@@ -1,0 +1,463 @@
+{% extends "base.html" %}
+
+{% block title %}Daena Demo - AI Tinkerers Toronto{% endblock %}
+
+{% block head %}
+<style>
+    .demo-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 24px;
+    }
+
+    .demo-header {
+        text-align: center;
+        margin-bottom: 32px;
+    }
+
+    .demo-header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--daena-gold), #fff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 8px;
+    }
+
+    .demo-header p {
+        color: #9ca3af;
+        font-size: 0.9rem;
+    }
+
+    .demo-panel {
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+    }
+
+    .demo-panel h3 {
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--daena-gold);
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .prompt-input {
+        width: 100%;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 16px;
+        color: white;
+        font-size: 1rem;
+        resize: none;
+        min-height: 100px;
+    }
+
+    .prompt-input:focus {
+        outline: none;
+        border-color: var(--daena-gold);
+    }
+
+    .run-btn {
+        background: linear-gradient(135deg, var(--daena-gold), #b8960e);
+        color: black;
+        font-weight: 600;
+        padding: 14px 32px;
+        border-radius: 12px;
+        border: none;
+        cursor: pointer;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 16px;
+        transition: all 0.3s ease;
+    }
+
+    .run-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(212, 175, 55, 0.3);
+    }
+
+    .run-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .cards-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
+
+    @media (max-width: 768px) {
+        .cards-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .router-card,
+    .council-card {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 12px;
+        padding: 20px;
+    }
+
+    .router-card .stat-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .router-card .stat-label {
+        color: #9ca3af;
+        font-size: 0.85rem;
+    }
+
+    .router-card .stat-value {
+        color: white;
+        font-weight: 500;
+    }
+
+    .council-vote {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 8px;
+        margin-bottom: 8px;
+    }
+
+    .council-vote .role-icon {
+        font-size: 1.5rem;
+    }
+
+    .council-vote .role-info {
+        flex: 1;
+    }
+
+    .council-vote .role-name {
+        font-weight: 600;
+        color: white;
+    }
+
+    .council-vote .role-status {
+        font-size: 0.8rem;
+        color: #9ca3af;
+    }
+
+    .council-vote .vote-badge {
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .vote-badge.approve {
+        background: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+    }
+
+    .vote-badge.reject {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+    }
+
+    .vote-badge.abstain {
+        background: rgba(107, 114, 128, 0.2);
+        color: #9ca3af;
+    }
+
+    .merge-result {
+        margin-top: 16px;
+        padding: 16px;
+        background: linear-gradient(135deg, rgba(212, 175, 55, 0.1), rgba(212, 175, 55, 0.02));
+        border: 1px solid rgba(212, 175, 55, 0.2);
+        border-radius: 8px;
+        text-align: center;
+    }
+
+    .merge-result .decision {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--daena-gold);
+    }
+
+    .trace-timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        padding: 20px 0;
+        overflow-x: auto;
+    }
+
+    .trace-event {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-width: 100px;
+    }
+
+    .trace-event .event-dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.3);
+        position: relative;
+        z-index: 1;
+    }
+
+    .trace-event .event-dot.active {
+        background: var(--daena-gold);
+        box-shadow: 0 0 12px rgba(212, 175, 55, 0.5);
+    }
+
+    .trace-event .event-line {
+        flex: 1;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.1);
+        width: 60px;
+    }
+
+    .trace-event .event-line.active {
+        background: var(--daena-gold);
+    }
+
+    .trace-event .event-label {
+        font-size: 0.75rem;
+        color: #9ca3af;
+        margin-top: 8px;
+        text-align: center;
+    }
+
+    .trace-event .event-time {
+        font-size: 0.7rem;
+        color: #6b7280;
+    }
+
+    .response-panel {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 12px;
+        padding: 20px;
+        margin-top: 16px;
+        font-family: 'Fira Code', monospace;
+        font-size: 0.9rem;
+        line-height: 1.6;
+        color: #e5e7eb;
+        white-space: pre-wrap;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+
+    .loading-spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(0, 0, 0, 0.3);
+        border-top-color: black;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .hidden {
+        display: none !important;
+    }
+
+    .pre-demo-prompts {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+    }
+
+    .sample-prompt {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 8px 14px;
+        font-size: 0.8rem;
+        color: #9ca3af;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .sample-prompt:hover {
+        background: rgba(212, 175, 55, 0.1);
+        border-color: var(--daena-gold);
+        color: var(--daena-gold);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="demo-container">
+    <!-- Header -->
+    <div class="demo-header">
+        <h1>🐝 Daena Router + Council Demo</h1>
+        <p>AI Tinkerers Toronto • January 29, 2026 • Live at Google</p>
+    </div>
+
+    <!-- Prompt Input Panel -->
+    <div class="demo-panel">
+        <h3><i class="fas fa-terminal"></i> Prompt Input</h3>
+        <textarea id="prompt-input" class="prompt-input"
+            placeholder="Enter your prompt here... Try asking about API routing, security analysis, or any question."></textarea>
+        <div class="pre-demo-prompts">
+            <button class="sample-prompt"
+                onclick="setPrompt('Explain how Daena routes requests to different AI models')">🔀 Routing</button>
+            <button class="sample-prompt"
+                onclick="setPrompt('Analyze the security implications of this API endpoint')">🔒 Security</button>
+            <button class="sample-prompt" onclick="setPrompt('What makes Daena different from other AI systems?')">💡
+                Explain</button>
+        </div>
+        <button id="run-btn" class="run-btn" onclick="runDemo()">
+            <i class="fas fa-play"></i>
+            <span>RUN DEMO</span>
+        </button>
+    </div>
+
+    <!-- Results Grid -->
+    <div class="cards-grid">
+        <!-- Router Decision Card -->
+        <div class="demo-panel" id="router-panel">
+            <h3><i class="fas fa-route"></i> Router Decision</h3>
+            <div class="router-card" id="router-results">
+                <div class="stat-row">
+                    <span class="stat-label">Model</span>
+                    <span class="stat-value" id="router-model">—</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Provider</span>
+                    <span class="stat-value" id="router-provider">—</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Reason</span>
+                    <span class="stat-value" id="router-reason">—</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Latency Est.</span>
+                    <span class="stat-value" id="router-latency">—</span>
+                </div>
+                <div class="stat-row" style="border: none;">
+                    <span class="stat-label">Cost Est.</span>
+                    <span class="stat-value" id="router-cost">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Council Votes Card -->
+        <div class="demo-panel" id="council-panel">
+            <h3><i class="fas fa-users"></i> Council Votes</h3>
+            <div id="council-results">
+                <div class="council-vote" id="vote-security">
+                    <span class="role-icon">🔒</span>
+                    <div class="role-info">
+                        <div class="role-name">Security</div>
+                        <div class="role-status" id="security-status">Awaiting...</div>
+                    </div>
+                    <span class="vote-badge" id="security-badge">—</span>
+                </div>
+                <div class="council-vote" id="vote-reliability">
+                    <span class="role-icon">⚙️</span>
+                    <div class="role-info">
+                        <div class="role-name">Reliability</div>
+                        <div class="role-status" id="reliability-status">Awaiting...</div>
+                    </div>
+                    <span class="vote-badge" id="reliability-badge">—</span>
+                </div>
+                <div class="council-vote" id="vote-product">
+                    <span class="role-icon">📊</span>
+                    <div class="role-info">
+                        <div class="role-name">Product</div>
+                        <div class="role-status" id="product-status">Awaiting...</div>
+                    </div>
+                    <span class="vote-badge" id="product-badge">—</span>
+                </div>
+                <div class="merge-result" id="merge-result">
+                    <div class="decision" id="merge-decision">AWAITING COUNCIL</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trace Timeline Panel -->
+    <div class="demo-panel">
+        <h3><i class="fas fa-stream"></i> Trace Timeline</h3>
+        <div class="trace-timeline" id="trace-timeline">
+            <div class="trace-event" id="event-route">
+                <div class="event-dot" id="dot-route"></div>
+                <div class="event-label">Route</div>
+                <div class="event-time" id="time-route">—</div>
+            </div>
+            <div class="trace-event">
+                <div class="event-line" id="line-1"></div>
+            </div>
+            <div class="trace-event" id="event-security">
+                <div class="event-dot" id="dot-security"></div>
+                <div class="event-label">Security</div>
+                <div class="event-time" id="time-security">—</div>
+            </div>
+            <div class="trace-event">
+                <div class="event-line" id="line-2"></div>
+            </div>
+            <div class="trace-event" id="event-reliability">
+                <div class="event-dot" id="dot-reliability"></div>
+                <div class="event-label">Reliability</div>
+                <div class="event-time" id="time-reliability">—</div>
+            </div>
+            <div class="trace-event">
+                <div class="event-line" id="line-3"></div>
+            </div>
+            <div class="trace-event" id="event-product">
+                <div class="event-dot" id="dot-product"></div>
+                <div class="event-label">Product</div>
+                <div class="event-time" id="time-product">—</div>
+            </div>
+            <div class="trace-event">
+                <div class="event-line" id="line-4"></div>
+            </div>
+            <div class="trace-event" id="event-merge">
+                <div class="event-dot" id="dot-merge"></div>
+                <div class="event-label">Merge</div>
+                <div class="event-time" id="time-merge">—</div>
+            </div>
+            <div class="trace-event">
+                <div class="event-line" id="line-5"></div>
+            </div>
+            <div class="trace-event" id="event-memory">
+                <div class="event-dot" id="dot-memory"></div>
+                <div class="event-label">Memory</div>
+                <div class="event-time" id="time-memory">—</div>
+            </div>
+        </div>
+
+        <!-- Response Output -->
+        <h3 style="margin-top: 20px;"><i class="fas fa-reply"></i> Response</h3>
+        <div class="response-panel" id="response-output">
+            Waiting for demo run...
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/demo.js"></script>
+{% endblock %}
