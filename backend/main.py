@@ -1585,6 +1585,8 @@ safe_import_router("human_relay")  # Human Relay Explorer (manual copy/paste bri
 # safe_import_router("demo")  # Demo router removed
 safe_import_router("chat_history", "router")
 safe_import_router("self_evolve")
+safe_import_router("snapshots")  # Configuration snapshots for Founder rollback
+safe_import_router("demo")  # Demo router for AI Tinkerers
 
 # New Sunflower × Honeycomb routes
 safe_import_router("sunflower")
