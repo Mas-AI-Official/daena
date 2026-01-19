@@ -153,3 +153,11 @@ backups/
 
 # Demo assets (videos, screenshots) - not committed
 demo_assets/
+# Large files
+local_brain/
+*.pptx
+*.mp4
+*.wav
+*.zip
+*.gguf
+
