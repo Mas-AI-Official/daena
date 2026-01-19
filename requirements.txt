@@ -1,0 +1,65 @@
+# Daena AI VP System - Dependencies
+# Core Framework
+fastapi>=0.115.0  # Required for Starlette 0.50+ compatibility
+uvicorn[standard]>=0.30.0  # Updated for compatibility
+pydantic==2.4.2
+python-multipart==0.0.6
+jinja2==3.1.2
+pydantic-settings==2.1.0
+
+# Database & Storage
+sqlalchemy==2.0.23
+alembic==1.12.1
+redis==5.0.1
+aiofiles==23.2.1
+
+# HTTP & API
+requests==2.31.0
+httpx==0.25.2
+websockets==12.0
+
+# Operator / Automation (scrape)
+beautifulsoup4==4.12.2
+
+python-dotenv==1.0.0
+
+# Optional (lightweight) auth/jwt deps used by some routers; still compatible with DISABLE_AUTH=1
+PyJWT==2.10.1
+email-validator==2.1.1
+
+# Monitoring & Logging
+structlog==23.2.0
+prometheus-client==0.19.0
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-asyncio==0.21.1
+
+# Utilities
+python-dateutil==2.8.2
+pytz==2023.3
+click==8.1.7
+psutil==5.9.6
+pyyaml==6.0.1  # Required for SEC-Loop config.yaml parsing
+
+# Security & Encryption
+cryptography==41.0.7  # Required for skill_capsules
+
+# Browser Automation & MCP (required for tool execution)
+playwright>=1.40.0
+selenium>=4.15.0
+pyautogui>=0.9.54
+mcp>=1.0.0
+
+# Device Management (CPU/GPU/TPU)
+# Optional: Install JAX for TPU support
+# jax==0.4.23
+# jaxlib==0.4.23
+# Note: JAX installation varies by platform, install separately if needed
+
+#
+# Optional dependency sets (not installed by default):
+# - OCR: pytesseract, Pillow
+# - Dev tools: black, flake8, mypy
+# - File watching: watchdog

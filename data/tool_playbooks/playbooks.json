@@ -1,0 +1,67 @@
+[
+  {
+    "id": "web-scrape-001",
+    "name": "Basic Web Scraping",
+    "description": "Scrape a webpage and extract text",
+    "category": "web_scraping",
+    "steps": [
+      {
+        "tool_name": "web_scrape_bs4",
+        "args": {
+          "url": "{url}",
+          "extract": "text"
+        },
+        "description": "Scrape the webpage",
+        "expected_output": null,
+        "retry_on_failure": false,
+        "max_retries": 3
+      }
+    ],
+    "tags": [
+      "web",
+      "scraping",
+      "basic"
+    ],
+    "success_count": 0,
+    "failure_count": 0,
+    "created_at": "2025-12-19T14:30:16.205263",
+    "updated_at": "2025-12-19T14:30:16.205274",
+    "created_from_doc": null,
+    "metadata": {}
+  },
+  {
+    "id": "browser-automation-001",
+    "name": "Browser Navigation and Click",
+    "description": "Navigate to a URL and click an element",
+    "category": "automation",
+    "steps": [
+      {
+        "tool_name": "browser_automation_selenium",
+        "args": {
+          "url": "{url}",
+          "steps": [
+            {
+              "action": "click",
+              "selector": "{selector}"
+            }
+          ]
+        },
+        "description": "Navigate and click",
+        "expected_output": null,
+        "retry_on_failure": false,
+        "max_retries": 3
+      }
+    ],
+    "tags": [
+      "browser",
+      "automation",
+      "selenium"
+    ],
+    "success_count": 0,
+    "failure_count": 0,
+    "created_at": "2025-12-19T14:30:16.205284",
+    "updated_at": "2025-12-19T14:30:16.205286",
+    "created_from_doc": null,
+    "metadata": {}
+  }
+]

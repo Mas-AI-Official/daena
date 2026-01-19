@@ -1,0 +1,90 @@
+memory_policy:
+  fidelity:
+    legal|finance|pii:
+      mode: lossless
+      store_raw_json_zstd: true
+      edge_only: true
+    chat|ops_log|research_note:
+      mode: semantic
+      store_raw_json_zstd: true
+  aging:
+  - after_days: 14
+    action: tighten_compression
+    targets:
+    - chat
+    - ops_log
+    - research_note
+  - after_days: 90
+    action: summarize_pack
+    targets:
+    - chat
+    - ops_log
+codecs:
+  default: nbmf
+  allow_ocr: false
+caching:
+  cas: true
+  simhash_threshold: 0.88
+emotion:
+  enabled: true
+  model: five_d
+tone:
+  mode: adaptive
+compression:
+  nbmf_quantization:
+    l2_fp16: true
+    l3_int8: true
+  delta_encoding: true
+  zstd_level: 17
+tenants:
+  default:
+    compression:
+      semantic:
+        quantization: fp16
+        delta: true
+        zstd_level: 17
+      lossless:
+        quantization: fp32
+        delta: false
+        zstd_level: 21
+    usage_alert_bytes: 10737418240
+  finance_global:
+    compression:
+      semantic:
+        quantization: int8
+        delta: true
+        zstd_level: 19
+      lossless:
+        quantization: fp32
+        delta: false
+        zstd_level: 21
+    usage_alert_bytes: 21474836480
+security:
+  encrypt_at_rest: AES-256
+  integrity_hash: SHA-256
+federation:
+  enable_edge: true
+  return_only:
+  - embeddings
+  - weight_deltas
+slas:
+  hot_p95_ms: 25
+  warm_p95_ms: 120
+flags:
+  nbmf_enabled: false
+  dual_write: true
+  read_mode: legacy
+  canary_percent: 0
+  tenant_allowlist: []
+  divergence_abort: true
+  legacy_read_through: false
+routing:
+  legal_finance_pii: lossless
+  chat_ops_research: semantic
+slo:
+  l1_p95_ms: 25
+  l2_p95_ms: 120
+  max_divergence_rate: 0.005
+routing_policy:
+  legal_finance_pii: lossless
+  chat_ops_research: semantic

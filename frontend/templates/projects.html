@@ -1,0 +1,779 @@
+{% extends "base.html" %}
+
+{% block title %}Projects - Daena VP{% endblock %}
+
+{% block head %}
+<style>
+    .projects-container {
+        padding: 30px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+
+    .page-header h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: white;
+    }
+
+    .new-project-btn {
+        padding: 12px 24px;
+        background: var(--daena-gold);
+        color: black;
+        border-radius: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        border: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .projects-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 24px;
+    }
+
+    .project-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .project-card:hover {
+        transform: translateY(-5px);
+        border-color: var(--daena-gold);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .project-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .project-status {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-bottom: 12px;
+    }
+
+    .project-status.active {
+        background: rgba(50, 205, 50, 0.2);
+        color: #32CD32;
+    }
+
+    .project-status.pending {
+        background: rgba(255, 165, 0, 0.2);
+        color: #FFA500;
+    }
+
+    .project-status.completed {
+        background: rgba(100, 149, 237, 0.2);
+        color: #6495ED;
+    }
+
+    .project-name {
+        font-size: 18px;
+        font-weight: 700;
+        color: white;
+        margin-bottom: 8px;
+    }
+
+    .project-desc {
+        font-size: 13px;
+        color: #9CA3AF;
+        line-height: 1.5;
+    }
+
+    /* Progress Bar */
+    .progress-section {
+        padding: 16px 20px;
+        background: rgba(0, 0, 0, 0.2);
+    }
+
+    .progress-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+
+    .progress-label {
+        font-size: 12px;
+        color: #9CA3AF;
+    }
+
+    .progress-value {
+        font-size: 12px;
+        color: white;
+        font-weight: 600;
+    }
+
+    .progress-bar {
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.5s ease;
+    }
+
+    /* Finance Section */
+    .finance-section {
+        padding: 16px 20px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .finance-item {
+        text-align: center;
+    }
+
+    .finance-value {
+        font-size: 16px;
+        font-weight: 700;
+        color: white;
+    }
+
+    .finance-label {
+        font-size: 10px;
+        color: #9CA3AF;
+        text-transform: uppercase;
+        margin-top: 4px;
+    }
+
+    /* Team Section */
+    .team-section {
+        padding: 16px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .team-avatars {
+        display: flex;
+    }
+
+    .team-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: white;
+        font-weight: 600;
+        margin-left: -8px;
+        border: 2px solid #0a0a0a;
+    }
+
+    .team-avatar:first-child {
+        margin-left: 0;
+    }
+
+    .team-count {
+        font-size: 12px;
+        color: #9CA3AF;
+    }
+
+    .dept-tag {
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 500;
+    }
+
+    /* Detail Modal */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal-overlay.active {
+        display: flex;
+    }
+
+    .modal-content {
+        width: 90%;
+        max-width: 800px;
+        max-height: 90vh;
+        overflow-y: auto;
+        background: #0f1729;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+    }
+
+    .modal-header {
+        padding: 24px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-close {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: white;
+    }
+
+    .modal-body {
+        padding: 24px;
+    }
+
+    @media (max-width: 700px) {
+        .projects-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="projects-container">
+    <div class="page-header">
+        <h1>Projects</h1>
+        <button class="new-project-btn" onclick="createProject()">
+            <i class="fas fa-plus"></i> New Project
+        </button>
+    </div>
+
+    <div class="projects-grid" id="projects-grid">
+        <!-- Projects loaded via JS -->
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="project-modal" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 id="modal-title" style="color: white; font-size: 20px;">Project Details</h2>
+            <div class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></div>
+        </div>
+        <div class="modal-body" id="modal-body">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const deptColors = {
+        'engineering': '#4169E1',
+        'product': '#9370DB',
+        'sales': '#FF8C00',
+        'marketing': '#FF8C00',
+        'finance': '#00CED1',
+        'hr': '#E91E7F',
+        'legal': '#9370DB',
+        'customer': '#32CD32'
+    };
+
+    const mockProjects = [
+        {
+            id: 'p1',
+            name: 'Daena 3.0 Launch',
+            description: 'Major AI system upgrade with enhanced brain capabilities and new UI',
+            status: 'active',
+            progress: 75,
+            department: 'engineering',
+            budget: 150000,
+            spent: 112000,
+            team: ['Alex', 'Emma', 'Noah', 'Sophia'],
+            deadline: '2025-02-15'
+        },
+        {
+            id: 'p2',
+            name: 'Q1 Sales Campaign',
+            description: 'Enterprise sales initiative targeting Fortune 500 companies',
+            status: 'active',
+            progress: 45,
+            department: 'sales',
+            budget: 80000,
+            spent: 35000,
+            team: ['Morgan', 'Charlotte'],
+            deadline: '2025-03-31'
+        },
+        {
+            id: 'p3',
+            name: 'Brand Refresh',
+            description: 'Complete visual identity overhaul and marketing materials update',
+            status: 'pending',
+            progress: 20,
+            department: 'marketing',
+            budget: 50000,
+            spent: 10000,
+            team: ['DaVinci', 'Sofia', 'Jackson'],
+            deadline: '2025-04-01'
+        },
+        {
+            id: 'p4',
+            name: 'Compliance Audit',
+            description: 'Annual regulatory compliance review and documentation',
+            status: 'completed',
+            progress: 100,
+            department: 'legal',
+            budget: 25000,
+            spent: 22000,
+            team: ['Sarah', 'William'],
+            deadline: '2024-12-20'
+        }
+    ];  // END REMOVED MOCK DATA
+
+    async function loadProjects() {
+        try {
+            // Try to load from API if endpoint exists
+            // For now, show empty state until projects API is implemented
+            const response = await fetch('/api/v1/projects');
+            if (response.ok) {
+                const projects = await response.json();
+                renderProjects(projects);
+            } else {
+                // No projects API yet - show empty state
+                renderProjects([]);
+            }
+        } catch (e) {
+            console.error('Failed to load projects:', e);
+            // Show empty state instead of mock data
+            renderProjects([]);
+        }
+    }
+
+    function renderProjects(projects) {
+        const grid = document.getElementById('projects-grid');
+
+        grid.innerHTML = projects.map(p => {
+            const color = deptColors[p.department] || '#888';
+            const remaining = p.budget - p.spent;
+
+            return `
+            <div class="project-card" onclick="showProject('${p.id}')">
+                <div class="project-header">
+                    <div class="project-status ${p.status}">${p.status.toUpperCase()}</div>
+                    <div class="project-name">${p.name}</div>
+                    <div class="project-desc">${p.description}</div>
+                </div>
+                
+                <div class="progress-section">
+                    <div class="progress-header">
+                        <span class="progress-label">Progress</span>
+                        <span class="progress-value">${p.progress}%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${p.progress}%; background: ${color}"></div>
+                    </div>
+                </div>
+                
+                <div class="finance-section">
+                    <div class="finance-item">
+                        <div class="finance-value" style="color: ${color}">$${(p.budget / 1000).toFixed(0)}k</div>
+                        <div class="finance-label">Budget</div>
+                    </div>
+                    <div class="finance-item">
+                        <div class="finance-value">$${(p.spent / 1000).toFixed(0)}k</div>
+                        <div class="finance-label">Spent</div>
+                    </div>
+                    <div class="finance-item">
+                        <div class="finance-value" style="color: #32CD32">$${(remaining / 1000).toFixed(0)}k</div>
+                        <div class="finance-label">Remaining</div>
+                    </div>
+                </div>
+                
+                <div class="team-section">
+                    <div>
+                        <div class="team-avatars">
+                            ${p.team.slice(0, 4).map((t, i) => `
+                                <div class="team-avatar" style="background: ${color}">${t[0]}</div>
+                            `).join('')}
+                        </div>
+                        <div class="team-count">${p.team.length} team members</div>
+                    </div>
+                    <div class="dept-tag" style="background: ${color}33; color: ${color}">
+                        ${p.department.toUpperCase()}
+                    </div>
+                </div>
+            </div>
+        `;
+        }).join('');
+    }
+
+    async function showProject(id) {
+        // Try to load project from API
+        try {
+            const response = await fetch(`/api/v1/projects/${id}`);
+            if (response.ok) {
+                const project = await response.json();
+                // Show project details modal
+                console.log('Project details:', project);
+            } else {
+                console.error('Project not found:', id);
+            }
+        } catch (e) {
+            console.error('Failed to load project:', e);
+        }
+
+        const color = deptColors[project.department] || '#888';
+
+        document.getElementById('modal-title').textContent = project.name;
+        document.getElementById('modal-body').innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            <div>
+                <h3 style="color: #9CA3AF; font-size: 12px; margin-bottom: 8px;">DESCRIPTION</h3>
+                <p style="color: white; line-height: 1.6;">${project.description}</p>
+                
+                <h3 style="color: #9CA3AF; font-size: 12px; margin: 24px 0 8px;">PROGRESS</h3>
+                <div class="progress-bar" style="margin-bottom: 8px;">
+                    <div class="progress-fill" style="width: ${project.progress}%; background: ${color}"></div>
+                </div>
+                <p style="color: white;">${project.progress}% Complete</p>
+                
+                <h3 style="color: #9CA3AF; font-size: 12px; margin: 24px 0 8px;">DEADLINE</h3>
+                <p style="color: white;">${project.deadline || 'No deadline set'}</p>
+            </div>
+            <div>
+                <h3 style="color: #9CA3AF; font-size: 12px; margin-bottom: 8px;">FINANCE</h3>
+                <div style="background: rgba(255,255,255,0.03); padding: 16px; border-radius: 10px; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                        <span style="color: #9CA3AF;">Budget</span>
+                        <span style="color: white; font-weight: 600;">$${project.finance?.budget?.toLocaleString() || 0}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                        <span style="color: #9CA3AF;">Spent</span>
+                        <span style="color: #FF6464; font-weight: 600;">$${project.finance?.spent?.toLocaleString() || 0}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #9CA3AF;">Remaining</span>
+                        <span style="color: #32CD32; font-weight: 600;">$${((project.finance?.budget || 0) - (project.finance?.spent || 0)).toLocaleString()}</span>
+                    </div>
+                </div>
+                
+                <h3 style="color: #9CA3AF; font-size: 12px; margin-bottom: 8px;">TEAM</h3>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    ${(project.team || []).map(t => `
+                        <div style="display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
+                            <div style="width: 28px; height: 28px; border-radius: 50%; background: ${color}; display: flex; align-items: center; justify-content: center; font-size: 12px; color: white;">${t[0]}</div>
+                            <span style="color: white; font-size: 13px;">${t}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+        <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: flex-end; gap: 12px;">
+            <button onclick="deleteProject('${project.id}')" style="padding: 8px 16px; background: rgba(255, 100, 100, 0.1); color: #FF6464; border: 1px solid rgba(255, 100, 100, 0.2); border-radius: 8px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-trash"></i> Delete
+            </button>
+            <button onclick="editProject('${project.id}')" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.1); color: white; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-edit"></i> Edit
+            </button>
+        </div>
+    `;
+
+        document.getElementById('project-modal').classList.add('active');
+    }
+
+    async function deleteProject(id) {
+        if (!confirm('Are you sure you want to delete this project?')) return;
+        
+        try {
+            const response = await fetch(`/api/v1/projects/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                closeModal();
+                loadProjects();
+                if (window.showToast) window.showToast('Project deleted successfully', 'success');
+            } else {
+                if (window.showToast) window.showToast('Failed to delete project', 'error');
+            }
+        } catch (e) {
+            console.error('Delete failed:', e);
+            if (window.showToast) window.showToast('Failed to delete project', 'error');
+        }
+    }
+
+    function editProject(id) {
+        // Close detail modal
+        closeModal();
+        
+        // Fetch project details to ensure we have latest data
+        fetch(`/api/v1/projects/${id}`)
+            .then(res => res.json())
+            .then(project => {
+                // Reuse create modal structure but with edit mode
+                const modalHtml = `
+                    <div class="modal-overlay" id="edit-project-modal" style="display: flex;">
+                        <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 600px;">
+                            <div class="modal-header">
+                                <h2 style="color: white; font-size: 20px;">Edit Project</h2>
+                                <div class="modal-close" onclick="closeEditProjectModal()"><i class="fas fa-times"></i></div>
+                            </div>
+                            <div class="modal-body">
+                                <form id="edit-project-form" onsubmit="submitEditProject(event, '${id}')">
+                                    <div style="margin-bottom: 20px;">
+                                        <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Project Name *</label>
+                                        <input type="text" id="edit-project-name" required value="${project.name}"
+                                            style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;"
+                                            placeholder="Enter project name">
+                                    </div>
+                                    <div style="margin-bottom: 20px;">
+                                        <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Description</label>
+                                        <textarea id="edit-project-description" rows="3"
+                                            style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px; resize: vertical;"
+                                            placeholder="Enter project description">${project.description || ''}</textarea>
+                                    </div>
+                                    <div style="margin-bottom: 20px;">
+                                        <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Status</label>
+                                        <select id="edit-project-status"
+                                            style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;">
+                                            <option value="active" ${project.status === 'active' ? 'selected' : ''}>Active</option>
+                                            <option value="pending" ${project.status === 'pending' ? 'selected' : ''}>Pending</option>
+                                            <option value="completed" ${project.status === 'completed' ? 'selected' : ''}>Completed</option>
+                                        </select>
+                                    </div>
+                                    <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                                        <button type="button" onclick="closeEditProjectModal()"
+                                            style="padding: 12px 24px; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                            Cancel
+                                        </button>
+                                        <button type="submit"
+                                            style="padding: 12px 24px; background: var(--daena-gold); color: black; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                            Save Changes
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+            })
+            .catch(e => {
+                console.error('Failed to load project for edit:', e);
+                if (window.showToast) window.showToast('Failed to load project details', 'error');
+            });
+    }
+
+    function closeEditProjectModal() {
+        const modal = document.getElementById('edit-project-modal');
+        if (modal) modal.remove();
+    }
+
+    async function submitEditProject(event, id) {
+        event.preventDefault();
+
+        const name = document.getElementById('edit-project-name').value.trim();
+        const description = document.getElementById('edit-project-description').value.trim();
+        const status = document.getElementById('edit-project-status').value;
+
+        if (!name) {
+            if (window.showToast) window.showToast('Project name is required', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/v1/projects/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name,
+                    description: description || null,
+                    status: status
+                })
+            });
+
+            if (response.ok) {
+                closeEditProjectModal();
+                loadProjects();
+                if (window.showToast) window.showToast('Project updated successfully', 'success');
+            } else {
+                const error = await response.json();
+                if (window.showToast) window.showToast('Failed to update project: ' + (error.detail || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error updating project:', error);
+            if (window.showToast) window.showToast('Failed to update project: ' + error.message, 'error');
+        }
+    }
+
+    function closeModal(e) {
+        if (!e || e.target.id === 'project-modal') {
+            document.getElementById('project-modal').classList.remove('active');
+        }
+    }
+
+    function createProject() {
+        // Create modal HTML
+        const modalHtml = `
+            <div class="modal-overlay" id="create-project-modal" style="display: flex;">
+                <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 600px;">
+                    <div class="modal-header">
+                        <h2 style="color: white; font-size: 20px;">Create New Project</h2>
+                        <div class="modal-close" onclick="closeCreateProjectModal()"><i class="fas fa-times"></i></div>
+                    </div>
+                    <div class="modal-body">
+                        <form id="create-project-form" onsubmit="submitNewProject(event)">
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Project Name *</label>
+                                <input type="text" id="project-name" required 
+                                    style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;"
+                                    placeholder="Enter project name">
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Description</label>
+                                <textarea id="project-description" rows="3"
+                                    style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px; resize: vertical;"
+                                    placeholder="Enter project description"></textarea>
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Status</label>
+                                <select id="project-status"
+                                    style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;">
+                                    <option value="active">Active</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="completed">Completed</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                                <button type="button" onclick="closeCreateProjectModal()"
+                                    style="padding: 12px 24px; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                    Cancel
+                                </button>
+                                <button type="submit"
+                                    style="padding: 12px 24px; background: var(--daena-gold); color: black; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                    Create Project
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add modal to body
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    function closeCreateProjectModal() {
+        const modal = document.getElementById('create-project-modal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    async function submitNewProject(event) {
+        event.preventDefault();
+
+        const name = document.getElementById('project-name').value.trim();
+        const description = document.getElementById('project-description').value.trim();
+        const status = document.getElementById('project-status').value;
+
+        if (!name) {
+            if (window.showToast) {
+                window.showToast('Project name is required', 'error');
+            }
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/v1/projects/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    description: description || null,
+                    status: status
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log('Project created:', result);
+
+                // Close modal
+                closeCreateProjectModal();
+
+                // Reload projects
+                await loadProjects();
+
+                // Show success message
+                if (window.showToast) {
+                    window.showToast('Project created successfully', 'success');
+                }
+            } else {
+                const error = await response.json();
+                if (window.showToast) {
+                    window.showToast('Failed to create project: ' + (error.detail || 'Unknown error'), 'error');
+                }
+            }
+        } catch (error) {
+            console.error('Error creating project:', error);
+            if (window.showToast) {
+                window.showToast('Failed to create project: ' + error.message, 'error');
+            }
+        }
+    }
+
+
+    document.addEventListener('DOMContentLoaded', loadProjects);
+
+    // WebSocket for real-time updates
+    if (window.WebSocketClient) {
+        // Listen for project.created events
+        window.WebSocketClient.on('project.created', (data) => {
+            console.log('Project created event:', data);
+            if (window.showToast) {
+                window.showToast(`New project: ${data.payload?.project?.name || 'Unknown'}`, 'info');
+            }
+            loadProjects(); // Refresh the projects list
+        });
+
+        // Listen for project.updated events
+        window.WebSocketClient.on('project.updated', (data) => {
+            console.log('Project updated event:', data);
+            loadProjects(); // Refresh the projects list
+        });
+
+        // Listen for project.deleted events
+        window.WebSocketClient.on('project.deleted', (data) => {
+            console.log('Project deleted event:', data);
+            if (window.showToast) {
+                window.showToast('Project deleted', 'warning');
+            }
+            loadProjects(); // Refresh the projects list
+        });
+    }
+</script>
+{% endblock %}

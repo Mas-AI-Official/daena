@@ -1,0 +1,1 @@
+{"payload": {"key": "value", "nested": {"data": "test"}}, "meta": {"compression": {"mode": "semantic", "profile": "default", "settings": {}}, "tenant_id": "default"}, "cls": "test"}

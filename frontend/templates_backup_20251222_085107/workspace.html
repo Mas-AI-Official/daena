@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="workspace-container" class="h-[calc(100vh-8rem)] flex gap-1">
+    <!-- Left: Projects & Context -->
+    <div class="w-64 flex flex-col gap-4">
+        <div class="glass-panel rounded-xl p-4 flex-1 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-medium text-white">Projects</h3>
+                <button id="connect-folder-btn" class="text-daena-gold hover:text-white"><i
+                        class="fas fa-plus"></i></button>
+            </div>
+            <div id="projects-list" class="flex-1 overflow-y-auto space-y-1">
+                <!-- Injected by JS -->
+            </div>
+        </div>
+        <div class="glass-panel rounded-xl p-4 h-1/3">
+            <h3 class="font-medium text-white mb-2">Context</h3>
+            <div class="text-xs text-gray-500">No active project context.</div>
+        </div>
+    </div>
+
+    <!-- Center: File Explorer & Preview -->
+    <div class="flex-1 glass-panel rounded-xl flex flex-col mx-2">
+        <div class="h-12 border-b border-white/10 flex items-center px-4 gap-2 text-sm text-gray-400">
+            <i class="fas fa-home hover:text-white cursor-pointer"></i>
+            <span>/</span>
+            <span class="text-white">Project Root</span>
+        </div>
+        <div class="flex-1 p-4 grid grid-cols-4 gap-4 content-start overflow-y-auto">
+            <!-- Mock Files -->
+            <div
+                class="p-4 bg-white/5 rounded border border-white/5 hover:bg-white/10 cursor-pointer text-center group">
+                <i class="fas fa-folder text-daena-gold text-3xl mb-2 group-hover:scale-110 transition-transform"></i>
+                <div class="text-xs text-gray-300 truncate">src</div>
+            </div>
+            <div
+                class="p-4 bg-white/5 rounded border border-white/5 hover:bg-white/10 cursor-pointer text-center group">
+                <i class="fas fa-file-code text-blue-400 text-3xl mb-2 group-hover:scale-110 transition-transform"></i>
+                <div class="text-xs text-gray-300 truncate">main.py</div>
+            </div>
+            <div
+                class="p-4 bg-white/5 rounded border border-white/5 hover:bg-white/10 cursor-pointer text-center group">
+                <i class="fas fa-file-alt text-gray-400 text-3xl mb-2 group-hover:scale-110 transition-transform"></i>
+                <div class="text-xs text-gray-300 truncate">README.md</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Memory & Notes -->
+    <div class="w-72 glass-panel rounded-xl flex flex-col p-4">
+        <h3 class="font-medium text-white mb-4">Memory & Notes</h3>
+        <textarea
+            class="flex-1 bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-gray-300 resize-none focus:outline-none focus:border-daena-gold/50"
+            placeholder="Project notes..."></textarea>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/workspace.js"></script>
+{% endblock %}

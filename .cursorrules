@@ -1,0 +1,61 @@
+# Cursor Rules for Daena Codebase
+
+## CRITICAL: Never Truncate Files
+
+**DO NOT** replace whole files or truncate content. If a file is large:
+- Apply minimal diffs only
+- Use patch-style edits
+- If unsure, don't change the file
+- Create a new file instead if needed
+
+## CRITICAL: No Duplicates
+
+**DO NOT** create duplicate modules or files:
+- If a similar file exists, modify/merge it
+- Never create `*_new.py`, `*_v2.py`, etc.
+- Keep one canonical implementation
+- Update imports/usages accordingly
+
+## File Editing Guidelines
+
+1. **Read the file first** - Understand its structure
+2. **Apply minimal patches** - Only change what's necessary
+3. **Preserve existing logic** - Don't rewrite working code
+4. **Test after changes** - Verify functionality still works
+
+## Code Style
+
+- **HTMX/HTML only** - No React, Next.js, or Node.js
+- **Local-first** - Ollama-first, cloud optional
+- **No hardcoded secrets** - Use environment variables
+- **No-auth mode** - `DISABLE_AUTH=1` must work for local dev
+
+## Architecture Rules
+
+- **Canonical paths only** - Use `backend/services/llm_service.py` for LLM
+- **Single source of truth** - One brain, one router, one tool registry
+- **Layer separation** - API mode (Layer A) and Explorer mode (Layer B) are independent
+
+## CRITICAL: Daena Brain Protection
+
+**DO NOT delete or replace the canonical Daena Brain**:
+- File: `backend/daena_brain.py`
+- Class: `DaenaBrain`
+- Method: `process_message()` - This is the canonical entry point
+- Instance: `daena_brain` (global singleton)
+
+**Rules for brain modifications**:
+- ✅ Only patch specific functions
+- ✅ Never replace entire class
+- ✅ Never remove `process_message()` method
+- ✅ Never change delegation to `LLMService`
+- ✅ If new features needed, create extension modules
+
+**See**: `docs/CORE_FILES_DO_NOT_REWRITE.md` for full list of protected files
+
+## When in Doubt
+
+- **Don't change it** - If unsure, ask or leave it alone
+- **Minimal changes** - Small, focused edits are better
+- **Test first** - Verify existing functionality before adding new features
+

@@ -1,0 +1,1 @@
+{"payload": {"data": "base64_audio_data", "mime_type": "audio/mpeg"}, "meta": {"compression": {"mode": "semantic", "profile": "default", "settings": {}}, "tenant_id": "default", "content_type": "binary", "mime_type": "audio/mpeg", "multimodal": true}, "cls": "test"}

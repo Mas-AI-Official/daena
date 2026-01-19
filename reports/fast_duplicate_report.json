@@ -1,0 +1,229 @@
+{
+  "exact_duplicates": {},
+  "same_name_files": {
+    "abstract_store.py": [
+      "memory_service\\abstract_store.py",
+      "backend\\routes\\abstract_store.py"
+    ],
+    "audit.py": [
+      "memory_service\\audit.py",
+      "backend\\routes\\audit.py"
+    ],
+    "knowledge_distillation.py": [
+      "memory_service\\knowledge_distillation.py",
+      "backend\\routes\\knowledge_distillation.py"
+    ],
+    "ocr_fallback.py": [
+      "memory_service\\ocr_fallback.py",
+      "backend\\routes\\ocr_fallback.py"
+    ],
+    "__init__.py": [
+      "memory_service\\__init__.py",
+      "memory_service\\adapters\\__init__.py",
+      "backend\\__init__.py",
+      "backend\\models\\__init__.py",
+      "backend\\routers\\__init__.py",
+      "backend\\routes\\__init__.py"
+    ],
+    "check_db.py": [
+      "backend\\check_db.py",
+      "backend\\scripts\\check_db.py"
+    ],
+    "database.py": [
+      "backend\\database.py",
+      "backend\\models\\database.py"
+    ],
+    "debug_sunflower.py": [
+      "backend\\debug_sunflower.py",
+      "backend\\scripts\\debug_sunflower.py"
+    ],
+    "tenant_rate_limit.py": [
+      "backend\\middleware\\tenant_rate_limit.py",
+      "backend\\routes\\tenant_rate_limit.py"
+    ],
+    "chat_history.py": [
+      "backend\\models\\chat_history.py",
+      "backend\\routes\\chat_history.py"
+    ],
+    "council.py": [
+      "backend\\models\\council.py",
+      "backend\\routes\\council.py"
+    ],
+    "agents.py": [
+      "backend\\routers\\agents.py",
+      "backend\\routes\\agents.py"
+    ],
+    "health.py": [
+      "backend\\routers\\health.py",
+      "backend\\routes\\health.py"
+    ],
+    "llm.py": [
+      "backend\\routers\\llm.py",
+      "backend\\routes\\llm.py"
+    ],
+    "voice.py": [
+      "backend\\routers\\voice.py",
+      "backend\\routes\\voice.py"
+    ],
+    "realtime_collaboration.py": [
+      "backend\\routes\\realtime_collaboration.py",
+      "backend\\services\\realtime_collaboration.py"
+    ],
+    "skill_capsules.py": [
+      "backend\\routes\\skill_capsules.py",
+      "backend\\services\\skill_capsules.py"
+    ],
+    "sunflower.py": [
+      "backend\\routes\\sunflower.py",
+      "backend\\utils\\sunflower.py"
+    ]
+  },
+  "complete_files": [
+    "DAENA_2_HARDENING_COMPLETE.md",
+    "DAENA_2_HARDENING_PHASE_2_COMPLETE.md",
+    "DAENA_2_HARDENING_PHASE_3_COMPLETE.md",
+    "DAENA_2_HARDENING_PHASE_4_COMPLETE.md",
+    "DAENA_2_HARDENING_PHASE_5_COMPLETE.md",
+    "LAUNCH_FILE_UPDATE_COMPLETE.md",
+    "NEXT_STEP_COMPLETE.md",
+    "daena doc\\DAENA_COMPLETE_INTEGRATION_GUIDE.md",
+    "daena doc\\Daena DOC\\MD files\\DAENA_COMPLETE_INTEGRATION_GUIDE.md",
+    "daena doc\\Daena DOC\\MD files\\README_DAENA_ENTERPRISE_COMPLETE.md",
+    "daena doc\\Daena DOC\\lates MD\\DAENA_COMPLETE_INTEGRATION_GUIDE.md",
+    "docs\\ADVANCED_ANALYTICS_COMPLETE.md",
+    "docs\\ALL_FIXES_COMPLETE.md",
+    "docs\\ALL_NEXT_STEPS_COMPLETE.md",
+    "docs\\ALL_PHASES_COMPLETE.md",
+    "docs\\ALL_SYSTEMS_COMPLETE.md",
+    "docs\\ALL_TASKS_COMPLETE.md",
+    "docs\\API_DOCUMENTATION_COMPLETE.md",
+    "docs\\ARCHITECTURE_AUDIT_COMPLETE.md",
+    "docs\\BENCHMARK_TOOL_COMPLETE.md",
+    "docs\\BUG_FIXES_COMPLETE.md",
+    "docs\\CASE_STUDIES_COMPLETE.md",
+    "docs\\CLOUD_KMS_INTEGRATION_COMPLETE.md",
+    "docs\\COMPETITIVE_ANALYSIS_COMPLETE.md",
+    "docs\\COMPLETE_IMPLEMENTATION_SUMMARY.md",
+    "docs\\COMPLETE_PHASE_STATUS.md",
+    "docs\\COMPLETE_ROADMAP_STATUS.md",
+    "docs\\COMPLETE_SYSTEM_SUMMARY.md",
+    "docs\\COMPLETE_TASKS_SUMMARY.md",
+    "docs\\COMPLETE_WORK_SUMMARY.md",
+    "docs\\COMPLIANCE_DOCUMENTATION_COMPLETE.md",
+    "docs\\COUNCIL_APPROVAL_COMPLETE.md",
+    "docs\\COUNCIL_ARCHITECTURE_IMPLEMENTATION_COMPLETE.md",
+    "docs\\CUSTOMER_SUCCESS_FRAMEWORK_COMPLETE.md",
+    "docs\\DAENA_ULTIMATE_COMPLETE_PATENT_PACKAGE.md",
+    "docs\\DAENA_ULTIMATE_COMPLETE_PATENT_SPECIFICATION_ALL_INNOVATIONS.md",
+    "docs\\DEVELOPER_PORTAL_COMPLETE.md",
+    "docs\\DOCUMENTATION_REVIEW_COMPLETE.md",
+    "docs\\ENCODER_UPGRADE_INFRASTRUCTURE_COMPLETE.md",
+    "docs\\EXTRA_SUGGESTIONS_COMPLETE.md",
+    "docs\\FINAL_COMPLETE_SUMMARY.md",
+    "docs\\FINAL_SESSION_COMPLETE.md",
+    "docs\\FIXES_COMPLETE.md",
+    "docs\\FRONTEND_ENHANCEMENTS_COMPLETE.md",
+    "docs\\FULL_STACK_AUDIT_COMPLETE.md",
+    "docs\\FULL_STACK_AUDIT_PHASE_7_COMPLETE.md",
+    "docs\\JAVASCRIPT_SDK_COMPLETE.md",
+    "docs\\KNOWLEDGE_DISTILLATION_ENHANCEMENT_COMPLETE.md",
+    "docs\\LAUNCH_FIXES_COMPLETE.md",
+    "docs\\MIGRATION_GUIDES_COMPLETE.md",
+    "docs\\MONITORING_SETUP_COMPLETE.md",
+    "docs\\NEXT_STEP_COMPLETE.md",
+    "docs\\OCR_COMPARISON_TOOL_COMPLETE.md",
+    "docs\\OCR_INTEGRATION_COMPLETE.md",
+    "docs\\OCR_INTEGRATION_ENHANCEMENT_COMPLETE.md",
+    "docs\\OPERATIONAL_REHEARSAL_COMPLETE.md",
+    "docs\\PHASE7_REFINEMENT_COMPLETE.md",
+    "docs\\PHASE_6_COMPLETE_SUMMARY.md",
+    "docs\\PHASE_6_TASK_3_COMPLETE.md",
+    "docs\\PHASE_7_COMPLETE_SUMMARY.md",
+    "docs\\PROJECT_COMPLETE.md",
+    "docs\\PYTHON_SDK_COMPLETE.md",
+    "docs\\REALTIME_COLLABORATION_COMPLETE.md",
+    "docs\\REALTIME_FRONTEND_INTEGRATION_COMPLETE.md",
+    "docs\\REMAINING_ITEMS_COMPLETE.md",
+    "docs\\SESSION_COMPLETE_SUMMARY.md",
+    "docs\\TEST_COVERAGE_EXPANSION_COMPLETE.md",
+    "docs\\VOICE_SETUP_COMPLETE.md",
+    "docs\\VOICE_SYSTEM_COMPLETE.md",
+    "docs\\VOICE_SYSTEM_COMPLETE_FIX.md",
+    "docs\\WAVE_A_COMPLETE.md",
+    "docs\\WAVE_B_COMPLETE.md",
+    "docs\\WAVE_B_TASK_B3_COMPLETE.md",
+    "docs\\WAVE_B_TASK_B4_COMPLETE.md",
+    "docs\\WAVE_B_TASK_B5_COMPLETE.md"
+  ],
+  "summary_files": [
+    "DAENA_2_HARDENING_SUMMARY.md",
+    "daena doc\\Daena DOC\\MD files\\DAENA_ENHANCED_SYSTEM_SUMMARY.md",
+    "daena doc\\Daena DOC\\MD files\\DAENA_INVESTMENT_PACKAGE_SUMMARY.md",
+    "daena doc\\Daena DOC\\MD files\\ENHANCED_SYSTEM_SUMMARY.md",
+    "daena doc\\Daena DOC\\MD files\\FINAL_IMPLEMENTATION_SUMMARY.md",
+    "daena doc\\Daena DOC\\MD files\\REAL_WORLD_READY_SUMMARY.md",
+    "daena doc\\Daena DOC\\lates MD\\FINAL_IMPLEMENTATION_SUMMARY.md",
+    "daena doc\\docs- gpt 5\\REAL_WORLD_READY_SUMMARY.md",
+    "docs-Previous version\\COMPREHENSIVE_DAENA_REBUILD_SUMMARY.md",
+    "docs-Previous version\\REAL_WORLD_READY_SUMMARY.md",
+    "docs\\8x8_TO_6x8_MIGRATION_SUMMARY.md",
+    "docs\\ACCOMPLISHMENTS_SUMMARY.md",
+    "docs\\ARCHITECTURE_AUDIT_FINAL_SUMMARY.md",
+    "docs\\AUDIT_EXECUTIVE_SUMMARY.md",
+    "docs\\AUDIT_FINAL_SUMMARY.md",
+    "docs\\BUG_FIXES_SUMMARY.md",
+    "docs\\COMPLETE_IMPLEMENTATION_SUMMARY.md",
+    "docs\\COMPLETE_SYSTEM_SUMMARY.md",
+    "docs\\COMPLETE_TASKS_SUMMARY.md",
+    "docs\\COMPLETE_WORK_SUMMARY.md",
+    "docs\\COMPREHENSIVE_UPGRADE_SUMMARY.md",
+    "docs\\COUNCIL_ARCHITECTURE_FINAL_SUMMARY.md",
+    "docs\\EXECUTIVE_SUMMARY.md",
+    "docs\\FINAL_COMPLETE_SUMMARY.md",
+    "docs\\FINAL_COMPLETION_SUMMARY.md",
+    "docs\\FINAL_DELIVERY_SUMMARY.md",
+    "docs\\FINAL_ROADMAP_SUMMARY.md",
+    "docs\\FINAL_SESSION_SUMMARY.md",
+    "docs\\FINAL_SUMMARY.md",
+    "docs\\FIXES_AND_IMPROVEMENTS_SUMMARY.md",
+    "docs\\LIVE_AND_TRUTHFUL_IMPLEMENTATION_SUMMARY.md",
+    "docs\\MASTER_SUMMARY_AND_ROADMAP.md",
+    "docs\\MEMORY_STRUCTURE_SUMMARY.md",
+    "docs\\NEXT_STEP_SUMMARY.md",
+    "docs\\OCR_INTEGRATION_FINAL_SUMMARY.md",
+    "docs\\PHASE_6_COMPLETE_SUMMARY.md",
+    "docs\\PHASE_7_APPROVAL_SUMMARY.md",
+    "docs\\PHASE_7_COMPLETE_SUMMARY.md",
+    "docs\\PHASE_7_FINAL_SUMMARY.md",
+    "docs\\PHASE_7_UPDATE_SUMMARY.md",
+    "docs\\PUSH_SUMMARY.md",
+    "docs\\REMAINING_CHANGES_SUMMARY.md",
+    "docs\\SESSION_ACHIEVEMENTS_SUMMARY.md",
+    "docs\\SESSION_COMPLETE_SUMMARY.md",
+    "docs\\TASK1_IMPLEMENTATION_SUMMARY.md",
+    "docs\\TASK2_IMPLEMENTATION_SUMMARY.md",
+    "docs\\TASK3_IMPLEMENTATION_SUMMARY.md",
+    "docs\\TPU_GPU_IMPLEMENTATION_SUMMARY.md",
+    "docs\\VOICE_IMPLEMENTATION_SUMMARY.md",
+    "docs\\WAVE_A_EXECUTION_SUMMARY.md"
+  ],
+  "status_files": [
+    "bench\\BENCHMARK_STATUS.md",
+    "docs\\COMPLETE_PHASE_STATUS.md",
+    "docs\\COMPLETE_ROADMAP_STATUS.md",
+    "docs\\COMPREHENSIVE_STATUS_UPDATE.md",
+    "docs\\CURRENT_STATUS_AND_NEXT_STEP.md",
+    "docs\\CURRENT_SYSTEM_STATUS.md",
+    "docs\\FINAL_STATUS_AND_NEXT_STEPS.md",
+    "docs\\FINAL_STATUS_REPORT.md",
+    "docs\\FINAL_STATUS_UPDATE.md",
+    "docs\\FULL_STACK_AUDIT_STATUS.md",
+    "docs\\OCR_INTEGRATION_STATUS.md",
+    "docs\\PHASE_STATUS_AND_NEXT_STEPS.md",
+    "docs\\PROJECT_STATUS.md",
+    "docs\\PROJECT_STATUS_REPORT.md",
+    "docs\\STATUS_CLEANUP.md",
+    "docs\\WAVE_B_IMPLEMENTATION_STATUS.md",
+    "training\\IMPLEMENTATION_STATUS.md"
+  ]
+}

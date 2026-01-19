@@ -1,0 +1,237 @@
+{
+  "integrations": {
+    "openai": {
+      "name": "OpenAI",
+      "category": "ai",
+      "auth_type": "api_key",
+      "capabilities": [
+        "chat",
+        "completion",
+        "image_generation",
+        "speech_to_text",
+        "text_to_speech"
+      ],
+      "icon": "fas fa-brain",
+      "color": "#10A37F",
+      "status": "available",
+      "description": "GPT-4o, DALL-E, Whisper AI models"
+    },
+    "anthropic": {
+      "name": "Anthropic Claude",
+      "category": "ai",
+      "auth_type": "api_key",
+      "capabilities": [
+        "chat",
+        "completion"
+      ],
+      "icon": "fas fa-robot",
+      "color": "#D97757",
+      "status": "available",
+      "description": "Claude 3.5 Sonnet AI assistant"
+    },
+    "google_gemini": {
+      "name": "Google Gemini",
+      "category": "ai",
+      "auth_type": "api_key",
+      "capabilities": [
+        "chat",
+        "completion",
+        "multimodal"
+      ],
+      "icon": "fab fa-google",
+      "color": "#4285F4",
+      "status": "available",
+      "description": "Gemini 2.0 Flash AI model"
+    },
+    "gmail": {
+      "name": "Gmail",
+      "category": "communication",
+      "auth_type": "oauth2",
+      "capabilities": [
+        "read_emails",
+        "send_emails",
+        "search",
+        "labels"
+      ],
+      "icon": "fas fa-envelope",
+      "color": "#EA4335",
+      "status": "available",
+      "description": "Gmail email integration"
+    },
+    "slack": {
+      "name": "Slack",
+      "category": "communication",
+      "auth_type": "api_key",
+      "capabilities": [
+        "send_message",
+        "read_channels",
+        "file_upload"
+      ],
+      "icon": "fab fa-slack",
+      "color": "#4A154B",
+      "status": "available",
+      "description": "Slack workspace messaging"
+    },
+    "telegram": {
+      "name": "Telegram",
+      "category": "communication",
+      "auth_type": "api_key",
+      "capabilities": [
+        "send_message",
+        "receive_updates",
+        "bot_commands"
+      ],
+      "icon": "fab fa-telegram",
+      "color": "#0088cc",
+      "status": "available",
+      "description": "Telegram bot integration"
+    },
+    "google_sheets": {
+      "name": "Google Sheets",
+      "category": "productivity",
+      "auth_type": "oauth2",
+      "capabilities": [
+        "read",
+        "write",
+        "query",
+        "create"
+      ],
+      "icon": "fas fa-table",
+      "color": "#34A853",
+      "status": "available",
+      "description": "Google Sheets spreadsheet operations"
+    },
+    "notion": {
+      "name": "Notion",
+      "category": "productivity",
+      "auth_type": "api_key",
+      "capabilities": [
+        "read_database",
+        "create_page",
+        "update_page"
+      ],
+      "icon": "fas fa-book",
+      "color": "#000000",
+      "status": "available",
+      "description": "Notion workspace integration"
+    },
+    "airtable": {
+      "name": "Airtable",
+      "category": "productivity",
+      "auth_type": "api_key",
+      "capabilities": [
+        "read_records",
+        "create_records",
+        "update_records"
+      ],
+      "icon": "fas fa-database",
+      "color": "#FFBF00",
+      "status": "available",
+      "description": "Airtable database operations"
+    },
+    "google_drive": {
+      "name": "Google Drive",
+      "category": "storage",
+      "auth_type": "oauth2",
+      "capabilities": [
+        "upload",
+        "download",
+        "list",
+        "search"
+      ],
+      "icon": "fab fa-google-drive",
+      "color": "#4285F4",
+      "status": "available",
+      "description": "Google Drive file storage"
+    },
+    "s3": {
+      "name": "AWS S3",
+      "category": "storage",
+      "auth_type": "api_key",
+      "capabilities": [
+        "upload",
+        "download",
+        "list",
+        "delete"
+      ],
+      "icon": "fab fa-aws",
+      "color": "#FF9900",
+      "status": "available",
+      "description": "Amazon S3 cloud storage"
+    },
+    "supabase": {
+      "name": "Supabase",
+      "category": "database",
+      "auth_type": "api_key",
+      "capabilities": [
+        "query",
+        "insert",
+        "update",
+        "delete",
+        "vector_search"
+      ],
+      "icon": "fas fa-database",
+      "color": "#3ECF8E",
+      "status": "available",
+      "description": "Supabase PostgreSQL + Vector DB"
+    },
+    "pinecone": {
+      "name": "Pinecone",
+      "category": "database",
+      "auth_type": "api_key",
+      "capabilities": [
+        "upsert",
+        "query",
+        "delete",
+        "vector_search"
+      ],
+      "icon": "fas fa-vector-square",
+      "color": "#7C3AED",
+      "status": "available",
+      "description": "Pinecone vector database"
+    },
+    "serpapi": {
+      "name": "SerpAPI",
+      "category": "search",
+      "auth_type": "api_key",
+      "capabilities": [
+        "google_search",
+        "image_search",
+        "news_search"
+      ],
+      "icon": "fas fa-search",
+      "color": "#4285F4",
+      "status": "available",
+      "description": "Google Search API"
+    },
+    "perplexity": {
+      "name": "Perplexity AI",
+      "category": "search",
+      "auth_type": "api_key",
+      "capabilities": [
+        "ai_search",
+        "research"
+      ],
+      "icon": "fas fa-brain",
+      "color": "#20808D",
+      "status": "available",
+      "description": "AI-powered search and research"
+    },
+    "browser": {
+      "name": "Browser Automation",
+      "category": "browser",
+      "auth_type": "none",
+      "capabilities": [
+        "navigate",
+        "click",
+        "fill",
+        "screenshot",
+        "scrape"
+      ],
+      "icon": "fas fa-window-maximize",
+      "color": "#00D9FF",
+      "status": "active",
+      "description": "Playwright browser automation"
+    }
+  }
+}

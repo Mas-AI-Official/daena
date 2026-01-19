@@ -1,0 +1,27 @@
+[
+  {
+    "text": "Instruction: Analyze the strategic implications of implementing AI in business operations.\nResponse: This is a comprehensive response about reasoning for the instruction: Analyze the strategic implications of implementing AI in business operations.",
+    "type": "instruction",
+    "category": "reasoning"
+  },
+  {
+    "text": "Instruction: What are the logical steps to solve complex business problems?\nResponse: This is a comprehensive response about reasoning for the instruction: What are the logical steps to solve complex business problems?",
+    "type": "instruction",
+    "category": "reasoning"
+  },
+  {
+    "text": "Instruction: How would you approach decision-making in uncertain market conditions?\nResponse: This is a comprehensive response about reasoning for the instruction: How would you approach decision-making in uncertain market conditions?",
+    "type": "instruction",
+    "category": "reasoning"
+  },
+  {
+    "text": "Instruction: Explain the reasoning behind successful business strategies.\nResponse: This is a comprehensive response about reasoning for the instruction: Explain the reasoning behind successful business strategies.",
+    "type": "instruction",
+    "category": "reasoning"
+  },
+  {
+    "text": "Instruction: What are the critical factors in strategic planning?\nResponse: This is a comprehensive response about reasoning for the instruction: What are the critical factors in strategic planning?",
+    "type": "instruction",
+    "category": "reasoning"
+  }
+]

@@ -1,0 +1,12 @@
+TTS==0.21.1
+transformers<4.49
+tokenizers<0.20
+torch
+torchaudio
+faster-whisper
+fastapi
+uvicorn[standard]
+pydub
+soundfile
+numpy
+python-multipart

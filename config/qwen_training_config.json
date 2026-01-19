@@ -1,0 +1,25 @@
+{
+  "model_name": "Qwen/Qwen2.5-7B-Instruct",
+  "model_type": "general_reasoning",
+  "specialty": "General Knowledge, Multilingual, Analysis",
+  "training_params": {
+    "batch_size": 2,
+    "learning_rate": 1e-05,
+    "num_epochs": 1,
+    "max_length": 2048,
+    "gradient_accumulation_steps": 4,
+    "warmup_steps": 50,
+    "save_steps": 100,
+    "eval_steps": 100,
+    "logging_steps": 10,
+    "weight_decay": 0.01,
+    "max_grad_norm": 1.0
+  },
+  "huggingface": {
+    "push_to_hub": true,
+    "hub_model_id": "masai/daena-qwen-brain",
+    "token": "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"
+  },
+  "output_dir": "trained_models/qwen_brain",
+  "data_file": "data/qwen_training_data.json"
+}

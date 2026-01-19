@@ -1,0 +1,62 @@
+{
+  "title": "NBMF Memory Observability",
+  "description": "Standard dashboard for Daena Sunflower-Honeycomb governance board.",
+  "schemaVersion": 37,
+  "version": 1,
+  "tags": ["nbmf", "governance", "sunflower-honeycomb"],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "NBMF Read Latency (p95)",
+      "targets": [
+        {
+          "expr": "daena_memory_metric{name=\"nbmf_read_p95_ms\"}",
+          "legendFormat": "read p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "NBMF Write Latency (p95)",
+      "targets": [
+        {
+          "expr": "daena_memory_metric{name=\"nbmf_write_p95_ms\"}",
+          "legendFormat": "write p95"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Legacy Writes (should be zero)",
+      "targets": [
+        {
+          "expr": "daena_memory_metric{name=\"legacy_writes\"}"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "L1 Hits",
+      "targets": [
+        {
+          "expr": "daena_memory_metric{name=\"l1_hits\"}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Divergence Placeholder",
+      "targets": [
+        {
+          "expr": "daena_memory_metric{name=\"divergence_rate\"}",
+          "legendFormat": "divergence rate"
+        }
+      ],
+      "description": "Populate once TrustManager v2 exports divergence metrics."
+    }
+  ],
+  "templating": {
+    "list": []
+  }
+}
+

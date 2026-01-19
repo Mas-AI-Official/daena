@@ -1,0 +1,242 @@
+{
+  "dashboard": {
+    "title": "Daena AI - NBMF Memory System Dashboard",
+    "tags": ["daena", "nbmf", "memory", "ai"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "CAS Hit Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"llm_cas_hit_rate\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.5, "color": "yellow"},
+                {"value": 0.6, "color": "green"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Total Cost Savings (USD)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"estimated_cost_savings_usd\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 100, "color": "yellow"},
+                {"value": 500, "color": "green"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "L1 Latency (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"l1_read_p95_ms\"}",
+            "refId": "A",
+            "legendFormat": "L1 p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 25, "color": "yellow"},
+                {"value": 50, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "L2 Latency (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"l2_read_p95_ms\"}",
+            "refId": "A",
+            "legendFormat": "L2 p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 120, "color": "yellow"},
+                {"value": 200, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Divergence Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"divergence_rate\"}",
+            "refId": "A",
+            "legendFormat": "Divergence Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 0.005, "color": "yellow"},
+                {"value": 0.01, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "LLM Requests",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(daena_memory_metric{name=\"llm_cas_hit\"}[5m])",
+            "refId": "A",
+            "legendFormat": "CAS Hits"
+          },
+          {
+            "expr": "rate(daena_memory_metric{name=\"llm_cas_miss\"}[5m])",
+            "refId": "B",
+            "legendFormat": "CAS Misses"
+          },
+          {
+            "expr": "rate(daena_memory_metric{name=\"llm_near_dup_reuse\"}[5m])",
+            "refId": "C",
+            "legendFormat": "Near-Dup Reuse"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "Cost Savings Percentage",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"cost_savings_percentage\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 40, "color": "yellow"},
+                {"value": 60, "color": "green"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24}
+      },
+      {
+        "id": 8,
+        "title": "Total LLM Cost (USD)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"total_cost_usd\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24}
+      },
+      {
+        "id": 9,
+        "title": "NBMF Operations",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(daena_memory_metric{name=\"nbmf_reads\"}[5m])",
+            "refId": "A",
+            "legendFormat": "Reads"
+          },
+          {
+            "expr": "rate(daena_memory_metric{name=\"nbmf_writes\"}[5m])",
+            "refId": "B",
+            "legendFormat": "Writes"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops"
+          }
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24}
+      }
+    ],
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": []
+    },
+    "links": []
+  }
+}
+

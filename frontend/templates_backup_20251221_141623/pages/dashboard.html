@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <!-- Welcome Section -->
+    <div class="mb-12 text-center">
+        <h2 class="text-4xl font-display font-bold text-white mb-2">Daena Center</h2>
+        <p class="text-gray-400">Central Command & Neural Coordination</p>
+    </div>
+
+    <!-- Honeycomb Grid -->
+    <div class="flex justify-center mb-16">
+        <div class="honeycomb-grid relative">
+
+            <!-- Center: Daena VP -->
+            <div class="hex-wrapper col-start-2 row-start-2 transform scale-110 z-20">
+                <div class="hex-bg bg-daena-gold/20 border-daena-gold animate-pulse-gold"></div>
+                <div class="hex-content">
+                    <div
+                        class="w-12 h-12 mx-auto mb-2 rounded-full bg-daena-gold flex items-center justify-center text-black">
+                        <i class="fas fa-brain text-2xl"></i>
+                    </div>
+                    <div class="font-bold text-daena-gold">DAENA VP</div>
+                    <div class="text-xs text-gray-300">Active</div>
+                </div>
+            </div>
+
+            <!-- Surrounding Departments (Mocked for layout, will be dynamic) -->
+            <!-- Top -->
+            <a href="/ui/departments/marketing" class="hex-wrapper col-start-2 row-start-1">
+                <div class="hex-bg"></div>
+                <div class="hex-content">
+                    <i class="fas fa-bullhorn text-xl text-blue-400 mb-2"></i>
+                    <div class="font-medium text-sm text-white">Marketing</div>
+                </div>
+            </a>
+
+            <!-- Top Right -->
+            <a href="/ui/departments/sales" class="hex-wrapper col-start-3 row-start-1 translate-y-1/2">
+                <div class="hex-bg"></div>
+                <div class="hex-content">
+                    <i class="fas fa-chart-line text-xl text-green-400 mb-2"></i>
+                    <div class="font-medium text-sm text-white">Sales</div>
+                </div>
+            </a>
+
+            <!-- Bottom Right -->
+            <a href="/ui/departments/finance" class="hex-wrapper col-start-3 row-start-2 translate-y-1/2">
+                <div class="hex-bg"></div>
+                <div class="hex-content">
+                    <i class="fas fa-coins text-xl text-yellow-400 mb-2"></i>
+                    <div class="font-medium text-sm text-white">Finance</div>
+                </div>
+            </a>
+
+            <!-- Bottom -->
+            <a href="/ui/departments/hr" class="hex-wrapper col-start-2 row-start-3">
+                <div class="hex-bg"></div>
+                <div class="hex-content">
+                    <i class="fas fa-users text-xl text-purple-400 mb-2"></i>
+                    <div class="font-medium text-sm text-white">HR</div>
+                </div>
+            </a>
+
+            <!-- Bottom Left -->
+            <a href="/ui/departments/legal" class="hex-wrapper col-start-1 row-start-2 translate-y-1/2">
+                <div class="hex-bg"></div>
+                <div class="hex-content">
+                    <i class="fas fa-scale-balanced text-xl text-red-400 mb-2"></i>
+                    <div class="font-medium text-sm text-white">Legal</div>
+                </div>
+            </a>
+
+            <!-- Top Left -->
+            <a href="/ui/departments/product" class="hex-wrapper col-start-1 row-start-1 translate-y-1/2">
+                <div class="hex-bg"></div>
+                <div class="hex-content">
+                    <i class="fas fa-box text-xl text-orange-400 mb-2"></i>
+                    <div class="font-medium text-sm text-white">Product</div>
+                </div>
+            </a>
+
+        </div>
+    </div>
+
+    <!-- System Status Summary -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Active Agents -->
+        <div class="glass-panel p-6 rounded-xl">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-white">Active Agents</h3>
+                <i class="fas fa-robot text-daena-gold"></i>
+            </div>
+            <div class="text-3xl font-bold text-white mb-1">24</div>
+            <div class="text-sm text-gray-400">Across 6 departments</div>
+        </div>
+
+        <!-- Pending Decisions -->
+        <div class="glass-panel p-6 rounded-xl">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-white">Pending Decisions</h3>
+                <i class="fas fa-gavel text-daena-gold"></i>
+            </div>
+            <div class="text-3xl font-bold text-white mb-1">3</div>
+            <div class="text-sm text-gray-400">Requires founder review</div>
+        </div>
+
+        <!-- System Health -->
+        <div class="glass-panel p-6 rounded-xl">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-white">System Health</h3>
+                <i class="fas fa-heartbeat text-green-400"></i>
+            </div>
+            <div class="text-3xl font-bold text-green-400 mb-1">98%</div>
+            <div class="text-sm text-gray-400">All systems nominal</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Here we would fetch real status and update the UI
+        // window.DaenaAPI.getSystemStatus().then(status => { ... });
+    });
+</script>
+{% endblock %}

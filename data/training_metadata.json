@@ -1,0 +1,42 @@
+{
+  "training_start": "2025-07-27T14:23:12.528298",
+  "data_count": 16,
+  "config": {
+    "model_name": "deepseek-ai/deepseek-coder-6.7b-instruct",
+    "training_params": {
+      "batch_size": 4,
+      "learning_rate": 1e-05,
+      "num_epochs": 3,
+      "max_length": 2048,
+      "gradient_accumulation_steps": 4,
+      "warmup_steps": 100,
+      "save_steps": 500,
+      "eval_steps": 500,
+      "logging_steps": 50,
+      "weight_decay": 0.01,
+      "max_grad_norm": 1.0
+    },
+    "huggingface": {
+      "push_to_hub": true,
+      "hub_model_id": "masai/daena-brain",
+      "token": "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"
+    },
+    "output_dir": "trained_models/daena_brain",
+    "data_sources": [
+      "business_strategy",
+      "technical_knowledge",
+      "reasoning_problems",
+      "daena_identity",
+      "conversation_examples"
+    ],
+    "training_modes": {
+      "conversation": true,
+      "reasoning": true,
+      "coding": true,
+      "business_strategy": true,
+      "leadership": true,
+      "innovation": true
+    }
+  },
+  "status": "prepared"
+}

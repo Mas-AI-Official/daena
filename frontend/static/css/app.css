@@ -1,0 +1,135 @@
+/* Daena Premium Theme */
+:root {
+    --bg-dark: #0a0a0a;
+    --bg-panel: rgba(20, 20, 20, 0.7);
+    --border-color: rgba(255, 255, 255, 0.1);
+    --accent-gold: #D4AF37;
+    --accent-gold-dim: rgba(212, 175, 55, 0.2);
+    --text-main: #e5e5e5;
+    --text-muted: #a3a3a3;
+    --glass-blur: blur(12px);
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: 'Inter', sans-serif;
+    overflow: hidden;
+    /* App-like feel */
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+    background: var(--bg-panel);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+}
+
+.glass-header {
+    background: rgba(10, 10, 10, 0.8);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Sidebar Transitions */
+#sidebar {
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#sidebar.collapsed {
+    width: 4rem;
+    /* 64px */
+}
+
+#sidebar.collapsed .nav-label {
+    display: none;
+}
+
+#sidebar.collapsed .nav-header {
+    justify-content: center;
+}
+
+#sidebar.collapsed .logo-text {
+    display: none;
+}
+
+/* Honeycomb Grid (Dashboard) */
+.honeycomb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+/* Toast Notifications */
+#toast-container {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.toast {
+    background: rgba(20, 20, 20, 0.9);
+    border: 1px solid var(--accent-gold);
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    animation: slideIn 0.3s ease-out;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Utility Classes */
+.text-gold {
+    color: var(--accent-gold);
+}
+
+.bg-gold-dim {
+    background-color: var(--accent-gold-dim);
+}
+
+.border-gold {
+    border-color: var(--accent-gold);
+}
+
+.hover-glow:hover {
+    box-shadow: 0 0 15px var(--accent-gold-dim);
+    border-color: rgba(212, 175, 55, 0.4);
+}

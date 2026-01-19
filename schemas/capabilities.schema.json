@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Capabilities Response Schema",
+  "description": "Schema for validating AI capabilities endpoint responses",
+  "type": "object",
+  "required": ["success", "timestamp", "capabilities"],
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "description": "Whether the request was successful"
+    },
+    "timestamp": {
+      "type": "number",
+      "description": "Unix timestamp of the response"
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["departments", "agents", "projects_active", "features"],
+      "properties": {
+        "departments": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Number of active departments"
+        },
+        "agents": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "Number of active agents"
+        },
+        "projects_active": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of active projects"
+        },
+        "avg_productivity": {
+          "oneOf": [
+            {"type": "number", "minimum": 0, "maximum": 100},
+            {"type": "null"}
+          ],
+          "description": "Average productivity score (0-100) or null if not available"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "voice",
+              "files",
+              "analytics",
+              "council",
+              "routing",
+              "abac",
+              "sunflower_coordinates",
+              "honeycomb_adjacency",
+              "message_bus",
+              "azure_openai",
+              "brain_training",
+              "multi_llm"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "List of available features"
+        },
+        "message_bus_stats": {
+          "type": "object",
+          "required": ["local_routes", "cmp_fallbacks", "total_messages"],
+          "properties": {
+            "local_routes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of local route messages"
+            },
+            "cmp_fallbacks": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of CMP fallback messages"
+            },
+            "total_messages": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Total number of messages processed"
+            },
+            "neighbor_routes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of neighbor route messages"
+            },
+            "neighbor_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Total number of neighbor connections"
+            },
+            "agent_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of registered agents"
+            },
+            "queue_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of active queues"
+            },
+            "has_cmp_fallback": {
+              "type": "boolean",
+              "description": "Whether CMP fallback is configured"
+            },
+            "running": {
+              "type": "boolean",
+              "description": "Whether message bus is running"
+            },
+            "processing": {
+              "type": "boolean",
+              "description": "Whether message bus is processing messages"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "system_info": {
+      "type": "object",
+      "properties": {
+        "sunflower_layers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Number of sunflower coordinate layers"
+        },
+        "agents_per_layer": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Number of agents per layer"
+        },
+        "total_capacity": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total system capacity"
+        },
+        "adjacency_cache_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Size of adjacency cache"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+} 

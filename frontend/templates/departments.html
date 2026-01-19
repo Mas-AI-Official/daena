@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}Departments - Daena VP{% endblock %}
+
+{% block head %}
+<style>
+    .departments-container {
+        padding: 30px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .page-header h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: white;
+    }
+
+    .departments-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 24px;
+        margin-top: 24px;
+    }
+
+    .department-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 24px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .department-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        border-color: var(--daena-gold);
+    }
+
+    .dept-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+
+    .dept-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+    }
+
+    .dept-info h3 {
+        font-size: 18px;
+        font-weight: 600;
+        color: white;
+        margin-bottom: 4px;
+    }
+
+    .dept-info p {
+        font-size: 12px;
+        color: #9CA3AF;
+    }
+
+    .dept-stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .stat-item {
+        text-align: center;
+    }
+
+    .stat-value {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--daena-gold);
+    }
+
+    .stat-label {
+        font-size: 11px;
+        color: #9CA3AF;
+        margin-top: 4px;
+    }
+
+    .add-dept-btn {
+        padding: 12px 24px;
+        background: var(--daena-gold);
+        color: black;
+        border: none;
+        border-radius: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .add-dept-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(212, 175, 55, 0.4);
+    }
+
+    .search-box {
+        margin-bottom: 24px;
+        position: relative;
+    }
+
+    .search-box input {
+        width: 100%;
+        padding: 12px 16px 12px 48px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        color: white;
+        font-size: 15px;
+    }
+
+    .search-box i {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #9CA3AF;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="departments-container">
+    <div class="page-header">
+        <div>
+            <h1>Departments</h1>
+            <p style="color: #9CA3AF; margin-top: 8px;">Manage your organizational structure</p>
+        </div>
+        <button class="add-dept-btn" onclick="window.location.href='/ui/founder-panel'">
+            <i class="fas fa-plus"></i> Add Department
+        </button>
+    </div>
+
+    <div class="search-box">
+        <i class="fas fa-search"></i>
+        <input type="text" id="search-input" placeholder="Search departments..." onkeyup="filterDepartments()">
+    </div>
+
+    <div class="departments-grid" id="departments-grid">
+        <div class="department-card" style="text-align: center; padding: 60px; opacity: 0.5;">
+            <i class="fas fa-spinner fa-spin" style="font-size: 32px; color: var(--daena-gold);"></i>
+            <p style="margin-top: 16px; color: #9CA3AF;">Loading departments...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadDepartments() {
+        try {
+            const response = await fetch('/api/v1/departments/?include_agents=true');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const data = await response.json();
+            const departments = data.departments || data || [];
+
+            const grid = document.getElementById('departments-grid');
+
+            if (departments.length === 0) {
+                grid.innerHTML = `
+                <div class="department-card" style="text-align: center; padding: 60px; grid-column: 1 / -1;">
+                    <i class="fas fa-building" style="font-size: 48px; color: #9CA3AF; opacity: 0.3;"></i>
+                    <p style="margin-top: 16px; color: #9CA3AF;">No departments found</p>
+                </div>
+            `;
+                return;
+            }
+
+            grid.innerHTML = departments.map(dept => {
+                const color = dept.color || '#4169E1';
+                const icon = dept.icon || 'building';
+                const agentCount = dept.agent_count || dept.agents?.length || 0;
+
+                return `
+                <div class="department-card" onclick="window.location.href='/ui/department/${dept.id || dept.department_id}'">
+                    <div class="dept-header">
+                        <div class="dept-icon" style="background: ${color}20; color: ${color};">
+                            <i class="fas fa-${icon}"></i>
+                        </div>
+                        <div class="dept-info">
+                            <h3>${dept.name}</h3>
+                            <p>${dept.status || 'active'}</p>
+                        </div>
+                    </div>
+                    <p style="color: #9CA3AF; font-size: 13px; line-height: 1.5;">
+                        ${dept.description || 'No description available'}
+                    </p>
+                    <div class="dept-stats">
+                        <div class="stat-item">
+                            <div class="stat-value">${agentCount}</div>
+                            <div class="stat-label">Agents</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${dept.tasks_count || 0}</div>
+                            <div class="stat-label">Tasks</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${dept.efficiency || '95'}%</div>
+                            <div class="stat-label">Efficiency</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            }).join('');
+
+        } catch (error) {
+            console.error('Failed to load departments:', error);
+            document.getElementById('departments-grid').innerHTML = `
+            <div class="department-card" style="text-align: center; padding: 60px; grid-column: 1 / -1; border-color: #FF6464;">
+                <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: #FF6464;"></i>
+                <p style="margin-top: 16px; color: #FF6464;">Failed to load departments</p>
+                <button onclick="loadDepartments()" style="margin-top: 16px; padding: 8px 16px; background: var(--daena-gold); color: black; border: none; border-radius: 6px; cursor: pointer;">
+                    Retry
+                </button>
+            </div>
+        `;
+        }
+    }
+
+    function filterDepartments() {
+        const searchTerm = document.getElementById('search-input').value.toLowerCase();
+        const cards = document.querySelectorAll('.department-card');
+
+        cards.forEach(card => {
+            const text = card.textContent.toLowerCase();
+            card.style.display = text.includes(searchTerm) ? 'block' : 'none';
+        });
+    }
+
+    // Load on page load
+    document.addEventListener('DOMContentLoaded', loadDepartments);
+
+    // Reload every 30 seconds
+    setInterval(loadDepartments, 30000);
+</script>
+{% endblock %}

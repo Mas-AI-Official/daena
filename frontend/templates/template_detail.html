@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Template Detail - Daena VP{% endblock %}
+
+{% block head %}
+<style>
+    .template-detail-container {
+        padding: 30px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .template-header {
+        display: flex;
+        gap: 24px;
+        margin-bottom: 30px;
+        padding: 24px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+    }
+
+    .template-icon-large {
+        width: 120px;
+        height: 120px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 48px;
+        flex-shrink: 0;
+    }
+
+    .customize-section {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: #E5E7EB;
+        margin-bottom: 8px;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 12px 16px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        color: white;
+        font-size: 14px;
+    }
+
+    .create-btn {
+        width: 100%;
+        padding: 16px;
+        background: var(--daena-gold);
+        color: black;
+        border: none;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .create-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 16px rgba(212, 175, 55, 0.4);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="template-detail-container">
+    <div class="template-header">
+        <div class="template-icon-large" id="template-icon"
+            style="background: rgba(212, 175, 55, 0.2); color: var(--daena-gold);">
+            <i class="fas fa-robot"></i>
+        </div>
+        <div style="flex: 1;">
+            <h1 id="template-name" style="font-size: 28px; color: white; margin-bottom: 12px;">Loading Template...</h1>
+            <p id="template-description" style="color: #9CA3AF; font-size: 14px; margin-bottom: 16px;">Template details
+                loading...</p>
+            <div id="template-tags"></div>
+        </div>
+    </div>
+
+    <div class="customize-section">
+        <h3 style="color: white; margin-bottom: 20px;">Customize Your Agent</h3>
+        <form id="agent-form">
+            <div class="form-group">
+                <label class="form-label">Agent Name *</label>
+                <input type="text" class="form-input" id="agent-name" placeholder="Enter agent name" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea class="form-input" id="agent-description" rows="3"
+                    placeholder="Describe your agent's purpose"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Department</label>
+                <select class="form-input" id="agent-department">
+                    <option value="">Select department...</option>
+                </select>
+            </div>
+            <button type="submit" class="create-btn">
+                <i class="fas fa-plus-circle"></i> Create Agent
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const templateId = window.location.pathname.split('/').pop();
+
+    async function loadTemplateDetail() {
+        try {
+            const response = await fetch(`/agent-builder/api/v1/templates/${templateId}`);
+            if (!response.ok) throw new Error('Failed');
+
+            const tmpl = await response.json();
+
+            document.getElementById('template-name').textContent = tmpl.name;
+            document.getElementById('template-description').textContent = tmpl.description;
+
+            const icon = document.getElementById('template-icon');
+            icon.style.background = tmpl.color || 'rgba(212, 175, 55, 0.2)';
+            icon.innerHTML = `<i class="fas fa-${tmpl.icon || 'robot'}"></i>`;
+
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    }
+
+    document.getElementById('agent-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const data = {
+            template_id: templateId,
+            name: document.getElementById('agent-name').value,
+            description: document.getElementById('agent-description').value,
+            department: document.getElementById('agent-department').value
+        };
+
+        try {
+            const response = await fetch('/api/v1/agents/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                window.showToast?.('Agent created successfully!', 'success');
+                setTimeout(() => window.location.href = '/ui/agents', 1500);
+            } else {
+                window.showToast?.('Failed to create agent', 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            window.showToast?.('Error creating agent', 'error');
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', loadTemplateDetail);
+</script>
+{% endblock %}

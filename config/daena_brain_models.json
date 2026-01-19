@@ -1,0 +1,168 @@
+{
+  "daena_brain_models": {
+    "model_paths": {
+      "base_path": "H:/Ideas/Daena/models",
+      "models": {
+        "reasoning_r1": {
+          "name": "DeepSeek-R1-Distill-Llama-8B",
+          "path": "H:/Ideas/Daena/models/DeepSeek-R1-Distill-Llama-8B-GGUF/DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf",
+          "type": "reasoning",
+          "parameters": "8B",
+          "specialization": "R1-style reasoning and problem solving",
+          "priority": 1
+        },
+        "reasoning_llama70b": {
+          "name": "Llama-3.3-70B-Instruct",
+          "path": "H:/Ideas/Daena/models/Llama-3.3-70B-Instruct-GGUF/downloading_Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf",
+          "type": "reasoning",
+          "parameters": "70B",
+          "specialization": "Massive reasoning and general intelligence",
+          "priority": 1
+        },
+        "coding_codestral": {
+          "name": "Codestral-22B-v0.1",
+          "path": "H:/Ideas/Daena/models/Codestral-22B-v0.1-GGUF/Codestral-22B-v0.1-Q4_K_M.gguf",
+          "type": "coding",
+          "parameters": "22B",
+          "specialization": "Advanced code generation and understanding",
+          "priority": 1
+        },
+        "coding_qwen32b": {
+          "name": "Qwen2.5-Coder-32B-Instruct",
+          "path": "H:/Ideas/Daena/models/Qwen2.5-Coder-32B-Instruct-GGUF/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf",
+          "type": "coding",
+          "parameters": "32B",
+          "specialization": "Large-scale coding and software development",
+          "priority": 1
+        },
+        "coding_deepseek": {
+          "name": "DeepSeek-Coder-V2-Lite-Instruct",
+          "path": "H:/Ideas/Daena/models/DeepSeek-Coder-V2-Lite-Instruct-GGUF/DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf",
+          "type": "coding",
+          "parameters": "7B",
+          "specialization": "Fast coding and development",
+          "priority": 2
+        },
+        "coding_starcoder": {
+          "name": "StarCoder2-7B",
+          "path": "H:/Ideas/Daena/models/StarCoder2-7B-GGUF/StarCoder2-7B-Q4_K_M.gguf",
+          "type": "coding",
+          "parameters": "7B",
+          "specialization": "Code completion and generation",
+          "priority": 2
+        },
+        "math_qwen": {
+          "name": "Qwen2-Math-1.5B-Instruct",
+          "path": "H:/Ideas/Daena/models/Qwen2-Math-1.5B-Instruct-GGUF/Qwen2-Math-1.5B-Instruct-Q4_K_M.gguf",
+          "type": "math",
+          "parameters": "1.5B",
+          "specialization": "Mathematical reasoning and calculations",
+          "priority": 1
+        },
+        "math_qwen_tuned": {
+          "name": "Qwen2-Math-1-tuned",
+          "path": "H:/Ideas/Daena/models/Qwen2-Math-1-tuned/Qwen2-Math-1-tuned-Q4_K_M.gguf",
+          "type": "math",
+          "parameters": "1B",
+          "specialization": "Tuned mathematical model",
+          "priority": 2
+        },
+        "multimodal_llava": {
+          "name": "LLaVA-v1.6",
+          "path": "H:/Ideas/Daena/models/llava-v1.6.Q4_K_M/llava-v1.6.Q4_K_M.gguf",
+          "type": "multimodal",
+          "parameters": "7B",
+          "specialization": "Vision + language understanding",
+          "priority": 1
+        },
+        "general_gemma": {
+          "name": "Gemma-2-27B-IT",
+          "path": "H:/Ideas/Daena/models/gemma-2-27b-it-GGUF/gemma-2-27b-it-Q4_K_M.gguf",
+          "type": "general",
+          "parameters": "27B",
+          "specialization": "General intelligence and conversation",
+          "priority": 1
+        },
+        "general_internlm": {
+          "name": "InternLM2.5-20B-Chat",
+          "path": "H:/Ideas/Daena/models/internlm/internlm2_5-20b-chat-gguf/internlm2_5-20b-chat-q4_k_m.gguf",
+          "type": "general",
+          "parameters": "20B",
+          "specialization": "Advanced chat and reasoning",
+          "priority": 2
+        }
+      }
+    },
+    "training_configuration": {
+      "consensus_weights": {
+        "reasoning": {
+          "DeepSeek-R1-Distill-Llama-8B": 0.4,
+          "Llama-3.3-70B-Instruct": 0.6
+        },
+        "coding": {
+          "Codestral-22B-v0.1": 0.3,
+          "Qwen2.5-Coder-32B-Instruct": 0.4,
+          "DeepSeek-Coder-V2-Lite-Instruct": 0.2,
+          "StarCoder2-7B": 0.1
+        },
+        "math": {
+          "Qwen2-Math-1.5B-Instruct": 0.7,
+          "Qwen2-Math-1-tuned": 0.3
+        },
+        "multimodal": {
+          "LLaVA-v1.6": 1.0
+        },
+        "general": {
+          "Gemma-2-27B-IT": 0.6,
+          "InternLM2.5-20B-Chat": 0.4
+        }
+      },
+      "training_modes": {
+        "conversation": {
+          "models": ["general_gemma", "general_internlm", "reasoning_llama70b"],
+          "frequency": "daily",
+          "priority": 1
+        },
+        "reasoning": {
+          "models": ["reasoning_r1", "reasoning_llama70b"],
+          "frequency": "daily",
+          "priority": 1
+        },
+        "coding": {
+          "models": ["coding_codestral", "coding_qwen32b", "coding_deepseek"],
+          "frequency": "daily",
+          "priority": 1
+        },
+        "business_strategy": {
+          "models": ["reasoning_llama70b", "general_gemma"],
+          "frequency": "weekly",
+          "priority": 2
+        },
+        "leadership": {
+          "models": ["reasoning_llama70b", "general_gemma"],
+          "frequency": "weekly",
+          "priority": 2
+        },
+        "innovation": {
+          "models": ["reasoning_r1", "coding_codestral", "math_qwen"],
+          "frequency": "weekly",
+          "priority": 2
+        }
+      }
+    },
+    "deployment_settings": {
+      "use_local_models": true,
+      "use_azure_openai": true,
+      "azure_openai_models": {
+        "gpt4": "gpt-4",
+        "gpt35": "gpt-35-turbo",
+        "gpt4o": "gpt-4o"
+      },
+      "model_loading": {
+        "max_concurrent_models": 4,
+        "memory_optimization": true,
+        "gpu_acceleration": true
+      }
+    }
+  }
+} 

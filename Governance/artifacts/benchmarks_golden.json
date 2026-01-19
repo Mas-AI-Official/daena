@@ -1,0 +1,40 @@
+{
+  "version": "1.0.0",
+  "date": "2025-01-XX",
+  "description": "Golden benchmark values for NBMF performance. CI will fail if results regress >10% from these values.",
+  "golden_values": {
+    "compression_lossless": {
+      "ratio": 13.30,
+      "min_acceptable": 11.97,
+      "unit": "multiplier",
+      "description": "Lossless compression ratio vs OCR baseline"
+    },
+    "compression_semantic": {
+      "ratio": 2.53,
+      "min_acceptable": 2.28,
+      "unit": "multiplier",
+      "description": "Semantic compression ratio vs OCR baseline"
+    },
+    "encode_p95_ms": {
+      "value": 0.65,
+      "max_acceptable": 0.72,
+      "unit": "milliseconds",
+      "description": "Encode latency p95"
+    },
+    "decode_p95_ms": {
+      "value": 0.09,
+      "max_acceptable": 0.10,
+      "unit": "milliseconds",
+      "description": "Decode latency p95"
+    },
+    "exact_match_rate": {
+      "value": 1.0,
+      "min_acceptable": 0.95,
+      "unit": "ratio",
+      "description": "Lossless exact match rate (should be 100%)"
+    }
+  },
+  "tolerance_percent": 10,
+  "notes": "These values are based on benchmark results documented in docs/BENCHMARK_RESULTS.md"
+}
+

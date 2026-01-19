@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: daena-tpu
+  labels:
+    app: daena
+    accelerator: tpu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: daena
+      accelerator: tpu
+  template:
+    metadata:
+      labels:
+        app: daena
+        accelerator: tpu
+    spec:
+      containers:
+      - name: daena
+        image: gcr.io/PROJECT_ID/daena:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: COMPUTE_PREFER
+          value: "tpu"
+        - name: COMPUTE_ALLOW_TPU
+          value: "true"
+        - name: COMPUTE_TPU_BATCH_FACTOR
+          value: "128"
+        - name: DAENA_MEMORY_AES_KEY
+          valueFrom:
+            secretKeyRef:
+              name: daena-secrets
+              key: aes-key
+        - name: GCP_PROJECT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: daena-config
+              key: gcp-project-id
+        - name: TPU_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: daena-config
+              key: tpu-name
+        resources:
+          requests:
+            cpu: "4"
+            memory: "8Gi"
+          limits:
+            cpu: "8"
+            memory: "16Gi"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/system/summary
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/v1/system/summary
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      nodeSelector:
+        cloud.google.com/gke-tpu-accelerator: v4-8  # TPU v4 Pod (8 chips)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: daena-tpu-service
+spec:
+  selector:
+    app: daena
+    accelerator: tpu
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+  type: LoadBalancer
+

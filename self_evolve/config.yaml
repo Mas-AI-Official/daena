@@ -1,0 +1,50 @@
+# SEC-Loop Configuration
+# Council-Gated Self-Evolving Cycle
+
+thresholds:
+  # Retention drift: Maximum allowed change vs baseline over 3 iterations
+  retention_drift_max: 0.01  # 1%
+  
+  # Knowledge incorporation: Minimum improvement on internal evals
+  knowledge_incorporation_min: 0.03  # 3%
+  
+  # Latency change: Maximum allowed increase on critical paths
+  latency_change_max: 0.05  # 5%
+  
+  # Cost reduction: Minimum cost savings per 1k "learned facts"
+  cost_reduction_min: 0.20  # 20% reduction (cost ≤ baseline × 0.8)
+
+departments:
+  # Allowlist of departments that can participate in SEC-Loop
+  # Empty list = all departments allowed
+  allowlist: []  # ["engineering", "product"]
+
+model_endpoints:
+  # Model endpoints for evaluation (optional, can use existing NBMF models)
+  azure: "${AZURE_OPENAI_ENDPOINT}"
+  openai: "${OPENAI_API_KEY}"
+  huggingface: "${HF_API_KEY}"
+
+immutable_model_mode: true  # Default: base models never change
+# If false, allows scheduled finetune (requires explicit approval)
+# ⚠️ WARNING: Setting to false may infringe on SEAL patents (gradient-based updates)
+# Only enable with explicit legal counsel approval
+
+quorum:
+  # Quorum settings for council approval
+  type: "local"  # local, global, ring, radial
+  required_votes: 4  # 4/6 neighbors for LOCAL quorum
+  timeout_seconds: 30.0
+
+evaluation:
+  # Evaluation settings
+  baseline_iterations: 3  # Number of iterations to establish baseline
+  eval_samples: 100  # Number of samples for evaluation
+  internal_eval_sets: ["benchmarks", "internal_tasks"]  # Eval set names
+
+selection:
+  # Data selection policy
+  max_candidates_per_cycle: 10  # Maximum candidates to process per cycle
+  min_confidence: 0.7  # Minimum confidence for candidate selection
+  tenant_safe: true  # Only select tenant-safe data (ABAC enforced)
+

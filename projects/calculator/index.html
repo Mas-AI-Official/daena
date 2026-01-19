@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daena Calculator - Built by AI Agents</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="calculator">
+        <div class="header">
+            <h1>🧮 DAENA CALCULATOR</h1>
+            <div class="subtitle">Built by AI Agents via Daena AI VP System</div>
+        </div>
+
+        <div class="display">
+            <div class="previous" id="previous"></div>
+            <div class="current" id="current">0</div>
+        </div>
+
+        <div class="buttons">
+            <button class="clear" onclick="clearAll()">C</button>
+            <button class="function" onclick="backspace()">⌫</button>
+            <button class="function" onclick="setOp('%')">%</button>
+            <button class="operator" onclick="setOp('/')">÷</button>
+
+            <button class="number" onclick="appendNum('7')">7</button>
+            <button class="number" onclick="appendNum('8')">8</button>
+            <button class="number" onclick="appendNum('9')">9</button>
+            <button class="operator" onclick="setOp('*')">×</button>
+
+            <button class="number" onclick="appendNum('4')">4</button>
+            <button class="number" onclick="appendNum('5')">5</button>
+            <button class="number" onclick="appendNum('6')">6</button>
+            <button class="operator" onclick="setOp('-')">−</button>
+
+            <button class="number" onclick="appendNum('1')">1</button>
+            <button class="number" onclick="appendNum('2')">2</button>
+            <button class="number" onclick="appendNum('3')">3</button>
+            <button class="operator" onclick="setOp('+')">+</button>
+
+            <button class="number" onclick="appendNum('0')">0</button>
+            <button class="number" onclick="appendNum('.')">.</button>
+            <button class="equals" onclick="calculate()">=</button>
+        </div>
+
+        <div class="footer">
+            ✨ Created via Daena's Engineering Department
+        </div>
+    </div>
+
+    <script>
+        let current = '0';
+        let previous = '';
+        let operator = null;
+        let history = [];
+
+        function updateDisplay() {
+            document.getElementById('current').textContent = current;
+            document.getElementById('previous').textContent = previous;
+        }
+
+        function appendNum(num) {
+            if (num === '.' && current.includes('.')) return;
+            if (current === '0' && num !== '.') {
+                current = num;
+            } else {
+                current += num;
+            }
+            updateDisplay();
+        }
+
+        function setOp(op) {
+            if (operator && previous) {
+                calculate();
+            }
+            operator = op;
+            previous = current + ' ' + op;
+            current = '0';
+            updateDisplay();
+        }
+
+        function calculate() {
+            if (!operator || !previous) return;
+
+            const prev = parseFloat(previous.split(' ')[0]);
+            const curr = parseFloat(current);
+            let result;
+
+            switch (operator) {
+                case '+': result = prev + curr; break;
+                case '-': result = prev - curr; break;
+                case '*': result = prev * curr; break;
+                case '/':
+                    if (curr === 0) {
+                        current = 'Error';
+                        updateDisplay();
+                        return;
+                    }
+                    result = prev / curr;
+                    break;
+                case '%': result = prev * (curr / 100); break;
+            }
+
+            // Store in history
+            history.push({
+                expression: `${prev} ${operator} ${curr}`,
+                result: result
+            });
+
+            current = result.toString();
+            previous = '';
+            operator = null;
+            updateDisplay();
+        }
+
+        function clearAll() {
+            current = '0';
+            previous = '';
+            operator = null;
+            updateDisplay();
+        }
+
+        function backspace() {
+            if (current.length === 1 || (current.length === 2 && current.startsWith('-'))) {
+                current = '0';
+            } else {
+                current = current.slice(0, -1);
+            }
+            updateDisplay();
+        }
+
+        // Keyboard support
+        document.addEventListener('keydown', (e) => {
+            if (e.key >= '0' && e.key <= '9') appendNum(e.key);
+            else if (e.key === '.') appendNum('.');
+            else if (e.key === '+') setOp('+');
+            else if (e.key === '-') setOp('-');
+            else if (e.key === '*') setOp('*');
+            else if (e.key === '/') setOp('/');
+            else if (e.key === '%') setOp('%');
+            else if (e.key === 'Enter' || e.key === '=') calculate();
+            else if (e.key === 'Escape') clearAll();
+            else if (e.key === 'Backspace') backspace();
+        });
+
+        updateDisplay();
+    </script>
+</body>
+
+</html>

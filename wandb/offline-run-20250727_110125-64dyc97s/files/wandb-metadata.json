@@ -1,0 +1,55 @@
+{
+    "os": "Windows-10-10.0.26100-SP0",
+    "python": "3.10.11",
+    "heartbeatAt": "2025-07-27T15:01:26.057171",
+    "startedAt": "2025-07-27T15:01:25.529848",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "train"
+    ],
+    "state": "running",
+    "program": "D:\\Ideas\\Daena\\train_unified_brain.py",
+    "codePathLocal": "train_unified_brain.py",
+    "codePath": "train_unified_brain.py",
+    "git": {
+        "remote": "https://github.com/Masoud-Masoori/daena-hivemind-dashboard.git",
+        "commit": "1fe16769fb803a87ed8a75760722cbaf8bb737dc"
+    },
+    "email": "50513774+masoud-masori@users.noreply.github.com",
+    "root": "D:/Ideas/Daena",
+    "host": "PeNeLoOPi_16",
+    "username": "masou",
+    "executable": "D:\\Ideas\\Daena\\venv_daena_main_py310\\Scripts\\python.exe",
+    "cpu_count": 16,
+    "cpu_count_logical": 22,
+    "cpu_freq": {
+        "current": 2300.0,
+        "min": 0.0,
+        "max": 2300.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2300.0,
+            "min": 0.0,
+            "max": 2300.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 246.44427490234375,
+            "used": 111.94531631469727
+        }
+    },
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+            "memory_total": 8585740288
+        }
+    ],
+    "memory": {
+        "total": 31.457717895507812
+    }
+}

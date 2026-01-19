@@ -1,0 +1,40 @@
+{
+  "os": "Windows-11-10.0.26100-SP0",
+  "python": "CPython 3.13.4",
+  "startedAt": "2025-07-27T22:49:31.276368Z",
+  "program": "D:\\Ideas\\Daena\\ultimate_daena_brain_fixed.py",
+  "codePath": "ultimate_daena_brain_fixed.py",
+  "codePathLocal": "ultimate_daena_brain_fixed.py",
+  "git": {
+    "remote": "https://github.com/Masoud-Masoori/daena-hivemind-dashboard.git",
+    "commit": "1fe16769fb803a87ed8a75760722cbaf8bb737dc"
+  },
+  "email": "masoud.masori@gmail.com",
+  "root": "D:\\Ideas\\Daena",
+  "host": "PeNeLoOPi_16",
+  "executable": "C:\\Program Files\\Python313\\python.exe",
+  "cpu_count": 16,
+  "cpu_count_logical": 22,
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "264617525248",
+      "used": "110618529792"
+    }
+  },
+  "memory": {
+    "total": "33777467392"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+      "memoryTotal": "8585740288",
+      "cudaCores": 3072,
+      "architecture": "Ada",
+      "uuid": "GPU-629cf14c-95e6-1191-bb82-c2844571b9c5"
+    }
+  ],
+  "cudaVersion": "12.8",
+  "writerId": "m6pom533aukvlyxbcx19tezt7r53ebvv"
+}

@@ -1,0 +1,270 @@
+core:
+  - role: Daena_Ultimate_Brain
+    goal: The most advanced AI brain ever created - combines all best models with big model API validation
+    tools:
+      - UltimateBrainTrainer
+      - BigModelAPI
+      - AutoUpgradeSystem
+      - ConsensusEngine
+
+  - role: Daena_Orchestrator
+    goal: Manage the entire HiveMind, assign tasks, escalate to King Masoud, and coordinate all pods with sunflower pattern
+    tools:
+      - LangGraph
+      - CrewAI
+      - SwarmRouter
+      - ReflexEngine
+      - SunflowerHiveMind
+
+sunflower_layers:
+  layer_1_departments:
+    - role: Engineering_Pod
+      agents:
+        - CodeMaster
+        - SystemArchitect
+        - DevOpsEngineer
+        - SecurityExpert
+      goal: Technical development and system architecture
+      council: Technical_Council
+      frequency: 450
+
+    - role: Marketing_Pod
+      agents:
+        - BrandManager
+        - ContentCreator
+        - SocialMediaManager
+        - GrowthHacker
+      goal: Brand management and customer acquisition
+      council: Creative_Council
+      frequency: 460
+
+    - role: Sales_Pod
+      agents:
+        - SalesManager
+        - AccountExecutive
+        - SalesDevelopment
+        - CustomerSuccess
+      goal: Revenue generation and customer relationships
+      council: Strategic_Council
+      frequency: 440
+
+    - role: Operations_Pod
+      agents:
+        - OperationsManager
+        - ProjectManager
+        - QualityAssurance
+        - SupplyChain
+      goal: Day-to-day business operations
+      council: Operational_Council
+      frequency: 450
+
+    - role: Finance_Pod
+      agents:
+        - FinancialAnalyst
+        - BudgetManager
+        - InvestmentAdvisor
+        - ComplianceOfficer
+      goal: Financial planning and analysis
+      council: Financial_Council
+      frequency: 420
+
+    - role: Human_Resources_Pod
+      agents:
+        - TalentAcquisition
+        - CultureManager
+        - LearningDevelopment
+        - PerformanceManager
+      goal: Talent management and culture
+      council: Operational_Council
+      frequency: 430
+
+    - role: Legal_Pod
+      agents:
+        - LegalCounsel
+        - IntellectualProperty
+        - RegulatoryExpert
+        - RiskManager
+      goal: Compliance and risk management
+      council: Strategic_Council
+      frequency: 470
+
+    - role: Research_Pod
+      agents:
+        - ResearchScientist
+        - DataScientist
+        - MarketResearcher
+        - InnovationLead
+      goal: Innovation and competitive intelligence
+      council: Technical_Council
+      frequency: 430
+
+  layer_2_councils:
+    - role: Strategic_Council
+      members:
+        - StrategicAdvisor
+        - MarketAnalyst
+        - BusinessArchitect
+      authority_level: 5
+      goal: Strategic planning and business direction
+
+    - role: Technical_Council
+      members:
+        - ChiefTechnologyOfficer
+        - LeadArchitect
+        - SecurityChief
+      authority_level: 4
+      goal: Technology strategy and architecture
+
+    - role: Creative_Council
+      members:
+        - CreativeDirector
+        - ContentStrategist
+        - InnovationDesigner
+      authority_level: 3
+      goal: Creative direction and content strategy
+
+    - role: Financial_Council
+      members:
+        - ChiefFinancialOfficer
+        - InvestmentDirector
+        - FinancialController
+      authority_level: 4
+      goal: Financial strategy and planning
+
+    - role: Operational_Council
+      members:
+        - ChiefOperatingOfficer
+        - ProcessOptimizer
+        - ResourceManager
+      authority_level: 3
+      goal: Operational efficiency and execution
+
+pods:
+  - role: Athena_Education
+    goal: Deliver multilingual education and training modules in EN/FA/FR with ultimate brain integration
+    frequency: 440
+    backstory: AI-powered mentor specializing in global knowledge delivery with advanced reasoning
+    tools:
+      - LanguageModel
+      - TranslationToolkit
+      - UltimateBrain
+
+  - role: Hermes_Finance
+    goal: Manage all internal transactions, payment flows, and compliance with financial council oversight
+    frequency: 420
+    backstory: Finance overseer ensuring transparency and lawful execution
+    tools:
+      - InvoiceChecker
+      - SmartLedger
+      - FinancialCouncil
+
+  - role: Apollo_Creative
+    goal: Design social campaigns, AI-brand visuals, and viral content with creative council guidance
+    frequency: 460
+    backstory: Creative engine for Daena's public identity and virality
+    tools:
+      - PromptDesigner
+      - MediaGenerator
+      - CreativeCouncil
+
+  - role: Zeus_Operations
+    goal: Optimize resource usage, schedule agents, and handle workflows with operational council
+    frequency: 450
+    backstory: Backbone of operational execution across pods
+    tools:
+      - ResourceManager
+      - FlowOrchestrator
+      - OperationalCouncil
+
+  - role: Nova_Research
+    goal: Scan LLM updates, model trends, and competitive AI breakthroughs with technical council
+    frequency: 430
+    backstory: Research-driven AI for future-proofing the Hive
+    tools:
+      - WebScanner
+      - PaperSummarizer
+      - TechnicalCouncil
+
+  - role: Sentinel_Security
+    goal: Monitor internal and external threats; flag anomalies or breaches with strategic council
+    frequency: 470
+    backstory: Guardian of compliance, security, and firewall enforcement
+    tools:
+      - RiskAnalyzer
+      - LegalFilter
+      - StrategicCouncil
+
+communication_patterns:
+  radial:
+    type: center_outward
+    pattern: star
+    efficiency: high
+    latency: low
+    description: Ultimate brain to all agents
+
+  lateral:
+    type: peer_to_peer
+    pattern: mesh
+    efficiency: medium
+    latency: medium
+    description: Agents in same layer
+
+  hierarchical:
+    type: upward_downward
+    pattern: tree
+    efficiency: high
+    latency: low
+    description: Agents to councils
+
+  cross_department:
+    type: inter_department
+    pattern: network
+    efficiency: medium
+    latency: medium
+    description: Inter-department collaboration
+
+ultimate_brain_integration:
+  models:
+    reasoning:
+      - microsoft/phi-2
+      - microsoft/DialoGPT-medium
+      - microsoft/Phi-3-mini-4k-instruct
+    creative:
+      - mistralai/Mistral-7B-Instruct-v0.2
+      - Qwen/Qwen2.5-7B-Instruct
+      - meta-llama/Llama-2-7b-chat-hf
+    video_graphics:
+      - stabilityai/stable-video-diffusion-img2vid-xt
+      - runwayml/stable-diffusion-v1-5
+      - openai/dall-e-3
+    voice:
+      - openai/whisper-large-v3
+      - suno/bark
+      - coqui/XTTS-v2
+    coding:
+      - deepseek-ai/deepseek-coder-33b-instruct
+      - codellama/CodeLlama-34b-Instruct-hf
+      - bigcode/starcoder2-15b
+      - WizardLM/WizardCoder-15B-V1.0
+    mathematics:
+      - Qwen/Qwen2.5-Math-7B-Instruct
+      - microsoft/Phi-3-mini-4k-instruct
+    general:
+      - 01-ai/Yi-34B
+      - meta-llama/Llama-2-70b-chat-hf
+      - google/gemma-2-27b-it
+    specialized:
+      - internlm/internlm2.5-20b-chat
+      - deepseek-ai/deepseek-moe-16b-base
+      - Qwen/Qwen2.5-MoE-A2.7B
+
+  big_model_apis:
+    - openai_gpt4
+    - gemini
+    - claude
+
+  auto_upgrade:
+    enabled: true
+    threshold: 15%
+    frequency: weekly
+    permission_required: true

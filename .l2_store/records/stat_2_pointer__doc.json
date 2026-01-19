@@ -1,0 +1,1 @@
+{"payload": {"uri": "uri://test"}, "meta": {"class": "doc", "type": "lossless_pointer", "source_uri": "uri://test", "abstract_item_id": "stat_2", "created_at": 1765603713.553351, "compression": {"mode": "semantic", "profile": "default", "settings": {"quantization": "fp16", "delta": true, "zstd_level": 17}, "usage_alert_bytes": 10737418240}, "tenant_id": "default"}, "cls": "doc"}

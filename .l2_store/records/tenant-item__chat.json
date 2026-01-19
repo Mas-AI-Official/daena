@@ -1,0 +1,1 @@
+{"payload": {"note": "hi"}, "meta": {"compression": {"mode": "semantic", "profile": "finance_global", "settings": {"quantization": "int8", "delta": true}}, "tenant_id": "finance_global"}, "cls": "chat"}

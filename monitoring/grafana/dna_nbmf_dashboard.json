@@ -1,0 +1,163 @@
+{
+  "dashboard": {
+    "title": "Daena Enterprise-DNA & NBMF Metrics",
+    "tags": ["daena", "nbmf", "dna", "memory"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "NBMF Read Latency (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_nbmf_metric{name=\"nbmf_read_p95_ms\"}",
+            "legendFormat": "NBMF Read p95 (ms)"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ms",
+            "label": "Latency (ms)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "NBMF Write Latency (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_nbmf_metric{name=\"nbmf_write_p95_ms\"}",
+            "legendFormat": "NBMF Write p95 (ms)"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ms",
+            "label": "Latency (ms)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "DNA Lineage Promotions",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(dna_lineage_promotions_total[5m])",
+            "legendFormat": "{{promotion_from}} → {{promotion_to}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops",
+            "label": "Promotions/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Immune Events by Type",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(dna_immune_events_total[5m])",
+            "legendFormat": "{{threat_type}} ({{threat_level}})"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops",
+            "label": "Events/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "DNA Health Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "dna_health_status",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "Degraded", "color": "red"}}},
+              {"type": "value", "options": {"1": {"text": "Healthy", "color": "green"}}}
+            ]
+          }
+        },
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "Anomalies (24h)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "dna_anomalies_24h",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "Quarantine Actions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(dna_immune_quarantine_total)",
+            "legendFormat": "Total Quarantines"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 16}
+      },
+      {
+        "id": 8,
+        "title": "L1 Hits vs Total Reads",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_nbmf_metric{name=\"l1_hits\"}",
+            "legendFormat": "L1 Hits"
+          },
+          {
+            "expr": "daena_nbmf_metric{name=\"nbmf_reads\"}",
+            "legendFormat": "Total Reads"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Count"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20}
+      },
+      {
+        "id": 9,
+        "title": "Lineage Chain Length Distribution",
+        "type": "histogram",
+        "targets": [
+          {
+            "expr": "dna_lineage_chain_length",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20}
+      }
+    ]
+  }
+}
+

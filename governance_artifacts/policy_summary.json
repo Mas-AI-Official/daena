@@ -1,0 +1,29 @@
+{
+  "default_allow": true,
+  "classes": {
+    "legal": {
+      "allow_roles": [
+        "legal.officer",
+        "admin"
+      ],
+      "deny_roles": [
+        "finance.analyst"
+      ],
+      "allow_tenants": [],
+      "deny_tenants": [],
+      "fidelity": "lossless"
+    },
+    "finance": {
+      "allow_roles": [
+        "finance.controller",
+        "admin"
+      ],
+      "deny_roles": [
+        "guest"
+      ],
+      "allow_tenants": [],
+      "deny_tenants": [],
+      "fidelity": "lossless"
+    }
+  }
+}

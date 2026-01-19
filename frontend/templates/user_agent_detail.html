@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}My Agent - Daena VP{% endblock %}
+
+{% block head %}
+<style>
+    .user-agent-container {
+        padding: 30px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .agent-header {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        margin-bottom: 30px;
+        padding: 24px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+    }
+
+    .agent-avatar-large {
+        width: 100px;
+        height: 100px;
+        border-radius: 16px;
+        background: var(--daena-gold);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 40px;
+        font-weight: 700;
+        color: black;
+    }
+
+    .agent-controls {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .control-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .control-card:hover {
+        border-color: var(--daena-gold);
+        transform: translateY(-2px);
+    }
+
+    .control-card i {
+        font-size: 32px;
+        color: var(--daena-gold);
+        margin-bottom: 12px;
+    }
+
+    .control-card h4 {
+        font-size: 14px;
+        color: white;
+        margin-bottom: 4px;
+    }
+
+    .control-card p {
+        font-size: 11px;
+        color: #9CA3AF;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="user-agent-container">
+    <div class="agent-header">
+        <div class="agent-avatar-large" id="agent-avatar">DA</div>
+        <div style="flex: 1;">
+            <h1 id="agent-name" style="font-size: 28px; color: white; margin-bottom: 8px;">My Custom Agent</h1>
+            <p id="agent-status" style="color: #22C55E; font-size: 14px; margin-bottom: 8px;">● Active</p>
+            <p id="agent-description" style="color: #9CA3AF; font-size: 13px;">Agent description...</p>
+        </div>
+        <div>
+            <button class="add-dept-btn" onclick="window.location.href='/agent-builder/'">
+                <i class="fas fa-arrow-left"></i> Back to Builder
+            </button>
+        </div>
+    </div>
+
+    <div class="agent-controls">
+        <div class="control-card" onclick="testAgent()">
+            <i class="fas fa-play-circle"></i>
+            <h4>Test Agent</h4>
+            <p>Run a test conversation</p>
+        </div>
+        <div class="control-card" onclick="deployAgent()">
+            <i class="fas fa-rocket"></i>
+            <h4>Deploy</h4>
+            <p>Deploy to production</p>
+        </div>
+        <div class="control-card" onclick="viewLogs()">
+            <i class="fas fa-file-alt"></i>
+            <h4>View Logs</h4>
+            <p>See activity logs</p>
+        </div>
+        <div class="control-card" onclick="editAgent()">
+            <i class="fas fa-edit"></i>
+            <h4>Edit Configuration</h4>
+            <p>Modify settings</p>
+        </div>
+    </div>
+
+    <div class="customize-section">
+        <h3 style="color: white; margin-bottom: 20px;">Performance Metrics</h3>
+        <div class="dept-stats-row">
+            <div class="stat-card">
+                <div class="stat-value">247</div>
+                <div class="stat-label">Total Conversations</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">94%</div>
+                <div class="stat-label">Success Rate</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">1.2s</div>
+                <div class="stat-label">Avg Response Time</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const agentId = window.location.pathname.split('/').pop();
+
+    function testAgent() {
+        window.showToast?.('Starting test conversation...', 'info');
+    }
+
+    function deployAgent() {
+        if (confirm('Deploy this agent to production?')) {
+            window.showToast?.('Agent deployed successfully!', 'success');
+        }
+    }
+
+    function viewLogs() {
+        window.location.href = `/ui/agents/${agentId}/logs`;
+    }
+
+    function editAgent() {
+        window.location.href = `/ui/agents/${agentId}/edit`;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('User agent detail loaded:', agentId);
+    });
+</script>
+{% endblock %}

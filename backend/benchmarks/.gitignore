@@ -1,0 +1,10 @@
+# Benchmark artifacts
+*.json
+*.csv
+*.log
+*.png
+*.jpg
+*.svg
+
+# Keep this file
+!.gitignore 

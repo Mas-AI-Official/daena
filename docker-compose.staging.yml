@@ -1,0 +1,124 @@
+version: '3.8'
+
+# Staging Environment Docker Compose
+# For testing before production deployment
+
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY:-ghcr.io/masoud-masoori}/daena:staging
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+    env_file:
+      - .env.staging
+    environment:
+      - ENVIRONMENT=staging
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - COMPUTE_PREFER=${COMPUTE_PREFER:-auto}
+      - COMPUTE_ALLOW_TPU=${COMPUTE_ALLOW_TPU:-false}
+      - COMPUTE_TPU_BATCH_FACTOR=${COMPUTE_TPU_BATCH_FACTOR:-32}
+      - PYTHONPATH=/app
+    depends_on:
+      - redis
+      - mongodb
+    networks:
+      - daena-staging
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/slo/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+
+  redis:
+    image: redis:6.2-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-staging-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - daena-staging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mongodb:
+    image: mongo:5.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-staging-data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-staging_password_change_me}
+    networks:
+      - daena-staging
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:v2.30.3
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-staging-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'  # Shorter retention for staging
+    networks:
+      - daena-staging
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:8.2.0
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-staging-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-staging_password_change_me}
+      - GF_INSTALL_PLUGINS=
+    networks:
+      - daena-staging
+    profiles:
+      - monitoring
+
+networks:
+  daena-staging:
+    driver: bridge
+
+volumes:
+  redis-staging-data:
+  mongodb-staging-data:
+  prometheus-staging-data:
+  grafana-staging-data:
+

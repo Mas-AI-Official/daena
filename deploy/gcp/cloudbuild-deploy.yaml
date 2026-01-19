@@ -1,0 +1,43 @@
+steps:
+  # Build Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/daena:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/daena:latest'
+      - '-f'
+      - 'Dockerfile'
+      - '.'
+
+  # Push to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/daena:$COMMIT_SHA'
+      - 'gcr.io/$PROJECT_ID/daena:latest'
+
+  # Deploy to GKE (GPU cluster)
+  - name: 'gcr.io/cloud-builders/gke-deploy'
+    args:
+      - 'run'
+      - '--filename=deploy/gcp/gke-gpu-deployment.yaml'
+      - '--location=$_GKE_ZONE'
+      - '--cluster=$_GKE_CLUSTER'
+      - '--image=gcr.io/$PROJECT_ID/daena:$COMMIT_SHA'
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _GKE_CLUSTER: 'daena-gpu-cluster'
+  _GKE_ZONE: 'us-central1-a'
+
+images:
+  - 'gcr.io/$PROJECT_ID/daena:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/daena:latest'
+
+timeout: '1200s'
+

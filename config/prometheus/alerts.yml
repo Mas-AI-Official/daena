@@ -1,0 +1,166 @@
+groups:
+  - name: daena_alerts
+    interval: 30s
+    rules:
+      - alert: HighEncodeLatency
+        expr: histogram_quantile(0.95, daena_nbmf_encode_latency_seconds_bucket) > 0.001
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High NBMF encode latency detected"
+          description: "Encode latency p95 is {{ $value }}ms (threshold: 1ms)"
+
+      - alert: LowCompressionRatio
+        expr: daena_nbmf_compression_ratio < 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low compression ratio detected"
+          description: "Compression ratio is {{ $value }}x (target: 10x+)"
+
+      - alert: LowCASHitRate
+        expr: daena_cas_hit_rate < 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low CAS hit rate"
+          description: "CAS hit rate is {{ $value | humanizePercentage }} (target: 60%+)"
+
+      - alert: HighErrorRate
+        expr: rate(daena_errors_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors/sec (threshold: 0.01)"
+
+      - alert: SystemDown
+        expr: daena_system_health == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Daena system is down"
+          description: "System health check failed"
+
+      - alert: HighMemoryUsage
+        expr: daena_memory_usage_bytes / daena_memory_limit_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: DeviceUnavailable
+        expr: daena_device_available == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Compute device unavailable"
+          description: "Preferred device ({{ $labels.device_type }}) is unavailable"
+
+      - alert: HighCPULoad
+        expr: daena_memory_metric{name="cpu_usage"} > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value }}% (threshold: 90%)"
+
+      - alert: HighMemoryUsage
+        expr: daena_memory_metric{name="memory_usage"} > 95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical memory usage"
+          description: "Memory usage is {{ $value }}% (threshold: 95%)"
+
+      - alert: HighDiskUsage
+        expr: daena_memory_metric{name="disk_usage"} > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is {{ $value }}% (threshold: 90%)"
+
+      - alert: HighNBMFReadLatency
+        expr: daena_memory_metric{name="nbmf_read_p95_ms"} > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High NBMF read latency"
+          description: "NBMF read latency p95 is {{ $value }}ms (threshold: 50ms)"
+
+      - alert: HighNBMFWriteLatency
+        expr: daena_memory_metric{name="nbmf_write_p95_ms"} > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High NBMF write latency"
+          description: "NBMF write latency p95 is {{ $value }}ms (threshold: 100ms)"
+
+      - alert: HighDivergenceRate
+        expr: daena_memory_metric{name="divergence_rate"} > 0.01
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High divergence rate detected"
+          description: "Divergence rate is {{ $value | humanizePercentage }} (threshold: 1%)"
+
+      - alert: LowCostSavings
+        expr: daena_memory_metric{name="cost_savings_percentage"} < 40
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low cost savings percentage"
+          description: "Cost savings is {{ $value }}% (target: 40%+)"
+
+      - alert: HighGPUUsage
+        expr: sunflower_gpu_usage_percent > 95
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High GPU usage"
+          description: "GPU {{ $labels.gpu_id }} usage is {{ $value }}% (threshold: 95%)"
+
+      - alert: HighGPUTemperature
+        expr: sunflower_gpu_temperature_celsius > 85
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical GPU temperature"
+          description: "GPU {{ $labels.gpu_id }} temperature is {{ $value }}°C (threshold: 85°C)"
+
+      - alert: LowAgentActivity
+        expr: sum(sunflower_agent_status{status="active"}) / count(sunflower_agent_status) < 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low agent activity"
+          description: "Only {{ $value | humanizePercentage }} of agents are active (target: 50%+)"
+
+      - alert: HighNetworkTraffic
+        expr: rate(daena_memory_metric{name="network_io_bytes_sent"}[5m]) + rate(daena_memory_metric{name="network_io_bytes_recv"}[5m]) > 1000000000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High network traffic"
+          description: "Network traffic is {{ $value | humanize1024 }}B/s (threshold: 1GB/s)"
+

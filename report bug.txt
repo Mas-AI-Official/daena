@@ -1,0 +1,22 @@
+ ✅ Health Check: healthy
+  ✅ Council Health: healthy
+  ✅ Brain Status: connected=True
+  ❌ Brain Models: 0 models found
+  ✅ Chat Create: session_id=8f2a7de7...
+  ❌ Chat Send: 
+  ✅ Chat Delete: Session deleted
+  ✅ Tool: Web Search: 🔍 **Web search results for: Python progr...
+  ✅ Voice Status: enabled=False
+  ❌ Snapshot Create: HTTP 404
+  ❌ Snapshot List: HTTP 404
+  ❌ Snapshot Restore: No snapshot
+  ✅ Demo Health: ready
+  ✅ Demo Run: 24ms
+
+------------------------------------------------------------
+
+  SUMMARY: 9/14 checks passed (64%)
+
+  ❌ CRITICAL ISSUES - Fix before demo!
+
+======================

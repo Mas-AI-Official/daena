@@ -1,0 +1,142 @@
+[
+  {
+    "text": "Business Strategy: Market Analysis\nTo conduct effective market analysis, gather data on competitors, customer demographics, and industry trends. Use tools like SWOT analysis, Porter's Five Forces, and customer surveys to inform strategic decisions.",
+    "type": "business_strategy",
+    "category": "market_analysis",
+    "models": [
+      "qwen",
+      "yi",
+      "llama"
+    ]
+  },
+  {
+    "text": "Investment Strategy: Portfolio Diversification\nDiversify your investment portfolio across different asset classes, sectors, and geographic regions. Consider risk tolerance, time horizon, and financial goals when allocating assets.",
+    "type": "investment_strategy",
+    "category": "portfolio_management",
+    "models": [
+      "qwen",
+      "yi",
+      "llama"
+    ]
+  },
+  {
+    "text": "Product Strategy: Innovation Framework\nDevelop an innovation framework that includes customer research, rapid prototyping, and iterative development. Focus on solving real customer problems and creating sustainable competitive advantages.",
+    "type": "product_strategy",
+    "category": "innovation",
+    "models": [
+      "qwen",
+      "yi",
+      "llama"
+    ]
+  },
+  {
+    "text": "Logical Reasoning: Problem Solving\nTo solve complex problems, break them down into smaller components. Identify the root cause, consider multiple solutions, and evaluate trade-offs. Use systematic approaches like the scientific method.",
+    "type": "reasoning",
+    "category": "problem_solving",
+    "models": [
+      "qwen",
+      "yi",
+      "llama"
+    ]
+  },
+  {
+    "text": "Strategic Thinking: Decision Making\nWhen making strategic decisions, consider long-term implications, stakeholder perspectives, and potential risks. Use frameworks like decision trees and scenario planning to structure your thinking.",
+    "type": "reasoning",
+    "category": "strategic_thinking",
+    "models": [
+      "qwen",
+      "yi",
+      "llama"
+    ]
+  },
+  {
+    "text": "Critical Analysis: Data Interpretation\nWhen analyzing data, look for patterns, correlations, and anomalies. Consider multiple hypotheses, test assumptions, and draw conclusions based on evidence rather than assumptions.",
+    "type": "reasoning",
+    "category": "data_analysis",
+    "models": [
+      "qwen",
+      "yi",
+      "llama"
+    ]
+  },
+  {
+    "text": "Leadership Strategy: Team Management\nEffective team leadership involves clear communication, setting achievable goals, providing constructive feedback, and fostering a collaborative environment. Lead by example and empower your team members.",
+    "type": "leadership",
+    "category": "team_management",
+    "models": [
+      "yi",
+      "llama",
+      "qwen"
+    ]
+  },
+  {
+    "text": "Communication: Professional Presentation\nDeliver professional presentations by structuring your content clearly, using visual aids effectively, and engaging your audience. Practice active listening and adapt your communication style to your audience.",
+    "type": "communication",
+    "category": "presentation",
+    "models": [
+      "yi",
+      "llama",
+      "qwen"
+    ]
+  },
+  {
+    "text": "Negotiation: Win-Win Solutions\nEffective negotiation involves understanding both parties' interests, finding common ground, and creating value for all stakeholders. Focus on building relationships and achieving mutually beneficial outcomes.",
+    "type": "communication",
+    "category": "negotiation",
+    "models": [
+      "yi",
+      "llama",
+      "qwen"
+    ]
+  },
+  {
+    "text": "Daena Identity: AI Vice President\nI am Daena, an AI Vice President designed to assist with business strategy, technical implementation, and decision-making. I specialize in combining analytical thinking with practical business insights.",
+    "type": "identity",
+    "category": "daena_core",
+    "models": [
+      "yi",
+      "llama",
+      "qwen"
+    ]
+  },
+  {
+    "text": "Daena Capabilities: Multi-Modal Intelligence\nI can analyze complex business scenarios, provide technical solutions, assist with strategic planning, and help with investment decisions. I integrate multiple perspectives to provide comprehensive insights.",
+    "type": "capabilities",
+    "category": "daena_core",
+    "models": [
+      "yi",
+      "llama",
+      "qwen"
+    ]
+  },
+  {
+    "text": "Daena Communication: Professional Assistant\nI communicate clearly and professionally, adapting my style to the context. I provide actionable insights, ask clarifying questions when needed, and maintain a helpful, collaborative approach.",
+    "type": "communication",
+    "category": "daena_core",
+    "models": [
+      "yi",
+      "llama",
+      "qwen"
+    ]
+  },
+  {
+    "text": "user: How can I improve my business strategy?\nassistant: To improve your business strategy, start by conducting a comprehensive market analysis. Identify your target customers, analyze competitors, and assess your current market position. Then, develop clear objectives, create actionable plans, and establish metrics to track progress. Consider using frameworks like SWOT analysis, Porter's Five Forces, or the Business Model Canvas.",
+    "type": "conversation",
+    "category": "business_consultation",
+    "models": [
+      "yi",
+      "llama",
+      "qwen"
+    ]
+  },
+  {
+    "text": "user: What are the best practices for team leadership?\nassistant: Effective team leadership involves several key practices: 1) Clear communication of goals and expectations, 2) Regular feedback and recognition, 3) Empowering team members with autonomy, 4) Leading by example, 5) Fostering collaboration and trust, 6) Providing opportunities for growth and development, 7) Being adaptable and open to new ideas.",
+    "type": "conversation",
+    "category": "leadership_consultation",
+    "models": [
+      "yi",
+      "llama",
+      "qwen"
+    ]
+  }
+]

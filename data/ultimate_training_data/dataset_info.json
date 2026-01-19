@@ -1,0 +1,40 @@
+{
+  "citation": "",
+  "description": "",
+  "features": {
+    "input_text": {
+      "dtype": "null",
+      "_type": "Value"
+    },
+    "target_text": {
+      "dtype": "null",
+      "_type": "Value"
+    },
+    "prompt": {
+      "dtype": "null",
+      "_type": "Value"
+    },
+    "response": {
+      "dtype": "null",
+      "_type": "Value"
+    },
+    "model": {
+      "dtype": "null",
+      "_type": "Value"
+    },
+    "category": {
+      "dtype": "null",
+      "_type": "Value"
+    },
+    "weight": {
+      "dtype": "null",
+      "_type": "Value"
+    },
+    "big_model_feedback": {
+      "dtype": "null",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": ""
+}

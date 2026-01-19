@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}Daena VP - Self-Upgrade Proposals{% endblock %}
+
+{% block head %}
+<style>
+    .proposal-card {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 15px;
+        padding: 25px;
+        margin-bottom: 20px;
+        backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+    }
+
+    .proposal-card:hover {
+        border-color: var(--daena-gold);
+        box-shadow: 0 4px 15px rgba(212, 175, 55, 0.2);
+    }
+
+    .status-badge {
+        padding: 5px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .status-pending {
+        background: rgba(255, 140, 0, 0.2);
+        color: #FF8C00;
+    }
+
+    .status-approved {
+        background: rgba(50, 205, 50, 0.2);
+        color: #32CD32;
+    }
+
+    .status-rejected {
+        background: rgba(255, 0, 0, 0.2);
+        color: #FF4444;
+    }
+
+    .status-applied {
+        background: rgba(0, 206, 209, 0.2);
+        color: #00CED1;
+    }
+
+    .code-preview {
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 15px;
+        font-family: 'Courier New', monospace;
+        font-size: 13px;
+        color: #00FF00;
+        max-height: 300px;
+        overflow-y: auto;
+        margin: 10px 0;
+    }
+
+    .action-btn {
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+
+    .approve-btn {
+        background: linear-gradient(135deg, #32CD32, #00FA9A);
+        color: white;
+    }
+
+    .approve-btn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 4px 15px rgba(50, 205, 50, 0.4);
+    }
+
+    .reject-btn {
+        background: linear-gradient(135deg, #FF4444, #FF0000);
+        color: white;
+    }
+
+    .reject-btn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 4px 15px rgba(255, 0, 0, 0.4);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-6 max-w-6xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-white mb-2">🤖 Daena's Self-Upgrade Proposals</h1>
+        <p class="text-gray-400">Daena can detect issues and propose code improvements. Review and approve changes
+            before they're applied.</p>
+    </div>
+
+    <div id="proposals-container">
+        <div class="text-center text-gray-500 py-10">
+            <i class="fas fa-circle-notch fa-spin text-2xl mb-2"></i>
+            <p>Loading proposals...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadProposals() {
+        try {
+            const response = await fetch('/api/v1/self-upgrade/proposals');
+            const data = await response.json();
+            renderProposals(data.proposals);
+        } catch (e) {
+            console.error("Failed to load proposals", e);
+            document.getElementById('proposals-container').innerHTML = `
+                <div class="text-center text-red-400 py-10">
+                    <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
+                    <p>No proposals found or API unavailable</p>
+                </div>
+            `;
+        }
+    }
+
+    function renderProposals(proposals) {
+        const container = document.getElementById('proposals-container');
+
+        if (proposals.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-gray-500 py-10">
+                    <i class="fas fa-check-circle text-4xl mb-4 text-green-500"></i>
+                    <p>No pending proposals. Daena will notify you when she detects improvements!</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = proposals.map(proposal => `
+            <div class="proposal-card">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-white mb-1">${proposal.title}</h3>
+                        <p class="text-gray-400 text-sm">${new Date(proposal.created_at).toLocaleString()}</p>
+                    </div>
+                    <span class="status-badge status-${proposal.status}">${proposal.status}</span>
+                </div>
+
+                <p class="text-gray-300 mb-4">${proposal.description}</p>
+
+                <div class="mb-4">
+                    <h4 class="text-sm font-bold text-gray-400 mb-2 uppercase">Proposed Changes (${proposal.changes.length})</h4>
+                    ${proposal.changes.map(change => `
+                        <div class="mb-3">
+                            <div class="flex items-center gap-2 mb-2">
+                                <i class="fas fa-file-code text-daena-gold"></i>
+                                <span class="text-white font-mono text-sm">${change.file_path}</span>
+                            </div>
+                            <p class="text-gray-400 text-sm mb-2">${change.description}</p>
+                            <div class="code-preview">
+                                <pre>${change.new_content.substring(0, 500)}${change.new_content.length > 500 ? '...' : ''}</pre>
+                            </div>
+                            <p class="text-xs text-gray-500 italic">Reason: ${change.reason}</p>
+                        </div>
+                    `).join('')}
+                </div>
+
+                ${proposal.status === 'pending' ? `
+                    <div class="flex gap-3">
+                        <button class="action-btn approve-btn" onclick="approveProposal('${proposal.id}')">
+                            <i class="fas fa-check mr-2"></i> Approve & Apply
+                        </button>
+                        <button class="action-btn reject-btn" onclick="rejectProposal('${proposal.id}')">
+                            <i class="fas fa-times mr-2"></i> Reject
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
+        `).join('');
+    }
+
+    async function approveProposal(id) {
+        if (!confirm('Are you sure you want to apply this upgrade? Files will be modified.')) return;
+
+        try {
+            const response = await fetch(`/api/v1/self-upgrade/proposals/${id}/approve`, { method: 'POST' });
+            const data = await response.json();
+
+            if (data.success) {
+                window.showToast('✅ Upgrade applied successfully!', 'success');
+                loadProposals();
+            }
+        } catch (e) {
+            window.showToast('❌ Failed to apply upgrade', 'error');
+        }
+    }
+
+    async function rejectProposal(id) {
+        const reason = prompt('Why are you rejecting this proposal? (optional)');
+
+        try {
+            await fetch(`/api/v1/self-upgrade/proposals/${id}/reject?reason=${encodeURIComponent(reason || '')}`, { method: 'POST' });
+            window.showToast('Proposal rejected', 'info');
+            loadProposals();
+        } catch (e) {
+            window.showToast('Failed to reject proposal', 'error');
+        }
+    }
+
+    loadProposals();
+</script>
+{% endblock %}

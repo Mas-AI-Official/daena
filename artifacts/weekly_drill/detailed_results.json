@@ -1,0 +1,26 @@
+{
+  "timestamp": "2025-11-16T21:32:47.296386+00:00",
+  "duration_sec": 0.49368715286254883,
+  "chaos_test": {
+    "status": "skipped"
+  },
+  "ledger_verification": {
+    "status": "failed",
+    "merkle_root": "86bf81404de56e9645fd1681a3550d4c26b6f926f43938de5ae9b8d1abb43fca",
+    "entry_count": 0,
+    "verification": "Traceback (most recent call last):\n  File \"D:\\Ideas\\Daena\\Tools\\daena_ledger_verify.py\", line 54, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"D:\\Ideas\\Daena\\Tools\\daena_ledger_verify.py\", line 46, in main\n    print(f\"\\u2713 Ledger verified ({args.ledger_path})\")\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Program Files\\Python313\\Lib\\encodings\\cp1252.py\", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: 'charmap' codec can't encode character '\\u2713' in position 0: character maps to <undefined>\n"
+  },
+  "key_manifests": {
+    "status": "failed",
+    "error": ""
+  },
+  "governance_artifacts": {
+    "status": "success",
+    "returncode": 0,
+    "output": "Generating governance artifacts in governance_artifacts...\n============================================================\nGenerating ledger manifest...\nLedger manifest saved to governance_artifacts\\ledger_manifest.json\nGenerating policy summary...\nPolicy summary saved to governance_artifacts\\policy_summary.json\nSkipping disaster recovery drill (--skip-drill)\nSummary report saved to governance_artifacts\\governance_summary.json\n============================================================\nGovernance artifacts generation complete!\nArtifacts saved to: governance_artifacts\n",
+    "error": null
+  },
+  "metrics": {
+    "divergence_rate": 0.0
+  }
+}

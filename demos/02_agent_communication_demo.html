@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daena AI VP System - Agent Communication Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; }
+        .header { background: rgba(0, 0, 0, 0.9); color: white; padding: 15px; text-align: center; position: fixed; top: 0; width: 100%; z-index: 1000; }
+        .patent-badge { background: linear-gradient(45deg, #ff6b6b, #feca57); color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; display: inline-block; margin-left: 20px; animation: pulse 2s infinite; }
+        .live-badge { background: #4CAF50; color: white; padding: 5px 10px; border-radius: 15px; font-size: 0.8em; margin-left: 10px; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        .main-container { margin-top: 100px; padding: 15px; max-width: 1800px; margin-left: auto; margin-right: auto; }
+        .panel { background: rgba(255, 255, 255, 0.95); border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); }
+        .honeycomb { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
+        .department { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 15px; border-radius: 10px; text-align: center; transition: all 0.3s ease; min-height: 140px; }
+        .department.active { background: linear-gradient(135deg, #ff6b6b, #feca57); animation: glow 2s infinite; }
+        @keyframes glow { 0% { box-shadow: 0 0 20px rgba(255, 107, 107, 0.5); } 50% { box-shadow: 0 0 30px rgba(254, 202, 87, 0.8); } 100% { box-shadow: 0 0 20px rgba(255, 107, 107, 0.5); } }
+        .department h3 { font-size: 16px; margin-bottom: 10px; }
+        .agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .agent { background: rgba(255, 255, 255, 0.2); padding: 8px; border-radius: 5px; font-size: 11px; text-align: center; transition: all 0.3s ease; }
+        .agent.active { background: rgba(255, 255, 255, 0.9); color: #333; transform: scale(1.1); }
+        .activity-feed { max-height: 400px; overflow-y: auto; background: #f8f9fa; border-radius: 10px; padding: 15px; }
+        .activity-item { display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; font-size: 0.9em; }
+        .activity-time { color: #666; margin-right: 15px; min-width: 70px; }
+        .activity-agent { font-weight: bold; margin-right: 15px; min-width: 180px; }
+        .activity-status { margin-right: 15px; }
+        .activity-task { flex: 1; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
+        .stat-card { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 20px; border-radius: 10px; text-align: center; }
+        .stat-value { font-size: 2em; font-weight: bold; margin-bottom: 5px; }
+        .stat-label { font-size: 0.9em; opacity: 0.8; }
+        .demo-controls { position: fixed; bottom: 20px; right: 20px; z-index: 1000; }
+        .demo-btn { background: linear-gradient(135deg, #ff6b6b, #feca57); color: white; border: none; padding: 12px 20px; border-radius: 25px; font-weight: bold; cursor: pointer; margin: 5px; transition: all 0.3s ease; font-size: 0.9em; }
+        .demo-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3); }
+        .video-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); z-index: 2000; display: none; }
+        .video-content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px; max-width: 80%; }
+        .border-agent { background: linear-gradient(135deg, #ff9800, #f57c00) !important; }
+        .knowledge-transfer { background: linear-gradient(135deg, #4CAF50, #388e3c) !important; }
+        .communication-line { position: absolute; height: 2px; background: linear-gradient(90deg, #ff6b6b, #feca57); animation: pulse 1s infinite; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧠 Daena AI VP System - Agent Communication Demo</h1>
+        <span class="patent-badge">PATENT PENDING</span>
+        <span class="live-badge">LIVE SYSTEM</span>
+        <p>Inter-Agent Communication | Border Agent Coordination | Real-time AI Processing</p>
+    </div>
+
+    <div class="main-container">
+        <!-- Demo Overview -->
+        <div class="panel">
+            <h2>🎯 AGENT COMMUNICATION DEMO</h2>
+            <p><strong>Purpose:</strong> Demonstrate inter-agent communication and knowledge sharing</p>
+            <p><strong>Key Features:</strong> Border agents, cross-department data flow, real-time collaboration</p>
+            <p><strong>Duration:</strong> 2-3 minutes</p>
+        </div>
+
+        <!-- Agent Communication Visualization -->
+        <div class="panel">
+            <h2>🤝 Agent Communication Network</h2>
+            <div class="honeycomb">
+                <div class="department" id="dept-engineering">
+                    <h3>🔧 Engineering</h3>
+                    <div class="agents">
+                        <div class="agent" data-type="strategic">Strategic</div>
+                        <div class="agent" data-type="growth">Growth</div>
+                        <div class="agent" data-type="research">Research</div>
+                        <div class="agent" data-type="data">Data</div>
+                        <div class="agent border-agent" data-type="border">Border</div>
+                        <div class="agent" data-type="exec">Exec</div>
+                    </div>
+                </div>
+                <div class="department" id="dept-marketing">
+                    <h3>📢 Marketing</h3>
+                    <div class="agents">
+                        <div class="agent" data-type="strategic">Strategic</div>
+                        <div class="agent" data-type="growth">Growth</div>
+                        <div class="agent" data-type="research">Research</div>
+                        <div class="agent" data-type="data">Data</div>
+                        <div class="agent border-agent" data-type="border">Border</div>
+                        <div class="agent" data-type="exec">Exec</div>
+                    </div>
+                </div>
+                <div class="department" id="dept-sales">
+                    <h3>💰 Sales</h3>
+                    <div class="agents">
+                        <div class="agent" data-type="strategic">Strategic</div>
+                        <div class="agent" data-type="growth">Growth</div>
+                        <div class="agent" data-type="research">Research</div>
+                        <div class="agent" data-type="data">Data</div>
+                        <div class="agent border-agent" data-type="border">Border</div>
+                        <div class="agent" data-type="exec">Exec</div>
+                    </div>
+                </div>
+                <div class="department" id="dept-operations">
+                    <h3>⚙️ Operations</h3>
+                    <div class="agents">
+                        <div class="agent" data-type="strategic">Strategic</div>
+                        <div class="agent" data-type="growth">Growth</div>
+                        <div class="agent" data-type="research">Research</div>
+                        <div class="agent" data-type="data">Data</div>
+                        <div class="agent border-agent" data-type="border">Border</div>
+                        <div class="agent" data-type="exec">Exec</div>
+                    </div>
+                </div>
+                <div class="department" id="dept-finance">
+                    <h3>💼 Finance</h3>
+                    <div class="agents">
+                        <div class="agent" data-type="strategic">Strategic</div>
+                        <div class="agent" data-type="growth">Growth</div>
+                        <div class="agent" data-type="research">Research</div>
+                        <div class="agent" data-type="data">Data</div>
+                        <div class="agent border-agent" data-type="border">Border</div>
+                        <div class="agent" data-type="exec">Exec</div>
+                    </div>
+                </div>
+                <div class="department" id="dept-hr">
+                    <h3>👥 HR</h3>
+                    <div class="agents">
+                        <div class="agent" data-type="strategic">Strategic</div>
+                        <div class="agent" data-type="growth">Growth</div>
+                        <div class="agent" data-type="research">Research</div>
+                        <div class="agent" data-type="data">Data</div>
+                        <div class="agent border-agent" data-type="border">Border</div>
+                        <div class="agent" data-type="exec">Exec</div>
+                    </div>
+                </div>
+                <div class="department" id="dept-legal">
+                    <h3>⚖️ Legal</h3>
+                    <div class="agents">
+                        <div class="agent" data-type="strategic">Strategic</div>
+                        <div class="agent" data-type="growth">Growth</div>
+                        <div class="agent" data-type="research">Research</div>
+                        <div class="agent" data-type="data">Data</div>
+                        <div class="agent border-agent" data-type="border">Border</div>
+                        <div class="agent" data-type="exec">Exec</div>
+                    </div>
+                </div>
+                <div class="department" id="dept-customer">
+                    <h3>🎯 Customer</h3>
+                    <div class="agents">
+                        <div class="agent" data-type="strategic">Strategic</div>
+                        <div class="agent" data-type="growth">Growth</div>
+                        <div class="agent" data-type="research">Research</div>
+                        <div class="agent" data-type="data">Data</div>
+                        <div class="agent border-agent" data-type="border">Border</div>
+                        <div class="agent" data-type="exec">Exec</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Communication Statistics -->
+        <div class="panel">
+            <h2>📊 Communication Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalMessages">0</div>
+                    <div class="stat-label">Total Messages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="borderMessages">0</div>
+                    <div class="stat-label">Border Agent Messages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="knowledgeTransfers">0</div>
+                    <div class="stat-label">Knowledge Transfers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avgConfidence">0.00</div>
+                    <div class="stat-label">Avg Confidence</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Feed -->
+        <div class="panel">
+            <h2>📋 Real-time Activity Feed</h2>
+            <div class="activity-feed" id="activityFeed">
+                <div class="activity-item">
+                    <div class="activity-time">Ready</div>
+                    <div class="activity-agent">System</div>
+                    <div class="activity-status">🟢</div>
+                    <div class="activity-task">Agent communication system initialized and ready</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Demo Controls -->
+    <div class="demo-controls">
+        <button class="demo-btn" onclick="startDemo()">🚀 Start Demo</button>
+        <button class="demo-btn" onclick="pauseDemo()">⏸️ Pause</button>
+        <button class="demo-btn" onclick="resetDemo()">🔄 Reset</button>
+        <button class="demo-btn" onclick="showVideoScript()">📹 Video Script</button>
+    </div>
+
+    <!-- Video Script Overlay -->
+    <div id="videoOverlay" class="video-overlay">
+        <div class="video-content">
+            <h2>📹 Video Recording Script - Agent Communication Demo</h2>
+            <div style="max-height: 400px; overflow-y: auto; text-align: left; line-height: 1.6;">
+                <p><strong>Duration:</strong> 2-3 minutes</p>
+                <p><strong>Purpose:</strong> Demonstrate inter-agent communication</p>
+                <br>
+                <p><strong>Opening (30 seconds):</strong></p>
+                <p>"Our agent communication system enables seamless collaboration across all departments. Notice the Border agents highlighted in orange - they facilitate cross-department data sharing and knowledge transfer."</p>
+                <br>
+                <p><strong>Communication Flow (1.5 minutes):</strong></p>
+                <p>"Watch as agents communicate in real-time. Border agents share strategic insights between departments, while internal agents coordinate tasks within their departments.</p>
+                <p>The activity feed shows every message, knowledge transfer, and collaboration event as it happens. This creates a transparent, efficient communication network."</p>
+                <br>
+                <p><strong>Statistics (30 seconds):</strong></p>
+                <p>"The statistics panel tracks total messages, border agent activity, knowledge transfers, and average confidence levels. This ensures quality control and performance monitoring."</p>
+                <br>
+                <p><strong>Closing (30 seconds):</strong></p>
+                <p>"This communication system ensures every agent stays informed and coordinated, creating a truly collaborative AI workforce that operates as a unified business intelligence system."</p>
+            </div>
+            <button class="demo-btn" onclick="closeVideoScript()" style="margin-top: 15px;">Close Script</button>
+        </div>
+    </div>
+
+    <script>
+        let demoActive = false;
+        let messageCount = 0;
+        let borderMessageCount = 0;
+        let knowledgeTransferCount = 0;
+        let demoInterval;
+
+        function startDemo() {
+            if (demoActive) return;
+            demoActive = true;
+            console.log('🚀 Starting Agent Communication Demo...');
+            
+            demoInterval = setInterval(() => {
+                if (demoActive) {
+                    simulateAgentCommunication();
+                    updateStatistics();
+                }
+            }, 2000);
+        }
+
+        function pauseDemo() {
+            demoActive = false;
+            if (demoInterval) clearInterval(demoInterval);
+            console.log('⏸️ Demo paused');
+        }
+
+        function resetDemo() {
+            demoActive = false;
+            if (demoInterval) clearInterval(demoInterval);
+            messageCount = 0;
+            borderMessageCount = 0;
+            knowledgeTransferCount = 0;
+            
+            // Reset all agents
+            document.querySelectorAll('.agent').forEach(agent => {
+                agent.classList.remove('active');
+            });
+            
+            // Reset departments
+            document.querySelectorAll('.department').forEach(dept => {
+                dept.classList.remove('active');
+            });
+            
+            updateStatistics();
+            addActivityItem('System', 'Demo reset - ready to start');
+        }
+
+        function showVideoScript() {
+            document.getElementById('videoOverlay').style.display = 'block';
+        }
+
+        function closeVideoScript() {
+            document.getElementById('videoOverlay').style.display = 'none';
+        }
+
+        function simulateAgentCommunication() {
+            const agents = document.querySelectorAll('.agent');
+            const departments = ['Engineering', 'Marketing', 'Sales', 'Operations', 'Finance', 'HR', 'Legal', 'Customer'];
+            const agentTypes = ['Strategic', 'Growth', 'Research', 'Data', 'Border', 'Exec'];
+            
+            // Activate 3-6 random agents
+            const agentsToActivate = Math.floor(Math.random() * 4) + 3;
+            
+            for (let i = 0; i < agentsToActivate; i++) {
+                const randomAgent = agents[Math.floor(Math.random() * agents.length)];
+                if (!randomAgent.classList.contains('active')) {
+                    randomAgent.classList.add('active');
+                    
+                    const agentIndex = Array.from(agents).indexOf(randomAgent);
+                    const deptIndex = Math.floor(agentIndex / 6);
+                    const agentTypeIndex = agentIndex % 6;
+                    const agentName = `${agentTypes[agentTypeIndex]}_${departments[deptIndex]}`;
+                    
+                    // Activate department
+                    const department = randomAgent.closest('.department');
+                    if (department) {
+                        department.classList.add('active');
+                        setTimeout(() => {
+                            department.classList.remove('active');
+                        }, 2000);
+                    }
+                    
+                    setTimeout(() => {
+                        const isBorderAgent = agentTypeIndex === 4;
+                        const isKnowledgeTransfer = Math.random() > 0.7;
+                        
+                        let messageType, content;
+                        if (isBorderAgent) {
+                            messageType = "Cross-department data sharing";
+                            content = `Shared strategic insights between ${departments[deptIndex]} and ${departments[Math.floor(Math.random() * 8)]}`;
+                            borderMessageCount++;
+                        } else if (isKnowledgeTransfer) {
+                            messageType = "Knowledge transfer";
+                            content = `Transferred market insights to ${agentTypes[Math.floor(Math.random() * 6)]} agent`;
+                            knowledgeTransferCount++;
+                        } else {
+                            messageType = "Internal communication";
+                            content = `Coordinated task execution within ${departments[deptIndex]}`;
+                        }
+                        
+                        messageCount++;
+                        addActivityItem(agentName, `${messageType}: ${content}`);
+                        
+                        setTimeout(() => {
+                            randomAgent.classList.remove('active');
+                        }, 2000 + Math.random() * 3000);
+                    }, 500);
+                }
+            }
+        }
+
+        function addActivityItem(agent, task) {
+            const activityFeed = document.getElementById('activityFeed');
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            
+            const activityItem = document.createElement('div');
+            activityItem.className = 'activity-item';
+            activityItem.innerHTML = `
+                <div class="activity-time">${timeString}</div>
+                <div class="activity-agent">${agent}</div>
+                <div class="activity-status">🟢</div>
+                <div class="activity-task">${task}</div>
+            `;
+            
+            activityFeed.insertBefore(activityItem, activityFeed.firstChild);
+            
+            // Keep only last 20 items
+            while (activityFeed.children.length > 20) {
+                activityFeed.removeChild(activityFeed.lastChild);
+            }
+        }
+
+        function updateStatistics() {
+            document.getElementById('totalMessages').textContent = messageCount;
+            document.getElementById('borderMessages').textContent = borderMessageCount;
+            document.getElementById('knowledgeTransfers').textContent = knowledgeTransferCount;
+            
+            const avgConfidence = 0.75 + Math.random() * 0.2;
+            document.getElementById('avgConfidence').textContent = avgConfidence.toFixed(2);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🤝 Agent Communication Demo loaded');
+            console.log('📋 Patent Pending Technology active');
+            console.log('🌻 Sunflower-Honeycomb Architecture initialized');
+            console.log('💰 Real-time AI Processing active');
+        });
+    </script>
+</body>
+</html>

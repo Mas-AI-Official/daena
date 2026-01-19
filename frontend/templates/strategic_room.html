@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}Strategic Room - Daena VP{% endblock %}
+
+{% block head %}
+<style>
+    .strategic-container {
+        padding: 30px;
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+
+    .strategic-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        margin-top: 24px;
+    }
+
+    .strategic-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 24px;
+    }
+
+    .card-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .card-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+    }
+
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: white;
+    }
+
+    .metric-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .metric-label {
+        font-size: 13px;
+        color: #9CA3AF;
+    }
+
+    .metric-value {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--daena-gold);
+    }
+
+    .goal-item {
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 10px;
+        margin-bottom: 12px;
+    }
+
+    .goal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .goal-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: white;
+    }
+
+    .goal-progress {
+        font-size: 12px;
+        color: var(--daena-gold);
+    }
+
+    .progress-bar {
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--daena-gold), #FFD700);
+        transition: width 0.3s ease;
+    }
+
+    @media (max-width: 1024px) {
+        .strategic-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="strategic-container">
+    <div class="page-header">
+        <h1>Strategic Room</h1>
+        <p style="color: #9CA3AF;">Long-term planning and goal tracking</p>
+    </div>
+
+    <div class="strategic-grid">
+        <!-- Company Goals -->
+        <div class="strategic-card" style="grid-column: span 2;">
+            <div class="card-header">
+                <div class="card-icon" style="background: rgba(212, 175, 55, 0.2); color: var(--daena-gold);">
+                    <i class="fas fa-bullseye"></i>
+                </div>
+                <div class="card-title">Strategic Goals</div>
+            </div>
+            <div id="goals-list">
+                <div class="goal-item">
+                    <div class="goal-header">
+                        <div class="goal-title">Q1 2026: Product Launch</div>
+                        <div class="goal-progress">75%</div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 75%;"></div>
+                    </div>
+                </div>
+                <div class="goal-item">
+                    <div class="goal-header">
+                        <div class="goal-title">Reach 10K Users</div>
+                        <div class="goal-progress">42%</div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 42%;"></div>
+                    </div>
+                </div>
+                <div class="goal-item">
+                    <div class="goal-header">
+                        <div class="goal-title">Revenue Target: $1M ARR</div>
+                        <div class="goal-progress">28%</div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 28%;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Key Metrics -->
+        <div class="strategic-card">
+            <div class="card-header">
+                <div class="card-icon" style="background: rgba(34, 197, 94, 0.2); color: #22C55E;">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div class="card-title">Key Metrics</div>
+            </div>
+            <div class="metric-row">
+                <div class="metric-label">Monthly Growth</div>
+                <div class="metric-value">+23%</div>
+            </div>
+            <div class="metric-row">
+                <div class="metric-label">Active Users</div>
+                <div class="metric-value">4,247</div>
+            </div>
+            <div class="metric-row">
+                <div class="metric-label">MRR</div>
+                <div class="metric-value">$23.5K</div>
+            </div>
+            <div class="metric-row">
+                <div class="metric-label">Churn Rate</div>
+                <div class="metric-value">2.1%</div>
+            </div>
+        </div>
+
+        <!-- Initiatives -->
+        <div class="strategic-card">
+            <div class="card-header">
+                <div class="card-icon" style="background: rgba(147, 112, 219, 0.2); color: #9370DB;">
+                    <i class="fas fa-rocket"></i>
+                </div>
+                <div class="card-title">Active Initiatives</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <button class="control-btn" onclick="window.location.href='/ui/strategic-meetings'">
+                    <i class="fas fa-users"></i> Strategic Meetings
+                </button>
+                <button class="control-btn" onclick="viewRoadmap()">
+                    <i class="fas fa-map"></i> Product Roadmap
+                </button>
+                <button class="control-btn" onclick="viewOKRs()">
+                    <i class="fas fa-tasks"></i> OKRs & KPIs
+                </button>
+            </div>
+        </div>
+
+        <!-- Council Input -->
+        <div class="strategic-card" style="grid-column: span 2;">
+            <div class="card-header">
+                <div class="card-icon" style="background: rgba(65, 105, 225, 0.2); color: #4169E1;">
+                    <i class="fas fa-users-cog"></i>
+                </div>
+                <div class="card-title">Council Recommendations</div>
+            </div>
+            <div id="council-recommendations">
+                <p style="color: #9CA3AF; font-size: 13px;">Loading council insights...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function viewRoadmap() {
+        window.location.href = '/ui/projects';
+    }
+
+    function viewOKRs() {
+        window.showToast?.('OKR dashboard loading...', 'info');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('Strategic Room loaded');
+    });
+</script>
+{% endblock %}

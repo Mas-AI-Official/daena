@@ -1,0 +1,629 @@
+{% extends "base.html" %}
+
+{% block title %}Workspace Connections - Daena VP{% endblock %}
+
+{% block head %}
+<style>
+    .workspace-container {
+        padding: 30px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+
+    .page-header h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: white;
+    }
+
+    .add-connection-btn {
+        padding: 12px 24px;
+        background: var(--daena-gold);
+        color: black;
+        border-radius: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        border: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* Connection Categories */
+    .category-section {
+        margin-bottom: 40px;
+    }
+
+    .category-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .category-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+    }
+
+    .category-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: white;
+    }
+
+    .connections-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 20px;
+    }
+
+    .connection-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 14px;
+        padding: 20px;
+        transition: all 0.3s ease;
+    }
+
+    .connection-card:hover {
+        border-color: var(--daena-gold);
+        transform: translateY(-3px);
+    }
+
+    .connection-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 16px;
+    }
+
+    .connection-logo {
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        color: white;
+    }
+
+    .connection-name {
+        font-size: 16px;
+        font-weight: 600;
+        color: white;
+    }
+
+    .connection-type {
+        font-size: 12px;
+        color: #9CA3AF;
+    }
+
+    .connection-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 0;
+        margin-bottom: 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+
+    .status-dot.connected {
+        background: #32CD32;
+        box-shadow: 0 0 8px #32CD32;
+    }
+
+    .status-dot.disconnected {
+        background: #FF6464;
+    }
+
+    .status-dot.pending {
+        background: #FFA500;
+    }
+
+    .status-text {
+        font-size: 12px;
+    }
+
+    .status-text.connected {
+        color: #32CD32;
+    }
+
+    .status-text.disconnected {
+        color: #FF6464;
+    }
+
+    .status-text.pending {
+        color: #FFA500;
+    }
+
+    .connection-path {
+        font-size: 11px;
+        color: #6B7280;
+        font-family: monospace;
+        background: rgba(0, 0, 0, 0.2);
+        padding: 8px 10px;
+        border-radius: 6px;
+        word-break: break-all;
+        margin-bottom: 12px;
+    }
+
+    .connection-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .action-btn {
+        flex: 1;
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.05);
+        color: #9CA3AF;
+    }
+
+    .action-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+    }
+
+    .action-btn.connect {
+        background: rgba(50, 205, 50, 0.1);
+        border-color: rgba(50, 205, 50, 0.3);
+        color: #32CD32;
+    }
+
+    .action-btn.disconnect {
+        background: rgba(255, 100, 100, 0.1);
+        border-color: rgba(255, 100, 100, 0.3);
+        color: #FF6464;
+    }
+
+    /* Add Connection Card */
+    .add-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        min-height: 180px;
+        border: 2px dashed rgba(255, 255, 255, 0.15);
+        background: transparent;
+        cursor: pointer;
+        color: #9CA3AF;
+        font-size: 14px;
+    }
+
+    .add-card:hover {
+        border-color: var(--daena-gold);
+        color: var(--daena-gold);
+    }
+
+    .add-card i {
+        font-size: 28px;
+    }
+
+    /* Modal */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal-overlay.active {
+        display: flex;
+    }
+
+    .modal-content {
+        width: 90%;
+        max-width: 500px;
+        background: #0f1729;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 24px;
+    }
+
+    .modal-title {
+        font-size: 20px;
+        font-weight: 700;
+        color: white;
+        margin-bottom: 20px;
+    }
+
+    .form-group {
+        margin-bottom: 16px;
+    }
+
+    .form-label {
+        font-size: 12px;
+        color: #9CA3AF;
+        margin-bottom: 6px;
+        display: block;
+    }
+
+    .form-input,
+    .form-select {
+        width: 100%;
+        padding: 12px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: white;
+        font-size: 14px;
+    }
+
+    .form-input:focus,
+    .form-select:focus {
+        outline: none;
+        border-color: var(--daena-gold);
+    }
+
+    .form-actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 24px;
+    }
+
+    .form-btn {
+        flex: 1;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        border: none;
+    }
+
+    .form-btn.primary {
+        background: var(--daena-gold);
+        color: black;
+    }
+
+    .form-btn.secondary {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="workspace-container">
+    <div class="page-header">
+        <h1>Workspace Connections</h1>
+        <button class="add-connection-btn" onclick="showAddModal()">
+            <i class="fas fa-plus"></i> Add Connection
+        </button>
+    </div>
+
+    <!-- Cloud Services -->
+    <div class="category-section">
+        <div class="category-header">
+            <div class="category-icon" style="background: rgba(65, 105, 225, 0.2); color: #4169E1;">
+                <i class="fas fa-cloud"></i>
+            </div>
+            <div class="category-title">Cloud Services</div>
+        </div>
+        <div class="connections-grid">
+            <div class="connection-card">
+                <div class="connection-header">
+                    <div class="connection-logo" style="background: #4285F4;"><i class="fab fa-google"></i></div>
+                    <div>
+                        <div class="connection-name">Google Cloud</div>
+                        <div class="connection-type">Cloud Platform</div>
+                    </div>
+                </div>
+                <div class="connection-status">
+                    <div class="status-dot connected"></div>
+                    <span class="status-text connected">Connected</span>
+                </div>
+                <div class="connection-path">project: mas-ai-daena</div>
+                <div class="connection-actions">
+                    <button class="action-btn disconnect" onclick="disconnect('gcloud')">Disconnect</button>
+                    <button class="action-btn">Browse</button>
+                </div>
+            </div>
+
+            <div class="connection-card">
+                <div class="connection-header">
+                    <div class="connection-logo" style="background: #FF9900;"><i class="fab fa-aws"></i></div>
+                    <div>
+                        <div class="connection-name">AWS</div>
+                        <div class="connection-type">Cloud Platform</div>
+                    </div>
+                </div>
+                <div class="connection-status">
+                    <div class="status-dot disconnected"></div>
+                    <span class="status-text disconnected">Not Connected</span>
+                </div>
+                <div class="connection-actions">
+                    <button class="action-btn connect" onclick="connect('aws')">Connect</button>
+                </div>
+            </div>
+
+            <div class="connection-card add-card" onclick="showAddModal('cloud')">
+                <i class="fas fa-plus-circle"></i>
+                <span>Add Cloud Service</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- IDE & Dev Tools -->
+    <div class="category-section">
+        <div class="category-header">
+            <div class="category-icon" style="background: rgba(0, 206, 209, 0.2); color: #00CED1;">
+                <i class="fas fa-code"></i>
+            </div>
+            <div class="category-title">IDE & Dev Tools</div>
+        </div>
+        <div class="connections-grid">
+            <div class="connection-card">
+                <div class="connection-header">
+                    <div class="connection-logo" style="background: linear-gradient(135deg, #00A67E, #00D9FF);"><i
+                            class="fas fa-terminal"></i></div>
+                    <div>
+                        <div class="connection-name">Cursor IDE</div>
+                        <div class="connection-type">AI Code Editor</div>
+                    </div>
+                </div>
+                <div class="connection-status">
+                    <div class="status-dot connected"></div>
+                    <span class="status-text connected">Connected</span>
+                </div>
+                <div class="connection-path">D:\Ideas\Daena_old_upgrade_20251213</div>
+                <div class="connection-actions">
+                    <button class="action-btn disconnect">Disconnect</button>
+                    <button class="action-btn">Open Project</button>
+                </div>
+            </div>
+
+            <div class="connection-card">
+                <div class="connection-header">
+                    <div class="connection-logo" style="background: #007ACC;"><i class="fab fa-microsoft"></i></div>
+                    <div>
+                        <div class="connection-name">VS Code</div>
+                        <div class="connection-type">Code Editor</div>
+                    </div>
+                </div>
+                <div class="connection-status">
+                    <div class="status-dot pending"></div>
+                    <span class="status-text pending">Pending Setup</span>
+                </div>
+                <div class="connection-actions">
+                    <button class="action-btn connect">Setup</button>
+                </div>
+            </div>
+
+            <div class="connection-card add-card" onclick="showAddModal('ide')">
+                <i class="fas fa-plus-circle"></i>
+                <span>Add IDE</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Local Folders -->
+    <div class="category-section">
+        <div class="category-header">
+            <div class="category-icon" style="background: rgba(255, 165, 0, 0.2); color: #FFA500;">
+                <i class="fas fa-folder"></i>
+            </div>
+            <div class="category-title">Local Folders & Drives</div>
+        </div>
+        <div class="connections-grid">
+            <div class="connection-card">
+                <div class="connection-header">
+                    <div class="connection-logo" style="background: #FFA500;"><i class="fas fa-folder-open"></i></div>
+                    <div>
+                        <div class="connection-name">Project Root</div>
+                        <div class="connection-type">Local Directory</div>
+                    </div>
+                </div>
+                <div class="connection-status">
+                    <div class="status-dot connected"></div>
+                    <span class="status-text connected">Mounted</span>
+                </div>
+                <div class="connection-path">D:\Ideas\Daena_old_upgrade_20251213</div>
+                <div class="connection-actions">
+                    <button class="action-btn">Browse Files</button>
+                    <button class="action-btn">Sync</button>
+                </div>
+            </div>
+
+            <div class="connection-card">
+                <div class="connection-header">
+                    <div class="connection-logo" style="background: #32CD32;"><i class="fas fa-brain"></i></div>
+                    <div>
+                        <div class="connection-name">Local Brain</div>
+                        <div class="connection-type">AI Models Directory</div>
+                    </div>
+                </div>
+                <div class="connection-status">
+                    <div class="status-dot connected"></div>
+                    <span class="status-text connected">Active</span>
+                </div>
+                <div class="connection-path">D:\Ideas\Daena_old_upgrade_20251213\local_brain</div>
+                <div class="connection-actions">
+                    <button class="action-btn">View Models</button>
+                </div>
+            </div>
+
+            <div class="connection-card add-card" onclick="showAddModal('folder')">
+                <i class="fas fa-plus-circle"></i>
+                <span>Add Folder</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Connection Modal -->
+<div class="modal-overlay" id="add-modal" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-title">Add Connection</div>
+
+        <div class="form-group">
+            <label class="form-label">Connection Type</label>
+            <select class="form-select" id="conn-type">
+                <option value="cloud">Cloud Service</option>
+                <option value="ide">IDE / Editor</option>
+                <option value="folder">Local Folder</option>
+                <option value="drive">External Drive</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Name</label>
+            <input type="text" class="form-input" id="conn-name" placeholder="e.g. My GCloud Project">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Path / URL</label>
+            <input type="text" class="form-input" id="conn-path" placeholder="e.g. D:\Projects or https://...">
+        </div>
+
+        <div class="form-actions">
+            <button class="form-btn secondary" onclick="closeModal()">Cancel</button>
+            <button class="form-btn primary" onclick="addConnection()">Add Connection</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Load connections on page load
+    async function loadConnections() {
+        try {
+            const response = await fetch('/api/v1/connections/list');
+            const data = await response.json();
+            console.log('Loaded connections:', data);
+            // TODO: Render connections dynamically
+        } catch (e) {
+            console.error('Failed to load connections:', e);
+        }
+    }
+
+    function showAddModal(type) {
+        if (type) document.getElementById('conn-type').value = type;
+        document.getElementById('add-modal').classList.add('active');
+    }
+
+    function closeModal(e) {
+        if (!e || e.target.id === 'add-modal') {
+            document.getElementById('add-modal').classList.remove('active');
+        }
+    }
+
+    async function addConnection() {
+        const type = document.getElementById('conn-type').value;
+        const name = document.getElementById('conn-name').value;
+        const path = document.getElementById('conn-path').value;
+
+        if (!name || !path) {
+            if (window.showToast) window.showToast('Please fill in all fields', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/v1/connections/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tool_id: `${type}_${name.toLowerCase().replace(/\s+/g, '_')}`,
+                    credentials: { path, name, type }
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                if (window.showToast) window.showToast(`Connected to ${name}`, 'success');
+                closeModal();
+                loadConnections();
+            } else {
+                if (window.showToast) window.showToast(data.detail || 'Failed to connect', 'error');
+            }
+        } catch (e) {
+            console.error('Connection error:', e);
+            if (window.showToast) window.showToast('Failed to add connection', 'error');
+        }
+    }
+
+    async function connect(service) {
+        if (window.showToast) window.showToast(`Connecting to ${service}...`, 'info');
+        
+        try {
+            const response = await fetch('/api/v1/connections/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tool_id: service,
+                    credentials: {}
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                if (window.showToast) window.showToast(`Connected to ${service}`, 'success');
+                location.reload();
+            }
+        } catch (e) {
+            if (window.showToast) window.showToast(`Failed to connect to ${service}`, 'error');
+        }
+    }
+
+    async function disconnect(service) {
+        if (!confirm(`Disconnect from ${service}?`)) return;
+        
+        try {
+            // First get connection ID
+            const listResponse = await fetch('/api/v1/connections/list');
+            const listData = await listResponse.json();
+            const connection = listData.connections?.find(c => c.tool_id === service);
+            
+            if (connection) {
+                const response = await fetch(`/api/v1/connections/${connection.id}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    if (window.showToast) window.showToast(`Disconnected from ${service}`, 'warning');
+                    location.reload();
+                }
+            } else {
+                if (window.showToast) window.showToast(`${service} not found in connections`, 'error');
+            }
+        } catch (e) {
+            if (window.showToast) window.showToast(`Failed to disconnect from ${service}`, 'error');
+        }
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', loadConnections);
+</script>
+<script src="/static/js/workspace.js"></script>
+{% endblock %}

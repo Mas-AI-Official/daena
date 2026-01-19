@@ -1,0 +1,88 @@
+{
+  "timestamp": 1763345410.5836177,
+  "duration_sec": 0.02430438995361328,
+  "backfill": {
+    "migrated": 0,
+    "skipped": 0,
+    "mismatches": 0
+  },
+  "snapshot": {
+    "l2": {
+      "records": 0,
+      "bytes": 8763,
+      "by_class": {},
+      "by_tenant": {},
+      "bytes_by_tenant": {},
+      "compression_profiles": {},
+      "files": 46
+    },
+    "l3": {
+      "records": 0,
+      "bytes": 6364,
+      "by_class": {},
+      "by_tenant": {},
+      "bytes_by_tenant": {},
+      "compression_profiles": {},
+      "files": 41
+    }
+  },
+  "ledger": {
+    "entries": 721,
+    "merkle_root": "6ab01547d1952c7acf73ae2e511bf5fe8fe2c7e192a1cfb6b5ccaa3cd3ecf544",
+    "first_txid": "552c4bed037b5a810b609afa69c664bca1bc7f83046e8a06ff2dd3643cd3f043",
+    "last_txid": "0ac4b1857c2e4e953fc8ec777f1149bd2652e28892ffae58f520bdd4d3c9bbc1",
+    "by_action": {
+      "write": 540,
+      "promote": 37,
+      "read": 85,
+      "divergence": 16,
+      "migrate": 1,
+      "divergence_abort": 15,
+      "snapshot": 1,
+      "chaos_start": 1,
+      "chaos_result": 1,
+      "drill": 6,
+      "llm_cas_hit": 10,
+      "llm_near_dup_reuse": 3,
+      "abstract_store": 3,
+      "ocr_fallback": 2
+    },
+    "by_store": {
+      "unknown": 6,
+      "legacy": 202,
+      "nbmf": 497,
+      "both": 1,
+      "cas": 13,
+      "ocr": 2
+    }
+  },
+  "policy": {
+    "default_allow": true,
+    "classes": {
+      "legal": {
+        "allow_roles": [
+          "legal.officer",
+          "admin"
+        ],
+        "deny_roles": [
+          "finance.analyst"
+        ],
+        "allow_tenants": [],
+        "deny_tenants": [],
+        "fidelity": "lossless"
+      },
+      "finance": {
+        "allow_roles": [
+          "finance.controller",
+          "admin"
+        ],
+        "deny_roles": [
+          "guest"
+        ],
+        "allow_tenants": [],
+        "deny_tenants": [],
+        "fidelity": "lossless"
+      }
+    }
+  }
+}

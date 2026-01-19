@@ -1,0 +1,8 @@
+{
+  "ledger_path": ".ledger\\ledger.jsonl",
+  "entries": 636,
+  "created_at": "2025-11-09T17:29:36.411699+00:00",
+  "merkle_root": "a577d9fa5fb22d49a8b22bb07965c1c2f1f28baf0e847b8bf3454a78c5776e59",
+  "first_txid": "552c4bed037b5a810b609afa69c664bca1bc7f83046e8a06ff2dd3643cd3f043",
+  "last_txid": "90b39d9222272d1700d5f24b9ff4633e0366f77a4f38af91c2ba0e947c48850e"
+}

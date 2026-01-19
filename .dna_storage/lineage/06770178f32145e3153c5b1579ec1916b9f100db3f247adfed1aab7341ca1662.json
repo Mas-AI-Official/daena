@@ -1,0 +1,13 @@
+{
+  "object_id": "test_item",
+  "tenant_id": "test_tenant",
+  "promotion_from": "L2Q",
+  "promotion_to": "L2",
+  "promoted_by": "test_system",
+  "promoted_at": "2025-11-30T17:11:32.281535",
+  "nbmf_ledger_txid": "test_txid_123",
+  "merkle_root": null,
+  "merkle_parent": null,
+  "metadata": {},
+  "hash": "06770178f32145e3153c5b1579ec1916b9f100db3f247adfed1aab7341ca1662"
+}

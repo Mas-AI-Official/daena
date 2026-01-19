@@ -1,0 +1,323 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Enterprise-DNA Schema",
+  "description": "Schema definitions for Genome, Epigenome, Lineage, and Immune components",
+  "definitions": {
+    "Capability": {
+      "type": "object",
+      "required": ["skill"],
+      "properties": {
+        "skill": {
+          "type": "string",
+          "description": "Name of the capability/skill"
+        },
+        "tool": {
+          "type": "string",
+          "description": "Tool identifier for this capability"
+        },
+        "memory_adapter": {
+          "type": "string",
+          "description": "Memory adapter identifier"
+        },
+        "allowed_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of allowed actions for this capability"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Semantic version of the capability"
+        }
+      }
+    },
+    "Genome": {
+      "type": "object",
+      "required": ["agent_id", "department", "role", "version"],
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "Unique identifier for the agent"
+        },
+        "department": {
+          "type": "string",
+          "enum": ["engineering", "product", "sales", "marketing", "finance", "hr", "legal", "customer"],
+          "description": "Department slug"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["advisor_a", "advisor_b", "scout_internal", "scout_external", "synth", "executor"],
+          "description": "Agent role"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Capability"
+          },
+          "description": "List of agent capabilities"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Genome version (semver)"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      }
+    },
+    "Epigenome": {
+      "type": "object",
+      "required": ["tenant_id"],
+      "properties": {
+        "tenant_id": {
+          "type": "string",
+          "description": "Tenant identifier"
+        },
+        "abac_rules": {
+          "type": "object",
+          "description": "Attribute-Based Access Control rules"
+        },
+        "retention_policy": {
+          "type": "object",
+          "description": "Data retention policy configuration"
+        },
+        "jurisdictions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Legal jurisdictions this tenant operates in"
+        },
+        "escalation_rules": {
+          "type": "object",
+          "description": "Escalation rules for decision-making"
+        },
+        "slo": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Service Level Objectives (metric -> target value)"
+        },
+        "sla": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Service Level Agreements (metric -> target value)"
+        },
+        "feature_flags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "description": "Feature flags for tenant"
+        },
+        "legal_constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Legal constraints (e.g., GDPR, HIPAA)"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      }
+    },
+    "LineageRecord": {
+      "type": "object",
+      "required": [
+        "object_id",
+        "tenant_id",
+        "promotion_from",
+        "promotion_to",
+        "promoted_by",
+        "promoted_at",
+        "nbmf_ledger_txid"
+      ],
+      "properties": {
+        "object_id": {
+          "type": "string",
+          "description": "Object identifier (memory item ID)"
+        },
+        "tenant_id": {
+          "type": "string",
+          "description": "Tenant identifier"
+        },
+        "promotion_from": {
+          "type": "string",
+          "enum": ["L2Q", "L2", "L3"],
+          "description": "Source tier of promotion"
+        },
+        "promotion_to": {
+          "type": "string",
+          "enum": ["L2", "L3"],
+          "description": "Destination tier of promotion"
+        },
+        "promoted_by": {
+          "type": "string",
+          "description": "Agent ID or system identifier that triggered promotion"
+        },
+        "promoted_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Promotion timestamp"
+        },
+        "nbmf_ledger_txid": {
+          "type": "string",
+          "description": "NBMF ledger transaction ID"
+        },
+        "merkle_root": {
+          "type": "string",
+          "description": "Merkle root hash for this promotion chain"
+        },
+        "merkle_parent": {
+          "type": "string",
+          "description": "Parent lineage record hash (for chain)"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata"
+        },
+        "hash": {
+          "type": "string",
+          "description": "Cryptographic hash of this lineage record"
+        }
+      }
+    },
+    "ThreatSignal": {
+      "type": "object",
+      "required": [
+        "signal_id",
+        "tenant_id",
+        "threat_type",
+        "threat_level",
+        "score",
+        "detected_at",
+        "source"
+      ],
+      "properties": {
+        "signal_id": {
+          "type": "string",
+          "description": "Unique threat signal identifier"
+        },
+        "tenant_id": {
+          "type": "string",
+          "description": "Tenant identifier"
+        },
+        "threat_type": {
+          "type": "string",
+          "enum": ["anomaly", "policy_breach", "prompt_injection", "rate_limit", "unauthorized_access"],
+          "description": "Type of threat detected"
+        },
+        "threat_level": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"],
+          "description": "Severity level"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Threat score (0.0 = safe, 1.0 = maximum threat)"
+        },
+        "detected_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Detection timestamp"
+        },
+        "source": {
+          "type": "string",
+          "description": "Source agent or system component"
+        },
+        "details": {
+          "type": "object",
+          "description": "Additional threat details"
+        },
+        "recommended_action": {
+          "type": "string",
+          "enum": ["quarantine", "degrade", "require_quorum", "rollback", "allow"],
+          "description": "Recommended action from immune system"
+        }
+      }
+    },
+    "ImmuneEvent": {
+      "type": "object",
+      "required": ["event_id", "tenant_id"],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "description": "Unique immune event identifier"
+        },
+        "tenant_id": {
+          "type": "string",
+          "description": "Tenant identifier"
+        },
+        "threat_signals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ThreatSignal"
+          },
+          "description": "List of threat signals in this event"
+        },
+        "trust_score_adjustment": {
+          "type": "number",
+          "minimum": -1.0,
+          "maximum": 1.0,
+          "description": "Adjustment to trust score (-1.0 to 1.0)"
+        },
+        "quarantine_required": {
+          "type": "boolean",
+          "description": "Whether quarantine is required"
+        },
+        "quorum_required": {
+          "type": "boolean",
+          "description": "Whether quorum is required for decisions"
+        },
+        "rollback_required": {
+          "type": "boolean",
+          "description": "Whether rollback is required"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Event creation timestamp"
+        }
+      }
+    }
+  },
+  "type": "object",
+  "properties": {
+    "genome": {
+      "$ref": "#/definitions/Genome"
+    },
+    "epigenome": {
+      "$ref": "#/definitions/Epigenome"
+    },
+    "lineage": {
+      "$ref": "#/definitions/LineageRecord"
+    },
+    "immune": {
+      "$ref": "#/definitions/ImmuneEvent"
+    }
+  }
+}
+

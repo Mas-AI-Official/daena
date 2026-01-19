@@ -1,0 +1,98 @@
+{
+  "sessions": {
+    "19e273ac-1337-4d1e-90f9-22dea0e519a5": {
+      "id": "19e273ac-1337-4d1e-90f9-22dea0e519a5",
+      "title": "New Chat 6:12:48 PM",
+      "category": "general",
+      "created_at": "2025-12-19T23:12:48.593520",
+      "updated_at": "2025-12-19T23:12:48.593520",
+      "messages": []
+    },
+    "dfc7dbf9-2458-4269-9e86-b1e89583aa1c": {
+      "id": "dfc7dbf9-2458-4269-9e86-b1e89583aa1c",
+      "title": "New Chat 9:02:08 PM",
+      "category": "general",
+      "created_at": "2025-12-20T02:02:08.818469",
+      "updated_at": "2025-12-20T02:02:08.818469",
+      "messages": []
+    },
+    "29c5048c-d138-4063-8baf-40913ba1b681": {
+      "id": "29c5048c-d138-4063-8baf-40913ba1b681",
+      "title": "New Chat 10:33:50 PM",
+      "category": "general",
+      "created_at": "2025-12-20T03:33:50.927354",
+      "updated_at": "2025-12-20T03:33:50.927354",
+      "messages": []
+    },
+    "80a838af-b03f-4622-8ee7-1a41d5065d73": {
+      "id": "80a838af-b03f-4622-8ee7-1a41d5065d73",
+      "title": "New Chat 10:34:03 PM",
+      "category": "general",
+      "created_at": "2025-12-20T03:34:03.931722",
+      "updated_at": "2025-12-20T03:34:03.931722",
+      "messages": []
+    },
+    "d38c5895-5977-4079-b1ff-98b3a35b891a": {
+      "id": "d38c5895-5977-4079-b1ff-98b3a35b891a",
+      "title": "New Chat 10:35:48 PM",
+      "category": "general",
+      "created_at": "2025-12-20T03:35:48.960987",
+      "updated_at": "2025-12-20T03:35:48.960987",
+      "messages": []
+    },
+    "a85f60cd-084a-4f65-90e2-740717b01ccb": {
+      "id": "a85f60cd-084a-4f65-90e2-740717b01ccb",
+      "title": "New Chat 10:39:39 PM",
+      "category": "general",
+      "created_at": "2025-12-20T03:39:39.791217",
+      "updated_at": "2025-12-20T03:39:39.791217",
+      "messages": []
+    },
+    "3c9876b8-0e2d-4c54-9936-2e081f7429c8": {
+      "id": "3c9876b8-0e2d-4c54-9936-2e081f7429c8",
+      "title": "New Chat 10:43:43 PM",
+      "category": "general",
+      "created_at": "2025-12-20T03:43:43.537876",
+      "updated_at": "2025-12-20T03:43:43.537876",
+      "messages": []
+    },
+    "48de4abd-d498-48c5-8a98-df3d65d86572": {
+      "id": "48de4abd-d498-48c5-8a98-df3d65d86572",
+      "title": "New Chat 10:43:47 PM",
+      "category": "general",
+      "created_at": "2025-12-20T03:43:47.969501",
+      "updated_at": "2025-12-20T03:43:47.969501",
+      "messages": []
+    },
+    "036c0353-7d48-4899-a610-05aa6a88d9b8": {
+      "id": "036c0353-7d48-4899-a610-05aa6a88d9b8",
+      "title": "New Chat 10:43:49 PM",
+      "category": "general",
+      "created_at": "2025-12-20T03:43:49.125409",
+      "updated_at": "2025-12-20T03:49:53.137494",
+      "messages": [
+        {
+          "sender": "user",
+          "content": "hi daeana",
+          "timestamp": "2025-12-20T03:43:59.869013"
+        },
+        {
+          "sender": "daena",
+          "content": "[THINKING]Local-first mode: cloud LLM disabled and Ollama not reachable. Start Ollama (or enable a cloud provider) to get full model responses.",
+          "timestamp": "2025-12-20T03:44:02.866430"
+        },
+        {
+          "sender": "user",
+          "content": "how are you",
+          "timestamp": "2025-12-20T03:49:50.117257"
+        },
+        {
+          "sender": "daena",
+          "content": "[THINKING]Local-first mode: cloud LLM disabled and Ollama not reachable. Start Ollama (or enable a cloud provider) to get full model responses.",
+          "timestamp": "2025-12-20T03:49:53.137494"
+        }
+      ]
+    }
+  },
+  "updated_at": "2025-12-20T03:49:53.137494"
+}

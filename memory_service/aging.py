@@ -1,0 +1,210 @@
+"""
+Aging utilities for NBMF memory tiers.
+
+The scheduler inspects records in the warm store (L2) and applies the
+configured actions (tighten compression, summarise & demote to cold
+storage) once their age crosses the thresholds defined in
+`memory_policy.aging`.
+"""
+
+from __future__ import annotations
+
+import time
+from collections import Counter
+from typing import Any, Dict, Iterable, List, Optional
+
+from .ledger import log_event
+from .router import MemoryRouter
+
+SECONDS_IN_DAY = 86400.0
+
+
+def _matched_targets(targets: Optional[Iterable[str]], cls: str) -> bool:
+    if not targets:
+        return True
+    return cls in targets
+
+
+def _ensure_list(meta: Dict[str, Any], key: str) -> List[str]:
+    value = meta.setdefault(key, [])
+    if isinstance(value, list):
+        return value
+    new_value = list(value)
+    meta[key] = new_value
+    return new_value
+
+
+def apply_aging(router: MemoryRouter, now: Optional[float] = None, *, dry_run: bool = False) -> Dict[str, int]:
+    """
+    Apply policy-driven aging actions and return a counter of applied actions.
+    Supports per-department aging policies.
+    """
+    # Access config via property if available, otherwise use internal _config
+    config = getattr(router, "config", None) or getattr(router, "_config", {})
+    policy = config.get("memory_policy", {}) if isinstance(config, dict) else {}
+    
+    # Get global aging actions
+    actions = policy.get("aging", [])
+    
+    # Get per-department aging policies
+    department_aging = policy.get("department_aging", {}) if isinstance(policy, dict) else {}
+    
+    if not isinstance(actions, list) or not actions:
+        actions = []
+    
+    if not isinstance(department_aging, dict):
+        department_aging = {}
+
+    now_ts = now or time.time()
+    stats: Counter[str] = Counter()
+
+    try:
+        for item_id, cls, record in router.l2.iter_records():
+            meta = dict(record.get("meta", {}))
+            created_at = meta.get("created_at")
+            if not isinstance(created_at, (int, float)):
+                continue
+            age_days = (now_ts - created_at) / SECONDS_IN_DAY
+            last_accessed = meta.get("last_accessed")
+            access_count = meta.get("access_count", 0)
+            days_since_access = (now_ts - last_accessed) / SECONDS_IN_DAY if last_accessed else age_days
+            
+            # Get department from metadata (if available)
+            department = meta.get("department") or meta.get("tenant") or meta.get("dept")
+            
+            # Use department-specific actions if available, otherwise use global
+            applicable_actions = actions
+            if department and department in department_aging:
+                dept_actions = department_aging[department]
+                if isinstance(dept_actions, list):
+                    applicable_actions = dept_actions
+                elif isinstance(dept_actions, dict) and "actions" in dept_actions:
+                    applicable_actions = dept_actions["actions"]
+            
+            for action_cfg in applicable_actions:
+                action = action_cfg.get("action")
+                threshold = action_cfg.get("after_days", 0)
+                access_threshold = action_cfg.get("after_days_no_access", None)  # New: access-based threshold
+                min_access_count = action_cfg.get("min_access_count", 0)  # New: minimum access count
+                targets = action_cfg.get("targets")
+                
+                # Time-based check
+                if age_days < threshold or not _matched_targets(targets, cls):
+                    continue
+                
+                # Access-based check (if specified)
+                if access_threshold is not None and days_since_access < access_threshold:
+                    continue  # Skip if accessed recently
+                if access_count >= min_access_count:
+                    continue  # Skip if accessed frequently (hot record)
+                
+                applied = _ensure_list(meta, "aging_applied")
+                if action in applied:
+                    continue
+
+                if action == "tighten_compression":
+                    if dry_run:
+                        stats[action] += 1
+                        continue
+                    compression = meta.setdefault("compression", {})
+                    settings = compression.get("settings")
+                    if not isinstance(settings, dict):
+                        settings = {}
+                    level = int(settings.get("zstd_level", 17))
+                    settings["zstd_level"] = min(level + 2, 22)
+                    settings["delta"] = True
+                    compression["settings"] = settings
+                    meta["retain_raw"] = False
+                    applied.append(action)
+                    router.l2.put_record(item_id, cls, record.get("payload"), meta)
+                    log_event(
+                        action="aging_tighten",
+                        ref=item_id,
+                        store="nbmf",
+                        route="aging",
+                        extra={"cls": cls, "zstd_level": settings["zstd_level"]},
+                    )
+                    stats[action] += 1
+
+                elif action == "summarize_pack":
+                    if dry_run:
+                        stats[action] += 1
+                        continue
+                    payload = record.get("payload", {})
+                    summary_text = str(payload)
+                    summary_payload = {
+                        "summary": summary_text[:1024],
+                        "original_type": type(payload).__name__,
+                    }
+                    cold_meta = dict(meta)
+                    cold_ref = router.l3.put_record(item_id, cls, payload, cold_meta)
+                    meta["cold_storage_ref"] = cold_ref
+                    meta["retain_raw"] = False
+                    applied.append(action)
+                    router.l2.put_record(item_id, cls, summary_payload, meta)
+                    log_event(
+                        action="aging_summarize",
+                        ref=item_id,
+                        store="nbmf",
+                        route="aging",
+                        extra={"cls": cls, "cold_ref": cold_ref},
+                    )
+                    stats[action] += 1
+    except AttributeError:
+        # L2Store doesn't have iter_records, skip aging
+        pass
+
+    return dict(stats)
+
+
+def promote_hot_records(router: MemoryRouter, min_access_count: int = 10, now: Optional[float] = None) -> Dict[str, int]:
+    """
+    Promote frequently accessed L3 records back to L2 (hot record promotion).
+    
+    Args:
+        router: Memory router instance
+        min_access_count: Minimum access count to promote
+        now: Current timestamp (for testing)
+    
+    Returns:
+        Dict with promotion statistics
+    """
+    import time
+    from collections import Counter
+    
+    now_ts = now or time.time()
+    stats: Counter[str] = Counter()
+    
+    try:
+        # Iterate L3 records (if iter_records exists)
+        if hasattr(router.l3, "iter_records"):
+            for item_id, cls, record in router.l3.iter_records():
+                meta = dict(record.get("meta", {}))
+                access_count = meta.get("access_count", 0)
+                last_accessed = meta.get("last_accessed", 0)
+                
+                # Promote if accessed frequently and recently
+                if access_count >= min_access_count and last_accessed > 0:
+                    days_since_access = (now_ts - last_accessed) / SECONDS_IN_DAY
+                    if days_since_access < 7:  # Accessed within last week
+                        # Promote to L2
+                        payload = record.get("payload")
+                        router.l2.put_record(item_id, cls, payload, meta)
+                        stats["promoted"] += 1
+                        log_event(
+                            action="aging_promote_hot",
+                            ref=item_id,
+                            store="nbmf",
+                            route="aging",
+                            extra={
+                                "cls": cls,
+                                "access_count": access_count,
+                                "days_since_access": days_since_access,
+                            },
+                        )
+    except AttributeError:
+        # L3Store doesn't have iter_records, skip promotion
+        pass
+    
+    return dict(stats)
+

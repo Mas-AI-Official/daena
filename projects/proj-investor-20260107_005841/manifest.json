@@ -1,0 +1,32 @@
+{
+  "project_id": "proj-investor-20260107_005841",
+  "output_dir": "D:\\Ideas\\Daena_old_upgrade_20251213\\projects\\proj-investor-20260107_005841",
+  "deliverables": [
+    {
+      "name": "Landing Page",
+      "path": "D:\\Ideas\\Daena_old_upgrade_20251213\\projects\\proj-investor-20260107_005841\\landing_page.html",
+      "format": "HTML"
+    },
+    {
+      "name": "Investor Email (Concise)",
+      "path": "D:\\Ideas\\Daena_old_upgrade_20251213\\projects\\proj-investor-20260107_005841\\investor_email_concise.md",
+      "format": "Markdown"
+    },
+    {
+      "name": "Investor Email (Detailed)",
+      "path": "D:\\Ideas\\Daena_old_upgrade_20251213\\projects\\proj-investor-20260107_005841\\investor_email_detailed.md",
+      "format": "Markdown"
+    },
+    {
+      "name": "Proof Section",
+      "path": "D:\\Ideas\\Daena_old_upgrade_20251213\\projects\\proj-investor-20260107_005841\\proof_capabilities.md",
+      "format": "Markdown"
+    },
+    {
+      "name": "Compliance Notes",
+      "path": "D:\\Ideas\\Daena_old_upgrade_20251213\\projects\\proj-investor-20260107_005841\\compliance_notes.md",
+      "format": "Markdown"
+    }
+  ],
+  "created_at": "2026-01-07T05:58:41.735578"
+}

@@ -20,6 +20,13 @@ REM Set demo mode environment variable
 set DEMO_MODE=1
 echo [✓] Demo mode enabled (DEMO_MODE=1)
 
+REM Set correct model environment variables (CRITICAL FIX)
+REM Backend reads DEFAULT_LOCAL_MODEL (not DEFAULT_MODEL)
+REM Backend reads OLLAMA_BASE_URL (not OLLAMA_HOST)
+set DEFAULT_LOCAL_MODEL=deepseek-r1:8b
+set OLLAMA_BASE_URL=http://127.0.0.1:11434
+echo [✓] Model set to: %DEFAULT_LOCAL_MODEL%
+
 REM Check if Ollama is running
 echo.
 echo [1/5] Checking Ollama...

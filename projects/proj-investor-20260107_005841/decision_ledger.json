@@ -1,0 +1,48 @@
+{
+  "entry_id": "ledger-proj-investor-20260107_005841",
+  "project_id": "proj-investor-20260107_005841",
+  "title": "Investor Landing Page + Outreach Pack for MAS-AI / Daena",
+  "goal": "Create landing page and investor materials for MAS-AI/Daena",
+  "started_at": "2026-01-07T00:55:00",
+  "completed_at": "2026-01-07T05:58:41.736631",
+  "departments_involved": [
+    "engineering",
+    "product",
+    "marketing",
+    "sales",
+    "legal"
+  ],
+  "agents_involved": [
+    "scout_internal",
+    "verifier",
+    "executor",
+    "council",
+    "compliance",
+    "qa"
+  ],
+  "execution_steps": [
+    "INTAKE: Parsed project request with 5 constraints and 5 deliverables",
+    "DECOMPOSE: Created 8-task graph across 4 departments",
+    "ROUTE: Assigned deepseek-r1:8b model to all tasks",
+    "ACQUIRE: Gathered 10 capabilities from backend source code",
+    "VERIFY: Approved 10 facts with Grade A (internal sources)",
+    "COUNCIL: Strategic review recommended leading with architecture",
+    "EXECUTE: Produced 5 deliverables (HTML, 2x email, proof, compliance)",
+    "QA: All deliverables verified (file exists, non-empty)",
+    "DELIVER: Published to project output folder with manifest"
+  ],
+  "evidence_used": [
+    "backend/main.py",
+    "backend/database.py",
+    "backend/services/council_service.py",
+    "backend/services/nbmf_memory.py",
+    "backend/services/verification_gate.py",
+    "backend/services/decision_ledger.py",
+    "backend/services/autonomous_executor.py",
+    "backend/services/event_bus.py"
+  ],
+  "council_recommendation": "Proceed with landing page focusing on verified capabilities only",
+  "deliverables_produced": 5,
+  "qa_passed": true,
+  "outcome": "success"
+}

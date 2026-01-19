@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Council Dashboard - Daena VP{% endblock %}
+{% block content %}
+<div style="padding: 30px; max-width: 1400px; margin: 0 auto;">
+    <h1 style="color: white; margin-bottom: 24px;">Council Dashboard</h1>
+    <div
+        style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 24px;">
+        <p style="color: #9CA3AF;">Council overview and management</p>
+        <button onclick="window.location.href='/ui/councils'"
+            style="margin-top: 16px; padding: 12px 24px; background: var(--daena-gold); color: black; border: none; border-radius: 8px; cursor: pointer;">View
+            All Councils</button>
+    </div>
+</div>
+{% endblock %}

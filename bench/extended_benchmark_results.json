@@ -1,0 +1,119 @@
+{
+  "timestamp": "2025-11-28T22:14:54.056637",
+  "compression": {
+    "lossless": {
+      "ratios": {
+        "mean": 13.295961395140584,
+        "median": 8.459708000647801,
+        "min": 0.30303030303030304,
+        "max": 35.96139927623643,
+        "std": 14.46457532045516,
+        "p95": 35.96139927623643,
+        "p99": 35.96139927623643
+      },
+      "size_savings": {
+        "ocr_mean": 10112.25,
+        "nbmf_mean": 577.25,
+        "savings_percent": 94.29157704764025
+      }
+    },
+    "semantic": {
+      "ratios": {
+        "mean": 2.530410410549346,
+        "median": 1.4041502093842202,
+        "min": 0.30864197530864196,
+        "max": 7.004699248120301,
+        "std": 2.7132303123359383,
+        "p95": 7.004699248120301,
+        "p99": 7.004699248120301
+      },
+      "size_savings": {
+        "ocr_mean": 10112.25,
+        "nbmf_mean": 2584.25,
+        "savings_percent": 74.44436203614428
+      }
+    }
+  },
+  "accuracy": {
+    "lossless": {
+      "exact_match_rate": 1.0,
+      "hash_match_rate": 1.0,
+      "total_tests": 80
+    },
+    "semantic": {
+      "mean_similarity": 0.9527511961722488,
+      "min_similarity": 0.9473684210526315,
+      "p95_similarity": 0.9545454545454546,
+      "total_tests": 80
+    }
+  },
+  "latency": {
+    "encode": {
+      "lossless": {
+        "mean": 0.15802749981048692,
+        "p50": 0.09589999899617396,
+        "p95": 0.3982999987783842,
+        "p99": 2.776499997708015,
+        "min": 0.007099999493220821,
+        "max": 2.776499997708015
+      },
+      "semantic": {
+        "mean": 0.07831875018382561,
+        "p50": 0.06190000203787349,
+        "p95": 0.2657000004546717,
+        "p99": 0.7000999976298772,
+        "min": 0.0024000000848900527,
+        "max": 0.7000999976298772
+      }
+    },
+    "decode": {
+      "lossless": {
+        "mean": 0.033193750323334825,
+        "p50": 0.019099999917671084,
+        "p95": 0.07639999967068434,
+        "p99": 0.5931999985477887,
+        "min": 0.0032000025385059416,
+        "max": 0.5931999985477887
+      },
+      "semantic": {
+        "mean": 0.0018349999209021917,
+        "p50": 0.0020999978005420417,
+        "p95": 0.005199999577598646,
+        "p99": 0.007300001016119495,
+        "min": 0.0002999986463692039,
+        "max": 0.007300001016119495
+      }
+    }
+  },
+  "token_counts": {
+    "ocr": {
+      "mean": 2528.0625,
+      "total": 10112.25
+    },
+    "nbmf_lossless": {
+      "mean": 144.3125,
+      "total": 577.25,
+      "reduction_percent": 94.29157704764025
+    },
+    "nbmf_semantic": {
+      "mean": 646.0625,
+      "total": 2584.25,
+      "reduction_percent": 74.44436203614428
+    }
+  },
+  "round_trip_tests": {},
+  "summary": {
+    "compression_ratio_lossless": 13.295961395140584,
+    "compression_ratio_semantic": 2.530410410549346,
+    "storage_savings_lossless": 94.29157704764025,
+    "storage_savings_semantic": 74.44436203614428,
+    "accuracy_lossless": 100.0,
+    "accuracy_semantic": 95.27511961722487,
+    "encode_latency_p95_lossless_ms": 0.3982999987783842,
+    "encode_latency_p95_semantic_ms": 0.2657000004546717,
+    "decode_latency_p95_lossless_ms": 0.07639999967068434,
+    "decode_latency_p95_semantic_ms": 0.005199999577598646,
+    "token_reduction_lossless_percent": 94.29157704764025,
+    "token_reduction_semantic_percent": 74.44436203614428
+  }
+}

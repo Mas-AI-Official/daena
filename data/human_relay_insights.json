@@ -1,0 +1,128 @@
+[
+  {
+    "id": "a57b6bab-9519-4210-87e2-ea574948d93b",
+    "relay_id": "5610d37a-dae8-4df5-a5fa-074c37ae61f1",
+    "provider": "chatgpt",
+    "raw_text": "REASONING:\nI need to find the capital of France.\n\nASSUMPTIONS:\nFrance is a country in Europe.\n\nFINAL ANSWER:\nThe capital of France is Paris.\n\nCONFIDENCE:\nHigh",
+    "parsed": {
+      "summary": "I need to find the capital of France.",
+      "key_points": [],
+      "reasoning": "I need to find the capital of France.",
+      "answer": "The capital of France is Paris.",
+      "confidence": "Unknown"
+    },
+    "created_at": "2025-12-14T13:44:52.249168"
+  },
+  {
+    "id": "6d5dd83d-6b6f-4883-b202-f454e8e4a433",
+    "relay_id": "9d824686-6f9e-4a7a-bcbd-6349a33f9224",
+    "provider": "chatgpt",
+    "raw_text": "FINAL ANSWER:\nThe capital of France is Paris.",
+    "parsed": {
+      "summary": "The capital of France is Paris.",
+      "key_points": [],
+      "reasoning": "",
+      "answer": "The capital of France is Paris.",
+      "confidence": "Unknown"
+    },
+    "created_at": "2025-12-14T13:44:52.270720"
+  },
+  {
+    "id": "fac4c743-8f50-4c40-aeb5-90f1ab29d21b",
+    "relay_id": "659d8f7f-bb90-4736-9569-8c65cecef9f4",
+    "provider": "chatgpt",
+    "raw_text": "FINAL ANSWER:\nTest answer.",
+    "parsed": {
+      "summary": "Test answer.",
+      "key_points": [],
+      "reasoning": "",
+      "answer": "Test answer.",
+      "confidence": "Unknown"
+    },
+    "created_at": "2025-12-14T13:45:01.779431"
+  },
+  {
+    "id": "3b4686bb-b5a7-46c2-92c6-f227f5164b5a",
+    "relay_id": "a7b23430-9d25-44de-91b9-7938abe218fc",
+    "provider": "chatgpt",
+    "raw_text": "REASONING:\nI need to find the capital of France.\n\nASSUMPTIONS:\nFrance is a country in Europe.\n\nFINAL ANSWER:\nThe capital of France is Paris.\n\nCONFIDENCE:\nHigh",
+    "parsed": {
+      "summary": "I need to find the capital of France.",
+      "key_points": [],
+      "reasoning": "I need to find the capital of France.",
+      "answer": "The capital of France is Paris.",
+      "confidence": "Unknown"
+    },
+    "created_at": "2025-12-14T14:04:35.951756"
+  },
+  {
+    "id": "04a82771-b247-44e5-bc1c-d6e8da3e3e76",
+    "relay_id": "4251c67f-da66-47e1-95dd-b82987c67be2",
+    "provider": "chatgpt",
+    "raw_text": "FINAL ANSWER:\nThe capital of France is Paris.",
+    "parsed": {
+      "summary": "The capital of France is Paris.",
+      "key_points": [],
+      "reasoning": "",
+      "answer": "The capital of France is Paris.",
+      "confidence": "Unknown"
+    },
+    "created_at": "2025-12-14T14:04:35.975303"
+  },
+  {
+    "id": "7f753dc2-9d98-4dac-9ff5-abba4e57ee5b",
+    "relay_id": "f1395072-c6ef-4b87-8467-9257c1270072",
+    "provider": "chatgpt",
+    "raw_text": "FINAL ANSWER:\nTest answer.",
+    "parsed": {
+      "summary": "Test answer.",
+      "key_points": [],
+      "reasoning": "",
+      "answer": "Test answer.",
+      "confidence": "Unknown"
+    },
+    "created_at": "2025-12-14T14:04:41.589948"
+  },
+  {
+    "id": "991f1693-f3bd-4dc0-b07a-aed53a5f5316",
+    "relay_id": "0bbfeb35-5368-42f2-ae44-ea156a7d2a13",
+    "provider": "chatgpt",
+    "raw_text": "REASONING:\nI need to find the capital of France.\n\nASSUMPTIONS:\nFrance is a country in Europe.\n\nFINAL ANSWER:\nThe capital of France is Paris.\n\nCONFIDENCE:\nHigh",
+    "parsed": {
+      "summary": "I need to find the capital of France.",
+      "key_points": [],
+      "reasoning": "I need to find the capital of France.",
+      "answer": "The capital of France is Paris.",
+      "confidence": "Unknown"
+    },
+    "created_at": "2025-12-14T14:59:17.261020"
+  },
+  {
+    "id": "82294d44-3714-4dff-8300-9bd6b7d7bae1",
+    "relay_id": "fa4528fa-54c7-4137-bac3-871da55f6fac",
+    "provider": "chatgpt",
+    "raw_text": "FINAL ANSWER:\nThe capital of France is Paris.",
+    "parsed": {
+      "summary": "The capital of France is Paris.",
+      "key_points": [],
+      "reasoning": "",
+      "answer": "The capital of France is Paris.",
+      "confidence": "Unknown"
+    },
+    "created_at": "2025-12-14T14:59:17.318260"
+  },
+  {
+    "id": "95a68b68-cd18-4eec-8bf1-8db57b3e5e8d",
+    "relay_id": "5d8205e5-6a13-491b-99ba-37f220a9ffa2",
+    "provider": "chatgpt",
+    "raw_text": "FINAL ANSWER:\nTest answer.",
+    "parsed": {
+      "summary": "Test answer.",
+      "key_points": [],
+      "reasoning": "",
+      "answer": "Test answer.",
+      "confidence": "Unknown"
+    },
+    "created_at": "2025-12-14T14:59:22.850134"
+  }
+]

@@ -1,0 +1,63 @@
+name: Weekly Automated Drill Bundle
+
+on:
+  schedule:
+    # Run every Monday at 2 AM UTC
+    - cron: '0 2 * * 1'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  weekly_drill:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libffi-dev python3-dev
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          # Try backend requirements first, fallback to root requirements
+          if [ -f "backend/requirements.txt" ]; then
+            pip install -r backend/requirements.txt || pip install -r requirements.txt || true
+          else
+            pip install -r requirements.txt || true
+          fi
+      
+      - name: Run weekly drill bundle
+        env:
+          DAENA_MEMORY_AES_KEY: ${{ secrets.DAENA_MEMORY_AES_KEY }}
+          DAENA_KMS_SIGNING_KEY: ${{ secrets.DAENA_KMS_SIGNING_KEY }}
+        run: |
+          python Tools/weekly_drill_bundle.py --output-dir artifacts/weekly_drill
+        continue-on-error: true
+      
+      - name: Upload compliance summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weekly-compliance-summary
+          path: artifacts/weekly_drill/
+          retention-days: 90
+      
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = JSON.parse(fs.readFileSync('artifacts/weekly_drill/compliance_summary.json', 'utf8'));
+            const status = summary.overall_status;
+            const icon = status === 'PASS' ? '✅' : '❌';
+            console.log(`${icon} Weekly Drill Status: ${status}`);
+

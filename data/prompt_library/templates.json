@@ -1,0 +1,56 @@
+[
+  {
+    "id": "marketing-001",
+    "domain": "marketing",
+    "name": "Marketing Campaign Prompt",
+    "version": "1.0.0",
+    "template": "Create a marketing campaign for {product} targeting {audience}. Focus on {key_message}.",
+    "variables": [
+      "product",
+      "audience",
+      "key_message"
+    ],
+    "evaluation_score": 0.0,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": "2025-12-19T13:32:31.129661",
+    "updated_at": "2025-12-19T13:32:31.129672",
+    "metadata": {}
+  },
+  {
+    "id": "code-001",
+    "domain": "code",
+    "name": "Code Review Prompt",
+    "version": "1.0.0",
+    "template": "Review this code for {language}: {code}. Check for {focus_areas}.",
+    "variables": [
+      "language",
+      "code",
+      "focus_areas"
+    ],
+    "evaluation_score": 0.0,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": "2025-12-19T13:32:31.129678",
+    "updated_at": "2025-12-19T13:32:31.129680",
+    "metadata": {}
+  },
+  {
+    "id": "sales-001",
+    "domain": "sales",
+    "name": "Sales Pitch Prompt",
+    "version": "1.0.0",
+    "template": "Create a sales pitch for {product} to {customer_type}. Emphasize {value_proposition}.",
+    "variables": [
+      "product",
+      "customer_type",
+      "value_proposition"
+    ],
+    "evaluation_score": 0.0,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": "2025-12-19T13:32:31.129683",
+    "updated_at": "2025-12-19T13:32:31.129684",
+    "metadata": {}
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "generated_at": "2025-11-17T02:10:10.612255Z",
+  "ledger": {
+    "status": "ok",
+    "merkle_root": "6ab01547d1952c7acf73ae2e511bf5fe8fe2c7e192a1cfb6b5ccaa3cd3ecf544",
+    "total_transactions": null
+  },
+  "policy": {
+    "status": "ok",
+    "abac_rules": 0,
+    "compression_profiles": 0
+  },
+  "drill": {
+    "status": "ok",
+    "backfill_status": null,
+    "ledger_verification": null
+  }
+}

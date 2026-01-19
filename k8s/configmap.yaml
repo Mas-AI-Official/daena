@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: daena-config
+data:
+  policy_config.yaml: |
+    default:
+      allow: true
+    classes:
+      legal|finance|pii:
+        allow_roles: [founder, admin]
+        deny_roles: [guest]
+  memory_config.yaml: |
+    memory_policy:
+      fidelity:
+        legal|finance|pii:
+          mode: lossless
+        chat|ops_log|research_note:
+          mode: semantic
+    flags:
+      nbmf_enabled: true
+      read_mode: nbmf
+

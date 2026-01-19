@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daena AI VP System - Full Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; }
+        .header { background: rgba(0, 0, 0, 0.9); color: white; padding: 15px; text-align: center; position: fixed; top: 0; width: 100%; z-index: 1000; }
+        .patent-badge { background: linear-gradient(45deg, #ff6b6b, #feca57); color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; display: inline-block; margin-left: 20px; animation: pulse 2s infinite; }
+        .live-badge { background: #4CAF50; color: white; padding: 5px 10px; border-radius: 15px; font-size: 0.8em; margin-left: 10px; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        .main-container { margin-top: 100px; padding: 15px; max-width: 1800px; margin-left: auto; margin-right: auto; }
+        .panel { background: rgba(255, 255, 255, 0.95); border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); }
+        .honeycomb { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
+        .department { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 15px; border-radius: 10px; text-align: center; transition: all 0.3s ease; min-height: 140px; }
+        .department.active { background: linear-gradient(135deg, #ff6b6b, #feca57); animation: glow 2s infinite; }
+        @keyframes glow { 0% { box-shadow: 0 0 20px rgba(255, 107, 107, 0.5); } 50% { box-shadow: 0 0 30px rgba(254, 202, 87, 0.8); } 100% { box-shadow: 0 0 20px rgba(255, 107, 107, 0.5); } }
+        .department h3 { font-size: 16px; margin-bottom: 10px; }
+        .agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .agent { background: rgba(255, 255, 255, 0.2); padding: 8px; border-radius: 5px; font-size: 11px; text-align: center; transition: all 0.3s ease; }
+        .agent.active { background: rgba(255, 255, 255, 0.9); color: #333; transform: scale(1.1); }
+        .pipeline-steps { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; margin: 20px 0; }
+        .step { background: #f5f5f5; padding: 15px; border-radius: 10px; text-align: center; transition: all 0.3s ease; }
+        .step.active { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; transform: scale(1.05); }
+        .step.completed { background: linear-gradient(135deg, #2196F3, #1976D2); color: white; }
+        .step-icon { font-size: 24px; margin-bottom: 10px; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
+        .kpi-card { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 20px; border-radius: 10px; text-align: center; }
+        .kpi-value { font-size: 2em; font-weight: bold; margin-bottom: 5px; }
+        .kpi-label { font-size: 0.9em; opacity: 0.8; }
+        .activity-feed { max-height: 300px; overflow-y: auto; background: #f8f9fa; border-radius: 10px; padding: 15px; }
+        .activity-item { display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; font-size: 0.9em; }
+        .activity-time { color: #666; margin-right: 15px; min-width: 70px; }
+        .activity-agent { font-weight: bold; margin-right: 15px; min-width: 180px; }
+        .activity-status { margin-right: 15px; }
+        .activity-task { flex: 1; }
+        .progress-bar { width: 100%; height: 20px; background: rgba(255, 255, 255, 0.2); border-radius: 10px; overflow: hidden; margin: 10px 0; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #4CAF50, #45a049); transition: width 0.3s ease; }
+        .strategy-output { background: #f8f9fa; border-radius: 10px; padding: 20px; margin-top: 20px; text-align: left; }
+        .strategy-section { margin-bottom: 15px; padding: 15px; background: white; border-radius: 8px; border-left: 4px solid #667eea; }
+        .strategy-section h4 { color: #667eea; margin-bottom: 10px; }
+        .result-card { background: #f0f8ff; border: 2px solid #4CAF50; border-radius: 10px; padding: 15px; margin: 10px 0; }
+        .result-card h4 { color: #2e7d32; margin-bottom: 10px; }
+        .number-highlight { font-size: 1.5em; font-weight: bold; color: #1976D2; }
+        .demo-controls { position: fixed; bottom: 20px; right: 20px; z-index: 1000; }
+        .demo-btn { background: linear-gradient(135deg, #ff6b6b, #feca57); color: white; border: none; padding: 12px 20px; border-radius: 25px; font-weight: bold; cursor: pointer; margin: 5px; transition: all 0.3s ease; font-size: 0.9em; }
+        .demo-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3); }
+        .video-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); z-index: 2000; display: none; }
+        .video-content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px; max-width: 80%; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧠 Daena AI VP System - Full Demo</h1>
+        <span class="patent-badge">PATENT PENDING</span>
+        <span class="live-badge">LIVE SYSTEM</span>
+        <p>Sunflower-Honeycomb Architecture | 48 Autonomous Agents | Real-time AI Processing</p>
+    </div>

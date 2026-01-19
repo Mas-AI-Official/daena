@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daena AI VP | Mas-AI</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'daena-gold': '#D4AF37',
+                        'daena-gold-dim': '#AA8C2C',
+                        'daena-dark': '#0A0A0A',
+                        'daena-panel': '#141414',
+                        'daena-border': '#2A2A2A',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="/static/css/app.css">
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+
+<body class="bg-daena-dark text-white overflow-hidden h-screen flex">
+
+    <!-- Sidebar -->
+    {% include 'partials/sidebar.html' %}
+
+    <!-- Main Content Wrapper -->
+    <div id="main-content" class="flex-1 flex flex-col h-full transition-all duration-300 ml-64 relative z-10">
+
+        <!-- Topbar -->
+        {% include 'partials/topbar.html' %}
+
+        <!-- Page Content -->
+        <main class="flex-1 overflow-y-auto p-6 relative">
+            {% block content %}{% endblock %}
+        </main>
+
+    </div>
+
+    <!-- Operator Panel (Right Side) -->
+    <aside id="operator-panel"
+        class="fixed right-0 top-0 h-full w-96 bg-daena-panel border-l border-daena-border z-50 transform translate-x-full transition-transform duration-300 shadow-2xl flex flex-col">
+        <!-- Operator Header -->
+        <div class="h-16 flex items-center justify-between px-6 border-b border-daena-border bg-black/20">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-sparkles text-daena-gold"></i>
+                <span class="font-bold text-lg tracking-wide">Operator</span>
+            </div>
+            <button id="close-operator" class="text-gray-400 hover:text-white transition-colors">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <!-- Operator Tabs -->
+        <div class="flex items-center px-6 border-b border-daena-border">
+            <button
+                class="operator-tab px-4 py-3 text-sm font-medium text-daena-gold border-b-2 border-daena-gold transition-colors"
+                data-tab="plan">Plan</button>
+            <button class="operator-tab px-4 py-3 text-sm font-medium text-gray-400 hover:text-white transition-colors"
+                data-tab="connectors">Connectors</button>
+            <button class="operator-tab px-4 py-3 text-sm font-medium text-gray-400 hover:text-white transition-colors"
+                data-tab="logs">Logs</button>
+        </div>
+
+        <!-- Operator Content -->
+        <div class="flex-1 overflow-y-auto p-6">
+            <!-- Plan Tab -->
+            <div id="tab-content-plan" class="space-y-4">
+                <div id="operator-chat" class="space-y-4 min-h-[200px]">
+                    <!-- Chat messages will appear here -->
+                    <div class="p-3 bg-daena-panel border border-daena-border rounded-lg mr-8">
+                        <p class="text-sm text-gray-200">Ready to assist. What is your objective?</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connectors Tab -->
+            <div id="tab-content-connectors" class="hidden space-y-3">
+                <!-- Connectors list injected by JS -->
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="tab-content-logs" class="hidden">
+                <div class="font-mono text-xs text-gray-400 space-y-1">
+                    <div>[14:00:01] System initialized</div>
+                    <div>[14:00:02] Connected to Brain</div>
+                    <div>[14:00:02] Loaded 4 connectors</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Operator Input -->
+        <div class="p-4 border-t border-daena-border bg-black/20">
+            <div class="relative">
+                <input type="text" id="operator-input" placeholder="Type a command or request..."
+                    class="w-full bg-black/50 border border-daena-border rounded-lg pl-4 pr-10 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-daena-gold/50 transition-colors">
+                <button
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-daena-gold hover:text-white transition-colors">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Toasts -->
+    {% include 'partials/toasts.html' %}
+
+    <!-- Scripts -->
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/operator.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

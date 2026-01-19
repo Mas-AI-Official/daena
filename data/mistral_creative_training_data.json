@@ -1,0 +1,27 @@
+[
+  {
+    "text": "Instruction: Create engaging content for a business blog.\nResponse: This is a comprehensive response about creative for the instruction: Create engaging content for a business blog.",
+    "type": "instruction",
+    "category": "creative"
+  },
+  {
+    "text": "Instruction: Design a marketing campaign strategy.\nResponse: This is a comprehensive response about creative for the instruction: Design a marketing campaign strategy.",
+    "type": "instruction",
+    "category": "creative"
+  },
+  {
+    "text": "Instruction: Write compelling product descriptions.\nResponse: This is a comprehensive response about creative for the instruction: Write compelling product descriptions.",
+    "type": "instruction",
+    "category": "creative"
+  },
+  {
+    "text": "Instruction: Develop creative solutions for business challenges.\nResponse: This is a comprehensive response about creative for the instruction: Develop creative solutions for business challenges.",
+    "type": "instruction",
+    "category": "creative"
+  },
+  {
+    "text": "Instruction: Generate innovative business ideas.\nResponse: This is a comprehensive response about creative for the instruction: Generate innovative business ideas.",
+    "type": "instruction",
+    "category": "creative"
+  }
+]

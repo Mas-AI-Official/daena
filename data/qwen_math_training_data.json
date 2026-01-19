@@ -1,0 +1,27 @@
+[
+  {
+    "text": "Instruction: Solve complex mathematical problems in business analytics.\nResponse: This is a comprehensive response about mathematics for the instruction: Solve complex mathematical problems in business analytics.",
+    "type": "instruction",
+    "category": "mathematics"
+  },
+  {
+    "text": "Instruction: Calculate ROI for different investment strategies.\nResponse: This is a comprehensive response about mathematics for the instruction: Calculate ROI for different investment strategies.",
+    "type": "instruction",
+    "category": "mathematics"
+  },
+  {
+    "text": "Instruction: Analyze statistical data for business insights.\nResponse: This is a comprehensive response about mathematics for the instruction: Analyze statistical data for business insights.",
+    "type": "instruction",
+    "category": "mathematics"
+  },
+  {
+    "text": "Instruction: Optimize resource allocation using mathematical models.\nResponse: This is a comprehensive response about mathematics for the instruction: Optimize resource allocation using mathematical models.",
+    "type": "instruction",
+    "category": "mathematics"
+  },
+  {
+    "text": "Instruction: Perform financial calculations and projections.\nResponse: This is a comprehensive response about mathematics for the instruction: Perform financial calculations and projections.",
+    "type": "instruction",
+    "category": "mathematics"
+  }
+]

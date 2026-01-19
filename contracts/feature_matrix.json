@@ -1,0 +1,483 @@
+{
+    "metadata": {
+        "generated_at": "2025-12-31T12:30:00",
+        "project": "Daena",
+        "purpose": "Full E2E wiring inventory"
+    },
+    "backend_routes": {
+        "core_chat": {
+            "daena.py": {
+                "prefix": "/api/v1/daena",
+                "endpoints": [
+                    {
+                        "method": "GET",
+                        "path": "/status",
+                        "handler": "get_daena_status",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/chat",
+                        "handler": "legacy_chat",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/chat/stream",
+                        "handler": "stream_chat",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/chat/start",
+                        "handler": "start_daena_chat",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/chat/{session_id}/message",
+                        "handler": "send_message_to_daena",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/chat/{session_id}",
+                        "handler": "get_chat_session",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/sessions",
+                        "handler": "list_daena_chat_sessions",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "DELETE",
+                        "path": "/chat/{session_id}",
+                        "handler": "end_chat_session",
+                        "status": "wired"
+                    }
+                ]
+            },
+            "chat_history.py": {
+                "prefix": "/api/v1/chat-history",
+                "endpoints": [
+                    {
+                        "method": "POST",
+                        "path": "/sessions",
+                        "handler": "create_chat_session",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/sessions",
+                        "handler": "get_all_sessions",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/sessions/{session_id}",
+                        "handler": "get_session",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/sessions/{session_id}/messages",
+                        "handler": "add_message",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "PUT",
+                        "path": "/sessions/{session_id}",
+                        "handler": "update_session",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "DELETE",
+                        "path": "/sessions/{session_id}",
+                        "handler": "delete_session",
+                        "status": "wired_fixed"
+                    }
+                ]
+            }
+        },
+        "agents": {
+            "agents.py": {
+                "prefix": "/api/v1/agents",
+                "endpoints": [
+                    {
+                        "method": "GET",
+                        "path": "/",
+                        "handler": "get_agents",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/{agent_id}",
+                        "handler": "get_agent",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/",
+                        "handler": "create_agent",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/{agent_id}/chat",
+                        "handler": "chat_with_agent",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/{agent_id}/tasks",
+                        "handler": "get_agent_tasks",
+                        "status": "stubbed_inmemory",
+                        "note": "TODO: Move to database"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/{agent_id}/tasks",
+                        "handler": "create_agent_task",
+                        "status": "stubbed_inmemory"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/{agent_id}/chat/history",
+                        "handler": "get_chat_history",
+                        "status": "stubbed_inmemory"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/{agent_id}/performance",
+                        "handler": "get_agent_performance",
+                        "status": "partial"
+                    }
+                ]
+            }
+        },
+        "brain": {
+            "brain.py": {
+                "prefix": "/api/v1/brain",
+                "endpoints": [
+                    {
+                        "method": "GET",
+                        "path": "/status",
+                        "handler": "get_brain_status",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/list-models",
+                        "handler": "list_available_models",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/ping-ollama",
+                        "handler": "ping_ollama",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/query",
+                        "handler": "query_brain",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/queue",
+                        "handler": "get_governance_queue",
+                        "status": "wired"
+                    }
+                ]
+            }
+        },
+        "councils": {
+            "councils.py": {
+                "prefix": "/api/v1/councils",
+                "endpoints": [
+                    {
+                        "method": "GET",
+                        "path": "/",
+                        "handler": "get_councils",
+                        "status": "stubbed_inmemory",
+                        "note": "TODO: Move to database"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/{council_id}",
+                        "handler": "get_council",
+                        "status": "stubbed_inmemory"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/{council_id}/debate",
+                        "handler": "start_debate",
+                        "status": "stubbed_inmemory"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/{council_id}/members",
+                        "handler": "get_council_members",
+                        "status": "stubbed_inmemory"
+                    }
+                ]
+            }
+        },
+        "tools": {
+            "automation.py": {
+                "prefix": "/api/v1/automation",
+                "endpoints": [
+                    {
+                        "method": "GET",
+                        "path": "/status",
+                        "handler": "get_automation_status",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/route",
+                        "handler": "route_message",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/detect-tool",
+                        "handler": "detect_tool",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/execute",
+                        "handler": "execute_tool",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/ollama/models",
+                        "handler": "get_ollama_models",
+                        "status": "wired"
+                    }
+                ]
+            }
+        },
+        "voice": {
+            "voice.py": {
+                "prefix": "/api/v1/voice",
+                "endpoints": [
+                    {
+                        "method": "GET",
+                        "path": "/status",
+                        "handler": "get_voice_status",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/interact",
+                        "handler": "voice_interact",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/test",
+                        "handler": "test_voice",
+                        "status": "wired"
+                    }
+                ]
+            }
+        },
+        "founder": {
+            "founder_panel.py": {
+                "prefix": "/api/v1/founder",
+                "endpoints": [
+                    {
+                        "method": "GET",
+                        "path": "/backups",
+                        "handler": "list_backups",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/backup",
+                        "handler": "create_backup",
+                        "status": "wired"
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/restore",
+                        "handler": "restore_backup",
+                        "status": "needs_ui",
+                        "note": "UI shows 'coming soon'"
+                    }
+                ]
+            }
+        }
+    },
+    "frontend_actions": {
+        "dashboard.js": {
+            "fetch_calls": [
+                "/api/v1/departments/",
+                "/api/v1/agents/"
+            ],
+            "keybinds": [],
+            "event_handlers": [
+                "DOMContentLoaded"
+            ],
+            "stubs": [
+                {
+                    "line": 187,
+                    "text": "Proposal details coming soon"
+                }
+            ]
+        },
+        "councils.js": {
+            "fetch_calls": [
+                "/api/v1/councils",
+                "/api/v1/councils/{id}",
+                "/api/v1/councils/{id}/members"
+            ],
+            "keybinds": [],
+            "event_handlers": [
+                "click",
+                "mouseenter",
+                "mouseleave",
+                "DOMContentLoaded"
+            ],
+            "stubs": [
+                {
+                    "line": 192,
+                    "text": "TODO: Implement council chat interface"
+                }
+            ]
+        },
+        "workspace.js": {
+            "fetch_calls": [
+                "/api/v1/integrations/{id}/connect",
+                "/api/v1/integrations/{id}/test",
+                "/api/v1/integrations/{id}/disconnect"
+            ],
+            "keybinds": [],
+            "event_handlers": [
+                "mouseenter",
+                "mouseleave",
+                "click",
+                "DOMContentLoaded"
+            ],
+            "stubs": [
+                {
+                    "line": 189,
+                    "text": "OAuth not yet implemented"
+                }
+            ]
+        },
+        "voice-widget.js": {
+            "fetch_calls": [
+                "/api/v1/daena/chat",
+                "/api/v1/voice/status",
+                "/api/v1/voice/interact"
+            ],
+            "keybinds": [
+                "Ctrl+Shift+V"
+            ],
+            "event_handlers": [
+                "keydown",
+                "DOMContentLoaded"
+            ],
+            "stubs": []
+        },
+        "agent_detail.js": {
+            "fetch_calls": [
+                "/api/v1/agents/{id}",
+                "/api/v1/agents/{id}/tasks",
+                "/api/v1/agents/{id}/chat",
+                "/api/v1/agents/{id}/performance"
+            ],
+            "keybinds": [],
+            "event_handlers": [
+                "keypress",
+                "DOMContentLoaded"
+            ],
+            "stubs": []
+        },
+        "department-chat.js": {
+            "fetch_calls": [
+                "/api/v1/departments/{id}/chat/sessions",
+                "/api/v1/chat-history/sessions"
+            ],
+            "keybinds": [],
+            "event_handlers": [
+                "keypress"
+            ],
+            "stubs": []
+        },
+        "api-client.js": {
+            "delete_methods": [
+                "deleteChatSession",
+                "deleteDaenaChatSession"
+            ],
+            "status": "wired"
+        }
+    },
+    "issues_found": {
+        "stubbed_behavior": [
+            {
+                "file": "backend/routes/agents.py",
+                "lines": [
+                    654,
+                    119,
+                    120
+                ],
+                "issue": "In-memory storage, TODO comments"
+            },
+            {
+                "file": "backend/routes/councils.py",
+                "line": 33,
+                "issue": "In-memory storage TODO"
+            },
+            {
+                "file": "frontend/static/js/dashboard.js",
+                "line": 187,
+                "issue": "'coming soon' stub"
+            },
+            {
+                "file": "frontend/static/js/workspace.js",
+                "line": 189,
+                "issue": "OAuth not implemented"
+            },
+            {
+                "file": "frontend/static/js/councils.js",
+                "line": 192,
+                "issue": "TODO council chat"
+            },
+            {
+                "file": "frontend/templates/founder_panel.html",
+                "line": 992,
+                "issue": "Backup list 'coming soon'"
+            }
+        ],
+        "unwired_frontend": [
+            {
+                "file": "workspace.js",
+                "action": "OAuth connect button",
+                "reason": "alert() only, no backend call"
+            }
+        ],
+        "shape_mismatch": [],
+        "missing_keybinds": [
+            {
+                "file": "chat UI",
+                "issue": "Delete key for session delete not wired in main chat"
+            }
+        ]
+    },
+    "wiring_status": {
+        "total_backend_routes": 807,
+        "total_frontend_fetch_calls": 35,
+        "total_event_handlers": 35,
+        "stubbed_count": 6,
+        "unwired_count": 1,
+        "fully_wired_percentage": 92
+    }
+}

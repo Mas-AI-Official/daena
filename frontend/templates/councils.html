@@ -1,0 +1,726 @@
+{% extends "base.html" %}
+
+{% block title %}Expert Councils - Daena VP{% endblock %}
+
+{% block head %}
+<style>
+    .councils-container {
+        padding: 24px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    .page-header {
+        margin-bottom: 24px;
+    }
+
+    .page-header h1 {
+        font-size: 26px;
+        font-weight: 700;
+        color: white;
+        margin-bottom: 6px;
+    }
+
+    .page-header p {
+        color: #9CA3AF;
+        font-size: 14px;
+    }
+
+    .councils-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+        gap: 20px;
+    }
+
+    .council-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 14px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+
+    .council-card:hover {
+        border-color: rgba(212, 175, 55, 0.3);
+    }
+
+    .council-header {
+        padding: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .council-info {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+
+    .council-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        color: white;
+    }
+
+    .council-name {
+        font-size: 16px;
+        font-weight: 700;
+        color: white;
+    }
+
+    .council-desc {
+        font-size: 11px;
+        color: #9CA3AF;
+        margin-top: 2px;
+    }
+
+    /* Toggle Switch */
+    .toggle-switch {
+        position: relative;
+        width: 46px;
+        height: 24px;
+    }
+
+    .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(255, 255, 255, 0.1);
+        transition: .4s;
+        border-radius: 24px;
+    }
+
+    .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+    }
+
+    input:checked+.toggle-slider {
+        background-color: var(--daena-gold);
+    }
+
+    input:checked+.toggle-slider:before {
+        transform: translateX(22px);
+    }
+
+    /* Experts Grid */
+    .experts-grid {
+        padding: 16px;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+    }
+
+    .expert-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        padding: 12px 8px;
+        text-align: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+
+    .expert-card:hover {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: var(--daena-gold);
+    }
+
+    .expert-card.inactive {
+        opacity: 0.5;
+    }
+
+    .expert-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        margin: 0 auto 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        color: white;
+    }
+
+    .expert-name {
+        font-size: 11px;
+        font-weight: 600;
+        color: white;
+        margin-bottom: 3px;
+    }
+
+    .expert-role {
+        font-size: 9px;
+        color: #9CA3AF;
+        margin-bottom: 3px;
+    }
+
+    .expert-inspiration {
+        font-size: 9px;
+        color: var(--daena-gold);
+        font-style: italic;
+    }
+
+    .expert-status {
+        margin-top: 6px;
+        font-size: 9px;
+        padding: 2px 6px;
+        border-radius: 8px;
+        display: inline-block;
+    }
+
+    .expert-status.active {
+        background: rgba(50, 205, 50, 0.2);
+        color: #32CD32;
+    }
+
+    .expert-status.inactive {
+        background: rgba(255, 100, 100, 0.2);
+        color: #FF6464;
+    }
+
+    /* Add Council Button */
+    .add-council-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 20px;
+        border: 2px dashed rgba(255, 255, 255, 0.2);
+        border-radius: 14px;
+        color: #9CA3AF;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 14px;
+        min-height: 200px;
+    }
+
+    .add-council-btn:hover {
+        border-color: var(--daena-gold);
+        color: var(--daena-gold);
+    }
+
+    /* Modal */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal-overlay.active {
+        display: flex;
+    }
+
+    .modal-content {
+        width: 90%;
+        max-width: 500px;
+        background: #0f1729;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
+    .modal-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: white;
+    }
+
+    .modal-close {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: white;
+    }
+
+    .modal-body {
+        padding: 20px;
+    }
+
+    .form-group {
+        margin-bottom: 16px;
+    }
+
+    .form-label {
+        font-size: 12px;
+        color: #9CA3AF;
+        margin-bottom: 6px;
+        display: block;
+    }
+
+    .form-input,
+    .form-select {
+        width: 100%;
+        padding: 12px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: white;
+        font-size: 14px;
+    }
+
+    .form-input:focus,
+    .form-select:focus {
+        outline: none;
+        border-color: var(--daena-gold);
+    }
+
+    .form-actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .form-btn {
+        flex: 1;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        border: none;
+        font-size: 14px;
+    }
+
+    .form-btn.primary {
+        background: var(--daena-gold);
+        color: black;
+    }
+
+    .form-btn.secondary {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+    }
+
+    .form-btn.danger {
+        background: rgba(255, 100, 100, 0.2);
+        color: #FF6464;
+    }
+
+    @media (max-width: 900px) {
+        .experts-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .councils-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="councils-container">
+    <div class="page-header">
+        <h1>Expert Councils</h1>
+        <p>World-class advisors trained from the greatest minds - guiding every decision</p>
+    </div>
+
+    <div class="councils-grid" id="councils-grid">
+        <!-- Councils loaded via JS -->
+    </div>
+</div>
+
+<!-- Edit Expert Modal -->
+<div class="modal-overlay" id="expert-modal" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <div class="modal-title" id="modal-title">Edit Expert</div>
+            <div class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></div>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="edit-council-id">
+            <input type="hidden" id="edit-expert-id">
+
+            <div class="form-group">
+                <label class="form-label">Expert Name</label>
+                <input type="text" class="form-input" id="expert-name" placeholder="e.g. The Oracle">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Role</label>
+                <input type="text" class="form-input" id="expert-role" placeholder="e.g. Value Investor">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Inspiration (Trained Model)</label>
+                <input type="text" class="form-input" id="expert-inspiration" placeholder="e.g. Warren Buffett">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select class="form-select" id="expert-status">
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="training">Training</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Training Data / Instructions</label>
+                <textarea class="form-input" id="expert-training" rows="3"
+                    placeholder="Enter training instructions or personality traits..."></textarea>
+            </div>
+
+            <div class="form-actions">
+                <button class="form-btn secondary" onclick="closeModal()">Cancel</button>
+                <button class="form-btn primary" onclick="saveExpert()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Council Modal -->
+<div class="modal-overlay" id="council-modal" onclick="closeCouncilModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <div class="modal-title">Add New Council</div>
+            <div class="modal-close" onclick="closeCouncilModal()"><i class="fas fa-times"></i></div>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">Council Name</label>
+                <input type="text" class="form-input" id="council-name" placeholder="e.g. Legal Council">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input type="text" class="form-input" id="council-desc"
+                    placeholder="e.g. Legal expertise and compliance">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Icon (FontAwesome class)</label>
+                <input type="text" class="form-input" id="council-icon" placeholder="e.g. fa-balance-scale">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Color</label>
+                <input type="color" class="form-input" id="council-color" value="#9370DB"
+                    style="height: 44px; padding: 4px;">
+            </div>
+
+            <div class="form-actions">
+                <button class="form-btn secondary" onclick="closeCouncilModal()">Cancel</button>
+                <button class="form-btn primary" onclick="createCouncil()">Create Council</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const councilColors = {
+        'finance': '#00CED1',
+        'tech': '#4169E1',
+        'strategy': '#9370DB',
+        'psychology': '#E91E7F',
+        'security': '#FF6347',
+        'legal': '#32CD32',
+        'marketing': '#FF8C00'
+    };
+
+    let councilsData = [];
+
+    async function loadCouncils() {
+        try {
+            // Use /api/v1/council/list which has the full expert data from INITIAL_COUNCILS
+            const response = await fetch('/api/v1/council/list');
+            councilsData = await response.json();
+            renderCouncils(councilsData);
+        } catch (e) {
+            console.error('Failed to load councils', e);
+            councilsData = [];
+            renderCouncils(councilsData);
+            // Show error message to user
+            const grid = document.getElementById('councils-grid');
+            if (grid && councilsData.length === 0) {
+                grid.innerHTML = '<div style="text-align: center; padding: 40px; color: #9CA3AF;">No councils found. Check backend connection.</div>';
+            }
+        }
+    }
+
+    // Removed getMockCouncils() - now using API
+    // If API fails, show empty state instead of mock data
+
+    function renderCouncils(councils) {
+        const grid = document.getElementById('councils-grid');
+
+        let html = councils.map(council => {
+            const color = councilColors[council.id] || '#888';
+            return `
+            <div class="council-card" data-council-id="${council.id}">
+                <div class="council-header">
+                    <div class="council-info">
+                        <div class="council-icon" style="background: ${color}">
+                            <i class="fas ${council.icon}"></i>
+                        </div>
+                        <div>
+                            <div class="council-name">${council.name}</div>
+                            <div class="council-desc">${council.description}</div>
+                        </div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" ${council.status === 'active' ? 'checked' : ''} 
+                               onchange="toggleCouncil('${council.id}', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div style="padding: 0 16px 16px 16px;">
+                    <button onclick="window.location.href='/ui/council-debate?council=${council.id}'" 
+                            style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: white; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s;"
+                            onmouseover="this.style.background='rgba(255, 255, 255, 0.15)'"
+                            onmouseout="this.style.background='rgba(255, 255, 255, 0.1)'">
+                        <i class="fas fa-comments mr-2"></i> Start Debate
+                    </button>
+                </div>
+                <div class="experts-grid">
+                    ${council.experts.map(expert => `
+                        <div class="expert-card ${expert.status}" onclick="editExpert('${council.id}', '${expert.id}')">
+                            <div class="expert-avatar" style="background: ${color}">
+                                <i class="fas ${expert.avatar}"></i>
+                            </div>
+                            <div class="expert-name">${expert.name}</div>
+                            <div class="expert-role">${expert.role}</div>
+                            <div class="expert-inspiration">"${expert.inspiration}"</div>
+                            <div class="expert-status ${expert.status}">${expert.status}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+        }).join('');
+
+        // Add council button
+        html += `
+        <div class="add-council-btn" onclick="showAddCouncilModal()">
+            <i class="fas fa-plus-circle fa-2x"></i>
+            <span>Add New Council</span>
+        </div>
+    `;
+
+        grid.innerHTML = html;
+    }
+
+    function editExpert(councilId, expertId) {
+        const council = councilsData.find(c => c.id === councilId);
+        if (!council) return;
+
+        const expert = council.experts.find(e => e.id === expertId);
+        if (!expert) return;
+
+        document.getElementById('edit-council-id').value = councilId;
+        document.getElementById('edit-expert-id').value = expertId;
+        document.getElementById('expert-name').value = expert.name;
+        document.getElementById('expert-role').value = expert.role;
+        document.getElementById('expert-inspiration').value = expert.inspiration;
+        document.getElementById('expert-status').value = expert.status;
+        document.getElementById('expert-training').value = expert.training || '';
+        document.getElementById('modal-title').textContent = `Edit: ${expert.name}`;
+
+        document.getElementById('expert-modal').classList.add('active');
+    }
+
+    async function saveExpert() {
+        const councilId = document.getElementById('edit-council-id').value;
+        const expertId = document.getElementById('edit-expert-id').value;
+        const name = document.getElementById('expert-name').value;
+        const role = document.getElementById('expert-role').value;
+        const inspiration = document.getElementById('expert-inspiration').value;
+        const status = document.getElementById('expert-status').value;
+        const training = document.getElementById('expert-training').value;
+
+        if (!name || !role) {
+            if (window.showToast) {
+                window.showToast('Name and role are required', 'error');
+            }
+            return;
+        }
+
+        // Save to backend API
+        try {
+            const response = await window.api.request(`/council/${councilId}/expert/${expertId}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    name,
+                    role,
+                    inspiration: inspiration || null,
+                    training: training || null
+                })
+            });
+
+            if (response && response.success) {
+                // Update local data
+                const council = councilsData.find(c => c.id === councilId);
+                if (council) {
+                    const expert = council.experts.find(e => e.id === expertId);
+                    if (expert) {
+                        expert.name = name;
+                        expert.role = role;
+                        expert.inspiration = inspiration;
+                        expert.status = status;
+                        expert.training = training;
+                    }
+                }
+
+                // Update enabled status if changed
+                const enabled = status === 'active';
+                if (enabled !== (expert && expert.status === 'active')) {
+                    await window.api.request(`/council/${councilId}/expert/${expertId}/toggle`, {
+                        method: 'POST',
+                        body: JSON.stringify({ enabled })
+                    });
+                }
+
+                renderCouncils(councilsData);
+                closeModal();
+                if (window.showToast) {
+                    window.showToast('Expert updated successfully!', 'success');
+                }
+            } else {
+                throw new Error('Update failed');
+            }
+        } catch (error) {
+            console.error('Error saving expert:', error);
+            if (window.showToast) {
+                window.showToast(`Failed to save expert: ${error.message}`, 'error');
+            }
+        }
+    }
+
+    function closeModal(e) {
+        if (!e || e.target.id === 'expert-modal') {
+            document.getElementById('expert-modal').classList.remove('active');
+        }
+    }
+
+    function showAddCouncilModal() {
+        document.getElementById('council-name').value = '';
+        document.getElementById('council-desc').value = '';
+        document.getElementById('council-icon').value = 'fa-star';
+        document.getElementById('council-color').value = '#9370DB';
+        document.getElementById('council-modal').classList.add('active');
+    }
+
+    function closeCouncilModal(e) {
+        if (!e || e.target.id === 'council-modal') {
+            document.getElementById('council-modal').classList.remove('active');
+        }
+    }
+
+    function createCouncil() {
+        const name = document.getElementById('council-name').value;
+        const desc = document.getElementById('council-desc').value;
+        const icon = document.getElementById('council-icon').value;
+        const color = document.getElementById('council-color').value;
+
+        if (!name) {
+            if (window.showToast) {
+                window.showToast('Please enter a council name', 'error');
+            }
+            return;
+        }
+
+        const newId = name.toLowerCase().replace(/\s+/g, '_');
+
+        // Add to local data
+        councilsData.push({
+            id: newId,
+            name: name,
+            description: desc,
+            icon: icon,
+            status: 'active',
+            experts: [
+                { id: `${newId}_1`, name: 'Expert 1', role: 'Role 1', inspiration: 'Inspiration 1', avatar: 'fa-user', status: 'active' },
+                { id: `${newId}_2`, name: 'Expert 2', role: 'Role 2', inspiration: 'Inspiration 2', avatar: 'fa-user', status: 'active' },
+                { id: `${newId}_3`, name: 'Expert 3', role: 'Role 3', inspiration: 'Inspiration 3', avatar: 'fa-user', status: 'active' },
+                { id: `${newId}_4`, name: 'Expert 4', role: 'Role 4', inspiration: 'Inspiration 4', avatar: 'fa-user', status: 'active' },
+                { id: `${newId}_5`, name: 'Expert 5', role: 'Role 5', inspiration: 'Inspiration 5', avatar: 'fa-user', status: 'active' }
+            ]
+        });
+
+        councilColors[newId] = color;
+
+        renderCouncils(councilsData);
+        closeCouncilModal();
+    }
+
+    async function toggleCouncil(councilId, enabled) {
+        const council = councilsData.find(c => c.id === councilId);
+        if (council) {
+            council.status = enabled ? 'active' : 'inactive';
+        }
+
+        try {
+            await fetch(`/api/v1/council/${councilId}/toggle?enabled=${enabled}`, { method: 'POST' });
+        } catch (e) {
+            console.error('Failed to toggle council', e);
+        }
+    }
+
+    // Load on page load
+    document.addEventListener('DOMContentLoaded', loadCouncils);
+
+    // WebSocket for real-time updates
+    if (window.WebSocketClient) {
+        // Listen for council.created events
+        window.WebSocketClient.on('council.created', (data) => {
+            console.log('Council created event:', data);
+            if (window.showToast) {
+                window.showToast(`New council: ${data.payload?.council?.name || 'Unknown'}`, 'info');
+            }
+            loadCouncils(); // Refresh the councils list
+        });
+
+        // Listen for council.member.updated events  
+        window.WebSocketClient.on('council.member.updated', (data) => {
+            console.log('Council member updated event:', data);
+            if (window.showToast) {
+                window.showToast(`Expert updated: ${data.payload?.expert?.name || 'Unknown'}`, 'success');
+            }
+            loadCouncils(); // Refresh the councils list
+        });
+    }
+
+</script>
+{% endblock %}

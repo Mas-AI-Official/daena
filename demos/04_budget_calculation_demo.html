@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daena AI VP - Budget Calculation Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; }
+        .header { background: rgba(0, 0, 0, 0.9); color: white; padding: 15px; text-align: center; position: fixed; top: 0; width: 100%; z-index: 1000; }
+        .patent-badge { background: linear-gradient(45deg, #ff6b6b, #feca57); color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; display: inline-block; margin-left: 20px; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        .main-container { margin-top: 100px; padding: 15px; max-width: 1800px; margin-left: auto; margin-right: auto; }
+        .panel { background: rgba(255, 255, 255, 0.95); border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); }
+        .budget-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin: 20px 0; }
+        .budget-card { background: white; padding: 20px; border-radius: 10px; border-left: 4px solid #4CAF50; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); }
+        .budget-category { font-weight: bold; color: #333; margin-bottom: 10px; }
+        .budget-amount { font-size: 1.5em; font-weight: bold; color: #1976D2; margin-bottom: 5px; }
+        .budget-percentage { color: #666; font-size: 0.9em; }
+        .calculation-steps { background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; }
+        .step { display: flex; align-items: center; padding: 10px; margin: 5px 0; background: white; border-radius: 5px; }
+        .step-number { background: #4CAF50; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 15px; font-weight: bold; }
+        .demo-controls { position: fixed; bottom: 20px; right: 20px; z-index: 1000; }
+        .demo-btn { background: linear-gradient(135deg, #ff6b6b, #feca57); color: white; border: none; padding: 12px 20px; border-radius: 25px; font-weight: bold; cursor: pointer; margin: 5px; transition: all 0.3s ease; font-size: 0.9em; }
+        .demo-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3); }
+        .offline-badge { background: #ff9800; color: white; padding: 5px 10px; border-radius: 15px; font-size: 0.8em; margin-left: 10px; }
+        .progress-bar { width: 100%; height: 20px; background: rgba(255, 255, 255, 0.2); border-radius: 10px; overflow: hidden; margin: 10px 0; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #4CAF50, #45a049); transition: width 0.3s ease; }
+        .calculating { color: #ff9800; font-style: italic; }
+        .generated { color: #4CAF50; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧠 Daena AI VP - Budget Calculation Demo</h1>
+        <span class="patent-badge">PATENT PENDING</span>
+        <span class="offline-badge">OFFLINE DEMO - NO API COSTS</span>
+        <p>Real Budget Calculations | Market-Specific Allocations | Dynamic Projections</p>
+    </div>
+
+    <div class="main-container">
+        <!-- Demo Overview -->
+        <div class="panel">
+            <h2>🎯 BUDGET CALCULATION DEMO</h2>
+            <p><strong>Purpose:</strong> Demonstrate real budget allocation calculations for different market scenarios</p>
+            <p><strong>Key Features:</strong> Dynamic calculations, market-specific allocations, real-time updates</p>
+            <p><strong>Duration:</strong> 1-2 minutes</p>
+        </div>
+
+        <!-- Scenario Selection -->
+        <div class="panel">
+            <h2>📊 Budget Calculation Scenarios</h2>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px 0;">
+                <button class="demo-btn" onclick="calculateBudget('healthcare', 2000000)">🏥 Healthcare AI ($2M)</button>
+                <button class="demo-btn" onclick="calculateBudget('fintech', 1500000)">💰 Fintech Startup ($1.5M)</button>
+                <button class="demo-btn" onclick="calculateBudget('general', 1000000)">🚀 General Business ($1M)</button>
+            </div>
+        </div>
+
+        <!-- Calculation Steps -->
+        <div class="panel">
+            <h2>🧮 Calculation Process</h2>
+            <div class="calculation-steps" id="calculationSteps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div>Analyzing market requirements and constraints...</div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div>Calculating optimal allocation percentages...</div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div>Applying market-specific adjustments...</div>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div>Generating final budget allocation...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Budget Results -->
+        <div class="panel">
+            <h2>💰 Budget Allocation Results</h2>
+            <div class="budget-grid" id="budgetResults">
+                <div class="budget-card">
+                    <div class="budget-category">R&D</div>
+                    <div class="budget-amount calculating">Calculating...</div>
+                    <div class="budget-percentage">0%</div>
+                </div>
+                <div class="budget-card">
+                    <div class="budget-category">Marketing</div>
+                    <div class="budget-amount calculating">Calculating...</div>
+                    <div class="budget-percentage">0%</div>
+                </div>
+                <div class="budget-card">
+                    <div class="budget-category">Operations</div>
+                    <div class="budget-amount calculating">Calculating...</div>
+                    <div class="budget-percentage">0%</div>
+                </div>
+                <div class="budget-card">
+                    <div class="budget-category">Legal/Compliance</div>
+                    <div class="budget-amount calculating">Calculating...</div>
+                    <div class="budget-percentage">0%</div>
+                </div>
+                <div class="budget-card">
+                    <div class="budget-category">Sales</div>
+                    <div class="budget-amount calculating">Calculating...</div>
+                    <div class="budget-percentage">0%</div>
+                </div>
+                <div class="budget-card">
+                    <div class="budget-category">Contingency</div>
+                    <div class="budget-amount calculating">Calculating...</div>
+                    <div class="budget-percentage">0%</div>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <h3>Total Budget: <span id="totalBudget" class="calculating">$0</span></h3>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                </div>
+                <p id="progressText">Ready to calculate budget allocation</p>
+            </div>
+        </div>
+
+        <!-- Market Analysis -->
+        <div class="panel">
+            <h2>📈 Market Analysis</h2>
+            <div id="marketAnalysis">
+                <p style="text-align: center; color: #666;">Select a scenario to see market analysis</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Demo Controls -->
+    <div class="demo-controls">
+        <button class="demo-btn" onclick="startDemo()">🚀 Start Demo</button>
+        <button class="demo-btn" onclick="pauseDemo()">⏸️ Pause</button>
+        <button class="demo-btn" onclick="resetDemo()">🔄 Reset</button>
+        <button class="demo-btn" onclick="showVideoScript()">📹 Video Script</button>
+    </div>
+
+    <!-- Video Script Overlay -->
+    <div id="videoOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); z-index: 2000; display: none;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px; max-width: 80%;">
+            <h2>📹 Video Recording Script - Budget Calculation Demo</h2>
+            <div style="max-height: 400px; overflow-y: auto; text-align: left; line-height: 1.6;">
+                <p><strong>Duration:</strong> 1-2 minutes</p>
+                <p><strong>Purpose:</strong> Show real budget allocation calculations</p>
+                <br>
+                <p><strong>Opening (20 seconds):</strong></p>
+                <p>"Our AI agents can calculate optimal budget allocations for any business scenario. Let me show you how they analyze market requirements and generate real financial projections."</p>
+                <br>
+                <p><strong>Calculation Process (1 minute):</strong></p>
+                <p>"Watch as the agents analyze market requirements, calculate optimal allocation percentages, apply market-specific adjustments, and generate the final budget allocation.</p>
+                <p>Notice how different market types require different allocation strategies - healthcare needs more R&D, fintech requires more marketing, and general business has balanced allocations."</p>
+                <br>
+                <p><strong>Results (30 seconds):</strong></p>
+                <p>"The agents have generated a complete budget breakdown with real dollar amounts and percentages. This replaces hours of manual financial planning with instant, data-driven allocations."</p>
+            </div>
+            <button class="demo-btn" onclick="closeVideoScript()" style="margin-top: 15px;">Close Script</button>
+        </div>
+    </div>
+
+    <script>
+        let demoActive = false;
+        let currentScenario = null;
+        let calculationProgress = 0;
+        let demoInterval;
+        
+        function startDemo() {
+            if (demoActive) return;
+            demoActive = true;
+            
+            console.log('🚀 Starting Budget Calculation Demo...');
+            
+            // Start with healthcare scenario
+            calculateBudget('healthcare', 2000000);
+        }
+        
+        function pauseDemo() {
+            demoActive = false;
+            if (demoInterval) clearInterval(demoInterval);
+            console.log('⏸️ Demo paused');
+        }
+        
+        function resetDemo() {
+            demoActive = false;
+            if (demoInterval) clearInterval(demoInterval);
+            currentScenario = null;
+            calculationProgress = 0;
+            
+            // Reset all budget cards
+            document.querySelectorAll('.budget-amount').forEach(el => {
+                el.textContent = 'Calculating...';
+                el.className = 'budget-amount calculating';
+            });
+            
+            document.querySelectorAll('.budget-percentage').forEach(el => {
+                el.textContent = '0%';
+            });
+            
+            document.getElementById('totalBudget').textContent = '$0';
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('progressText').textContent = 'Ready to calculate budget allocation';
+            document.getElementById('marketAnalysis').innerHTML = '<p style="text-align: center; color: #666;">Select a scenario to see market analysis</p>';
+        }
+        
+        function showVideoScript() {
+            document.getElementById('videoOverlay').style.display = 'block';
+        }
+        
+        function closeVideoScript() {
+            document.getElementById('videoOverlay').style.display = 'none';
+        }
+        
+        function calculateBudget(marketType, totalBudget) {
+            currentScenario = { marketType, totalBudget };
+            calculationProgress = 0;
+            
+            console.log(`💰 Calculating budget for ${marketType} with $${totalBudget.toLocaleString()}`);
+            
+            // Update total budget
+            document.getElementById('totalBudget').textContent = `$${totalBudget.toLocaleString()}`;
+            
+            // Start calculation animation
+            demoInterval = setInterval(() => {
+                if (calculationProgress < 100) {
+                    calculationProgress += 10;
+                    updateProgress();
+                    
+                    if (calculationProgress === 100) {
+                        generateBudgetResults(marketType, totalBudget);
+                        clearInterval(demoInterval);
+                    }
+                }
+            }, 200);
+        }
+        
+        function updateProgress() {
+            document.getElementById('progressFill').style.width = calculationProgress + '%';
+            document.getElementById('progressText').textContent = `Calculating... ${calculationProgress}%`;
+        }
+        
+        function generateBudgetResults(marketType, totalBudget) {
+            // Define base allocations for different market types
+            let baseAllocations;
+            if (marketType === 'healthcare') {
+                baseAllocations = {
+                    'R&D': 0.35,
+                    'Marketing': 0.20,
+                    'Operations': 0.15,
+                    'Legal/Compliance': 0.10,
+                    'Sales': 0.10,
+                    'Contingency': 0.05
+                };
+            } else if (marketType === 'fintech') {
+                baseAllocations = {
+                    'R&D': 0.30,
+                    'Marketing': 0.25,
+                    'Operations': 0.20,
+                    'Legal/Compliance': 0.15,
+                    'Sales': 0.08,
+                    'Contingency': 0.02
+                };
+            } else { // general
+                baseAllocations = {
+                    'R&D': 0.25,
+                    'Marketing': 0.30,
+                    'Operations': 0.20,
+                    'Legal/Compliance': 0.08,
+                    'Sales': 0.15,
+                    'Contingency': 0.02
+                };
+            }
+            
+            // Add some randomness to simulate agent analysis
+            const allocations = {};
+            for (const [category, basePercent] of Object.entries(baseAllocations)) {
+                const variation = (Math.random() - 0.5) * 0.1; // ±5% variation
+                const finalPercent = Math.max(0.01, Math.min(0.50, basePercent + variation));
+                allocations[category] = {
+                    percentage: finalPercent,
+                    amount: Math.round(totalBudget * finalPercent)
+                };
+            }
+            
+            // Ensure total adds up to 100%
+            const totalPercent = Object.values(allocations).reduce((sum, alloc) => sum + alloc.percentage, 0);
+            const adjustment = (1.0 - totalPercent) / Object.keys(allocations).length;
+            
+            for (const category in allocations) {
+                allocations[category].percentage += adjustment;
+                allocations[category].amount = Math.round(totalBudget * allocations[category].percentage);
+            }
+            
+            // Update budget cards
+            Object.entries(allocations).forEach(([category, data]) => {
+                const amountEl = document.querySelector(`[data-category="${category}"] .budget-amount`) || 
+                                Array.from(document.querySelectorAll('.budget-amount')).find(el => 
+                                    el.closest('.budget-card').querySelector('.budget-category').textContent === category);
+                const percentageEl = document.querySelector(`[data-category="${category}"] .budget-percentage`) || 
+                                   Array.from(document.querySelectorAll('.budget-percentage')).find(el => 
+                                       el.closest('.budget-card').querySelector('.budget-category').textContent === category);
+                
+                if (amountEl) {
+                    amountEl.textContent = `$${data.amount.toLocaleString()}`;
+                    amountEl.className = 'budget-amount generated';
+                }
+                
+                if (percentageEl) {
+                    percentageEl.textContent = `${(data.percentage * 100).toFixed(1)}%`;
+                }
+            });
+            
+            // Update progress
+            document.getElementById('progressFill').style.width = '100%';
+            document.getElementById('progressText').textContent = 'Budget calculation complete!';
+            
+            // Update market analysis
+            updateMarketAnalysis(marketType, allocations);
+            
+            console.log('✅ Budget calculation complete:', allocations);
+        }
+        
+        function updateMarketAnalysis(marketType, allocations) {
+            const analysis = {
+                healthcare: {
+                    title: 'Healthcare AI Market Analysis',
+                    insights: [
+                        'High R&D allocation (35%) due to regulatory requirements',
+                        'Significant marketing investment for healthcare provider outreach',
+                        'Strong legal/compliance focus for FDA approval process',
+                        'Conservative contingency planning for regulatory delays'
+                    ]
+                },
+                fintech: {
+                    title: 'Fintech Startup Market Analysis',
+                    insights: [
+                        'Balanced R&D and marketing allocation for rapid growth',
+                        'High legal/compliance investment for financial regulations',
+                        'Lower sales allocation due to digital-first approach',
+                        'Minimal contingency due to agile development'
+                    ]
+                },
+                general: {
+                    title: 'General Business Market Analysis',
+                    insights: [
+                        'Balanced allocation across all categories',
+                        'Higher marketing investment for brand building',
+                        'Moderate R&D for product development',
+                        'Standard contingency planning'
+                    ]
+                }
+            };
+            
+            const marketData = analysis[marketType];
+            document.getElementById('marketAnalysis').innerHTML = `
+                <h3>${marketData.title}</h3>
+                <ul style="margin-top: 15px;">
+                    ${marketData.insights.map(insight => `<li style="margin: 8px 0;">${insight}</li>`).join('')}
+                </ul>
+            `;
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🧠 Budget Calculation Demo loaded');
+            console.log('📋 Patent Pending Technology active');
+            console.log('🌻 Sunflower-Honeycomb Architecture initialized');
+            console.log('💰 No API costs - Offline simulation');
+        });
+    </script>
+</body>
+</html>

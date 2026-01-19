@@ -1,0 +1,1 @@
+{"payload": {"text": "Low confidence content"}, "meta": {"class": "test", "fidelity": "semantic", "abstract": true, "confidence": 0.5, "source_uri": null, "lossless_pointer": "file:///path/to/source.pdf", "created_at": 1765603851.2840235, "compression": {"mode": "semantic", "profile": "default", "settings": {}}, "tenant_id": "default"}, "cls": "test"}

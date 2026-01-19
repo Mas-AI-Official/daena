@@ -1,0 +1,1 @@
+{"payload": {"document": "content"}, "meta": {"compression": {"mode": "lossless", "profile": "default", "settings": {"quantization": "fp32", "delta": false, "zstd_level": 21}, "usage_alert_bytes": 10737418240}, "tenant_id": "default"}, "cls": "legal"}

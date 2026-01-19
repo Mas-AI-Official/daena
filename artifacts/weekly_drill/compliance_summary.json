@@ -1,0 +1,38 @@
+{
+  "timestamp": "2025-11-16T21:32:47.295981+00:00",
+  "overall_status": "FAIL",
+  "checks": {
+    "chaos_test": {
+      "status": "skipped",
+      "passed": false
+    },
+    "ledger_verification": {
+      "status": "failed",
+      "passed": false,
+      "entry_count": 0,
+      "merkle_root": "86bf81404de56e9645fd1681a3550d4c26b6f926f43938de5ae9b8d1abb43fca"
+    },
+    "key_manifests": {
+      "status": "failed",
+      "passed": false,
+      "compliance": "unknown"
+    },
+    "governance_artifacts": {
+      "status": "success",
+      "passed": true
+    }
+  },
+  "key_metrics": {
+    "ledger_entries": 0,
+    "cas_hit_rate": 0.0,
+    "near_dup_rate": 0.0,
+    "divergence_rate": 0.0,
+    "nbmf_reads": 0,
+    "nbmf_writes": 0
+  },
+  "recommendations": [
+    "CAS hit rate (0.00%) below target (60%)",
+    "Key manifest chain needs attention",
+    "Some compliance checks failed - review details"
+  ]
+}

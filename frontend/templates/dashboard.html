@@ -1,0 +1,637 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Daena AI VP{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/hexagonal-dashboard.css">
+<style>
+    /* Additional Dashboard Styles */
+    .dashboard-grid {
+        width: 100%;
+        max-width: 1100px;
+        margin-top: 15px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+    }
+
+    .dashboard-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        padding: 12px 14px;
+    }
+
+    .card-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .card-header i {
+        font-size: 14px;
+        color: var(--daena-gold);
+    }
+
+    .card-header h4 {
+        font-size: 11px;
+        color: #9CA3AF;
+        text-transform: uppercase;
+        margin: 0;
+    }
+
+    /* Activity Feed */
+    .activity-list {
+        max-height: 130px;
+        overflow-y: auto;
+    }
+
+    .activity-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 6px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .activity-item:last-child {
+        border-bottom: none;
+    }
+
+    .activity-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        flex-shrink: 0;
+    }
+
+    .activity-content {
+        flex: 1;
+    }
+
+    .activity-text {
+        font-size: 11px;
+        color: #E5E7EB;
+        line-height: 1.3;
+    }
+
+    .activity-time {
+        font-size: 9px;
+        color: #6B7280;
+        margin-top: 2px;
+    }
+
+    /* Task Progress */
+    .task-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .task-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .task-bar {
+        flex: 1;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+
+    .task-progress {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.3s ease;
+    }
+
+    .task-label {
+        font-size: 10px;
+        color: #9CA3AF;
+        min-width: 70px;
+    }
+
+    .task-percent {
+        font-size: 10px;
+        font-weight: 600;
+        min-width: 35px;
+        text-align: right;
+    }
+
+    /* Agent Status */
+    .agent-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+    }
+
+    .agent-mini {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 4px;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .agent-mini:hover {
+        background: rgba(255, 255, 255, 0.08);
+        transform: translateY(-2px);
+    }
+
+    .agent-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-bottom: 4px;
+    }
+
+    .agent-dot.active {
+        background: #22C55E;
+        box-shadow: 0 0 6px #22C55E;
+    }
+
+    .agent-dot.busy {
+        background: #F59E0B;
+        box-shadow: 0 0 6px #F59E0B;
+    }
+
+    .agent-dot.idle {
+        background: #6B7280;
+    }
+
+    .agent-name {
+        font-size: 8px;
+        color: #9CA3AF;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 50px;
+    }
+
+    /* Quick Actions */
+    .quick-actions {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+    }
+
+    .quick-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        color: #E5E7EB;
+        font-size: 10px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .quick-btn:hover {
+        background: rgba(212, 175, 55, 0.1);
+        border-color: var(--daena-gold);
+        color: var(--daena-gold);
+    }
+
+    .quick-btn i {
+        font-size: 11px;
+    }
+
+    @media (max-width: 900px) {
+        .dashboard-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 600px) {
+        .dashboard-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hex-container">
+    <div class="hex-grid">
+        <!-- Central Daena (NO SPINNING) -->
+        <div class="center-daena" onclick="openDaenaChat()">
+            <div class="daena-ring">
+                <div class="daena-inner">
+                    <i class="fas fa-brain daena-brain-icon"></i>
+                    <div class="daena-title">Daena VP</div>
+                </div>
+            </div>
+            <div class="daena-stats">
+                <div class="agents" id="total-agents">48 Agents</div>
+                <div class="efficiency" id="efficiency">94.20% Efficiency</div>
+            </div>
+        </div>
+
+        <!-- Customer (Top - Green) -->
+        <div class="hex-item hex-pos-customer" onclick="openDepartment('customer')">
+            <i class="hex-icon fas fa-bullseye"></i>
+            <div class="hex-title">Customer</div>
+            <div class="hex-agents">6 agents</div>
+            <div class="status-dot"></div>
+        </div>
+
+        <!-- Legal (Top-Right - Purple) -->
+        <div class="hex-item hex-pos-legal" onclick="openDepartment('legal')">
+            <i class="hex-icon fas fa-balance-scale"></i>
+            <div class="hex-title">Legal</div>
+            <div class="hex-agents">6 agents</div>
+            <div class="status-dot"></div>
+        </div>
+
+        <!-- Engineering (Right - Blue) -->
+        <div class="hex-item hex-pos-engineering" onclick="openDepartment('engineering')">
+            <i class="hex-icon fas fa-cog"></i>
+            <div class="hex-title">Engineering</div>
+            <div class="hex-agents">6 agents</div>
+            <div class="status-dot"></div>
+        </div>
+
+        <!-- Product (Bottom-Right - Magenta) -->
+        <div class="hex-item hex-pos-product" onclick="openDepartment('product')">
+            <i class="hex-icon fas fa-rocket"></i>
+            <div class="hex-title">Product</div>
+            <div class="hex-agents">6 agents</div>
+            <div class="status-dot"></div>
+        </div>
+
+        <!-- Sales (Bottom - Green) -->
+        <div class="hex-item hex-pos-sales" onclick="openDepartment('sales')">
+            <i class="hex-icon fas fa-dollar-sign"></i>
+            <div class="hex-title">Sales</div>
+            <div class="hex-agents">6 agents</div>
+            <div class="status-dot"></div>
+        </div>
+
+        <!-- Marketing (Bottom-Left - Orange) -->
+        <div class="hex-item hex-pos-marketing" onclick="openDepartment('marketing')">
+            <i class="hex-icon fas fa-chart-bar"></i>
+            <div class="hex-title">Marketing</div>
+            <div class="hex-agents">6 agents</div>
+            <div class="status-dot"></div>
+        </div>
+
+        <!-- Finance (Left - Cyan) -->
+        <div class="hex-item hex-pos-finance" onclick="openDepartment('finance')">
+            <i class="hex-icon fas fa-chart-line"></i>
+            <div class="hex-title">Finance</div>
+            <div class="hex-agents">6 agents</div>
+            <div class="status-dot"></div>
+        </div>
+
+        <!-- HR (Top-Left - Pink) -->
+        <div class="hex-item hex-pos-hr" onclick="openDepartment('hr')">
+            <i class="hex-icon fas fa-users"></i>
+            <div class="hex-title">HR</div>
+            <div class="hex-agents">6 agents</div>
+            <div class="status-dot"></div>
+        </div>
+    </div>
+
+    <!-- Company Info Panels -->
+    <div class="company-info">
+        <div class="info-card">
+            <h4>Operations</h4>
+            <div class="info-row">
+                <div class="info-item">
+                    <div class="info-value" id="active-projects" style="color: #32CD32;">12</div>
+                    <div class="info-label">Active Projects</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-value" id="tasks-today" style="color: #FFD700;">247</div>
+                    <div class="info-label">Tasks Today</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-card">
+            <h4>System Health</h4>
+            <div class="info-row">
+                <div class="info-item">
+                    <div class="info-value" id="uptime" style="color: #00CED1;">99.2%</div>
+                    <div class="info-label">Uptime</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-value" id="avg-response" style="color: #32CD32;">1.2s</div>
+                    <div class="info-label">Avg Response</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-card">
+            <h4>Brain Status</h4>
+            <div class="info-row">
+                <div class="info-item">
+                    <div class="info-value" style="color: #FF69B4;">Ollama</div>
+                    <div class="info-label">LLM Provider</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-value" id="brain-status-card" style="color: #7ED321;">Active</div>
+                    <div class="info-label">Status</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Extended Dashboard Grid -->
+    <div class="dashboard-grid">
+        <!-- Recent Activity -->
+        <div class="dashboard-card">
+            <div class="card-header">
+                <i class="fas fa-stream"></i>
+                <h4>Recent Activity</h4>
+            </div>
+            <div class="activity-list" id="activity-list">
+                <!-- Activity items loaded dynamically from EventLog API -->
+                <div class="activity-item">
+                    <div class="activity-icon" style="background: rgba(107, 114, 128, 0.2); color: #6B7280;">
+                        <i class="fas fa-circle-notch fa-spin"></i>
+                    </div>
+                    <div class="activity-content">
+                        <div class="activity-text">Loading recent activity...</div>
+                        <div class="activity-time">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Task Progress -->
+        <div class="dashboard-card">
+            <div class="card-header">
+                <i class="fas fa-tasks"></i>
+                <h4>Task Progress</h4>
+            </div>
+            <div class="task-list" id="task-progress-list">
+                <!-- Task progress loaded dynamically from Tasks API -->
+                <div class="task-item">
+                    <span class="task-label">Loading...</span>
+                    <div class="task-bar">
+                        <div class="task-progress" style="width: 0%;"></div>
+                    </div>
+                    <span class="task-percent">--</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="dashboard-card">
+            <div class="card-header">
+                <i class="fas fa-bolt"></i>
+                <h4>Quick Actions</h4>
+            </div>
+            <div class="quick-actions">
+                <button class="quick-btn" onclick="openDaenaChat()">
+                    <i class="fas fa-comments"></i> Ask Daena
+                </button>
+                <button class="quick-btn" onclick="window.location.href='/ui/agents'">
+                    <i class="fas fa-robot"></i> View Agents
+                </button>
+                <button class="quick-btn" onclick="window.location.href='/ui/projects'">
+                    <i class="fas fa-project-diagram"></i> Projects
+                </button>
+                <button class="quick-btn" onclick="window.location.href='/ui/analytics'">
+                    <i class="fas fa-chart-pie"></i> Analytics
+                </button>
+                <button class="quick-btn" onclick="window.location.href='/ui/brain-settings'">
+                    <i class="fas fa-brain"></i> Brain Settings
+                </button>
+                <button class="quick-btn" onclick="window.location.href='/ui/founder-panel'">
+                    <i class="fas fa-user-shield"></i> Founder Panel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function openDepartment(dept) {
+        window.location.href = `/ui/office/${dept}`;
+    }
+
+    function openDaenaChat() {
+        window.location.href = '/ui/daena-office';
+    }
+
+    // Animate hexagons on load
+    document.addEventListener('DOMContentLoaded', () => {
+        const hexItems = document.querySelectorAll('.hex-item');
+        hexItems.forEach((hex, i) => {
+            hex.style.opacity = '0';
+            setTimeout(() => {
+                hex.style.transition = 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+                hex.style.opacity = '1';
+            }, 100 + i * 80);
+        });
+
+        // Update brain status in card
+        updateDashboardData();
+    });
+
+    // Fetch and update dashboard data
+    async function updateDashboardData() {
+        try {
+            // Update brain status card
+            const brainStatus = document.getElementById('brain-status-card');
+            const topIndicator = document.getElementById('brain-status-indicator');
+
+            if (topIndicator) {
+                const isOnline = topIndicator.textContent.includes('ONLINE');
+                if (brainStatus) {
+                    if (isOnline) {
+                        brainStatus.textContent = 'Active';
+                        brainStatus.style.color = '#7ED321';
+                    } else {
+                        brainStatus.textContent = 'Offline';
+                        brainStatus.style.color = '#EF4444';
+                    }
+                }
+            }
+        } catch (e) {
+            console.log('Dashboard data update:', e);
+        }
+    }
+
+    // Load recent activity from EventLog API
+    async function loadRecentActivity() {
+        try {
+            const response = await fetch('/api/v1/events/recent?limit=10');
+            if (response.ok) {
+                const data = await response.json();
+                const activityList = document.getElementById('activity-list');
+                if (!activityList) return;
+
+                if (data.events && data.events.length > 0) {
+                    activityList.innerHTML = data.events.map(event => {
+                        const iconMap = {
+                            'task.completed': { icon: 'fa-check', color: '#22C55E' },
+                            'agent.created': { icon: 'fa-robot', color: '#3B82F6' },
+                            'chat.message': { icon: 'fa-comments', color: '#F59E0B' },
+                            'task.progress': { icon: 'fa-tasks', color: '#8B5CF6' }
+                        };
+                        const iconInfo = iconMap[event.event_type] || { icon: 'fa-circle', color: '#6B7280' };
+                        const timeAgo = getTimeAgo(new Date(event.created_at));
+
+                        return `
+                            <div class="activity-item">
+                                <div class="activity-icon" style="background: rgba(${hexToRgb(iconInfo.color)}, 0.2); color: ${iconInfo.color};">
+                                    <i class="fas ${iconInfo.icon}"></i>
+                                    </div>
+                                <div class="activity-content">
+                                    <div class="activity-text">${formatEventText(event)}</div>
+                                    <div class="activity-time">${timeAgo}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    activityList.innerHTML = '<div class="activity-item"><div class="activity-text" style="color: #6B7280;">No recent activity</div></div>';
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load recent activity:', e);
+        }
+    }
+
+    // Load task progress by department
+    async function loadTaskProgress() {
+        try {
+            const response = await fetch('/api/v1/tasks/stats/overview');
+            if (response.ok) {
+                const data = await response.json();
+                const taskList = document.getElementById('task-progress-list');
+                if (!taskList || !data.department_distribution) return;
+
+                const deptColors = {
+                    'engineering': { color: '#4169E1', gradient: 'linear-gradient(90deg, #4169E1, #60A5FA)' },
+                    'product': { color: '#9370DB', gradient: 'linear-gradient(90deg, #9370DB, #A78BFA)' },
+                    'sales': { color: '#22C55E', gradient: 'linear-gradient(90deg, #22C55E, #4ADE80)' },
+                    'marketing': { color: '#FF6B6B', gradient: 'linear-gradient(90deg, #FF6B6B, #F87171)' },
+                    'finance': { color: '#00CED1', gradient: 'linear-gradient(90deg, #00CED1, #22D3EE)' },
+                    'hr': { color: '#E91E7F', gradient: 'linear-gradient(90deg, #E91E7F, #F472B6)' },
+                    'legal': { color: '#8B5CF6', gradient: 'linear-gradient(90deg, #8B5CF6, #A78BFA)' },
+                    'customer': { color: '#32CD32', gradient: 'linear-gradient(90deg, #32CD32, #4ADE80)' }
+                };
+
+                const deptProgress = {};
+                for (const dept in data.department_distribution) {
+                    try {
+                        const deptTasks = await fetch(`/api/v1/tasks/department/${dept}`).then(r => r.ok ? r.json() : []);
+                        if (deptTasks.length > 0) {
+                            const completed = deptTasks.filter(t => t.status === 'completed').length;
+                            const total = deptTasks.length;
+                            deptProgress[dept] = Math.round((completed / total) * 100);
+                        }
+                    } catch (e) {
+                        deptProgress[dept] = 0;
+                    }
+                }
+
+                taskList.innerHTML = Object.entries(deptProgress).slice(0, 5).map(([dept, progress]) => {
+                    const colorInfo = deptColors[dept.toLowerCase()] || { color: '#6B7280', gradient: 'linear-gradient(90deg, #6B7280, #9CA3AF)' };
+                    return `
+                        <div class="task-item">
+                            <span class="task-label">${dept.charAt(0).toUpperCase() + dept.slice(1)}</span>
+                            <div class="task-bar">
+                                <div class="task-progress" style="width: ${progress}%; background: ${colorInfo.gradient};"></div>
+                                        </div>
+                            <span class="task-percent" style="color: ${colorInfo.color};">${progress}%</span>
+                                </div>
+                            `;
+                }).join('') || '<div class="task-item"><span class="task-label">No tasks</span></div>';
+            }
+        } catch (e) {
+            console.error('Failed to load task progress:', e);
+        }
+    }
+
+    // Load operations summary
+    async function loadOperationsSummary() {
+        try {
+            const taskStats = await fetch('/api/v1/tasks/stats/overview').then(r => r.ok ? r.json() : {});
+            if (taskStats.total_tasks !== undefined) {
+                const activeProjectsEl = document.getElementById('active-projects');
+                const tasksTodayEl = document.getElementById('tasks-today');
+                if (activeProjectsEl) {
+                    activeProjectsEl.textContent = Object.keys(taskStats.department_distribution || {}).length || 0;
+                }
+                if (tasksTodayEl) {
+                    tasksTodayEl.textContent = taskStats.total_tasks || 0;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load operations summary:', e);
+        }
+    }
+
+    // Helper functions
+    function formatEventText(event) {
+        const payload = event.payload_json || {};
+        switch (event.event_type) {
+            case 'task.completed':
+                return `Task "${payload.title || event.entity_id}" completed`;
+            case 'task.progress':
+                return `Task "${payload.title || event.entity_id}" progress: ${Math.round(payload.progress || 0)}%`;
+            case 'agent.created':
+                return `Agent "${payload.name || event.entity_id}" created`;
+            case 'chat.message':
+                return `New message in chat`;
+            default:
+                return `${event.event_type} - ${event.entity_id}`;
+        }
+    }
+
+    function getTimeAgo(date) {
+        const seconds = Math.floor((new Date() - date) / 1000);
+        if (seconds < 60) return `${seconds}s ago`;
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes}m ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        return `${days}d ago`;
+    }
+
+    function hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '107, 114, 128';
+    }
+
+    // Refresh dashboard data periodically
+    setInterval(() => {
+        updateDashboardData();
+        loadRecentActivity();
+        loadTaskProgress();
+        loadOperationsSummary();
+    }, 10000);
+
+    // Initial load
+    updateDashboardData();
+    loadRecentActivity();
+    loadTaskProgress();
+    loadOperationsSummary();
+</script>
+{% endblock %}

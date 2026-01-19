@@ -1,0 +1,1326 @@
+{% extends "base.html" %}
+
+{% block title %}Founder Panel - Daena VP{% endblock %}
+
+{% block head %}
+<style>
+    .founder-container {
+        padding: 30px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    .page-header {
+        margin-bottom: 30px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .page-header h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: white;
+        margin-bottom: 8px;
+    }
+
+    .page-header p {
+        color: #9CA3AF;
+    }
+
+    .founder-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: linear-gradient(135deg, rgba(212, 175, 55, 0.2), rgba(212, 175, 55, 0.05));
+        border: 1px solid var(--daena-gold);
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        color: var(--daena-gold);
+        margin-top: 12px;
+    }
+
+    .control-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+    }
+
+    .control-section {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 24px;
+    }
+
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .section-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+    }
+
+    .section-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: white;
+    }
+
+    /* Control Items */
+    .control-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .control-item:last-child {
+        border-bottom: none;
+    }
+
+    .control-label {
+        font-size: 14px;
+        color: #E5E7EB;
+    }
+
+    .control-desc {
+        font-size: 11px;
+        color: #9CA3AF;
+        margin-top: 2px;
+    }
+
+    /* Toggle */
+    .toggle {
+        position: relative;
+        width: 44px;
+        height: 24px;
+    }
+
+    .toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 24px;
+        transition: 0.3s;
+    }
+
+    .toggle-slider::before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background: white;
+        border-radius: 50%;
+        transition: 0.3s;
+    }
+
+    input:checked+.toggle-slider {
+        background: var(--daena-gold);
+    }
+
+    input:checked+.toggle-slider::before {
+        transform: translateX(20px);
+    }
+
+    /* Emergency Section */
+    .emergency-section {
+        grid-column: 1 / -1;
+        background: rgba(255, 100, 100, 0.05);
+        border-color: rgba(255, 100, 100, 0.2);
+    }
+
+    .emergency-section .section-icon {
+        background: rgba(255, 100, 100, 0.2);
+        color: #FF6464;
+    }
+
+    .emergency-btn {
+        width: 100%;
+        padding: 14px;
+        border-radius: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-bottom: 10px;
+    }
+
+    .emergency-btn.stop {
+        background: rgba(255, 100, 100, 0.2);
+        border: 1px solid #FF6464;
+        color: #FF6464;
+    }
+
+    .emergency-btn.stop:hover {
+        background: #FF6464;
+        color: white;
+    }
+
+    .emergency-btn.maintenance {
+        background: rgba(255, 165, 0, 0.2);
+        border: 1px solid #FFA500;
+        color: #FFA500;
+    }
+
+    .emergency-btn.maintenance:hover {
+        background: #FFA500;
+        color: white;
+    }
+
+    /* Add Buttons */
+    .add-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+        padding: 12px;
+        margin-top: 16px;
+        border: 1px dashed rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
+        color: #9CA3AF;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 13px;
+    }
+
+    .add-btn:hover {
+        border-color: var(--daena-gold);
+        color: var(--daena-gold);
+    }
+
+    /* Hidden Departments */
+    .hidden-dept {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 8px;
+        margin-bottom: 8px;
+    }
+
+    .hidden-dept-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+    }
+
+    .hidden-dept-name {
+        flex: 1;
+        font-size: 13px;
+        color: white;
+    }
+
+    .reveal-btn {
+        padding: 4px 10px;
+        font-size: 11px;
+        border-radius: 6px;
+        background: var(--daena-gold);
+        color: black;
+        cursor: pointer;
+        border: none;
+    }
+
+    @media (max-width: 1100px) {
+        .control-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 700px) {
+        .control-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="founder-container">
+    <div class="page-header">
+        <h1>Founder Control Panel</h1>
+        <p>Full system control and governance - Visible only to Founder/CEO</p>
+        <div class="founder-badge">
+            <i class="fas fa-crown"></i>
+            FOUNDER ACCESS
+        </div>
+    </div>
+
+    <div class="control-grid">
+        <!-- Departments -->
+        <div class="control-section">
+            <div class="section-header">
+                <div class="section-icon" style="background: rgba(65, 105, 225, 0.2); color: #4169E1;">
+                    <i class="fas fa-building"></i>
+                </div>
+                <div class="section-title">Departments</div>
+            </div>
+
+            <div id="departments-list">
+                <div class="control-item" style="justify-content: center;">
+                    <div class="control-desc">Loading departments...</div>
+                </div>
+            </div>
+
+            <button class="add-btn" onclick="addDepartment()">
+                <i class="fas fa-plus"></i> Add Department
+            </button>
+        </div>
+
+        <!-- Councils -->
+        <div class="control-section">
+            <div class="section-header">
+                <div class="section-icon" style="background: rgba(147, 112, 219, 0.2); color: #9370DB;">
+                    <i class="fas fa-users-cog"></i>
+                </div>
+                <div class="section-title">Expert Councils</div>
+            </div>
+
+            <div id="councils-list">
+                <div class="control-item" style="justify-content: center;">
+                    <div class="control-desc">Loading councils...</div>
+                </div>
+            </div>
+
+            <button class="add-btn" onclick="addCouncil()">
+                <i class="fas fa-plus"></i> Add Council
+            </button>
+        </div>
+
+        <!-- Hidden Departments -->
+        <div class="control-section">
+            <div class="section-header">
+                <div class="section-icon" style="background: rgba(255, 165, 0, 0.2); color: #FFA500;">
+                    <i class="fas fa-eye-slash"></i>
+                </div>
+                <div class="section-title">Hidden Departments</div>
+            </div>
+
+            <div id="hidden-departments-list">
+                <!-- Hidden departments will be loaded here -->
+                <div class="loading-text" style="color: #9CA3AF; padding: 20px; text-align: center;">Loading hidden
+                    departments...</div>
+            </div>
+
+            <button class="add-btn" onclick="addHiddenDept()">
+                <i class="fas fa-plus"></i> Create Hidden Dept
+            </button>
+        </div>
+
+        <!-- Approve Learning Section -->
+        <div class="control-section" style="grid-column: span 2;">
+            <div class="section-header">
+                <div class="section-icon" style="background: rgba(50, 205, 50, 0.2); color: #32CD32;">
+                    <i class="fas fa-graduation-cap"></i>
+                </div>
+                <div class="section-title">Approve Learning</div>
+                <div style="margin-left: auto; font-size: 12px; color: #9CA3AF;" id="pending-learning-count">Loading...
+                </div>
+            </div>
+
+            <div id="pending-learning-list" style="max-height: 300px; overflow-y: auto;">
+                <div class="control-item" style="justify-content: center;">
+                    <div class="control-desc">Loading pending learning items...</div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="add-btn" style="flex: 1; margin: 0;" onclick="approveAllLearning()">
+                    <i class="fas fa-check-double"></i> Approve All
+                </button>
+                <button class="add-btn" style="flex: 1; margin: 0;" onclick="rejectAllLearning()">
+                    <i class="fas fa-times"></i> Reject All
+                </button>
+            </div>
+        </div>
+
+        <!-- Voice Settings Section -->
+        <div class="control-section">
+            <div class="section-header">
+                <div class="section-icon" style="background: rgba(0, 191, 255, 0.2); color: #00BFFF;">
+                    <i class="fas fa-microphone"></i>
+                </div>
+                <div class="section-title">Voice Settings</div>
+                <div style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
+                    <div id="voice-status-indicator"
+                        style="width: 8px; height: 8px; border-radius: 50%; background: #9CA3AF;"></div>
+                    <span id="voice-status-text" style="font-size: 11px; color: #9CA3AF;">Checking...</span>
+                </div>
+            </div>
+
+            <div class="control-item">
+                <div>
+                    <div class="control-label">Volume</div>
+                    <div class="control-desc">Voice output volume</div>
+                </div>
+                <input type="range" id="voice-volume" min="0" max="100" value="80"
+                    onchange="updateVoiceSetting('volume', this.value)"
+                    style="width: 120px; accent-color: var(--daena-gold);">
+            </div>
+
+            <div class="control-item">
+                <div>
+                    <div class="control-label">Speed</div>
+                    <div class="control-desc">Speech rate</div>
+                </div>
+                <input type="range" id="voice-rate" min="80" max="200" value="120"
+                    onchange="updateVoiceSetting('rate', this.value)"
+                    style="width: 120px; accent-color: var(--daena-gold);">
+            </div>
+
+            <div class="control-item">
+                <div>
+                    <div class="control-label">Pitch</div>
+                    <div class="control-desc">Voice pitch</div>
+                </div>
+                <input type="range" id="voice-pitch" min="50" max="150" value="100"
+                    onchange="updateVoiceSetting('pitch', this.value)"
+                    style="width: 120px; accent-color: var(--daena-gold);">
+            </div>
+
+            <button class="add-btn" onclick="testVoice()">
+                <i class="fas fa-play"></i> Test Voice
+            </button>
+        </div>
+
+        <!-- God Mode Section -->
+        <div class="control-section" style="grid-column: span 2;">
+            <div class="section-header">
+                <div class="section-icon" style="background: rgba(212, 175, 55, 0.2); color: var(--daena-gold);">
+                    <i class="fas fa-brain"></i>
+                </div>
+                <div class="section-title">God Mode System</div>
+                <div style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
+                    <div id="god-mode-status-indicator"
+                        style="width: 8px; height: 8px; border-radius: 50%; background: #9CA3AF;"></div>
+                    <span id="god-mode-status-text" style="font-size: 11px; color: #9CA3AF;">Checking...</span>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+                <!-- NBMF Memory Tiers -->
+                <div
+                    style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 16px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <i class="fas fa-database" style="color: #4169E1;"></i>
+                        <span style="font-size: 13px; font-weight: 600; color: white;">NBMF Memory</span>
+                    </div>
+                    <div id="nbmf-tiers-summary" style="font-size: 11px; color: #9CA3AF;">
+                        Loading...
+                    </div>
+                    <button class="add-btn" style="margin-top: 12px; padding: 8px;" onclick="viewMemoryTiers()">
+                        <i class="fas fa-eye"></i> View Tiers
+                    </button>
+                </div>
+
+                <!-- Change Control -->
+                <div
+                    style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 16px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <i class="fas fa-shield-alt" style="color: #32CD32;"></i>
+                        <span style="font-size: 13px; font-weight: 600; color: white;">Change Control</span>
+                    </div>
+                    <div id="pending-changes-count"
+                        style="font-size: 20px; font-weight: 700; color: var(--daena-gold); margin: 12px 0;">
+                        -
+                    </div>
+                    <div style="font-size: 11px; color: #9CA3AF;">Pending Approvals</div>
+                    <button class="add-btn" style="margin-top: 12px; padding: 8px;" onclick="viewChangeControl()">
+                        <i class="fas fa-clipboard-check"></i> Review Queue
+                    </button>
+                </div>
+
+                <!-- Router Agent -->
+                <div
+                    style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 16px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <i class="fas fa-route" style="color: #9370DB;"></i>
+                        <span style="font-size: 13px; font-weight: 600; color: white;">Router Agent</span>
+                    </div>
+                    <div id="router-models-count"
+                        style="font-size: 20px; font-weight: 700; color: var(--daena-gold); margin: 12px 0;">
+                        -
+                    </div>
+                    <div style="font-size: 11px; color: #9CA3AF;">Models Available</div>
+                    <button class="add-btn" style="margin-top: 12px; padding: 8px;" onclick="viewRouterStatus()">
+                        <i class="fas fa-info-circle"></i> View Models
+                    </button>
+                </div>
+            </div>
+
+            <div
+                style="margin-top: 16px; padding: 12px; background: rgba(212, 175, 55, 0.1); border: 1px solid rgba(212, 175, 55, 0.3); border-radius: 8px;">
+                <p style="margin: 0; color: var(--daena-gold); font-size: 12px;">
+                    <i class="fas fa-crown"></i> <strong>God Mode:</strong> NBMF Memory Tiers (T0-T4), Router Agent,
+                    Verifier Agent, DCP Profiles, and Change Control with Founder Override active.
+                </p>
+            </div>
+        </div>
+
+        <!-- Emergency Controls -->
+        <div class="control-section emergency-section">
+            <div class="section-header">
+                <div class="section-icon">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="section-title">Emergency Controls</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+                <div>
+                    <button class="emergency-btn stop" onclick="emergencyStop()">
+                        <i class="fas fa-stop-circle"></i> EMERGENCY STOP
+                    </button>
+                    <p style="font-size: 11px; color: #9CA3AF; text-align: center;">Stop all agents immediately</p>
+                </div>
+                <div>
+                    <button class="emergency-btn maintenance" onclick="maintenanceMode()">
+                        <i class="fas fa-tools"></i> MAINTENANCE MODE
+                    </button>
+                    <p style="font-size: 11px; color: #9CA3AF; text-align: center;">Pause non-critical ops</p>
+                </div>
+                <div>
+                    <button class="emergency-btn"
+                        style="background: rgba(50, 205, 50, 0.2); border-color: #32CD32; color: #32CD32;"
+                        onclick="resetSystem()">
+                        <i class="fas fa-sync"></i> SYSTEM RESET
+                    </button>
+                    <p style="font-size: 11px; color: #9CA3AF; text-align: center;">Restart all services</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<script src="/static/js/god_mode.js"></script>
+
+{% block scripts %}
+<script>
+    // Load hidden departments from backend
+    async function loadHiddenDepartments() {
+        const container = document.getElementById('hidden-departments-list');
+        if (!container) return;
+
+        try {
+            const response = await window.api.getHiddenDepartments();
+            if (response.success && response.hidden_departments) {
+                if (response.hidden_departments.length === 0) {
+                    container.innerHTML = '<div style="color: #9CA3AF; padding: 20px; text-align: center;">No hidden departments found</div>';
+                    return;
+                }
+
+                container.innerHTML = response.hidden_departments.map(dept => `
+                    <div class="hidden-dept">
+                        <div class="hidden-dept-icon" style="background: #333; color: #666;">
+                            <i class="fas fa-user-secret"></i>
+                        </div>
+                        <div class="hidden-dept-info" style="flex: 1;">
+                            <div class="hidden-dept-name">${dept.name || dept.id}</div>
+                            <div style="font-size: 11px; color: #9CA3AF; margin-top: 2px;">
+                                ${dept.agents_count || 0} agents • ${dept.status || 'active'}
+                            </div>
+                        </div>
+                        <button class="reveal-btn" onclick="revealDept('${dept.id}')">Reveal</button>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = '<div style="color: #9CA3AF; padding: 20px; text-align: center;">Failed to load hidden departments</div>';
+            }
+        } catch (error) {
+            console.error('Error loading hidden departments:', error);
+            container.innerHTML = '<div style="color: #FF6464; padding: 20px; text-align: center;">Error loading hidden departments</div>';
+        }
+    }
+
+    async function addDepartment() {
+        const modalHtml = `
+            <div class="modal-overlay" id="add-dept-modal" style="display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+                <div class="modal-content" onclick="event.stopPropagation()" style="width: 90%; max-width: 500px; background: #0f1729; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;">
+                    <div class="modal-header" style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                        <h2 style="color: white; font-size: 20px; margin: 0;">Add Department</h2>
+                        <div class="modal-close" onclick="closeModal('add-dept-modal')" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;"><i class="fas fa-times"></i></div>
+                    </div>
+                    <div class="modal-body" style="padding: 24px;">
+                        <form id="add-dept-form" onsubmit="submitNewDepartment(event)">
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Department Name *</label>
+                                <input type="text" id="dept-name" required style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;" placeholder="e.g., Research & Development">
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Description</label>
+                                <textarea id="dept-description" rows="3" style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px; resize: vertical;" placeholder="Department description"></textarea>
+                            </div>
+                            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                                <button type="button" onclick="closeModal('add-dept-modal')" style="padding: 12px 24px; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Cancel</button>
+                                <button type="submit" style="padding: 12px 24px; background: var(--daena-gold); color: black; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Create Department</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    async function addCouncil() {
+        const modalHtml = `
+            <div class="modal-overlay" id="add-council-modal" style="display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+                <div class="modal-content" onclick="event.stopPropagation()" style="width: 90%; max-width: 500px; background: #0f1729; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;">
+                    <div class="modal-header" style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                        <h2 style="color: white; font-size: 20px; margin: 0;">Add Council Member</h2>
+                        <div class="modal-close" onclick="closeModal('add-council-modal')" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;"><i class="fas fa-times"></i></div>
+                    </div>
+                    <div class="modal-body" style="padding: 24px;">
+                        <form id="add-council-form" onsubmit="submitNewCouncil(event)">
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Member Name *</label>
+                                <input type="text" id="council-name" required style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;" placeholder="e.g., AI Ethics Council">
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Category</label>
+                                <select id="council-category" style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;">
+                                    <option value="executive">Executive</option>
+                                    <option value="advisory">Advisory</option>
+                                    <option value="technical">Technical</option>
+                                    <option value="financial">Financial</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                                <button type="button" onclick="closeModal('add-council-modal')" style="padding: 12px 24px; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Cancel</button>
+                                <button type="submit" style="padding: 12px 24px; background: var(--daena-gold); color: black; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Create Council Member</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    async function addHiddenDept() {
+        const modalHtml = `
+            <div class="modal-overlay" id="add-hidden-dept-modal" style="display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+                <div class="modal-content" onclick="event.stopPropagation()" style="width: 90%; max-width: 500px; background: #0f1729; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;">
+                    <div class="modal-header" style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                        <h2 style="color: white; font-size: 20px; margin: 0;">Create Hidden Department</h2>
+                        <div class="modal-close" onclick="closeModal('add-hidden-dept-modal')" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;"><i class="fas fa-times"></i></div>
+                    </div>
+                    <div class="modal-body" style="padding: 24px;">
+                        <form id="add-hidden-dept-form" onsubmit="submitNewHiddenDept(event)">
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Department Name *</label>
+                                <input type="text" id="hidden-dept-name" required style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;" placeholder="e.g., Special Operations">
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Description</label>
+                                <textarea id="hidden-dept-description" rows="3" style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px; resize: vertical;" placeholder="Hidden department description"></textarea>
+                            </div>
+                            <div style="padding: 12px; background: rgba(255,165,0,0.1); border: 1px solid rgba(255,165,0,0.3); border-radius: 8px; margin-bottom: 20px;">
+                                <p style="margin: 0; color: #FFA500; font-size: 13px;"><i class="fas fa-info-circle"></i> This department will be hidden from regular views and only visible in the Founder Panel.</p>
+                            </div>
+                            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                                <button type="button" onclick="closeModal('add-hidden-dept-modal')" style="padding: 12px 24px; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Cancel</button>
+                                <button type="submit" style="padding: 12px 24px; background: var(--daena-gold); color: black; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Create Hidden Department</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    function closeModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) modal.remove();
+    }
+
+    async function submitNewDepartment(event) {
+        event.preventDefault();
+        const name = document.getElementById('dept-name').value.trim();
+        const description = document.getElementById('dept-description').value.trim();
+        try {
+            const response = await fetch('/api/v1/departments/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description, status: 'active' })
+            });
+            if (response.ok) {
+                closeModal('add-dept-modal');
+                await loadDepartments();
+                window.showToast?.('Department created successfully', 'success');
+            } else {
+                const error = await response.json();
+                window.showToast?.('Failed: ' + (error.detail || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            window.showToast?.('Failed to create department', 'error');
+        }
+    }
+
+    async function submitNewCouncil(event) {
+        event.preventDefault();
+        const name = document.getElementById('council-name').value.trim();
+        const category = document.getElementById('council-category').value;
+        try {
+            const response = await fetch('/api/v1/council/members/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, category, enabled: true })
+            });
+            if (response.ok) {
+                closeModal('add-council-modal');
+                await loadCouncils();
+                window.showToast?.('Council member created successfully', 'success');
+            } else {
+                const error = await response.json();
+                window.showToast?.('Failed: ' + (error.detail || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            window.showToast?.('Failed to create council member', 'error');
+        }
+    }
+
+    async function submitNewHiddenDept(event) {
+        event.preventDefault();
+        const name = document.getElementById('hidden-dept-name').value.trim();
+        const description = document.getElementById('hidden-dept-description').value.trim();
+        try {
+            const response = await fetch('/api/v1/departments/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description, status: 'hidden', is_hidden: true })
+            });
+            if (response.ok) {
+                closeModal('add-hidden-dept-modal');
+                await loadHiddenDepartments();
+                window.showToast?.('Hidden department created successfully', 'success');
+            } else {
+                const error = await response.json();
+                window.showToast?.('Failed: ' + (error.detail || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            window.showToast?.('Failed to create hidden department', 'error');
+        }
+    }
+    async function revealDept(id) {
+        if (confirm(`Reveal department "${id}"? This will make it visible to all users.`)) {
+            try {
+                const response = await fetch(`/api/v1/founder-panel/hidden-departments/${id}/reveal`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    window.showToast?.('Department revealed successfully', 'success');
+                    await loadHiddenDepartments(); // Reload list
+                } else {
+                    throw new Error(`Failed: ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Error revealing department:', error);
+                window.showToast?.('Failed to reveal department', 'error');
+            }
+        }
+    }
+    async function emergencyStop() {
+        if (confirm('⚠️ This will STOP ALL AGENTS immediately. Continue?')) {
+            try {
+                const response = await fetch('/api/v1/founder-panel/system/emergency/stop-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    window.showToast?.('Emergency stop executed', 'warning');
+                } else {
+                    throw new Error(`Failed: ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Error executing emergency stop:', error);
+                window.showToast?.('Failed to execute emergency stop', 'error');
+            }
+        }
+    }
+    async function maintenanceMode() {
+        if (confirm('Enter maintenance mode? Non-critical operations will pause.')) {
+            try {
+                const response = await fetch('/api/v1/founder-panel/system/maintenance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: true })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    window.showToast?.('Maintenance mode enabled', 'info');
+                } else {
+                    throw new Error(`Failed: ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Error enabling maintenance mode:', error);
+                window.showToast?.('Failed to enable maintenance mode', 'error');
+            }
+        }
+    }
+    async function resetSystem() {
+        if (confirm('Reset the entire system? All services will restart.')) {
+            try {
+                const response = await fetch('/api/v1/system/reset-to-default?confirm=true', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    window.showToast?.('System reset initiated', 'warning');
+                    // Reload page after a delay
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    throw new Error(`Failed: ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Error resetting system:', error);
+                window.showToast?.('Failed to reset system', 'error');
+            }
+        }
+    }
+
+    // Load hidden departments on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        loadDepartments();
+        loadCouncils();
+        loadHiddenDepartments();
+    });
+
+    // === REAL-TIME SYNC: Load departments from database ===
+    async function loadDepartments() {
+        const container = document.getElementById('departments-list');
+        try {
+            const response = await fetch('/api/v1/departments/?include_agents=true');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const data = await response.json();
+            const departments = data.departments || data || [];
+
+            if (departments.length === 0) {
+                container.innerHTML = `
+                    <div class="control-item" style="justify-content: center;">
+                        <div class="control-desc">No departments found</div>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = departments.map(dept => `
+                <div class="control-item" data-dept-id="${dept.id || dept.department_id}">
+                    <div>
+                        <div class="control-label">${dept.name}</div>
+                        <div class="control-desc">${dept.agent_count || dept.agents?.length || 0} agents active</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" ${dept.is_active !== false ? 'checked' : ''} 
+                            onchange="toggleDepartment('${dept.id || dept.department_id}', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            `).join('');
+        } catch (error) {
+            console.error('Failed to load departments:', error);
+            container.innerHTML = `
+                <div class="control-item" style="justify-content: center;">
+                    <div class="control-desc" style="color: #ff6b6b;">Failed to load departments</div>
+                </div>`;
+        }
+    }
+
+    // === REAL-TIME SYNC: Load councils from database ===
+    async function loadCouncils() {
+        const container = document.getElementById('councils-list');
+        try {
+            const response = await fetch('/api/v1/council/list');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const data = await response.json();
+            const councils = data.councils || data || [];
+
+            if (councils.length === 0) {
+                container.innerHTML = `
+                    <div class="control-item" style="justify-content: center;">
+                        <div class="control-desc">No councils found</div>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = councils.map(council => `
+                <div class="control-item" data-council-id="${council.id || council.council_id}">
+                    <div>
+                        <div class="control-label">${council.name}</div>
+                        <div class="control-desc">${council.member_count || council.members?.length || 0} experts</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" ${council.is_active !== false ? 'checked' : ''} 
+                            onchange="toggleCouncil('${council.id || council.council_id}', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            `).join('');
+        } catch (error) {
+            console.error('Failed to load councils:', error);
+            container.innerHTML = `
+                <div class="control-item" style="justify-content: center;">
+                    <div class="control-desc" style="color: #ff6b6b;">Failed to load councils</div>
+                </div>`;
+        }
+    }
+
+    // Toggle department active status
+    async function toggleDepartment(deptId, enabled) {
+        try {
+            const response = await fetch(`/api/v1/departments/${deptId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: enabled })
+            });
+            if (response.ok) {
+                window.showToast?.(`Department ${enabled ? 'enabled' : 'disabled'}`, 'success');
+            }
+        } catch (error) {
+            console.error('Toggle department failed:', error);
+            window.showToast?.('Failed to update department', 'error');
+            loadDepartments(); // Reload to revert UI
+        }
+    }
+
+    // Toggle council active status
+    async function toggleCouncil(councilId, enabled) {
+        try {
+            const response = await fetch(`/api/v1/council/${councilId}/toggle?enabled=${enabled}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (response.ok) {
+                window.showToast?.(`Council ${enabled ? 'enabled' : 'disabled'}`, 'success');
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            console.error('Toggle council failed:', error);
+            window.showToast?.('Failed to update council', 'error');
+            loadCouncils(); // Reload to revert UI
+        }
+    }
+
+    // Refresh all data every 30 seconds for real-time sync
+    setInterval(() => {
+        loadDepartments();
+        loadCouncils();
+        loadHiddenDepartments();
+    }, 30000);
+
+    // WebSocket for instant real-time updates
+    let ws = null;
+    function connectWebSocket() {
+        try {
+            ws = new WebSocket('ws://127.0.0.1:8000/api/v1/ws/founder');
+
+            ws.onopen = () => {
+                console.log('[Founder Panel] WebSocket connected');
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[Founder Panel] WS Event:', data.event_type);
+
+                    // Reload on department events
+                    if (data.event_type?.startsWith('department.')) {
+                        loadDepartments();
+                        loadHiddenDepartments();
+                    }
+
+                    // Reload on council events
+                    if (data.event_type?.startsWith('council.')) {
+                        loadCouncils();
+                    }
+                } catch (error) {
+                    console.error('[Founder Panel] Error parsing WebSocket message:', error);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('[Founder Panel] WebSocket error:', error);
+            };
+
+            ws.onclose = () => {
+                console.log('[Founder Panel] WebSocket closed, reconnecting in 5s...');
+                setTimeout(connectWebSocket, 5000);
+            };
+        } catch (error) {
+            console.error('[Founder Panel] Failed to connect WebSocket:', error);
+            setTimeout(connectWebSocket, 5000);
+        }
+    }
+
+    // Connect WebSocket on page load
+    connectWebSocket();
+
+    // Voice Control Functions
+    async function checkVoiceStatus() {
+        try {
+            const response = await fetch('/api/v1/voice/status');
+            const data = await response.json();
+            const indicator = document.getElementById('voice-status-indicator');
+            const text = document.getElementById('voice-status-text');
+
+            if (data.status === 'online') {
+                indicator.style.background = '#10B981'; // Green
+                text.textContent = 'Online & Ready';
+            } else {
+                indicator.style.background = '#EF4444'; // Red
+                text.textContent = 'Offline';
+            }
+        } catch (e) {
+            console.error('Voice status check failed:', e);
+            const text = document.getElementById('voice-status-text');
+            if (text) text.textContent = 'Error';
+        }
+    }
+
+    async function testVoice() {
+        window.showToast('Testing voice system...', 'info');
+        try {
+            const response = await fetch('/api/v1/voice/test');
+            const data = await response.json();
+            if (data.status === 'success') {
+                window.showToast('Voice test successful! Playing audio...', 'success');
+                if (data.audio_file) {
+                    // If audio_file is a path, we might need a route to serve it or it might be a relative URL
+                    // Assuming backend serves it or we just trust the toast for now if playback isn't auto
+                    // For now, let's just log it
+                    console.log('Audio file generated:', data.audio_file);
+                }
+            } else {
+                window.showToast('Voice test failed', 'error');
+            }
+        } catch (e) {
+            window.showToast('Voice test error: ' + e.message, 'error');
+        }
+    }
+
+    function saveVoiceSettings() {
+        const lang = document.getElementById('voice-lang').value;
+        localStorage.setItem('daena_voice_lang', lang);
+        window.showToast('Voice language saved: ' + lang, 'success');
+    }
+
+    // Backup Functions
+    async function createBackup() {
+        window.showToast('Creating backup...', 'info');
+        try {
+            // Use correct endpoint from system.py
+            const response = await fetch('/api/v1/system/backup', { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                window.showToast('Backup created successfully!', 'success');
+                updateLastBackupInfo();
+            } else {
+                window.showToast('Backup failed: ' + data.message, 'error');
+            }
+        } catch (e) {
+            window.showToast('Backup error: ' + e.message, 'error');
+        }
+    }
+
+    async function listBackups() {
+        try {
+            const response = await fetch('/api/v1/system/backups');
+            const data = await response.json();
+            if (data.success && data.backups) {
+                const backups = data.backups || [];
+
+                const modalHtml = `
+                    <div class="modal-overlay" id="backups-modal" style="display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+                        <div class="modal-content" onclick="event.stopPropagation()" style="width: 90%; max-width: 600px; background: #0f1729; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; max-height: 80vh; overflow: hidden;">
+                            <div class="modal-header" style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                                <h2 style="color: white; font-size: 20px; margin: 0;">📦 Backups (${backups.length})</h2>
+                                <div class="modal-close" onclick="closeModal('backups-modal')" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;"><i class="fas fa-times"></i></div>
+                            </div>
+                            <div class="modal-body" style="padding: 24px; max-height: 60vh; overflow-y: auto;">
+                                ${backups.length === 0 ? `
+                                    <div style="text-align: center; padding: 40px; color: #9CA3AF;">
+                                        <i class="fas fa-box-open" style="font-size: 48px; margin-bottom: 16px;"></i>
+                                        <p>No backups found. Create one using the "Create Backup" button.</p>
+                                    </div>
+                                ` : backups.map(b => `
+                                    <div style="display: flex; align-items: center; padding: 16px; background: rgba(255,255,255,0.05); border-radius: 8px; margin-bottom: 12px;">
+                                        <div style="flex: 1;">
+                                            <div style="color: white; font-weight: 600;">${b.name || b.filename || 'Backup'}</div>
+                                            <div style="color: #9CA3AF; font-size: 13px; margin-top: 4px;">
+                                                ${b.created_at || b.timestamp || 'Unknown date'} • ${b.size || 'Unknown size'}
+                                            </div>
+                                        </div>
+                                        <div style="display: flex; gap: 8px;">
+                                            <button onclick="restoreBackup('${b.id || b.filename}')" style="padding: 8px 16px; background: rgba(59, 130, 246, 0.2); border: 1px solid #3B82F6; color: #3B82F6; border-radius: 6px; cursor: pointer;">
+                                                <i class="fas fa-undo"></i> Restore
+                                            </button>
+                                            <button onclick="deleteBackup('${b.id || b.filename}')" style="padding: 8px 16px; background: rgba(239, 68, 68, 0.2); border: 1px solid #EF4444; color: #EF4444; border-radius: 6px; cursor: pointer;">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+            } else {
+                window.showToast('Failed to load backups', 'error');
+            }
+        } catch (e) {
+            window.showToast('Failed to list backups: ' + e.message, 'error');
+        }
+    }
+
+    async function restoreBackup(backupId) {
+        if (!confirm(`Restore from backup "${backupId}"? This will overwrite current configuration.`)) return;
+        try {
+            const response = await fetch('/api/v1/system/restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ backup_id: backupId })
+            });
+            const data = await response.json();
+            if (data.success) {
+                window.showToast('Backup restored successfully! Reloading...', 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                window.showToast('Restore failed: ' + (data.message || 'Unknown error'), 'error');
+            }
+        } catch (e) {
+            window.showToast('Restore error: ' + e.message, 'error');
+        }
+    }
+
+    async function deleteBackup(backupId) {
+        if (!confirm(`Delete backup "${backupId}"? This cannot be undone.`)) return;
+        try {
+            const response = await fetch(`/api/v1/system/backups/${backupId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                window.showToast('Backup deleted', 'success');
+                closeModal('backups-modal');
+                listBackups(); // Refresh list
+            } else {
+                window.showToast('Delete failed', 'error');
+            }
+        } catch (e) {
+            window.showToast('Delete error: ' + e.message, 'error');
+        }
+    }
+
+    async function updateLastBackupInfo() {
+        // Placeholder
+    }
+
+    // Initialize Voice & Backup
+    document.addEventListener('DOMContentLoaded', () => {
+        checkVoiceStatus();
+        loadPendingLearning();
+        loadVoiceSettings();
+        const savedLang = localStorage.getItem('daena_voice_lang');
+        if (savedLang) {
+            const langSelect = document.getElementById('voice-lang');
+            if (langSelect) langSelect.value = savedLang;
+        }
+    });
+
+    // ========== APPROVE LEARNING FUNCTIONS ==========
+    async function loadPendingLearning() {
+        const container = document.getElementById('pending-learning-list');
+        const countEl = document.getElementById('pending-learning-count');
+
+        try {
+            const response = await fetch('/api/v1/learning/pending');
+            const data = await response.json();
+
+            const items = data.learning_items || data.items || [];
+            countEl.textContent = `${items.length} pending`;
+
+            if (items.length === 0) {
+                container.innerHTML = `
+                    <div class="control-item" style="justify-content: center;">
+                        <div class="control-desc" style="color: #32CD32;">
+                            ✓ No pending learning items - all approved!
+                        </div>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = items.map(item => `
+                <div class="control-item" data-learning-id="${item.id}">
+                    <div style="flex: 1;">
+                        <div class="control-label">${item.summary || item.title || 'Learning Item'}</div>
+                        <div class="control-desc">${item.category || 'general'} • ${item.learned_by || 'daena'}</div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="approveLearning('${item.id}')" 
+                            style="padding: 6px 12px; background: rgba(50, 205, 50, 0.2); border: 1px solid #32CD32; color: #32CD32; border-radius: 6px; cursor: pointer;">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button onclick="rejectLearning('${item.id}')"
+                            style="padding: 6px 12px; background: rgba(255, 100, 100, 0.2); border: 1px solid #FF6464; color: #FF6464; border-radius: 6px; cursor: pointer;">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        } catch (error) {
+            console.error('Failed to load pending learning:', error);
+            container.innerHTML = `
+                <div class="control-item" style="justify-content: center;">
+                    <div class="control-desc">No pending items or error loading</div>
+                </div>`;
+            countEl.textContent = '0 pending';
+        }
+    }
+
+    async function approveLearning(id) {
+        try {
+            const response = await fetch(`/api/v1/learning/${id}/approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (response.ok) {
+                window.showToast?.('Learning approved', 'success');
+                await loadPendingLearning();
+            } else {
+                window.showToast?.('Failed to approve', 'error');
+            }
+        } catch (error) {
+            console.error('Approve learning error:', error);
+            window.showToast?.('Error approving learning', 'error');
+        }
+    }
+
+    async function rejectLearning(id) {
+        try {
+            const response = await fetch(`/api/v1/learning/${id}/reject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (response.ok) {
+                window.showToast?.('Learning rejected', 'success');
+                await loadPendingLearning();
+            } else {
+                window.showToast?.('Failed to reject', 'error');
+            }
+        } catch (error) {
+            console.error('Reject learning error:', error);
+            window.showToast?.('Error rejecting learning', 'error');
+        }
+    }
+
+    async function approveAllLearning() {
+        if (!confirm('Approve ALL pending learning items?')) return;
+        try {
+            const response = await fetch('/api/v1/learning/approve-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (response.ok) {
+                window.showToast?.('All learning approved', 'success');
+                await loadPendingLearning();
+            }
+        } catch (error) {
+            window.showToast?.('Error approving all', 'error');
+        }
+    }
+
+    async function rejectAllLearning() {
+        if (!confirm('Reject ALL pending learning items?')) return;
+        try {
+            const response = await fetch('/api/v1/learning/reject-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (response.ok) {
+                window.showToast?.('All learning rejected', 'success');
+                await loadPendingLearning();
+            }
+        } catch (error) {
+            window.showToast?.('Error rejecting all', 'error');
+        }
+    }
+
+    // ========== VOICE SETTINGS FUNCTIONS ==========
+    async function loadVoiceSettings() {
+        try {
+            const response = await fetch('/api/v1/voice/settings');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.volume !== undefined) {
+                    document.getElementById('voice-volume').value = data.volume * 100;
+                }
+                if (data.rate !== undefined) {
+                    document.getElementById('voice-rate').value = data.rate;
+                }
+                if (data.pitch !== undefined) {
+                    document.getElementById('voice-pitch').value = data.pitch;
+                }
+            }
+        } catch (error) {
+            console.log('Voice settings not available');
+        }
+    }
+
+    async function updateVoiceSetting(setting, value) {
+        try {
+            const settings = {};
+            if (setting === 'volume') settings.volume = parseFloat(value) / 100;
+            if (setting === 'rate') settings.rate = parseInt(value);
+            if (setting === 'pitch') settings.pitch = parseInt(value);
+
+            const response = await fetch('/api/v1/voice/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            if (response.ok) {
+                console.log(`Voice ${setting} updated to ${value}`);
+            }
+        } catch (error) {
+            console.error('Failed to update voice setting:', error);
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: daena-gpu
+  labels:
+    app: daena
+    accelerator: gpu
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: daena
+      accelerator: gpu
+  template:
+    metadata:
+      labels:
+        app: daena
+        accelerator: gpu
+    spec:
+      containers:
+      - name: daena
+        image: gcr.io/PROJECT_ID/daena:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: COMPUTE_PREFER
+          value: "gpu"
+        - name: COMPUTE_ALLOW_TPU
+          value: "false"
+        - name: DAENA_MEMORY_AES_KEY
+          valueFrom:
+            secretKeyRef:
+              name: daena-secrets
+              key: aes-key
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            cpu: "4"
+            memory: "8Gi"
+          limits:
+            nvidia.com/gpu: 1
+            cpu: "8"
+            memory: "16Gi"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/system/summary
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/v1/system/summary
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      nodeSelector:
+        accelerator: nvidia-tesla-t4  # or nvidia-tesla-a100, nvidia-l4, etc.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: daena-gpu-service
+spec:
+  selector:
+    app: daena
+    accelerator: gpu
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+  type: LoadBalancer
+

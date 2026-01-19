@@ -1,0 +1,27 @@
+{
+  "connected": true,
+  "ollama_available": true,
+  "llm_available": true,
+  "provider": "ollama",
+  "models": [
+    {
+      "name": "daena-brain:latest",
+      "size": 8988125344,
+      "modified_at": "2025-12-19T22:14:14.3709955-05:00",
+      "active": true
+    },
+    {
+      "name": "qwen2.5:14b-instruct",
+      "size": 8988124069,
+      "modified_at": "2025-12-19T22:14:14.3231763-05:00",
+      "active": true
+    }
+  ],
+  "active_model": "qwen2.5:14b-instruct",
+  "active_models": [
+    "qwen2.5:14b-instruct",
+    "daena-brain:latest"
+  ],
+  "local_brain_path": "D:\\Ideas\\Daena_old_upgrade_20251213\\local_brain",
+  "local_brain_exists": true
+}

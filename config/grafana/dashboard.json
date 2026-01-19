@@ -1,0 +1,520 @@
+{
+  "dashboard": {
+    "title": "Daena AI VP - Comprehensive System Dashboard",
+    "tags": ["daena", "nbmf", "memory", "ai", "monitoring"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 2,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "System Health Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"daena\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red", "text": "Down"},
+                {"value": 1, "color": "green", "text": "Up"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "CPU Usage",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"cpu_usage\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 70, "color": "yellow"},
+                {"value": 90, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Memory Usage",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"memory_usage\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 80, "color": "yellow"},
+                {"value": 95, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Disk Usage",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"disk_usage\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 85, "color": "yellow"},
+                {"value": 95, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "CAS Hit Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"llm_cas_hit_rate\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.5, "color": "yellow"},
+                {"value": 0.6, "color": "green"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 4}
+      },
+      {
+        "id": 6,
+        "title": "Total Cost Savings (USD)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"estimated_cost_savings_usd\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 100, "color": "yellow"},
+                {"value": 500, "color": "green"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 6, "w": 6, "x": 6, "y": 4}
+      },
+      {
+        "id": 7,
+        "title": "Cost Savings Percentage",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"cost_savings_percentage\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 40, "color": "yellow"},
+                {"value": 60, "color": "green"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 4}
+      },
+      {
+        "id": 8,
+        "title": "Total LLM Cost (USD)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"total_cost_usd\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        },
+        "gridPos": {"h": 6, "w": 6, "x": 18, "y": 4}
+      },
+      {
+        "id": 9,
+        "title": "NBMF Read Latency (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"nbmf_read_p95_ms\"}",
+            "refId": "A",
+            "legendFormat": "Read p95"
+          },
+          {
+            "expr": "daena_memory_metric{name=\"nbmf_read_avg_ms\"}",
+            "refId": "B",
+            "legendFormat": "Read avg"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 25, "color": "yellow"},
+                {"value": 50, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10}
+      },
+      {
+        "id": 10,
+        "title": "NBMF Write Latency (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"nbmf_write_p95_ms\"}",
+            "refId": "A",
+            "legendFormat": "Write p95"
+          },
+          {
+            "expr": "daena_memory_metric{name=\"nbmf_write_avg_ms\"}",
+            "refId": "B",
+            "legendFormat": "Write avg"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 50, "color": "yellow"},
+                {"value": 100, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10}
+      },
+      {
+        "id": 11,
+        "title": "L1 Cache Latency (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"l1_read_p95_ms\"}",
+            "refId": "A",
+            "legendFormat": "L1 p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 25, "color": "yellow"},
+                {"value": 50, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18}
+      },
+      {
+        "id": 12,
+        "title": "L2 Cache Latency (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"l2_read_p95_ms\"}",
+            "refId": "A",
+            "legendFormat": "L2 p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 120, "color": "yellow"},
+                {"value": 200, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 18}
+      },
+      {
+        "id": 13,
+        "title": "NBMF Operations Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(daena_memory_metric{name=\"nbmf_reads\"}[5m])",
+            "refId": "A",
+            "legendFormat": "Reads/sec"
+          },
+          {
+            "expr": "rate(daena_memory_metric{name=\"nbmf_writes\"}[5m])",
+            "refId": "B",
+            "legendFormat": "Writes/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 26}
+      },
+      {
+        "id": 14,
+        "title": "LLM CAS Operations",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(daena_memory_metric{name=\"llm_cas_hit\"}[5m])",
+            "refId": "A",
+            "legendFormat": "CAS Hits"
+          },
+          {
+            "expr": "rate(daena_memory_metric{name=\"llm_cas_miss\"}[5m])",
+            "refId": "B",
+            "legendFormat": "CAS Misses"
+          },
+          {
+            "expr": "rate(daena_memory_metric{name=\"llm_near_dup_reuse\"}[5m])",
+            "refId": "C",
+            "legendFormat": "Near-Dup Reuse"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 26}
+      },
+      {
+        "id": 15,
+        "title": "Divergence Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "daena_memory_metric{name=\"divergence_rate\"}",
+            "refId": "A",
+            "legendFormat": "Divergence Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 0.005, "color": "yellow"},
+                {"value": 0.01, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 34}
+      },
+      {
+        "id": 16,
+        "title": "Network I/O",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(daena_memory_metric{name=\"network_io_bytes_sent\"}[5m])",
+            "refId": "A",
+            "legendFormat": "Bytes Sent"
+          },
+          {
+            "expr": "rate(daena_memory_metric{name=\"network_io_bytes_recv\"}[5m])",
+            "refId": "B",
+            "legendFormat": "Bytes Received"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 34}
+      },
+      {
+        "id": 17,
+        "title": "Active Agents",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(sunflower_agent_status{status=\"active\"})",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 42}
+      },
+      {
+        "id": 18,
+        "title": "Total Agents",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(sunflower_agent_status)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 6, "w": 6, "x": 6, "y": 42}
+      },
+      {
+        "id": 19,
+        "title": "GPU Usage",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "sunflower_gpu_usage_percent",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "blue"},
+                {"value": 50, "color": "green"},
+                {"value": 80, "color": "yellow"},
+                {"value": 95, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 42}
+      },
+      {
+        "id": 20,
+        "title": "GPU Temperature",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sunflower_gpu_temperature_celsius",
+            "refId": "A",
+            "legendFormat": "GPU {{gpu_id}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "celsius",
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 70, "color": "yellow"},
+                {"value": 85, "color": "red"}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 6, "w": 6, "x": 18, "y": 42}
+      }
+    ],
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+    },
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": []
+    },
+    "links": [
+      {
+        "title": "Daena Documentation",
+        "url": "https://github.com/your-org/daena",
+        "type": "link",
+        "icon": "external link"
+      }
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+# Pre-commit hooks for Daena
+# Install: pip install pre-commit && pre-commit install
+
+repos:
+  - repo: local
+    hooks:
+      - id: duplicate-detector
+        name: Duplicate File Detector
+        entry: python Tools/fast_duplicate_sweep.py --pre-commit
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+        
+      - id: python-lint
+        name: Python Linting (ruff)
+        entry: ruff check .
+        language: system
+        types: [python]
+        pass_filenames: false
+        
+      - id: python-format
+        name: Python Formatting (ruff format)
+        entry: ruff format --check .
+        language: system
+        types: [python]
+        pass_filenames: false
+

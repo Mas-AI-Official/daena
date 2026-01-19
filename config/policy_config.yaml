@@ -1,0 +1,33 @@
+default:
+  allow: true
+classes:
+  # PII (Personally Identifiable Information) - Strict access control
+  pii:
+    allow_roles:
+      - founder
+      - admin
+      - legal.officer
+    deny_roles:
+      - guest
+      - finance.analyst
+    allow_tenants: []  # Empty means tenant isolation enforced by router
+    deny_tenants: []
+    # PII requires explicit tenant context
+    require_tenant: true
+  legal:
+    allow_roles:
+      - legal.officer
+      - admin
+      - founder
+    deny_roles:
+      - finance.analyst
+      - guest
+    allow_tenants: []
+    deny_tenants: []
+  finance:
+    allow_roles:
+      - finance.controller
+      - admin
+      - founder
+    deny_roles:
+      - guest

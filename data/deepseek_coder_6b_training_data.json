@@ -1,0 +1,27 @@
+[
+  {
+    "text": "Instruction: Write a Python function to implement a machine learning algorithm.\nResponse: This is a comprehensive response about coding for the instruction: Write a Python function to implement a machine learning algorithm.",
+    "type": "instruction",
+    "category": "coding"
+  },
+  {
+    "text": "Instruction: Design a scalable microservices architecture.\nResponse: This is a comprehensive response about coding for the instruction: Design a scalable microservices architecture.",
+    "type": "instruction",
+    "category": "coding"
+  },
+  {
+    "text": "Instruction: Create a REST API with proper error handling.\nResponse: This is a comprehensive response about coding for the instruction: Create a REST API with proper error handling.",
+    "type": "instruction",
+    "category": "coding"
+  },
+  {
+    "text": "Instruction: Implement a database optimization strategy.\nResponse: This is a comprehensive response about coding for the instruction: Implement a database optimization strategy.",
+    "type": "instruction",
+    "category": "coding"
+  },
+  {
+    "text": "Instruction: Write clean, maintainable code with best practices.\nResponse: This is a comprehensive response about coding for the instruction: Write clean, maintainable code with best practices.",
+    "type": "instruction",
+    "category": "coding"
+  }
+]
