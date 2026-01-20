@@ -1267,6 +1267,39 @@ async def send_message_to_daena(session_id: str, message_data: Dict[str, Any]):
     finally:
         db.close()
 
+
+@router.get("/chat/deleted")
+async def list_deleted_sessions():
+    """
+    List all soft-deleted chat sessions (for restore UI).
+    Must be before /chat/{session_id} to avoid route conflict.
+    """
+    from backend.database import get_db, ChatSession
+    
+    db = next(get_db())
+    try:
+        sessions = db.query(ChatSession).filter(
+            ChatSession.is_active == False
+        ).order_by(ChatSession.updated_at.desc()).limit(50).all()
+        
+        return {
+            "success": True,
+            "deleted_sessions": [
+                {
+                    "session_id": s.session_id,
+                    "title": s.title,
+                    "category": s.category,
+                    "deleted_at": s.updated_at.isoformat() if s.updated_at else None,
+                    "message_count": s.message_count
+                }
+                for s in sessions
+            ],
+            "total": len(sessions)
+        }
+    finally:
+        db.close()
+
+
 @router.get("/chat/{session_id}")
 async def get_chat_session(session_id: str):
     """Get chat session details and history - NOW DB-BACKED"""
@@ -1493,36 +1526,6 @@ async def restore_chat_session(session_id: str):
     finally:
         db.close()
 
-
-@router.get("/chat/deleted")
-async def list_deleted_sessions():
-    """
-    List all soft-deleted chat sessions (for restore UI).
-    """
-    from backend.database import get_db, ChatSession
-    
-    db = next(get_db())
-    try:
-        sessions = db.query(ChatSession).filter(
-            ChatSession.is_active == False
-        ).order_by(ChatSession.updated_at.desc()).limit(50).all()
-        
-        return {
-            "success": True,
-            "deleted_sessions": [
-                {
-                    "session_id": s.session_id,
-                    "title": s.title,
-                    "category": s.category,
-                    "deleted_at": s.updated_at.isoformat() if s.updated_at else None,
-                    "message_count": s.message_count
-                }
-                for s in sessions
-            ],
-            "total": len(sessions)
-        }
-    finally:
-        db.close()
 
 
 @router.websocket("/ws/chat")
