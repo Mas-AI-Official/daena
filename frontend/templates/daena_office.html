@@ -72,10 +72,14 @@
         </div>
 
         <!-- Toggle Selection Mode Button -->
-        <div class="p-2 border-t border-white/10">
+        <div class="p-2 border-t border-white/10 flex gap-2">
             <button onclick="toggleSelectionMode()" id="selection-mode-btn"
-                class="w-full text-xs text-gray-400 hover:text-white hover:bg-white/5 rounded py-1 transition-colors">
-                <i class="fas fa-check-square mr-1"></i> Select Multiple
+                class="flex-1 text-xs text-gray-400 hover:text-white hover:bg-white/5 rounded py-1 transition-colors">
+                <i class="fas fa-check-square mr-1"></i> Select
+            </button>
+            <button onclick="showDeletedSessions()" id="restore-deleted-btn"
+                class="flex-1 text-xs text-gray-400 hover:text-green-400 hover:bg-green-500/10 rounded py-1 transition-colors">
+                <i class="fas fa-trash-restore mr-1"></i> Restore
             </button>
         </div>
     </div>
