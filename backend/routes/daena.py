@@ -1395,6 +1395,136 @@ async def end_chat_session(session_id: str):
     finally:
         db.close()
 
+
+@router.get("/chat/{session_id}/export")
+async def export_chat_session(session_id: str):
+    """
+    Export a chat session as JSON for download or backup.
+    Returns full session with all messages.
+    """
+    from backend.database import get_db
+    from backend.services.chat_service import chat_service
+    from fastapi.responses import JSONResponse
+    
+    db = next(get_db())
+    try:
+        session = chat_service.get_session(db, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        messages = chat_service.get_messages(db, session_id)
+        
+        export_data = {
+            "export_version": "1.0",
+            "exported_at": datetime.now().isoformat(),
+            "session": {
+                "session_id": session.session_id,
+                "title": session.title,
+                "category": session.category,
+                "scope_type": session.scope_type,
+                "scope_id": session.scope_id,
+                "created_at": session.created_at.isoformat() if session.created_at else None,
+                "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+            },
+            "messages": [
+                {
+                    "id": str(msg.id),
+                    "role": msg.role,
+                    "content": msg.content,
+                    "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                    "metadata": msg.metadata_json
+                }
+                for msg in messages
+            ],
+            "message_count": len(messages)
+        }
+        
+        # Return with download headers
+        response = JSONResponse(content=export_data)
+        filename = f"daena_chat_{session_id[:8]}_{datetime.now().strftime('%Y%m%d')}.json"
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export chat session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.post("/chat/{session_id}/restore")
+async def restore_chat_session(session_id: str):
+    """
+    Restore a soft-deleted chat session.
+    """
+    from backend.database import get_db, ChatSession
+    
+    db = next(get_db())
+    try:
+        session = db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        if session.is_active:
+            return {
+                "success": True,
+                "message": "Session is already active",
+                "session_id": session_id
+            }
+        
+        session.is_active = True
+        session.updated_at = datetime.now()
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Chat session restored",
+            "session_id": session_id,
+            "title": session.title
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to restore chat session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.get("/chat/deleted")
+async def list_deleted_sessions():
+    """
+    List all soft-deleted chat sessions (for restore UI).
+    """
+    from backend.database import get_db, ChatSession
+    
+    db = next(get_db())
+    try:
+        sessions = db.query(ChatSession).filter(
+            ChatSession.is_active == False
+        ).order_by(ChatSession.updated_at.desc()).limit(50).all()
+        
+        return {
+            "success": True,
+            "deleted_sessions": [
+                {
+                    "session_id": s.session_id,
+                    "title": s.title,
+                    "category": s.category,
+                    "deleted_at": s.updated_at.isoformat() if s.updated_at else None,
+                    "message_count": s.message_count
+                }
+                for s in sessions
+            ],
+            "total": len(sessions)
+        }
+    finally:
+        db.close()
+
+
 @router.websocket("/ws/chat")
 async def daena_websocket_simple(websocket: WebSocket):
     """WebSocket endpoint for real-time chat (frontend-compatible: /ws/chat)"""

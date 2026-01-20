@@ -581,6 +581,10 @@
                                 class="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded" title="Rename">
                                 <i class="fas fa-edit text-xs"></i>
                             </button>
+                            <button onclick="event.stopPropagation(); exportSession('${session.session_id}')"
+                                class="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 rounded" title="Export">
+                                <i class="fas fa-download text-xs"></i>
+                            </button>
                             <button onclick="event.stopPropagation(); deleteSession('${session.session_id}')"
                                 class="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded" title="Delete">
                                 <i class="fas fa-trash text-xs"></i>
@@ -885,6 +889,61 @@
                 }
             }
         );
+    }
+
+    async function exportSession(sessionId) {
+        try {
+            window.showToast?.('Exporting chat...', 'info');
+            // Open the export URL directly to trigger download
+            window.open(`/api/v1/daena/chat/${sessionId}/export`, '_blank');
+        } catch (e) {
+            window.showToast?.('Failed to export chat', 'error');
+        }
+    }
+
+    async function showDeletedSessions() {
+        try {
+            const data = await window.api.request('/daena/chat/deleted');
+            if (!data.deleted_sessions || data.deleted_sessions.length === 0) {
+                window.showToast?.('No deleted chats to restore', 'info');
+                return;
+            }
+
+            // Create modal content
+            const listHtml = data.deleted_sessions.map(s => `
+                <div class="flex items-center justify-between p-3 bg-white/5 rounded-lg mb-2">
+                    <div>
+                        <p class="text-white font-medium">${s.title || 'Untitled'}</p>
+                        <p class="text-gray-400 text-xs">Deleted: ${new Date(s.deleted_at).toLocaleDateString()}</p>
+                    </div>
+                    <button onclick="restoreSession('${s.session_id}')" 
+                        class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm">
+                        Restore
+                    </button>
+                </div>
+            `).join('');
+
+            window.showModal(
+                'Restore Deleted Chats',
+                `<div class="max-h-64 overflow-y-auto">${listHtml}</div>`,
+                'Close',
+                false
+            );
+        } catch (e) {
+            window.showToast?.('Failed to load deleted chats', 'error');
+        }
+    }
+
+    async function restoreSession(sessionId) {
+        try {
+            await window.api.request(`/daena/chat/${sessionId}/restore`, { method: 'POST' });
+            window.showToast?.('Chat restored!', 'success');
+            await loadSessions();
+            // Close modal if open
+            document.querySelector('.modal-overlay')?.remove();
+        } catch (e) {
+            window.showToast?.('Failed to restore chat', 'error');
+        }
     }
 
     async function loadSession(sessionId) {
