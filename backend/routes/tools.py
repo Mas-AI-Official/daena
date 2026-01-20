@@ -101,3 +101,59 @@ async def consult_ui_endpoint(req: ConsultUIRequest, request: Request):
 
 
 
+
+# ============ WEB SEARCH ENDPOINTS ============
+
+class SearchRequest(BaseModel):
+    query: str
+    num_results: int = 5
+    provider: Optional[str] = None
+
+
+@router.post("/search")
+async def web_search(req: SearchRequest):
+    import os
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        from backend.services.daena_tools.web_search import web_search_service
+        
+        result = await web_search_service.search(
+            query=req.query,
+            num_results=req.num_results,
+            preferred_provider=req.provider
+        )
+        
+        if not result.get("success"):
+            return {"success": False, "error": result.get("error", "Search failed"), "query": req.query, "results": []}
+        
+        return {
+            "success": True,
+            "query": req.query,
+            "results": [{"title": r.get("title", ""), "url": r.get("url", r.get("link", "")), "snippet": r.get("snippet", r.get("description", "")), "provider": result.get("provider", "unknown")} for r in result.get("results", [])],
+            "provider_used": result.get("provider", "unknown"),
+            "total_results": len(result.get("results", []))
+        }
+    except Exception as e:
+        logger.error(f"Search failed: {e}")
+        return {"success": False, "error": str(e), "query": req.query, "results": []}
+
+
+@router.get("/search")
+async def web_search_get(q: str, num: int = 5, provider: Optional[str] = None):
+    req = SearchRequest(query=q, num_results=num, provider=provider)
+    return await web_search(req)
+
+
+@router.get("/providers")
+async def list_search_providers():
+    import os
+    providers = [
+        {"name": "brave", "available": bool(os.getenv("BRAVE_API_KEY")), "priority": 1},
+        {"name": "serper", "available": bool(os.getenv("SERPER_API_KEY")), "priority": 2},
+        {"name": "tavily", "available": bool(os.getenv("TAVILY_API_KEY")), "priority": 3},
+        {"name": "duckduckgo", "available": True, "priority": 4}
+    ]
+    active = next((p["name"] for p in providers if p["available"]), "duckduckgo")
+    return {"providers": providers, "active_provider": active}
