@@ -258,14 +258,12 @@ async function viewChangeControl() {
                     </div>
                     <div class="modal-body" style="padding: 24px; max-height: 500px; overflow-y: auto;">
                         <div style="margin-bottom: 20px;">
-                            <div style="color: var(--daena-gold); font-size: 24px; font-weight: 700;">${pending Data.count || 0
-    }</div >
-        <div style="color: #9CA3AF; font-size: 12px;">Pending Founder Approval</div>
-                        </div >
-        ${
-            (pendingData.proposals || []).length === 0
-            ? '<div style="text-align: center; color: #9CA3AF; padding: 40px;">No pending approvals</div>'
-            : (pendingData.proposals || []).map(proposal => `
+                            <div style="color: var(--daena-gold); font-size: 24px; font-weight: 700;">${pendingData.count || 0}</div>
+                            <div style="color: #9CA3AF; font-size: 12px;">Pending Founder Approval</div>
+                        </div>
+                        ${(pendingData.proposals || []).length === 0
+                ? '<div style="text-align: center; color: #9CA3AF; padding: 40px;">No pending approvals</div>'
+                : (pendingData.proposals || []).map(proposal => `
                                 <div style="padding: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; margin-bottom: 12px;">
                                     <div style="color: white; font-weight: 600; margin-bottom: 8px;">${proposal.title}</div>
                                     <div style="font-size: 11px; color: #9CA3AF; margin-bottom: 12px;">
@@ -284,12 +282,12 @@ async function viewChangeControl() {
                                     </div>
                                 </div>
                             `).join('')
-    }
-                    </div >
-                </div >
-            </div >
+            }
+                    </div>
+                </div>
+            </div>
         `;
-        
+
         document.body.insertAdjacentHTML('beforeend', modalHtml);
     } catch (error) {
         console.error('Failed to load change control:', error);
@@ -301,25 +299,25 @@ async function viewChangeControl() {
 async function viewRouterStatus() {
     try {
         const modelsData = await godMode.getRouterModels();
-        
+
         const modalHtml = `
-        < div class="modal-overlay" id = "router-status-modal" onclick = "closeGodModeModal('router-status-modal')"
-    style = "display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;" >
-        <div class="modal-content" onclick="event.stopPropagation()"
-            style="width: 90%; max-width: 700px; background: #0f1729; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;">
-            <div class="modal-header" style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="color: white; font-size: 20px; margin: 0;">Router Agent Models</h2>
-                <div onclick="closeGodModeModal('router-status-modal')"
-                    style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;">
-                    <i class="fas fa-times"></i>
-                </div>
-            </div>
-            <div class="modal-body" style="padding: 24px; max-height: 500px; overflow-y: auto;">
-                <div style="margin-bottom: 20px;">
-                    <div style="color: var(--daena-gold); font-size: 24px; font-weight: 700;">${modelsData.count || 0}</div>
-                    <div style="color: #9CA3AF; font-size: 12px;">Available Models</div>
-                </div>
-                ${(modelsData.models || []).map(model => `
+            <div class="modal-overlay" id="router-status-modal" onclick="closeGodModeModal('router-status-modal')"
+                style="display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+                <div class="modal-content" onclick="event.stopPropagation()"
+                    style="width: 90%; max-width: 700px; background: #0f1729; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;">
+                    <div class="modal-header" style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                        <h2 style="color: white; font-size: 20px; margin: 0;">Router Agent Models</h2>
+                        <div onclick="closeGodModeModal('router-status-modal')"
+                            style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;">
+                            <i class="fas fa-times"></i>
+                        </div>
+                    </div>
+                    <div class="modal-body" style="padding: 24px; max-height: 500px; overflow-y: auto;">
+                        <div style="margin-bottom: 20px;">
+                            <div style="color: var(--daena-gold); font-size: 24px; font-weight: 700;">${modelsData.count || 0}</div>
+                            <div style="color: #9CA3AF; font-size: 12px;">Available Models</div>
+                        </div>
+                        ${(modelsData.models || []).map(model => `
                             <div style="padding: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; margin-bottom: 12px;">
                                 <div style="color: white; font-weight: 600; margin-bottom: 8px;">${model.name}</div>
                                 <div style="font-size: 11px; color: #9CA3AF;">
@@ -331,11 +329,11 @@ async function viewRouterStatus() {
                                 </div>
                             </div>
                         `).join('')}
+                    </div>
+                </div>
             </div>
-        </div>
-            </div >
         `;
-        
+
         document.body.insertAdjacentHTML('beforeend', modalHtml);
     } catch (error) {
         console.error('Failed to load router status:', error);

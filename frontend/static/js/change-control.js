@@ -1,8 +1,7 @@
-"""
-Frontend integration for Change Control V2 - Backup Management UI
-
-Adds change history and backup controls to Founder Panel
-"""
+/**
+ * Frontend integration for Change Control V2 - Backup Management UI
+ * Adds change history and backup controls to Founder Panel
+ */
 
 const ChangeControl = {
     async getStats() {

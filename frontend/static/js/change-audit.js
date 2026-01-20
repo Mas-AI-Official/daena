@@ -22,7 +22,7 @@ const ChangeAudit = {
         this.renderVisualization();
     },
 
-    setup Filters() {
+    setupFilters() {
         // Actor filter
         const actorSelect = document.getElementById('filter-actor');
         if (actorSelect) {

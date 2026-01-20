@@ -1,22 +1,211 @@
- ✅ Health Check: healthy
-  ✅ Council Health: healthy
-  ✅ Brain Status: connected=True
-  ❌ Brain Models: 0 models found
-  ✅ Chat Create: session_id=8f2a7de7...
-  ❌ Chat Send: 
-  ✅ Chat Delete: Session deleted
-  ✅ Tool: Web Search: 🔍 **Web search results for: Python progr...
-  ✅ Voice Status: enabled=False
-  ❌ Snapshot Create: HTTP 404
-  ❌ Snapshot List: HTTP 404
-  ❌ Snapshot Restore: No snapshot
-  ✅ Demo Health: ready
-  ✅ Demo Run: 24ms
+AI Tinkerers Toronto - January 2026 Meetup at Google! 
+Jan
+29
+Thursday, January 29th
+5PM to 8PM (EST)
 
-------------------------------------------------------------
+Submit Your Demo Proposal
+This is a technical show-and-tell for builders, by builders. We want to see your messy experiments, creative hacks, and technical discoveries in action. Your demo should answer: "How did you build this interesting thing?" not "Why should someone use this product?"
 
-  SUMMARY: 9/14 checks passed (64%)
 
-  ❌ CRITICAL ISSUES - Fix before demo!
+ Status: Pending review by organizers.
 
-======================
+Thanks for submitting your proposal. We'll get back to you soon.
+
+Event: AI Tinkerers Toronto - January 2026 Meetup at Google! 
+Date and time: January 29, 2026 from 5PM to 8PM EST
+Edit Proposal View Talk Page
+
+
+AI "Instant" Feedback
+Thank you for submitting your proposal for the AI Tinkerers Toronto January 2026 Meetup. We appreciate your interest in presenting your work.
+
+Overall Assessment: Excellent Fit
+This is an exceptionally strong proposal that aligns perfectly with the AI Tinkerers ethos. The focus on agentic workflow routing, evaluation, and traceability is highly relevant, and the commitment to a local-first, demo-driven approach that dissects the technical “how” is exactly what our audience expects. Your background as an active builder with shipped projects like MedScan and Daena confirms your ability to deliver a hands-on presentation.
+
+Technical Depth and Implementation Details
+We are particularly excited by the explicit mention of implementation details, such as router signals, council scoring prompts, and trace events. For the 6-minute demo, we encourage you to spend the majority of the time on the code or configuration that defines the router’s decision logic and the scoring mechanism. Showing the actual prompt engineering or the scoring function used by the “council” will maximize the technical takeaway for the audience.
+
+Connection to Recent Industry Developments
+Your work on Daena, which focuses on governance and traceability for agentic workflows, is highly timely. This directly addresses the industry’s increasing focus on agent standards, evidenced by the recent launch of the Agentic AI Foundation (AAIF) and the donation of specifications like Agents.md. We encourage you to briefly contextualize how your local-first governance approach relates to these emerging vendor-neutral standards.
+
+As a suggestion for future research or a brief mention, consider how your routing logic might handle models that offer specific resource controls, such as the new “Effort” parameter introduced by Claude Opus 4.5 for cost-optimized reasoning depth. This could be a compelling extension of your current routing signals.
+
+Presentation Focus
+Ensure the demonstration clearly contrasts the chosen model’s output versus the critique provided by the evaluation council. Since the time is short, focus on one complex, hard-won technical lesson rather than trying to cover all three steps equally. The audience will gain the most value from seeing the real-time backend state synchronization and the audit trace generation.
+
+Reminder
+Thank you again for your submission. Please remember that as an AI agent, we don’t make the final decisions around here; the human organizers will review this feedback and make the final selection.
+
+
+This AI feedback is for your convenience only. Rest assured, humans will review your proposal.
+Thought for 8m 32s
+
+Best choice for this AI Tinkerers event
+
+For AI Tinkerers Toronto (Jan 29, 2026 @ Google), the best demo is Daena (not NatureNLP, not VibeAgents).
+
+Why:
+
+The event explicitly wants agentic workflows, routing, production deployment, live code, hard-won lessons and a 6-minute demo.
+
+Your proposal feedback already confirms the strongest angle is router decision logic + council scoring + traceability/state sync.
+
+How to position it (simple + powerful):
+“Daena is a local-first VP system. The demo is one narrow slice: a router picks a model, a council critiques the output, and we log the trace so you can debug and reproduce decisions.”
+
+NatureNLP is great, but it is a training framework and harder to show in 6 minutes without sliding into research/pitch. VibeAgents can be framed as a component inside Daena, but the “shiny working system” is Daena.
+
+What you should show (the exact 6-minute plan)
+
+AI Tinkerers wants “How did you build this?” not “Why use it?”
+
+Minute-by-minute
+
+0:00–0:30 Open http://localhost:8000/demo and run one prompt. Show the live timeline.
+
+0:30–2:30 Router
+Open: Core/routing/router_agent.py
+Show: model selection rules, signals, and why a model was chosen.
+
+2:30–4:30 Council scoring
+Open: backend/services/demo_council.py
+Show: the role scoring format (security/reliability/product), what it returns, and how you merge.
+
+4:30–5:30 Traceability
+Open: backend/services/demo_trace.py
+Show: what events are logged and how the UI renders them.
+
+5:30–6:00 One hard-won lesson
+مثال: “Separating router vs evaluator avoids mode-flipping and makes decisions debuggable.”
+
+This matches the organizers’ guidance you received.
+
+What I scanned in your uploaded build (Daena_old_upgrade_20251213.zip)
+Good news: your demo wiring is already correct
+
+Frontend demo uses:
+
+POST /api/v1/demo/run
+
+GET /api/v1/demo/health
+
+Backend implements exactly those endpoints in backend/routes/demo.py.
+So the demo page + API paths match cleanly in this snapshot.
+
+Important: there are 3 broken JS files (syntax errors)
+
+These can break parts of the founder/admin panels (not the demo page), and they are worth fixing before the event so nothing “randomly explodes” during showing.
+
+frontend/static/js/god_mode.js
+
+Has invalid template string fragments and a broken variable reference (pending Data).
+
+frontend/static/js/change-control.js
+
+Starts with """ (Python-style string) which is invalid JS.
+
+frontend/static/js/change-audit.js
+
+Has a function name typo: setup Filters() (space) which breaks parsing.
+
+Also: your backend already has rollback/versioning style endpoints in:
+
+backend/routes/change_control_v2.py (/api/v1/changes/...)
+
+backend/routes/god_mode.py (separate change-control endpoints)
+So the backend capability exists, but the UI scripts above need cleanup to reliably expose it.
+
+Council “training” question (do we need it for this event?)
+
+No. For AI Tinkerers, do NOT talk about training councils.
+
+Use this framing:
+
+“Council” = prompt-defined evaluator roles (security, reliability, product)
+
+They run on whatever model is available (local DeepSeek/Qwen), or even mocked for reliability, but the key is the scoring format + merge logic + trace
+
+Save the “trained councils” story for a bigger conference (or when you have real eval data).
+
+Models: Kimi K2, DeepSeek v3.2, Gemini, what is realistic for Jan 29?
+Safest demo setup (recommended)
+
+Local models via Ollama for reliability (no Wi-Fi dependency)
+
+One cloud model only as a “bonus if internet works”
+
+Notes:
+
+Ollama shows deepseek-v3.2:cloud (cloud served).
+
+Ollama also lists kimi-k2-thinking:cloud (cloud served).
+
+So Kimi K2 is awesome, but for the meetup I would not make the core demo depend on cloud.
+
+If you want one “wow” line:
+“I can swap in cloud models like Gemini 3 Flash or Kimi K2 via routing, but the core system runs local-first.” (Gemini 3 Flash is explicitly mentioned by the event page.)
+
+Folder location on your PC (inside D:\Ideas\Daena_old_upgrade_20251213 or outside?)
+
+Do this:
+
+Keep D:\Ideas\Daena_old_upgrade_20251213 as your frozen baseline
+
+Create a new working folder for the event:
+
+D:\Ideas\Daena_AITinkerersDemo_20260129
+
+Copy the project there (or make a git branch) and only make demo-safe changes in the demo folder.
+
+This gives you the “rollback to stable” instantly: just go back to the frozen baseline folder.
+
+The path to “professional and shiny” in 10 days (Jan 19 -> Jan 29)
+
+Day 1 (today): Demo stability
+
+Run backend, open /demo, verify one prompt run
+
+Fix the 3 JS syntax issues (below) so nothing breaks if you click around
+
+Day 2: Make the demo more “real”
+
+Optional but strong: make /api/v1/demo/run able to run in two modes:
+
+simulate (current safe behavior)
+
+real (calls selected model once, then council critiques)
+
+Keep default simulate so it never fails.
+
+Day 3: Record a backup video
+
+90 seconds, unlisted YouTube or Drive link
+
+If Wi-Fi dies or laptop glitches, you still have a perfect fallback.
+
+Day 4: Tighten the 6-min script
+
+Practice exactly once per day
+
+Make sure you can do it in 5:30 so Q&A is relaxed
+
+Day 5–6: Polish the trace UX
+
+Highlight one trace event that proves your “debuggability” point
+
+Day 7: Science fair kit
+
+A single page “Runbook” (start commands, URLs, 2 prompts to run)
+
+Day 8–9: Dry runs
+
+Full dry run from cold boot
+
+Time it
+
+Day 10 (event day): Execution
+
+Arrive early, open demo locally, keep a terminal ready
+
+Have the backup video link ready
