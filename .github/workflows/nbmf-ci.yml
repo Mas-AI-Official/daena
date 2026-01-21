@@ -85,7 +85,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: nbmf_benchmark
     if: always()  # Run even if benchmark fails
-    if: always()  # Run even if benchmark fails
     
     steps:
     - name: Checkout code
