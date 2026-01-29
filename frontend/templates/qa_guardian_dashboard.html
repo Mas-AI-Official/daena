@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QA Guardian Dashboard - Daena</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: rgba(20, 20, 30, 0.8);
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-purple: #8b5cf6;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .header h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .header h1 .icon {
+            font-size: 2rem;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 0.625rem 1.25rem;
+            border-radius: 0.5rem;
+            border: none;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-danger {
+            background: var(--accent-red);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .btn-outline:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .status-card {
+            background: var(--bg-card);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
+        }
+
+        .status-card .label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .status-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .status-card .indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+        }
+
+        .indicator-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .indicator-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--accent-yellow);
+        }
+
+        .indicator-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border-radius: 1rem;
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .panel-body {
+            padding: 1rem 1.5rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .incident-list {
+            list-style: none;
+        }
+
+        .incident-item {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.75rem;
+            background: rgba(0, 0, 0, 0.3);
+            border-left: 4px solid var(--accent-blue);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .incident-item:hover {
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .incident-item.severity-p0 {
+            border-left-color: var(--accent-red);
+        }
+
+        .incident-item.severity-p1 {
+            border-left-color: #f97316;
+        }
+
+        .incident-item.severity-p2 {
+            border-left-color: var(--accent-yellow);
+        }
+
+        .incident-item.severity-p3 {
+            border-left-color: var(--accent-blue);
+        }
+
+        .incident-item.severity-p4 {
+            border-left-color: var(--text-secondary);
+        }
+
+        .incident-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .incident-title {
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+
+        .incident-meta {
+            display: flex;
+            gap: 0.75rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.125rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.625rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-p0 {
+            background: var(--accent-red);
+        }
+
+        .badge-p1 {
+            background: #f97316;
+        }
+
+        .badge-p2 {
+            background: var(--accent-yellow);
+            color: #000;
+        }
+
+        .badge-p3 {
+            background: var(--accent-blue);
+        }
+
+        .badge-p4 {
+            background: var(--text-secondary);
+        }
+
+        .badge-status {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--accent-blue);
+        }
+
+        .badge-approval {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--accent-yellow);
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .summary-item:last-child {
+            border-bottom: none;
+        }
+
+        .summary-label {
+            color: var(--text-secondary);
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding: 1rem 1.5rem;
+        }
+
+        .action-btn {
+            width: 100%;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .action-btn.running {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: var(--accent-blue);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        @media (max-width: 1024px) {
+            .status-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="dashboard">
+        <header class="header">
+            <h1>
+                <span class="icon">🛡️</span>
+                QA Guardian Dashboard
+            </h1>
+            <div class="header-actions">
+                <a href="/incident-room" class="btn btn-outline">🚨 Incident Room</a>
+                <button class="btn btn-outline" onclick="refreshDashboard()">↻ Refresh</button>
+                <button class="btn btn-primary" onclick="requestReview()">Request QA Review</button>
+                <button class="btn btn-danger" id="killSwitchBtn" onclick="toggleKillSwitch()">
+                    Kill Switch
+                </button>
+            </div>
+        </header>
+
+        <div class="status-grid">
+            <div class="status-card">
+                <div class="label">Guardian Status</div>
+                <div class="value" id="guardianStatus">--</div>
+                <div class="indicator indicator-success" id="statusIndicator">
+                    <span>●</span> <span id="statusText">Loading...</span>
+                </div>
+            </div>
+
+            <div class="status-card">
+                <div class="label">Open Incidents</div>
+                <div class="value" id="openIncidents">0</div>
+                <div class="indicator indicator-warning" id="incidentIndicator">
+                    <span id="incidentText">0 awaiting approval</span>
+                </div>
+            </div>
+
+            <div class="status-card">
+                <div class="label">Auto-Fix Rate Limit</div>
+                <div class="value" id="rateLimit">5/5</div>
+                <div class="indicator indicator-success">
+                    <span>Available this hour</span>
+                </div>
+            </div>
+
+            <div class="status-card">
+                <div class="label">Last 24h Incidents</div>
+                <div class="value" id="incidents24h">0</div>
+                <div class="indicator indicator-success" id="trend24h">
+                    <span>No critical issues</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>📋 Recent Incidents</h2>
+                    <select id="incidentFilter" onchange="filterIncidents()"
+                        style="background: transparent; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 0.25rem; color: var(--text-primary);">
+                        <option value="all">All</option>
+                        <option value="open">Open</option>
+                        <option value="awaiting_approval">Awaiting Approval</option>
+                        <option value="closed">Closed</option>
+                    </select>
+                </div>
+                <div class="panel-body">
+                    <ul class="incident-list" id="incidentList">
+                        <li class="empty-state">
+                            <div class="icon">✅</div>
+                            <p>No incidents to display</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>⚡ Quick Actions</h2>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="action-btn" onclick="runRegression('smoke')">
+                            🔥 Run Smoke Tests
+                        </button>
+                        <button class="action-btn" onclick="runRegression('golden')">
+                            ⭐ Run Golden Workflows
+                        </button>
+                        <button class="action-btn" onclick="runSecurityScan()">
+                            🔒 Security Scan
+                        </button>
+                        <button class="action-btn" onclick="startGuardian()">
+                            ▶️ Start Guardian Loop
+                        </button>
+                        <button class="action-btn" onclick="stopGuardian()">
+                            ⏹️ Stop Guardian Loop
+                        </button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>📊 Summary</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div class="summary-item">
+                            <span class="summary-label">Auto-Fix</span>
+                            <span id="autoFixStatus">Disabled</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Last Regression</span>
+                            <span id="lastRegression">Never</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Last Security Scan</span>
+                            <span id="lastSecurityScan">Never</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Critical Issues</span>
+                            <span id="criticalCount" style="color: var(--accent-green);">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1/qa';
+
+        async function fetchAPI(endpoint, options = {}) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, {
+                    headers: { 'Content-Type': 'application/json' },
+                    ...options
+                });
+                return await response.json();
+            } catch (error) {
+                console.error('API Error:', error);
+                return null;
+            }
+        }
+
+        async function refreshDashboard() {
+            // Fetch status
+            const status = await fetchAPI('/status');
+            if (status) {
+                document.getElementById('guardianStatus').textContent = status.running ? 'Running' : 'Stopped';
+                document.getElementById('statusText').textContent = status.enabled ? 'Enabled' : 'Disabled';
+                document.getElementById('statusIndicator').className = `indicator ${status.enabled ? 'indicator-success' : 'indicator-danger'}`;
+                document.getElementById('openIncidents').textContent = status.open_incidents;
+                document.getElementById('rateLimit').textContent = `${status.rate_limit_remaining}/5`;
+                document.getElementById('incidents24h').textContent = status.total_incidents_24h;
+                document.getElementById('autoFixStatus').textContent = status.auto_fix_enabled ? 'Enabled' : 'Disabled';
+
+                // Update kill switch button
+                const killBtn = document.getElementById('killSwitchBtn');
+                if (status.kill_switch_active) {
+                    killBtn.textContent = '🔴 Kill Switch ON';
+                    killBtn.className = 'btn btn-danger';
+                } else {
+                    killBtn.textContent = 'Kill Switch';
+                    killBtn.className = 'btn btn-outline';
+                }
+            }
+
+            // Fetch incidents
+            const incidents = await fetchAPI('/incidents?limit=20');
+            if (incidents) {
+                renderIncidents(incidents);
+
+                // Count awaiting approval
+                const awaiting = incidents.filter(i => i.status === 'awaiting_approval').length;
+                document.getElementById('incidentText').textContent = `${awaiting} awaiting approval`;
+
+                // Count critical
+                const critical = incidents.filter(i => i.severity === 'P0' || i.severity === 'P1').length;
+                document.getElementById('criticalCount').textContent = critical;
+                document.getElementById('criticalCount').style.color = critical > 0 ? 'var(--accent-red)' : 'var(--accent-green)';
+            }
+        }
+
+        function renderIncidents(incidents) {
+            const list = document.getElementById('incidentList');
+
+            if (!incidents || incidents.length === 0) {
+                list.innerHTML = `
+                    <li class="empty-state">
+                        <div class="icon">✅</div>
+                        <p>No incidents to display</p>
+                    </li>
+                `;
+                return;
+            }
+
+            list.innerHTML = incidents.map(inc => `
+                <li class="incident-item severity-${inc.severity.toLowerCase()}" onclick="viewIncident('${inc.incident_id}')">
+                    <div class="incident-header">
+                        <span class="incident-title">${inc.summary.substring(0, 60)}${inc.summary.length > 60 ? '...' : ''}</span>
+                        <span class="badge badge-${inc.severity.toLowerCase()}">${inc.severity}</span>
+                    </div>
+                    <div class="incident-meta">
+                        <span>📁 ${inc.subsystem}</span>
+                        <span>🏷️ ${inc.category}</span>
+                        <span class="badge badge-status">${inc.status}</span>
+                        ${inc.approval_required ? '<span class="badge badge-approval">Needs Approval</span>' : ''}
+                    </div>
+                </li>
+            `).join('');
+        }
+
+        async function viewIncident(incidentId) {
+            const incident = await fetchAPI(`/incidents/${incidentId}`);
+            if (incident) {
+                alert(JSON.stringify(incident, null, 2));
+            }
+        }
+
+        async function filterIncidents() {
+            const filter = document.getElementById('incidentFilter').value;
+            const endpoint = filter === 'all' ? '/incidents?limit=20' : `/incidents?status=${filter}&limit=20`;
+            const incidents = await fetchAPI(endpoint);
+            if (incidents) {
+                renderIncidents(incidents);
+            }
+        }
+
+        async function toggleKillSwitch() {
+            const status = await fetchAPI('/status');
+            const newState = !status.kill_switch_active;
+
+            if (newState && !confirm('Are you sure you want to activate the kill switch? This will stop all auto-fixes.')) {
+                return;
+            }
+
+            await fetchAPI('/kill-switch', {
+                method: 'POST',
+                body: JSON.stringify({ enable: newState })
+            });
+
+            refreshDashboard();
+        }
+
+        async function requestReview() {
+            const target = prompt('What to review? (full, security, regression)', 'full');
+            if (target) {
+                const result = await fetchAPI('/request-review', {
+                    method: 'POST',
+                    body: JSON.stringify({ target, notes: 'Requested from dashboard' })
+                });
+                if (result && result.success) {
+                    alert(`Review requested: ${result.request_id}`);
+                }
+            }
+        }
+
+        async function runRegression(type) {
+            const result = await fetchAPI('/run-regression', {
+                method: 'POST',
+                body: JSON.stringify({ run_type: type })
+            });
+            if (result && result.success) {
+                alert(`Regression started: ${result.run_id}`);
+            }
+        }
+
+        async function runSecurityScan() {
+            const result = await fetchAPI('/run-security-scan', {
+                method: 'POST',
+                body: JSON.stringify({ scan_type: 'full' })
+            });
+            if (result && result.success) {
+                alert(`Security scan started: ${result.scan_id}`);
+            }
+        }
+
+        async function startGuardian() {
+            const result = await fetchAPI('/start', { method: 'POST' });
+            if (result && result.success) {
+                alert('Guardian loop started');
+                refreshDashboard();
+            }
+        }
+
+        async function stopGuardian() {
+            const result = await fetchAPI('/stop', { method: 'POST' });
+            if (result && result.success) {
+                alert('Guardian loop stopped');
+                refreshDashboard();
+            }
+        }
+
+        // Initial load
+        refreshDashboard();
+
+        // Auto-refresh every 30 seconds
+        setInterval(refreshDashboard, 30000);
+    </script>
+</body>
+
+</html>

@@ -435,14 +435,51 @@ async def freeze_blockchain():
         "founder_id": "founder"
     }
 
+@router.get("/system/emergency/status")
+async def system_emergency_status():
+    """Return current lockdown status for Incident Room / Guardian."""
+    try:
+        from backend.config.security_state import is_lockdown_active
+        lockdown_active = is_lockdown_active()
+    except Exception:
+        lockdown_active = False
+    return {
+        "lockdown_active": lockdown_active,
+        "timestamp": datetime.now().isoformat(),
+    }
+
 @router.post("/system/emergency/lockdown")
 async def system_lockdown():
-    """Complete system lockdown"""
+    """Complete system lockdown – sets runtime lockdown flag for Guardian/containment."""
+    try:
+        from backend.config.security_state import set_lockdown, is_lockdown_active
+        set_lockdown(True)
+        active = is_lockdown_active()
+    except Exception:
+        active = True
     return {
         "message": "System lockdown executed",
         "status": "system_locked",
+        "lockdown_active": active,
         "timestamp": datetime.now().isoformat(),
         "affected_systems": ["all"],
+        "founder_id": "founder"
+    }
+
+@router.post("/system/emergency/unlock")
+async def system_unlock():
+    """Clear runtime lockdown (does not change SECURITY_LOCKDOWN_MODE env)."""
+    try:
+        from backend.config.security_state import set_lockdown, is_lockdown_active
+        set_lockdown(False)
+        active = is_lockdown_active()
+    except Exception:
+        active = False
+    return {
+        "message": "Runtime lockdown cleared",
+        "status": "unlocked",
+        "lockdown_active": active,
+        "timestamp": datetime.now().isoformat(),
         "founder_id": "founder"
     }
 

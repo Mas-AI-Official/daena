@@ -7,6 +7,7 @@ REM Set environment variables from parent batch file if not already set
 if "%PROJECT_ROOT%"=="" set "PROJECT_ROOT=%~dp0.."
 if "%PYTHON_EXE%"=="" set "PYTHON_EXE=%PROJECT_ROOT%\venv_daena_main_py310\Scripts\python.exe"
 if "%BACKEND_LOG%"=="" set "BACKEND_LOG=%PROJECT_ROOT%\logs\backend_%DATE:~-4,4%%DATE:~-7,2%%DATE:~-10,2%_%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%.log"
+set "BACKEND_LOG=%BACKEND_LOG: =0%"
 REM ============================================================================
 
 setlocal enabledelayedexpansion

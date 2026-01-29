@@ -8,10 +8,10 @@
     /* Additional Dashboard Styles */
     .dashboard-grid {
         width: 100%;
-        max-width: 1100px;
+        max-width: 1200px;
         margin-top: 15px;
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(2, 1fr);
         gap: 12px;
     }
 
@@ -94,6 +94,32 @@
         flex-direction: column;
         gap: 8px;
     }
+
+    /* Execution Layer panel */
+    .execution-layer { display: flex; flex-direction: column; gap: 10px; }
+    .execution-layer .exec-tools-section,
+    .execution-layer .exec-logs-section,
+    .execution-layer .exec-config-section { display: flex; flex-direction: column; gap: 4px; }
+    .execution-layer .exec-label { font-size: 9px; color: #6B7280; text-transform: uppercase; }
+    .execution-layer .exec-value { font-size: 11px; color: #E5E7EB; }
+    .execution-layer .exec-loading { font-size: 10px; color: #6B7280; }
+    .exec-tool-list, .exec-logs-list { max-height: 90px; overflow-y: auto; }
+    .exec-tool-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 11px; }
+    .exec-tool-row .tool-name { color: #E5E7EB; }
+    .exec-tool-row .tool-toggle { cursor: pointer; color: var(--daena-gold); }
+    .exec-log-row { font-size: 10px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.05); color: #9CA3AF; }
+    .exec-log-row .log-status { font-weight: 600; }
+    .exec-log-row .log-status.ok { color: #22C55E; }
+    .exec-log-row .log-status.error { color: #EF4444; }
+    .exec-token-section .exec-token-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+    .exec-token-input { flex: 1; padding: 4px 8px; font-size: 11px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: #E5E7EB; }
+    .exec-token-btn { padding: 4px 10px; font-size: 10px; background: var(--daena-gold); color: #0a0a0a; border: none; border-radius: 4px; cursor: pointer; }
+    .exec-token-error { font-size: 10px; color: #EF4444; margin-top: 4px; }
+    .exec-run-section .exec-run-row { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+    .exec-run-select { flex: 1; min-width: 100px; padding: 4px 6px; font-size: 11px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: #E5E7EB; }
+    .exec-run-dry { font-size: 10px; color: #9CA3AF; display: flex; align-items: center; gap: 4px; }
+    .exec-run-btn { padding: 4px 10px; font-size: 10px; background: #22C55E; color: #0a0a0a; border: none; border-radius: 4px; cursor: pointer; }
+    .exec-run-result { font-size: 10px; margin-top: 6px; padding: 6px; background: rgba(0,0,0,0.3); border-radius: 4px; color: #9CA3AF; max-height: 60px; overflow-y: auto; }
 
     .task-item {
         display: flex;
@@ -214,13 +240,13 @@
         font-size: 11px;
     }
 
-    @media (max-width: 900px) {
+    @media (min-width: 1100px) {
         .dashboard-grid {
             grid-template-columns: repeat(2, 1fr);
         }
     }
 
-    @media (max-width: 600px) {
+    @media (max-width: 900px) {
         .dashboard-grid {
             grid-template-columns: 1fr;
         }
@@ -417,9 +443,66 @@
                 <button class="quick-btn" onclick="window.location.href='/ui/brain-settings'">
                     <i class="fas fa-brain"></i> Brain Settings
                 </button>
+                <button class="quick-btn" onclick="window.location.href='/ui/app-setup'">
+                    <i class="fas fa-sliders-h"></i> App Setup
+                </button>
                 <button class="quick-btn" onclick="window.location.href='/ui/founder-panel'">
                     <i class="fas fa-user-shield"></i> Founder Panel
                 </button>
+                <button class="quick-btn" onclick="window.location.href='/ui/connections'">
+                    <i class="fas fa-plug"></i> Connections
+                </button>
+                <button class="quick-btn" onclick="window.location.href='/incident-room'">
+                    <i class="fas fa-shield-alt"></i> Incident Room
+                </button>
+                <button class="quick-btn" onclick="window.location.href='/api/v1/qa/ui'">
+                    <i class="fas fa-clipboard-check"></i> QA Guardian
+                </button>
+            </div>
+        </div>
+
+        <!-- Execution Layer (Moltbot-style control plane) -->
+        <div class="dashboard-card" id="execution-layer">
+            <div class="card-header">
+                <i class="fas fa-cogs"></i>
+                <h4>Execution Layer</h4>
+            </div>
+            <div class="execution-layer">
+                <div class="exec-token-section" id="exec-token-section">
+                    <span class="exec-label">Token (if EXECUTION_TOKEN set on server)</span>
+                    <div class="exec-token-row">
+                        <input type="password" id="exec-token-input" class="exec-token-input" placeholder="X-Execution-Token" autocomplete="off" />
+                        <button type="button" class="exec-token-btn" onclick="saveExecutionToken()">Save</button>
+                    </div>
+                    <div id="exec-token-error" class="exec-token-error" style="display:none;"></div>
+                </div>
+                <div class="exec-tools-section">
+                    <span class="exec-label">Tools</span>
+                    <div class="exec-tool-list" id="exec-tool-list">
+                        <span class="exec-loading">Loading...</span>
+                    </div>
+                </div>
+                <div class="exec-run-section">
+                    <span class="exec-label">Run tool</span>
+                    <div class="exec-run-row">
+                        <select id="exec-run-tool" class="exec-run-select"><option value="">Select tool</option></select>
+                        <label class="exec-run-dry"><input type="checkbox" id="exec-run-dry" checked /> Dry run</label>
+                        <button type="button" class="exec-run-btn" onclick="runExecutionTool()">Run</button>
+                    </div>
+                    <div id="exec-run-result" class="exec-run-result" style="display:none;"></div>
+                </div>
+                <div class="exec-logs-section">
+                    <span class="exec-label">Recent runs</span>
+                    <div class="exec-logs-list" id="exec-logs-list">
+                        <span class="exec-loading">Loading...</span>
+                    </div>
+                </div>
+                <div class="exec-config-section">
+                    <span class="exec-label">Approval</span>
+                    <span id="exec-approval-mode" class="exec-value">—</span>
+                    <span class="exec-label">Budget (max steps / retries)</span>
+                    <span id="exec-budget" class="exec-value">—</span>
+                </div>
             </div>
         </div>
     </div>
@@ -451,28 +534,46 @@
         updateDashboardData();
     });
 
-    // Fetch and update dashboard data
+    // Fetch and update dashboard data (brain from API; sync with top bar)
     async function updateDashboardData() {
         try {
-            // Update brain status card
             const brainStatus = document.getElementById('brain-status-card');
             const topIndicator = document.getElementById('brain-status-indicator');
 
+            const response = await fetch('/api/v1/brain/status');
+            const data = await response.ok ? response.json() : {};
+            const isConnected = data.connected === true && data.ollama_available === true && (data.llm_available !== false);
+            const activeModel = data.active_model || 'daena-brain:latest';
+
+            const usingFallback = !!data.using_fallback;
+            if (brainStatus) {
+                brainStatus.textContent = isConnected ? (usingFallback ? 'Active (fallback)' : 'Active') : 'Offline';
+                brainStatus.style.color = isConnected ? '#7ED321' : '#EF4444';
+            }
             if (topIndicator) {
-                const isOnline = topIndicator.textContent.includes('ONLINE');
-                if (brainStatus) {
-                    if (isOnline) {
-                        brainStatus.textContent = 'Active';
-                        brainStatus.style.color = '#7ED321';
-                    } else {
-                        brainStatus.textContent = 'Offline';
-                        brainStatus.style.color = '#EF4444';
-                    }
+                if (isConnected) {
+                    topIndicator.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400';
+                    topIndicator.innerHTML = '<div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div><span>BRAIN ONLINE: ' + (activeModel.split(':')[0]) + (usingFallback ? ' (fallback)' : '') + '</span>';
+                } else {
+                    topIndicator.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-400';
+                    topIndicator.innerHTML = '<div class="w-2 h-2 rounded-full bg-red-500"></div><span>BRAIN OFFLINE</span>';
                 }
             }
+            if (window.RealtimeStatusManager) {
+                window.RealtimeStatusManager.updateStatus('brain', data);
+            }
         } catch (e) {
-            console.log('Dashboard data update:', e);
+            const brainStatus = document.getElementById('brain-status-card');
+            const topIndicator = document.getElementById('brain-status-indicator');
+            if (brainStatus) { brainStatus.textContent = 'Offline'; brainStatus.style.color = '#EF4444'; }
+            if (topIndicator) {
+                topIndicator.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-400';
+                topIndicator.innerHTML = '<div class="w-2 h-2 rounded-full bg-red-500"></div><span>BRAIN OFFLINE</span>';
+            }
+            console.log('Dashboard brain status:', e);
         }
+        loadRecentActivity();
+        loadTaskProgress();
     }
 
     // Load recent activity from EventLog API
@@ -620,12 +721,143 @@
         return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '107, 114, 128';
     }
 
+    // Execution Layer: add X-Execution-Token when set (sessionStorage.execution_token)
+    function executionHeaders() {
+        const t = sessionStorage.getItem('execution_token');
+        return t ? { 'X-Execution-Token': t } : {};
+    }
+    async function executionFetch(url, options) {
+        const opts = options || {};
+        opts.headers = { ...opts.headers, ...executionHeaders() };
+        const r = await fetch(url, opts);
+        if (r.status === 401) {
+            sessionStorage.removeItem('execution_token');
+            throw new Error('Execution Layer requires token. Set EXECUTION_TOKEN in env and add X-Execution-Token header, or store token in sessionStorage.execution_token');
+        }
+        return r;
+    }
+    function saveExecutionToken() {
+        const input = document.getElementById('exec-token-input');
+        const errEl = document.getElementById('exec-token-error');
+        if (!input || !errEl) return;
+        const token = (input.value || '').trim();
+        if (token) {
+            sessionStorage.setItem('execution_token', token);
+            errEl.style.display = 'none';
+            errEl.textContent = '';
+            loadExecutionLayer();
+        } else {
+            sessionStorage.removeItem('execution_token');
+            errEl.textContent = 'Token cleared.';
+            errEl.style.display = 'block';
+        }
+    }
+    async function runExecutionTool() {
+        const sel = document.getElementById('exec-run-tool');
+        const dry = document.getElementById('exec-run-dry');
+        const resultEl = document.getElementById('exec-run-result');
+        if (!sel || !sel.value || !resultEl) return;
+        resultEl.style.display = 'block';
+        resultEl.textContent = 'Running...';
+        try {
+            const r = await executionFetch('/api/v1/execution/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tool_name: sel.value, args: {}, dry_run: dry && dry.checked })
+            });
+            const data = await r.json();
+            resultEl.textContent = JSON.stringify(data, null, 2).slice(0, 500);
+            loadExecutionLayer();
+        } catch (e) {
+            resultEl.textContent = 'Error: ' + (e.message || String(e));
+            const te = document.getElementById('exec-token-error');
+            if (te && e.message && e.message.includes('X-Execution-Token')) {
+                te.textContent = e.message;
+                te.style.display = 'block';
+            }
+        }
+    }
+    async function loadExecutionLayer() {
+        try {
+            const [toolsRes, logsRes, configRes] = await Promise.all([
+                executionFetch('/api/v1/execution/tools'),
+                executionFetch('/api/v1/execution/logs?limit=5'),
+                executionFetch('/api/v1/execution/config')
+            ]);
+            if (toolsRes.ok) {
+                const data = await toolsRes.json();
+                const listEl = document.getElementById('exec-tool-list');
+                if (listEl && data.tools && data.tools.length > 0) {
+                    listEl.innerHTML = data.tools.map(t => `
+                        <div class="exec-tool-row">
+                            <span class="tool-name">${t.name}</span>
+                            <button type="button" class="tool-toggle" data-tool="${t.name}" data-enabled="${t.enabled}" onclick="toggleExecutionTool('${t.name}', ${!t.enabled})" title="${t.enabled ? 'Disable' : 'Enable'}">
+                                ${t.enabled ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                    `).join('');
+                    const runSel = document.getElementById('exec-run-tool');
+                    if (runSel && data.tools && data.tools.length > 0) {
+                        const prev = runSel.value;
+                        runSel.innerHTML = '<option value="">Select tool</option>' + data.tools.filter(t => t.enabled).map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+                        if (prev && data.tools.some(t => t.name === prev)) runSel.value = prev;
+                    }
+                } else if (listEl) {
+                    listEl.innerHTML = '<span class="exec-loading">No tools</span>';
+                }
+            }
+            if (logsRes.ok) {
+                const data = await logsRes.json();
+                const listEl = document.getElementById('exec-logs-list');
+                if (listEl) {
+                    if (data.logs && data.logs.length > 0) {
+                        listEl.innerHTML = data.logs.map(log => {
+                            const status = (log.status === 'ok' || log.status === 'dry_run') ? 'ok' : 'error';
+                            const ts = log.ts ? new Date(log.ts * 1000).toLocaleTimeString() : '—';
+                            return `<div class="exec-log-row"><span class="log-status ${status}">${log.tool_name || '?'}</span> ${ts} — ${log.status || ''}</div>`;
+                        }).join('');
+                    } else {
+                        listEl.innerHTML = '<span class="exec-loading">No runs yet</span>';
+                    }
+                }
+            }
+            if (configRes.ok) {
+                const data = await configRes.json();
+                const cfg = data.config || {};
+                const approvalEl = document.getElementById('exec-approval-mode');
+                const budgetEl = document.getElementById('exec-budget');
+                if (approvalEl) approvalEl.textContent = cfg.approval_mode === 'require_approval' ? 'Require approval' : 'Auto';
+                if (budgetEl) budgetEl.textContent = `${cfg.max_steps_per_run ?? '—'} / ${cfg.max_retries_per_tool ?? '—'}`;
+            }
+        } catch (e) {
+            console.error('Execution Layer load failed:', e);
+            const listEl = document.getElementById('exec-tool-list');
+            if (listEl) listEl.innerHTML = '<span class="exec-loading">Failed to load</span>';
+            const errEl = document.getElementById('exec-token-error');
+            if (errEl && e.message && (e.message.includes('X-Execution-Token') || e.message.includes('401'))) {
+                errEl.textContent = e.message;
+                errEl.style.display = 'block';
+            }
+        }
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        const tokenInput = document.getElementById('exec-token-input');
+        if (tokenInput && sessionStorage.getItem('execution_token')) tokenInput.placeholder = '•••••••• (set)';
+    });
+    async function toggleExecutionTool(name, enabled) {
+        try {
+            const r = await executionFetch(`/api/v1/execution/tools/${encodeURIComponent(name)}/enabled?enabled=${enabled}`, { method: 'PATCH' });
+            if (r.ok) loadExecutionLayer();
+        } catch (e) { console.error('Toggle failed:', e); }
+    }
+
     // Refresh dashboard data periodically
     setInterval(() => {
         updateDashboardData();
         loadRecentActivity();
         loadTaskProgress();
         loadOperationsSummary();
+        loadExecutionLayer();
     }, 10000);
 
     // Initial load
@@ -633,5 +865,6 @@
     loadRecentActivity();
     loadTaskProgress();
     loadOperationsSummary();
+    loadExecutionLayer();
 </script>
 {% endblock %}

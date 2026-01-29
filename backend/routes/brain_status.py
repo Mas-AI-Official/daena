@@ -16,8 +16,25 @@ from pathlib import Path
 router = APIRouter(prefix="/api/v1/brain", tags=["brain"])
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL = "http://127.0.0.1:11434"
-LOCAL_BRAIN_PATH = Path(__file__).parent.parent.parent / "local_brain"
+
+def _ollama_url() -> str:
+    """Use backend settings so brain status stays in sync with chat/LLM."""
+    try:
+        from backend.config.settings import get_settings
+        return get_settings().ollama_base_url or "http://127.0.0.1:11434"
+    except Exception:
+        return "http://127.0.0.1:11434"
+
+
+def _local_brain_path() -> Path:
+    try:
+        from backend.config.settings import get_settings
+        s = get_settings()
+        if getattr(s, "models_root", None):
+            return Path(s.models_root) / "ollama"
+    except Exception:
+        pass
+    return Path(__file__).parent.parent.parent / "local_brain"
 
 
 class RoutingMode(str, Enum):
@@ -62,6 +79,7 @@ async def get_brain_status() -> Dict[str, Any]:
     finally:
         db.close()
     
+    local_brain = _local_brain_path()
     status = {
         "connected": False,
         "ollama_available": False,
@@ -71,19 +89,28 @@ async def get_brain_status() -> Dict[str, Any]:
         "active_model": active_models[0] if active_models else None,  # Primary for backward compatibility
         "active_models": active_models,  # All active models
         "routing_mode": _current_routing_mode.value,
-        "local_brain_path": str(LOCAL_BRAIN_PATH),
-        "local_brain_exists": LOCAL_BRAIN_PATH.exists()
+        "local_brain_path": str(local_brain),
+        "local_brain_exists": local_brain.exists()
     }
     
+    # Try primary Ollama first; if down, use local brain fallback (daena brain on fallback port)
+    ollama_url = _ollama_url()
+    try:
+        from backend.services.local_brain_manager import try_primary_then_fallback
+        ollama_url = await try_primary_then_fallback()
+        if "11435" in ollama_url:
+            status["using_fallback"] = True  # UI can show "Local brain (fallback)"
+    except Exception:
+        pass
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.get(f"{OLLAMA_URL}/api/tags")
+            response = await client.get(f"{ollama_url.rstrip('/')}/api/tags")
             if response.status_code == 200:
                 data = response.json()
                 models = data.get("models", [])
-                status["connected"] = True
                 status["ollama_available"] = True
                 status["llm_available"] = len(models) > 0
+                status["connected"] = status["ollama_available"] and status["llm_available"]  # sync with frontend
                 model_list = [
                     {
                         "name": m.get("name"),
@@ -99,6 +126,8 @@ async def get_brain_status() -> Dict[str, Any]:
                 if not active_models and models:
                     status["active_model"] = models[0].get("name")
                     status["active_models"] = [models[0].get("name")]
+            else:
+                status["error"] = f"Ollama returned {response.status_code}"
     except Exception as e:
         logger.warning(f"Ollama not available: {e}")
         status["error"] = str(e)
@@ -114,10 +143,12 @@ async def list_models() -> Dict[str, Any]:
         "cloud": []
     }
     
-    # Get Ollama models
+    # Get Ollama models (primary or local brain fallback)
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.get(f"{OLLAMA_URL}/api/tags")
+        from backend.services.local_brain_manager import try_primary_then_fallback
+        ollama_url = await try_primary_then_fallback()
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{ollama_url.rstrip('/')}/api/tags")
             if response.status_code == 200:
                 data = response.json()
                 for m in data.get("models", []):
@@ -130,8 +161,9 @@ async def list_models() -> Dict[str, Any]:
         logger.warning(f"Could not list Ollama models: {e}")
     
     # Check local_brain trained models
-    if LOCAL_BRAIN_PATH.exists():
-        manifests = LOCAL_BRAIN_PATH / "manifests"
+    local_brain = _local_brain_path()
+    if local_brain.exists():
+        manifests = local_brain / "manifests"
         if manifests.exists():
             for registry in manifests.iterdir():
                 if registry.is_dir():
@@ -154,10 +186,12 @@ async def list_models() -> Dict[str, Any]:
 
 @router.get("/list-models")
 async def list_all_models() -> Dict[str, Any]:
-    """List ALL available local models from Ollama"""
+    """List ALL available local models from Ollama (primary or fallback)"""
     try:
+        from backend.services.local_brain_manager import try_primary_then_fallback
+        ollama_url = await try_primary_then_fallback()
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{OLLAMA_URL}/api/tags")
+            response = await client.get(f"{ollama_url.rstrip('/')}/api/tags")
             if response.status_code == 200:
                 data = response.json()
                 models = data.get("models", [])
@@ -215,26 +249,34 @@ async def scan_models() -> Dict[str, Any]:
             "error": str(e)
         }
 
+class TestBrainRequest(BaseModel):
+    model_name: Optional[str] = None
+
+
 @router.post("/test")
-async def test_brain_connection() -> Dict[str, Any]:
-    """Test the brain connection with a simple prompt using the ACTIVE model"""
-    # Get active model from DB
+async def test_brain_connection(request: Optional[TestBrainRequest] = Body(None)) -> Dict[str, Any]:
+    """Test the brain connection with a simple prompt. Uses model_name from body if provided, else ACTIVE model from DB."""
     from backend.database import SessionLocal, SystemConfig
     import json
-    
-    db = SessionLocal()
-    active_model = "qwen2.5:7b-instruct" # Default fallback
-    try:
-        config = db.query(SystemConfig).filter(SystemConfig.config_key == "active_brain_model").first()
-        if config and config.config_value:
-            active_model = config.config_value
-    finally:
-        db.close()
+
+    active_model = getattr(request, "model_name", None) if request else None
+    if not active_model:
+        db = SessionLocal()
+        try:
+            config = db.query(SystemConfig).filter(SystemConfig.config_key == "active_brain_model").first()
+            if config and config.config_value:
+                active_model = config.config_value
+        finally:
+            db.close()
+        if not active_model:
+            active_model = "qwen2.5:7b-instruct"
 
     try:
+        from backend.services.local_brain_manager import try_primary_then_fallback
+        ollama_url = await try_primary_then_fallback()
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                f"{OLLAMA_URL}/api/generate",
+                f"{ollama_url.rstrip('/')}/api/generate",
                 json={
                     "model": active_model,
                     "prompt": "Say 'Hello, I am Daena's brain and I am working!' in one sentence.",
@@ -268,12 +310,14 @@ class PullModelRequest(BaseModel):
 
 @router.post("/pull")
 async def pull_model(request: PullModelRequest = Body(...)) -> Dict[str, Any]:
-    """Pull/download a model from Ollama"""
+    """Pull/download a model from Ollama (primary or fallback)"""
     model_name = request.model_name
     try:
+        from backend.services.local_brain_manager import try_primary_then_fallback
+        ollama_url = await try_primary_then_fallback()
         async with httpx.AsyncClient(timeout=300.0) as client:
             response = await client.post(
-                f"{OLLAMA_URL}/api/pull",
+                f"{ollama_url.rstrip('/')}/api/pull",
                 json={"name": model_name}
             )
             return {
@@ -347,10 +391,12 @@ async def select_model(model_name: str, enabled: bool = True) -> Dict[str, Any]:
         
         db.commit()
         
-        # Verify model exists in Ollama
+        # Verify model exists in Ollama (primary or fallback)
         try:
+            from backend.services.local_brain_manager import try_primary_then_fallback
+            ollama_url = await try_primary_then_fallback()
             async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(f"{OLLAMA_URL}/api/tags")
+                response = await client.get(f"{ollama_url.rstrip('/')}/api/tags")
                 if response.status_code == 200:
                     data = response.json()
                     models = [m.get("name") for m in data.get("models", [])]
@@ -374,11 +420,13 @@ async def select_model(model_name: str, enabled: bool = True) -> Dict[str, Any]:
 
 @router.delete("/models/{model_name}")
 async def delete_model(model_name: str) -> Dict[str, Any]:
-    """Delete a model from Ollama"""
+    """Delete a model from Ollama (primary or fallback)"""
     try:
+        from backend.services.local_brain_manager import try_primary_then_fallback
+        ollama_url = await try_primary_then_fallback()
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.delete(
-                f"{OLLAMA_URL}/api/delete",
+                f"{ollama_url.rstrip('/')}/api/delete",
                 json={"name": model_name}
             )
             return {

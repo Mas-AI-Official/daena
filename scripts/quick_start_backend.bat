@@ -3,11 +3,13 @@ REM Quick Backend Starter - Simple and Reliable
 setlocal EnableExtensions
 
 cd /d "%~dp0.."
+set "PROJECT_ROOT=%CD%"
 
-set "PY_MAIN=venv_daena_main_py310\Scripts\python.exe"
-if not exist "%PY_MAIN%" (
-    echo [ERROR] Python venv not found at: %PY_MAIN%
-    echo [INFO] Please run: python -m venv venv_daena_main_py310
+set "PY_MAIN="
+if exist "%PROJECT_ROOT%\venv_daena_main_py310\Scripts\python.exe" set "PY_MAIN=%PROJECT_ROOT%\venv_daena_main_py310\Scripts\python.exe"
+if not defined PY_MAIN if exist "%PROJECT_ROOT%\venv_daena_audio_py310\Scripts\python.exe" set "PY_MAIN=%PROJECT_ROOT%\venv_daena_audio_py310\Scripts\python.exe"
+if not defined PY_MAIN (
+    echo [ERROR] Python venv not found. Create: python -m venv venv_daena_main_py310
     pause
     exit /b 1
 )
@@ -22,6 +24,7 @@ echo Press CTRL+C to stop
 echo ============================================================================
 echo.
 
+set "PYTHONPATH=%PROJECT_ROOT%"
 "%PY_MAIN%" -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 
 pause

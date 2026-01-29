@@ -6,7 +6,7 @@ import os
 import json
 from pathlib import Path
 from typing import List, Optional
-from pydantic import Field, ConfigDict, field_validator
+from pydantic import Field, ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 
@@ -81,14 +81,28 @@ class Settings(BaseSettings):
     # Cloud providers are opt-in (local-first by default)
     enable_cloud_llm: bool = Field(default=False, env="ENABLE_CLOUD_LLM")
     
-    # Ollama Configuration
+    # Brain root: shared MODELS_ROOT (LLMs/GLMs) used by Daena and other apps. Set per project via env.
+    models_root: str = Field(default="D:/Ideas/MODELS_ROOT", env="MODELS_ROOT")
+    # Ollama Configuration (ollama models live under MODELS_ROOT/ollama; OLLAMA_MODELS overrides)
     ollama_base_url: str = Field(default="http://localhost:11434", env="OLLAMA_BASE_URL")
     ollama_models_path: Optional[str] = Field(
-        default_factory=lambda: str(project_root / "local_brain"),
+        default=None,
         env="OLLAMA_MODELS"
     )
+    # Local brain fallback: when primary Ollama fails, use Daena-managed Ollama on this port (same binary, MODELS_ROOT)
+    ollama_fallback_port: int = Field(default=11435, env="OLLAMA_FALLBACK_PORT")
+    ollama_use_local_brain_fallback: bool = Field(default=True, env="OLLAMA_USE_LOCAL_BRAIN_FALLBACK")
     trained_daena_model: str = Field(default="daena-brain", env="TRAINED_DAENA_MODEL")
     default_local_model: str = Field(default="qwen2.5:7b-instruct", env="DEFAULT_LOCAL_MODEL")
+
+    @model_validator(mode="after")
+    def set_ollama_models_path_from_root(self):
+        """Derive ollama_models_path and xtts_model_path from models_root when not set."""
+        if self.ollama_models_path is None or (isinstance(self.ollama_models_path, str) and self.ollama_models_path.strip() == ""):
+            object.__setattr__(self, "ollama_models_path", str(Path(self.models_root).resolve() / "ollama"))
+        if getattr(self, "xtts_model_path", None) is None or (isinstance(self.xtts_model_path, str) and self.xtts_model_path.strip() == ""):
+            object.__setattr__(self, "xtts_model_path", str(Path(self.models_root).resolve() / "xtts"))
+        return self
     
     # Prompt Intelligence Brain
     prompt_brain_enabled: bool = Field(default=True, env="PROMPT_BRAIN_ENABLED")
@@ -133,6 +147,24 @@ class Settings(BaseSettings):
     automation_action_timeout_sec: float = Field(default=20.0, env="AUTOMATION_ACTION_TIMEOUT_SEC")
     automation_rate_limit_per_min: int = Field(default=30, env="AUTOMATION_RATE_LIMIT_PER_MIN")
     automation_max_processes: int = Field(default=50, env="AUTOMATION_MAX_PROCESSES")
+    # Execution Layer: require X-Execution-Token when set (default unset = no auth for local dev)
+    execution_token: Optional[str] = Field(None, env="EXECUTION_TOKEN")
+    # Workspace root for filesystem_read/write (allowlist); default project root
+    execution_workspace_root: Optional[str] = Field(None, env="EXECUTION_WORKSPACE_ROOT")
+    # Shell allowlist: only these commands (or prefixes) allowed for shell_exec
+    shell_allowlist: List[str] = Field(
+        default_factory=lambda: ["git ", "python -m ", "pip list", "pip show", "pip --version"],
+        env="SHELL_ALLOWLIST",
+    )
+    # XTTS / TTS (use MODELS_ROOT/xtts)
+    xtts_enabled: bool = Field(default=True, env="XTTS_ENABLED")
+    xtts_server_url: str = Field(default="http://localhost:8020", env="XTTS_SERVER_URL")
+    xtts_model_path: Optional[str] = Field(None, env="XTTS_MODEL_PATH")
+    xtts_speaker_wav: Optional[str] = Field(None, env="XTTS_SPEAKER_WAV")
+    xtts_language: str = Field(default="en", env="XTTS_LANGUAGE")
+    # Reasoning / heavy models (Ollama model names under MODELS_ROOT/ollama)
+    ollama_reasoning_model: str = Field(default="deepseek-r1:7b", env="OLLAMA_REASONING_MODEL")
+    ollama_reasoning_fallback: str = Field(default="qwen2.5:14b-instruct", env="OLLAMA_REASONING_FALLBACK")
     
     # Voice Services
     elevenlabs_api_key: Optional[str] = Field(None, env="ELEVENLABS_API_KEY")
@@ -148,6 +180,26 @@ class Settings(BaseSettings):
     agent_role: str = "agent"
     guest_role: str = "guest"
     session_expiry: int = 3600
+
+    # Security Guardian / Incident response: system-wide lockdown (env + runtime)
+    security_lockdown_mode: bool = Field(default=False, env="SECURITY_LOCKDOWN_MODE")
+
+    # Global HTTP rate limiting (middleware): enable in production to reduce abuse
+    rate_limit_enabled: bool = Field(default=False, env="RATE_LIMIT_ENABLED")
+
+    @field_validator("rate_limit_enabled", "security_lockdown_mode", mode="before")
+    @classmethod
+    def parse_bool_env(cls, v):
+        """Parse bool from env (1/true/yes -> True, 0/false/no -> False)."""
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            v_lower = v.lower().strip()
+            if v_lower in ("true", "1", "yes", "on"):
+                return True
+            if v_lower in ("false", "0", "no", "off"):
+                return False
+        return bool(v)
 
     @field_validator("disable_auth", mode="before")
     @classmethod
@@ -221,6 +273,26 @@ class Settings(BaseSettings):
             return [i.strip() for i in v.split(",")]
         return v
 
+    @field_validator("shell_allowlist", mode="before")
+    @classmethod
+    def parse_shell_allowlist(cls, v):
+        if v is None:
+            return ["git ", "python -m ", "pip list", "pip show", "pip --version"]
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if str(x).strip()]
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return ["git ", "python -m ", "pip list", "pip show", "pip --version"]
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, list):
+                    return [str(x).strip() for x in parsed if str(x).strip()]
+            except Exception:
+                pass
+            return [p.strip() for p in s.split(",") if p.strip()]
+        return ["git ", "python -m ", "pip list", "pip show", "pip --version"]
+
     @field_validator("automation_allowed_domains", mode="before")
     @classmethod
     def parse_automation_allowed_domains(cls, v):
@@ -267,11 +339,7 @@ class Settings(BaseSettings):
     prometheus_enabled: bool = True
     metrics_port: int = 9090
     
-    # Prompt Intelligence Brain Configuration
-    prompt_brain_enabled: bool = Field(default=True, env="PROMPT_BRAIN_ENABLED")
-    prompt_brain_mode: str = Field(default="rules", env="PROMPT_BRAIN_MODE")  # rules|hybrid|llm_rewrite
-    prompt_brain_complexity_threshold: int = Field(default=50, env="PROMPT_BRAIN_COMPLEXITY_THRESHOLD")
-    prompt_brain_allow_llm_rewrite: bool = Field(default=False, env="PROMPT_BRAIN_ALLOW_LLM_REWRITE")
+
 
 settings = Settings()
 

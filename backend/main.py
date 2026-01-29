@@ -867,13 +867,24 @@ print("✅ CORS middleware added")
 
 # ... (Auth, Tracing, Role, CSRF, APIKeyGuard disabled for debugging) ...
 
-# Add rate limiting middleware (global)
-# try:
-#     from middleware.rate_limit import rate_limit_middleware
-#     app.middleware("http")(rate_limit_middleware)
-#     print("✅ Global rate limiting middleware added")
-# except ImportError as e:
-#     print(f"⚠️ Global rate limiting middleware not available: {e}")
+# Lockdown middleware: when SECURITY_LOCKDOWN_MODE or runtime lockdown is active, block non-whitelisted requests (503)
+try:
+    from backend.middleware.lockdown_middleware import lockdown_middleware
+    app.middleware("http")(lockdown_middleware)
+    logger.info("✅ Lockdown middleware added (blocks non-whitelisted when lockdown active)")
+except ImportError as e:
+    logger.warning("⚠️ Lockdown middleware not available: %s", e)
+
+# Add rate limiting middleware (global) when RATE_LIMIT_ENABLED=1
+try:
+    if getattr(settings, "rate_limit_enabled", False):
+        from backend.middleware.rate_limit import rate_limit_middleware
+        app.middleware("http")(rate_limit_middleware)
+        logger.info("✅ Global rate limiting middleware added (RATE_LIMIT_ENABLED=1)")
+    else:
+        logger.info("ℹ️ Global rate limiting disabled (set RATE_LIMIT_ENABLED=1 to enable)")
+except ImportError as e:
+    logger.warning("⚠️ Global rate limiting middleware not available: %s", e)
 
 # Add tenant-specific rate limiting middleware
 # try:
@@ -1261,6 +1272,22 @@ try:
         logger.info("Security routes registered")
     except Exception as e:
         logger.warning(f"Security router not available: {e}")
+
+    # Deception layer (decoy routes – log and alert on access; no sensitive data)
+    try:
+        from backend.routes.deception import router as deception_router
+        app.include_router(deception_router)
+        logger.info("Deception (decoy) routes registered at /api/v1/_decoy")
+    except Exception as e:
+        logger.warning(f"Deception router not available: {e}")
+
+    # Security containment (Guardian playbooks: block IP, lockdown, status)
+    try:
+        from backend.routes.security_containment import router as security_containment_router
+        app.include_router(security_containment_router)
+        logger.info("Security containment routes registered at /api/v1/security/containment")
+    except Exception as e:
+        logger.warning(f"Security containment router not available: {e}")
     
     # Knowledge distillation endpoints
     try:
@@ -1529,6 +1556,20 @@ try:
     except ImportError as e:
         logger.warning(f"⚠️ Social Media API not available: {e}")
 
+    # QA Guardian API (Hidden Department - Quality Assurance & Self-Healing)
+    try:
+        from backend.routes.qa_guardian import router as qa_guardian_router
+        app.include_router(qa_guardian_router, prefix="/api/v1", tags=["qa-guardian"])
+        logger.info("✅ QA Guardian API registered at /api/v1/qa")
+        
+        # Also register CMP Canvas and Control Center UI routes
+        from backend.routes.qa_guardian import cmp_canvas_router
+        app.include_router(cmp_canvas_router, tags=["ui"])
+        logger.info("✅ CMP Canvas UI registered at /cmp-canvas")
+        logger.info("✅ Control Center UI registered at /control-center")
+    except ImportError as e:
+        logger.warning(f"⚠️ QA Guardian API not available: {e}")
+
     logger.info("Compliance routes registered (Extra Suggestions - E1)")
 except ImportError as e:
     logger.warning(f"Compliance routes not available: {e}")
@@ -1580,6 +1621,7 @@ safe_import_router("ocr_comparison")
 safe_import_router("automation")  # Operator / automation endpoints
 safe_import_router("cmp_tools")  # CMP tool registry + executor
 safe_import_router("tools")  # Canonical tool runner endpoint
+safe_import_router("execution_layer")  # Execution Layer: tools list, run (dry_run), logs, config
 safe_import_router("explorer")  # Explorer Bridge (human-in-the-loop consultation)
 safe_import_router("human_relay")  # Human Relay Explorer (manual copy/paste bridge)
 # safe_import_router("demo")  # Demo router removed
@@ -1620,8 +1662,64 @@ safe_import_router("intelligence")
 # Environment Sync Routes
 safe_import_router("env_sync")
 
+# Company Gaps Strategy Module (Add-On 1)
+try:
+    from backend.routes.company_gaps import router as company_gaps_router
+    app.include_router(company_gaps_router)
+    logger.info("✅ Company Gaps API registered at /api/v1/strategy/company-gaps")
+except ImportError as e:
+    logger.warning(f"⚠️ Company Gaps API not available: {e}")
+
+# Client Mode / AI Marketplace (Add-On 2)
+try:
+    from backend.routes.client_mode import router as client_mode_router
+    app.include_router(client_mode_router, prefix="/api/v1")
+    logger.info("✅ Client Mode API registered at /api/v1/client-mode")
+except ImportError as e:
+    logger.warning(f"⚠️ Client Mode API not available: {e}")
+
+# Change Requests / Permissioned Self-Fix (Add-On 3)
+try:
+    from backend.routes.change_requests import router as change_requests_router
+    app.include_router(change_requests_router, prefix="/api/v1")
+    logger.info("✅ Change Requests API registered at /api/v1/change-requests")
+except ImportError as e:
+    logger.warning(f"⚠️ Change Requests API not available: {e}")
+
+# Pricing Lab (Add-On 5)
+try:
+    from backend.routes.pricing_lab import router as pricing_lab_router
+    app.include_router(pricing_lab_router, prefix="/api/v1")
+    logger.info("✅ Pricing Lab API registered at /api/v1/pricing")
+except ImportError as e:
+    logger.warning(f"⚠️ Pricing Lab API not available: {e}")
+
 # Development Tools (protected by DAENA_DEV_MODE=1)
 safe_import_router("dev_tools")
+
+# Capabilities API (Control Center)
+try:
+    from backend.routes.capabilities import router as capabilities_router
+    app.include_router(capabilities_router, prefix="/api/v1", tags=["capabilities"])
+    logger.info("✅ Capabilities API registered at /api/v1/capabilities")
+except ImportError as e:
+    logger.warning(f"⚠️ Capabilities API not available: {e}")
+
+# SSE Fallback API
+try:
+    from backend.routes.sse import router as sse_router
+    app.include_router(sse_router, tags=["sse"])
+    logger.info("✅ SSE API registered at /sse/events")
+except ImportError as e:
+    logger.warning(f"⚠️ SSE API not available: {e}")
+
+# CMP Graph API (n8n-like node graph)
+try:
+    from backend.routes.cmp_graph import router as cmp_graph_router
+    app.include_router(cmp_graph_router, prefix="/api/v1", tags=["cmp-graph"])
+    logger.info("✅ CMP Graph API registered at /api/v1/cmp/graph")
+except ImportError as e:
+    logger.warning(f"⚠️ CMP Graph API not available: {e}")
 
 # Test the events endpoint
 @app.get("/test-events")
@@ -3937,6 +4035,10 @@ async def serve_agent_detail(request: Request, agent_id: str):
 async def serve_brain_settings(request: Request):
     return templates.TemplateResponse("brain_settings.html", {"request": request})
 
+@app.get("/ui/app-setup", response_class=HTMLResponse)
+async def serve_app_setup(request: Request):
+    return templates.TemplateResponse("app_setup.html", {"request": request})
+
 @app.get("/ui/mcp-hub", response_class=HTMLResponse)
 async def serve_mcp_hub(request: Request):
     return templates.TemplateResponse("mcp_hub.html", {"request": request})
@@ -4092,6 +4194,10 @@ async def serve_agent_detail(request: Request, agent_id: str):
 @app.get("/ui/brain-settings", response_class=HTMLResponse)
 async def serve_brain_settings(request: Request):
     return templates.TemplateResponse("brain_settings.html", {"request": request})
+
+@app.get("/ui/app-setup", response_class=HTMLResponse)
+async def serve_app_setup(request: Request):
+    return templates.TemplateResponse("app_setup.html", {"request": request})
 
 @app.get("/ui/mcp-hub", response_class=HTMLResponse)
 async def serve_mcp_hub(request: Request):

@@ -6,6 +6,7 @@ Provides local inference when cloud APIs are unavailable.
 import os
 import httpx
 import logging
+from pathlib import Path
 from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -30,12 +31,18 @@ if OLLAMA_MODELS_PATH:
     os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_PATH
     logger.info(f"Ollama models path configured: {OLLAMA_MODELS_PATH}")
 else:
-    # Default to local_brain if not set
-    default_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "local_brain")
+    # Default: use shared brain root (MODELS_ROOT/ollama)
+    default_path = str(Path(settings.models_root) / "ollama")
     if os.path.exists(default_path):
         OLLAMA_MODELS_PATH = default_path
         os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_PATH
-        logger.info(f"Using default Ollama models path: {OLLAMA_MODELS_PATH}")
+        logger.info(f"Using models_root Ollama path: {OLLAMA_MODELS_PATH}")
+    else:
+        legacy = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "local_brain")
+        if os.path.exists(legacy):
+            OLLAMA_MODELS_PATH = legacy
+            os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_PATH
+            logger.info(f"Using legacy local_brain path: {OLLAMA_MODELS_PATH}")
 
 
 def log_ollama_config():
@@ -55,11 +62,22 @@ def log_ollama_config():
 log_ollama_config()
 
 
-async def check_ollama_available() -> bool:
-    """Check if Ollama service is running."""
+async def get_ollama_base_url() -> str:
+    """Primary Ollama if up; otherwise start/local fallback (daena brain) and return its URL."""
     try:
+        from backend.services.local_brain_manager import try_primary_then_fallback
+        return await try_primary_then_fallback()
+    except Exception as e:
+        logger.debug(f"Fallback resolution failed, using primary: {e}")
+        return OLLAMA_BASE_URL
+
+
+async def check_ollama_available() -> bool:
+    """Check if Ollama service is running (primary or local brain fallback)."""
+    try:
+        base = await get_ollama_base_url()
         async with httpx.AsyncClient(timeout=5) as client:
-            response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            response = await client.get(f"{base.rstrip('/')}/api/tags")
             return response.status_code == 200
     except Exception as e:
         logger.debug(f"Ollama not available: {e}")
@@ -72,7 +90,9 @@ async def chat(
     temperature: float = 0.7,
     max_tokens: Optional[int] = None,
 ) -> str:
-    """Send chat messages to Ollama and return response."""
+    """Send chat messages to Ollama and return response (uses primary or local brain fallback)."""
+
+    base = await get_ollama_base_url()
 
     # Choose model
     mdl = model
@@ -81,7 +101,7 @@ async def chat(
         # Prefer trained model if it exists
         try:
             async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+                response = await client.get(f"{base.rstrip('/')}/api/tags")
                 if response.status_code == 200:
                     data = response.json()
                     available_models = [m.get("name") for m in data.get("models", []) if isinstance(m, dict)]
@@ -105,7 +125,7 @@ async def chat(
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=request_data)
+            response = await client.post(f"{base.rstrip('/')}/api/chat", json=request_data)
             response.raise_for_status()
             data = response.json()
 
@@ -163,6 +183,8 @@ async def generate_stream(
     max_tokens: Optional[int] = None,
 ):
     """Generate streaming text from a prompt using Ollama."""
+    base = await get_ollama_base_url()
+
     # Choose model
     mdl = model
     if not mdl:
@@ -170,7 +192,7 @@ async def generate_stream(
         # Check available models
         try:
             async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+                response = await client.get(f"{base.rstrip('/')}/api/tags")
                 if response.status_code == 200:
                     data = response.json()
                     available_models = [m.get("name") for m in data.get("models", []) if isinstance(m, dict)]
@@ -214,7 +236,7 @@ async def generate_stream(
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            async with client.stream("POST", f"{OLLAMA_BASE_URL}/api/chat", json=request_data) as response:
+            async with client.stream("POST", f"{base.rstrip('/')}/api/chat", json=request_data) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if line:

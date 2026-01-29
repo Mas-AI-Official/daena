@@ -1,13 +1,23 @@
 @echo off
 REM ============================================================================
-REM START_OLLAMA.bat - Ollama Brain Launcher with Health Check
-REM Project: Daena AI VP
+REM START_OLLAMA.bat - Ollama Brain Launcher (MODELS_ROOT + GPU/CUDA friendly)
+REM Project: Daena AI VP - same Ollama binary, upgrades apply to both primary and fallback
 REM ============================================================================
 setlocal EnableExtensions
 
-set "PROJECT_ROOT=D:\Ideas\Daena_old_upgrade_20251213"
+REM Project root: use script location (scripts folder) -> parent
+cd /d "%~dp0"
+cd ..
+set "PROJECT_ROOT=%CD%"
+if not defined MODELS_ROOT set "MODELS_ROOT=D:\Ideas\MODELS_ROOT"
+set "OLLAMA_MODELS=%MODELS_ROOT%\ollama"
 set "OLLAMA_PORT=11434"
 set "OLLAMA_BASE_URL=http://127.0.0.1:11434"
+
+REM GPU: use one GPU by default to avoid OOM; reserve 10%% VRAM overhead
+if not defined OLLAMA_NUM_GPU set "OLLAMA_NUM_GPU=1"
+if not defined OLLAMA_GPU_OVERHEAD set "OLLAMA_GPU_OVERHEAD=10"
+REM Optional: limit to specific GPU, e.g. set CUDA_VISIBLE_DEVICES=0
 
 REM UTF-8 console
 chcp 65001 >nul 2>&1
@@ -15,6 +25,10 @@ chcp 65001 >nul 2>&1
 echo.
 echo ============================================================================
 echo DAENA BRAIN - OLLAMA LAUNCHER
+echo ============================================================================
+echo   MODELS_ROOT: %MODELS_ROOT%
+echo   OLLAMA_MODELS: %OLLAMA_MODELS%
+echo   OLLAMA_NUM_GPU: %OLLAMA_NUM_GPU%  OLLAMA_GPU_OVERHEAD: %OLLAMA_GPU_OVERHEAD%%
 echo ============================================================================
 echo.
 
@@ -27,9 +41,9 @@ if not errorlevel 1 (
     goto :VERIFY_MODEL
 )
 
-REM Start Ollama
-echo [INFO] Starting Ollama service...
-start "Ollama Service" ollama serve
+REM Start Ollama (uses MODELS_ROOT and GPU env above)
+echo [INFO] Starting Ollama service (MODELS_ROOT=%MODELS_ROOT%)...
+start "Ollama Service" cmd /c "set OLLAMA_MODELS=%OLLAMA_MODELS% && set OLLAMA_NUM_GPU=%OLLAMA_NUM_GPU% && set OLLAMA_GPU_OVERHEAD=%OLLAMA_GPU_OVERHEAD% && ollama serve"
 timeout /t 3 /nobreak >nul
 
 REM Health check loop

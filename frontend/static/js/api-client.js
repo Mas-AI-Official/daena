@@ -18,6 +18,11 @@ class DaenaAPI {
             'Content-Type': 'application/json',
             ...options.headers
         };
+        // Execution Layer: add X-Execution-Token when set (sync with backend EXECUTION_TOKEN)
+        if (endpoint.startsWith('/execution') && typeof sessionStorage !== 'undefined') {
+            const t = sessionStorage.getItem('execution_token');
+            if (t) headers['X-Execution-Token'] = t;
+        }
 
         try {
             const response = await fetch(url, { ...options, headers });
@@ -28,13 +33,17 @@ class DaenaAPI {
             const data = await response.json().catch(() => ({}));
 
             if (!response.ok) {
-                // If 401, redirect to login (unless we are in a no-auth dev mode handled by middleware)
+                // 401 on Execution Layer: do not redirect; throw so caller can show token prompt
+                if (response.status === 401 && endpoint.startsWith('/execution')) {
+                    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('execution_token');
+                    throw new Error(data.detail || 'Execution Layer requires X-Execution-Token. Set EXECUTION_TOKEN in env or enter token below.');
+                }
                 if (response.status === 401) {
                     console.warn("Unauthorized access. Redirecting to login...");
                     window.location.href = '/login';
                     return;
                 }
-                throw new Error(data.detail || `API Error: ${response.statusText}`);
+                throw new Error(data.detail || data.message || `API Error: ${response.statusText}`);
             }
 
             return data;
@@ -42,6 +51,38 @@ class DaenaAPI {
             console.error(`Request failed: ${endpoint}`, error);
             throw error;
         }
+    }
+
+    // --- Execution Layer (tools, run, logs, config, approval) ---
+    async getExecutionTools() {
+        return this.request('/execution/tools');
+    }
+    async executionRun(toolName, args = {}, dryRun = false, approvalId = null) {
+        return this.request('/execution/run', {
+            method: 'POST',
+            body: JSON.stringify({ tool_name: toolName, args, dry_run: dryRun, approval_id: approvalId || undefined })
+        });
+    }
+    async getExecutionLogs(limit = 50) {
+        return this.request(`/execution/logs?limit=${limit}`);
+    }
+    async getExecutionConfig() {
+        return this.request('/execution/config');
+    }
+    async setExecutionToolEnabled(toolName, enabled) {
+        return this.request(`/execution/tools/${encodeURIComponent(toolName)}/enabled?enabled=${enabled}`, { method: 'PATCH' });
+    }
+    async executionApprove(toolName) {
+        return this.request(`/execution/approve?tool_name=${encodeURIComponent(toolName)}`, { method: 'POST' });
+    }
+    setExecutionToken(token) {
+        if (typeof sessionStorage !== 'undefined') {
+            if (token) sessionStorage.setItem('execution_token', token);
+            else sessionStorage.removeItem('execution_token');
+        }
+    }
+    getExecutionToken() {
+        return typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('execution_token') : null;
     }
 
     // --- Core System ---
@@ -268,6 +309,20 @@ class DaenaAPI {
 
     async getHiddenDepartments() {
         return this.request('/founder-panel/hidden-departments');
+    }
+
+    // --- Incident Room / Security (decoy hits, lockdown) ---
+    async getDecoyHits(limit = 100) {
+        return this.request(`/_decoy/hits?limit=${limit}`);
+    }
+    async getLockdownStatus() {
+        return this.request('/founder-panel/system/emergency/status');
+    }
+    async postLockdown() {
+        return this.request('/founder-panel/system/emergency/lockdown', { method: 'POST' });
+    }
+    async postUnlock() {
+        return this.request('/founder-panel/system/emergency/unlock', { method: 'POST' });
     }
 
     // --- Agent Reset ---

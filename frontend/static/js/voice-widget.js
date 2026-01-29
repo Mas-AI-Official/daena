@@ -346,27 +346,29 @@ class VoiceWidget {
             const statusIndicator = document.getElementById('voice-status-indicator');
             const voiceBtn = document.getElementById('voice-navbar-btn');
 
-            if (data.status === 'online') {
-                console.log('✅ Voice service online');
+            const isOnline = data.status === 'online' || data.talk_active === true;
+            if (isOnline) {
                 if (statusIndicator) {
                     statusIndicator.classList.remove('bg-red-500');
                     statusIndicator.classList.add('bg-green-500');
                 }
-                if (voiceBtn) {
-                    voiceBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                }
+                if (voiceBtn) voiceBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                if (window.RealtimeStatusManager) window.RealtimeStatusManager.updateStatus('voice', data);
             } else {
-                console.warn('⚠️ Voice service offline');
                 if (statusIndicator) {
                     statusIndicator.classList.remove('bg-green-500');
                     statusIndicator.classList.add('bg-red-500');
                 }
-                if (voiceBtn) {
-                    voiceBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                }
+                if (voiceBtn) voiceBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                if (window.RealtimeStatusManager) window.RealtimeStatusManager.updateStatus('voice', { talk_active: false });
             }
         } catch (e) {
             console.error('Failed to check voice status:', e);
+            if (statusIndicator) {
+                statusIndicator.classList.remove('bg-green-500');
+                statusIndicator.classList.add('bg-red-500');
+            }
+            if (voiceBtn) voiceBtn.classList.add('opacity-50', 'cursor-not-allowed');
         }
     }
 

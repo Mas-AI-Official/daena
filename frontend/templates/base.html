@@ -112,6 +112,26 @@
             background: rgba(0, 0, 0, 0.3);
         }
 
+        .lockdown-banner {
+            padding: 8px 16px;
+            background: rgba(239, 68, 68, 0.2);
+            border-bottom: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            font-size: 13px;
+        }
+        .lockdown-banner-link {
+            color: #fcd34d;
+            font-weight: 600;
+            text-decoration: underline;
+        }
+        .lockdown-banner-link:hover {
+            color: #fde68a;
+        }
+
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -280,6 +300,11 @@
 
     <!-- Main Content Wrapper -->
     <div class="main-wrapper">
+        <!-- Lockdown banner (shown when SECURITY_LOCKDOWN_MODE or runtime lockdown is active) -->
+        <div id="lockdown-banner" class="lockdown-banner" style="display: none;">
+            <span><i class="fas fa-shield-alt mr-2"></i>System in lockdown.</span>
+            <a href="/incident-room" class="lockdown-banner-link">Open Incident Room</a>
+        </div>
         <!-- Topbar -->
         <div class="topbar">
             {% include "partials/topbar.html" %}
@@ -306,6 +331,33 @@
             setTimeout(() => toast.remove(), 4000);
         };
 
+        // Centralized API error handler (log + toast)
+        window.handleApiError = function (err, label = 'Request') {
+            const msg = (err && (err.message || err.detail || err)) || 'Unknown error';
+            console.error(label + ':', err);
+            if (window.showToast) window.showToast(label + ' failed: ' + (typeof msg === 'string' ? msg : 'Unknown error'), 'error');
+        };
+
+        // Escape HTML for safe display of user content (XSS mitigation)
+        window.escapeHtml = function (s) {
+            if (s == null || s === undefined) return '';
+            var div = document.createElement('div');
+            div.textContent = s;
+            return div.innerHTML;
+        };
+
+        // Lockdown banner: show when system is in lockdown
+        (function () {
+            const el = document.getElementById('lockdown-banner');
+            if (!el) return;
+            fetch(window.DAENA_API_BASE + '/founder-panel/system/emergency/status')
+                .then(function (r) { return r.ok ? r.json() : {}; })
+                .then(function (data) {
+                    if (data && data.lockdown_active === true) el.style.display = 'flex';
+                })
+                .catch(function () {});
+        })();
+
         // Text-to-Speech
         window.speak = function (text, callback) {
             if (!('speechSynthesis' in window)) { if (callback) callback(); return; }
@@ -325,10 +377,11 @@
                 const data = await response.json();
 
                 const isConnected = data.connected === true && data.ollama_available === true && data.llm_available === true;
+                const modelLabel = (data.active_model && isConnected) ? (data.active_model.split(':')[0]) : '';
 
                 if (isConnected) {
                     indicator.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400';
-                    indicator.innerHTML = `<div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div><span>BRAIN ONLINE</span>`;
+                    indicator.innerHTML = `<div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div><span>BRAIN ONLINE${modelLabel ? ': ' + modelLabel : ''}</span>`;
                 } else {
                     indicator.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-400';
                     indicator.innerHTML = `<div class="w-2 h-2 rounded-full bg-red-500"></div><span>BRAIN OFFLINE</span>`;

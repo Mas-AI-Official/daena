@@ -292,7 +292,7 @@ class RealtimeStatusManager {
 
         if (card) {
             if (isConnected) {
-                card.textContent = 'Active';
+                card.textContent = data.using_fallback ? 'Active (fallback)' : 'Active';
                 card.style.color = '#7ED321';
             } else {
                 card.textContent = 'Offline';
@@ -327,7 +327,19 @@ class RealtimeStatusManager {
     }
 
     updateVoiceUI(data) {
-        // Voice UI updates if needed
+        const indicator = document.getElementById('voice-status-indicator');
+        const voiceBtn = document.getElementById('voice-navbar-btn');
+        const voiceText = document.getElementById('voice-navbar-text');
+        const isOnline = data && (data.status === 'online' || data.talk_active === true);
+        if (indicator) {
+            indicator.classList.remove(isOnline ? 'bg-red-500' : 'bg-green-500');
+            indicator.classList.add(isOnline ? 'bg-green-500' : 'bg-red-500');
+        }
+        if (voiceBtn) {
+            voiceBtn.classList.toggle('opacity-50', !isOnline);
+            voiceBtn.classList.toggle('cursor-not-allowed', !isOnline);
+        }
+        if (voiceText) voiceText.textContent = isOnline ? 'Say "Daena"' : 'Voice Offline';
     }
 
     updateProjectsUI(data) {
