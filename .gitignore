@@ -193,3 +193,18 @@ local_brain/
 DaenaBrain/
 hf_cache/
 huggingface/
+
+# Block Documentation Dumps
+daena doc/
+docs/
+*.zip
+
+# Block Documentation Dumps
+daena doc/
+docs/
+*.zip
+
+# Block Documentation Dumps
+daena doc/
+docs/
+*.zip
