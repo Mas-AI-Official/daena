@@ -1,3 +1,23 @@
+# ============================================
+# JUNK FILES - DO NOT COMMIT (from Honest Audit)
+# ============================================
+Untitled
+TTS)
+Compare with nbmf and using this ocr.txt
+NBMF  Data storage and recall.txt
+COMMIT_MESSAGE.txt
+brain_status.json
+conflict_matrix.json
+backend_*.txt
+backend_*.log
+compile_log.txt
+_backend_helper_*.bat
+debug_*.py
+debug_*.txt
+test_output.txt
+*.backup
+*.bak
+
 # Python
 __pycache__/
 *.py[cod]
