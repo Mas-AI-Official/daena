@@ -208,3 +208,8 @@ docs/
 daena doc/
 docs/
 *.zip
+
+# Block Documentation Dumps
+daena doc/
+docs/
+*.zip
