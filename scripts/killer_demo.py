@@ -42,6 +42,36 @@ class Colors:
     BOLD = '\033[1m'
 
 
+# Database Integration for Frontend Wiring
+try:
+    from backend.database import SessionLocal, EventLog
+    DB_AVAILABLE = True
+except ImportError as e:
+    print(f"{Colors.YELLOW}Warning: Backend imports failed ({e}). Running in terminal-only mode.{Colors.ENDC}")
+    DB_AVAILABLE = False
+
+def log_event(event_type: str, entity_type: str, entity_id: str, payload: Dict[str, Any]):
+    """Log event to database so frontend picks it up."""
+    if not DB_AVAILABLE:
+        return
+    
+    try:
+        db = SessionLocal()
+        event = EventLog(
+            event_type=event_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            payload_json=payload,
+            created_by="killer_demo"
+        )
+        db.add(event)
+        db.commit()
+        db.close()
+    except Exception as e:
+        # Don't crash demo if logging fails
+        pass
+
+
 def print_banner():
     """Print the Daena demo banner."""
     print(f"""
@@ -65,11 +95,28 @@ def print_banner():
 def simulate_agent_activity(agent_name: str, action: str, duration: float = 0.5):
     """Simulate agent activity with streaming output."""
     import time
+    
+    # Log start
+    log_event(
+        "task.progress", 
+        "agent", 
+        agent_name, 
+        {"message": f"[{agent_name}] {action}...", "progress": 10, "status": "running"}
+    )
+    
     print(f"{Colors.GREEN}[{agent_name}]{Colors.ENDC} {action}", end="", flush=True)
     for _ in range(3):
         time.sleep(duration)
         print(".", end="", flush=True)
     print(f" {Colors.GREEN}✓{Colors.ENDC}")
+    
+    # Log completion
+    log_event(
+        "task.completed", 
+        "agent", 
+        agent_name, 
+        {"message": f"[{agent_name}] {action} - Completed", "progress": 100, "status": "completed"}
+    )
 
 
 def simulate_council_debate(experts: List[Dict], question: str):
@@ -91,6 +138,19 @@ def simulate_council_debate(experts: List[Dict], question: str):
         
         print(f"{color}[{expert['name']}]{Colors.ENDC} ({expert['role']})")
         print(f"   {expert['opinion']}")
+        
+        # Log to frontend chat/debate
+        log_event(
+            "chat.message", 
+            "council", 
+            "finance_council", 
+            {
+                "message": f"**{expert['name']}** ({expert['role']}): {expert['opinion']}",
+                "sender": expert['name'],
+                "role": expert['role']
+            }
+        )
+        
         time.sleep(0.8)
     
     print()
@@ -115,6 +175,18 @@ def display_defi_findings(findings: List[Dict]):
         print(f"   Protocol: {finding['protocol']}")
         print(f"   Tool: {finding['tool']}")
         print(f"   {finding['description']}")
+        
+        log_event(
+            "security.alert",
+            "contract",
+            finding['protocol'],
+            {
+                "message": f"[{finding['severity']}] {finding['protocol']}: {finding['title']}",
+                "severity": finding['severity'],
+                "details": finding
+            }
+        )
+        
         time.sleep(0.5)
 
 
@@ -135,6 +207,19 @@ def display_recommendation(recommendation: Dict):
         print(f"\n{Colors.YELLOW}Dissent Notes:{Colors.ENDC}")
         for note in recommendation['dissent']:
             print(f"   ⚠️ {note}")
+
+    # Log recommendation to frontend
+    log_event(
+        "task.progress", 
+        "council", 
+        "finance_council", 
+        {
+            "message": f"📊 RECOMMENDATION: {recommendation['decision']} (Confidence: {recommendation['confidence']}%)",
+            "progress": 90,
+            "status": "awaiting_approval",
+            "details": recommendation
+        }
+    )
 
 
 async def run_demo():
