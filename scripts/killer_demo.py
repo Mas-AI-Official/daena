@@ -64,15 +64,17 @@ def print_banner():
 
 def simulate_agent_activity(agent_name: str, action: str, duration: float = 0.5):
     """Simulate agent activity with streaming output."""
+    import time
     print(f"{Colors.GREEN}[{agent_name}]{Colors.ENDC} {action}", end="", flush=True)
     for _ in range(3):
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(duration))
+        time.sleep(duration)
         print(".", end="", flush=True)
     print(f" {Colors.GREEN}✓{Colors.ENDC}")
 
 
 def simulate_council_debate(experts: List[Dict], question: str):
     """Simulate a council debate between experts."""
+    import time
     print(f"\n{Colors.YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{Colors.ENDC}")
     print(f"{Colors.BOLD}🏛️  FINANCE COUNCIL DEBATE{Colors.ENDC}")
     print(f"{Colors.YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{Colors.ENDC}")
@@ -89,13 +91,14 @@ def simulate_council_debate(experts: List[Dict], question: str):
         
         print(f"{color}[{expert['name']}]{Colors.ENDC} ({expert['role']})")
         print(f"   {expert['opinion']}")
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.8))
+        time.sleep(0.8)
     
     print()
 
 
 def display_defi_findings(findings: List[Dict]):
     """Display DeFi security findings."""
+    import time
     print(f"\n{Colors.CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{Colors.ENDC}")
     print(f"{Colors.BOLD}🔍 DEFI SECURITY FINDINGS{Colors.ENDC}")
     print(f"{Colors.CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{Colors.ENDC}")
@@ -112,7 +115,7 @@ def display_defi_findings(findings: List[Dict]):
         print(f"   Protocol: {finding['protocol']}")
         print(f"   Tool: {finding['tool']}")
         print(f"   {finding['description']}")
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.5))
+        time.sleep(0.5)
 
 
 def display_recommendation(recommendation: Dict):
