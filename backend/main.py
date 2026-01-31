@@ -866,6 +866,18 @@ Monitoring endpoints require API key authentication.
     lifespan=lifespan,
 )
 
+# 🚨 SECURITY: DISABLE_AUTH guard - prevent running without auth in production
+_disable_auth = os.getenv("DISABLE_AUTH", "0") == "1"
+_environment = os.getenv("ENVIRONMENT", "development").lower()
+if _disable_auth and _environment not in ("development", "dev", "local"):
+    raise RuntimeError(
+        "🚨 SECURITY ERROR: DISABLE_AUTH=1 is NOT allowed outside development environment!\n"
+        f"   Current ENVIRONMENT={_environment}\n"
+        "   Either set ENVIRONMENT=development or remove DISABLE_AUTH."
+    )
+if _disable_auth:
+    logger.warning("⚠️ DISABLE_AUTH=1 - Authentication is disabled (dev mode only)")
+
 # Add CORS middleware - restrict to configured origins (no "*" in production)
 _cors_origins = get_cors_origins()
 if not _cors_origins or "*" in _cors_origins:
