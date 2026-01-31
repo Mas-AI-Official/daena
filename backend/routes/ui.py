@@ -36,6 +36,13 @@ def _ctx(request: Request) -> dict:
     }
 
 
+def _redirect_to_control_plane(request: Request, section: str):
+    """Redirect to Control Plane with section hash when not embedded."""
+    if not request.query_params.get("embed"):
+        return RedirectResponse(url=f"/ui/control-plane#{section}", status_code=302)
+    return None
+
+
 @router.get("/ui", include_in_schema=False)
 async def ui_root():
     return RedirectResponse(url="/ui/dashboard", status_code=302)
@@ -44,6 +51,21 @@ async def ui_root():
 @router.get("/ui/dashboard", response_class=HTMLResponse)
 async def ui_dashboard(request: Request):
     return templates.TemplateResponse("dashboard.html", _ctx(request))
+
+
+@router.get("/ui/control-plane", response_class=HTMLResponse)
+async def ui_control_plane(request: Request):
+    """Unified Control Plane: Brain, Integrations, Skills, Execution, Proactive, Tasks+Runbook+Approvals, Provider onboarding."""
+    return templates.TemplateResponse("control_plane.html", _ctx(request))
+
+
+@router.get("/ui/provider-onboarding", response_class=HTMLResponse)
+async def ui_provider_onboarding(request: Request):
+    """Provider onboarding wizard (Moltbot-style: Discord, Telegram). Redirects to Control Plane when not embed."""
+    r = _redirect_to_control_plane(request, "provider")
+    if r is not None:
+        return r
+    return templates.TemplateResponse("provider_onboarding.html", _ctx(request))
 
 
 @router.get("/ui/departments", response_class=HTMLResponse)
@@ -186,8 +208,8 @@ async def ui_voice_panel(request: Request):
 
 @router.get("/ui/system-monitor", response_class=HTMLResponse)
 async def ui_system_monitor(request: Request):
-    """System monitoring dashboard showing all backend capabilities"""
-    return templates.TemplateResponse("system_monitor.html", _ctx(request))
+    """System Monitor removed from sidebar; content embedded in Dashboard. Redirect to dashboard."""
+    return RedirectResponse(url="/ui/dashboard", status_code=302)
 
 
 @router.get("/ui/files", response_class=HTMLResponse)
@@ -224,8 +246,77 @@ async def ui_operator(request: Request):
 
 @router.get("/ui/connections", response_class=HTMLResponse)
 async def ui_connections(request: Request):
-    """Service Connections page (Phase 4)"""
+    """Integrations (Connections) page - same template, sidebar label is Integrations"""
     return templates.TemplateResponse("connections.html", _ctx(request))
+
+
+@router.get("/ui/skills", response_class=HTMLResponse)
+async def ui_skills(request: Request):
+    r = _redirect_to_control_plane(request, "skills")
+    if r is not None:
+        return r
+    return templates.TemplateResponse("skills.html", _ctx(request))
+
+
+@router.get("/ui/execution", response_class=HTMLResponse)
+async def ui_execution(request: Request):
+    r = _redirect_to_control_plane(request, "execution")
+    if r is not None:
+        return r
+    return templates.TemplateResponse("execution.html", _ctx(request))
+
+
+@router.get("/ui/proactive", response_class=HTMLResponse)
+async def ui_proactive(request: Request):
+    r = _redirect_to_control_plane(request, "proactive")
+    if r is not None:
+        return r
+    return templates.TemplateResponse("proactive.html", _ctx(request))
+
+
+@router.get("/ui/tasks", response_class=HTMLResponse)
+async def ui_tasks(request: Request):
+    r = _redirect_to_control_plane(request, "tasks")
+    if r is not None:
+        return r
+    return templates.TemplateResponse("tasks.html", _ctx(request))
+
+
+@router.get("/ui/runbook", response_class=HTMLResponse)
+async def ui_runbook(request: Request):
+    r = _redirect_to_control_plane(request, "runbook")
+    if r is not None:
+        return r
+    return templates.TemplateResponse("runbook.html", _ctx(request))
+
+
+@router.get("/ui/approvals", response_class=HTMLResponse)
+async def ui_approvals(request: Request):
+    r = _redirect_to_control_plane(request, "approvals")
+    if r is not None:
+        return r
+    return templates.TemplateResponse("approvals.html", _ctx(request))
+
+
+@router.get("/ui/tasks-runbook-approvals", response_class=HTMLResponse)
+async def ui_tasks_runbook_approvals(request: Request):
+    """Condensed Tasks + Runbook + Approvals (one Control Plane section). Redirect when not embed."""
+    r = _redirect_to_control_plane(request, "tasks-runbook-approvals")
+    if r is not None:
+        return r
+    return templates.TemplateResponse("tasks_runbook_approvals.html", _ctx(request))
+
+
+@router.get("/ui/incident-room", response_class=HTMLResponse)
+async def ui_incident_room(request: Request):
+    """Incident Room: lockdown, containment, decoy hits (Empty Nest shield)."""
+    return templates.TemplateResponse("incident_room.html", _ctx(request))
+
+
+@router.get("/ui/wiring-audit", response_class=HTMLResponse)
+async def ui_wiring_audit(request: Request):
+    """UI wiring audit: list frontend actions and backend endpoints (for E) smoke test / verification)."""
+    return templates.TemplateResponse("wiring_audit.html", _ctx(request))
 
 
 @router.get("/ui/department/{dept_id}", response_class=HTMLResponse)

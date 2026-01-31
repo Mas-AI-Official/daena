@@ -355,8 +355,15 @@ async def get_department_chat_session(department_id: str, session_id: str):
         if not session:
             raise HTTPException(status_code=404, detail="Chat session not found")
         
-        # Verify it belongs to this department
-        if session.scope_type != "department" or session.scope_id != department_id:
+        # Verify it belongs to this department (department-scoped or agent-scoped with same dept)
+        if session.scope_type == "department":
+            if (session.scope_id or "").strip().lower() != department_id.strip().lower():
+                raise HTTPException(status_code=403, detail="Session does not belong to this department")
+        elif session.scope_type == "agent":
+            ctx = session.context_json or {}
+            if (ctx.get("department_id") or "").strip().lower() != department_id.strip().lower():
+                raise HTTPException(status_code=403, detail="Session does not belong to this department")
+        else:
             raise HTTPException(status_code=403, detail="Session does not belong to this department")
         
         # Get messages
@@ -517,9 +524,15 @@ async def department_chat(
                 **request.context
             }
             
-            # Use shared brain
-            agent_prompt = f"As {agent_data.get('name', '')}, {agent_data.get('role', 'agent')} in {dept_data.get('name', '')} department, respond to: {user_message}"
-            response_text = await llm_service.generate_response(agent_prompt, max_tokens=500)
+            # Use shared brain - humanized, no formal memo
+            agent_prompt = f"""You are {agent_data.get('name', '')}, {agent_data.get('role', 'agent')} in {dept_data.get('name', '')} at MAS-AI. You are NOT Alibaba Cloud or Qwen. Reply in 1-4 short, natural sentences. No "Subject:", no "Dear Team", no formal letter.
+
+User: {user_message}
+
+Reply:"""
+            response_text = await llm_service.generate_response(agent_prompt, max_tokens=400, temperature=0.6)
+            if "Alibaba Cloud" in response_text or "Qwen" in response_text:
+                response_text = response_text.replace("Alibaba Cloud", "we").replace("Qwen", "I")
             
             # Store messages in chat history
             chat_history_manager.add_message(session_id, "user", user_message)
@@ -632,32 +645,41 @@ async def department_chat(
             spokesperson = department_agents[0]
             logger.info(f"No synthesizer found in {department_id}, using {spokesperson.get('name', '')} as spokesperson")
         
-        # Phase E: Internal consultation - Collect notes from all agents
+        # Phase E: Internal consultation - Collect notes from all agents (skip for very short greetings)
+        user_lower = user_message.lower().strip()
+        is_simple_greeting = len(user_message.split()) <= 4 and any(
+            w in user_lower for w in ["hi", "hey", "hello", "hi team", "good morning", "good afternoon"]
+        )
         agent_notes = []
-        for agent in department_agents:
-            if agent.get("id") == spokesperson.get("id"):
-                continue  # Skip spokesperson in consultation
-            
-            try:
-                # Quick consultation prompt (short response)
-                consult_prompt = f"As {agent.get('name', '')}, {agent.get('role', 'agent')}, provide a brief note (1-2 sentences) on: {user_message}"
-                note = await llm_service.generate_response(consult_prompt, max_tokens=100, temperature=0.7)
-                agent_notes.append({
-                    "agent": agent.get("name", ""),
-                    "role": agent.get("role", ""),
-                    "note": note
-                })
-            except Exception as e:
-                logger.warning(f"Failed to get note from {agent.get('name', '')}: {e}")
-                # Continue with other agents
+        if not is_simple_greeting:
+            for agent in department_agents:
+                if agent.get("id") == spokesperson.get("id"):
+                    continue  # Skip spokesperson in consultation
+                try:
+                    consult_prompt = f"As {agent.get('name', '')}, {agent.get('role', 'agent')}, one short sentence on: {user_message}"
+                    note = await llm_service.generate_response(consult_prompt, max_tokens=80, temperature=0.6)
+                    agent_notes.append({
+                        "agent": agent.get("name", ""),
+                        "role": agent.get("role", ""),
+                        "note": note
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to get note from {agent.get('name', '')}: {e}")
         
-        # Phase E: Spokesperson synthesizes response
-        synthesis_prompt = f"""As {spokesperson.get('name', 'Spokesperson')}, {spokesperson.get('role', 'Synthesizer')} for {dept_data.get('name', '')} department, synthesize a response to: "{user_message}"
+        # Phase E: Spokesperson responds - HUMANIZED: short, natural, no formal letter format
+        if is_simple_greeting:
+            synthesis_prompt = f"""You are {spokesperson.get('name', 'Team')}, the spokesperson for {dept_data.get('name', '')} department at MAS-AI. You are NOT Alibaba Cloud, NOT Qwen, NOT a generic AI. Reply to this greeting in 1-2 short, warm, natural sentences. No "Subject:", no "Dear Team", no formal letter. Just a human-like reply.
 
-You have consulted with {len(agent_notes)} team members. Their input:
-{chr(10).join([f"- {note['agent']} ({note['role']}): {note['note']}" for note in agent_notes]) if agent_notes else "No additional input from team members."}
+User said: "{user_message}"
 
-Provide a comprehensive, synthesized response that incorporates the team's perspectives."""
+Reply briefly:"""
+        else:
+            synthesis_prompt = f"""You are {spokesperson.get('name', 'Spokesperson')}, spokesperson for {dept_data.get('name', '')} department. You are NOT Alibaba Cloud or Qwen. Reply in 2-4 short, natural sentences. No "Subject:" or "Dear Team" or formal memo format.
+
+User asked: "{user_message}"
+{chr(10).join([f"- {n['agent']}: {n['note']}" for n in agent_notes]) if agent_notes else ""}
+
+Give a concise, human reply that uses the team input above. Do not sign with "[Your Name]" or "Knowledge Synthesizer" or "Alibaba Cloud"."""
         
         # Check Ollama availability
         ollama_available = False
@@ -671,7 +693,30 @@ Provide a comprehensive, synthesized response that incorporates the team's persp
             pass
         
         if ollama_available:
-            response_text = await llm_service.generate_response(synthesis_prompt, max_tokens=800, temperature=0.7)
+            response_text = await llm_service.generate_response(
+                synthesis_prompt,
+                max_tokens=300 if is_simple_greeting else 500,
+                temperature=0.6
+            )
+            # Strip any accidental formal prefixes (humanize: no memo style)
+            formal_prefixes = ("Subject: Re:", "Subject:", "Dear Team", "Dear team", "Hi Team,", "Hello,", "Hi,", "Re:")
+            while True:
+                t = response_text.strip()
+                stripped = False
+                for prefix in formal_prefixes:
+                    if t.startswith(prefix):
+                        response_text = t[len(prefix):].strip()
+                        stripped = True
+                        break
+                if not stripped:
+                    break
+            # Identity guards: never expose Alibaba/Qwen
+            response_text = response_text.replace("Alibaba Cloud", "the team").replace("Qwen", "we")
+            if "Knowledge Synthesizer" in response_text or "[Your Name]" in response_text:
+                response_text = response_text.replace("Knowledge Synthesizer", spokesperson.get("name", "Team")).replace("[Your Name]", spokesperson.get("name", ""))
+            # For simple greetings, cap length to keep it human and short
+            if is_simple_greeting and len(response_text) > 280:
+                response_text = response_text[:277].rsplit(".", 1)[0] + "." if "." in response_text[:277] else response_text[:277]
         else:
             # Deterministic offline response
             response_text = f"Thank you for your message. I'm {spokesperson.get('name', 'Department Representative')} from {dept_data.get('name', '')}. I'm currently operating in offline mode (brain connection unavailable). Your message has been received and will be processed when the brain is online. In the meantime, how can I assist with department operations?"

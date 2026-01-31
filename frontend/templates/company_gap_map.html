@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Company Gap Map - Daena</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a24;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-purple: #8b5cf6;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 1.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .btn.primary {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        .btn.success {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+        }
+
+        /* Summary Cards */
+        .summary-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .summary-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .summary-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .summary-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .summary-card.complete .summary-value {
+            color: var(--accent-green);
+        }
+
+        .summary-card.partial .summary-value {
+            color: var(--accent-yellow);
+        }
+
+        .summary-card.missing .summary-value {
+            color: var(--accent-red);
+        }
+
+        .summary-card.coverage .summary-value {
+            color: var(--accent-blue);
+        }
+
+        /* Gap Grid */
+        .gap-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1rem;
+        }
+
+        .gap-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+
+        .gap-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .gap-card.complete {
+            border-color: var(--accent-green);
+        }
+
+        .gap-card.partial {
+            border-color: var(--accent-yellow);
+        }
+
+        .gap-card.missing {
+            border-color: var(--accent-red);
+        }
+
+        .gap-header {
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .gap-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+        }
+
+        .gap-icon {
+            font-size: 1.25rem;
+        }
+
+        .gap-status {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .gap-status.complete {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .gap-status.partial {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--accent-yellow);
+        }
+
+        .gap-status.missing {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+        }
+
+        .gap-body {
+            padding: 1rem;
+        }
+
+        .coverage-bar {
+            height: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 0.75rem;
+        }
+
+        .coverage-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s;
+        }
+
+        .coverage-fill.complete {
+            background: var(--accent-green);
+        }
+
+        .coverage-fill.partial {
+            background: var(--accent-yellow);
+        }
+
+        .coverage-fill.missing {
+            background: var(--accent-red);
+        }
+
+        .gap-meta {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        .capabilities-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .cap-tag {
+            padding: 0.125rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.7rem;
+        }
+
+        .cap-tag.existing {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .cap-tag.missing {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+        }
+
+        .gap-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .gap-actions .btn {
+            flex: 1;
+            font-size: 0.75rem;
+            padding: 0.5rem;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.visible {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            width: 600px;
+            max-width: 90vw;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-body {
+            padding: 1rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 1.25rem;
+        }
+
+        .proposal-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .proposal-section h4 {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+
+        .proposal-list {
+            list-style: none;
+            padding-left: 1rem;
+        }
+
+        .proposal-list li {
+            padding: 0.25rem 0;
+            font-size: 0.875rem;
+        }
+
+        .proposal-list li::before {
+            content: "•";
+            color: var(--accent-blue);
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>📊 Company Gap Map</h1>
+        <div class="header-actions">
+            <button class="btn" onclick="generateBacklog()">📋 Generate Backlog</button>
+            <button class="btn primary" onclick="refresh()">🔄 Refresh</button>
+        </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="summary-row">
+        <div class="summary-card complete">
+            <div class="summary-value" id="completeCount">0</div>
+            <div class="summary-label">Complete</div>
+        </div>
+        <div class="summary-card partial">
+            <div class="summary-value" id="partialCount">0</div>
+            <div class="summary-label">Partial</div>
+        </div>
+        <div class="summary-card missing">
+            <div class="summary-value" id="missingCount">0</div>
+            <div class="summary-label">Missing</div>
+        </div>
+        <div class="summary-card coverage">
+            <div class="summary-value" id="overallCoverage">0%</div>
+            <div class="summary-label">Overall Coverage</div>
+        </div>
+    </div>
+
+    <!-- Gap Cards -->
+    <div class="gap-grid" id="gapGrid"></div>
+
+    <!-- Proposal Modal -->
+    <div class="modal-overlay" id="proposalModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modalTitle">Department Proposal</h3>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1/strategy/company-gaps';
+
+        async function loadGapMap() {
+            try {
+                const resp = await fetch(API_BASE);
+                const data = await resp.json();
+
+                // Update summary
+                document.getElementById('completeCount').textContent = data.summary.complete;
+                document.getElementById('partialCount').textContent = data.summary.partial;
+                document.getElementById('missingCount').textContent = data.summary.missing;
+                document.getElementById('overallCoverage').textContent = data.summary.overall_coverage + '%';
+
+                // Render gap cards
+                renderGaps(data.gaps);
+            } catch (e) {
+                console.error('Failed to load gaps:', e);
+            }
+        }
+
+        function renderGaps(gaps) {
+            const grid = document.getElementById('gapGrid');
+
+            grid.innerHTML = gaps.map(gap => `
+                <div class="gap-card ${gap.status}">
+                    <div class="gap-header">
+                        <span class="gap-title">
+                            <span class="gap-icon">${gap.icon}</span>
+                            <span>${gap.area_name}</span>
+                        </span>
+                        <span class="gap-status ${gap.status}">${gap.status}</span>
+                    </div>
+                    <div class="gap-body">
+                        <div class="coverage-bar">
+                            <div class="coverage-fill ${gap.status}" style="width: ${gap.coverage_percent}%"></div>
+                        </div>
+                        <div class="gap-meta">
+                            <div>Coverage: ${gap.coverage_percent}%</div>
+                            <div>Priority: ${gap.priority}</div>
+                            <div>Effort: ${gap.effort_estimate}</div>
+                            <div>Missing: ${gap.missing_capabilities.length}</div>
+                        </div>
+                        <div class="capabilities-list">
+                            ${gap.existing_capabilities.map(c => `
+                                <span class="cap-tag existing">✓ ${c.replace('_', ' ')}</span>
+                            `).join('')}
+                            ${gap.missing_capabilities.slice(0, 3).map(c => `
+                                <span class="cap-tag missing">✗ ${c.replace('_', ' ')}</span>
+                            `).join('')}
+                            ${gap.missing_capabilities.length > 3 ? `<span class="cap-tag missing">+${gap.missing_capabilities.length - 3} more</span>` : ''}
+                        </div>
+                        <div class="gap-actions">
+                            <button class="btn" onclick="viewProposal('${gap.area_id}')">View Proposal</button>
+                            <button class="btn primary" onclick="createDepartment('${gap.area_id}')" ${gap.status === 'complete' ? 'disabled' : ''}>
+                                Create Dept
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function viewProposal(areaId) {
+            try {
+                const resp = await fetch(`${API_BASE}/areas/${areaId}/proposal`);
+                const proposal = await resp.json();
+
+                document.getElementById('modalTitle').textContent = `${proposal.department_name} - Proposal`;
+                document.getElementById('modalBody').innerHTML = `
+                    <div class="proposal-section">
+                        <h4>Agent Roles</h4>
+                        <ul class="proposal-list">
+                            ${proposal.agent_roles.map(r => `<li><strong>${r.role}</strong>: ${r.description}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="proposal-section">
+                        <h4>API Endpoints</h4>
+                        <ul class="proposal-list">
+                            ${proposal.api_endpoints.slice(0, 6).map(e => `<li><code>${e.method} ${e.path}</code></li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="proposal-section">
+                        <h4>UI Components</h4>
+                        <ul class="proposal-list">
+                            ${proposal.ui_components.map(c => `<li>${c}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="proposal-section">
+                        <h4>Success KPIs</h4>
+                        <ul class="proposal-list">
+                            ${proposal.success_kpis.map(k => `<li>${k.replace('_', ' ')}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="proposal-section">
+                        <h4>Risks</h4>
+                        <ul class="proposal-list">
+                            ${proposal.risks.map(r => `<li>${r}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="proposal-section">
+                        <h4>Founder Approvals Required</h4>
+                        <ul class="proposal-list">
+                            ${proposal.founder_approvals_required.map(a => `<li>${a}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+
+                document.getElementById('proposalModal').classList.add('visible');
+            } catch (e) {
+                alert('Failed to load proposal: ' + e.message);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('proposalModal').classList.remove('visible');
+        }
+
+        async function createDepartment(areaId) {
+            if (!confirm('This will create a new department to fill this gap. Founder approval will be required. Continue?')) {
+                return;
+            }
+
+            try {
+                const resp = await fetch(`${API_BASE}/areas/${areaId}/create-department`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ founder_approved: true })
+                });
+                const result = await resp.json();
+
+                if (result.success) {
+                    alert('Department creation initiated!\n\n' + result.next_steps.join('\n'));
+                    refresh();
+                } else {
+                    alert(result.message);
+                }
+            } catch (e) {
+                alert('Failed: ' + e.message);
+            }
+        }
+
+        async function generateBacklog() {
+            try {
+                const resp = await fetch(`${API_BASE}/generate-backlog`, { method: 'POST' });
+                const result = await resp.json();
+                alert(`Generated ${result.generated_count} backlog items from gaps.`);
+            } catch (e) {
+                alert('Failed: ' + e.message);
+            }
+        }
+
+        function refresh() {
+            loadGapMap();
+        }
+
+        // Initialize
+        loadGapMap();
+    </script>
+</body>
+
+</html>

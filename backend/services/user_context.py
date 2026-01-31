@@ -6,7 +6,22 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-USER_CONTEXT_FILE = Path(__file__).parent.parent.parent / "local_brain" / "user_context.json"
+def _user_context_file() -> Path:
+    try:
+        from backend.config.settings import get_brain_root
+        return get_brain_root() / "user_context.json"
+    except Exception:
+        return Path(__file__).parent.parent.parent / "local_brain" / "user_context.json"
+
+
+USER_CONTEXT_FILE = None  # Set on first access
+
+
+def _get_user_context_file() -> Path:
+    global USER_CONTEXT_FILE
+    if USER_CONTEXT_FILE is None:
+        USER_CONTEXT_FILE = _user_context_file()
+    return USER_CONTEXT_FILE
 
 class UserContextManager:
     _instance = None
@@ -23,13 +38,13 @@ class UserContextManager:
     
     def load(self):
         """Load user context from file"""
-        USER_CONTEXT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        
-        if USER_CONTEXT_FILE.exists():
+        f = _get_user_context_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        if f.exists():
             try:
-                with open(USER_CONTEXT_FILE, 'r') as f:
-                    self.user_data = json.load(f)
-            except:
+                with open(f, 'r') as fp:
+                    self.user_data = json.load(fp)
+            except Exception:
                 self.user_data = self.get_default_context()
         else:
             self.user_data = self.get_default_context()
@@ -56,7 +71,7 @@ class UserContextManager:
     def save(self):
         """Save user context to file"""
         try:
-            with open(USER_CONTEXT_FILE, 'w') as f:
+            with open(_get_user_context_file(), 'w') as f:
                 json.dump(self.user_data, f, indent=2, default=str)
         except Exception as e:
             print(f"Failed to save user context: {e}")

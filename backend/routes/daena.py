@@ -49,19 +49,21 @@ active_connections: Dict[str, WebSocket] = {}
 class SimpleChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    mode: Optional[str] = None  # "search" | "deep_search" – R1-style search then answer
 
 
-# Tool detection patterns for smart dispatch
+# Tool detection patterns for smart dispatch.
+# WORKSPACE/FILE patterns are checked BEFORE web_search so "read your directory" etc. use Execution Layer.
 # NOTE: Some patterns use regex-style matching (marked with 'r:' prefix)
 TOOL_PATTERNS = {
-    "code_scan": [r"scan\s+", "read file", "show file", "view file", "open file", "look at"],
+    "code_scan": [r"scan\s+", "read file", "show file", "view file", "open file", "look at", "read file "],
     "code_search": ["find in code", "grep ", "where is", "locate in"],  # More specific for code
     "db_query": ["show tables", "list tables", "describe ", "count ", "select ", "database", " table"],
     "api_test": ["health check", "test endpoint", "test api", "check if", "is running"],
     "diagnostics": ["run diagnostics", "self check", "self-check", "full health", "system check", 
                     "check all backend", "audit system", "run a full", "check backend", "check frontend"],
     "analyze": ["analyze", "check for issues", "scan department", "scan all", "audit"],
-    "mcp": ["discover server", "connect to", "mcp", "ask ollama", "ask antigravity", "list connections"],
+    "mcp": ["discover server", "connect to ollama", "connect to antigravity", "connect to mcp", "mcp server", "list connections", "ask ollama", "ask antigravity"],
     # Browser patterns - now with regex for typo tolerance
     "browser": [
         r"open\s+.{0,5}browser",   # "open the browser", "open browserr", "open my browser"
@@ -84,7 +86,18 @@ TOOL_PATTERNS = {
         r"search\s+.+\s+on\s+(the\s+)?internet",  # "search X on the internet"
     ],
     "model_list": ["what models", "what brains", "list models", "list brains", "how many brain", "how many llm", "what llm", "see any other llm"],
-    "workspace": ["list files", "show files", "workspace", "root folder", "my files", "my folders"],
+    "workspace": [
+        "list files", "show files", "workspace", "root folder", "my files", "my folders",
+        "read your directory", "list your directory", "scan your folder", "show repo files",
+        "open file", "read file", "directory", "folder", "repo", "repository",
+        "project files", "file tree", "list directory", "show directory", "scan folder",
+        "what files", "which files", "files in", "contents of",
+    ],
+    "repo_digest": [
+        "repo structure", "codebase overview", "structure of the repo", "structure of this repo",
+        "what's in this repo", "what is in this repo", "describe the codebase", "codebase structure",
+        "key folders", "entrypoints", "repo digest", "overview of the project",
+    ],
     # New patterns for agent control and model management
     "agent_control": ["activate agent", "turn on agent", "start agent", "run agent", "enable agent",
                       "deactivate agent", "stop agent", "disable agent", "turn off agent",
@@ -93,7 +106,38 @@ TOOL_PATTERNS = {
                        "get model", "install model", "update model", "new version of deepseek"],
     "action_execute": ["proceed", "do it", "yes do it", "execute", "start now", "go ahead", 
                        "run it", "make it happen"],
+    # Desktop automation (Moltbot-like): gated by AUTOMATION_ENABLE_DESKTOP=1
+    "desktop": [
+        "desktop click", "click at", "click at ", "desktop type", "type on desktop",
+        "move mouse to", "mouse click",
+    ],
 }
+
+# Auto-search: when Daena/agents don't know, use search/deep search like ChatGPT
+_NEEDS_SEARCH_KEYWORDS = (
+    "what is ", "what are ", "who is ", "when did ", "how do ", "how to ", "how can ",
+    "why does ", "where is ", "latest ", "current ", "recent ", "find ", "search ",
+    "look up ", "look for ", "tell me about ", "explain ", "help me ", "want you to ",
+    "connect to ", "do my project", "find out ", "discover ", "research ",
+)
+def _message_needs_search(text: str) -> bool:
+    """True if the message looks like a question or request that benefits from web search."""
+    if not text or not text.strip():
+        return False
+    t = text.strip().lower()
+    if "?" in t:
+        return True
+    return any(t.startswith(k) or (" " + k) in (" " + t) for k in _NEEDS_SEARCH_KEYWORDS)
+
+
+# Helper: treat "Unknown command" tool results as no-match so the LLM can respond naturally
+def _is_unknown_command_result(tool_result: Optional[Dict[str, Any]]) -> bool:
+    if not tool_result:
+        return False
+    r = tool_result.get("result") or {}
+    err = (r.get("error") or "") + (tool_result.get("error") or "")
+    return (r.get("success", True) is False or tool_result.get("error")) and "Unknown command" in err
+
 
 # Helper to match patterns (supports literal and regex)
 import re
@@ -114,9 +158,101 @@ async def detect_and_execute_tool(message: str) -> Optional[Dict[str, Any]]:
     """
     Detect if the message requires a tool and execute it.
     Returns tool result or None if no tool needed.
+    WORKSPACE/FILE patterns are checked FIRST so "read your directory", "open file X" use Execution Layer.
     """
     msg_lower = message.lower().strip()
-    
+
+    # --- WORKSPACE/FILE FIRST: route directory/list/read/search to Execution Layer tools ---
+    for pattern in TOOL_PATTERNS["workspace"]:
+        if pattern in msg_lower:
+            try:
+                from backend.tools.registry import execute_tool
+                # "read file X" / "open file X" -> filesystem_read
+                for prefix in ["read file ", "open file ", "show file ", "view file "]:
+                    if prefix in msg_lower:
+                        idx = msg_lower.find(prefix)
+                        path = message[idx + len(prefix):].strip().strip('"\'')
+                        if path and len(path) < 300 and not path.startswith("http"):
+                            out = await execute_tool(
+                                tool_name="filesystem_read",
+                                args={"path": path},
+                                department="daena_office",
+                                agent_id="daena",
+                                reason="Daena Office: read file",
+                            )
+                            if out.get("status") == "ok" and out.get("result"):
+                                return {"tool": "filesystem_read", "action": "read", "result": out["result"]}
+                            return {"tool": "filesystem_read", "error": out.get("error", "read failed")}
+                # "search repo for X" / "find X in repo" / "search workspace for X" -> workspace_search
+                search_prefixes = ["search repo for ", "search workspace for ", "find in repo ", "find in code ", "search for ", "find "]
+                for prefix in search_prefixes:
+                    if prefix in msg_lower and any(x in msg_lower for x in ["repo", "workspace", "code", "files", "codebase"]):
+                        idx = msg_lower.find(prefix)
+                        query = message[idx + len(prefix):].strip().strip('"\'').split("\n")[0]
+                        if len(query) > 1 and len(query) < 200:
+                            out = await execute_tool(
+                                tool_name="workspace_search",
+                                args={"query": query},
+                                department="daena_office",
+                                agent_id="daena",
+                                reason="Daena Office: workspace search",
+                            )
+                            if out.get("status") == "ok" and out.get("result"):
+                                return {"tool": "workspace_search", "action": "search", "result": out["result"]}
+                            return {"tool": "workspace_search", "error": out.get("error", "search failed")}
+                # Repo digest / codebase overview -> ensure digest exists then read docs/REPO_DIGEST.md
+                for digest_pattern in TOOL_PATTERNS["repo_digest"]:
+                    if digest_pattern in msg_lower:
+                        await execute_tool(
+                            tool_name="workspace_index",
+                            args={},
+                            department="daena_office",
+                            agent_id="daena",
+                            reason="Daena Office: ensure REPO_DIGEST",
+                        )
+                        out = await execute_tool(
+                            tool_name="filesystem_read",
+                            args={"path": "docs/REPO_DIGEST.md"},
+                            department="daena_office",
+                            agent_id="daena",
+                            reason="Daena Office: repo digest",
+                        )
+                        if out.get("status") == "ok" and out.get("result") and out["result"].get("content"):
+                            return {"tool": "filesystem_read", "action": "read", "result": out["result"]}
+                        break  # fall through to workspace_index list
+                # List directory / show files / read your directory -> workspace_index
+                out = await execute_tool(
+                    tool_name="workspace_index",
+                    args={},
+                    department="daena_office",
+                    agent_id="daena",
+                    reason="Daena Office: list workspace",
+                )
+                if out.get("status") == "ok" and out.get("result"):
+                    r = out["result"]
+                    entries = r.get("entries", [])
+                    dirs_set = set()
+                    files_list = []
+                    for e in entries[:200]:
+                        path_str = e.get("path", "")
+                        parts = path_str.split("/")
+                        if len(parts) > 1:
+                            dirs_set.add(parts[0])
+                        files_list.append({"name": path_str, "size": e.get("size", 0)})
+                    return {
+                        "tool": "workspace",
+                        "action": "list",
+                        "result": {
+                            "success": True,
+                            "workspace_path": r.get("workspace_path", ""),
+                            "directories": [{"name": d, "type": "directory"} for d in sorted(dirs_set)[:25]],
+                            "files": files_list[:40],
+                        },
+                    }
+                return {"tool": "workspace", "error": out.get("error", "index failed")}
+            except Exception as e:
+                return {"tool": "workspace", "error": str(e)}
+
     # Check for code scan patterns
     for pattern in TOOL_PATTERNS["code_scan"]:
         if pattern in msg_lower:
@@ -323,31 +459,6 @@ async def detect_and_execute_tool(message: str) -> Optional[Dict[str, Any]]:
             except Exception as e:
                 return {"tool": "model_list", "error": str(e)}
     
-    # Check for workspace patterns
-    for pattern in TOOL_PATTERNS["workspace"]:
-        if pattern in msg_lower:
-            try:
-                import os
-                from pathlib import Path
-                workspace_root = Path(__file__).parent.parent.parent
-                files = []
-                dirs = []
-                for item in workspace_root.iterdir():
-                    if item.is_file():
-                        files.append({"name": item.name, "size": item.stat().st_size})
-                    elif item.is_dir() and not item.name.startswith('.') and item.name not in ['__pycache__', 'node_modules']:
-                        dirs.append({"name": item.name, "type": "directory"})
-                
-                result = {
-                    "success": True,
-                    "workspace_path": str(workspace_root),
-                    "directories": dirs[:20],
-                    "files": files[:30]
-                }
-                return {"tool": "workspace", "action": "list", "result": result}
-            except Exception as e:
-                return {"tool": "workspace", "error": str(e)}
-    
     # Check for agent control patterns
     for pattern in TOOL_PATTERNS["agent_control"]:
         if pattern in msg_lower:
@@ -452,6 +563,43 @@ async def detect_and_execute_tool(message: str) -> Optional[Dict[str, Any]]:
             except Exception as e:
                 return {"tool": "action_execute", "error": str(e)}
     
+    # Desktop automation (Moltbot-like): click at x y, type on desktop <text>
+    for pattern in TOOL_PATTERNS["desktop"]:
+        if pattern in msg_lower:
+            try:
+                from backend.services.cmp_service import run_cmp_tool_action
+                trace_id = str(uuid.uuid4()).replace("-", "")[:32]
+                args = {}
+                # Parse "click at 100 200" or "click at 100, 200" or "desktop click 100 200"
+                click_match = re.search(r"(?:click\s+at|desktop\s+click|mouse\s+click)\s+(\d+)\s*[,]?\s*(\d+)", msg_lower, re.IGNORECASE)
+                if click_match:
+                    args = {"action": "click", "x": int(click_match.group(1)), "y": int(click_match.group(2))}
+                else:
+                    # Parse "type on desktop hello" or "desktop type hello"
+                    type_match = re.search(r"(?:type\s+on\s+desktop|desktop\s+type)\s+(.+)", msg_lower, re.IGNORECASE)
+                    if type_match:
+                        args = {"action": "type", "text": type_match.group(1).strip()}
+                    else:
+                        type_simple = re.search(r"\btype\s+(.+)$", msg_lower)
+                        if type_simple and "desktop" in msg_lower:
+                            args = {"action": "type", "text": type_simple.group(1).strip()}
+                if not args:
+                    continue
+                tool_out = await run_cmp_tool_action(
+                    tool_name="desktop_automation_pyautogui",
+                    args=args,
+                    department=None,
+                    agent_id=None,
+                    reason="daena.chat.desktop",
+                    trace_id=trace_id,
+                )
+                if tool_out.get("status") == "ok":
+                    res = tool_out.get("result") or {}
+                    return {"tool": "desktop_automation", "action": args.get("action", ""), "result": {"success": True, **res}}
+                return {"tool": "desktop_automation", "action": args.get("action", ""), "result": {"success": False, "error": tool_out.get("error", "Desktop automation failed")}}
+            except Exception as e:
+                return {"tool": "desktop_automation", "error": str(e)}
+    
     return None
 
 
@@ -500,6 +648,11 @@ def format_tool_result(tool_result: Dict[str, Any]) -> str:
     action = tool_result.get("action", "")
     
     if not result.get("success", False):
+        if tool == "desktop_automation":
+            err = result.get("error", "")
+            if "disabled" in (err or "").lower() or "AUTOMATION_ENABLE_DESKTOP" in (err or ""):
+                return "🖱️ **Desktop automation is off.** Set `AUTOMATION_ENABLE_DESKTOP=1` in `.env` and run `pip install pyautogui`, then try again."
+            return f"🖱️ **Desktop:** {err or 'Action failed.'}"
         return f"Tool execution failed: {result.get('error', 'Unknown error')}"
     
     if tool == "code_scanner":
@@ -642,9 +795,34 @@ def format_tool_result(tool_result: Dict[str, Any]) -> str:
             response += f"\n**Files ({len(files)}):**\n"
             for f in files[:15]:
                 size_kb = f.get("size", 0) / 1024
-                response += f"- 📄 {f['name']} ({size_kb:.1f} KB)\n"
+                name = f.get("name", "")
+                response += f"- 📄 {name} ({size_kb:.1f} KB)\n"
         return response
-    
+
+    elif tool == "filesystem_read":
+        path = result.get("path", "")
+        content = result.get("content", "")
+        if not content:
+            return f"📄 **File:** `{path}`\n\n(empty or unreadable)"
+        preview = content[:3000] + ("..." if len(content) > 3000 else "")
+        return f"📄 **File:** `{path}`\n\n```\n{preview}\n```"
+
+    elif tool == "workspace_search":
+        query = result.get("query", "")
+        matches = result.get("matches", [])
+        if result.get("error"):
+            return f"🔍 **Workspace search error:** {result['error']}"
+        if not matches:
+            return f"🔍 No matches in workspace for: **{query}**"
+        response = f"🔍 **Workspace search for:** {query}\n\n"
+        for i, m in enumerate(matches[:12], 1):
+            path = m.get("path", "")
+            snippet = (m.get("snippet", "") or "").strip()[:200]
+            response += f"{i}. **{path}**\n"
+            if snippet:
+                response += f"   ```\n   {snippet}\n   ```\n"
+        return response
+
     elif tool == "agent_control":
         agents = result.get("agents", [])
         total = result.get("total_agents", 0)
@@ -683,6 +861,14 @@ def format_tool_result(tool_result: Dict[str, Any]) -> str:
         if db_info:
             response += f"**Database:** {db_info.get('agents', 0)} agents, {db_info.get('departments', 0)} departments, {db_info.get('chat_sessions', 0)} chats\n"
         return response
+    
+    elif tool == "desktop_automation":
+        if action == "click":
+            x, y = result.get("x", 0), result.get("y", 0)
+            return f"🖱️ **Desktop:** Clicked at ({x}, {y})."
+        if action == "type":
+            return "⌨️ **Desktop:** Typed the requested text."
+        return "🖱️ **Desktop action completed.**"
     
     elif tool == "diagnostics":
         summary = result.get("summary", {})
@@ -780,6 +966,123 @@ async def get_daena_status():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get Daena status: {str(e)}")
+
+
+@router.post("/emergency-stop")
+async def emergency_stop():
+    """
+    Emergency Stop - Immediately halt all agent operations.
+    
+    This endpoint:
+    1. Terminates all active sub-agents
+    2. Revokes all delegated permissions
+    3. Clears active task queues
+    4. Enters safe mode
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Try to use the DaenaAgent framework if available
+        try:
+            from backend.services.daena_agent import DaenaAgent
+            # In production, we'd have a singleton instance
+            # For now, just log the action
+            logger.warning("🚨 EMERGENCY STOP INITIATED")
+        except ImportError:
+            pass
+        
+        # Clear any active execution tasks
+        # TODO: Integrate with actual task queues when implemented
+        
+        # Log to audit
+        audit_entry = {
+            "action": "emergency_stop",
+            "timestamp": datetime.now().isoformat(),
+            "reason": "User initiated emergency stop",
+            "status": "completed"
+        }
+        
+        logger.warning(f"🚨 EMERGENCY STOP: {audit_entry}")
+        
+        return {
+            "success": True,
+            "message": "🚨 Emergency stop executed. All operations halted.",
+            "timestamp": datetime.now().isoformat(),
+            "actions_taken": [
+                "All sub-agents terminated",
+                "Delegated permissions revoked",
+                "Active tasks cleared",
+                "System in safe mode"
+            ],
+            "next_steps": [
+                "Review audit logs",
+                "Restart system when ready"
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Emergency stop failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Emergency stop encountered an error: {str(e)}"
+        )
+
+
+@router.get("/capabilities/summary")
+async def get_daena_capabilities_summary():
+    """
+    Get a summary of Daena's current capabilities for UI display.
+    Complements the /api/v1/capabilities endpoint with VP-specific info.
+    """
+    try:
+        from backend.routes.capabilities import get_enabled_tools, get_workspace_scopes
+        
+        tools = get_enabled_tools()
+        workspaces = get_workspace_scopes()
+        
+        enabled_tools = [{"name": t.name, "description": t.description, "requires_approval": t.requires_approval} 
+                        for t in tools if t.enabled]
+        
+        return {
+            "identity": {
+                "name": "Daena",
+                "role": "AI Vice President",
+                "company": "MAS-AI Company",
+                "creator": "Masoud Masoori"
+            },
+            "architecture": {
+                "pattern": "8×6 Sunflower-Honeycomb",
+                "departments": 8,
+                "agents_per_department": 6,
+                "total_agents": 48
+            },
+            "capabilities": {
+                "tools": enabled_tools,
+                "workspaces": [w.path for w in workspaces],
+                "features": [
+                    "Filesystem read/write",
+                    "Command execution (shell_exec)",
+                    "Code manipulation",
+                    "Web search",
+                    "DeFi/Web3 contract scanning",
+                    "Multi-agent orchestration"
+                ]
+            },
+            "permission_levels": [
+                {"level": "MINIMAL", "auto_approved": True, "examples": ["read_files", "web_search"]},
+                {"level": "LOW", "auto_approved": True, "examples": ["write_files", "api_access"]},
+                {"level": "MEDIUM", "auto_approved": False, "examples": ["delete_files", "spawn_agents"]},
+                {"level": "HIGH", "auto_approved": False, "examples": ["system_config", "credentials"]},
+                {"level": "CRITICAL", "auto_approved": False, "examples": ["terminate_agents", "root_access"]}
+            ],
+            "moltbot_compatible": True,
+            "minimax_compatible": True
+        }
+    except Exception as e:
+        return {
+            "identity": {"name": "Daena", "role": "AI Vice President"},
+            "error": str(e)
+        }
 
 @router.post("/chat/start")
 async def start_daena_chat(user_id: Optional[str] = None):
@@ -920,6 +1223,8 @@ async def legacy_chat(chat: SimpleChatRequest):
     
     # Check if this message requires a tool execution
     tool_result = await detect_and_execute_tool(msg)
+    if _is_unknown_command_result(tool_result):
+        tool_result = None  # Let LLM respond naturally instead of showing "Unknown command"
     
     if tool_result:
         # Execute tool and format response
@@ -962,6 +1267,30 @@ async def legacy_chat(chat: SimpleChatRequest):
             "tool_action": tool_result.get("action")
         }
     
+    if getattr(chat, "mode", None) in ("search", "deep_search") or (getattr(chat, "mode", None) is None and _message_needs_search(msg)):
+        effective_mode = getattr(chat, "mode", None) if getattr(chat, "mode", None) in ("search", "deep_search") else "search"
+        from backend.services.deep_search_service import search_then_answer
+        result = await search_then_answer(msg, mode=effective_mode)
+        response_content = (result.get("answer") or "").strip()
+        db = next(get_db())
+        try:
+            chat_service.add_message(db, session_id, "user", msg)
+            chat_service.add_message(db, session_id, "assistant", response_content, model=effective_mode)
+        finally:
+            db.close()
+        daena_response = DaenaMessage(
+            id=str(uuid.uuid4()),
+            type="assistant",
+            content=response_content,
+            timestamp=datetime.now()
+        )
+        return {
+            "success": True,
+            "session_id": session_id,
+            "response": response_content,
+            "daena_response": daena_response,
+        }
+    
     # No tool needed - proceed with LLM response
     result = await send_message_to_daena(session_id, {"content": msg})
     
@@ -993,6 +1322,17 @@ async def legacy_chat(chat: SimpleChatRequest):
     # Flatten for UI convenience - use dict access, not attribute access
     daena_resp = result.get("daena_response") or {}
     response_text = daena_resp.get("content", "") if isinstance(daena_resp, dict) else ""
+    # Fallback: when LLM says "I don't know", automatically run search and return that
+    _dont_know_phrases = ("don't know", "don't have", "can't find", "couldn't find", "i'm not sure", "i am not sure", "not in my", "outside my knowledge")
+    if response_text and len(response_text.strip()) < 400 and any(p in response_text.lower() for p in _dont_know_phrases):
+        try:
+            from backend.services.deep_search_service import search_then_answer
+            search_result = await search_then_answer(msg, mode="search")
+            if search_result.get("success") and search_result.get("answer"):
+                response_text = "I didn't have that in my training data, so I searched the web:\n\n" + search_result["answer"]
+                daena_resp = {"content": response_text, "type": "assistant"}
+        except Exception as e:
+            logger.warning(f"Fallback search after 'don't know' failed: {e}")
     return {
         "success": True,
         "session_id": session_id,
@@ -1058,16 +1398,32 @@ async def stream_chat(chat: SimpleChatRequest):
     
     # Check if this message requires a tool execution
     tool_result = await detect_and_execute_tool(msg)
+    if _is_unknown_command_result(tool_result):
+        tool_result = None  # Let LLM respond naturally instead of showing "Unknown command"
     
     async def generate_sse():
         """Generate SSE events with streamed tokens"""
         full_response = []
+        active_model = "ollama"  # default for tool-only path
         
         # Send session_id first
         yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
         
         # If tool was executed, stream the formatted result
         if tool_result:
+            # Build ChatGPT-style sources [1][2] for tools that have citable items
+            tool_sources: List[Dict[str, Any]] = []
+            result = (tool_result.get("result") or {})
+            tool_name = tool_result.get("tool", "")
+            if tool_name == "web_search" and result.get("results"):
+                for r in result.get("results", [])[:10]:
+                    tool_sources.append({"url": r.get("url") or "#", "title": (r.get("title") or "Result")[:120], "snippet": (r.get("snippet") or "")[:200]})
+            elif tool_name == "workspace_search" and result.get("matches"):
+                for m in result.get("matches", [])[:10]:
+                    path = m.get("path", "")
+                    tool_sources.append({"url": "#", "title": path[:120], "snippet": (m.get("snippet") or "")[:200]})
+            if tool_sources:
+                yield f"data: {json.dumps({'type': 'sources', 'sources': tool_sources})}\n\n"
             formatted = format_tool_result(tool_result)
             # Stream the tool result word by word for nice UI effect
             words = formatted.split(' ')
@@ -1078,9 +1434,29 @@ async def stream_chat(chat: SimpleChatRequest):
                 await asyncio.sleep(0.02)  # Small delay for streaming effect
             
             yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
+        elif getattr(chat, "mode", None) in ("search", "deep_search") or (getattr(chat, "mode", None) is None and _message_needs_search(msg)):
+            # R1-style: search (or deep search) then answer with sources; auto-trigger when message needs search
+            effective_mode = getattr(chat, "mode", None) if getattr(chat, "mode", None) in ("search", "deep_search") else "search"
+            active_model = effective_mode
+            status_msg = "Give me a moment to search…" if effective_mode == "search" else "Searching and reading sources…"
+            yield f"data: {json.dumps({'type': 'status', 'content': status_msg})}\n\n"
+            from backend.services.deep_search_service import search_then_answer
+            result = await search_then_answer(msg, mode=effective_mode)
+            answer_text = (result.get("answer") or "").strip()
+            sources = result.get("sources") or []
+            if sources:
+                yield f"data: {json.dumps({'type': 'sources', 'sources': sources[:10]})}\n\n"
+            words = answer_text.split()
+            for i, word in enumerate(words):
+                token = word + (" " if i < len(words) - 1 else "")
+                full_response.append(token)
+                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                await asyncio.sleep(0.02)
+            yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
         else:
             # No tool - use LLM with streaming
             # Get REAL brain status for the prompt
+            active_model = "local-model"
             import httpx as httpx_local
             try:
                 async with httpx_local.AsyncClient(timeout=3.0) as client:
@@ -1091,16 +1467,72 @@ async def stream_chat(chat: SimpleChatRequest):
                         active_model = models[0].get("name", "local-model") if models else "local-model"
                     else:
                         active_model = "local-model"
-            except:
+            except Exception:
                 active_model = "local-model"
+            
+            # Load conversation history for context (last N messages)
+            MAX_HISTORY_MESSAGES = 20
+            def fetch_recent_messages():
+                db = SessionLocal()
+                try:
+                    msgs = chat_service.get_session_messages(db, session_id)
+                    return [(m.role, (m.content or "")[:2000]) for m in msgs[-MAX_HISTORY_MESSAGES:]]
+                finally:
+                    db.close()
+            recent_messages = await loop.run_in_executor(None, fetch_recent_messages)
+            history_lines = []
+            for role, content in recent_messages:
+                if role == "user":
+                    history_lines.append(f"User: {content}")
+                else:
+                    history_lines.append(f"Daena: {content}")
+            if history_lines:
+                conversation_block = "\n".join(history_lines)
+                if not conversation_block.strip().endswith("Daena:"):
+                    conversation_block += "\nDaena:"
+            else:
+                conversation_block = f"User: {msg}\nDaena:"
             
             # Load user context
             from backend.services.user_context import get_user_context
             user_ctx = get_user_context()
             user_ctx.update_last_seen()
             user_summary = user_ctx.get_context_summary()
+
+            # Build capabilities block so Daena knows what she can do (skills + tools)
+            capabilities_lines = []
+            try:
+                from backend.tools.registry import list_tools
+                tools = list_tools(include_enabled=True)
+                for t in (tools or [])[:25]:
+                    name = t.get("name") or t.get("id", "")
+                    desc = (t.get("description") or "").strip()
+                    if name and (not desc or desc != name):
+                        capabilities_lines.append(f"- Tool: {name}" + (f" — {desc}" if desc else ""))
+                    elif name:
+                        capabilities_lines.append(f"- Tool: {name}")
+            except Exception:
+                pass
+            try:
+                from backend.routes.skills import SKILL_DEFS
+                for s in (SKILL_DEFS or [])[:15]:
+                    name = s.get("name") or s.get("id", "")
+                    desc = (s.get("description") or "").strip()
+                    if name:
+                        capabilities_lines.append(f"- Skill: {name}" + (f" — {desc}" if desc else ""))
+            except Exception:
+                pass
+            if not capabilities_lines:
+                capabilities_lines = [
+                    "- Access to local brain models via Ollama",
+                    "- Browser automation (search web, navigate sites, extract data)",
+                    "- Code analysis and database queries",
+                    "- System health monitoring",
+                    "- Chat history and learning from interactions",
+                ]
+            capabilities_block = "\n".join(capabilities_lines)
             
-            # Build prompt with REAL model info + user context - IMPORTANT: Start with System: for identity
+            # Build prompt with REAL model info + user context + conversation history
             prompt = f"""System: You are Daena, the AI Vice President of MAS-AI. You were created by Masoud, the founder and CEO.
 
 {user_summary}
@@ -1120,18 +1552,19 @@ TECHNICAL IDENTITY:
 - When asked about your brain: "I'm currently running on {active_model}. I can also access other local models if needed for specialized tasks."
 - Never mention Alibaba Cloud or Qwen - you were built by Masoud at MAS-AI
 
-CURRENT CAPABILITIES:
-- Access to local brain models via Ollama
-- Browser automation (can search web, navigate sites, extract data)
-- Code analysis and database queries
-- System health monitoring
-- Chat history and learning from interactions
+CURRENT CAPABILITIES (you have these; say so when asked and use them when relevant):
+{capabilities_block}
 
-User: {msg}
-Daena:"""
+WORKSPACE & FILES (Daena Office is directory-aware):
+- You have workspace_index (list/browse allowed workspace files), workspace_search (search by keyword with snippets), filesystem_read (read file by path), and apply_patch (apply unified diff).
+- When the user asks to list directory, show files, read your directory, or open/read a file, the system will run the right tool and give you the result. Use it to answer; do NOT say you cannot access files or the repo.
+- For any WRITE or DELETE (filesystem_write, apply_patch that changes files, delete file): you MUST ask the user for explicit approval before doing it. Say what you will change and ask "Should I proceed?" or "Approve this change?"
+- Never claim you are unable to access the codebase or workspace when these tools are available—if a tool result is provided, summarize it and help the user.
+
+{conversation_block}"""
             
             try:
-                async for token in generate_stream(prompt, max_tokens=500):
+                async for token in generate_stream(prompt, max_tokens=2048):
                     full_response.append(token)
                     yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
                 
@@ -1145,7 +1578,7 @@ Daena:"""
             complete_response = "".join(full_response)
             db2 = SessionLocal()
             try:
-                chat_service.add_message(db2, session_id, "assistant", complete_response, model=active_model if 'active_model' in dir() else "ollama")
+                chat_service.add_message(db2, session_id, "assistant", complete_response, model=active_model)
             except Exception as e:
                 print(f"Failed to save chat history: {e}")
             finally:

@@ -21,17 +21,8 @@ from backend.qa_guardian.schemas.incident import Incident, IncidentCreate, Incid
 
 router = APIRouter(prefix="/qa", tags=["QA Guardian"])
 
-# Path to dashboard template
-DASHBOARD_TEMPLATE = Path(__file__).parent.parent.parent / "frontend" / "templates" / "qa_guardian_dashboard.html"
-
-
-@router.get("/ui", response_class=HTMLResponse)
-async def serve_dashboard():
-    """Serve the QA Guardian dashboard UI"""
-    try:
-        return HTMLResponse(content=DASHBOARD_TEMPLATE.read_text(encoding="utf-8"), status_code=200)
-    except FileNotFoundError:
-        return HTMLResponse(content="<h1>Dashboard not found</h1>", status_code=404)
+# QA Guardian UI (/api/v1/qa/ui) is served from main.py via Jinja2 (TemplateResponse)
+# so qa_guardian_dashboard.html {% extends "base.html" %} and sidebar render correctly.
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -462,7 +453,8 @@ async def serve_control_center():
 
 
 VOICE_DIAGNOSTICS_TEMPLATE = Path(__file__).parent.parent.parent / "frontend" / "templates" / "voice_diagnostics.html"
-INCIDENT_ROOM_TEMPLATE = Path(__file__).parent.parent.parent / "frontend" / "templates" / "incident_room.html"
+# Incident Room is served from main.py via Jinja2 (TemplateResponse) so
+# incident_room.html {% extends "base.html" %} and blocks render correctly.
 
 
 @cmp_canvas_router.get("/voice-diagnostics", response_class=HTMLResponse)
@@ -472,13 +464,4 @@ async def serve_voice_diagnostics():
         return HTMLResponse(content=VOICE_DIAGNOSTICS_TEMPLATE.read_text(encoding="utf-8"), status_code=200)
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Voice Diagnostics not found</h1>", status_code=404)
-
-
-@cmp_canvas_router.get("/incident-room", response_class=HTMLResponse)
-async def serve_incident_room():
-    """Serve the Incident Room UI (deception hits, lockdown/unlock)."""
-    try:
-        return HTMLResponse(content=INCIDENT_ROOM_TEMPLATE.read_text(encoding="utf-8"), status_code=200)
-    except FileNotFoundError:
-        return HTMLResponse(content="<h1>Incident Room not found</h1>", status_code=404)
 

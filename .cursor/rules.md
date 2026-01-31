@@ -63,6 +63,19 @@
 - `backend/utils/sunflower_registry.py` - Registry (read-only, use adapters)
 - `START_DAENA.bat` - Main launcher (modify carefully)
 
+## Execute manual verification steps
+
+When asked to **execute manual steps**, **run verification**, or **run all manual steps and fix errors**:
+
+1. **Start backend** (if not running): run `scripts\start_backend_with_env.bat` in a separate terminal, or use `.\scripts\run_all_tests.ps1 -StartBackend` (PowerShell). Backend must listen at http://localhost:8000 with `EXECUTION_TOKEN` set.
+2. **Wait for health**: poll `GET /health` until 200 (up to 90s).
+3. **Run in order**:  
+   - **One-shot:** `scripts\run_manual_steps.bat` (checks health, then smoke + manual_verification_steps).  
+   - Or: `python scripts\smoke_control_plane.py --base http://localhost:8000 --token <EXECUTION_TOKEN>` then `python scripts\manual_verification_steps.py` (set `DAENA_BASE_URL`, `EXECUTION_TOKEN`).
+4. **Fix errors** in scripts or APIs before proceeding; re-run until both pass.
+
+Manual verification steps (API equivalents) are implemented in `scripts/manual_verification_steps.py` (token gating, skills run, execution run, proactive run_once, tasks create/run, runbook page, skills artifacts, lockdown).
+
 ## When in Doubt
 
 1. **Ask the user** before making large changes
@@ -73,7 +86,7 @@
 
 ---
 
-**Last Updated**: 2025-12-13  
+**Last Updated**: 2026-01-30  
 **Purpose**: Prevent file truncation and ensure code quality
 
 

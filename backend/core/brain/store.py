@@ -40,11 +40,14 @@ class BrainStore:
     """
     
     def __init__(self, storage_path: Optional[Path] = None):
-        """Initialize brain store"""
+        """Initialize brain store. Uses BRAIN_ROOT or MODELS_ROOT/daena_brain or project local_brain."""
         if storage_path is None:
-            # Default to local_brain directory for brain storage
-            project_root = Path(__file__).parent.parent.parent.parent
-            storage_path = project_root / "local_brain" / "brain_store"
+            try:
+                from backend.config.settings import get_brain_root
+                storage_path = get_brain_root() / "brain_store"
+            except Exception:
+                project_root = Path(__file__).parent.parent.parent.parent
+                storage_path = project_root / "local_brain" / "brain_store"
         self.storage_path = Path(storage_path)
         self.storage_path.mkdir(parents=True, exist_ok=True)
         

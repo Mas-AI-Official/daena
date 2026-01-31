@@ -1,8 +1,10 @@
 """
 Integration API Routes
-Enhanced endpoints for managing integrations with secure credential storage
+Enhanced endpoints for managing integrations with secure credential storage.
+MCP-first: MCP servers (GitHub, Cloudflare, GCP, etc.) can be listed and enabled via mcp-servers endpoints.
 """
 from fastapi import APIRouter, HTTPException, Body
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 
@@ -10,6 +12,8 @@ from backend.services.integration_registry import get_integration_registry
 from backend.services.credentials_manager import get_credentials_manager
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
+
+_MCP_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "mcp_servers.json"
 
 # Request/Response Models
 class ConnectRequest(BaseModel):
@@ -20,6 +24,77 @@ class ExecuteRequest(BaseModel):
     action: str
     params: Dict[str, Any] = {}
     user_id: str = "default"
+
+
+class MCPServerUpdate(BaseModel):
+    """Request body for PATCH /mcp-servers/{server_id}."""
+    enabled: bool
+
+
+@router.get("/mcp-servers")
+async def list_mcp_servers() -> Dict[str, Any]:
+    """
+    List MCP servers: from integration registry (mcp_server=True) merged with config/mcp_servers.json.
+    Integrations page can show these as "MCP servers + providers" and enable/disable via PATCH.
+    """
+    registry = get_integration_registry()
+    all_integrations = registry.list_all() if hasattr(registry, "list_all") else []
+    mcp_from_registry = [i for i in all_integrations if i.get("mcp_server") or i.get("category") == "mcp"]
+    if not mcp_from_registry and hasattr(registry, "integrations"):
+        mcp_from_registry = [{"id": k, **v} for k, v in (registry.integrations or {}).items() if v.get("mcp_server") or v.get("category") == "mcp"]
+    config = {}
+    if _MCP_CONFIG_PATH.exists():
+        try:
+            import json
+            with open(_MCP_CONFIG_PATH, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except Exception:
+            pass
+    servers = []
+    seen = set()
+    for s in mcp_from_registry:
+        sid = s.get("id") or s.get("name", "").lower().replace(" ", "_")
+        if sid in seen:
+            continue
+        seen.add(sid)
+        cfg = config.get(sid) or {}
+        servers.append({
+            "id": sid,
+            "name": s.get("name", sid),
+            "description": s.get("description", ""),
+            "enabled": cfg.get("enabled", s.get("enabled_by_default", False)),
+            "command": cfg.get("command"),
+            "args": cfg.get("args", []),
+        })
+    for sid, cfg in config.items():
+        if sid not in seen:
+            servers.append({"id": sid, "name": cfg.get("name", sid), "enabled": cfg.get("enabled", False), "command": cfg.get("command"), "args": cfg.get("args", [])})
+    return {"success": True, "mcp_servers": servers}
+
+
+@router.patch("/mcp-servers/{server_id}")
+async def update_mcp_server(server_id: str, body: MCPServerUpdate) -> Dict[str, Any]:
+    """Enable or disable an MCP server (updates config/mcp_servers.json)."""
+    enabled = body.enabled
+    if ".." in server_id or "/" in server_id:
+        raise HTTPException(status_code=400, detail="Invalid server_id")
+    config = {}
+    if _MCP_CONFIG_PATH.exists():
+        try:
+            import json
+            with open(_MCP_CONFIG_PATH, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except Exception:
+            pass
+    if server_id not in config:
+        config[server_id] = {"name": server_id, "enabled": False, "command": "npx", "args": ["-y", f"@modelcontextprotocol/server-{server_id}"]}
+    config[server_id]["enabled"] = enabled
+    _MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    import json
+    with open(_MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+    return {"success": True, "server_id": server_id, "enabled": enabled}
+
 
 @router.get("")
 async def list_integrations(

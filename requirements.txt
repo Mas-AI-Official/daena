@@ -13,7 +13,7 @@ alembic==1.12.1
 redis==5.0.1
 aiofiles==23.2.1
 
-# HTTP & API
+# HTTP & API (httpx required for providers Discord/Telegram + deep search, brain, etc.)
 requests==2.31.0
 httpx==0.25.2
 websockets==12.0
@@ -31,7 +31,7 @@ email-validator==2.1.1
 structlog==23.2.0
 prometheus-client==0.19.0
 
-# Testing
+# Testing (pytest-asyncio required for provider smoke tests)
 pytest==7.4.3
 pytest-cov==4.1.0
 pytest-asyncio==0.21.1
@@ -52,6 +52,10 @@ selenium>=4.15.0
 pyautogui>=0.9.54
 mcp>=1.0.0
 
+# Audio / TTS (for voice and XTTS under MODELS_ROOT)
+soundfile>=0.12.1
+# Optional: TTS (Coqui) for XTTS - install in audio venv: pip install TTS
+
 # Device Management (CPU/GPU/TPU)
 # Optional: Install JAX for TPU support
 # jax==0.4.23
@@ -63,3 +67,6 @@ mcp>=1.0.0
 # - OCR: pytesseract, Pillow
 # - Dev tools: black, flake8, mypy
 # - File watching: watchdog
+#
+# Provider (Moltbot-style): Discord/Telegram use httpx (above). No extra pip install.
+# Smoke test: pytest + pytest-asyncio (above). Run: scripts\run_provider_smoke_test.bat

@@ -141,14 +141,27 @@ async def execute_daena_command(req: ToolRequest) -> Dict[str, Any]:
         - "test /api/v1/brain/status"
         - "discover servers" (MCP)
         - "go to https://google.com" (Browser)
+        - "click at 100 200" / "type on desktop hello" (Desktop automation)
     """
-    command = req.command.strip().lower()
-    
+    command_raw = req.command.strip()
+    command = command_raw.lower()
+
+    # Try chat-style tool detection first (desktop, action_execute, etc.)
+    try:
+        from backend.routes.daena import detect_and_execute_tool
+        tool_result = await detect_and_execute_tool(command_raw)
+        if tool_result is not None:
+            if "error" in tool_result:
+                return {"success": False, "error": tool_result["error"]}
+            return {"success": True, "result": tool_result.get("result", tool_result)}
+    except Exception as e:
+        logger.debug(f"detect_and_execute_tool skipped: {e}")
+
     # Determine which tool to use
     if req.tool:
         tool = req.tool
     else:
-        # Auto-detect
+        # Auto-detect (skip "click" for desktop: click at X Y is handled above)
         if any(kw in command for kw in ["scan ", "search ", "find ", "list ", "ls ", "analyze"]):
             tool = "code"
         elif any(kw in command for kw in ["table", "describe ", "count ", "select ", "schema"]):
@@ -157,12 +170,14 @@ async def execute_daena_command(req: ToolRequest) -> Dict[str, Any]:
             tool = "api"
         elif any(kw in command for kw in ["mcp", "server", "connect", "antigravity", "ollama"]):
             tool = "mcp"
-        elif any(kw in command for kw in ["go to", "navigate", "click", "fill", "screenshot", "browser", "login"]):
+        elif any(kw in command for kw in ["go to", "navigate", "fill", "screenshot", "browser", "login"]) or (
+            "click" in command and " at " not in command
+        ):
             tool = "browser"
         else:
             # Default to code scanner
             tool = "code"
-    
+
     try:
         if tool == "code":
             from backend.services.daena_tools.code_scanner import daena_scan

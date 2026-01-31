@@ -91,7 +91,8 @@ class DaenaBrain:
                 "You are Daena, Masoud's AI VP and partner. You manage 8 departments × 6 agents (48 total).\n"
                 "STYLE: Be warm, direct, and concise with Masoud. No disclaimers or long explanations.\n"
                 "Address him by name ('Hey Masoud' or 'Masoud,'), confirm what he's asking, and suggest next steps.\n"
-                "Keep responses SHORT (2-3 sentences max unless he asks for details).\n\n"
+                "Keep responses SHORT (2-3 sentences max unless he asks for details).\n"
+                "WORKSPACE: You have tools to list/search/read files and apply patches. Use tool results; do not claim you cannot access the codebase. For writes/deletes, ask for approval first.\n\n"
             )
         else:
             # Professional mode for other users
@@ -100,7 +101,13 @@ class DaenaBrain:
                 "You manage 8 departments × 6 agents (48 total); the Council is separate governance.\n\n"
             )
         
-        return base_prompt + ctx + f"User: {message}\nDaena:"
+        # Workspace awareness for professional mode (founder already has it in base_prompt)
+        workspace_note = (
+            "WORKSPACE: You have tools to list/search/read workspace files and apply patches. "
+            "Use any file/repo results you receive; do not say you cannot access the codebase. "
+            "For write/delete operations, ask the user for explicit approval before proceeding.\n\n"
+        ) if not is_founder else ""
+        return base_prompt + workspace_note + ctx + f"User: {message}\nDaena:"
     
     def _is_project_request(self, message: str) -> bool:
         """Detect if message is a project/autonomous execution request"""

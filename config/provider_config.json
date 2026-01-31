@@ -1,0 +1,17 @@
+{
+  "providers": {
+    "discord": {
+      "enabled": true,
+      "allowed_tools": [
+        "health_check"
+      ],
+      "standing_instructions": ""
+    },
+    "telegram": {
+      "enabled": false,
+      "allowed_tools": [],
+      "standing_instructions": ""
+    }
+  },
+  "version": 1
+}

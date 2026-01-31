@@ -23,20 +23,27 @@ MANIFEST
 
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
+backend/.venv/
 venv_daena_audio/
 venv_daena_main_py310/
 venv_mas_ai_py310/
 daena_tts/
 xtts_temp/
+.brain-ci/
 
 # Environment variables
 .env
 .env.local
 .env.production
 .env.staging
+.env_azure_openai
+.env_*
 config_template.env
+config/secrets.env
+config/secrets.*.env
 
 # But allow example/template files
 !.env.production.example
@@ -161,3 +168,8 @@ local_brain/
 *.zip
 *.gguf
 
+
+# Moved external folders
+DaenaBrain/
+hf_cache/
+huggingface/

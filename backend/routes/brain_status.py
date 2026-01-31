@@ -12,9 +12,28 @@ from enum import Enum
 import httpx
 import logging
 from pathlib import Path
+import json
 
 router = APIRouter(prefix="/api/v1/brain", tags=["brain"])
 logger = logging.getLogger(__name__)
+
+_CLOUD_CONFIG_KEY = "cloud_apis"
+
+
+def _get_cloud_apis_config() -> Dict[str, Any]:
+    """Read cloud API keys and enabled state from DB (SystemConfig)."""
+    try:
+        from backend.database import SessionLocal, SystemConfig
+        db = SessionLocal()
+        try:
+            row = db.query(SystemConfig).filter(SystemConfig.config_key == _CLOUD_CONFIG_KEY).first()
+            if row and row.config_value:
+                return json.loads(row.config_value) if isinstance(row.config_value, str) else row.config_value
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("cloud_apis config read failed: %s", e)
+    return {}
 
 
 def _ollama_url() -> str:
@@ -103,7 +122,7 @@ async def get_brain_status() -> Dict[str, Any]:
     except Exception:
         pass
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(f"{ollama_url.rstrip('/')}/api/tags")
             if response.status_code == 200:
                 data = response.json()
@@ -160,7 +179,7 @@ async def list_models() -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"Could not list Ollama models: {e}")
     
-    # Check local_brain trained models
+    # Check local_brain trained models (exclude registry placeholder entries like registry.ollama.ai/library)
     local_brain = _local_brain_path()
     if local_brain.exists():
         manifests = local_brain / "manifests"
@@ -169,20 +188,121 @@ async def list_models() -> Dict[str, Any]:
                 if registry.is_dir():
                     for model in registry.iterdir():
                         if model.is_dir():
+                            name = f"{registry.name}/{model.name}"
+                            if "registry.ollama.ai" in name:
+                                continue
                             models["trained"].append({
-                                "name": f"{registry.name}/{model.name}",
+                                "name": name,
                                 "path": str(model)
                             })
     
-    # Cloud APIs (status only)
-    models["cloud"] = [
-        {"name": "openai/gpt-4", "status": "not_configured"},
-        {"name": "google/gemini-pro", "status": "not_configured"},
-        {"name": "anthropic/claude-3", "status": "not_configured"},
-        {"name": "xai/grok", "status": "not_configured"}
+    # Cloud APIs: merge default list with DB (keys and enabled state)
+    default_cloud = [
+        {"name": "openai/gpt-4", "provider": "openai", "status": "not_configured", "enabled": False},
+        {"name": "google/gemini-pro", "provider": "google", "status": "not_configured", "enabled": False},
+        {"name": "anthropic/claude-3", "provider": "anthropic", "status": "not_configured", "enabled": False},
+        {"name": "xai/grok", "provider": "xai", "status": "not_configured", "enabled": False},
+        {"name": "deepseek/deepseek-chat", "provider": "deepseek", "status": "not_configured", "enabled": False},
     ]
-    
+    cloud_config = _get_cloud_apis_config()
+    for entry in default_cloud:
+        prov = entry.get("provider") or entry["name"].split("/")[0].lower()
+        entry["provider"] = prov
+        cfg = cloud_config.get(prov, {})
+        has_key = bool(cfg.get("key"))
+        entry["enabled"] = bool(cfg.get("enabled", False))
+        entry["status"] = "configured" if has_key else "not_configured"
+    models["cloud"] = default_cloud
     return models
+
+@router.get("/cloud")
+async def get_cloud_apis() -> Dict[str, Any]:
+    """Get cloud API config (enabled state only; keys never returned)."""
+    raw = _get_cloud_apis_config()
+    out = {}
+    for prov, cfg in raw.items():
+        out[prov] = {"enabled": bool(cfg.get("enabled", False)), "has_key": bool(cfg.get("key"))}
+    return {"success": True, "cloud": out}
+
+
+class CloudKeyBody(BaseModel):
+    key: str = ""
+
+
+@router.post("/cloud/{provider}/key")
+async def set_cloud_api_key(provider: str, body: CloudKeyBody = Body(...)) -> Dict[str, Any]:
+    """Save or clear API key for a cloud provider (openai, google, anthropic, xai). Syncs to backend."""
+    from backend.database import SessionLocal, SystemConfig
+    from datetime import datetime
+    provider = provider.lower()
+    if provider not in ("openai", "google", "anthropic", "xai", "deepseek"):
+        return {"success": False, "error": f"Unknown provider: {provider}"}
+    key_value = (body.key or "").strip()
+    db = SessionLocal()
+    try:
+        config = db.query(SystemConfig).filter(SystemConfig.config_key == _CLOUD_CONFIG_KEY).first()
+        data = _get_cloud_apis_config()
+        if provider not in data:
+            data[provider] = {"enabled": False, "key": ""}
+        data[provider]["key"] = key_value
+        if not key_value:
+            data[provider]["enabled"] = False
+        json_val = json.dumps(data)
+        if config:
+            config.config_value = json_val
+            config.updated_at = datetime.utcnow()
+        else:
+            config = SystemConfig(
+                config_key=_CLOUD_CONFIG_KEY,
+                config_value=json_val,
+                config_type="json",
+                description="Cloud LLM API keys and enabled state",
+            )
+            db.add(config)
+        db.commit()
+        return {"success": True, "provider": provider, "message": "API key saved" if key_value else "API key cleared"}
+    finally:
+        db.close()
+
+
+class CloudToggleBody(BaseModel):
+    enabled: bool = True
+
+
+@router.post("/cloud/{provider}/toggle")
+async def set_cloud_api_toggle(provider: str, body: CloudToggleBody = Body(...)) -> Dict[str, Any]:
+    """Enable or disable a cloud provider in the pipeline. Syncs to backend."""
+    from backend.database import SessionLocal, SystemConfig
+    from datetime import datetime
+    provider = provider.lower()
+    if provider not in ("openai", "google", "anthropic", "xai", "deepseek"):
+        return {"success": False, "error": f"Unknown provider: {provider}"}
+    db = SessionLocal()
+    try:
+        data = _get_cloud_apis_config()
+        if provider not in data:
+            data[provider] = {"enabled": False, "key": ""}
+        data[provider]["enabled"] = body.enabled
+        if body.enabled and not data[provider].get("key"):
+            return {"success": False, "error": "Set an API key first before enabling"}
+        json_val = json.dumps(data)
+        config = db.query(SystemConfig).filter(SystemConfig.config_key == _CLOUD_CONFIG_KEY).first()
+        if config:
+            config.config_value = json_val
+            config.updated_at = datetime.utcnow()
+        else:
+            config = SystemConfig(
+                config_key=_CLOUD_CONFIG_KEY,
+                config_value=json_val,
+                config_type="json",
+                description="Cloud LLM API keys and enabled state",
+            )
+            db.add(config)
+        db.commit()
+        return {"success": True, "provider": provider, "enabled": body.enabled}
+    finally:
+        db.close()
+
 
 @router.get("/list-models")
 async def list_all_models() -> Dict[str, Any]:

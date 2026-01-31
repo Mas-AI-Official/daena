@@ -348,7 +348,8 @@
         await loadCouncilDetails();
 
         // Handle Enter key
-        document.getElementById('message-input').addEventListener('keypress', (e) => {
+        const msgInput = document.getElementById('message-input');
+        if (msgInput) msgInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendMessage();
         });
     });
@@ -504,6 +505,7 @@
 
     async function sendMessage() {
         const input = document.getElementById('message-input');
+        if (!input) return;
         const message = input.value.trim();
         if (!message) return;
 

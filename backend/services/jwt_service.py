@@ -15,8 +15,9 @@ import os
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Set
 from enum import Enum
+from collections import defaultdict
 
 try:
     import jwt
@@ -66,6 +67,10 @@ class JWTService:
         
         # Token rotation: track last refresh token per user
         self.user_refresh_tokens: Dict[str, str] = {}  # user_id -> refresh_token
+        
+        # Containment: track tokens by client IP so we can revoke on block
+        self._ip_to_tokens: Dict[str, Set[str]] = defaultdict(set)
+        self._max_tokens_per_ip = int(os.getenv("JWT_MAX_TOKENS_PER_IP", "50"))
         
         if not JWT_AVAILABLE:
             logger.warning("PyJWT not installed. JWT features will be limited. Install with: pip install PyJWT")
@@ -249,7 +254,47 @@ class JWTService:
             del self.user_refresh_tokens[user_id]
         logger.info(f"All tokens revoked for user {user_id}")
 
+    def record_tokens_for_ip(self, ip: str, access_token: str, refresh_token: str) -> None:
+        """
+        Record tokens for a client IP (used at login/refresh).
+        Enables revoke_tokens_for_ip(ip) when containment blocks that IP.
+        """
+        if not ip or ip == "unknown":
+            return
+        self._ip_to_tokens[ip].add(access_token)
+        self._ip_to_tokens[ip].add(refresh_token)
+        # Cap size per IP to avoid unbounded growth
+        tokens = self._ip_to_tokens[ip]
+        if len(tokens) > self._max_tokens_per_ip:
+            excess = len(tokens) - self._max_tokens_per_ip
+            for _ in range(excess):
+                tokens.pop()
+
+    def revoke_tokens_for_ip(self, ip: str) -> int:
+        """
+        Revoke all tokens that were issued to this IP (containment integration).
+        Returns number of tokens revoked.
+        """
+        if not ip:
+            return 0
+        ip = ip.strip()
+        tokens = self._ip_to_tokens.get(ip)
+        if not tokens:
+            return 0
+        count = 0
+        for token in list(tokens):
+            self.revoke_token(token)
+            count += 1
+        self._ip_to_tokens[ip] = set()
+        logger.info("[JWT] Revoked %d token(s) for blocked IP %s", count, ip)
+        return count
+
 
 # Global instance
 jwt_service = JWTService()
+
+
+def get_jwt_service() -> JWTService:
+    """Return the global JWT service (for routes that import lazily)."""
+    return jwt_service
 

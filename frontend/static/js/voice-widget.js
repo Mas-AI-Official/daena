@@ -82,8 +82,8 @@ class VoiceWidget {
                 // Play wake sound
                 this.playWakeSound();
 
-                // Fill message input field if it exists
-                const messageInput = document.getElementById('message-input');
+                // Fill message input field if it exists (daena_office uses message-input, department_office uses messageInput)
+                const messageInput = document.getElementById('message-input') || document.getElementById('messageInput');
                 if (messageInput) {
                     // Set the command in the input field
                     if (command.length > 0) {
@@ -211,7 +211,7 @@ class VoiceWidget {
 
         let silenceTimeout = null;
         let finalTranscript = '';
-        const messageInput = document.getElementById('message-input');
+        const messageInput = document.getElementById('message-input') || document.getElementById('messageInput');
 
         voiceRecognition.onresult = (event) => {
             let interim = '';
@@ -247,11 +247,14 @@ class VoiceWidget {
             this.isRecording = false;
             clearTimeout(silenceTimeout);
 
-            // Auto-submit if there's content
+            // Auto-submit if there's content (chat-form on daena_office; department office uses sendMessage())
             const chatForm = document.getElementById('chat-form');
-            if (messageInput && messageInput.value.trim().length > 0 && chatForm) {
-                // Trigger form submit
-                chatForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            if (messageInput && messageInput.value.trim().length > 0) {
+                if (chatForm) {
+                    chatForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+                } else if (typeof window.sendMessage === 'function') {
+                    window.sendMessage();
+                }
                 if (window.showToast) {
                     window.showToast('Message sent via voice', 'success');
                 }

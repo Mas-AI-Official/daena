@@ -1,13 +1,13 @@
 {
   "tool_enabled": {
-    "web_scrape_bs4": true,
+    "web_scrape_bs4": false,
     "browser_automation_selenium": false,
     "desktop_automation_pyautogui": false,
     "consult_ui": false,
     "git_status": true,
-    "git_diff": true,
     "filesystem_read": true,
     "filesystem_write": false,
+    "git_diff": true,
     "apply_patch": false,
     "shell_exec": true
   },

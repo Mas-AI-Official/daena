@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # API Configuration
     app_name: str = "Mas-AI Company - Daena AI VP System"
     app_version: str = "2.0.0"
-    debug: bool = Field(default=True, env="DEBUG")
+    debug: bool = Field(default=True, validation_alias="DEBUG")
     
     @field_validator('debug', mode='before')
     @classmethod
@@ -49,51 +49,53 @@ class Settings(BaseSettings):
         return bool(v)
     
     # Server Configuration
-    host: str = Field(default="0.0.0.0", env="BACKEND_HOST")
-    port: int = Field(default=8000, env="BACKEND_PORT")
-    backend_base_url: str = Field(default="http://localhost:8000", env="BACKEND_BASE_URL")
-    frontend_origin: str = Field(default="http://localhost:8000", env="FRONTEND_ORIGIN")
+    host: str = Field(default="0.0.0.0", validation_alias="BACKEND_HOST")
+    port: int = Field(default=8000, validation_alias="BACKEND_PORT")
+    backend_base_url: str = Field(default="http://localhost:8000", validation_alias="BACKEND_BASE_URL")
+    frontend_origin: str = Field(default="http://localhost:8000", validation_alias="FRONTEND_ORIGIN")
     cors_origins: List[str] = Field(
         default_factory=lambda: ["http://localhost:3000", "http://localhost:8000", "http://127.0.0.1:3000", "http://127.0.0.1:8000"],
-        env="CORS_ORIGINS"
+        validation_alias="CORS_ORIGINS"
     )
     
     # API Keys (env-based only; no credentials stored in repo)
     # NOTE: In local no-auth mode (DISABLE_AUTH=1) these are bypassed.
-    api_key: Optional[str] = Field(None, env="DAENA_API_KEY")
-    secret_key: Optional[str] = Field(None, env="DAENA_SECRET_KEY")
-    test_api_key: Optional[str] = Field(None, env="DAENA_TEST_API_KEY")
+    api_key: Optional[str] = Field(None, validation_alias="DAENA_API_KEY")
+    secret_key: Optional[str] = Field(None, validation_alias="DAENA_SECRET_KEY")
+    test_api_key: Optional[str] = Field(None, validation_alias="DAENA_TEST_API_KEY")
     
     # AI Provider API Keys
-    openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")
-    anthropic_api_key: Optional[str] = Field(None, env="ANTHROPIC_API_KEY") 
-    gemini_api_key: Optional[str] = Field(None, env="GEMINI_API_KEY")
-    deepseek_api_key: Optional[str] = Field(None, env="DEEPSEEK_API_KEY")
-    grok_api_key: Optional[str] = Field(None, env="GROK_API_KEY")
-    mistral_api_key: Optional[str] = Field(None, env="MISTRAL_API_KEY")
+    openai_api_key: Optional[str] = Field(None, validation_alias="OPENAI_API_KEY")
+    anthropic_api_key: Optional[str] = Field(None, validation_alias="ANTHROPIC_API_KEY") 
+    gemini_api_key: Optional[str] = Field(None, validation_alias="GEMINI_API_KEY")
+    deepseek_api_key: Optional[str] = Field(None, validation_alias="DEEPSEEK_API_KEY")
+    grok_api_key: Optional[str] = Field(None, validation_alias="GROK_API_KEY")
+    mistral_api_key: Optional[str] = Field(None, validation_alias="MISTRAL_API_KEY")
     
     # Azure OpenAI Configuration
-    azure_openai_api_key: Optional[str] = Field(None, env="AZURE_OPENAI_API_KEY")
-    azure_openai_api_version: str = Field("2025-01-01-preview", env="AZURE_OPENAI_API_VERSION")
-    azure_openai_api_base: Optional[str] = Field(None, env="AZURE_OPENAI_API_BASE")
-    azure_openai_deployment_id: Optional[str] = Field(None, env="AZURE_OPENAI_DEPLOYMENT_ID")
+    azure_openai_api_key: Optional[str] = Field(None, validation_alias="AZURE_OPENAI_API_KEY")
+    azure_openai_api_version: str = Field("2025-01-01-preview", validation_alias="AZURE_OPENAI_API_VERSION")
+    azure_openai_api_base: Optional[str] = Field(None, validation_alias="AZURE_OPENAI_API_BASE")
+    azure_openai_deployment_id: Optional[str] = Field(None, validation_alias="AZURE_OPENAI_DEPLOYMENT_ID")
 
     # Cloud providers are opt-in (local-first by default)
-    enable_cloud_llm: bool = Field(default=False, env="ENABLE_CLOUD_LLM")
+    enable_cloud_llm: bool = Field(default=False, validation_alias="ENABLE_CLOUD_LLM")
     
-    # Brain root: shared MODELS_ROOT (LLMs/GLMs) used by Daena and other apps. Set per project via env.
-    models_root: str = Field(default="D:/Ideas/MODELS_ROOT", env="MODELS_ROOT")
+    # Model weights + caches (Ollama, XTTS, Whisper, reasoning models). Set per project via env.
+    models_root: str = Field(default="D:/Ideas/MODELS_ROOT", validation_alias="MODELS_ROOT")
+    # Learned memory, chat history, embeddings, governance logs. Default: project/local_brain or DAENA_BRAIN_ROOT.
+    brain_root: Optional[str] = Field(default=None, validation_alias="BRAIN_ROOT")
     # Ollama Configuration (ollama models live under MODELS_ROOT/ollama; OLLAMA_MODELS overrides)
-    ollama_base_url: str = Field(default="http://localhost:11434", env="OLLAMA_BASE_URL")
+    ollama_base_url: str = Field(default="http://localhost:11434", validation_alias="OLLAMA_BASE_URL")
     ollama_models_path: Optional[str] = Field(
         default=None,
-        env="OLLAMA_MODELS"
+        validation_alias="OLLAMA_MODELS"
     )
     # Local brain fallback: when primary Ollama fails, use Daena-managed Ollama on this port (same binary, MODELS_ROOT)
-    ollama_fallback_port: int = Field(default=11435, env="OLLAMA_FALLBACK_PORT")
-    ollama_use_local_brain_fallback: bool = Field(default=True, env="OLLAMA_USE_LOCAL_BRAIN_FALLBACK")
-    trained_daena_model: str = Field(default="daena-brain", env="TRAINED_DAENA_MODEL")
-    default_local_model: str = Field(default="qwen2.5:7b-instruct", env="DEFAULT_LOCAL_MODEL")
+    ollama_fallback_port: int = Field(default=11435, validation_alias="OLLAMA_FALLBACK_PORT")
+    ollama_use_local_brain_fallback: bool = Field(default=True, validation_alias="OLLAMA_USE_LOCAL_BRAIN_FALLBACK")
+    trained_daena_model: str = Field(default="daena-brain", validation_alias="TRAINED_DAENA_MODEL")
+    default_local_model: str = Field(default="qwen2.5:7b-instruct", validation_alias="DEFAULT_LOCAL_MODEL")
 
     @model_validator(mode="after")
     def set_ollama_models_path_from_root(self):
@@ -105,87 +107,97 @@ class Settings(BaseSettings):
         return self
     
     # Prompt Intelligence Brain
-    prompt_brain_enabled: bool = Field(default=True, env="PROMPT_BRAIN_ENABLED")
-    prompt_brain_mode: str = Field(default="rules", env="PROMPT_BRAIN_MODE")  # rules|hybrid|llm_rewrite
-    prompt_brain_complexity_threshold: int = Field(default=50, env="PROMPT_BRAIN_COMPLEXITY_THRESHOLD")
-    prompt_brain_allow_llm_rewrite: bool = Field(default=False, env="PROMPT_BRAIN_ALLOW_LLM_REWRITE")
+    prompt_brain_enabled: bool = Field(default=True, validation_alias="PROMPT_BRAIN_ENABLED")
+    prompt_brain_mode: str = Field(default="rules", validation_alias="PROMPT_BRAIN_MODE")  # rules|hybrid|llm_rewrite
+    prompt_brain_complexity_threshold: int = Field(default=50, validation_alias="PROMPT_BRAIN_COMPLEXITY_THRESHOLD")
+    prompt_brain_allow_llm_rewrite: bool = Field(default=False, validation_alias="PROMPT_BRAIN_ALLOW_LLM_REWRITE")
     
     # Complexity Scorer Thresholds
-    daena_complexity_no_llm_max: int = Field(default=2, env="DAENA_COMPLEXITY_NO_LLM_MAX")
-    daena_complexity_cheap_max: int = Field(default=5, env="DAENA_COMPLEXITY_CHEAP_MAX")
-    daena_complexity_strong_max: int = Field(default=8, env="DAENA_COMPLEXITY_STRONG_MAX")
+    daena_complexity_no_llm_max: int = Field(default=2, validation_alias="DAENA_COMPLEXITY_NO_LLM_MAX")
+    daena_complexity_cheap_max: int = Field(default=5, validation_alias="DAENA_COMPLEXITY_CHEAP_MAX")
+    daena_complexity_strong_max: int = Field(default=8, validation_alias="DAENA_COMPLEXITY_STRONG_MAX")
     
     # Cost Guard
-    daena_founder_override: bool = Field(default=False, env="DAENA_FOUNDER_OVERRIDE")
-    daena_deterministic_gate_enabled: bool = Field(default=True, env="DAENA_DETERMINISTIC_GATE_ENABLED")
+    daena_founder_override: bool = Field(default=False, validation_alias="DAENA_FOUNDER_OVERRIDE")
+    daena_deterministic_gate_enabled: bool = Field(default=True, validation_alias="DAENA_DETERMINISTIC_GATE_ENABLED")
     
     # Explorer Mode: Human-in-the-loop consultation (NO APIs, NO automation)
-    enable_explorer_mode: bool = Field(default=True, env="ENABLE_EXPLORER_MODE")
+    enable_explorer_mode: bool = Field(default=True, validation_alias="ENABLE_EXPLORER_MODE")
     
     # Human Relay Explorer: Manual copy/paste bridge (NO automation, NO scraping)
-    enable_human_relay_explorer: bool = Field(default=True, env="ENABLE_HUMAN_RELAY_EXPLORER")
+    enable_human_relay_explorer: bool = Field(default=True, validation_alias="ENABLE_HUMAN_RELAY_EXPLORER")
 
     # ------------------------------------------------------------------
     # Training Configuration (Kill-switch)
     # ------------------------------------------------------------------
-    training_enabled: bool = Field(default=False, env="DAENA_TRAINING_ENABLED")
-    wandb_disabled: bool = Field(default=True, env="WANDB_DISABLED")
-    hf_hub_disable_telemetry: bool = Field(default=True, env="HF_HUB_DISABLE_TELEMETRY")
-    do_not_track: bool = Field(default=True, env="DO_NOT_TRACK")
+    training_enabled: bool = Field(default=False, validation_alias="DAENA_TRAINING_ENABLED")
+    wandb_disabled: bool = Field(default=True, validation_alias="WANDB_DISABLED")
+    hf_hub_disable_telemetry: bool = Field(default=True, validation_alias="HF_HUB_DISABLE_TELEMETRY")
+    do_not_track: bool = Field(default=True, validation_alias="DO_NOT_TRACK")
 
     # ------------------------------------------------------------------
     # Operator / Automation (local-first, safe by default)
     # ------------------------------------------------------------------
-    automation_safe_mode: bool = Field(default=True, env="AUTOMATION_SAFE_MODE")
+    enable_execution_layer: bool = Field(default=True, validation_alias="ENABLE_EXECUTION_LAYER")
+    automation_safe_mode: bool = Field(default=True, validation_alias="AUTOMATION_SAFE_MODE")
     automation_allowed_domains: List[str] = Field(
         default_factory=lambda: ["localhost", "127.0.0.1", "example.com", "httpbin.org"],
-        env="AUTOMATION_ALLOWED_DOMAINS",
+        validation_alias="AUTOMATION_ALLOWED_DOMAINS",
     )
-    automation_enable_browser: bool = Field(default=False, env="AUTOMATION_ENABLE_BROWSER")
-    automation_enable_desktop: bool = Field(default=False, env="AUTOMATION_ENABLE_DESKTOP")
-    automation_request_timeout_sec: float = Field(default=15.0, env="AUTOMATION_REQUEST_TIMEOUT_SEC")
-    automation_action_timeout_sec: float = Field(default=20.0, env="AUTOMATION_ACTION_TIMEOUT_SEC")
-    automation_rate_limit_per_min: int = Field(default=30, env="AUTOMATION_RATE_LIMIT_PER_MIN")
-    automation_max_processes: int = Field(default=50, env="AUTOMATION_MAX_PROCESSES")
-    # Execution Layer: require X-Execution-Token when set (default unset = no auth for local dev)
-    execution_token: Optional[str] = Field(None, env="EXECUTION_TOKEN")
+    automation_enable_browser: bool = Field(default=False, validation_alias="AUTOMATION_ENABLE_BROWSER")
+    automation_enable_desktop: bool = Field(default=False, validation_alias="AUTOMATION_ENABLE_DESKTOP")
+    automation_request_timeout_sec: float = Field(default=15.0, validation_alias="AUTOMATION_REQUEST_TIMEOUT_SEC")
+    automation_action_timeout_sec: float = Field(default=20.0, validation_alias="AUTOMATION_ACTION_TIMEOUT_SEC")
+    automation_rate_limit_per_min: int = Field(default=30, validation_alias="AUTOMATION_RATE_LIMIT_PER_MIN")
+    automation_max_processes: int = Field(default=50, validation_alias="AUTOMATION_MAX_PROCESSES")
+    # Execution Layer: require X-Execution-Token when set; ALWAYS require token unless dev override
+    execution_token: Optional[str] = Field(None, validation_alias="EXECUTION_TOKEN")
+    allow_insecure_execution_local: bool = Field(default=False, validation_alias="ALLOW_INSECURE_EXECUTION_LOCAL")
+    execution_bind: str = Field(default="127.0.0.1", validation_alias="EXECUTION_BIND")
+    allow_remote_execution: bool = Field(default=False, validation_alias="ALLOW_REMOTE_EXECUTION")
+    # Moltbot-style providers: credentials from env only; default all disabled
+    discord_bot_token: Optional[str] = Field(None, validation_alias="DISCORD_BOT_TOKEN")
+    telegram_bot_token: Optional[str] = Field(None, validation_alias="TELEGRAM_BOT_TOKEN")
+    telegram_webhook_secret_token: Optional[str] = Field(None, validation_alias="TELEGRAM_WEBHOOK_SECRET_TOKEN")
     # Workspace root for filesystem_read/write (allowlist); default project root
-    execution_workspace_root: Optional[str] = Field(None, env="EXECUTION_WORKSPACE_ROOT")
+    execution_workspace_root: Optional[str] = Field(None, validation_alias="EXECUTION_WORKSPACE_ROOT")
+    # Daena Windows Node (Moltbot-style hands): URL and token from env only
+    windows_node_url: Optional[str] = Field(None, validation_alias="WINDOWS_NODE_URL")  # default http://127.0.0.1:18888
     # Shell allowlist: only these commands (or prefixes) allowed for shell_exec
     shell_allowlist: List[str] = Field(
         default_factory=lambda: ["git ", "python -m ", "pip list", "pip show", "pip --version"],
-        env="SHELL_ALLOWLIST",
+        validation_alias="SHELL_ALLOWLIST",
     )
     # XTTS / TTS (use MODELS_ROOT/xtts)
-    xtts_enabled: bool = Field(default=True, env="XTTS_ENABLED")
-    xtts_server_url: str = Field(default="http://localhost:8020", env="XTTS_SERVER_URL")
-    xtts_model_path: Optional[str] = Field(None, env="XTTS_MODEL_PATH")
-    xtts_speaker_wav: Optional[str] = Field(None, env="XTTS_SPEAKER_WAV")
-    xtts_language: str = Field(default="en", env="XTTS_LANGUAGE")
+    xtts_enabled: bool = Field(default=True, validation_alias="XTTS_ENABLED")
+    xtts_server_url: str = Field(default="http://localhost:8020", validation_alias="XTTS_SERVER_URL")
+    xtts_model_path: Optional[str] = Field(None, validation_alias="XTTS_MODEL_PATH")
+    xtts_speaker_wav: Optional[str] = Field(None, validation_alias="XTTS_SPEAKER_WAV")
+    xtts_language: str = Field(default="en", validation_alias="XTTS_LANGUAGE")
     # Reasoning / heavy models (Ollama model names under MODELS_ROOT/ollama)
-    ollama_reasoning_model: str = Field(default="deepseek-r1:7b", env="OLLAMA_REASONING_MODEL")
-    ollama_reasoning_fallback: str = Field(default="qwen2.5:14b-instruct", env="OLLAMA_REASONING_FALLBACK")
+    ollama_reasoning_model: str = Field(default="deepseek-r1:7b", validation_alias="OLLAMA_REASONING_MODEL")
+    ollama_reasoning_fallback: str = Field(default="qwen2.5:14b-instruct", validation_alias="OLLAMA_REASONING_FALLBACK")
     
     # Voice Services
-    elevenlabs_api_key: Optional[str] = Field(None, env="ELEVENLABS_API_KEY")
-    did_api_key: Optional[str] = Field(None, env="DID_API_KEY")
-    google_tts_api_key: Optional[str] = Field(None, env="GOOGLE_TTS_API_KEY")
+    elevenlabs_api_key: Optional[str] = Field(None, validation_alias="ELEVENLABS_API_KEY")
+    did_api_key: Optional[str] = Field(None, validation_alias="DID_API_KEY")
+    google_tts_api_key: Optional[str] = Field(None, validation_alias="GOOGLE_TTS_API_KEY")
     
     # Authentication & Roles
     auth_enabled: bool = True
-    # LOCAL DEV ONLY: bypass all auth when True (default True for no-auth baseline)
-    disable_auth: bool = Field(default=True, env="DISABLE_AUTH")
-    dev_founder_name: str = Field(default="Masoud", env="DEV_FOUNDER_NAME")
+    # LOCAL DEV ONLY: bypass all auth when True. Default False (auth ON); set DISABLE_AUTH=1 for local dev.
+    disable_auth: bool = Field(default=False, validation_alias="DISABLE_AUTH")
+    dev_founder_name: str = Field(default="Masoud", validation_alias="DEV_FOUNDER_NAME")
     founder_role: str = "founder"
     agent_role: str = "agent"
     guest_role: str = "guest"
     session_expiry: int = 3600
 
     # Security Guardian / Incident response: system-wide lockdown (env + runtime)
-    security_lockdown_mode: bool = Field(default=False, env="SECURITY_LOCKDOWN_MODE")
+    security_lockdown_mode: bool = Field(default=False, validation_alias="SECURITY_LOCKDOWN_MODE")
 
     # Global HTTP rate limiting (middleware): enable in production to reduce abuse
-    rate_limit_enabled: bool = Field(default=False, env="RATE_LIMIT_ENABLED")
+    rate_limit_enabled: bool = Field(default=False, validation_alias="RATE_LIMIT_ENABLED")
 
     @field_validator("rate_limit_enabled", "security_lockdown_mode", mode="before")
     @classmethod
@@ -225,7 +237,7 @@ class Settings(BaseSettings):
     # Hybrid GPU/Cloud Configuration
     gpu_enabled: bool = True
     gcp_fallback_enabled: bool = True
-    gcp_project_id: Optional[str] = Field(None, env="GCP_PROJECT_ID")
+    gcp_project_id: Optional[str] = Field(None, validation_alias="GCP_PROJECT_ID")
     gcp_zone: str = "us-central1-a"
     gcp_instance_name: str = "daena-gpu-instance"
     gcp_machine_type: str = "n1-standard-4"
@@ -233,14 +245,14 @@ class Settings(BaseSettings):
     gcp_gpu_count: int = 1
     
     # Compute Device Configuration (CPU/GPU/TPU)
-    compute_prefer: str = Field("auto", env="COMPUTE_PREFER")  # auto, cpu, gpu, tpu
-    compute_allow_tpu: bool = Field(True, env="COMPUTE_ALLOW_TPU")
-    compute_tpu_batch_factor: int = Field(128, env="COMPUTE_TPU_BATCH_FACTOR")
+    compute_prefer: str = Field("auto", validation_alias="COMPUTE_PREFER")  # auto, cpu, gpu, tpu
+    compute_allow_tpu: bool = Field(True, validation_alias="COMPUTE_ALLOW_TPU")
+    compute_tpu_batch_factor: int = Field(128, validation_alias="COMPUTE_TPU_BATCH_FACTOR")
     
     # OCR Comparison Configuration
-    ocr_comparison_enabled: bool = Field(False, env="OCR_COMPARISON_ENABLED")
-    ocr_confidence_threshold: float = Field(0.7, env="OCR_CONFIDENCE_THRESHOLD")
-    ocr_hybrid_mode: bool = Field(True, env="OCR_HYBRID_MODE")
+    ocr_comparison_enabled: bool = Field(False, validation_alias="OCR_COMPARISON_ENABLED")
+    ocr_confidence_threshold: float = Field(0.7, validation_alias="OCR_CONFIDENCE_THRESHOLD")
+    ocr_hybrid_mode: bool = Field(True, validation_alias="OCR_HYBRID_MODE")
 
     @property
     def voice_activation_phrases(self) -> List[str]:
@@ -315,8 +327,8 @@ class Settings(BaseSettings):
         return [str(v).strip()] if str(v).strip() else []
     
     # Monetization
-    stripe_publishable_key: Optional[str] = Field(None, env="STRIPE_PUBLISHABLE_KEY")
-    stripe_secret_key: Optional[str] = Field(None, env="STRIPE_SECRET_KEY")
+    stripe_publishable_key: Optional[str] = Field(None, validation_alias="STRIPE_PUBLISHABLE_KEY")
+    stripe_secret_key: Optional[str] = Field(None, validation_alias="STRIPE_SECRET_KEY")
     enable_payments: bool = False
     marketplace_enabled: bool = True
     commission_rate: float = 0.15
@@ -372,6 +384,15 @@ def get_cors_origins():
     if isinstance(settings.cors_origins, str):
         return [origin.strip() for origin in settings.cors_origins.split(",")]
     return settings.cors_origins
+
+
+def get_brain_root() -> Path:
+    """Brain root for learned memory, chat history, governance (brain_store, user_context, chat_history). Prefer BRAIN_ROOT, else MODELS_ROOT/daena_brain, else project local_brain."""
+    if settings.brain_root and str(settings.brain_root).strip():
+        return Path(settings.brain_root).resolve()
+    if settings.models_root:
+        return Path(settings.models_root).resolve() / "daena_brain"
+    return project_root / "local_brain"
 
 
 def get_settings() -> Settings:

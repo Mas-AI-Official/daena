@@ -20,7 +20,7 @@ class DaenaAPI {
         };
         // Execution Layer: add X-Execution-Token when set (sync with backend EXECUTION_TOKEN)
         if (endpoint.startsWith('/execution') && typeof sessionStorage !== 'undefined') {
-            const t = sessionStorage.getItem('execution_token');
+            const t = sessionStorage.getItem('daena_execution_token') || sessionStorage.getItem('execution_token');
             if (t) headers['X-Execution-Token'] = t;
         }
 
@@ -77,12 +77,17 @@ class DaenaAPI {
     }
     setExecutionToken(token) {
         if (typeof sessionStorage !== 'undefined') {
-            if (token) sessionStorage.setItem('execution_token', token);
-            else sessionStorage.removeItem('execution_token');
+            if (token) {
+                sessionStorage.setItem('execution_token', token);
+                sessionStorage.setItem('daena_execution_token', token);
+            } else {
+                sessionStorage.removeItem('execution_token');
+                sessionStorage.removeItem('daena_execution_token');
+            }
         }
     }
     getExecutionToken() {
-        return typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('execution_token') : null;
+        return typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem('daena_execution_token') || sessionStorage.getItem('execution_token')) : null;
     }
 
     // --- Core System ---
@@ -202,6 +207,28 @@ class DaenaAPI {
 
     async getBrainModelUsage() {
         return this.request('/brain/models/usage');
+    }
+
+    // --- Voice (sync with backend /api/v1/voice) ---
+    async getVoiceStatus() {
+        return this.request('/voice/status');
+    }
+    async setTalkMode(enabled) {
+        return this.request('/voice/talk-mode', {
+            method: 'POST',
+            body: JSON.stringify({ enabled })
+        });
+    }
+    async speakText(text) {
+        return this.request('/voice/speak', {
+            method: 'POST',
+            body: JSON.stringify({ text })
+        });
+    }
+
+    // --- Chat History: clear context (sync with backend POST .../clear-context) ---
+    async clearSessionContext(sessionId) {
+        return this.request(`/chat-history/sessions/${sessionId}/clear-context`, { method: 'POST' });
     }
 
     // --- Departments & Agents ---

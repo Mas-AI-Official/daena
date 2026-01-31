@@ -143,12 +143,19 @@ async def search_duckduckgo(query: str, num_results: int = 8) -> Optional[Dict[s
                 html = response.text
                 results = []
                 
-                # Parse DuckDuckGo HTML results
+                # Parse DuckDuckGo HTML results (primary pattern)
                 result_pattern = r'<a rel="nofollow" class="result__a" href="([^"]+)"[^>]*>([^<]+)</a>'
                 snippet_pattern = r'<a class="result__snippet"[^>]*>([^<]+(?:<[^>]+>[^<]*</[^>]+>)*[^<]*)</a>'
-                
                 hrefs = re.findall(result_pattern, html)
                 snippets = re.findall(snippet_pattern, html)
+                # Fallback: alternate DDG HTML (e.g. different class order or no rel)
+                if not hrefs:
+                    result_pattern_alt = r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([^<]+)</a>'
+                    hrefs = re.findall(result_pattern_alt, html)
+                if not hrefs:
+                    # Fallback: any link with uddg= (DDG redirect) and visible text
+                    result_pattern_uddg = r'href="(https?://[^"]*uddg=[^"]+)"[^>]*>([^<]+)</a>'
+                    hrefs = re.findall(result_pattern_uddg, html)
                 
                 for i, (url, title) in enumerate(hrefs[:num_results]):
                     snippet = snippets[i] if i < len(snippets) else ""

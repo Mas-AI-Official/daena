@@ -720,11 +720,11 @@
         event.preventDefault();
         const name = document.getElementById('council-name').value.trim();
         const category = document.getElementById('council-category').value;
+        const params = new URLSearchParams({ name, description: category || '', icon: 'fa-users', color: '#6B7280' });
         try {
-            const response = await fetch('/api/v1/council/members/', {
+            const response = await fetch('/api/v1/council/create?' + params.toString(), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, category, enabled: true })
+                headers: { 'Content-Type': 'application/json' }
             });
             if (response.ok) {
                 closeModal('add-council-modal');

@@ -6,6 +6,7 @@ REM This script is called by START_DAENA.bat to launch uvicorn safely
 REM Set environment variables from parent batch file if not already set
 if "%PROJECT_ROOT%"=="" set "PROJECT_ROOT=%~dp0.."
 if "%PYTHON_EXE%"=="" set "PYTHON_EXE=%PROJECT_ROOT%\venv_daena_main_py310\Scripts\python.exe"
+if not exist "%PROJECT_ROOT%\venv_daena_main_py310\Scripts\python.exe" if exist "%PROJECT_ROOT%\venv_daena_audio_py310\Scripts\python.exe" set "PYTHON_EXE=%PROJECT_ROOT%\venv_daena_audio_py310\Scripts\python.exe"
 if "%BACKEND_LOG%"=="" set "BACKEND_LOG=%PROJECT_ROOT%\logs\backend_%DATE:~-4,4%%DATE:~-7,2%%DATE:~-10,2%_%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%.log"
 set "BACKEND_LOG=%BACKEND_LOG: =0%"
 REM ============================================================================
@@ -35,8 +36,9 @@ if "%PROJECT_ROOT%"=="" (
     exit /b 1
 )
 
-REM Change to project root
+REM Change to project root; PYTHONPATH so backend and config resolve
 cd /d "%PROJECT_ROOT%"
+set "PYTHONPATH=%PROJECT_ROOT%;%PROJECT_ROOT%\backend"
 if errorlevel 1 (
     echo ERROR: Cannot change to project root: %PROJECT_ROOT%
     echo Current directory: %CD%

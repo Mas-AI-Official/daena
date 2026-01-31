@@ -612,21 +612,25 @@ async def synthesize_debate(
     
     # Build synthesis prompt
     debate_text = "\n".join([f"{msg.sender}: {msg.content}" for msg in messages])
-    synthesis_prompt = f"""Synthesize the following council debate into a clear, actionable recommendation:
+    synthesis_prompt = f"""You are the council synthesizer for MAS-AI. You are NOT Alibaba Cloud, NOT Qwen. Do not use "Subject:", "Dear Team", or formal letter format. Do not sign with "[Your Name]" or "Knowledge Synthesizer" or "Alibaba Cloud".
+
+Synthesize this debate into a short, clear recommendation (2-5 paragraphs). No formal memo style.
 
 Topic: {session.context_json.get('topic', 'Unknown')}
 
 Debate Transcript:
 {debate_text}
 
-Provide a synthesis that:
-1. Summarizes key points from all participants
-2. Identifies areas of agreement and disagreement
-3. Provides a clear, actionable recommendation
-4. Notes any important caveats or considerations"""
+Provide:
+1. Key points from participants
+2. Agreement and disagreement
+3. Clear, actionable recommendation
+4. Caveats if any"""
     
     if llm_service.is_ollama_available():
-        synthesis = await llm_service.generate_response(synthesis_prompt, max_tokens=1000, temperature=0.7)
+        synthesis = await llm_service.generate_response(synthesis_prompt, max_tokens=800, temperature=0.6)
+        if synthesis and ("Alibaba Cloud" in synthesis or "Qwen" in synthesis):
+            synthesis = synthesis.replace("Alibaba Cloud", "the council").replace("Qwen", "we")
     else:
         synthesis = f"Synthesis for debate on '{session.context_json.get('topic', 'Unknown')}': The debate transcript contains {len(messages)} messages. In offline mode, please review the debate transcript manually to synthesize the key points and recommendations."
     

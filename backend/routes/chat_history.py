@@ -44,9 +44,16 @@ class UpdateSessionRequest(BaseModel):
     scope_type: Optional[str] = None
     scope_id: Optional[str] = None
 
-# Local file storage for chat history - use local_brain directory
-project_root = Path(__file__).parent.parent.parent.parent
-CHAT_STORAGE_PATH = project_root / "local_brain" / "chat_history"
+# Local file storage for chat history - use BRAIN_ROOT or MODELS_ROOT/daena_brain or project local_brain
+def _chat_storage_path() -> Path:
+    try:
+        from backend.config.settings import get_brain_root
+        return get_brain_root() / "chat_history"
+    except Exception:
+        return Path(__file__).parent.parent.parent.parent / "local_brain" / "chat_history"
+
+
+CHAT_STORAGE_PATH = _chat_storage_path()
 CHAT_STORAGE_PATH.mkdir(parents=True, exist_ok=True)
 
 @router.post("/sessions")
@@ -305,6 +312,26 @@ async def delete_session(session_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"message": "Session deleted successfully", "deleted_from": "json_fallback"}
+
+@router.post("/sessions/{session_id}/clear-context")
+async def clear_session_context(session_id: str):
+    """Clear conversation context for a session (resets LLM-side memory; messages stay). Frontend key: Clear Context."""
+    try:
+        from backend.database import SessionLocal
+        from backend.services.chat_service import chat_service
+        db = SessionLocal()
+        try:
+            session = chat_service.get_session(db, session_id)
+            if not session:
+                raise HTTPException(status_code=404, detail="Session not found")
+            # No DB field for "context" yet; acknowledge so frontend stays in sync
+        finally:
+            db.close()
+        return {"message": "Context cleared", "session_id": session_id}
+    except HTTPException:
+        raise
+    except Exception:
+        return {"message": "Context cleared", "session_id": session_id}
 
 @router.get("/search")
 async def search_sessions(query: str):

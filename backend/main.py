@@ -11,6 +11,7 @@ from datetime import datetime
 import json
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from typing import Dict, List, Optional, Union
 import time
 
@@ -812,6 +813,15 @@ from daena.smart_decision_maker import SmartDecisionMaker
 agent_manager = AgentManager()
 smart_decision_maker = SmartDecisionMaker(agent_manager)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan: startup and shutdown (replaces deprecated on_event)."""
+    await _run_startup()
+    yield
+    # Shutdown logic can be added here if needed
+
+
 app = FastAPI(
     title="Daena AI VP System - Mas-AI Company",
     description="""Revolutionary AI-powered business management with autonomous agents.
@@ -852,18 +862,22 @@ Monitoring endpoints require API key authentication.
     servers=[
         {"url": "https://daena.mas-ai.co", "description": "Production"},
         {"url": "http://localhost:8000", "description": "Local Development"}
-    ]
+    ],
+    lifespan=lifespan,
 )
 
-# Add CORS middleware - REQUIRED for frontend
+# Add CORS middleware - restrict to configured origins (no "*" in production)
+_cors_origins = get_cors_origins()
+if not _cors_origins or "*" in _cors_origins:
+    _cors_origins = ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:3000", "http://127.0.0.1:3000"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-print("✅ CORS middleware added")
+print("✅ CORS middleware added (origins: %s)" % (_cors_origins[:3] if len(_cors_origins) > 3 else _cors_origins))
 
 # ... (Auth, Tracing, Role, CSRF, APIKeyGuard disabled for debugging) ...
 
@@ -1346,6 +1360,36 @@ try:
         logger.warning(f"⚠️ UI routes not available: {e}")
     except Exception as e:
         logger.warning(f"⚠️ UI routes failed to load: {e}")
+
+    # Skills & Execution Layer - Explicit registration so /api/v1/skills and /api/v1/execution/* always work
+    try:
+        from backend.routes.skills import router as skills_router
+        app.include_router(skills_router)
+        logger.info("✅ Skills API registered at /api/v1/skills (explicit)")
+    except Exception as e:
+        logger.warning(f"⚠️ Skills API not available: {e}")
+    try:
+        from backend.routes.execution_layer import router as execution_layer_router
+        app.include_router(execution_layer_router)
+        logger.info("✅ Execution Layer API registered at /api/v1/execution (explicit)")
+    except Exception as e:
+        logger.warning(f"⚠️ Execution Layer API not available: {e}")
+
+    # Founder Panel (Incident Room: lockdown, emergency status, containment)
+    try:
+        from backend.routes.founder_panel import router as founder_panel_router
+        app.include_router(founder_panel_router)
+        logger.info("✅ Founder Panel API registered at /api/v1/founder-panel (explicit)")
+    except Exception as e:
+        logger.warning(f"⚠️ Founder Panel API not available: {e}")
+
+    # Proactive rules and events (App Setup → Proactive page)
+    try:
+        from backend.routes.proactive import router as proactive_router
+        app.include_router(proactive_router)
+        logger.info("✅ Proactive API registered at /api/v1/proactive (explicit)")
+    except Exception as e:
+        logger.warning(f"⚠️ Proactive API not available: {e}")
     
     # WebSocket routes for real-time updates
     try:
@@ -1621,7 +1665,11 @@ safe_import_router("ocr_comparison")
 safe_import_router("automation")  # Operator / automation endpoints
 safe_import_router("cmp_tools")  # CMP tool registry + executor
 safe_import_router("tools")  # Canonical tool runner endpoint
-safe_import_router("execution_layer")  # Execution Layer: tools list, run (dry_run), logs, config
+# execution_layer and skills registered explicitly above (backend.routes) so they always work
+# safe_import_router("execution_layer")
+# safe_import_router("skills")
+safe_import_router("proactive")  # Proactive rules and events
+safe_import_router("providers")  # Moltbot-style providers: Discord, Telegram; ToolRequest via Execution Layer
 safe_import_router("explorer")  # Explorer Bridge (human-in-the-loop consultation)
 safe_import_router("human_relay")  # Human Relay Explorer (manual copy/paste bridge)
 # safe_import_router("demo")  # Demo router removed
@@ -1720,6 +1768,14 @@ try:
     logger.info("✅ CMP Graph API registered at /api/v1/cmp/graph")
 except ImportError as e:
     logger.warning(f"⚠️ CMP Graph API not available: {e}")
+
+# DeFi / Web3 Smart Contract Security API
+try:
+    from backend.routes.defi import router as defi_router
+    app.include_router(defi_router, prefix="/api/v1", tags=["defi"])
+    logger.info("✅ DeFi Security API registered at /api/v1/defi")
+except ImportError as e:
+    logger.warning(f"⚠️ DeFi Security API not available: {e}")
 
 # Test the events endpoint
 @app.get("/test-events")
@@ -3262,9 +3318,7 @@ async def get_executive_metrics():
         logger.error(f"Executive metrics error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get executive metrics")
 
-# Startup event
-@app.on_event("startup")
-async def startup_event():
+async def _run_startup():
     """Initialize services on startup - CRITICAL: All errors must be caught to prevent startup crash"""
     print("🚀 Starting Mas-AI Company - Daena AI VP System")
     
@@ -3481,6 +3535,16 @@ async def startup_event():
         print(f"✅ Managing {TOTAL_DEPARTMENTS} departments")
         print(f"✅ Overseeing {MAX_TOTAL_AGENTS} active agents")
         print("✅ Tracking 0 active projects")
+
+    # Initialize MCP Registry
+    try:
+        from backend.services.mcp.mcp_registry import get_mcp_registry
+        registry = get_mcp_registry()
+        await registry.initialize()
+        logger.info("✅ MCP Registry initialized")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to initialize MCP Registry: {e}")
+
 
 @app.post("/api/v1/meetings/schedule")
 async def schedule_meeting(request: dict):
@@ -4033,10 +4097,14 @@ async def serve_agent_detail(request: Request, agent_id: str):
 
 @app.get("/ui/brain-settings", response_class=HTMLResponse)
 async def serve_brain_settings(request: Request):
+    if not request.query_params.get("embed"):
+        return RedirectResponse(url="/ui/control-plane#brain", status_code=302)
     return templates.TemplateResponse("brain_settings.html", {"request": request})
 
 @app.get("/ui/app-setup", response_class=HTMLResponse)
 async def serve_app_setup(request: Request):
+    if not request.query_params.get("embed"):
+        return RedirectResponse(url="/ui/control-plane#app-setup", status_code=302)
     return templates.TemplateResponse("app_setup.html", {"request": request})
 
 @app.get("/ui/mcp-hub", response_class=HTMLResponse)
@@ -4050,6 +4118,16 @@ async def serve_connections(request: Request):
 @app.get("/ui/founder-panel", response_class=HTMLResponse)
 async def serve_founder_panel(request: Request):
     return templates.TemplateResponse("founder_panel.html", {"request": request})
+
+@app.get("/incident-room", response_class=HTMLResponse)
+async def serve_incident_room(request: Request):
+    """Serve Incident Room with Jinja2 so base.html sidebar and blocks render."""
+    return templates.TemplateResponse("incident_room.html", {"request": request})
+
+@app.get("/api/v1/qa/ui", response_class=HTMLResponse)
+async def serve_qa_guardian_ui(request: Request):
+    """Serve QA Guardian dashboard with Jinja2 so base.html sidebar and blocks render."""
+    return templates.TemplateResponse("qa_guardian_dashboard.html", {"request": request})
 
 @app.get("/ui/office/{department_id}", response_class=HTMLResponse)
 async def serve_department_office(request: Request, department_id: str):
@@ -4068,6 +4146,22 @@ async def serve_department_office(request: Request, department_id: str):
     dept = DEPT_DATA.get(department_id, {"name": department_id.title(), "color": "#888", "icon": "fa-building", "rep": "Rep", "role": "Representative"})
     rep_initials = "".join([w[0].upper() for w in dept["rep"].split()[:2]])
     
+    # Real-time agents from sunflower registry (6 per department)
+    agents = []
+    try:
+        from backend.utils.sunflower_registry import sunflower_registry
+        agents = sunflower_registry.get_department_agents(department_id)
+    except Exception:
+        pass
+    # Fallback: ensure 6 agents so UI matches 8×6 structure (rep + Advisor A/B, Scout I/E, Synth, Executor)
+    role_templates = [dept["rep"], "Advisor A", "Advisor B", "Scout Internal", "Scout External", "Synth", "Executor"]
+    while len(agents) < 6:
+        i = len(agents)
+        name = role_templates[i] if i < len(role_templates) else f"Agent {i+1}"
+        role = dept["role"] if i == 0 else (name if name != dept["rep"] else "Member")
+        agents.append({"id": f"fallback-{department_id}-{i}", "name": name, "role": role})
+    agent_count = len(agents)
+    
     return templates.TemplateResponse("department_office.html", {
         "request": request,
         "dept_id": department_id,
@@ -4076,7 +4170,9 @@ async def serve_department_office(request: Request, department_id: str):
         "dept_icon": dept["icon"],
         "rep_name": dept["rep"],
         "rep_role": dept["role"],
-        "rep_initials": rep_initials
+        "rep_initials": rep_initials,
+        "agents": agents,
+        "agent_count": agent_count
     })
 
 @app.get("/ui/self-upgrade", response_class=HTMLResponse)
@@ -4131,18 +4227,6 @@ try:
     logger.info("✅ God Mode router registered")
 except Exception as e:
     logger.error(f"Failed to register god_mode router: {e}")
-
-
-@app.on_event("startup")
-async def startup_event():
-    # Initialize MCP Registry
-    try:
-        from backend.services.mcp.mcp_registry import get_mcp_registry
-        registry = get_mcp_registry()
-        await registry.initialize()
-        logger.info("✅ MCP Registry initialized")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to initialize MCP Registry: {e}")
 
 if __name__ == "__main__":
     import uvicorn
@@ -4193,10 +4277,14 @@ async def serve_agent_detail(request: Request, agent_id: str):
 
 @app.get("/ui/brain-settings", response_class=HTMLResponse)
 async def serve_brain_settings(request: Request):
+    if not request.query_params.get("embed"):
+        return RedirectResponse(url="/ui/control-plane#brain", status_code=302)
     return templates.TemplateResponse("brain_settings.html", {"request": request})
 
 @app.get("/ui/app-setup", response_class=HTMLResponse)
 async def serve_app_setup(request: Request):
+    if not request.query_params.get("embed"):
+        return RedirectResponse(url="/ui/control-plane#app-setup", status_code=302)
     return templates.TemplateResponse("app_setup.html", {"request": request})
 
 @app.get("/ui/mcp-hub", response_class=HTMLResponse)
@@ -4210,6 +4298,16 @@ async def serve_connections(request: Request):
 @app.get("/ui/founder-panel", response_class=HTMLResponse)
 async def serve_founder_panel(request: Request):
     return templates.TemplateResponse("founder_panel.html", {"request": request})
+
+@app.get("/incident-room", response_class=HTMLResponse)
+async def serve_incident_room(request: Request):
+    """Serve Incident Room with Jinja2 so base.html sidebar and blocks render."""
+    return templates.TemplateResponse("incident_room.html", {"request": request})
+
+@app.get("/api/v1/qa/ui", response_class=HTMLResponse)
+async def serve_qa_guardian_ui(request: Request):
+    """Serve QA Guardian dashboard with Jinja2 so base.html sidebar and blocks render."""
+    return templates.TemplateResponse("qa_guardian_dashboard.html", {"request": request})
 
 @app.get("/ui/office/{department_id}", response_class=HTMLResponse)
 async def serve_department_office(request: Request, department_id: str):
@@ -4228,6 +4326,22 @@ async def serve_department_office(request: Request, department_id: str):
     dept = DEPT_DATA.get(department_id, {"name": department_id.title(), "color": "#888", "icon": "fa-building", "rep": "Rep", "role": "Representative"})
     rep_initials = "".join([w[0].upper() for w in dept["rep"].split()[:2]])
     
+    # Real-time agents from sunflower registry (6 per department)
+    agents = []
+    try:
+        from backend.utils.sunflower_registry import sunflower_registry
+        agents = sunflower_registry.get_department_agents(department_id)
+    except Exception:
+        pass
+    # Fallback: ensure 6 agents so UI matches 8×6 structure (rep + Advisor A/B, Scout I/E, Synth, Executor)
+    role_templates = [dept["rep"], "Advisor A", "Advisor B", "Scout Internal", "Scout External", "Synth", "Executor"]
+    while len(agents) < 6:
+        i = len(agents)
+        name = role_templates[i] if i < len(role_templates) else f"Agent {i+1}"
+        role = dept["role"] if i == 0 else (name if name != dept["rep"] else "Member")
+        agents.append({"id": f"fallback-{department_id}-{i}", "name": name, "role": role})
+    agent_count = len(agents)
+    
     return templates.TemplateResponse("department_office.html", {
         "request": request,
         "dept_id": department_id,
@@ -4236,7 +4350,9 @@ async def serve_department_office(request: Request, department_id: str):
         "dept_icon": dept["icon"],
         "rep_name": dept["rep"],
         "rep_role": dept["role"],
-        "rep_initials": rep_initials
+        "rep_initials": rep_initials,
+        "agents": agents,
+        "agent_count": agent_count
     })
 
 @app.get("/ui/self-upgrade", response_class=HTMLResponse)
@@ -4291,18 +4407,6 @@ try:
     logger.info("✅ God Mode router registered")
 except Exception as e:
     logger.error(f"Failed to register god_mode router: {e}")
-
-
-@app.on_event("startup")
-async def startup_event():
-    # Initialize MCP Registry
-    try:
-        from backend.services.mcp.mcp_registry import get_mcp_registry
-        registry = get_mcp_registry()
-        await registry.initialize()
-        logger.info("✅ MCP Registry initialized")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to initialize MCP Registry: {e}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -26,6 +26,49 @@
         font-size: 14px;
     }
 
+    /* Routing Mode dropdown - modern look */
+    .routing-mode-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.05);
+        padding: 8px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        min-width: 200px;
+    }
+    .routing-mode-wrap:focus-within {
+        border-color: var(--daena-gold);
+        box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.2);
+    }
+    .routing-mode-wrap label {
+        font-size: 13px;
+        color: #9CA3AF;
+        white-space: nowrap;
+    }
+    .routing-mode-select {
+        flex: 1;
+        padding: 6px 28px 6px 10px;
+        background: rgba(0, 0, 0, 0.25);
+        border: none;
+        border-radius: 6px;
+        color: white;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%239CA3AF' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+    }
+    .routing-mode-select option {
+        background: #1a1a1a;
+        color: white;
+    }
+    .routing-mode-select:focus {
+        outline: none;
+    }
+
     .scan-btn {
         padding: 10px 20px;
         background: var(--daena-gold);
@@ -303,12 +346,10 @@
         <h1>Brain & API Settings</h1>
         <p>Manage local LLM models and cloud API connections</p>
     </div>
-    <div style="display: flex; gap: 12px; align-items: center;">
-        <div
-            style="display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-            <span style="font-size: 13px; color: #9CA3AF;">Routing Mode:</span>
-            <select id="routing-mode" onchange="setRoutingMode(this.value)"
-                style="background: none; border: none; color: white; font-weight: 600; cursor: pointer; outline: none;">
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <div class="routing-mode-wrap">
+            <label for="routing-mode">Routing Mode:</label>
+            <select id="routing-mode" class="routing-mode-select" onchange="setRoutingMode(this.value)" aria-label="Routing mode">
                 <option value="local_only">Local Only (Offline)</option>
                 <option value="hybrid">Hybrid (Smart)</option>
                 <option value="api_only">API Only (Cloud)</option>
@@ -485,8 +526,9 @@
             </div>
             <input type="password" class="api-key-input" placeholder="Enter API Key..." 
                    id="api-key-${idx}" onchange="saveAPIKey(${idx}, this.value)">
+            <button type="button" onclick="saveAPIKey(${idx}, document.getElementById('api-key-${idx}').value)" class="scan-btn" style="padding: 8px 14px; font-size: 12px;">Save</button>
             <label class="toggle">
-                <input type="checkbox" ${api.status === 'connected' ? 'checked' : ''} 
+                <input type="checkbox" ${api.enabled ? 'checked' : ''} 
                        onchange="toggleCloud(${idx}, this.checked)">
                 <span class="toggle-slider"></span>
             </label>
@@ -763,14 +805,53 @@
         }
     }
 
-    function toggleCloud(idx, enabled) {
-        cloudAPIs[idx].status = enabled ? 'connected' : 'disconnected';
+    async function toggleCloud(idx, enabled) {
+        const provider = cloudAPIs[idx].provider || cloudAPIs[idx].name.toLowerCase().split(/[/-]/)[0];
+        try {
+            const r = await fetch(`/api/v1/brain/cloud/${encodeURIComponent(provider)}/toggle`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: enabled })
+            });
+            const data = await r.json().catch(() => ({}));
+            if (data.success) {
+                cloudAPIs[idx].enabled = enabled;
+                cloudAPIs[idx].status = enabled ? 'connected' : 'disconnected';
+                if (window.showToast) window.showToast(enabled ? 'Cloud API enabled' : 'Cloud API disabled', 'success');
+            } else {
+                if (window.showToast) window.showToast(data.error || 'Failed to toggle', 'error');
+                renderCloudAPIs();
+                return;
+            }
+        } catch (e) {
+            if (window.showToast) window.showToast('Request failed', 'error');
+            renderCloudAPIs();
+            return;
+        }
         renderCloudAPIs();
     }
 
-    function saveAPIKey(idx, key) {
-        cloudAPIs[idx].hasKey = key.length > 0;
-        cloudAPIs[idx].credits = 100;
+    async function saveAPIKey(idx, key) {
+        const provider = cloudAPIs[idx].provider || cloudAPIs[idx].name.toLowerCase().split(/[/-]/)[0];
+        const keyVal = (key || '').trim();
+        try {
+            const r = await fetch(`/api/v1/brain/cloud/${encodeURIComponent(provider)}/key`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: keyVal })
+            });
+            const data = await r.json().catch(() => ({}));
+            if (data.success) {
+                cloudAPIs[idx].hasKey = keyVal.length > 0;
+                if (!keyVal) cloudAPIs[idx].enabled = false;
+                cloudAPIs[idx].status = keyVal && cloudAPIs[idx].enabled ? 'connected' : (keyVal ? 'disconnected' : 'disconnected');
+                if (window.showToast) window.showToast('API key saved and synced with backend', 'success');
+            } else {
+                if (window.showToast) window.showToast(data.error || 'Failed to save key', 'error');
+            }
+        } catch (e) {
+            if (window.showToast) window.showToast('Request failed', 'error');
+        }
         renderCloudAPIs();
     }
 

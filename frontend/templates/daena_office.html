@@ -2,6 +2,18 @@
 
 {% block title %}Daena Office{% endblock %}
 
+{% block head %}
+<style>
+    .sources-hidden {
+        display: none !important;
+    }
+
+    .source-item a {
+        max-width: 12rem;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="flex h-[calc(100vh-7rem)] gap-6">
     <!-- Chat Sessions Sidebar -->
@@ -142,6 +154,12 @@
                     title="Clear Context">
                     <i class="fas fa-eraser"></i>
                 </button>
+                <button id="show-sources-btn" onclick="toggleShowSources()"
+                    class="p-2 text-gray-400 hover:text-white transition-colors flex items-center gap-1"
+                    title="Show sources: On/Off (citations below messages)">
+                    <i class="fas fa-link text-xs"></i>
+                    <span id="show-sources-label" class="text-[10px]">Sources Off</span>
+                </button>
             </div>
         </div>
 
@@ -162,6 +180,19 @@
 
         <!-- Input Area -->
         <div class="p-4 border-t border-white/10 bg-black/20">
+            <div class="flex gap-2 mb-2">
+                <button type="button" id="btn-search-mode" onclick="setSendMode('search')"
+                    class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors"
+                    title="Quick search then answer (like Google + LLM)">
+                    <i class="fas fa-search mr-1"></i> Search
+                </button>
+                <button type="button" id="btn-deep-search-mode" onclick="setSendMode('deep_search')"
+                    class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors"
+                    title="Deep search: scrape pages and synthesize conclusion">
+                    <i class="fas fa-globe mr-1"></i> Deep search
+                </button>
+                <span id="send-mode-badge" class="text-xs text-daena-gold hidden"></span>
+            </div>
             <form id="chat-form" class="flex gap-3 items-end">
                 <textarea id="message-input" rows="1"
                     class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-daena-gold/50 focus:bg-white/10 transition-all resize-none overflow-hidden"
@@ -210,6 +241,38 @@
                     <i class="fas fa-chart-pie text-yellow-400"></i> Analyze
                 </button>
             </div>
+            <!-- Desktop automation (Moltbot-like) -->
+            <p class="text-xs text-gray-400 mb-2 mt-3">Desktop automation</p>
+            <div class="grid grid-cols-2 gap-1">
+                <button type="button" onclick="showDesktopClickForm()"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1"
+                    title="Click at screen coordinates (requires AUTOMATION_ENABLE_DESKTOP=1)">
+                    <i class="fas fa-mouse-pointer text-amber-400"></i> Click
+                </button>
+                <button type="button" onclick="showDesktopTypeForm()"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1"
+                    title="Type text on desktop (requires AUTOMATION_ENABLE_DESKTOP=1)">
+                    <i class="fas fa-keyboard text-amber-400"></i> Type
+                </button>
+            </div>
+            <div id="desktop-click-form" class="hidden mt-2 space-y-2 p-2 bg-black/20 rounded border border-white/10">
+                <div class="flex gap-2 items-center">
+                    <input type="number" id="desktop-x" placeholder="X" min="0" step="1"
+                        class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white w-16">
+                    <input type="number" id="desktop-y" placeholder="Y" min="0" step="1"
+                        class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white w-16">
+                    <button type="button" onclick="runDesktopClick()"
+                        class="text-xs px-2 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">Run</button>
+                </div>
+            </div>
+            <div id="desktop-type-form" class="hidden mt-2 space-y-2 p-2 bg-black/20 rounded border border-white/10">
+                <div class="flex gap-2">
+                    <input type="text" id="desktop-type-text" placeholder="Text to type on desktop"
+                        class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white">
+                    <button type="button" onclick="runDesktopType()"
+                        class="text-xs px-2 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">Run</button>
+                </div>
+            </div>
         </div>
 
         <!-- MCP Connections -->
@@ -236,7 +299,7 @@
             <form onsubmit="executeToolCommand(event)" class="flex gap-2">
                 <input type="text" id="tool-command"
                     class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-daena-gold/50"
-                    placeholder="e.g., scan backend/routes/daena.py">
+                    placeholder="e.g. health check, click at 100 200, type on desktop hello">
                 <button type="submit"
                     class="text-xs px-3 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">
                     Run
@@ -323,12 +386,44 @@
 
 {% endblock %}
 
+
+
 {% block scripts %}
 <script src="/static/js/websocket-client.js"></script>
+<script src="/static/js/voice-client.js"></script>
 <script>
     let currentSessionId = null;
     let allSessions = [];
     let currentCategory = 'all';
+    let sendMode = null;  // 'search' | 'deep_search' – R1-style search then answer
+
+    function setSendMode(mode) {
+        sendMode = mode === sendMode ? null : mode;
+        const btnSearch = document.getElementById('btn-search-mode');
+        const btnDeep = document.getElementById('btn-deep-search-mode');
+        const badge = document.getElementById('send-mode-badge');
+        if (btnSearch) btnSearch.classList.toggle('border-daena-gold', sendMode === 'search');
+        if (btnSearch) btnSearch.classList.toggle('text-daena-gold', sendMode === 'search');
+        if (btnDeep) btnDeep.classList.toggle('border-daena-gold', sendMode === 'deep_search');
+        if (btnDeep) btnDeep.classList.toggle('text-daena-gold', sendMode === 'deep_search');
+        if (badge) {
+            badge.classList.toggle('hidden', !sendMode);
+            badge.textContent = sendMode === 'search' ? 'Search' : sendMode === 'deep_search' ? 'Deep search' : '';
+        }
+    }
+
+    // --- Message Formatter ---
+    function formatMessage(text) {
+        if (!text) return '';
+        // Convert [Title](url) to <a href="url" class="source-pill">[Title]</a>
+        // And simple URLs to links if not in markdown
+        let html = text
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") // Basic cleanup first
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="source-pill" title="$2"><i class="fas fa-external-link-alt text-[9px] mr-1"></i>$1</a>')
+            .replace(/`([^`]+)`/g, '<code class="bg-black/30 px-1 rounded text-orange-300">$1</code>')
+            .replace(/\n/g, '<br>');
+        return html;
+    }
 
     // Category emoji map
     const categoryEmojis = {
@@ -361,7 +456,26 @@
         'general': '#6B7280'
     };
 
+    function applyShowSources(on) {
+        localStorage.setItem('daena_office_show_sources', on ? 'on' : 'off');
+        const label = document.getElementById('show-sources-label');
+        if (label) label.textContent = on ? 'Sources On' : 'Sources Off';
+        document.querySelectorAll('[id$="-sources"]').forEach(el => {
+            if (on) el.classList.remove('sources-hidden');
+            else el.classList.add('sources-hidden');
+        });
+        const btn = document.getElementById('show-sources-btn');
+        if (btn) btn.classList.toggle('text-daena-gold', on);
+    }
+
+    function toggleShowSources() {
+        const on = localStorage.getItem('daena_office_show_sources') !== 'on';
+        applyShowSources(on);
+        window.showToast?.(on ? 'Sources visible below messages' : 'Sources hidden', 'info');
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
+        applyShowSources(localStorage.getItem('daena_office_show_sources') === 'on');
         await checkBrainStatus();
         showInitialGreeting(); // Replace static "Connecting to secure channel..." message
         await loadSessions();
@@ -375,10 +489,12 @@
         }
 
         // Add Enter key support for message input (Enter sends, Shift+Enter for new line with textarea)
-        document.getElementById('message-input').addEventListener('keydown', (e) => {
+        const msgInput = document.getElementById('message-input');
+        if (msgInput) msgInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                document.getElementById('chat-form').dispatchEvent(new Event('submit'));
+                const chatForm = document.getElementById('chat-form');
+                if (chatForm) chatForm.dispatchEvent(new Event('submit'));
             }
         });
 
@@ -996,7 +1112,7 @@
                 </div>
                 <div class="flex-1 flex ${isUser ? 'justify-end' : ''}">
                     <div class="${isUser ? 'bg-blue-600' : 'bg-white/10'} rounded-2xl ${isUser ? 'rounded-tr-none' : 'rounded-tl-none'} px-5 py-3 text-gray-200 inline-block max-w-[80%]">
-                        <p class="whitespace-pre-wrap leading-relaxed">${msg.content}</p>
+                        <div class="whitespace-pre-wrap leading-relaxed">${isUser ? msg.content : formatMessage(msg.content)}</div>
                     </div>
                 </div>
             </div>
@@ -1004,16 +1120,18 @@
         container.scrollTop = container.scrollHeight;
     }
 
-    document.getElementById('chat-form').addEventListener('submit', async (e) => {
+    const chatFormEl = document.getElementById('chat-form');
+    if (chatFormEl) chatFormEl.addEventListener('submit', async (e) => {
         e.preventDefault();
         const input = document.getElementById('message-input');
+        const container = document.getElementById('chat-messages');
+        if (!input || !container) return;
         const content = input.value.trim();
 
         if (!content) return;
 
         // Optimistic UI - show user message with edit button
         const msgId = 'msg-' + Date.now();
-        const container = document.getElementById('chat-messages');
         container.insertAdjacentHTML('beforeend', `
             <div id="${msgId}" class="flex gap-4 flex-row-reverse group">
                 <div class="w-8 h-8 rounded-full bg-white/10 flex-shrink-0 flex items-center justify-center text-gray-400 font-bold mt-1"><i class="fas fa-user"></i></div>
@@ -1040,6 +1158,7 @@
                 <div class="flex-1">
                     <div class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
                         <p id="${responseId}-text" class="whitespace-pre-wrap leading-relaxed"><i class="fas fa-circle-notch fa-spin"></i></p>
+                        <div id="${responseId}-sources" class="mt-2 pt-2 border-t border-white/10 hidden"></div>
                     </div>
                 </div>
             </div>
@@ -1047,15 +1166,15 @@
         container.scrollTop = container.scrollHeight;
 
         try {
-            // Use streaming endpoint
+            const payload = { message: content, session_id: currentSessionId };
+            if (sendMode) payload.mode = sendMode;
             const response = await fetch('/api/v1/daena/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: content,
-                    session_id: currentSessionId
-                })
+                body: JSON.stringify(payload)
             });
+            sendMode = null;
+            setSendMode(null);
 
             if (!response.ok) {
                 throw new Error('Stream request failed');
@@ -1084,14 +1203,46 @@
                             const data = JSON.parse(line.substring(6));
 
                             if (data.type === 'session' && data.session_id) {
-                                // Update session ID if new session was created
                                 if (!currentSessionId) {
                                     currentSessionId = data.session_id;
                                     loadSessions();
                                 }
+                            } else if (data.type === 'status' && data.content) {
+                                if (firstToken) { textEl.innerHTML = ''; firstToken = false; }
+                                textEl.textContent = data.content;
+                                container.scrollTop = container.scrollHeight;
+                            } else if (data.type === 'sources' && data.sources && data.sources.length) {
+                                const sourcesEl = document.getElementById(`${responseId}-sources`);
+                                if (sourcesEl) {
+                                    const showOn = localStorage.getItem('daena_office_show_sources') === 'on';
+                                    sourcesEl.className = `mt-2 pt-2 border-t border-white/10 ${showOn ? 'block' : 'hidden'}`;
+                                    sourcesEl.id = `${responseId}-sources-inner`; // renaming to ensure unique access
+
+                                    const items = data.sources.map((s, i) => `
+                                        <a href="${s.url}" target="_blank" class="source-pill mb-1 mr-1" title="${s.snippet || s.title}">
+                                            <span class="opacity-50 mr-1">[${i + 1}]</span>${s.title || (s.url.length > 20 ? s.url.slice(0, 20) + '...' : s.url)}
+                                        </a>
+                                    `).join('');
+                                    sourcesEl.innerHTML = `<div class="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Sources</div><div class="flex flex-wrap">${items}</div>`;
+
+                                    const escape = (s) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+                                    const sources = data.sources.slice(0, 8);
+                                    const domain = (url) => { try { return new URL(url).hostname || url; } catch { return url; } };
+                                    const citations = sources.map((s, i) => `[<a href="${escape(s.url || '#')}" target="_blank" rel="noopener noreferrer" class="citation-marker text-daena-gold hover:underline" title="${escape((s.title || s.url || '').slice(0, 120))}">${i + 1}</a>]`).join(' ');
+                                    const list = sources.map((s, i) => {
+                                        const title = (s.title || s.url || 'Source ' + (i + 1)).trim();
+                                        const url = s.url || '#';
+                                        const d = domain(url);
+                                        const oneLine = escape(title.slice(0, 60)) + (title.length > 60 ? '…' : '');
+                                        return `<div class="source-item flex items-center gap-2 py-1 text-xs border-b border-white/5 last:border-0"><span class="text-daena-gold font-mono">[${i + 1}]</span><a href="${escape(url)}" target="_blank" rel="noopener noreferrer" class="truncate flex-1 text-gray-400 hover:text-white" title="${escape(title)}" style="max-width: 100%;">${oneLine}</a><span class="text-gray-500 shrink-0">${escape(d)}</span></div>`;
+                                    }).join('');
+                                    sourcesEl.innerHTML = `<div class="sources-header cursor-pointer select-none text-xs text-gray-400 hover:text-gray-300 flex items-center gap-2 py-1" onclick="this.nextElementSibling.classList.toggle('hidden')"><i class="fas fa-chevron-down sources-toggle"></i> Sources (${sources.length})</div><div class="sources-list hidden">${list}</div><div class="citation-markers mt-1 text-[11px] text-gray-500">${citations}</div>`;
+                                    sourcesEl.classList.remove('hidden');
+                                    if (!showOn) sourcesEl.classList.add('sources-hidden');
+                                }
                             } else if (data.type === 'token' && data.content) {
                                 if (firstToken) {
-                                    textEl.innerHTML = '';  // Clear spinner
+                                    textEl.innerHTML = '';
                                     firstToken = false;
                                 }
                                 fullText += data.content;
@@ -1099,6 +1250,13 @@
                                 container.scrollTop = container.scrollHeight;
                             } else if (data.type === 'done') {
                                 loadSessions();
+                                if (voiceEnabled && fullText && fullText.trim()) {
+                                    fetch('/api/v1/voice/speak', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ text: fullText.trim() })
+                                    }).catch(() => { });
+                                }
                             } else if (data.type === 'error') {
                                 textEl.textContent = 'Error: ' + data.error;
                             }
@@ -1158,9 +1316,7 @@
             '',
             async () => {
                 try {
-                    await window.api.request(`/chat-history/sessions/${currentSessionId}/clear-context`, {
-                        method: 'POST'
-                    });
+                    await window.api.clearSessionContext(currentSessionId);
                     window.showToast?.('Context cleared - Daena will treat this as a fresh conversation', 'success');
                 } catch (e) {
                     // Fallback: just show success (context clearing is a client-side concept too)
@@ -1188,19 +1344,13 @@
         }
     });
 
-    // Voice Toggle Function
+    // Voice Toggle Function (sync with backend GET/POST /api/v1/voice/status, /api/v1/voice/talk-mode)
     let voiceEnabled = false;
     async function toggleVoice() {
         try {
             voiceEnabled = !voiceEnabled;
-            // Note: window.api.request already prepends /api/v1, so just use /voice/talk-mode
-            const data = await window.api.request('/voice/talk-mode', {
-                method: 'POST',
-                body: JSON.stringify({ enabled: voiceEnabled })
-            });
-
-            // window.api.request already returns parsed JSON
-            voiceEnabled = data.talk_active || voiceEnabled;
+            const data = await window.api.setTalkMode(voiceEnabled);
+            voiceEnabled = data.talk_active !== undefined ? data.talk_active : voiceEnabled;
 
             const icon = document.getElementById('voice-icon');
             if (voiceEnabled) {
@@ -1392,6 +1542,45 @@
 
         await executeQuickTool(command);
         input.value = '';
+    }
+
+    function showDesktopClickForm() {
+        document.getElementById('desktop-type-form').classList.add('hidden');
+        const el = document.getElementById('desktop-click-form');
+        el.classList.toggle('hidden');
+        if (!el.classList.contains('hidden')) {
+            document.getElementById('desktop-x').focus();
+        }
+    }
+
+    function showDesktopTypeForm() {
+        document.getElementById('desktop-click-form').classList.add('hidden');
+        const el = document.getElementById('desktop-type-form');
+        el.classList.toggle('hidden');
+        if (!el.classList.contains('hidden')) {
+            document.getElementById('desktop-type-text').focus();
+        }
+    }
+
+    async function runDesktopClick() {
+        const x = document.getElementById('desktop-x').value.trim();
+        const y = document.getElementById('desktop-y').value.trim();
+        if (!x || !y) {
+            const output = document.getElementById('tool-output');
+            output.innerHTML = '<span class="text-amber-400">Enter X and Y (e.g. 100, 200).</span>';
+            return;
+        }
+        await executeQuickTool('click at ' + x + ' ' + y);
+    }
+
+    async function runDesktopType() {
+        const text = document.getElementById('desktop-type-text').value.trim();
+        if (!text) {
+            const output = document.getElementById('tool-output');
+            output.innerHTML = '<span class="text-amber-400">Enter text to type on desktop.</span>';
+            return;
+        }
+        await executeQuickTool('type on desktop ' + text);
     }
 
     async function discoverMcpServers() {

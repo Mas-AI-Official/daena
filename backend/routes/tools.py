@@ -31,6 +31,7 @@ class ToolExecuteRequest(BaseModel):
     department: Optional[str] = None
     agent_id: Optional[str] = None
     reason: Optional[str] = None
+    dry_run: bool = False
 
 
 @router.get("/status")
@@ -51,6 +52,7 @@ async def tools_execute(req: ToolExecuteRequest, request: Request):
         agent_id=req.agent_id,
         reason=req.reason,
         trace_id=trace_id,
+        dry_run=req.dry_run,
     )
     return {"success": out["status"] == "ok", **out}
 

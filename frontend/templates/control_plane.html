@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+{% block title %}Control Plane - Daena AI VP{% endblock %}
+{% block head %}
+<style>
+    .cp-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 8px;
+    }
+
+    .cp-tab {
+        padding: 8px 14px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        color: #9CA3AF;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .cp-tab:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: white;
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .cp-tab.active {
+        background: rgba(212, 175, 55, 0.15);
+        color: var(--daena-gold);
+        border-color: var(--daena-gold);
+    }
+
+    .cp-panel {
+        display: none;
+        height: calc(100vh - 180px);
+        min-height: 400px;
+    }
+
+    .cp-panel.active {
+        display: block;
+    }
+
+    .cp-panel iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.2);
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="p-4">
+    <h1 class="text-xl font-semibold text-white mb-2">Control Plane</h1>
+    <p class="text-sm text-gray-400 mb-4">Brain, integrations, skills, execution, proactive rules, tasks, runbook,
+        approvals, and provider onboarding in one place.</p>
+
+    <div class="cp-tabs" role="tablist">
+        <button type="button" class="cp-tab active" data-tab="brain" role="tab">Brain & API</button>
+        <button type="button" class="cp-tab" data-tab="app-setup" role="tab">Integrations / App Setup</button>
+        <button type="button" class="cp-tab" data-tab="skills" role="tab">Skills</button>
+        <button type="button" class="cp-tab" data-tab="execution" role="tab">Execution</button>
+        <button type="button" class="cp-tab" data-tab="proactive" role="tab">Proactive</button>
+        <button type="button" class="cp-tab" data-tab="tasks-runbook-approvals" role="tab">Tasks & Runbook &
+            Approvals</button>
+        <button type="button" class="cp-tab" data-tab="provider" role="tab">Provider onboarding</button>
+        <button type="button" class="cp-tab" data-tab="defi" role="tab">Web3 / DeFi</button>
+    </div>
+
+    <div id="cp-panel-brain" class="cp-panel active">
+        <iframe src="/ui/brain-settings?embed=1" title="Brain & API"></iframe>
+    </div>
+    <div id="cp-panel-app-setup" class="cp-panel">
+        <iframe src="/ui/app-setup?embed=1" title="App Setup"></iframe>
+    </div>
+    <div id="cp-panel-skills" class="cp-panel">
+        <iframe src="/ui/skills?embed=1" title="Skills"></iframe>
+    </div>
+    <div id="cp-panel-execution" class="cp-panel">
+        <iframe src="/ui/execution?embed=1" title="Execution"></iframe>
+    </div>
+    <div id="cp-panel-proactive" class="cp-panel">
+        <iframe src="/ui/proactive?embed=1" title="Proactive"></iframe>
+    </div>
+    <div id="cp-panel-tasks-runbook-approvals" class="cp-panel">
+        <iframe src="/ui/tasks-runbook-approvals?embed=1" title="Tasks & Runbook & Approvals"></iframe>
+    </div>
+    <div id="cp-panel-provider" class="cp-panel">
+        <iframe src="/ui/provider-onboarding?embed=1" title="Provider onboarding"></iframe>
+    </div>
+    <div id="cp-panel-defi" class="cp-panel">
+        <!-- Native DeFi Security UI -->
+        <div style="padding: 20px; background: rgba(0,0,0,0.3); border-radius: 12px; height: 100%; overflow-y: auto;">
+            <h2 style="color: var(--daena-gold); margin-bottom: 16px; font-size: 18px;">
+                <i class="fas fa-cube"></i> Web3 / DeFi Smart Contract Security
+            </h2>
+
+            <!-- Contract Picker -->
+            <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 12px; margin-bottom: 20px;">
+                <div>
+                    <label
+                        style="color: #9CA3AF; font-size: 12px; display: block; margin-bottom: 4px;">Workspace</label>
+                    <select id="defi-workspace"
+                        style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
+                        <option value=".">Current Project</option>
+                        <option value="contracts">contracts/</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="color: #9CA3AF; font-size: 12px; display: block; margin-bottom: 4px;">Contract
+                        Path</label>
+                    <input type="text" id="defi-contract-path" placeholder="src/Token.sol"
+                        style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;">
+                <button onclick="runDefiScan()"
+                    style="padding: 10px 16px; background: linear-gradient(135deg, #22C55E, #16A34A); border: none; border-radius: 8px; color: white; cursor: pointer; font-size: 13px;">
+                    <i class="fas fa-search"></i> Quick Scan (Read-Only)
+                </button>
+                <button onclick="generateDefiReport()"
+                    style="padding: 10px 16px; background: rgba(59,130,246,0.2); border: 1px solid #3B82F6; border-radius: 8px; color: #3B82F6; cursor: pointer; font-size: 13px;">
+                    <i class="fas fa-file-alt"></i> Generate Report
+                </button>
+                <button onclick="suggestDefiFixes()"
+                    style="padding: 10px 16px; background: rgba(245,158,11,0.2); border: 1px solid #F59E0B; border-radius: 8px; color: #F59E0B; cursor: pointer; font-size: 13px;">
+                    <i class="fas fa-wrench"></i> Suggest Fixes
+                </button>
+                <button onclick="applyDefiFixes()"
+                    style="padding: 10px 16px; background: rgba(239,68,68,0.2); border: 1px solid #EF4444; border-radius: 8px; color: #EF4444; cursor: pointer; font-size: 13px;"
+                    title="Requires approval">
+                    <i class="fas fa-hammer"></i> Apply Fixes (Approval Required)
+                </button>
+            </div>
+
+            <!-- Status / Loading -->
+            <div id="defi-status"
+                style="display: none; padding: 12px; background: rgba(59,130,246,0.1); border-radius: 8px; margin-bottom: 16px; color: #60A5FA;">
+                <i class="fas fa-spinner fa-spin"></i> <span id="defi-status-text">Scanning...</span>
+            </div>
+
+            <!-- Dependencies Check -->
+            <div id="defi-deps"
+                style="padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 16px;">
+                <h4 style="color: #9CA3AF; font-size: 12px; margin-bottom: 8px;">Tool Status</h4>
+                <div id="defi-deps-list" style="font-size: 12px; color: #6B7280;">Loading...</div>
+            </div>
+
+            <!-- Findings -->
+            <div id="defi-findings" style="display: none;">
+                <h4 style="color: white; font-size: 14px; margin-bottom: 12px;">
+                    <i class="fas fa-exclamation-triangle"></i> Findings
+                </h4>
+                <div id="defi-findings-list"></div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        const tabs = document.querySelectorAll('.cp-tab');
+        const panels = document.querySelectorAll('.cp-panel');
+        const hash = (window.location.hash || '').replace('#', '');
+        function show(tabId) {
+            tabs.forEach(function (t) {
+                t.classList.toggle('active', t.getAttribute('data-tab') === tabId);
+            });
+            panels.forEach(function (p) {
+                var id = p.id.replace('cp-panel-', '');
+                p.classList.toggle('active', id === tabId);
+            });
+            if (tabId) window.location.replace('#' + tabId);
+        }
+        tabs.forEach(function (t) {
+            t.addEventListener('click', function () { show(t.getAttribute('data-tab')); });
+        });
+        if (hash) {
+            var found = Array.from(tabs).some(function (t) { return t.getAttribute('data-tab') === hash; });
+            if (found) show(hash);
+        }
+        window.addEventListener('hashchange', function () {
+            var h = (window.location.hash || '').replace('#', '');
+            var tabId = (h === 'tasks' || h === 'runbook' || h === 'approvals') ? 'tasks-runbook-approvals' : h;
+            if (tabId) show(tabId);
+        });
+    })();
+
+    // DeFi Functions
+    let currentScanId = null;
+
+    async function loadDefiDependencies() {
+        try {
+            const resp = await fetch('/api/v1/defi/dependencies');
+            const data = await resp.json();
+            const listEl = document.getElementById('defi-deps-list');
+            if (listEl && data.dependencies) {
+                listEl.innerHTML = Object.entries(data.dependencies).map(([tool, info]) => {
+                    const icon = info.installed ? '✅' : '❌';
+                    const color = info.installed ? '#22C55E' : '#EF4444';
+                    return `<span style="color:${color}; margin-right: 12px;">${icon} ${tool}</span>`;
+                }).join('');
+            }
+        } catch (e) {
+            console.log('DeFi deps check:', e);
+        }
+    }
+
+    async function runDefiScan() {
+        const workspace = document.getElementById('defi-workspace').value;
+        const contract = document.getElementById('defi-contract-path').value;
+        if (!contract) {
+            alert('Please enter a contract path (e.g., src/Token.sol)');
+            return;
+        }
+
+        const statusEl = document.getElementById('defi-status');
+        const statusText = document.getElementById('defi-status-text');
+        statusEl.style.display = 'block';
+        statusText.textContent = 'Starting scan...';
+
+        try {
+            const resp = await fetch('/api/v1/defi/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    workspace_path: workspace,
+                    contract_path: contract,
+                    mode: 'read_only',
+                    tools: ['slither']
+                })
+            });
+            const data = await resp.json();
+
+            if (data.scan_id) {
+                currentScanId = data.scan_id;
+                statusText.textContent = `Scan queued: ${data.scan_id}. Polling for results...`;
+                pollScanResults(data.scan_id);
+            } else if (data.message) {
+                statusEl.style.background = 'rgba(239,68,68,0.1)';
+                statusEl.style.color = '#EF4444';
+                statusText.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${data.message}`;
+            }
+        } catch (e) {
+            statusEl.style.background = 'rgba(239,68,68,0.1)';
+            statusEl.style.color = '#EF4444';
+            statusText.textContent = 'Error: ' + e.message;
+        }
+    }
+
+    async function pollScanResults(scanId) {
+        const statusEl = document.getElementById('defi-status');
+        const statusText = document.getElementById('defi-status-text');
+
+        for (let i = 0; i < 60; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+                const resp = await fetch(`/api/v1/defi/scan/${scanId}`);
+                const data = await resp.json();
+
+                if (data.status === 'completed') {
+                    statusEl.style.background = 'rgba(34,197,94,0.1)';
+                    statusEl.style.color = '#22C55E';
+                    statusText.innerHTML = `<i class="fas fa-check-circle"></i> Scan complete!`;
+                    displayFindings(data);
+                    return;
+                } else if (data.status === 'failed') {
+                    statusEl.style.background = 'rgba(239,68,68,0.1)';
+                    statusEl.style.color = '#EF4444';
+                    statusText.textContent = 'Scan failed: ' + (data.errors || []).join(', ');
+                    return;
+                }
+                statusText.textContent = `Scanning... (${data.status})`;
+            } catch (e) {
+                console.log('Poll error:', e);
+            }
+        }
+        statusText.textContent = 'Scan timed out. Check later.';
+    }
+
+    function displayFindings(data) {
+        const findingsEl = document.getElementById('defi-findings');
+        const listEl = document.getElementById('defi-findings-list');
+        findingsEl.style.display = 'block';
+
+        if (!data.findings || data.findings.length === 0) {
+            listEl.innerHTML = '<div style="color: #22C55E; padding: 12px;">No vulnerabilities found! ✅</div>';
+            return;
+        }
+
+        const severityColors = {
+            critical: '#EF4444',
+            high: '#F97316',
+            medium: '#F59E0B',
+            low: '#22C55E',
+            info: '#6B7280'
+        };
+
+        listEl.innerHTML = data.findings.map(f => `
+            <div style="padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 8px; border-left: 3px solid ${severityColors[f.severity] || '#6B7280'};">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                    <span style="color: white; font-weight: 500;">${f.title || f.id}</span>
+                    <span style="color: ${severityColors[f.severity]}; font-size: 11px; text-transform: uppercase;">${f.severity}</span>
+                </div>
+                <div style="color: #9CA3AF; font-size: 12px;">${f.location || ''}</div>
+                <div style="color: #6B7280; font-size: 11px; margin-top: 4px;">${(f.description || '').slice(0, 200)}...</div>
+            </div>
+        `).join('');
+    }
+
+    async function generateDefiReport() {
+        if (!currentScanId) {
+            alert('Run a scan first');
+            return;
+        }
+        try {
+            const resp = await fetch(`/api/v1/defi/report/${currentScanId}`, { method: 'POST' });
+            const data = await resp.json();
+            if (data.content) {
+                const blob = new Blob([data.content], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `audit-report-${currentScanId}.md`;
+                a.click();
+            }
+        } catch (e) {
+            alert('Error generating report: ' + e.message);
+        }
+    }
+
+    async function suggestDefiFixes() {
+        alert('Fix suggestions will be shown after implementing AI-powered fix generation.');
+    }
+
+    async function applyDefiFixes() {
+        if (!currentScanId) {
+            alert('Run a scan first');
+            return;
+        }
+        try {
+            const resp = await fetch(`/api/v1/defi/fix/${currentScanId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ finding_ids: [], create_branch: true })
+            });
+            const data = await resp.json();
+            if (data.approval_required) {
+                alert(`Approval required! Check Approvals Inbox.\nApproval ID: ${data.approval_id}`);
+            }
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    }
+
+    // Load dependencies on page load
+    document.addEventListener('DOMContentLoaded', loadDefiDependencies);
+</script>
+{% endblock %}

@@ -8,6 +8,7 @@ class RealtimeStatusManager {
     constructor() {
         this.statusCache = new Map();
         this.updateCallbacks = new Map();
+        this.brainOfflinePollTimer = null;
         this.defaults = {
             brain: { connected: false, status: 'offline', error: null },
             agents: { total: 0, active: 0, online: 0 },
@@ -31,6 +32,18 @@ class RealtimeStatusManager {
 
         // Set up polling as fallback (every 10 seconds)
         setInterval(() => this.loadAllStatuses(), 10000);
+    }
+
+    startBrainOfflinePoll() {
+        if (this.brainOfflinePollTimer) return;
+        this.brainOfflinePollTimer = setInterval(() => this.loadBrainStatus(), 3000);
+    }
+
+    stopBrainOfflinePoll() {
+        if (this.brainOfflinePollTimer) {
+            clearInterval(this.brainOfflinePollTimer);
+            this.brainOfflinePollTimer = null;
+        }
     }
 
     setupWebSocketListeners() {
@@ -178,6 +191,12 @@ class RealtimeStatusManager {
         this.statusCache.set(key, data);
         this.notifyCallbacks(key, data);
         this.updateUI(key, data);
+        // When brain is offline, poll more often so UI recovers as soon as Ollama is back
+        if (key === 'brain') {
+            const isConnected = data.connected === true && data.ollama_available === true;
+            if (isConnected) this.stopBrainOfflinePoll();
+            else this.startBrainOfflinePoll();
+        }
     }
 
     refreshStatus(key) {
@@ -252,7 +271,8 @@ class RealtimeStatusManager {
                 // Old structure fallback
                 if (isConnected) {
                     indicator.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400';
-                    indicator.innerHTML = `<div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div><span>BRAIN ONLINE: ${activeModel}</span>`;
+                    const safeModel = (typeof window.escapeHtml === 'function') ? window.escapeHtml(activeModel) : activeModel;
+                    indicator.innerHTML = '<div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div><span>BRAIN ONLINE: ' + safeModel + '</span>';
                 } else {
                     indicator.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-400';
                     indicator.innerHTML = `<div class="w-2 h-2 rounded-full bg-red-500"></div><span>BRAIN OFFLINE</span>`;

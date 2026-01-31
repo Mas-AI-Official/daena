@@ -175,11 +175,19 @@ class ToolPlaybookLibrary:
             return {"error": "Playbook not found"}
         
         from backend.services.cmp_service import run_cmp_tool_action
+        from backend.services.execution_layer_config import get_execution_config
+        
+        cfg = get_execution_config()
+        max_steps = int(cfg.get("max_steps_per_run", 50))
+        max_retries = int(cfg.get("max_retries_per_tool", 3))
         
         results = []
         execution_id = f"exec-{datetime.utcnow().isoformat()}"
         
         for i, step in enumerate(playbook.steps):
+            if i >= max_steps:
+                logger.warning(f"Playbook stopped: max_steps_per_run ({max_steps}) reached")
+                break
             # Substitute variables in args
             step_args = self._substitute_variables(step.args, variables)
             
@@ -204,10 +212,11 @@ class ToolPlaybookLibrary:
                     "error": result.get("error") if not success else None,
                 })
                 
-                # Retry logic
+                # Retry logic (capped by config max_retries_per_tool)
                 if not success and step.retry_on_failure:
-                    for retry in range(step.max_retries):
-                        logger.info(f"Retrying step {i} (attempt {retry + 1}/{step.max_retries})")
+                    allowed_retries = min(step.max_retries, max_retries)
+                    for retry in range(allowed_retries):
+                        logger.info(f"Retrying step {i} (attempt {retry + 1}/{allowed_retries})")
                         result = await run_cmp_tool_action(
                             tool_name=step.tool_name,
                             args=step_args,

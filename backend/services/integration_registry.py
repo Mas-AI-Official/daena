@@ -73,8 +73,69 @@ class IntegrationRegistry:
             print(f"Error saving integrations config: {e}")
     
     def get_default_integrations(self) -> Dict[str, Dict[str, Any]]:
-        """Default integration definitions"""
+        """Default integration definitions. MCP-first: GitHub, Cloudflare, GCP, Azure/OpenAI, local models."""
         return {
+            # MCP servers + providers (first-class; default disabled)
+            "github": {
+                "name": "GitHub",
+                "category": "mcp",
+                "auth_type": "api_key",
+                "mcp_server": True,
+                "capabilities": ["repo_read", "audit_log", "workflows"],
+                "icon": "fab fa-github",
+                "color": "#24292e",
+                "status": "available",
+                "enabled_by_default": False,
+                "description": "GitHub API / MCP server for repos and audit",
+            },
+            "cloudflare": {
+                "name": "Cloudflare",
+                "category": "mcp",
+                "auth_type": "api_key",
+                "mcp_server": True,
+                "capabilities": ["logs_read", "dns", "waf"],
+                "icon": "fas fa-cloud",
+                "color": "#F38020",
+                "status": "available",
+                "enabled_by_default": False,
+                "description": "Cloudflare logs and WAF (MCP)",
+            },
+            "gcp": {
+                "name": "Google Cloud",
+                "category": "mcp",
+                "auth_type": "oauth2",
+                "mcp_server": True,
+                "capabilities": ["storage", "bigquery", "run"],
+                "icon": "fab fa-google",
+                "color": "#4285F4",
+                "status": "available",
+                "enabled_by_default": False,
+                "description": "GCP APIs via MCP",
+            },
+            "azure_openai": {
+                "name": "Azure / OpenAI",
+                "category": "ai",
+                "auth_type": "api_key",
+                "mcp_server": False,
+                "capabilities": ["chat", "completion", "embeddings"],
+                "icon": "fas fa-brain",
+                "color": "#0078D4",
+                "status": "available",
+                "enabled_by_default": False,
+                "description": "Azure OpenAI or OpenAI API",
+            },
+            "local_models": {
+                "name": "Local models (Ollama)",
+                "category": "ai",
+                "auth_type": "none",
+                "mcp_server": False,
+                "capabilities": ["chat", "completion"],
+                "icon": "fas fa-server",
+                "color": "#6B7280",
+                "status": "available",
+                "enabled_by_default": True,
+                "description": "Local Ollama / Brain",
+            },
             # AI & ML
             "openai": {
                 "name": "OpenAI",

@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Proactive - Daena VP{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-white">Proactive rules</h1>
+            <p class="text-gray-400 text-sm mt-1">Rules and events in Daena UI</p>
+        </div>
+        <button onclick="loadRules(); loadEvents();" class="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-white transition-colors">
+            <i class="fas fa-sync-alt mr-2"></i>Refresh
+        </button>
+    </div>
+
+    <div class="glass-panel p-6 rounded-xl">
+        <h2 class="text-lg font-medium text-white mb-4">Rules</h2>
+        <div id="rules-list" class="space-y-3">
+            <div class="text-center py-8 text-gray-500">Loading...</div>
+        </div>
+        <div class="mt-4">
+            <button onclick="document.getElementById('new-rule-form').classList.toggle('hidden')" class="px-4 py-2 rounded-lg bg-daena-gold/20 text-daena-gold hover:bg-daena-gold/30 text-sm">
+                <i class="fas fa-plus mr-2"></i>New rule
+            </button>
+        </div>
+        <div id="new-rule-form" class="hidden mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
+            <input type="text" id="new-rule-name" placeholder="Rule name" class="w-full max-w-md mb-2 px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-white">
+            <input type="text" id="new-rule-cron" placeholder="Cron (e.g. 0 9 * * *)" class="w-full max-w-md mb-2 px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-white">
+            <input type="text" id="new-rule-trigger" placeholder="Event trigger (e.g. health_fail)" class="w-full max-w-md mb-2 px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-white">
+            <button onclick="createRule()" class="px-4 py-2 rounded-lg bg-daena-gold text-black font-medium text-sm">Create</button>
+        </div>
+    </div>
+
+    <div class="glass-panel p-6 rounded-xl">
+        <h2 class="text-lg font-medium text-white mb-4">Recent events</h2>
+        <div id="events-list" class="space-y-2 max-h-64 overflow-y-auto text-sm text-gray-400">
+            <div class="text-center py-4 text-gray-500">Loading...</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const API_BASE = (window.DAENA_API_BASE || (window.location.origin + '/api/v1')).replace(/\/+$/, '') || (window.location.origin + '/api/v1');
+
+    function escapeHtml(s) {
+        if (s == null) return '';
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    async function loadRules() {
+        const el = document.getElementById('rules-list');
+        try {
+            const r = await fetch(API_BASE + '/api/v1/proactive/rules');
+            const data = await r.json();
+            if (!data.success || !data.rules) {
+                el.innerHTML = '<div class="text-red-400">Failed to load rules</div>';
+                return;
+            }
+            el.innerHTML = data.rules.map(rule => `
+                <div class="flex items-center justify-between p-4 rounded-lg bg-white/5 border border-white/10">
+                    <div>
+                        <span class="font-medium text-white">${escapeHtml(rule.name)}</span>
+                        <span class="text-gray-500 text-sm ml-2">${escapeHtml(rule.id)}</span>
+                        ${rule.cron ? '<p class="text-gray-400 text-sm mt-1">Cron: ' + escapeHtml(rule.cron) + '</p>' : ''}
+                        ${rule.event_trigger ? '<p class="text-gray-400 text-sm">Trigger: ' + escapeHtml(rule.event_trigger) + '</p>' : ''}
+                    </div>
+                    <button onclick="runOnce('${escapeHtml(rule.id)}')" class="px-3 py-1.5 rounded-lg bg-daena-gold/20 text-daena-gold hover:bg-daena-gold/30 text-sm">Run once</button>
+                </div>
+            `).join('');
+        } catch (e) {
+            el.innerHTML = '<div class="text-red-400">Error: ' + escapeHtml(String(e)) + '</div>';
+        }
+    }
+
+    async function createRule() {
+        const name = document.getElementById('new-rule-name').value.trim();
+        if (!name) {
+            if (window.showToast) window.showToast('Enter rule name', 'error');
+            return;
+        }
+        const cron = document.getElementById('new-rule-cron').value.trim() || null;
+        const event_trigger = document.getElementById('new-rule-trigger').value.trim() || null;
+        try {
+            const r = await fetch(API_BASE + '/api/v1/proactive/rules', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, cron, event_trigger, enabled: true })
+            });
+            const data = await r.json();
+            if (data.success) {
+                document.getElementById('new-rule-name').value = '';
+                document.getElementById('new-rule-cron').value = '';
+                document.getElementById('new-rule-trigger').value = '';
+                document.getElementById('new-rule-form').classList.add('hidden');
+                loadRules();
+                loadEvents();
+                if (window.showToast) window.showToast('Rule created', 'success');
+            } else {
+                if (window.showToast) window.showToast(data.detail || 'Create failed', 'error');
+            }
+        } catch (e) {
+            if (window.showToast) window.showToast('Request failed', 'error');
+        }
+    }
+
+    async function runOnce(ruleId) {
+        try {
+            const r = await fetch(API_BASE + '/api/v1/proactive/run_once?rule_id=' + encodeURIComponent(ruleId), { method: 'POST' });
+            const data = await r.json();
+            if (data.success) {
+                loadEvents();
+                if (window.showToast) window.showToast('Rule run triggered', 'success');
+            } else {
+                if (window.showToast) window.showToast(data.detail || 'Run failed', 'error');
+            }
+        } catch (e) {
+            if (window.showToast) window.showToast('Request failed', 'error');
+        }
+    }
+
+    async function loadEvents() {
+        const el = document.getElementById('events-list');
+        try {
+            const r = await fetch(API_BASE + '/api/v1/proactive/events?limit=50');
+            const data = await r.json();
+            if (!data.success || !data.events) {
+                el.innerHTML = '<div class="text-gray-500">No events</div>';
+                return;
+            }
+            el.innerHTML = data.events.length === 0
+                ? '<p class="text-gray-500">No recent events</p>'
+                : data.events.map(ev => `
+                    <div class="p-2 rounded bg-black/20 border border-white/5">
+                        <span class="text-daena-gold">${escapeHtml(ev.rule_id)}</span>
+                        <span class="text-gray-500 ml-2">${escapeHtml(ev.ts || '')}</span>
+                        <pre class="text-xs mt-1 overflow-x-auto">${escapeHtml(JSON.stringify(ev.payload || {}))}</pre>
+                    </div>
+                `).join('');
+        } catch (e) {
+            el.innerHTML = '<div class="text-red-400">Error loading events</div>';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadRules();
+        loadEvents();
+    });
+</script>
+{% endblock %}

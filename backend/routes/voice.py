@@ -45,13 +45,15 @@ async def voice_status():
             "status": "online",
             "service_status": status,
             "settings": settings,
+            "talk_active": settings.get("talk_active", False),
             "command_parser": "ready"
         }
     except Exception as e:
         logger.error(f"Voice service check failed: {e}")
         return {
             "status": "error",
-            "error": str(e)
+            "error": str(e),
+            "talk_active": False
         }
 
 @router.post("/settings")
@@ -79,10 +81,30 @@ async def get_voice_settings():
 class VoiceModeRequest(BaseModel):
     enabled: bool
 
+class SpeakRequest(BaseModel):
+    text: str
+
+@router.post("/speak")
+async def speak_text(request: SpeakRequest):
+    """Speak text via TTS (e.g. after chat response when talk mode is on). Respects talk_active."""
+    try:
+        result = await voice_service.text_to_speech(
+            request.text,
+            voice_type="daena",
+            auto_read=True
+        )
+        if result and result.get("error"):
+            return {"success": False, "error": result["error"]}
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Speak failed: {e}")
+        return {"success": False, "error": str(e)}
+
 @router.post("/talk-mode")
 async def set_talk_mode(request: VoiceModeRequest):
-    """Enable/disable continuous talk mode"""
-    return await voice_service.set_talk_active(request.enabled)
+    """Enable/disable continuous talk mode. Returns talk_active so frontend stays in sync."""
+    result = await voice_service.set_talk_active(request.enabled)
+    return { **result, "talk_active": request.enabled }
 
 @router.post("/toggle")
 async def toggle_voice(request: VoiceModeRequest = None):
@@ -94,8 +116,8 @@ async def toggle_voice(request: VoiceModeRequest = None):
         if request and request.enabled is not None:
             new_enabled = request.enabled
         else:
-            # Toggle current state
-            new_enabled = not current_status.get("talk_active", False)
+            settings = voice_service.get_voice_settings()
+            new_enabled = not settings.get("talk_active", False)
         
         result = await voice_service.set_talk_active(new_enabled)
         

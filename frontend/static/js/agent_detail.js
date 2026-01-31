@@ -173,8 +173,9 @@ async function sendAgentMessage() {
         const responseDiv = userMsgDiv.querySelector('.agent-response');
 
         if (data.success && data.response) {
-            // Real response from Ollama
-            responseDiv.innerHTML = `<span style="font-size: 13px; color: #E5E7EB;">${formatResponse(data.response)}</span>`;
+            // Real response from Ollama (escape first, then format markdown)
+            const safeResponse = escapeHtml(data.response);
+            responseDiv.innerHTML = '<span style="font-size: 13px; color: #E5E7EB;">' + formatResponse(safeResponse) + '</span>';
 
             // Store response in history
             chatHistory.push({ role: 'assistant', content: data.response, timestamp: new Date().toISOString() });
@@ -182,12 +183,12 @@ async function sendAgentMessage() {
             // Save to chat history in backend
             saveChatHistory(message, data.response);
         } else {
-            responseDiv.innerHTML = `<span style="font-size: 13px; color: #FF6464;">❌ ${data.error || 'Failed to get response. Is Ollama running?'}</span>`;
+            responseDiv.innerHTML = '<span style="font-size: 13px; color: #FF6464;">❌ ' + escapeHtml(data.error || 'Failed to get response. Is Ollama running?') + '</span>';
         }
     } catch (error) {
         console.error('Chat error:', error);
         const responseDiv = userMsgDiv.querySelector('.agent-response');
-        responseDiv.innerHTML = `<span style="font-size: 13px; color: #FF6464;">❌ Error: ${error.message}. Check if backend is running.</span>`;
+        responseDiv.innerHTML = '<span style="font-size: 13px; color: #FF6464;">❌ Error: ' + escapeHtml(error && error.message ? error.message : 'Unknown error') + '. Check if backend is running.</span>';
     }
 
     chat.scrollTop = chat.scrollHeight;
@@ -288,6 +289,7 @@ function configureAgent() {
 
 // ============ UTILITIES ============
 function escapeHtml(text) {
+    if (text == null || text === undefined) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;

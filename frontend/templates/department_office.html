@@ -350,7 +350,7 @@
             <h3>Department Stats</h3>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                 <div>
-                    <div class="stat-value" style="color: {{ dept_color }}">6</div>
+                    <div class="stat-value" style="color: {{ dept_color }}">{{ agent_count | default(6) }}</div>
                     <div class="stat-label">Agents</div>
                 </div>
                 <div>
@@ -368,40 +368,32 @@
 
         <div class="stat-card">
             <h3>Team</h3>
-            <div class="team-list">
+            <div class="team-list" id="team-list">
+                {% if agents %}
+                {% for agent in agents %}
                 <div class="team-member">
-                    <div class="team-avatar" style="background: {{ dept_color }}">A1</div>
+                    <div class="team-avatar" style="background: {{ dept_color }}">{{ (agent.name if agent.name is defined else agent.get('name', 'Ag'))[:2] if agent else 'Ag' }}</div>
                     <div>
-                        <div style="color: white; font-size: 12px;">Advisor A</div>
+                        <div style="color: white; font-size: 12px;">{{ agent.name | default('Agent') }}</div>
+                        <div style="color: #9CA3AF; font-size: 10px;">{{ agent.role | default('') }}</div>
                     </div>
+                    <span class="status-badge online" style="margin-left: auto;">Online</span>
                 </div>
-                <div class="team-member">
-                    <div class="team-avatar" style="background: {{ dept_color }}">A2</div>
-                    <div>
-                        <div style="color: white; font-size: 12px;">Advisor B</div>
-                    </div>
-                </div>
-                <div class="team-member">
-                    <div class="team-avatar" style="background: {{ dept_color }}">SI</div>
-                    <div>
-                        {% for agent in agents %}
-                        <div class="team-member">
-                            <div class="team-avatar" style="background: {{ dept_color }};">{{ agent.name[:2] }}</div>
-                            <div style="font-size: 12px; color: white;">{{ agent.name }}</div>
-                            <div class="status-badge online" style="margin-left: auto;">Online</div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
+                {% endfor %}
+                {% else %}
+                <div style="color: #9CA3AF; font-size: 12px;">Loading agents...</div>
+                {% endif %}
             </div>
         </div>
-        {% endblock %}
+    </div>
+</div>
+{% endblock %}
 
-        {% block scripts %}
+{% block scripts %}
         <script>
             const deptId = "{{ dept_id }}";
             const deptColor = "{{ dept_color }}";
-            const repInitials = "{{ agents[0].name[:2] if agents else 'DA' }}";
+            const repInitials = "{{ rep_initials }}";
 
             let currentSessionId = null;
             let chatSessions = [];
@@ -438,22 +430,46 @@
 
             function renderChatHistoryList() {
                 const container = document.getElementById('chat-history-list');
+                if (!container) return;
                 if (!chatSessions.length) {
                     container.innerHTML = '<div style="color: #9CA3AF; font-size: 11px; text-align: center; padding: 10px;">No history yet</div>';
                     return;
                 }
 
                 container.innerHTML = chatSessions.map(session => `
-            <div onclick="switchSession('${session.session_id}')" 
-                 style="padding: 8px; border-radius: 6px; background: ${session.session_id === currentSessionId ? 'rgba(255,255,255,0.1)' : 'transparent'}; cursor: pointer; transition: background 0.2s;">
-                <div style="color: white; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    ${session.title || 'New Chat'}
+            <div class="chat-history-row" style="display: flex; align-items: center; gap: 6px; padding: 8px; border-radius: 6px; background: ${session.session_id === currentSessionId ? 'rgba(255,255,255,0.1)' : 'transparent'}; cursor: pointer; transition: background 0.2s;" onclick="switchSession('${(session.session_id || '').replace(/'/g, "\\'")}')">
+                <div style="flex: 1; min-width: 0;">
+                    <div style="color: white; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${(session.title || 'New Chat').replace(/</g, '&lt;')}</div>
+                    <div style="color: #9CA3AF; font-size: 10px;">${session.created_at ? new Date(session.created_at).toLocaleDateString() : ''}</div>
                 </div>
-                <div style="color: #9CA3AF; font-size: 10px;">
-                    ${new Date(session.created_at).toLocaleDateString()}
-                </div>
+                <button type="button" onclick="event.stopPropagation(); deleteDepartmentSession('${(session.session_id || '').replace(/'/g, "\\'")}');" title="Delete chat" style="padding: 4px; background: transparent; border: none; color: #9CA3AF; cursor: pointer; border-radius: 4px;" onmouseover="this.style.color='#EF4444'" onmouseout="this.style.color='#9CA3AF'"><i class="fas fa-trash-alt" style="font-size: 11px;"></i></button>
             </div>
         `).join('');
+            }
+
+            async function deleteDepartmentSession(sessionId) {
+                if (!sessionId || !confirm('Delete this chat? This cannot be undone.')) return;
+                try {
+                    const response = await fetch(`/api/v1/departments/${deptId}/chat/sessions/${sessionId}`, { method: 'DELETE' });
+                    const data = await response.json();
+                    if (response.ok && (data.success !== false)) {
+                        if (currentSessionId === sessionId) {
+                            currentSessionId = null;
+                            document.getElementById('messages').innerHTML = `
+                                <div class="message assistant rep">
+                                    <div class="message-avatar" style="background: ${deptColor}">${repInitials}</div>
+                                    <div class="message-content">Chat deleted. Start a new conversation below.</div>
+                                </div>`;
+                        }
+                        await loadChatSessions();
+                        if (window.showToast) window.showToast('Chat deleted', 'success');
+                    } else {
+                        if (window.showToast) window.showToast(data.detail || 'Failed to delete', 'error');
+                    }
+                } catch (e) {
+                    console.error('Delete failed:', e);
+                    if (window.showToast) window.showToast('Failed to delete chat', 'error');
+                }
             }
 
             async function switchSession(sessionId) {
@@ -532,7 +548,8 @@
             }
 
             async function sendMessage() {
-                const input = document.getElementById('message-input');
+                const input = document.getElementById('messageInput');
+                if (!input) return;
                 const message = input.value.trim();
                 if (!message) return;
 
@@ -559,7 +576,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             message,
-                            session_id: currentSessionId // Pass current session ID if exists
+                            context: { session_id: currentSessionId }
                         })
                     });
 
@@ -583,11 +600,13 @@
                     typingDiv.remove();
                     console.error('Chat error:', e);
                     appendMessage('assistant', 'Error connecting to server.');
+                    if (window.showToast) window.showToast('Could not send message. Try again.', 'error');
                 }
             }
 
-            // Handle Enter key
-            document.getElementById('message-input').addEventListener('keypress', (e) => {
+            // Handle Enter key (id matches input: messageInput)
+            const msgInput = document.getElementById('messageInput');
+            if (msgInput) msgInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') sendMessage();
             });
 

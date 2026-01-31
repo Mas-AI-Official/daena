@@ -1,34 +1,34 @@
 {
-    "browser": {
-        "name": "Browser MCP",
-        "enabled": true,
-        "command": "npx",
-        "args": [
-            "-y",
-            "@anthropic/mcp-browser"
-        ],
-        "env": {},
-        "tools": [
-            "navigate",
-            "click",
-            "screenshot",
-            "search"
-        ]
-    },
-    "filesystem": {
-        "name": "Filesystem MCP",
-        "enabled": true,
-        "command": "npx",
-        "args": [
-            "-y",
-            "@anthropic/mcp-filesystem",
-            "."
-        ],
-        "env": {},
-        "tools": [
-            "read_file",
-            "write_file",
-            "list_directory"
-        ]
-    }
+  "browser": {
+    "name": "Browser MCP",
+    "enabled": true,
+    "command": "npx",
+    "args": [
+      "-y",
+      "@anthropic/mcp-browser"
+    ],
+    "env": {},
+    "tools": [
+      "navigate",
+      "click",
+      "screenshot",
+      "search"
+    ]
+  },
+  "filesystem": {
+    "name": "Filesystem MCP",
+    "enabled": true,
+    "command": "npx",
+    "args": [
+      "-y",
+      "@anthropic/mcp-filesystem",
+      "."
+    ],
+    "env": {},
+    "tools": [
+      "read_file",
+      "write_file",
+      "list_directory"
+    ]
+  }
 }

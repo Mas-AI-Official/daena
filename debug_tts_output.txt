@@ -1,0 +1,23 @@
+INFO:audio.audio_service.tts_service:Initializing XTTS-v2 TTS service...
+INFO:audio.audio_service.tts_service:Using voice sample: D:\Ideas\Daena_old_upgrade_20251213\daena_voice.wav
+INFO:audio.audio_service.tts_service:Loading XTTS-v2 from: D:\Ideas\Daena_old_upgrade_20251213\models\tts
+D:\Ideas\Daena_old_upgrade_20251213\venv_daena_audio_py310\lib\site-packages\transformers\utils\hub.py:127: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+INFO:audio.audio_service.tts_service:\u2705 XTTS-v2 TTS initialized successfully
+INFO:audio.audio_service.tts_service:Generating speech: 'This is a test of the voice system....' (lang=en)
+The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+INFO:audio.audio_service.tts_service:\u2705 Speech generated: test_output.wav
+PyTorch 2.6+ weights_only fix applied via monkeypatch
+torchaudio.load patched with soundfile
+Added C:\ffmpeg\bin to PATH for FFmpeg
+Import successful
+Initializing TTSService(use_gpu=False)...
+ > tts_models/multilingual/multi-dataset/xtts_v2 is already downloaded.
+ > Using model: xtts
+TTSService initialized successfully!
+Testing speak()...
+ > Text splitted to sentences.
+['This is a test of the voice system.']
+ > Processing time: 12.533987283706665
+ > Real-time factor: 4.69258386996964
+speak() successful! Output: D:\Ideas\Daena_old_upgrade_20251213\test_output.wav

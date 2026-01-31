@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMP Canvas - Node Graph Editor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-canvas: #1a1a24;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-purple: #8b5cf6;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --grid-color: rgba(255, 255, 255, 0.03);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Left Sidebar - Node Palette */
+        .sidebar {
+            width: 280px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .sidebar-search {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sidebar-search input {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 0.875rem;
+        }
+
+        .node-categories {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+        }
+
+        .category {
+            margin-bottom: 0.5rem;
+        }
+
+        .category-header {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .category-nodes {
+            padding-left: 0.5rem;
+        }
+
+        .node-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            cursor: grab;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+        }
+
+        .node-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .node-item.dragging {
+            opacity: 0.5;
+        }
+
+        .node-icon {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
+        }
+
+        /* Main Canvas */
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .canvas-toolbar {
+            height: 48px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 1rem;
+            gap: 0.5rem;
+        }
+
+        .toolbar-btn {
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+        }
+
+        .toolbar-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .toolbar-btn.primary {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        .toolbar-btn.primary:hover {
+            background: #2563eb;
+        }
+
+        .toolbar-separator {
+            width: 1px;
+            height: 24px;
+            background: var(--border-color);
+            margin: 0 0.5rem;
+        }
+
+        .toolbar-title {
+            flex: 1;
+            font-weight: 600;
+        }
+
+        .canvas {
+            flex: 1;
+            position: relative;
+            background: var(--bg-canvas);
+            background-image:
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 20px 20px;
+            overflow: hidden;
+        }
+
+        .canvas-inner {
+            position: absolute;
+            width: 5000px;
+            height: 5000px;
+            transform-origin: 0 0;
+        }
+
+        /* Node */
+        .graph-node {
+            position: absolute;
+            min-width: 180px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            cursor: move;
+            user-select: none;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+            transition: box-shadow 0.2s;
+        }
+
+        .graph-node:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+        }
+
+        .graph-node.selected {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+        }
+
+        .node-header {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-radius: 0.75rem 0.75rem 0 0;
+        }
+
+        .node-badge {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+        }
+
+        .node-title {
+            flex: 1;
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+
+        .node-menu-btn {
+            width: 24px;
+            height: 24px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-radius: 0.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .node-menu-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .node-body {
+            padding: 0.75rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .node-status {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .status-dot.healthy {
+            background: var(--accent-green);
+        }
+
+        .status-dot.unhealthy {
+            background: var(--accent-red);
+        }
+
+        .status-dot.unknown {
+            background: var(--text-secondary);
+        }
+
+        /* Ports */
+        .node-ports {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0.75rem;
+        }
+
+        .port {
+            width: 12px;
+            height: 12px;
+            background: var(--bg-primary);
+            border: 2px solid var(--border-color);
+            border-radius: 50%;
+            cursor: crosshair;
+            transition: all 0.2s;
+        }
+
+        .port:hover {
+            border-color: var(--accent-blue);
+            transform: scale(1.2);
+        }
+
+        .port.input {
+            margin-left: -6px;
+        }
+
+        .port.output {
+            margin-right: -6px;
+        }
+
+        /* Edges (SVG) */
+        .edges-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .edge {
+            stroke: var(--text-secondary);
+            stroke-width: 2;
+            fill: none;
+            pointer-events: stroke;
+        }
+
+        .edge:hover {
+            stroke: var(--accent-blue);
+            stroke-width: 3;
+        }
+
+        .edge.selected {
+            stroke: var(--accent-blue);
+        }
+
+        /* Right Panel - Node Config */
+        .config-panel {
+            width: 320px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            display: none;
+            flex-direction: column;
+        }
+
+        .config-panel.visible {
+            display: flex;
+        }
+
+        .config-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .config-close {
+            width: 24px;
+            height: 24px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-radius: 0.25rem;
+        }
+
+        .config-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .config-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .config-section h4 {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 0.75rem;
+        }
+
+        .config-field {
+            margin-bottom: 1rem;
+        }
+
+        .config-field label {
+            display: block;
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .config-field input,
+        .config-field select {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 0.875rem;
+        }
+
+        /* Empty State */
+        .empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .empty-state .icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .empty-state h3 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        /* Mini Map */
+        .minimap {
+            position: absolute;
+            bottom: 1rem;
+            right: 1rem;
+            width: 150px;
+            height: 100px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            opacity: 0.8;
+        }
+
+        /* Zoom Controls */
+        .zoom-controls {
+            position: absolute;
+            bottom: 1rem;
+            left: 1rem;
+            display: flex;
+            gap: 0.25rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            padding: 0.25rem;
+        }
+
+        .zoom-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            color: var(--text-primary);
+            cursor: pointer;
+            border-radius: 0.25rem;
+            font-size: 1rem;
+        }
+
+        .zoom-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .zoom-level {
+            padding: 0 0.5rem;
+            display: flex;
+            align-items: center;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar - Node Palette -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>🔗 Nodes</h2>
+            </div>
+            <div class="sidebar-search">
+                <input type="text" placeholder="Search nodes..." id="nodeSearch">
+            </div>
+            <div class="node-categories" id="nodeCategories">
+                <!-- Categories loaded dynamically -->
+            </div>
+        </aside>
+
+        <!-- Main Canvas -->
+        <main class="canvas-container">
+            <div class="canvas-toolbar">
+                <span class="toolbar-title" id="graphTitle">Untitled Workflow</span>
+                <button class="toolbar-btn" onclick="saveGraph()">💾 Save</button>
+                <button class="toolbar-btn" onclick="loadGraph()">📂 Load</button>
+                <div class="toolbar-separator"></div>
+                <button class="toolbar-btn" onclick="validateGraph()">✅ Validate</button>
+                <button class="toolbar-btn primary" onclick="executeGraph()">▶️ Execute</button>
+            </div>
+
+            <div class="canvas" id="canvas">
+                <svg class="edges-container" id="edgesContainer"></svg>
+                <div class="canvas-inner" id="canvasInner">
+                    <!-- Nodes rendered here -->
+                </div>
+
+                <div class="empty-state" id="emptyState">
+                    <div class="icon">🔗</div>
+                    <h3>Start Building Your Workflow</h3>
+                    <p>Drag nodes from the left panel onto the canvas</p>
+                </div>
+
+                <div class="zoom-controls">
+                    <button class="zoom-btn" onclick="zoomOut()">−</button>
+                    <span class="zoom-level" id="zoomLevel">100%</span>
+                    <button class="zoom-btn" onclick="zoomIn()">+</button>
+                    <button class="zoom-btn" onclick="resetZoom()">↺</button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Panel - Node Config -->
+        <aside class="config-panel" id="configPanel">
+            <div class="config-header">
+                <h3 id="configTitle">Node Configuration</h3>
+                <button class="config-close" onclick="closeConfig()">✕</button>
+            </div>
+            <div class="config-body" id="configBody">
+                <!-- Config fields rendered dynamically -->
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1/cmp/graph';
+
+        // State
+        let currentGraph = null;
+        let selectedNode = null;
+        let scale = 1;
+        let pan = { x: 0, y: 0 };
+        let nodes = [];
+        let edges = [];
+        let categories = {};
+
+        // Initialize
+        async function init() {
+            await loadCategories();
+            await loadTemplates();
+        }
+
+        async function loadCategories() {
+            try {
+                const resp = await fetch(`${API_BASE}/categories`);
+                const data = await resp.json();
+                categories = data.categories.reduce((acc, cat) => {
+                    acc[cat.id] = cat;
+                    return acc;
+                }, {});
+                renderNodePalette();
+            } catch (e) {
+                console.error('Failed to load categories:', e);
+            }
+        }
+
+        function renderNodePalette() {
+            const container = document.getElementById('nodeCategories');
+
+            const nodeTypes = {
+                trigger: ['Webhook', 'Schedule', 'Event', 'Manual'],
+                email: ['Send Email', 'Read Email', 'Email Trigger'],
+                crm: ['Create Lead', 'Update Contact', 'CRM Trigger'],
+                calendar: ['Create Event', 'Check Availability'],
+                llm: ['GPT-4', 'Claude', 'Gemini', 'Custom LLM'],
+                storage: ['Read File', 'Write File', 'Upload'],
+                qa: ['Run Tests', 'Security Scan', 'Code Review'],
+                agent: ['Daena Agent', 'Custom Agent'],
+            };
+
+            container.innerHTML = Object.entries(categories).map(([id, cat]) => `
+                <div class="category">
+                    <div class="category-header">
+                        <span>${cat.icon}</span>
+                        <span>${cat.name}</span>
+                    </div>
+                    <div class="category-nodes">
+                        ${(nodeTypes[id] || ['Action']).map(name => `
+                            <div class="node-item" 
+                                 draggable="true"
+                                 data-type="${id}"
+                                 data-name="${name}"
+                                 ondragstart="onDragStart(event)">
+                                <div class="node-icon" style="background: ${cat.color}20; color: ${cat.color}">
+                                    ${cat.icon}
+                                </div>
+                                <span>${name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Drag and Drop
+        function onDragStart(e) {
+            e.dataTransfer.setData('node-type', e.target.dataset.type);
+            e.dataTransfer.setData('node-name', e.target.dataset.name);
+            e.target.classList.add('dragging');
+        }
+
+        document.getElementById('canvas').addEventListener('dragover', e => {
+            e.preventDefault();
+        });
+
+        document.getElementById('canvas').addEventListener('drop', e => {
+            e.preventDefault();
+            const type = e.dataTransfer.getData('node-type');
+            const name = e.dataTransfer.getData('node-name');
+
+            const rect = e.target.getBoundingClientRect();
+            const x = (e.clientX - rect.left) / scale;
+            const y = (e.clientY - rect.top) / scale;
+
+            addNode(type, name, x, y);
+        });
+
+        function addNode(type, name, x, y) {
+            const id = `node_${Date.now()}`;
+            const cat = categories[type] || { icon: '📦', color: '#94a3b8' };
+
+            const node = {
+                id,
+                name,
+                type,
+                category: type,
+                position: { x, y },
+                config: {},
+                health: 'unknown'
+            };
+
+            nodes.push(node);
+            renderNode(node);
+            hideEmptyState();
+        }
+
+        function renderNode(node) {
+            const container = document.getElementById('canvasInner');
+            const cat = categories[node.category] || { icon: '📦', color: '#94a3b8' };
+
+            const nodeEl = document.createElement('div');
+            nodeEl.className = 'graph-node';
+            nodeEl.id = node.id;
+            nodeEl.style.left = `${node.position.x}px`;
+            nodeEl.style.top = `${node.position.y}px`;
+
+            nodeEl.innerHTML = `
+                <div class="node-header" style="border-left: 3px solid ${cat.color}">
+                    <div class="node-badge" style="background: ${cat.color}20; color: ${cat.color}">
+                        ${cat.icon}
+                    </div>
+                    <span class="node-title">${node.name}</span>
+                    <button class="node-menu-btn" onclick="openConfig('${node.id}')">⚙️</button>
+                </div>
+                <div class="node-body">
+                    <div class="node-status">
+                        <span class="status-dot ${node.health}"></span>
+                        <span>${node.health}</span>
+                    </div>
+                </div>
+                <div class="node-ports">
+                    <div class="port input" data-node="${node.id}" data-port="input"></div>
+                    <div class="port output" data-node="${node.id}" data-port="output"></div>
+                </div>
+            `;
+
+            // Make draggable
+            nodeEl.addEventListener('mousedown', e => startDrag(e, node));
+            nodeEl.addEventListener('click', e => selectNode(node.id));
+
+            container.appendChild(nodeEl);
+        }
+
+        // Node Dragging
+        let isDragging = false;
+        let dragNode = null;
+        let dragOffset = { x: 0, y: 0 };
+
+        function startDrag(e, node) {
+            if (e.target.classList.contains('port') || e.target.classList.contains('node-menu-btn')) return;
+
+            isDragging = true;
+            dragNode = node;
+
+            const nodeEl = document.getElementById(node.id);
+            dragOffset = {
+                x: e.clientX - nodeEl.offsetLeft,
+                y: e.clientY - nodeEl.offsetTop
+            };
+        }
+
+        document.addEventListener('mousemove', e => {
+            if (!isDragging || !dragNode) return;
+
+            const x = e.clientX - dragOffset.x;
+            const y = e.clientY - dragOffset.y;
+
+            const nodeEl = document.getElementById(dragNode.id);
+            nodeEl.style.left = `${x}px`;
+            nodeEl.style.top = `${y}px`;
+
+            dragNode.position = { x, y };
+            renderEdges();
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            dragNode = null;
+        });
+
+        // Node Selection
+        function selectNode(nodeId) {
+            document.querySelectorAll('.graph-node').forEach(n => n.classList.remove('selected'));
+            document.getElementById(nodeId).classList.add('selected');
+            selectedNode = nodes.find(n => n.id === nodeId);
+        }
+
+        // Config Panel
+        function openConfig(nodeId) {
+            const node = nodes.find(n => n.id === nodeId);
+            if (!node) return;
+
+            document.getElementById('configTitle').textContent = node.name;
+            document.getElementById('configBody').innerHTML = `
+                <div class="config-section">
+                    <h4>General</h4>
+                    <div class="config-field">
+                        <label>Name</label>
+                        <input type="text" value="${node.name}" onchange="updateNodeName('${nodeId}', this.value)">
+                    </div>
+                    <div class="config-field">
+                        <label>Category</label>
+                        <select disabled>
+                            <option>${categories[node.category]?.name || node.category}</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="config-section">
+                    <h4>Actions</h4>
+                    <button class="toolbar-btn" onclick="testNode('${nodeId}')" style="width: 100%; margin-bottom: 0.5rem;">🧪 Test</button>
+                    <button class="toolbar-btn" onclick="deleteNode('${nodeId}')" style="width: 100%; color: var(--accent-red);">🗑️ Delete</button>
+                </div>
+            `;
+
+            document.getElementById('configPanel').classList.add('visible');
+        }
+
+        function closeConfig() {
+            document.getElementById('configPanel').classList.remove('visible');
+        }
+
+        function updateNodeName(nodeId, name) {
+            const node = nodes.find(n => n.id === nodeId);
+            if (node) {
+                node.name = name;
+                document.getElementById(nodeId).querySelector('.node-title').textContent = name;
+            }
+        }
+
+        function deleteNode(nodeId) {
+            nodes = nodes.filter(n => n.id !== nodeId);
+            edges = edges.filter(e => e.source_node_id !== nodeId && e.target_node_id !== nodeId);
+
+            document.getElementById(nodeId).remove();
+            closeConfig();
+            renderEdges();
+
+            if (nodes.length === 0) showEmptyState();
+        }
+
+        // Edges
+        function renderEdges() {
+            const svg = document.getElementById('edgesContainer');
+
+            svg.innerHTML = edges.map(edge => {
+                const sourceNode = document.getElementById(edge.source_node_id);
+                const targetNode = document.getElementById(edge.target_node_id);
+
+                if (!sourceNode || !targetNode) return '';
+
+                const sourcePort = sourceNode.querySelector('.port.output');
+                const targetPort = targetNode.querySelector('.port.input');
+
+                const x1 = sourceNode.offsetLeft + sourceNode.offsetWidth;
+                const y1 = sourceNode.offsetTop + sourceNode.offsetHeight / 2;
+                const x2 = targetNode.offsetLeft;
+                const y2 = targetNode.offsetTop + targetNode.offsetHeight / 2;
+
+                const cx1 = x1 + Math.abs(x2 - x1) / 2;
+                const cx2 = x2 - Math.abs(x2 - x1) / 2;
+
+                return `<path class="edge" d="M${x1},${y1} C${cx1},${y1} ${cx2},${y2} ${x2},${y2}"/>`;
+            }).join('');
+        }
+
+        // Zoom
+        function zoomIn() { setZoom(scale + 0.1); }
+        function zoomOut() { setZoom(scale - 0.1); }
+        function resetZoom() { setZoom(1); }
+
+        function setZoom(newScale) {
+            scale = Math.max(0.25, Math.min(2, newScale));
+            document.getElementById('canvasInner').style.transform = `scale(${scale})`;
+            document.getElementById('zoomLevel').textContent = `${Math.round(scale * 100)}%`;
+        }
+
+        // Empty State
+        function hideEmptyState() {
+            document.getElementById('emptyState').style.display = 'none';
+        }
+
+        function showEmptyState() {
+            document.getElementById('emptyState').style.display = 'block';
+        }
+
+        // API Actions
+        async function saveGraph() {
+            const graphData = {
+                id: currentGraph?.id || `graph_${Date.now()}`,
+                name: document.getElementById('graphTitle').textContent,
+                nodes,
+                edges
+            };
+
+            try {
+                await fetch(API_BASE, {
+                    method: currentGraph ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(graphData)
+                });
+                alert('Graph saved!');
+            } catch (e) {
+                alert('Failed to save: ' + e.message);
+            }
+        }
+
+        async function loadGraph() {
+            const id = prompt('Enter graph ID:');
+            if (!id) return;
+
+            try {
+                const resp = await fetch(`${API_BASE}/${id}`);
+                if (!resp.ok) throw new Error('Graph not found');
+
+                const graph = await resp.json();
+                currentGraph = graph;
+                nodes = graph.nodes || [];
+                edges = graph.edges || [];
+
+                document.getElementById('graphTitle').textContent = graph.name;
+                document.getElementById('canvasInner').innerHTML = '';
+
+                nodes.forEach(renderNode);
+                renderEdges();
+
+                if (nodes.length > 0) hideEmptyState();
+            } catch (e) {
+                alert('Failed to load: ' + e.message);
+            }
+        }
+
+        async function validateGraph() {
+            if (!currentGraph?.id) {
+                alert('Save the graph first');
+                return;
+            }
+
+            try {
+                const resp = await fetch(`${API_BASE}/${currentGraph.id}/validate`);
+                const result = await resp.json();
+
+                if (result.valid) {
+                    alert('✅ Graph is valid!');
+                } else {
+                    alert('⚠️ Issues found:\n' + result.issues.map(i => i.message).join('\n'));
+                }
+            } catch (e) {
+                alert('Validation failed: ' + e.message);
+            }
+        }
+
+        async function executeGraph() {
+            if (!currentGraph?.id) {
+                alert('Save the graph first');
+                return;
+            }
+
+            try {
+                const resp = await fetch(`${API_BASE}/${currentGraph.id}/execute`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const result = await resp.json();
+                alert(`▶️ Execution started!\nID: ${result.execution_id}`);
+            } catch (e) {
+                alert('Execution failed: ' + e.message);
+            }
+        }
+
+        async function loadTemplates() {
+            try {
+                const resp = await fetch(`${API_BASE}/templates`);
+                const data = await resp.json();
+                // TODO: Show templates in UI
+            } catch (e) {
+                console.log('Templates not available');
+            }
+        }
+
+        // Initialize
+        init();
+    </script>
+</body>
+
+</html>

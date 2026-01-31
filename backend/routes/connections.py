@@ -2,7 +2,7 @@
 Connections API - Manus/n8n-style visual connection management
 """
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import base64
@@ -26,6 +26,8 @@ class TestConnectionRequest(BaseModel):
 
 
 class ConnectionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     tool_id: str
     tool_name: str
@@ -33,9 +35,6 @@ class ConnectionResponse(BaseModel):
     last_tested: Optional[datetime] = None
     last_used: Optional[datetime] = None
     error_message: Optional[str] = None
-    
-    class Config:
-        orm_mode = True
 
 
 def encrypt_credentials(credentials: Dict[str, str]) -> str:

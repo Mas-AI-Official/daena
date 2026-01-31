@@ -4,8 +4,7 @@ try:
 except ImportError:
     # Fallback for older SQLAlchemy
     from sqlalchemy import JSON
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 import datetime
 
 # Create SQLAlchemy engine (SQLite for development, easy to switch to MongoDB later)
@@ -552,6 +551,113 @@ class VoiceState(Base):
     settings_json = Column(JSON, default={})
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+# ═══════════════════════════════════════════════════════════════════════
+# QA GUARDIAN MODELS - Hidden Department for Quality Assurance
+# ═══════════════════════════════════════════════════════════════════════
+
+# QA Guardian Incident table
+class QAIncident(Base):
+    """QA Guardian Incident - tracked issues and errors"""
+    __tablename__ = "qa_incidents"
+    id = Column(Integer, primary_key=True, index=True)
+    incident_id = Column(String, unique=True, index=True)  # e.g., "inc_20260121_abc123"
+    idempotency_key = Column(String, unique=True, index=True)  # For deduplication
+    
+    # Classification
+    severity = Column(String, index=True)  # P0, P1, P2, P3, P4
+    risk_level = Column(String, default="LOW")  # CRITICAL, HIGH, MEDIUM, LOW
+    category = Column(String, index=True)  # bug, config, security, dependency, data, workflow, agent_conflict
+    subsystem = Column(String, index=True)  # api, services, database, etc.
+    source = Column(String)  # runtime, ci, user_report, scheduled_scan
+    
+    # Affected entities
+    affected_agent = Column(String, nullable=True, index=True)
+    affected_department = Column(String, nullable=True, index=True)
+    
+    # Details
+    summary = Column(String, nullable=False)
+    description = Column(Text)
+    evidence_json = Column(JSON, default=[])  # List of Evidence objects
+    suspected_root_cause = Column(Text, nullable=True)
+    reproduction_steps_json = Column(JSON, default=[])
+    
+    # Response
+    proposed_actions_json = Column(JSON, default=[])
+    approval_required = Column(Boolean, default=False)
+    owner = Column(String, nullable=True)
+    
+    # Lifecycle
+    status = Column(String, default="open", index=True)  # open, triaging, proposed, awaiting_approval, verified, committed, rolled_back, closed
+    resolution = Column(Text, nullable=True)
+    closed_at = Column(DateTime, nullable=True)
+    
+    # Locking
+    locked_by = Column(String, nullable=True)
+    locked_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+# QA Guardian Patch Proposal table
+class QAPatchProposal(Base):
+    """QA Guardian Patch Proposal - two-phase commit patches"""
+    __tablename__ = "qa_patch_proposals"
+    id = Column(Integer, primary_key=True, index=True)
+    proposal_id = Column(String, unique=True, index=True)  # e.g., "patch_20260121_abc123"
+    incident_id = Column(String, ForeignKey("qa_incidents.incident_id"), index=True)
+    
+    # Changes
+    files_json = Column(JSON, default=[])  # List of FileChange objects
+    
+    # Plans
+    verification_plan_json = Column(JSON, default={})
+    rollback_plan_json = Column(JSON, default={})
+    
+    # Assessment
+    risk_level = Column(String)  # CRITICAL, HIGH, MEDIUM, LOW
+    deny_list_touched_json = Column(JSON, default=[])
+    estimated_impact = Column(Text, nullable=True)
+    
+    # Status
+    status = Column(String, default="proposed", index=True)  # proposed, verifying, verified, awaiting_approval, applying, applied, failed, rolled_back
+    verification_result_json = Column(JSON, nullable=True)
+    
+    # Execution
+    applied_at = Column(DateTime, nullable=True)
+    applied_by = Column(String, nullable=True)
+    approval_by = Column(String, nullable=True)
+    approval_reason = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+# QA Guardian Audit Log table
+class QAAuditLog(Base):
+    """QA Guardian Audit Log - structured logging for all actions"""
+    __tablename__ = "qa_audit_log"
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Event identification
+    event_id = Column(String, unique=True, index=True)
+    action = Column(String, index=True)  # incident_created, decision_made, patch_applied, etc.
+    
+    # Context
+    incident_id = Column(String, nullable=True, index=True)
+    proposal_id = Column(String, nullable=True, index=True)
+    agent_id = Column(String, nullable=True, index=True)
+    
+    # Details
+    severity = Column(String, nullable=True)
+    details_json = Column(JSON, default={})  # Full event details
+    
+    # Actor
+    actor = Column(String, default="qa_guardian")  # Who performed the action
+    
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+
 
 # ENHANCE: Department - add hidden field
 # Note: We'll need to add this via migration, but for now we'll use status field

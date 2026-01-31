@@ -1,0 +1,802 @@
+INFO:     Will watch for changes in these directories: ['D:\\Ideas\\Daena_old_upgrade_20251213']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [38060] using WatchFiles
+2026-01-22 10:06:31 - root - INFO - [-] - Logging configured for development environment (level: INFO)
+2026-01-22 10:06:32 - services.gpu_service - INFO - [-] - Local GPU detected via nvidia-smi
+2026-01-22 10:06:32 - services.gpu_service - INFO - [-] - No cloud GPU access configured
+2026-01-22 10:06:32 - services.gpu_service - INFO - [-] - GPU Setup - Local: True, Cloud: False
+2026-01-22 10:06:32 - services.llm_service - WARNING - [-] - ΓÜá∩╕Å No AI providers configured - using fallback responses
+2026-01-22 10:06:32 - backend.services.voice_awakening - WARNING - [-] - ΓÜá∩╕Å SpeechRecognition not available. Install: pip install SpeechRecognition pyaudio
+2026-01-22 10:06:32 - backend.services.voice_awakening - WARNING - [-] - ΓÜá∩╕Å Porcupine not available. Install: pip install pvporcupine
+2026-01-22 10:06:32 - services.voice_service - WARNING - [-] - ΓÜá∩╕Å Speech recognition not available. Install: pip install SpeechRecognition pyaudio
+2026-01-22 10:06:32 - services.voice_service - WARNING - [-] - ΓÜá∩╕Å System TTS not available. Install: pip install pyttsx3
+2026-01-22 10:06:32 - services.voice_service - WARNING - [-] - ΓÜá∩╕Å System TTS not available. Install: pip install pyttsx3
+2026-01-22 10:06:32 - services.voice_service - INFO - [-] - Γ£à Found Daena voice file: D:\Ideas\Daena_old_upgrade_20251213\daena_voice.wav
+2026-01-22 10:06:32 - services.voice_service - INFO - [-] - Γ£à Voice cloning service available
+2026-01-22 10:06:32 - services.voice_service - INFO - [-] - Γ£à Voice awakening service available
+2026-01-22 10:06:32 - backend.main - INFO - [-] - Γ£à Optional AI services initialized
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Engineering & Technology
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Product & Innovation
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Sales & Business Development
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Marketing & Brand
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Finance & Accounting
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Legal & Compliance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Sunflower registry populated: 8 departments, 48 agents
+2026-01-22 10:06:33 - backend.main - INFO - [-] - Sunflower Registry initialized: 8 departments, 48 agents
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Engineering & Technology
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Product & Innovation
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Sales & Business Development
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Marketing & Brand
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Finance & Accounting
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Legal & Compliance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Engineering
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Product
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Sales
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Marketing
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Finance
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Human Resources
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Legal
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Customer Success
+2026-01-22 10:06:33 - backend.utils.sunflower_registry - INFO - [-] - Sunflower registry populated: 8 departments, 48 agents
+2026-01-22 10:06:33 - backend.main - INFO - [-] - Γ£à Sunflower registry populated: 8 departments, 48 agents
+Γ£à CORS middleware added
+2026-01-22 10:06:33 - backend.utils.tracing - WARNING - [-] - OpenTelemetry not available. Install with: pip install opentelemetry-api opentelemetry-sdk opentelemetry-instrumentation-fastapi opentelemetry-exporter-otlp
+Γä╣∩╕Å Distributed tracing disabled (set DAENA_TRACING_ENABLED=true to enable)
+Γä╣∩╕Å Message queue persistence disabled (set DAENA_MQ_USE_REDIS=true or DAENA_MQ_USE_RABBITMQ=true to enable)
+Γ£à Static files mounted from: frontend/static
+Γ£à Templates configured to load from: D:\Ideas\Daena_old_upgrade_20251213\frontend\templates
+2026-01-22 10:06:33 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:06:33 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:06:33 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:06:33 - backend.demo_mode - INFO - [-] - Demo Mode: disabled
+2026-01-22 10:06:33 - backend.main - INFO - [-] - Γ£à Demo API registered at /api/v1/demo (AI Tinkerers Toronto)
+2026-01-22 10:06:34 - backend.main - INFO - [-] - Council V2 routes registered (Wave B)
+2026-01-22 10:06:34 - backend.main - INFO - [-] - Quorum and Backpressure routes registered (Wave B - Task B3)
+2026-01-22 10:06:34 - backend.main - INFO - [-] - Presence Service routes registered (Wave B - Task B4)
+2026-01-22 10:06:34 - backend.main - INFO - [-] - Abstract Store routes registered (Wave B - Task B5)
+2026-01-22 10:06:34 - backend.main - INFO - [-] - OCR Fallback routes registered (Wave B - Task B6)
+2026-01-22 10:06:34 - backend.main - INFO - [-] - Γ£à Daena Tools routes registered (Code Scanner, DB Inspector, API Tester)
+2026-01-22 10:06:34 - backend.main - INFO - [-] - Tenant dashboard routes registered
+2026-01-22 10:06:34 - backend.main - INFO - [-] - Security routes registered
+2026-01-22 10:06:34 - backend.main - INFO - [-] - Knowledge distillation routes registered
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Analytics routes registered
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Message queue routes registered
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Integrations routes registered
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Monitoring routes registered at /api/v1/monitoring
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à System summary routes registered at /api/v1/system-summary
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à UI routes registered at /ui/* (explicit)
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à WebSocket routes registered for real-time updates
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Hiring routes registered
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Enterprise-DNA routes registered
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Structure verification routes registered
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Workspace V2 routes registered
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à WebSocket hub registered at /ws/events
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Agent activity API registered at /api/v1/agents
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Session categories API registered
+D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\pydantic\_internal\_config.py:383: UserWarning: Valid config keys have changed in V2:
+* 'orm_mode' has been renamed to 'from_attributes'
+  warnings.warn(message, UserWarning)
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Connections API registered at /api/v1/connections
+2026-01-22 10:06:35 - backend.core.chat_storage - INFO - [-] - Γ£à Chat storage initialized: data\chat_sessions.db
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Daena Core API registered at /api/v1/daena
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Department Office API registered at /api/v1/office
+2026-01-22 10:06:35 - backend.models.chat_history_sqlite - INFO - [-] - Γ£à SQLite chat history initialized: D:\Ideas\local_brain\chat_history.db
+2026-01-22 10:06:35 - backend.routes.chat_history - INFO - [-] - ≡ƒöº Using SQLite-based chat history
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Chat History API registered at /api/v1/chat-history
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Councils API registered at /api/v1/councils
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Council API registered at /api/v1/council
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Analytics V2 API registered at /api/v1/analytics
+2026-01-22 10:06:35 - backend.main - INFO - [-] - Γ£à Workspace API registered at /api/v1/workspace
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à Projects API registered at /api/v1/projects
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à Self-Upgrade API registered at /api/v1/self-upgrade
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à Brain Status API registered at /api/v1/brain
+2026-01-22 10:06:36 - backend.services.llm_service - WARNING - [-] - ΓÜá∩╕Å No AI providers configured - using fallback responses
+2026-01-22 10:06:36 - backend.services.voice_service - WARNING - [-] - ΓÜá∩╕Å Speech recognition not available. Install: pip install SpeechRecognition pyaudio
+2026-01-22 10:06:36 - backend.services.voice_service - WARNING - [-] - ΓÜá∩╕Å System TTS not available. Install: pip install pyttsx3
+2026-01-22 10:06:36 - backend.services.voice_service - WARNING - [-] - ΓÜá∩╕Å System TTS not available. Install: pip install pyttsx3
+2026-01-22 10:06:36 - backend.services.voice_service - INFO - [-] - Γ£à Found Daena voice file: D:\Ideas\Daena_old_upgrade_20251213\daena_voice.wav
+2026-01-22 10:06:36 - backend.services.voice_service - INFO - [-] - Γ£à Voice cloning service available
+2026-01-22 10:06:36 - backend.services.voice_service - INFO - [-] - Γ£à Voice awakening service available
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à Voice API registered at /api/v1/voice
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à System API registered at /api/v1/system
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à Founder Panel API registered at /api/v1/founder
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à Agent Automation API registered at /api/v1/automation
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à MCP API registered at /api/v1/connections/mcp
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à Learning API registered at /api/v1/learning
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à Social Media API registered at /api/v1/social-media
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à QA Guardian API registered at /api/v1/qa
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à CMP Canvas UI registered at /cmp-canvas
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Γ£à Control Center UI registered at /control-center
+2026-01-22 10:06:36 - backend.main - INFO - [-] - Compliance routes registered (Extra Suggestions - E1)
+Γ£à Successfully included ui router
+Γ£à Successfully included brain router
+Γ£à Successfully included agents router
+Γ£à Successfully included departments router
+Γ£à Successfully included projects router
+Γ£à Successfully included departments router
+Γ£à Successfully included projects router
+Γ£à Successfully included daena router
+2026-01-22 10:06:37 - routes.chat_history - INFO - [-] - ≡ƒöº Using SQLite-based chat history
+Γ£à Successfully included chat_history router
+Γ£à Successfully included daena_decisions router
+Γ£à Successfully included agent_builder_complete router
+Γ£à Successfully included cmp_voting router
+Γ£à Successfully included strategic_meetings router
+Γ£à Successfully included voice_agents router
+Γ£à Successfully included honey_knowledge router
+Γ£à Successfully included founder_panel router
+Γ£à Successfully included task_timeline router
+Γ£à Successfully included consultation router
+Γ£à Successfully included data_sources router
+Γ£à Successfully included ai_models router
+Γ£à Successfully included model_registry router
+Γ£à Successfully included prompt_library router
+Γ£à Successfully included tool_playbooks router
+2026-01-22 10:06:38 - backend.services.local_llm_ollama - INFO - [-] - Ollama models path configured: D:\Ideas\Daena_old_upgrade_20251213\local_brain
+2026-01-22 10:06:38 - backend.services.local_llm_ollama - INFO - [-] - ======================================================================
+2026-01-22 10:06:38 - backend.services.local_llm_ollama - INFO - [-] - OLLAMA CONFIGURATION
+2026-01-22 10:06:38 - backend.services.local_llm_ollama - INFO - [-] -   Base URL: http://localhost:11434
+2026-01-22 10:06:38 - backend.services.local_llm_ollama - INFO - [-] -   Trained Model: daena-brain
+2026-01-22 10:06:38 - backend.services.local_llm_ollama - INFO - [-] -   Default Model: qwen2.5:7b-instruct
+2026-01-22 10:06:38 - backend.services.local_llm_ollama - INFO - [-] -   Fallback Model: qwen2.5:14b-instruct
+2026-01-22 10:06:38 - backend.services.local_llm_ollama - INFO - [-] -   Timeout: 120s
+2026-01-22 10:06:38 - backend.services.local_llm_ollama - INFO - [-] -   Models Path: D:\Ideas\Daena_old_upgrade_20251213\local_brain
+2026-01-22 10:06:38 - backend.services.local_llm_ollama - INFO - [-] - ======================================================================
+Γ£à Successfully included llm_status router
+Γ£à Successfully included workflows router
+Γ£à Successfully included security router
+Γ£à Successfully included users router
+Γ£à Successfully included council router
+Γ£à Successfully included experience_pipeline router
+Γ£à Successfully included strategic_assembly router
+Γ£à Successfully included strategic_room router
+Γ£à Successfully included voice_panel router
+Γ£à Successfully included conference_room router
+Γ£à Successfully included tasks router
+Γ£à Successfully included notifications router
+Γ£à Successfully included voice router
+Γ£à Successfully included deep_search router
+Γ£à Successfully included analytics router
+Γ£à Successfully included realtime_collaboration router
+Γ£à Successfully included council_approval router
+Γ£à Successfully included ocr_comparison router
+Γ£à Successfully included automation router
+Γ£à Successfully included cmp_tools router
+Γ£à Successfully included tools router
+Γ£à Successfully included explorer router
+Γ£à Successfully included human_relay router
+Γ£à Successfully included chat_history router
+2026-01-22 10:06:39 - self_evolve.selector - INFO - [-] - DataSelector initialized: max_candidates=10, min_confidence=0.7
+2026-01-22 10:06:39 - self_evolve.revisor - INFO - [-] - AbstractRevisor initialized
+2026-01-22 10:06:39 - self_evolve.tester - INFO - [-] - EvaluationTester initialized with thresholds: {'retention_drift_max': 0.01, 'knowledge_incorporation_min': 0.03, 'latency_change_max': 0.05, 'cost_reduction_min': 0.2}
+2026-01-22 10:06:39 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:06:39 - self_evolve.apply - INFO - [-] - AbstractApplier initialized
+2026-01-22 10:06:39 - self_evolve.rollback - INFO - [-] - RollbackManager initialized
+2026-01-22 10:06:39 - self_evolve.sec_loop - INFO - [-] - SEC-Loop initialized
+2026-01-22 10:06:39 - self_evolve.rollback - INFO - [-] - RollbackManager initialized
+Γ£à Successfully included self_evolve router
+Γ£à Successfully included snapshots router
+Γ£à Successfully included demo router
+Γ£à Successfully included sunflower router
+Γ£à Successfully included honeycomb router
+Γ£à Successfully included health router
+Γ£à Successfully included council_status router
+Γ£à Successfully included council_rounds router
+Γ£à Successfully included slo router
+Γ£à Successfully included registry router
+Γ£à Successfully included audit router
+Γ£à Successfully included health_routing router
+2026-01-22 10:06:39 - backend.services.skill_capsules - WARNING - [-] - CAPSULE_SECRET_KEY not set - skill capsules encryption disabled
+2026-01-22 10:06:39 - backend.services.skill_capsules - INFO - [-] - Created skill capsule: core-communication (Core Communication Skills)
+2026-01-22 10:06:39 - backend.services.skill_capsules - INFO - [-] - Created skill capsule: strategic-thinking (Strategic Thinking Framework)
+Γ£à Successfully included skill_capsules router
+Γ£à Successfully included autonomous router
+Γ£à Successfully included file_system router
+Γ£à Successfully included tasks router
+Γ£à Successfully included events router
+Γ£à Successfully included intelligence router
+Γ£à Successfully included env_sync router
+2026-01-22 10:06:39 - backend.main - INFO - [-] - Γ£à Company Gaps API registered at /api/v1/strategy/company-gaps
+2026-01-22 10:06:39 - backend.main - INFO - [-] - Γ£à Client Mode API registered at /api/v1/client-mode
+2026-01-22 10:06:39 - backend.main - INFO - [-] - Γ£à Change Requests API registered at /api/v1/change-requests
+2026-01-22 10:06:39 - backend.main - INFO - [-] - Γ£à Pricing Lab API registered at /api/v1/pricing
+Γ£à Successfully included dev_tools router
+2026-01-22 10:06:39 - backend.main - INFO - [-] - Γ£à Capabilities API registered at /api/v1/capabilities
+2026-01-22 10:06:39 - backend.main - INFO - [-] - Γ£à SSE API registered at /sse/events
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à CMP Graph API registered at /api/v1/cmp/graph
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Voice router registered
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Connections router registered
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Webhooks router registered
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Mobile Agent router registered
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Change Control V2 router registered (incremental backup)
+ΓÜá∩╕Å God Mode imports failed: No module named 'Core.memory.nbmf_tiers'; 'Core.memory' is not a package
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à God Mode router registered
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Voice router registered
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Connections router registered
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Webhooks router registered
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Mobile Agent router registered
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Change Control V2 router registered (incremental backup)
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à God Mode router registered
+INFO:     Started server process [36284]
+INFO:     Waiting for application startup.
+≡ƒÜÇ Starting Mas-AI Company - Daena AI VP System
+≡ƒôª Creating database tables...
+Γ£à Database tables created
+2026-01-22 10:06:40 - backend.services.db_seeder - INFO - [-] - Found 8 departments, skipping seed
+Γ£à Database seeded with defaults
+2026-01-22 10:06:40 - backend.routes.council - INFO - [-] - ≡ƒî▒ _ensure_initial_councils: Starting with 4 initial councils
+2026-01-22 10:06:40 - backend.routes.council - INFO - [-] - Γ£à All 4 councils already exist, no new ones created
+2026-01-22 10:06:40 - backend.routes.council - INFO - [-] - ≡ƒôè Database state: 4 categories, 20 members
+Γ£à Initial councils seeded on startup (4 councils in DB)
+=========================================
+Γ£à LLM providers configured.
+Γ£à LLM service initialized
+Γ£à Local Ollama available at http://localhost:11434 (model: qwen2.5:7b-instruct)
+≡ƒÄñ Initializing voice cloning with: D:\Ideas\Daena_old_upgrade_20251213\daena_voice.wav
+2026-01-22 10:06:40 - backend.services.voice_cloning - WARNING - [-] - ΓÜá∩╕Å ElevenLabs API key not found. Voice cloning disabled.
+2026-01-22 10:06:40 - backend.services.voice_cloning - INFO - [-] - ≡ƒÆí Set ELEVENLABS_API_KEY environment variable to enable voice cloning
+ΓÜá∩╕Å Voice cloning initialized but no voice ID (check API key)
+≡ƒî╗ Seeding sunflower registry...
+Γ£à Sunflower registry seeding scheduled
+2026-01-22 10:06:40 - backend.services.realtime_collaboration - INFO - [-] - Real-time collaboration service started
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Real-time collaboration service started
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Real-time metrics stream started
+≡ƒôü Using database: daena.db
+≡ƒôï Current columns in agents table: id, name, department, department_id, tenant_id, project_id, status, type, role, capabilities, description, is_active, sunflower_index, cell_id, brain_model_id, training_status, performance_score, created_at, updated_at, voice_id, last_seen, metadata_json
+Γ£à tenant_id column already exists
+Γ£à project_id column already exists
+Γ£à Database schema fix complete - both columns verified
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à Database schema verified
+Γ£à Daena AI VP is online and ready
+Γ£à Managing 8 departments
+Γ£à Overseeing 48 active agents
+Γ£à Tracking 0 active projects
+2026-01-22 10:06:40 - agents.agent_manager - INFO - [-] - Refreshed: Now using live data: 48 agents across 8 departments
+Γ£à Agent manager refreshed with live data
+ΓÜá∩╕Å Could not initialize file monitoring: No module named 'watchdog.observers'
+2026-01-22 10:06:40 - agents.agent_manager - INFO - [-] - Refreshed: Now using live data: 48 agents across 8 departments
+Γ£à Agent manager refreshed with live data
+Γ£à Live counts: 48 agents, 8 departments
+2026-01-22 10:06:40 - backend.services.mcp.mcp_client - ERROR - [-] - Failed to start MCP server browser: 
+2026-01-22 10:06:40 - backend.services.mcp.mcp_client - ERROR - [-] - Failed to start MCP server filesystem: 
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à MCP Registry initialized
+2026-01-22 10:06:40 - backend.services.mcp.mcp_client - ERROR - [-] - Failed to start MCP server browser: 
+2026-01-22 10:06:40 - backend.services.mcp.mcp_client - ERROR - [-] - Failed to start MCP server filesystem: 
+2026-01-22 10:06:40 - backend.main - INFO - [-] - Γ£à MCP Registry initialized
+Starting 8x6 seeding (8├ù6)...
+Target: 48 total agents across 8 departments
+≡ƒôü Using database: daena.db
+≡ƒôï Current columns in agents table: id, name, department, department_id, tenant_id, project_id, status, type, role, capabilities, description, is_active, sunflower_index, cell_id, brain_model_id, training_status, performance_score, created_at, updated_at, voice_id, last_seen, metadata_json
+Γ£à tenant_id column already exists
+Γ£à project_id column already exists
+Γ£à Database schema fix complete - both columns verified
+OK: Database schema fixed via migration script
+Seeding departments with sunflower coordinates...
+  WARNING: Department engineering already exists, checking for conflicts...
+    OK: Updating department engineering...
+  WARNING: Department product already exists, checking for conflicts...
+    OK: Updating department product...
+  WARNING: Department sales already exists, checking for conflicts...
+    OK: Updating department sales...
+  WARNING: Department marketing already exists, checking for conflicts...
+    OK: Updating department marketing...
+  WARNING: Department finance already exists, checking for conflicts...
+    OK: Updating department finance...
+  WARNING: Department hr already exists, checking for conflicts...
+    OK: Updating department hr...
+  WARNING: Department legal already exists, checking for conflicts...
+    OK: Updating department legal...
+  WARNING: Department customer already exists, checking for conflicts...
+    OK: Updating department customer...
+  OK: 8 departments seeded
+Seeding agents with sunflower coordinates...
+  Seeding agents for engineering...
+    WARNING: Agent engineering_advisor_a already exists, updating...
+    WARNING: Agent engineering_advisor_b already exists, updating...
+    WARNING: Agent engineering_scout_internal already exists, updating...
+    WARNING: Agent engineering_scout_external already exists, updating...
+    WARNING: Agent engineering_synth already exists, updating...
+    WARNING: Agent engineering_executor already exists, updating...
+  Seeding agents for product...
+    WARNING: Agent product_advisor_a already exists, updating...
+    WARNING: Agent product_advisor_b already exists, updating...
+    WARNING: Agent product_scout_internal already exists, updating...
+    WARNING: Agent product_scout_external already exists, updating...
+    WARNING: Agent product_synth already exists, updating...
+    WARNING: Agent product_executor already exists, updating...
+  Seeding agents for sales...
+    WARNING: Agent sales_advisor_a already exists, updating...
+    WARNING: Agent sales_advisor_b already exists, updating...
+    WARNING: Agent sales_scout_internal already exists, updating...
+    WARNING: Agent sales_scout_external already exists, updating...
+    WARNING: Agent sales_synth already exists, updating...
+    WARNING: Agent sales_executor already exists, updating...
+  Seeding agents for marketing...
+    WARNING: Agent marketing_advisor_a already exists, updating...
+    WARNING: Agent marketing_advisor_b already exists, updating...
+    WARNING: Agent marketing_scout_internal already exists, updating...
+    WARNING: Agent marketing_scout_external already exists, updating...
+    WARNING: Agent marketing_synth already exists, updating...
+    WARNING: Agent marketing_executor already exists, updating...
+  Seeding agents for finance...
+    WARNING: Agent finance_advisor_a already exists, updating...
+    WARNING: Agent finance_advisor_b already exists, updating...
+    WARNING: Agent finance_scout_internal already exists, updating...
+    WARNING: Agent finance_scout_external already exists, updating...
+    WARNING: Agent finance_synth already exists, updating...
+    WARNING: Agent finance_executor already exists, updating...
+  Seeding agents for hr...
+    WARNING: Agent hr_advisor_a already exists, updating...
+    WARNING: Agent hr_advisor_b already exists, updating...
+    WARNING: Agent hr_scout_internal already exists, updating...
+    WARNING: Agent hr_scout_external already exists, updating...
+    WARNING: Agent hr_synth already exists, updating...
+    WARNING: Agent hr_executor already exists, updating...
+  Seeding agents for legal...
+    WARNING: Agent legal_advisor_a already exists, updating...
+    WARNING: Agent legal_advisor_b already exists, updating...
+    WARNING: Agent legal_scout_internal already exists, updating...
+    WARNING: Agent legal_scout_external already exists, updating...
+    WARNING: Agent legal_synth already exists, updating...
+    WARNING: Agent legal_executor already exists, updating...
+  Seeding agents for customer...
+    WARNING: Agent customer_advisor_a already exists, updating...
+    WARNING: Agent customer_advisor_b already exists, updating...
+    WARNING: Agent customer_scout_internal already exists, updating...
+    WARNING: Agent customer_scout_external already exists, updating...
+    WARNING: Agent customer_synth already exists, updating...
+    WARNING: Agent customer_executor already exists, updating...
+  OK: 48 agents seeded
+Prune duplicates: removed 0 extra department agents
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Engineering & Technology
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Product & Innovation
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Sales & Business Development
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Marketing & Brand
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Finance & Accounting
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Human Resources
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Legal & Compliance
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered department: Customer Success
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Engineering
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Engineering
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Engineering
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Engineering
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Engineering
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Engineering
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Product
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Product
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Product
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Product
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Product
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Product
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Sales
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Sales
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Sales
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Sales
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Sales
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Sales
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Marketing
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Marketing
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Marketing
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Marketing
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Marketing
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Marketing
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Finance
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Finance
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Finance
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Finance
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Finance
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Finance
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Human Resources
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Human Resources
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Human Resources
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Human Resources
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Human Resources
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Human Resources
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Legal
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Legal
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Legal
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Legal
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Legal
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Legal
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Senior Advisor Customer Success
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Strategy Advisor Customer Success
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Internal Scout Customer Success
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: External Scout Customer Success
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Knowledge Synthesizer Customer Success
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Registered agent: Action Executor Customer Success
+2026-01-22 10:06:41 - backend.utils.sunflower_registry - INFO - [-] - Sunflower registry populated: 8 departments, 48 agents
+Seeding honeycomb adjacency relationships...
+  OK: 14 adjacency relationships seeded
+
+Seeding completed successfully!
+Final counts:
+   Departments: 8/8
+   Agents: 48/48
+   Adjacencies: 78
+
+Sample adjacency (first 3 cells):
+   D1: ['D5', 'D2', 'D6', 'D4', 'D3', 'D8']
+   D2: ['D6', 'D1', 'D3', 'D7', 'D5', 'D4']
+   D3: ['D7', 'D2', 'D4', 'D8', 'D1', 'D6']
+2026-01-22 10:06:41 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:06:41 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:06:41 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:06:41 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+INFO:     Application startup complete.
+2026-01-22 10:06:44 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:06:44 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:06:44 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:06:44 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:06:46 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:06:46 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:06:46 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:06:46 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:06:48 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:06:48 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:06:48 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:06:48 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:06:50 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:06:50 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:06:50 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:06:50 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:06:52 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:06:52 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:06:52 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:06:52 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:06:55 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:06:55 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:06:55 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:06:55 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:06:57 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:06:57 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:06:57 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:06:57 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:06:59 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:06:59 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:06:59 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:06:59 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:01 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:01 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:01 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:01 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:04 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:04 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:04 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:04 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:06 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:06 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:06 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:06 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:08 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:08 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:08 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:08 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:11 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:11 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:11 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:11 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:13 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:13 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:13 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:13 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:15 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:15 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:15 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:15 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:18 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:18 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:18 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:18 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:20 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:20 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:20 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:20 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:22 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:22 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:22 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:22 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:24 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:24 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:24 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:24 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:26 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:26 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:26 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:26 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:29 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:29 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:29 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:29 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:31 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:31 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:31 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:31 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:33 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:33 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:33 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:33 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\Ideas\Daena_old_upgrade_20251213\venv_daena_main_py310\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\Ideas\Daena_old_upgrade_20251213\backend\routes\qa_guardian.py", line 32, in serve_dashboard
+    return HTMLResponse(content=DASHBOARD_TEMPLATE.read_text(), status_code=200)
+  File "C:\Python310\lib\pathlib.py", line 1135, in read_text
+    return f.read()
+  File "C:\Python310\lib\encodings\cp1252.py", line 23, in decode
+    return codecs.charmap_decode(input,self.errors,decoding_table)[0]
+UnicodeDecodeError: 'charmap' codec can't decode byte 0x8f in position 9366: character maps to <undefined>
+2026-01-22 10:07:35 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:35 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:35 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:35 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:37 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:37 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:37 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:37 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:40 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:40 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:40 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:40 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:42 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:42 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:42 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:42 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:44 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:44 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:44 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:44 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:46 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:46 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:46 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:46 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:48 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:48 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:48 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:48 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:51 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:51 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:51 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:51 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:53 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:53 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:53 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:53 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:55 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:55 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:55 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:55 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:07:57 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:07:57 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:07:57 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:07:57 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:00 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:00 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:00 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:00 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:02 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:02 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:02 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:02 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:04 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:04 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:04 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:04 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:07 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:07 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:07 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:07 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:09 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:09 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:09 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:09 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:11 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:11 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:11 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:11 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:14 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:14 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:14 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:14 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:16 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:16 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:16 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:16 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:18 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:18 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:18 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:18 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:20 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:20 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:20 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:20 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:22 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:22 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:22 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:22 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:25 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:25 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:25 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:25 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:27 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:27 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:27 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:27 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:29 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:29 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:29 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:29 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:31 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:31 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:31 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:31 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:33 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:33 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:33 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:33 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:36 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:36 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:36 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:36 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:38 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:38 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:38 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:38 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:40 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:40 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:40 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:40 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:42 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:42 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:42 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:42 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:44 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:44 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:44 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:44 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:47 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:47 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:47 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:47 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:49 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:49 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:49 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:49 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:51 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:51 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:51 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:51 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4
+2026-01-22 10:08:54 - Core.device_manager - INFO - [-] - Γ£à GPU detected via nvidia-smi: NVIDIA GeForce RTX 4060 Laptop GPU (8.0GB)
+2026-01-22 10:08:54 - Core.device_manager - INFO - [-] - Detected 2 compute devices
+2026-01-22 10:08:54 - Core.device_manager - INFO - [-] - Auto-selected: NVIDIA GeForce RTX 4060 Laptop GPU
+2026-01-22 10:08:54 - self_evolve.policy - INFO - [-] - CouncilPolicy initialized: quorum_type=local, required_votes=4

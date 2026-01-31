@@ -8,7 +8,7 @@ Endpoints:
 - GET /api/v1/auth/me - Get current user info
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
@@ -18,6 +18,14 @@ from backend.services.billing_service import billing_service
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
+
+
+def _client_ip(request: Request) -> str:
+    """Client IP for containment/JWT revocation tracking."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return getattr(request.client, "host", "") if request.client else ""
 
 
 class LoginRequest(BaseModel):
@@ -61,45 +69,54 @@ async def get_current_user(
 
 
 @router.post("/login")
-async def login(request: LoginRequest) -> LoginResponse:
+async def login(body: LoginRequest, request: Request) -> LoginResponse:
     """
     Login and get JWT tokens.
     
     In production, verify password here.
+    Client IP is recorded for containment (revoke sessions when IP is blocked).
     """
     # TODO: Verify password against user database
     # For now, accept any user_id
     
     # Determine role (in production, get from database)
     role = UserRole.CLIENT  # Default
-    if request.user_id == "founder" or request.user_id.startswith("founder_"):
+    if body.user_id == "founder" or body.user_id.startswith("founder_"):
         role = UserRole.FOUNDER
-    elif request.user_id.startswith("admin_"):
+    elif body.user_id.startswith("admin_"):
         role = UserRole.ADMIN
-    elif request.user_id.startswith("agent_"):
+    elif body.user_id.startswith("agent_"):
         role = UserRole.AGENT
     
     # Generate token pair
     token_pair = jwt_service.generate_token_pair(
-        user_id=request.user_id,
+        user_id=body.user_id,
         role=role,
-        email=request.email,
-        tenant_id=request.tenant_id,
-        project_id=request.project_id
+        email=body.email,
+        tenant_id=body.tenant_id,
+        project_id=body.project_id
     )
+    ip = _client_ip(request)
+    if ip:
+        jwt_service.record_tokens_for_ip(
+            ip,
+            token_pair["access_token"],
+            token_pair["refresh_token"],
+        )
     
     return LoginResponse(
         access_token=token_pair["access_token"],
         refresh_token=token_pair["refresh_token"],
         token_type=token_pair["token_type"],
         expires_in=token_pair["expires_in"],
-        user_id=request.user_id,
+        user_id=body.user_id,
         role=role.value
     )
 
 
 @router.post("/refresh")
 async def refresh_token(
+    request: Request,
     refresh_token: str = Header(..., alias="X-Refresh-Token")
 ) -> LoginResponse:
     """
@@ -111,6 +128,15 @@ async def refresh_token(
     
     if not token_pair:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    
+    # Record new tokens for this client IP (containment revocation)
+    ip = _client_ip(request)
+    if ip:
+        jwt_service.record_tokens_for_ip(
+            ip,
+            token_pair["access_token"],
+            token_pair["refresh_token"],
+        )
     
     # Extract user info from refresh token (before it was revoked)
     # In production, store user info separately

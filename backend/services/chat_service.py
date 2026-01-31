@@ -232,17 +232,18 @@ class ChatService:
                         sessions.append(s)
                         logger.info(f"  ✓ Matched session {s.session_id[:8]}... (case-insensitive: '{scope_str}' == '{dept_id_str}')")
         
+        # Also include agent-scoped sessions for this department (context_json.department_id)
+        agent_sessions = db.query(ChatSession).filter(
+            ChatSession.scope_type == "agent",
+            ChatSession.is_active == True
+        ).order_by(ChatSession.updated_at.desc()).all()
+        for s in agent_sessions:
+            ctx = (s.context_json or {}) if hasattr(s, 'context_json') else {}
+            if isinstance(ctx, dict) and str(ctx.get("department_id", "")).strip().lower() == dept_id_normalized:
+                if s not in sessions:
+                    sessions.append(s)
+        sessions.sort(key=lambda x: (x.updated_at or datetime.min).isoformat() if hasattr(x, 'updated_at') and x.updated_at else "", reverse=True)
         logger.info(f"get_department_sessions: Final result: {len(sessions)} sessions for dept_id='{department_id}'")
-        if sessions:
-            logger.info(f"  Sample session: id={sessions[0].session_id[:8]}..., scope_id='{sessions[0].scope_id}'")
-        else:
-            # Log all department sessions for debugging
-            all_dept = db.query(ChatSession).filter(
-                ChatSession.scope_type == "department",
-                ChatSession.is_active == True
-            ).all()
-            logger.warning(f"  No matches found. All department sessions: {[(s.session_id[:8], s.scope_id) for s in all_dept[:5]]}")
-        
         return sessions
     
     @staticmethod

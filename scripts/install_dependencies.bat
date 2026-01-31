@@ -120,6 +120,10 @@ if errorlevel 1 (
 ) else (
     echo [OK] cryptography verified
 )
+"%PY_MAIN%" -c "import httpx; print('httpx OK')" 2>nul
+if errorlevel 1 (echo [WARNING] httpx not found) else (echo [OK] httpx verified)
+"%PY_MAIN%" -c "import pytest; import pytest_asyncio; print('pytest OK')" 2>nul
+if errorlevel 1 (echo [WARNING] pytest/pytest-asyncio not found) else (echo [OK] pytest verified - run scripts\run_provider_smoke_test.bat for provider smoke test)
 
 REM Note: Voice packages (aiohttp, SpeechRecognition, pvporcupine, pyaudio) 
 REM are installed in the audio environment (venv_daena_audio_py310)

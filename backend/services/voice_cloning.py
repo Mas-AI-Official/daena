@@ -81,9 +81,12 @@ class VoiceCloningService:
                 except:
                     pass
         
-        if not self.api_key:
-            logger.warning("⚠️ ElevenLabs API key not found. Voice cloning disabled.")
-            logger.info("💡 Set ELEVENLABS_API_KEY environment variable to enable voice cloning")
+        
+        # Check if API key is valid (not placeholder)
+        if not self.api_key or self.api_key == "your_elevenlabs_api_key_here":
+            logger.info("🔇 ElevenLabs voice cloning disabled (no API key configured)")
+            logger.info("💡 Using local XTTS-v2 audio service instead (http://127.0.0.1:5001)")
+            logger.info("💡 To enable ElevenLabs cloud TTS, set ELEVENLABS_API_KEY in .env")
             self._initialized = True
             return
         

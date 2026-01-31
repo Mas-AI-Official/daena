@@ -1,3 +1,4 @@
+# DEPRECATED: Single entry point is backend.main. Run: python -m uvicorn backend.main:app
 from fastapi import FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -403,18 +404,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # Run the application
 if __name__ == "__main__":
-    import uvicorn
-    
-    print("🌻 Starting Daena AI VP Sunflower System...")
-    print("✅ All routers loaded successfully")
-    print(f"📊 Managing {len(daena_vp.departments)} departments")
-    print(f"🤖 Controlling {sum(len(d['agents']) for d in daena_vp.departments.values())} AI agents")
-    print("🚀 Starting server...")
-    
-    uvicorn.run(
-        "main_fixed:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=False,
-        log_level="info"
-    ) 
+    import sys
+    print("DEPRECATED: Use backend.main:app. Run: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000", file=sys.stderr)
+    sys.exit(1) 

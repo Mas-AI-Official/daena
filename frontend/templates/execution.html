@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}Execution - Daena VP{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-white">Execution Layer</h1>
+            <p class="text-gray-400 text-sm mt-1">Tools, run, logs, permissions (requires Execution Token)</p>
+        </div>
+        <button onclick="loadTools(); loadLogs();" class="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-white transition-colors">
+            <i class="fas fa-sync-alt mr-2"></i>Refresh
+        </button>
+    </div>
+
+    <div class="glass-panel p-6 rounded-xl">
+        <h2 class="text-lg font-medium text-white mb-2">Pair Node (Windows Node)</h2>
+        <p class="text-gray-400 text-sm mb-4">Local “hands” at a URL; token stored in backend (not in .env). Enable/disable node tools below.</p>
+        <div class="flex flex-wrap items-end gap-4 mb-4">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Node URL</label>
+                <input type="text" id="node-url" placeholder="http://127.0.0.1:18888" class="w-64 px-3 py-2 rounded bg-black/30 border border-white/10 text-white text-sm" />
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Token (optional)</label>
+                <input type="password" id="node-token" placeholder="Leave blank if node has no token" class="w-48 px-3 py-2 rounded bg-black/30 border border-white/10 text-white text-sm" />
+            </div>
+            <button type="button" onclick="saveNodeConfig()" class="px-4 py-2 rounded bg-daena-gold/20 text-daena-gold border border-daena-gold/40 hover:bg-daena-gold/30 text-sm">Save</button>
+            <button type="button" onclick="testNodeConnection()" class="px-4 py-2 rounded bg-white/10 text-white hover:bg-white/15 text-sm">Test connection</button>
+        </div>
+        <div id="node-status" class="text-sm text-gray-500"></div>
+    </div>
+
+    <div class="glass-panel p-6 rounded-xl">
+        <h2 class="text-lg font-medium text-white mb-4">Tools</h2>
+        <div id="tools-list" class="space-y-3">
+            <div class="text-center py-8 text-gray-500">Loading... (requires valid X-Execution-Token)</div>
+        </div>
+    </div>
+
+    <div class="glass-panel p-6 rounded-xl">
+        <h2 class="text-lg font-medium text-white mb-4">Recent execution logs</h2>
+        <div id="logs-list" class="space-y-2 max-h-64 overflow-y-auto text-sm font-mono text-gray-400">
+            <div class="text-center py-4 text-gray-500">Loading...</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const API_BASE = (window.DAENA_API_BASE || (window.location.origin + '/api/v1')).replace(/\/+$/, '') || (window.location.origin + '/api/v1');
+
+    function getExecutionToken() {
+        try {
+            return sessionStorage.getItem('daena_execution_token') || sessionStorage.getItem('execution_token') || '';
+        } catch (e) { return ''; }
+    }
+
+    function escapeHtml(s) {
+        if (s == null) return '';
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    async function loadTools() {
+        const el = document.getElementById('tools-list');
+        const token = getExecutionToken();
+        if (!token) {
+            el.innerHTML = '<p class="text-yellow-400">Set Execution Token in App Setup / Dashboard (sessionStorage key: daena_execution_token) to list tools.</p>';
+            return;
+        }
+        try {
+            const r = await fetch(API_BASE + '/execution/tools', {
+                headers: { 'X-Execution-Token': token }
+            });
+            const data = await r.json();
+            if (r.status === 401) {
+                el.innerHTML = '<p class="text-red-400">' + escapeHtml(data.detail || 'Unauthorized') + '</p>';
+                return;
+            }
+            if (!data.success || !data.tools) {
+                el.innerHTML = '<div class="text-red-400">Failed to load tools</div>';
+                return;
+            }
+            el.innerHTML = data.tools.map(t => `
+                <div class="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                    <div>
+                        <span class="font-medium text-white">${escapeHtml(t.name || t.id)}</span>
+                        <span class="ml-2 text-xs text-gray-500">${escapeHtml(t.risk_level || 'low')}</span>
+                    </div>
+                    <span class="text-xs ${t.enabled !== false ? 'text-green-400' : 'text-gray-500'}">${t.enabled !== false ? 'Enabled' : 'Disabled'}</span>
+                </div>
+            `).join('');
+        } catch (e) {
+            el.innerHTML = '<div class="text-red-400">Error: ' + escapeHtml(String(e)) + '</div>';
+        }
+    }
+
+    let liveAuditInterval = null;
+
+    function toggleLiveAudit(enable) {
+        if (liveAuditInterval) {
+            clearInterval(liveAuditInterval);
+            liveAuditInterval = null;
+        }
+        if (enable) {
+            loadLogs();
+            liveAuditInterval = setInterval(loadLogs, 5000);
+        }
+    }
+
+    async function loadNodeConfig() {
+        const token = getExecutionToken();
+        if (!token) return;
+        try {
+            const r = await fetch(API_BASE + '/execution/node/config', { headers: { 'X-Execution-Token': token } });
+            const data = await r.json();
+            if (data.success) {
+                document.getElementById('node-url').value = data.url || 'http://127.0.0.1:18888';
+                document.getElementById('node-status').textContent = data.has_token ? 'Token configured (hidden)' : 'No token set';
+            }
+        } catch (e) { document.getElementById('node-status').textContent = ''; }
+    }
+
+    async function saveNodeConfig() {
+        const token = getExecutionToken();
+        if (!token) {
+            if (window.showToast) window.showToast('Set Execution Token first', 'error');
+            return;
+        }
+        const url = document.getElementById('node-url').value.trim();
+        const nodeToken = document.getElementById('node-token').value;
+        try {
+            const r = await fetch(API_BASE + '/execution/node/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Execution-Token': token },
+                body: JSON.stringify({ url: url || undefined, token: nodeToken })
+            });
+            const data = await r.json();
+            if (data.success) {
+                if (window.showToast) window.showToast('Node config saved', 'success');
+                document.getElementById('node-token').value = '';
+                document.getElementById('node-status').textContent = data.has_token ? 'Token configured (hidden)' : 'No token set';
+            } else {
+                if (window.showToast) window.showToast(data.detail || 'Save failed', 'error');
+            }
+        } catch (e) {
+            if (window.showToast) window.showToast('Request failed', 'error');
+        }
+    }
+
+    async function testNodeConnection() {
+        const token = getExecutionToken();
+        if (!token) {
+            if (window.showToast) window.showToast('Set Execution Token first', 'error');
+            return;
+        }
+        const statusEl = document.getElementById('node-status');
+        statusEl.textContent = 'Testing...';
+        try {
+            const r = await fetch(API_BASE + '/execution/node/health', { headers: { 'X-Execution-Token': token } });
+            const data = await r.json();
+            if (data.success && data.node && data.node.status === 'ok') {
+                statusEl.textContent = 'Connected: ' + (data.node.workspace_root || 'OK');
+                statusEl.className = 'text-sm text-green-400';
+            } else {
+                statusEl.textContent = 'Failed: ' + (data.node && data.node.error ? data.node.error : data.detail || 'Unknown');
+                statusEl.className = 'text-sm text-red-400';
+            }
+        } catch (e) {
+            statusEl.textContent = 'Error: ' + (e.message || 'Network error');
+            statusEl.className = 'text-sm text-red-400';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadTools();
+        loadLogs();
+        loadNodeConfig();
+    });
+
+    async function loadLogs() {
+        const el = document.getElementById('logs-list');
+        const token = getExecutionToken();
+        if (!token) {
+            el.innerHTML = '<p class="text-gray-500">Set Execution Token to load logs.</p>';
+            return;
+        }
+        try {
+            const r = await fetch(API_BASE + '/execution/logs?limit=20', {
+                headers: { 'X-Execution-Token': token }
+            });
+            const data = await r.json();
+            if (!data.success || !data.logs) {
+                el.innerHTML = '<div class="text-gray-500">No logs or error</div>';
+                return;
+            }
+            el.innerHTML = data.logs.length === 0
+                ? '<p class="text-gray-500">No recent executions</p>'
+                : data.logs.map(l => `
+                    <div class="p-2 rounded bg-black/20 border border-white/5">
+                        <span class="text-daena-gold">${escapeHtml(l.tool_name || l.tool)}</span>
+                        ${l.ts != null ? '<span class="text-gray-500 ml-2">' + escapeHtml(typeof l.ts === 'number' ? new Date(l.ts * 1000).toISOString().slice(0, 19) : String(l.ts).slice(0, 19)) + '</span>' : ''}
+                        ${l.status ? '<span class="ml-2 ' + (l.status === 'ok' ? 'text-green-400' : 'text-red-400') + '">' + escapeHtml(l.status) + '</span>' : ''}
+                    </div>
+                `).join('');
+        } catch (e) {
+            el.innerHTML = '<div class="text-red-400">Error loading logs</div>';
+        }
+    }
+</script>
+{% endblock %}

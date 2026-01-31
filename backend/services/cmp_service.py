@@ -25,6 +25,7 @@ async def run_cmp_tool_action(
     agent_id: Optional[str],
     reason: Optional[str],
     trace_id: Optional[str] = None,
+    dry_run: bool = False,
 ) -> Dict[str, Any]:
     return await execute_tool(
         tool_name=tool_name,
@@ -33,6 +34,7 @@ async def run_cmp_tool_action(
         agent_id=agent_id,
         reason=reason,
         trace_id=trace_id,
+        dry_run=dry_run,
     )
 
 

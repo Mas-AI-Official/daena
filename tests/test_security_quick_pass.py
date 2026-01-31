@@ -84,14 +84,20 @@ class TestMonitoringAuth:
     
     def test_monitoring_requires_auth_in_production(self):
         """Verify monitoring endpoints require auth in production."""
-        client = TestClient(app)
+        # Mock settings to ensure disable_auth is False
+        mock_settings = MagicMock()
+        mock_settings.disable_auth = False
+        mock_settings.secret_key = "secret"
+        mock_settings.monitoring_api_key = "monitoring-key"
+        mock_settings.test_api_key = "test-key"
         
-        # In production mode, should require auth
-        with patch.dict(os.environ, {"ENVIRONMENT": "production"}):
-            # Try to access monitoring endpoint without auth
-            response = client.get("/api/v1/monitoring/metrics")
-            # Should be 403 or 401
-            assert response.status_code in [401, 403]
+        with patch("backend.config.settings.get_settings", return_value=mock_settings):
+            with patch.dict(os.environ, {"ENVIRONMENT": "production", "DISABLE_AUTH": "0"}):
+                client = TestClient(app)
+                # Try to access monitoring endpoint without auth
+                response = client.get("/api/v1/monitoring/metrics")
+                # Should be 403 or 401
+                assert response.status_code in [401, 403]
     
     def test_monitoring_allows_auth_in_production(self):
         """Verify monitoring endpoints work with valid auth in production."""
@@ -110,7 +116,8 @@ class TestMonitoringAuth:
         """Verify monitoring allows no auth in development (for testing)."""
         client = TestClient(app)
         
-        with patch.dict(os.environ, {"ENVIRONMENT": "development"}):
+        # Must set DISABLE_AUTH=1 to allow no-auth access
+        with patch.dict(os.environ, {"ENVIRONMENT": "development", "DISABLE_AUTH": "1"}):
             # Try without auth in dev mode
             response = client.get("/api/v1/monitoring/metrics")
             # Should allow (200 or similar)

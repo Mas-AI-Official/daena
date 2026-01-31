@@ -50,10 +50,16 @@ def get_tts_service():
     global tts_service
     if tts_service is None:
         try:
+            logger.info("Attempting to initialize TTS service with GPU...")
             tts_service = TTSService(use_gpu=True)
         except Exception as e:
-            logger.error(f"Failed to initialize TTS service: {e}")
-            raise HTTPException(status_code=500, detail="TTS service initialization failed")
+            logger.error(f"Failed to initialize TTS service with GPU: {e}")
+            try:
+                logger.info("Falling back to CPU for TTS service...")
+                tts_service = TTSService(use_gpu=False)
+            except Exception as e2:
+                logger.error(f"CPU fallback also failed: {e2}")
+                raise HTTPException(status_code=500, detail="TTS service initialization failed")
     return tts_service
 
 

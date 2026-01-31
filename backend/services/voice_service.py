@@ -739,6 +739,7 @@ class VoiceService:
         """Get voice service status"""
         return {
             "enabled": self.enabled,
+            "talk_active": self.talk_active,
             "speech_recognition_available": SPEECH_RECOGNITION_AVAILABLE,
             "tts_available": self.tts_engine is not None,
             "providers_available": self.get_available_providers(),

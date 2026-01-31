@@ -7,7 +7,7 @@ Raw data NEVER goes directly to synthesis or memory. Verification is mandatory.
 """
 
 from enum import Enum
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from pydantic import BaseModel
 from datetime import datetime
 import logging

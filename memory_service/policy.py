@@ -67,10 +67,17 @@ class AccessPolicy:
         if tenant and tenant in deny_tenants:
             return False
 
-        if allow_roles and (role not in allow_roles):
-            return False
-        if allow_tenants and (tenant not in allow_tenants):
-            return False
+        if allow_roles:
+            if role not in allow_roles:
+                return False
+                
+        if allow_tenants:
+            if tenant not in allow_tenants:
+                return False
+                
+        # If we passed all defined allow constraints, and at least one was defined, grant access
+        if allow_roles or allow_tenants:
+            return True
 
         return self._default_allow()
 

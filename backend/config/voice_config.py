@@ -11,13 +11,25 @@ import os
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 BACKEND_DIR = Path(__file__).parent.parent
 
+# MODELS_ROOT/xtts/voices (shared brain) - used when DAENA_VOICE_WAV not set
+def _models_root_xtts_voices():
+    try:
+        from backend.config.settings import settings
+        root = getattr(settings, "models_root", None)
+        if root:
+            return Path(root) / "xtts" / "voices" / "daena_voice.wav"
+    except Exception:
+        pass
+    return None
+
 # Voice file paths
-# NOTE: We prefer the repo-root `daena_voice.wav` (per project convention),
-# then fall back to `Voice/daena_voice.wav`, then other legacy locations.
+# NOTE: We prefer MODELS_ROOT/xtts/voices/daena_voice.wav (shared), then repo-root, Voice/, etc.
+MODELS_ROOT_VOICE = _models_root_xtts_voices()
 VOICE_PATHS = {
-    "daena_primary": PROJECT_ROOT / "daena_voice.wav",  # Primary: repo root
-    "voice_dir": PROJECT_ROOT / "Voice" / "daena_voice.wav",  # Fallback: Voice directory
-    "daena_backup": BACKEND_DIR / "daena_voice.wav",   # Backup in backend
+    "models_root_xtts": MODELS_ROOT_VOICE,  # Shared brain: MODELS_ROOT/xtts/voices
+    "daena_primary": PROJECT_ROOT / "daena_voice.wav",  # Repo root
+    "voice_dir": PROJECT_ROOT / "Voice" / "daena_voice.wav",
+    "daena_backup": BACKEND_DIR / "daena_voice.wav",
     "static_audio": PROJECT_ROOT / "frontend" / "static" / "audio" / "daena_voice.wav",
     "backend_static": BACKEND_DIR / "static" / "audio" / "daena_voice.wav"
 }
@@ -104,7 +116,7 @@ AGENT_VOICES = {
 }
 
 def get_daena_voice_path() -> Path:
-    """Get the primary Daena voice file path"""
+    """Get the primary Daena voice file path (prefer MODELS_ROOT/xtts/voices, then repo)."""
     # Explicit override (absolute or relative)
     override = os.getenv("DAENA_VOICE_WAV", "").strip()
     if override:
@@ -115,10 +127,9 @@ def get_daena_voice_path() -> Path:
             return p
 
     for name, path in VOICE_PATHS.items():
-        if path.exists():
+        if path is not None and path.exists():
             return path
     
-    # If no voice file found, return the primary path for error handling
     return VOICE_PATHS["daena_primary"]
 
 def get_voice_file_info() -> Dict[str, Any]:
@@ -148,14 +159,14 @@ def get_voice_file_info() -> Dict[str, Any]:
             info["total_size"] = p.stat().st_size
 
     for name, path in VOICE_PATHS.items():
-        if path.exists():
+        if path is not None and path.exists():
             info["available_locations"].append({
                 "name": name,
                 "path": str(path),
-                "size": path.stat().st_size if path.exists() else 0,
+                "size": path.stat().st_size,
                 "exists": True
             })
-            if not info["daena_voice_found"] and name == "daena_primary":
+            if not info["daena_voice_found"] and name in ("models_root_xtts", "daena_primary"):
                 info["daena_voice_found"] = True
                 info["daena_voice_path"] = str(path)
                 info["total_size"] = path.stat().st_size

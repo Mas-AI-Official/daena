@@ -1,5 +1,6 @@
 """
-Minimal backend entry point for debugging
+DEPRECATED: Use backend.main:app for full backend. Run: python -m uvicorn backend.main:app
+Minimal backend entry point for debugging (kept for reference only).
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,5 +33,6 @@ async def departments():
     return [{"id": 1, "name": "Engineering", "slug": "engineering"}]
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    import sys
+    print("DEPRECATED: Use backend.main:app. Run: python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000", file=sys.stderr)
+    sys.exit(1)

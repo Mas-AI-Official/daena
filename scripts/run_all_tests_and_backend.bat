@@ -1,23 +1,15 @@
 @echo off
-REM ============================================================================
-REM Comprehensive Test & Backend Runner
-REM Runs all tests and starts backend, verifies everything works
-REM ============================================================================
-
 setlocal EnableExtensions
+REM Start backend and run comprehensive_test_all_phases.py. For smoke + manual verification (no backend start) use scripts\run_manual_steps.bat.
+
 set "PROJECT_ROOT=%~dp0.."
 cd /d "%PROJECT_ROOT%"
 
-echo.
-echo ============================================================================
-echo COMPREHENSIVE TEST & BACKEND RUNNER
-echo ============================================================================
-echo.
-
-REM Step 1: Check Python
 echo [STEP 1] Checking Python...
-set "PY_MAIN=%PROJECT_ROOT%\venv_daena_main_py310\Scripts\python.exe"
-if not exist "%PY_MAIN%" set "PY_MAIN=python"
+set "PY_MAIN="
+if exist "%PROJECT_ROOT%\venv_daena_main_py310\Scripts\python.exe" set "PY_MAIN=%PROJECT_ROOT%\venv_daena_main_py310\Scripts\python.exe"
+if not defined PY_MAIN if exist "%PROJECT_ROOT%\venv_daena_audio_py310\Scripts\python.exe" set "PY_MAIN=%PROJECT_ROOT%\venv_daena_audio_py310\Scripts\python.exe"
+if not defined PY_MAIN set "PY_MAIN=python"
 "%PY_MAIN%" --version
 if errorlevel 1 (
     echo ❌ Python not found

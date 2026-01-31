@@ -76,8 +76,17 @@ def _log_playbook(action: str, payload: Dict[str, Any]) -> None:
 
 def block_ip(ip: str, reason: str = "manual") -> None:
     if ip:
-        _blocked_ips.add(ip.strip())
+        ip = ip.strip()
+        _blocked_ips.add(ip)
         _log_playbook("block_ip", {"ip": ip, "reason": reason})
+        # Revoke any JWT sessions issued to this IP (containment integration)
+        try:
+            from backend.services.jwt_service import jwt_service
+            revoked = jwt_service.revoke_tokens_for_ip(ip)
+            if revoked:
+                logger.info("[CONTAINMENT] Revoked %d token(s) for blocked IP %s", revoked, ip)
+        except Exception as e:
+            logger.debug("JWT revoke_tokens_for_ip not available or failed: %s", e)
 
 
 def unblock_ip(ip: str) -> None:

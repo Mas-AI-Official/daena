@@ -52,7 +52,7 @@ class FrontendTester:
             "/ui/workspace",
             "/ui/council-dashboard",
             "/ui/analytics",
-            "/ui/system-monitor",
+            "/ui/control-plane",
             "/ui/founder-panel",
             "/ui/memory"
         ]

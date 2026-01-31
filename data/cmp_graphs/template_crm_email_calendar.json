@@ -1,0 +1,149 @@
+{
+  "id": "template_crm_email_calendar",
+  "name": "CRM + Email + Calendar Workflow",
+  "description": "Example workflow: New CRM lead \u2192 Send welcome email \u2192 Schedule follow-up",
+  "nodes": [
+    {
+      "id": "trigger_new_lead",
+      "name": "New Lead Trigger",
+      "type": "trigger",
+      "category": "crm",
+      "position": {
+        "x": 100.0,
+        "y": 200.0
+      },
+      "config": {
+        "credentials_required": [],
+        "parameters": {
+          "event": "lead.created"
+        },
+        "rate_limit": null
+      },
+      "enabled": true,
+      "health": "unknown"
+    },
+    {
+      "id": "action_send_email",
+      "name": "Send Welcome Email",
+      "type": "action",
+      "category": "email",
+      "position": {
+        "x": 350.0,
+        "y": 200.0
+      },
+      "config": {
+        "credentials_required": [
+          "SENDGRID_API_KEY"
+        ],
+        "parameters": {
+          "template": "welcome"
+        },
+        "rate_limit": null
+      },
+      "enabled": true,
+      "health": "unknown"
+    },
+    {
+      "id": "action_create_event",
+      "name": "Schedule Follow-up",
+      "type": "action",
+      "category": "calendar",
+      "position": {
+        "x": 600.0,
+        "y": 200.0
+      },
+      "config": {
+        "credentials_required": [
+          "GOOGLE_API_KEY"
+        ],
+        "parameters": {
+          "delay_days": 3
+        },
+        "rate_limit": null
+      },
+      "enabled": true,
+      "health": "unknown"
+    },
+    {
+      "id": "action_create_ticket",
+      "name": "Create Support Ticket",
+      "type": "action",
+      "category": "crm",
+      "position": {
+        "x": 600.0,
+        "y": 350.0
+      },
+      "config": {
+        "credentials_required": [],
+        "parameters": {
+          "priority": "normal"
+        },
+        "rate_limit": null
+      },
+      "enabled": true,
+      "health": "unknown"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_1",
+      "source_node_id": "trigger_new_lead",
+      "source_output": "default",
+      "target_node_id": "action_send_email",
+      "target_input": "default",
+      "config": {
+        "trigger_type": "on_success",
+        "data_mapping": {},
+        "condition": {
+          "field": null,
+          "operator": null,
+          "value": null,
+          "always": true
+        },
+        "rate_limit": null
+      }
+    },
+    {
+      "id": "edge_2",
+      "source_node_id": "action_send_email",
+      "source_output": "default",
+      "target_node_id": "action_create_event",
+      "target_input": "default",
+      "config": {
+        "trigger_type": "on_success",
+        "data_mapping": {},
+        "condition": {
+          "field": null,
+          "operator": null,
+          "value": null,
+          "always": true
+        },
+        "rate_limit": null
+      }
+    },
+    {
+      "id": "edge_3",
+      "source_node_id": "action_send_email",
+      "source_output": "default",
+      "target_node_id": "action_create_ticket",
+      "target_input": "default",
+      "config": {
+        "trigger_type": "on_error",
+        "data_mapping": {},
+        "condition": {
+          "field": null,
+          "operator": null,
+          "value": null,
+          "always": true
+        },
+        "rate_limit": null
+      }
+    }
+  ],
+  "version": 1,
+  "created_at": "2026-01-22 00:11:48.600523",
+  "updated_at": "2026-01-22 00:11:48.600529",
+  "owner_id": null,
+  "is_template": true,
+  "enabled": true
+}

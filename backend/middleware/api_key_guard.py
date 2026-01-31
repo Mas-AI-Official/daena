@@ -24,36 +24,20 @@ class APIKeyGuard(BaseHTTPMiddleware):
         self.api_key = API_KEY
         self.test_api_key = TEST_API_KEY
         
-        # List of paths that don't require authentication
+        # Strictly public paths only (no auth). System/config/logs/daena require API key.
         self.public_paths = [
-            "/", 
-            "/api/v1/health", 
-            "/api/v1/rate-limit", 
-            "/dashboard", 
+            "/",
+            "/health",
+            "/health/",
+            "/api/v1/health",
+            "/api/v1/rate-limit",
+            "/dashboard",
             "/dashboard/",
-            "/api/v1/external/test",  # Allow test endpoint
+            "/api/v1/external/test",
             "/docs",
             "/openapi.json",
             "/api/v1/docs",
             "/api/v1/openapi.json",
-            "/api/v1/monitoring/metrics",  # Allow metrics endpoint
-            "/api/v1/config",  # Allow config endpoint
-            "/api/v1/logs",  # Allow logs endpoint
-            "/api/v1/daena/status",  # Allow status endpoint
-            "/api/v1/daena/analytics",  # Allow analytics endpoint
-            "/api/v1/daena/logs",  # Allow daena logs endpoint
-            "/api/v1/system/emergency-stop",  # Allow system endpoints
-            "/api/v1/system/reboot",
-            "/api/v1/system/security-audit",
-            "/api/v1/system/performance-optimize",
-            "/api/v1/system/update-ai-models",
-            "/api/v1/system/deploy-agent",
-            "/api/v1/system/create-backup",
-            "/api/v1/system/monitor-network",
-            "/api/v1/system/manage-users",
-            "/api/v1/system/generate-analytics-report",
-            "/api/v1/system/setup-workflow-automation",
-            "/api/v1/system/manage-apis"
         ]
         
         # External API paths that use their own authentication
@@ -80,6 +64,10 @@ class APIKeyGuard(BaseHTTPMiddleware):
             
         # Allow external API paths (they have their own authentication)
         if request.url.path.startswith("/api/v1/external/"):
+            return await call_next(request)
+
+        # Execution layer uses X-Execution-Token only (no global API key required)
+        if request.url.path.startswith("/api/v1/execution/"):
             return await call_next(request)
             
         # Allow OPTIONS requests (CORS preflight)

@@ -5,16 +5,67 @@ Provides text-to-speech with voice cloning using Coqui TTS XTTS-v2
 import logging
 import os
 from pathlib import Path
+import functools
+
+# Force torchaudio backend to soundfile to avoid TorchCodec issues in PyTorch 2.6+
+os.environ["TORCHAUDIO_BACKEND"] = "soundfile"
+
 import torch
 
-# Apply XTTS Fix for PyTorch 2.6+ (must be before TTS import)
+# Apply XTTS Fix for PyTorch 2.6+ and torchaudio 2.9.1+ (must be before TTS import)
 try:
-    from torch.serialization import add_safe_globals
-    from TTS.tts.configs.xtts_config import XttsConfig
-    add_safe_globals([XttsConfig])
-except ImportError:
-    pass  # PyTorch < 2.6 or TTS not installed yet
-except Exception:
+    import torch
+    import torchaudio
+    import soundfile as sf
+    import numpy as np
+    import functools
+    
+    # 1. Monkeypatch torch.load to disable weights_only by default
+    original_torch_load = torch.load
+    @functools.wraps(original_torch_load)
+    def patched_torch_load(*args, **kwargs):
+        if 'weights_only' not in kwargs:
+            kwargs['weights_only'] = False
+        return original_torch_load(*args, **kwargs)
+    
+    torch.load = patched_torch_load
+    print("PyTorch 2.6+ weights_only fix applied via monkeypatch")
+    
+    # 2. Monkeypatch torchaudio.load to use soundfile directly
+    # This bypasses the broken torchcodec in torchaudio 2.9.1+
+    original_torchaudio_load = torchaudio.load
+    @functools.wraps(original_torchaudio_load)
+    def patched_torchaudio_load(filepath, *args, **kwargs):
+        try:
+            data, samplerate = sf.read(filepath)
+            # Convert to tensor (channels, samples)
+            if len(data.shape) == 1:
+                # Mono
+                tensor = torch.from_numpy(data).float().unsqueeze(0)
+            else:
+                # Stereo or more
+                tensor = torch.from_numpy(data).float().transpose(0, 1)
+            return tensor, samplerate
+        except Exception as e:
+            # Fallback to original if soundfile fails
+            return original_torchaudio_load(filepath, *args, **kwargs)
+
+    torchaudio.load = patched_torchaudio_load
+    print("torchaudio.load patched with soundfile")
+    
+    # Ensure FFmpeg is in PATH for Windows
+    ffmpeg_paths = [
+        r"C:\ProgramData\chocolatey\bin",
+        r"C:\ffmpeg\bin",
+        r"C:\Program Files\ffmpeg\bin"
+    ]
+    for path in ffmpeg_paths:
+        if os.path.exists(path) and path not in os.environ["PATH"]:
+            os.environ["PATH"] += os.pathsep + path
+            print(f"Added {path} to PATH for FFmpeg")
+            
+except Exception as e:
+    print(f"Note: PyTorch/Torchaudio fix failed: {e}")
     pass
 
 from TTS.api import TTS
