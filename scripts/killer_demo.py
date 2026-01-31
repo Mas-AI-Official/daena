@@ -30,6 +30,12 @@ from typing import Dict, List, Any
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Set encoding for Windows console to handle Unicode box drawing characters
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+
 # ANSI colors for terminal output
 class Colors:
     HEADER = '\033[95m'
@@ -45,11 +51,14 @@ class Colors:
 # Database Integration for Frontend Wiring
 try:
     from backend.database import SessionLocal, EventLog, Base, engine
-    # Ensure tables exist (Robustness)
-    Base.metadata.create_all(bind=engine)
+    # Ensure tables exist (Robustness) - ignore errors if DB is locked
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as db_e:
+        print(f"{Colors.YELLOW}Warning: Database schema check failed ({db_e}). Continuing...{Colors.ENDC}")
     DB_AVAILABLE = True
-except ImportError as e:
-    print(f"{Colors.YELLOW}Warning: Backend imports failed ({e}). Running in terminal-only mode.{Colors.ENDC}")
+except Exception as e:
+    print(f"{Colors.YELLOW}Warning: Backend/DB initialization failed ({e}). Running in terminal-only mode.{Colors.ENDC}")
     DB_AVAILABLE = False
 
 def log_event(event_type: str, entity_type: str, entity_id: str, payload: Dict[str, Any]):
