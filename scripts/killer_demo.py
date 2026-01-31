@@ -44,7 +44,9 @@ class Colors:
 
 # Database Integration for Frontend Wiring
 try:
-    from backend.database import SessionLocal, EventLog
+    from backend.database import SessionLocal, EventLog, Base, engine
+    # Ensure tables exist (Robustness)
+    Base.metadata.create_all(bind=engine)
     DB_AVAILABLE = True
 except ImportError as e:
     print(f"{Colors.YELLOW}Warning: Backend imports failed ({e}). Running in terminal-only mode.{Colors.ENDC}")
