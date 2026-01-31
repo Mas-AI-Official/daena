@@ -98,11 +98,13 @@ def setup_logging(environment: str = None):
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 
     # Windows console safety: avoid UnicodeEncodeError (cp1252) breaking logs
-    try:
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    # SKIP if running in tests (pytest captures stdout, reconfiguring breaks it)
+    if environment != "test":
+        try:
+            if hasattr(sys.stdout, "reconfigure"):
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     
     # Clear existing handlers
     root_logger = logging.getLogger()

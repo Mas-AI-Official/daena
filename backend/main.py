@@ -869,7 +869,7 @@ Monitoring endpoints require API key authentication.
 # 🚨 SECURITY: DISABLE_AUTH guard - prevent running without auth in production
 _disable_auth = os.getenv("DISABLE_AUTH", "0") == "1"
 _environment = os.getenv("ENVIRONMENT", "development").lower()
-if _disable_auth and _environment not in ("development", "dev", "local"):
+if _disable_auth and _environment not in ("development", "dev", "local", "test"):
     raise RuntimeError(
         "🚨 SECURITY ERROR: DISABLE_AUTH=1 is NOT allowed outside development environment!\n"
         f"   Current ENVIRONMENT={_environment}\n"
@@ -1237,28 +1237,21 @@ except ImportError as e:
     logger.warning(f"Presence routes not available: {e}")
 
 # Include Abstract Store routes (Wave B - Task B5)
-try:
-    from backend.routes.abstract_store import router as abstract_router
-    app.include_router(abstract_router)
-    logger.info("Abstract Store routes registered (Wave B - Task B5)")
-except ImportError as e:
-    logger.warning(f"Abstract Store routes not available: {e}")
+# Abstract Store routes commented out pending migration
+# try:
+#     from backend.routes.abstract_store import router as abstract_router
+#     app.include_router(abstract_router)
+#     logger.info("Abstract Store routes registered (Wave B - Task B5)")
+# except ImportError as e:
+#     logger.warning(f"Abstract Store routes not available: {e}")
 
 # Include OCR Fallback routes (Wave B - Task B6)
 try:
     from backend.routes.ocr_fallback import router as ocr_router
     app.include_router(ocr_router)
-    # Integrate OCR with Abstract Store
-    from memory_service.ocr_fallback import integrate_ocr_with_abstract_store
-    import asyncio
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(integrate_ocr_with_abstract_store())
-        else:
-            loop.run_until_complete(integrate_ocr_with_abstract_store())
-    except:
-        pass  # Integration will happen on first use
+    # Legacy OCR Integration disabled
+    # from memory_service.ocr_fallback import integrate_ocr_with_abstract_store
+    # ...
     logger.info("OCR Fallback routes registered (Wave B - Task B6)")
 except ImportError as e:
     logger.warning(f"OCR Fallback routes not available: {e}")

@@ -9,8 +9,16 @@ import logging
 import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import sys
+import os
+
+# Ensure backend modules are importable
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import openai
 from backend.services.email_service import email_service
+# PHASE 3: Unified Memory Import
+from backend.memory import memory
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -338,18 +346,33 @@ Best regards,
         return results
     
     def _save_campaign_results(self, results: Dict[str, Any]) -> str:
-        """Save campaign results to JSON file"""
+        """Save campaign results to Unified Memory (L2)"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        campaign_id = f"campaign_{timestamp}"
+        
+        # Write to Unified Memory
+        memory.write(
+            key=campaign_id,
+            cls="email_campaign",
+            payload=results,
+            meta={
+                "type": "campaign_report",
+                "timestamp": timestamp,
+                "stats": {
+                    "sent": results['sent'],
+                    "failed": results['failed']
+                }
+            }
+        )
+        
+        # Legacy fallback (optional, can remove later)
         filename = f"logs/email_campaign_{timestamp}.json"
-        
-        # Ensure logs directory exists
         os.makedirs("logs", exist_ok=True)
-        
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
-        
-        logger.info(f"✅ Saved campaign results to {filename}")
-        return filename
+            
+        logger.info(f"✅ Saved campaign results to Unified Memory (Key: {campaign_id}) and File ({filename})")
+        return campaign_id
     
     def generate_voice_summary(self, campaign_results: Dict[str, Any]) -> str:
         """Generate a voice summary of the email campaign"""

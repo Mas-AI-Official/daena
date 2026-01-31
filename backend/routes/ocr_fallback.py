@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
-from memory_service.ocr_fallback import ocr_fallback_service, OCRProvider
+from backend.services.ocr_service import ocr_service, OCRProvider
 
 router = APIRouter(prefix="/api/v1/ocr", tags=["ocr"])
 
@@ -23,7 +23,7 @@ class OCRRequest(BaseModel):
 async def process_ocr(request: OCRRequest) -> Dict[str, Any]:
     """Process OCR fallback for a source URI."""
     try:
-        result = await ocr_fallback_service.process_ocr_fallback(
+        result = await ocr_service.process_ocr(
             source_uri=request.source_uri,
             page_crop=request.page_crop,
             force_refresh=request.force_refresh
@@ -48,7 +48,7 @@ async def process_ocr(request: OCRRequest) -> Dict[str, Any]:
 @router.get("/stats")
 async def get_ocr_stats() -> Dict[str, Any]:
     """Get OCR fallback statistics."""
-    stats = ocr_fallback_service.get_stats()
+    stats = ocr_service.get_stats()
     
     return {
         "success": True,
@@ -59,7 +59,7 @@ async def get_ocr_stats() -> Dict[str, Any]:
 @router.get("/fallback-rate")
 async def get_fallback_rate() -> Dict[str, Any]:
     """Get OCR fallback rate."""
-    rate = ocr_fallback_service.get_fallback_rate()
+    rate = ocr_service.get_fallback_rate()
     
     return {
         "success": True,

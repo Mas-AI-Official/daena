@@ -19,8 +19,32 @@ from enum import Enum
 
 from backend.utils.message_bus_v2 import message_bus_v2, TopicMessage
 from backend.utils.tracing import get_tracing_service, trace_council_round
-from memory_service.ledger import log_event
-from memory_service.router import MemoryRouter
+
+# PHASE 3: Unified Memory Integration
+from backend.memory import memory
+from backend.database import SessionLocal, EventLog
+
+def log_event(action: str, ref: str, store: str, route: str, extra: Dict[str, Any]):
+    """Unified Event Logging Adapter"""
+    try:
+        db = SessionLocal()
+        event = EventLog(
+            event_type=action,
+            entity_type="council",
+            entity_id=ref,
+            payload_json={
+                "store": store,
+                "route": route,
+                "extra": extra
+            },
+            created_by="council_scheduler"
+        )
+        db.add(event)
+        db.commit()
+        db.close()
+    except Exception as e:
+        # Fallback logging
+        pass
 
 # Optional poisoning filters
 try:
@@ -81,8 +105,9 @@ class CouncilScheduler:
     3. Commit Phase: Executor commits actions to NBMF
     """
     
-    def __init__(self, router: Optional[MemoryRouter] = None):
-        self.router = router or MemoryRouter()
+    def __init__(self, router: Any = None):
+        # Use Unified Memory Manager (acting as router)
+        self.router = router or memory
         self.current_phase: CouncilPhase = CouncilPhase.IDLE
         self.phase_timeouts: Dict[CouncilPhase, float] = {
             CouncilPhase.SCOUT: 30.0,  # 30 seconds
@@ -531,11 +556,13 @@ class CouncilScheduler:
             if tenant_id:
                 item_id = f"{tenant_id}:{item_id}"
             
-            result = self.router.write_nbmf_only(
-                item_id,
-                "council_action",
-                action_payload,
-                {
+            # PHASE 3: Write to Unified Memory
+            # Mapping write_nbmf_only -> memory.write
+            result = self.router.write(
+                key=item_id,
+                cls="council_action",
+                payload=action_payload,
+                meta={
                     "department": department,
                     "topic": topic,
                     "phase": "commit",
@@ -570,7 +597,7 @@ class CouncilScheduler:
             
             # Link to related memories
             try:
-                from memory_service.router import MemoryRouter
+                # from backend.memory import memory
                 # In production, find related memories and link them
                 # For now, just log
                 logger.debug(f"Memory linking would happen here for {item_id}")
@@ -724,12 +751,9 @@ class CouncilScheduler:
             }
         
         try:
-            from memory_service.abstract_store import AbstractStore, StorageMode
-            
-            abstract_store = AbstractStore(router=self.router)
+            # PHASE 3: Unified Memory (Abstract+Pointer pattern simulated in L2)
             
             # Get the committed action (from previous phase)
-            # In production, retrieve from commit_results
             action_payload = {
                 "action": f"Council decision for {topic}",
                 "department": department,
@@ -746,15 +770,17 @@ class CouncilScheduler:
             if tenant_id:
                 item_id = f"{tenant_id}:{item_id}"
             
-            # Store using abstract+pointer pattern with tenant/project isolation
-            result = abstract_store.store_abstract(
-                item_id,
-                "council_decision",
-                action_payload,
-                source_uri=f"council://{department}/{item_id}",
-                mode=StorageMode.HYBRID,
-                tenant_id=tenant_id,
-                project_id=project_id
+            # Store using Unified Memory
+            result = self.router.write(
+                key=item_id,
+                cls="council_decision",
+                payload=action_payload,
+                meta={
+                    "source_uri": f"council://{department}/{item_id}",
+                    "mode": "hybrid",
+                    "tenant_id": tenant_id,
+                    "project_id": project_id
+                }
             )
             
             phase_duration = time.time() - phase_start

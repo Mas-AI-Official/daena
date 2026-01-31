@@ -7,8 +7,29 @@ import os
 import sys
 
 # Add the project root directory to Python path
+# Add the project root directory to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
+os.environ["ENVIRONMENT"] = "test"  # Force test environment for logging safety
+
+# Mock problematic services BEFORE importing backend.main
+os.environ["ENVIRONMENT"] = "test"
+if "DISABLE_AUTH" in os.environ:
+    del os.environ["DISABLE_AUTH"]
+
+from unittest.mock import MagicMock
+
+# Mock Voice Service (avoids COM/Audio init)
+sys.modules["backend.services.voice_service"] = MagicMock()
+sys.modules["services.voice_service"] = MagicMock()
+
+# Mock LLM Service (avoids API calls)
+sys.modules["backend.services.llm_service"] = MagicMock()
+sys.modules["services.llm_service"] = MagicMock()
+
+# Mock GPU Service (avoids nvidia-smi calls)
+sys.modules["backend.services.gpu_service"] = MagicMock()
+sys.modules["services.gpu_service"] = MagicMock()
 
 from backend.main import app
 try:
