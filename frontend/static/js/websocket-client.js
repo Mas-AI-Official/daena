@@ -29,7 +29,7 @@ class WebSocketClient {
      */
     connect(endpoint, connectionId = null) {
         const id = connectionId || endpoint;
-        
+
         // Don't reconnect if already connected
         if (this.connections.has(id)) {
             const ws = this.connections.get(id);
@@ -41,9 +41,9 @@ class WebSocketClient {
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}${endpoint}`;
-        
+
         console.log(`Connecting to WebSocket: ${wsUrl}`);
-        
+
         const ws = new WebSocket(wsUrl);
         this.connections.set(id, ws);
         this.reconnectAttempts.set(id, 0);
@@ -81,7 +81,7 @@ class WebSocketClient {
             this.metrics.activeConnections = Math.max(0, this.metrics.activeConnections - 1);
             this.updateConnectionStatus(id, 'disconnected');
             this.emit('disconnected', { endpoint, id });
-            
+
             // Attempt to reconnect
             const attempts = this.reconnectAttempts.get(id) || 0;
             if (attempts < this.maxReconnectAttempts) {
@@ -104,10 +104,10 @@ class WebSocketClient {
      */
     handleMessage(connectionId, data) {
         const eventType = data.event_type;
-        
+
         // Emit event to registered handlers
         this.emit(eventType, data);
-        
+
         // Handle specific event types
         switch (eventType) {
             case 'chat.message':
@@ -235,7 +235,7 @@ class WebSocketClient {
                 const now = Date.now();
                 const batch = this.messageQueue.filter(m => now - m.timestamp < this.batchInterval);
                 this.messageQueue = this.messageQueue.filter(m => now - m.timestamp >= this.batchInterval);
-                
+
                 // Group by connection
                 const byConnection = {};
                 batch.forEach(({ connectionId, message }) => {
@@ -244,7 +244,7 @@ class WebSocketClient {
                     }
                     byConnection[connectionId].push(message);
                 });
-                
+
                 // Send batches
                 Object.entries(byConnection).forEach(([connectionId, messages]) => {
                     if (messages.length === 1) {
@@ -271,7 +271,7 @@ class WebSocketClient {
             status,
             ...data
         });
-        
+
         // Update status indicator if it exists
         const statusElement = document.getElementById(`ws-status-${connectionId}`);
         if (statusElement) {
@@ -319,6 +319,7 @@ class WebSocketClient {
 
 // Global WebSocket client instance
 window.WebSocketClient = new WebSocketClient();
+window.wsClient = window.WebSocketClient; // Alias for legacy code (dashboard.js, sync-manager.js)
 
 // Auto-connect to general events on page load
 if (document.readyState === 'loading') {

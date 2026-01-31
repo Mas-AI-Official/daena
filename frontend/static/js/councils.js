@@ -196,4 +196,14 @@ function chatWithCouncil(councilId) {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     loadCouncils();
+
+    // Listen for WebSocket updates (via Global Client)
+    if (window.wsClient) {
+        window.wsClient.on('council.updated', (data) => {
+            console.log('Council updated, refreshing...', data);
+            loadCouncils();
+        });
+        window.wsClient.on('council.created', loadCouncils);
+        window.wsClient.on('council.deleted', loadCouncils);
+    }
 });
