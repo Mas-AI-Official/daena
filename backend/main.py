@@ -866,18 +866,6 @@ Monitoring endpoints require API key authentication.
     lifespan=lifespan,
 )
 
-# 🚨 SECURITY: DISABLE_AUTH guard - prevent running without auth in production
-_disable_auth = os.getenv("DISABLE_AUTH", "0") == "1"
-_environment = os.getenv("ENVIRONMENT", "development").lower()
-if _disable_auth and _environment not in ("development", "dev", "local", "test"):
-    raise RuntimeError(
-        "🚨 SECURITY ERROR: DISABLE_AUTH=1 is NOT allowed outside development environment!\n"
-        f"   Current ENVIRONMENT={_environment}\n"
-        "   Either set ENVIRONMENT=development or remove DISABLE_AUTH."
-    )
-if _disable_auth:
-    logger.warning("⚠️ DISABLE_AUTH=1 - Authentication is disabled (dev mode only)")
-
 # Add CORS middleware - restrict to configured origins (no "*" in production)
 _cors_origins = get_cors_origins()
 if not _cors_origins or "*" in _cors_origins:
@@ -1237,21 +1225,28 @@ except ImportError as e:
     logger.warning(f"Presence routes not available: {e}")
 
 # Include Abstract Store routes (Wave B - Task B5)
-# Abstract Store routes commented out pending migration
-# try:
-#     from backend.routes.abstract_store import router as abstract_router
-#     app.include_router(abstract_router)
-#     logger.info("Abstract Store routes registered (Wave B - Task B5)")
-# except ImportError as e:
-#     logger.warning(f"Abstract Store routes not available: {e}")
+try:
+    from backend.routes.abstract_store import router as abstract_router
+    app.include_router(abstract_router)
+    logger.info("Abstract Store routes registered (Wave B - Task B5)")
+except ImportError as e:
+    logger.warning(f"Abstract Store routes not available: {e}")
 
 # Include OCR Fallback routes (Wave B - Task B6)
 try:
     from backend.routes.ocr_fallback import router as ocr_router
     app.include_router(ocr_router)
-    # Legacy OCR Integration disabled
-    # from memory_service.ocr_fallback import integrate_ocr_with_abstract_store
-    # ...
+    # Integrate OCR with Abstract Store
+    from memory_service.ocr_fallback import integrate_ocr_with_abstract_store
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(integrate_ocr_with_abstract_store())
+        else:
+            loop.run_until_complete(integrate_ocr_with_abstract_store())
+    except:
+        pass  # Integration will happen on first use
     logger.info("OCR Fallback routes registered (Wave B - Task B6)")
 except ImportError as e:
     logger.warning(f"OCR Fallback routes not available: {e}")
@@ -1324,14 +1319,6 @@ try:
     except ImportError as e:
         logger.warning(f"Analytics routes not available: {e}")
     
-    # Data Integrity Shield - Daena's #1 differentiator
-    try:
-        from backend.routes.integrity import router as integrity_router
-        app.include_router(integrity_router)
-        logger.info("✅ Data Integrity Shield routes registered at /api/v1/integrity")
-    except Exception as e:
-        logger.warning(f"⚠️ Data Integrity Shield routes not available: {e}")
-    
     # Message queue persistence endpoints
     try:
         from backend.routes.message_queue import router as message_queue_router
@@ -1339,14 +1326,6 @@ try:
         logger.info("Message queue routes registered")
     except ImportError as e:
         logger.warning(f"Message queue routes not available: {e}")
-    
-    # Outcome Tracker - Learning Loop feedback system
-    try:
-        from backend.routes.outcomes import router as outcomes_router
-        app.include_router(outcomes_router)
-        logger.info("✅ Outcome Tracker routes registered at /api/v1/outcomes")
-    except Exception as e:
-        logger.warning(f"⚠️ Outcome Tracker routes not available: {e}")
     
     # External integrations endpoints
     try:
@@ -1793,64 +1772,10 @@ except ImportError as e:
 # DeFi / Web3 Smart Contract Security API
 try:
     from backend.routes.defi import router as defi_router
-    app.include_router(defi_router, tags=["defi"])
+    app.include_router(defi_router, prefix="/api/v1", tags=["defi"])
     logger.info("✅ DeFi Security API registered at /api/v1/defi")
 except ImportError as e:
     logger.warning(f"⚠️ DeFi Security API not available: {e}")
-
-# Skill Registry API (Dynamic skills with governance)
-try:
-    from backend.routes.skills import router as skills_router
-    app.include_router(skills_router, tags=["skills"])
-    logger.info("✅ Skill Registry API registered at /api/v1/skills")
-except ImportError as e:
-    logger.warning(f"⚠️ Skill Registry API not available: {e}")
-
-# Package Auditor API (Supply-chain security)
-try:
-    from backend.routes.packages import router as packages_router
-    app.include_router(packages_router, tags=["packages"])
-    logger.info("✅ Package Auditor API registered at /api/v1/packages")
-except ImportError as e:
-    logger.warning(f"⚠️ Package Auditor API not available: {e}")
-
-# Outcome Tracker API (Learning loop feedback)
-try:
-    from backend.routes.outcomes import router as outcomes_router
-    app.include_router(outcomes_router, tags=["outcomes"])
-    logger.info("✅ Outcome Tracker API registered at /api/v1/outcomes")
-except ImportError as e:
-    logger.warning(f"⚠️ Outcome Tracker API not available: {e}")
-
-# Data Integrity Shield API (Anti-manipulation)
-# Data Integrity Shield API (Anti-manipulation)
-from backend.routes.integrity import router as integrity_router
-app.include_router(integrity_router, tags=["integrity"])
-logger.info("✅ Integrity Shield API registered at /api/v1/integrity")
-
-# NBMF Memory API (3-tier hierarchical memory)
-# NBMF Memory API (3-tier hierarchical memory)
-from backend.routes.memory import router as memory_router
-app.include_router(memory_router, tags=["memory"])
-logger.info("✅ NBMF Memory API registered at /api/v1/memory")
-
-# Governance Loop API (System-wide decision control)
-# Governance Loop API (System-wide decision control)
-from backend.routes.governance import router as governance_router
-app.include_router(governance_router, tags=["governance"])
-logger.info("✅ Governance Loop API registered at /api/v1/governance")
-
-# Shadow Department API (Defensive deception layer)
-# Shadow Department API (Defensive deception layer)
-from backend.routes.shadow import router as shadow_router
-app.include_router(shadow_router, tags=["shadow"])
-logger.info("✅ Shadow Department API registered at /api/v1/shadow")
-
-# Research Agent API (Multi-source knowledge gathering)
-# Research Agent API (Multi-source knowledge gathering)
-from backend.routes.research import router as research_router
-app.include_router(research_router, tags=["research"])
-logger.info("✅ Research Agent API registered at /api/v1/research")
 
 # Test the events endpoint
 @app.get("/test-events")
@@ -2486,6 +2411,32 @@ async def get_chat_status():
         "voice_available": VOICE_AVAILABLE,
         "timestamp": datetime.now().isoformat()
     }
+
+
+# Pipeline (Think → Plan → Execute) — every message can trigger this; Daena Office may call before/with stream
+class PipelineChatMessage(BaseModel):
+    message: str
+    department: Optional[str] = None
+    session_id: Optional[str] = "default"
+
+
+@app.post("/api/v1/pipeline/chat")
+async def pipeline_chat(msg: PipelineChatMessage):
+    """Run Think → Plan → (Request tools) → Approve → Execute → Verify. Returns pipeline_id, stages, actions, governance_status."""
+    try:
+        from backend.routes.chat import chat as pipeline_chat_handler
+        from backend.routes.chat import ChatMessage as PipelineChatMessageModel
+        m = PipelineChatMessageModel(message=msg.message, department=msg.department, session_id=msg.session_id)
+        return await pipeline_chat_handler(m)
+    except Exception as e:
+        logger.warning(f"Pipeline chat error: {e}")
+        return {
+            "response": str(e),
+            "pipeline_id": "",
+            "stages": [],
+            "actions": [],
+            "governance_status": "blocked"
+        }
 
 @app.get("/api/v1/voice/status")
 async def get_voice_status():
@@ -4486,7 +4437,7 @@ except Exception as e:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "backend.main:app",
+        "main:app",
         host=settings.host,
         port=settings.port,
         reload=False,

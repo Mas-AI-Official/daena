@@ -159,13 +159,13 @@ if exist "%~dp0venv_daena_audio_py310\Scripts\python.exe" (
 )
 echo.
 
-REM ---- 6. Wait for Backend (Harden to 60 attempts) ----
+REM ---- 6. Wait for Backend ----
 echo [6/6] Waiting for Backend to be ready...
 set /a COUNT=0
 
 :WAIT_LOOP
 set /a COUNT+=1
-echo   [*] Attempt %COUNT%/60...
+echo   [*] Attempt %COUNT%/30...
 
 REM Try to connect to health endpoint
 powershell -NoProfile -Command "try{$null=Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:%BACKEND_PORT%/health' -TimeoutSec 2;exit 0}catch{exit 1}" >nul 2>&1
@@ -174,11 +174,10 @@ if %errorlevel%==0 (
     goto :READY
 )
 
-if %COUNT% GEQ 60 (
+if %COUNT% GEQ 30 (
     echo.
-    echo   [WARN] Backend did not respond after 120 seconds.
-    echo   [WARN] It might still be loading agents (Sunflower structure takes time^).
-    echo   [WARN] Check the [DAENA - BACKEND] window for current status.
+    echo   [WARN] Backend did not respond after 30 attempts.
+    echo   [WARN] Check the DAENA - BACKEND window for errors.
     echo.
     goto :READY
 )
@@ -189,40 +188,37 @@ goto :WAIT_LOOP
 :READY
 echo.
 echo ============================================================
-echo.
-echo ============================================================
-echo   DAENA AI VP
-echo   (Claude Framework Integrated)
+echo   DAENA STARTUP COMPLETE
 echo ============================================================
 echo.
 echo   Main URLs:
-echo   Backend URL:      http://127.0.0.1:%BACKEND_PORT%
+echo   Backend:          http://127.0.0.1:%BACKEND_PORT%
 echo   Daena Office:     http://127.0.0.1:%BACKEND_PORT%/ui/daena-office
 echo   API Docs:         http://127.0.0.1:%BACKEND_PORT%/docs
 echo.
-echo   Control Panels:
+echo   Sidebar (VP):
 echo   Dashboard:        http://127.0.0.1:%BACKEND_PORT%/ui/dashboard
 echo   Control Plane:    http://127.0.0.1:%BACKEND_PORT%/ui/control-plane
-echo   CMP Canvas:       http://127.0.0.1:%BACKEND_PORT%/cmp-canvas
+echo   Brain ^& API:     http://127.0.0.1:%BACKEND_PORT%/ui/brain-api
+echo   Web3 / DeFi:      http://127.0.0.1:%BACKEND_PORT%/ui/web3
+echo   Founder:         http://127.0.0.1:%BACKEND_PORT%/ui/founder-panel
 echo.
-echo   Architecture: 8x6 Sunflower-Honeycomb (48 agents)
+echo   Other:
+echo   QA Guardian:      http://127.0.0.1:%BACKEND_PORT%/api/v1/qa/ui
+echo   Incident Room:    http://127.0.0.1:%BACKEND_PORT%/ui/incident-room
+echo   Wiring audit:     http://127.0.0.1:%BACKEND_PORT%/ui/wiring-audit
+echo.
 echo   QA Guardian Status: %QA_GUARDIAN_ENABLED%
+echo   Check the "DAENA - BACKEND" window for server logs.
 echo.
 echo ============================================================
 echo.
 
-REM Auto-launch Dashboard (Retry logic + multiple fallback)
-echo   [+] Launching Daena Control Plane (v2) in your default browser...
-echo   [+] URL: http://127.0.0.1:%BACKEND_PORT%/ui/control-plane
-
-start "" "http://127.0.0.1:%BACKEND_PORT%/ui/control-plane"
-if errorlevel 1 (
-    echo   [WARN] 'start' command failed. Opening via PowerShell...
-    powershell -Command "Start-Process 'http://127.0.0.1:%BACKEND_PORT%/ui/control-plane'"
-)
+REM Auto-launch Dashboard
+echo   [+] Launching Dashboard...
+start "" "http://127.0.0.1:%BACKEND_PORT%/ui/daena-office"
 
 echo.
-echo [DONE] System is active. 
 echo Press any key to close this launcher window...
 echo (The backend will continue running in its own window)
 pause >nul
