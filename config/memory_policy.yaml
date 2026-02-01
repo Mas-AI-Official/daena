@@ -1,0 +1,150 @@
+# =============================================================================
+# DAENA MEMORY POLICY CONFIGURATION
+# NBMF (Neural Bytecode Memory Format) Hierarchical Memory System
+# =============================================================================
+#
+# This configuration defines how data is routed through Daena's 3-tier memory:
+# - L1 HOT: Vector DB cache (p95 < 25ms recall)
+# - L2 WARM: NBMF encoded storage (compressed + encrypted)
+# - L3 COLD: Summarized archives
+#
+# Fidelity modes:
+# - lossless: Exact reconstruction (legal, finance, PII)
+# - semantic: Meaning-preserving, may change phrasing (chat, logs)
+# - lossless_edge: Lossless but kept on-device only
+#
+# =============================================================================
+
+memory_policy:
+  version: "1.0"
+  
+  # Data classification policies
+  classes:
+    
+    # CRITICAL - Always lossless, long retention
+    legal:
+      fidelity: lossless
+      retention: 7y          # 2555 days
+      hot_cache_days: 30
+      encrypt: true
+      promote_on_access: true
+      
+    finance:
+      fidelity: lossless
+      retention: 7y
+      hot_cache_days: 30
+      encrypt: true
+      promote_on_access: true
+      
+    pii:
+      fidelity: lossless_edge
+      retention: 7y
+      on_device: true        # Never leaves client device
+      encrypt: true
+      federated: true        # Learn from it without moving it
+      
+    # HIGH VALUE - Lossless, moderate retention
+    skill:
+      fidelity: lossless
+      retention: 10y
+      hot_cache_days: 90
+      encrypt: false
+      
+    threat:
+      fidelity: lossless
+      retention: 5y
+      hot_cache_days: 30
+      encrypt: true
+      
+    config:
+      fidelity: lossless
+      retention: 5y
+      hot_cache_days: 365
+      encrypt: true
+      
+    # STANDARD - Semantic, typical retention
+    chat:
+      fidelity: semantic
+      retention: 180d
+      hot_cache_days: 14
+      encrypt: false
+      
+    ops_log:
+      fidelity: semantic
+      retention: 90d
+      hot_cache_days: 7
+      batch_only: true       # Only accessed in batch, not individually
+      
+    research_note:
+      fidelity: semantic
+      retention: 365d
+      hot_cache_days: 30
+      
+    outcome:
+      fidelity: semantic
+      retention: 365d
+      hot_cache_days: 14
+      
+    # SPECIAL - Training data
+    training_chunk:
+      fidelity_global: semantic   # Semantic in cloud
+      fidelity_edge: lossless     # Lossless on device
+      retention: 730d             # 2 years
+      federated: true             # Support federated learning
+      
+    # DEFAULT - For unknown data classes
+    unknown:
+      fidelity: semantic
+      retention: 90d
+      hot_cache_days: 7
+
+  # Aging rules (time-based tier transitions)
+  aging:
+    - after_days: 14
+      action: tighten_compression
+      apply_to:
+        - chat
+        - ops_log
+        - research_note
+        
+    - after_days: 90
+      action: summarize_pack
+      apply_to:
+        - chat
+        - ops_log
+        
+    - after_days: 365
+      action: archive_cold
+      apply_to:
+        - research_note
+        - outcome
+        
+  # SLA targets
+  slas:
+    hot_p95_ms: 25          # L1 recall target
+    warm_p95_ms: 120        # L2 recall target
+    cold_p95_ms: 500        # L3 recall target
+    
+  # Security settings
+  security:
+    encrypt_at_rest: AES-256
+    integrity_hash: SHA-256
+    ledger: local_append_only
+    key_rotation_days: 90
+    
+  # Compression settings
+  compression:
+    algorithm: zstd          # zlib, brotli, zstd
+    lossless_level: 9        # Max compression for lossless
+    semantic_level: 6        # Balanced for semantic
+    
+  # Hot cache settings
+  hot_cache:
+    max_items: 10000
+    eviction_policy: lru
+    embedding_dimension: 128
+    
+  # Archive settings
+  archive:
+    pack_size: 100           # Items per pack file
+    cleanup_after_days: 730  # Delete after 2 years

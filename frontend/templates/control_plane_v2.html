@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Daena — Control Plane</title>
+<style>
+/* ─── RESET & VARIABLES ──────────────────────────────────── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-base:       #0a0c0f;
+  --bg-surface:    #111418;
+  --bg-card:       #161b22;
+  --bg-card-hover:#1c2330;
+  --border:        #2d3848;
+  --border-focus: #3b82f6;
+
+  --text-primary:  #e2e8f0;
+  --text-secondary:#8892a4;
+  --text-muted:    #5a6577;
+
+  --accent-blue:   #3b82f6;
+  --accent-cyan:   #06b6d4;
+  --accent-green:  #10b981;
+  --accent-amber:  #f59e0b;
+  --accent-red:    #ef4444;
+  --accent-purple: #8b5cf6;
+  --accent-pink:   #ec4899;
+
+  --status-active:   #10b981;
+  --status-pending:  #f59e0b;
+  --status-rejected: #ef4444;
+  --status-sandbox:  #8b5cf6;
+  --status-draft:    #6b7280;
+
+  --radius:   8px;
+  --radius-sm:4px;
+  --radius-lg:12px;
+}
+
+body {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ─── LAYOUT ─────────────────────────────────────────────── */
+.cp-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: 48px 1fr;
+  height: 100vh;
+}
+
+/* ── Top Bar ── */
+.topbar {
+  grid-column: 1 / -1;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  gap: 16px;
+}
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.topbar-logo {
+  width: 28px; height: 28px;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700;
+}
+.topbar-title { font-size: 15px; font-weight: 600; color: var(--text-primary); letter-spacing: 0.5px; }
+.topbar-sub { font-size: 11px; color: var(--text-muted); }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.ws-status {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-muted);
+}
+.ws-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 6px var(--accent-green);
+  animation: pulse-dot 2s infinite;
+}
+.ws-dot.disconnected { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); animation: none; }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── Sidebar ── */
+.sidebar {
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  padding: 12px 0;
+  overflow-y: auto;
+}
+.nav-group-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px;
+  color: var(--text-muted); padding: 16px 20px 6px;
+  font-weight: 600;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 20px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+  border-left: 3px solid transparent;
+  font-size: 12px;
+  user-select: none;
+}
+.nav-item:hover { background: var(--bg-card); color: var(--text-primary); }
+.nav-item.active {
+  border-left-color: var(--accent-blue);
+  color: var(--accent-blue);
+  background: rgba(59,130,246,0.06);
+}
+.nav-item .nav-icon { width: 16px; text-align: center; font-size: 13px; }
+.nav-badge {
+  margin-left: auto;
+  background: var(--accent-amber);
+  color: #000;
+  font-size: 9px; font-weight: 700;
+  padding: 1px 6px; border-radius: 8px;
+}
+.nav-badge.blue { background: var(--accent-blue); color: #fff; }
+
+/* ── Main Content ── */
+.main-content {
+  overflow: auto;
+  padding: 24px;
+  background: var(--bg-base);
+}
+
+/* ─── TAB PANELS (hidden by default) ────────────────── */
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ─── PANEL HEADER ──────────────────────────────────── */
+.panel-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 24px;
+}
+.panel-header h2 {
+  font-size: 18px; font-weight: 600; color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+.panel-header p { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-primary);
+  font-size: 12px; font-family: inherit; cursor: pointer;
+  transition: all 0.15s; white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent-blue); background: var(--bg-card-hover); }
+.btn.primary { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+.btn.primary:hover { background: #2563eb; }
+.btn.danger { background: var(--accent-red); border-color: var(--accent-red); color: #fff; }
+.btn.success { background: var(--accent-green); border-color: var(--accent-green); color: #fff; }
+.btn.sm { padding: 4px 10px; font-size: 11px; }
+
+/* ─── STATS ROW ─────────────────────────────────────── */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  transition: border-color 0.2s;
+}
+.stat-card:hover { border-color: var(--border-focus); }
+.stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+.stat-value { font-size: 22px; font-weight: 700; color: var(--text-primary); }
+.stat-value.blue   { color: var(--accent-blue); }
+.stat-value.green  { color: var(--accent-green); }
+.stat-value.amber  { color: var(--accent-amber); }
+.stat-value.red    { color: var(--accent-red); }
+.stat-value.purple { color: var(--accent-purple); }
+.stat-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+/* ─── TABLE ─────────────────────────────────────────── */
+.table-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+table {
+  width: 100%; border-collapse: collapse;
+  font-size: 12px;
+}
+thead th {
+  background: var(--bg-surface);
+  text-align: left; padding: 10px 14px;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--text-muted); font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(45,56,72,0.5);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--bg-card-hover); }
+tbody td:first-child { color: var(--text-primary); font-weight: 500; }
+
+/* ─── BADGE / STATUS ────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 600; padding: 3px 8px;
+  border-radius: 10px; white-space: nowrap;
+}
+.badge::before {
+  content: ''; width: 6px; height: 6px;
+  border-radius: 50%; background: currentColor;
+}
+.badge-active   { color: var(--status-active);   background: rgba(16,185,129,0.12); }
+.badge-pending  { color: var(--status-pending);  background: rgba(245,158,11,0.12); }
+.badge-rejected { color: var(--status-rejected); background: rgba(239,68,68,0.12); }
+.badge-sandbox  { color: var(--status-sandbox);  background: rgba(139,92,246,0.12); }
+.badge-draft    { color: var(--status-draft);    background: rgba(107,114,128,0.12); }
+.badge-safe     { color: var(--accent-green);    background: rgba(16,185,129,0.12); }
+.badge-low      { color: var(--accent-cyan);     background: rgba(6,182,212,0.12); }
+.badge-medium   { color: var(--accent-amber);    background: rgba(245,158,11,0.12); }
+.badge-high     { color: #f97316;                background: rgba(249,115,22,0.12); }
+.badge-critical { color: var(--accent-red);      background: rgba(239,68,68,0.12); }
+
+/* ─── LIVE FEED ─────────────────────────────────────── */
+.live-feed {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 360px;
+  overflow-y: auto;
+}
+.feed-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(45,56,72,0.4);
+  animation: feed-in 0.3s ease;
+}
+.feed-item:last-child { border-bottom: none; }
+@keyframes feed-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+.feed-time { font-size: 10px; color: var(--text-muted); white-space: nowrap; padding-top: 2px; min-width: 60px; }
+.feed-icon { font-size: 14px; }
+.feed-body { flex: 1; }
+.feed-title { font-size: 12px; color: var(--text-primary); font-weight: 500; }
+.feed-detail { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.feed-empty { padding: 40px; text-align: center; color: var(--text-muted); font-size: 12px; }
+
+/* ─── FORM ELEMENTS ─────────────────────────────────── */
+.form-row { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.form-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px; }
+.form-group label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; }
+input, select, textarea {
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text-primary); padding: 7px 10px;
+  border-radius: var(--radius-sm); font-family: inherit; font-size: 12px;
+  transition: border-color 0.15s;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--border-focus); }
+textarea { resize: vertical; min-height: 80px; }
+select option { background: var(--bg-card); }
+
+/* ─── MODAL ─────────────────────────────────────────── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); z-index: 100;
+  justify-content: center; align-items: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); width: 520px; max-width: 90vw;
+  max-height: 80vh; overflow-y: auto; padding: 24px;
+}
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.modal-header h3 { font-size: 15px; font-weight: 600; }
+.modal-close { background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; }
+.modal-close:hover { color: var(--text-primary); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+/* ─── FINDING CARDS ─────────────────────────────────── */
+.finding {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 6px;
+}
+.finding-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.finding-msg { font-size: 11px; color: var(--text-secondary); }
+
+/* ─── SCROLLBAR ─────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ─── UTILITY ───────────────────────────────────────── */
+.mt-4 { margin-top: 16px; }
+.mt-2 { margin-top: 8px; }
+.mb-4 { margin-bottom: 16px; }
+.flex { display: flex; }
+.flex-end { justify-content: flex-end; }
+.gap-2 { gap: 8px; }
+.w-full { width: 100%; }
+.text-muted { color: var(--text-muted); font-size: 11px; }
+.panel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- LAYOUT                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<div class="cp-layout">
+
+  <!-- ── TOPBAR ── -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">D</div>
+      <div>
+        <div class="topbar-title">CONTROL PLANE</div>
+        <div class="topbar-sub">Daena — MAS-AI Autonomous Company OS</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="ws-status">
+        <div class="ws-dot" id="wsDot"></div>
+        <span id="wsLabel">Connected</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── SIDEBAR ── -->
+  <nav class="sidebar">
+    <div class="nav-group-label">Operations</div>
+    <div class="nav-item active" onclick="switchTab('skills')" id="nav-skills">
+      <span class="nav-icon">⚙️</span> Skill Registry
+      <span class="nav-badge blue" id="badge-skills">6</span>
+    </div>
+    <div class="nav-item" onclick="switchTab('packages')" id="nav-packages">
+      <span class="nav-icon">📦</span> Package Audit
+      <span class="nav-badge" id="badge-packages" style="display:none">0</span>
+    </div>
+    <div class="nav-item" onclick="switchTab('agents')" id="nav-agents">
+      <span class="nav-icon">🤖</span> Agent Activity
+    </div>
+    <div class="nav-item" onclick="switchTab('council')" id="nav-council">
+      <span class="nav-icon">🏛️</span> Council Debates
+    </div>
+
+    <div class="nav-group-label">Security</div>
+    <div class="nav-item" onclick="switchTab('trust')" id="nav-trust">
+      <span class="nav-icon">🛡️</span> Trust & Safety
+    </div>
+    <div class="nav-item" onclick="switchTab('shadow')" id="nav-shadow">
+      <span class="nav-icon">🕵️</span> Shadow Dept
+    </div>
+
+    <div class="nav-group-label">Finance</div>
+    <div class="nav-item" onclick="switchTab('treasury')" id="nav-treasury">
+      <span class="nav-icon">💰</span> Treasury
+    </div>
+  </nav>
+
+  <!-- ── MAIN CONTENT ── -->
+  <main class="main-content">
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- PANEL: SKILL REGISTRY                               -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="panel active" id="panel-skills">
+      <div class="panel-header">
+        <div>
+          <h2>Skill Registry</h2>
+          <p>Dynamic typed capabilities — create, test, approve, deploy. Daena can self-create skills.</p>
+        </div>
+        <button class="btn primary" onclick="openModal('create-skill')">+ New Skill</button>
+      </div>
+
+      <div class="stats-row" id="skill-stats">
+        <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value blue" id="s-total">—</div></div>
+        <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value green" id="s-active">—</div></div>
+        <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value amber" id="s-pending">—</div></div>
+        <div class="stat-card"><div class="stat-label">Self-Created</div><div class="stat-value purple" id="s-self">—</div></div>
+        <div class="stat-card"><div class="stat-label">Rejected</div><div class="stat-value red" id="s-rejected">—</div></div>
+      </div>
+
+      <!-- Filter Row -->
+      <div class="form-row mb-4">
+        <div class="form-group" style="max-width:180px">
+          <label>Status</label>
+          <select id="skill-filter-status" onchange="loadSkills()">
+            <option value="">All</option>
+            <option value="active">Active</option>
+            <option value="pending_review">Pending Review</option>
+            <option value="sandbox_test">Sandbox Test</option>
+            <option value="rejected">Rejected</option>
+            <option value="deprecated">Deprecated</option>
+          </select>
+        </div>
+        <div class="form-group" style="max-width:180px">
+          <label>Category</label>
+          <select id="skill-filter-cat" onchange="loadSkills()">
+            <option value="">All</option>
+            <option value="filesystem">Filesystem</option>
+            <option value="code_exec">Code Exec</option>
+            <option value="security">Security</option>
+            <option value="network">Network</option>
+            <option value="data_transform">Data Transform</option>
+            <option value="external_api">External API</option>
+            <option value="ai_tool">AI Tool</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Category</th>
+              <th>Creator</th>
+              <th>Status</th>
+              <th>Risk</th>
+              <th>Uses</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="skills-tbody">
+            <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:30px;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- PANEL: PACKAGE AUDIT                                -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="panel" id="panel-packages">
+      <div class="panel-header">
+        <div>
+          <h2>Package Audit</h2>
+          <p>Governance gate for all installs. Nothing touches the system without passing this loop.</p>
+        </div>
+        <button class="btn primary" onclick="openModal('request-package')">+ Request Install</button>
+      </div>
+
+      <div class="stats-row" id="pkg-stats">
+        <div class="stat-card"><div class="stat-label">Total Audits</div><div class="stat-value blue" id="p-total">—</div></div>
+        <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value amber" id="p-pending">—</div></div>
+        <div class="stat-card"><div class="stat-label">Approved</div><div class="stat-value green" id="p-approved">—</div></div>
+        <div class="stat-card"><div class="stat-label">Rejected</div><div class="stat-value red" id="p-rejected">—</div></div>
+        <div class="stat-card"><div class="stat-label">Installed</div><div class="stat-value purple" id="p-installed">—</div></div>
+      </div>
+
+      <!-- Live Audit Feed -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <span style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.8px;">Live Audit Feed</span>
+        <div class="ws-status" style="font-size:10px;"><div class="ws-dot" style="width:6px;height:6px;"></div> Streaming</div>
+      </div>
+      <div class="live-feed" id="pkg-feed">
+        <div class="feed-empty">No audit events yet</div>
+      </div>
+
+      <!-- Records Table -->
+      <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <span style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.8px;">Audit Records</span>
+        <select id="pkg-filter-status" onchange="loadPackages()" style="font-size:11px; padding:3px 8px;">
+          <option value="">All</option>
+          <option value="queued">Queued</option>
+          <option value="pending_approval">Pending Approval</option>
+          <option value="approved">Approved</option>
+          <option value="installed">Installed</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Package</th>
+              <th>Manager</th>
+              <th>Status</th>
+              <th>Risk</th>
+              <th>Findings</th>
+              <th>Requested By</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="packages-tbody">
+            <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:30px;">No audits yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- PANEL: AGENT ACTIVITY                               -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="panel" id="panel-agents">
+      <div class="panel-header">
+        <div>
+          <h2>Agent Activity</h2>
+          <p>Real-time feed of every agent action across all departments. 8×6 Sunflower-Honeycomb.</p>
+        </div>
+        <div class="panel-actions">
+          <button class="btn" onclick="clearFeed('agents-feed')">Clear</button>
+        </div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">Agents Online</div><div class="stat-value green" id="a-online">—</div><div class="stat-sub">of 48 total</div></div>
+        <div class="stat-card"><div class="stat-label">Actions Today</div><div class="stat-value blue" id="a-actions">—</div></div>
+        <div class="stat-card"><div class="stat-label">Depts Active</div><div class="stat-value cyan" id="a-depts">—</div><div class="stat-sub">of 8</div></div>
+        <div class="stat-card"><div class="stat-label">Pending Tasks</div><div class="stat-value amber" id="a-tasks">—</div></div>
+      </div>
+      <div class="live-feed" id="agents-feed" style="max-height:500px;">
+        <div class="feed-empty">Waiting for agent activity...</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- PANEL: COUNCIL DEBATES                              -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="panel" id="panel-council">
+      <div class="panel-header">
+        <div>
+          <h2>Council Debates</h2>
+          <p>Live governance debates. 5 expert agents vote on major decisions.</p>
+        </div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">Active Debates</div><div class="stat-value blue" id="c-active">0</div></div>
+        <div class="stat-card"><div class="stat-label">Resolved</div><div class="stat-value green" id="c-resolved">0</div></div>
+        <div class="stat-card"><div class="stat-label">Pending Vote</div><div class="stat-value amber" id="c-pending">0</div></div>
+      </div>
+      <div class="live-feed" id="council-feed" style="max-height:500px;">
+        <div class="feed-empty">No active debates</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- PANEL: TRUST & SAFETY                               -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="panel" id="panel-trust">
+      <div class="panel-header">
+        <div>
+          <h2>Trust & Safety</h2>
+          <p>Integrity Shield — source verification, prompt injection detection, trust scores.</p>
+        </div>
+        <button class="btn primary" onclick="openModal('verify-content')">Verify Content</button>
+      </div>
+      <div class="stats-row" id="trust-stats">
+        <div class="stat-card"><div class="stat-label">Verifications</div><div class="stat-value blue" id="t-verified">—</div></div>
+        <div class="stat-card"><div class="stat-label">Injections Blocked</div><div class="stat-value red" id="t-injections">—</div></div>
+        <div class="stat-card"><div class="stat-label">Trusted Sources</div><div class="stat-value green" id="t-sources">—</div></div>
+        <div class="stat-card"><div class="stat-label">Stripped Attempts</div><div class="stat-value amber" id="t-stripped">—</div></div>
+      </div>
+      <div class="live-feed" id="trust-feed" style="max-height:400px;">
+        <div class="feed-empty">No trust events yet</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- PANEL: SHADOW DEPT                                  -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="panel" id="panel-shadow">
+      <div class="panel-header">
+        <div>
+          <h2>Shadow Department</h2>
+          <p>Defensive deception — honeypots, canary tokens, threat intelligence. Founder-only view.</p>
+        </div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">Honeypots Active</div><div class="stat-value green" id="sh-honeypots">3</div></div>
+        <div class="stat-card"><div class="stat-label">Canary Tokens</div><div class="stat-value blue" id="sh-canary">12</div></div>
+        <div class="stat-card"><div class="stat-label">Alerts (24h)</div><div class="stat-value red" id="sh-alerts">0</div></div>
+        <div class="stat-card"><div class="stat-label">TTPs Logged</div><div class="stat-value purple" id="sh-ttps">0</div></div>
+      </div>
+      <div class="live-feed" id="shadow-feed" style="max-height:400px;">
+        <div class="feed-empty" id="shadow-empty">No threat events</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- PANEL: TREASURY                                     -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="panel" id="panel-treasury">
+      <div class="panel-header">
+        <div>
+          <h2>Treasury</h2>
+          <p>$DAENA token, NFT agent licensing, multi-sig wallet. Council-gated spending.</p>
+        </div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">$DAENA Balance</div><div class="stat-value blue" id="tr-balance">25,000,000</div><div class="stat-sub">of 100M supply</div></div>
+        <div class="stat-card"><div class="stat-label">NFTs Minted</div><div class="stat-value purple" id="tr-nfts">0</div><div class="stat-sub">of 1,000 slots</div></div>
+        <div class="stat-card"><div class="stat-label">ETH Held</div><div class="stat-value green" id="tr-eth">0.00</div></div>
+        <div class="stat-card"><div class="stat-label">Monthly Spend</div><div class="stat-value amber" id="tr-spend">$0</div></div>
+      </div>
+      <div class="live-feed" id="treasury-feed" style="max-height:300px;">
+        <div class="feed-empty">No treasury events</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- MODALS                                              -->
+<!-- ═══════════════════════════════════════════════════ -->
+
+<!-- Create Skill Modal -->
+<div class="modal-overlay" id="modal-create-skill">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Create New Skill</h3>
+      <button class="modal-close" onclick="closeModal('create-skill')">&times;</button>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Name (slug)</label><input type="text" id="cs-name" placeholder="e.g. parse_csv"/></div>
+      <div class="form-group"><label>Display Name</label><input type="text" id="cs-display" placeholder="e.g. Parse CSV File"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Description</label><textarea id="cs-desc" placeholder="What does this skill do?" style="min-height:50px;"></textarea></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="max-width:160px">
+        <label>Category</label>
+        <select id="cs-category">
+          <option value="custom">Custom</option>
+          <option value="filesystem">Filesystem</option>
+          <option value="code_exec">Code Exec</option>
+          <option value="data_transform">Data Transform</option>
+          <option value="security">Security</option>
+          <option value="network">Network</option>
+          <option value="external_api">External API</option>
+          <option value="ai_tool">AI Tool</option>
+        </select>
+      </div>
+      <div class="form-group" style="max-width:160px">
+        <label>Creator</label>
+        <select id="cs-creator">
+          <option value="daena">Daena (self)</option>
+          <option value="founder">Founder</option>
+          <option value="agent">Sub-Agent</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Code Body (Python)</label><textarea id="cs-code" placeholder='def execute(inputs):\n    # Your skill code here\n    return {"result": "..."}'></textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('create-skill')">Cancel</button>
+      <button class="btn primary" onclick="submitCreateSkill()">Create Skill</button>
+    </div>
+  </div>
+</div>
+
+<!-- Request Package Install Modal -->
+<div class="modal-overlay" id="modal-request-package">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Request Package Install</h3>
+      <button class="modal-close" onclick="closeModal('request-package')">&times;</button>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Package Name</label><input type="text" id="rp-name" placeholder="e.g. lodash"/></div>
+      <div class="form-group" style="max-width:140px"><label>Version</label><input type="text" id="rp-version" placeholder="e.g. 4.17.21"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="max-width:150px">
+        <label>Package Manager</label>
+        <select id="rp-manager">
+          <option value="npm">npm</option>
+          <option value="pip">pip</option>
+          <option value="yarn">yarn</option>
+          <option value="cargo">cargo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Requested By</label>
+        <input type="text" id="rp-agent" value="daena" placeholder="agent_id"/>
+      </div>
+    </div>
+    <div style="margin-top:12px; padding:10px 12px; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.2); border-radius:6px; font-size:11px; color:#f59e0b;">
+      ⚠️ This will trigger a full security audit before install is allowed. Critical packages are auto-rejected.
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('request-package')">Cancel</button>
+      <button class="btn primary" onclick="submitRequestPackage()">Request & Audit</button>
+    </div>
+  </div>
+</div>
+
+<!-- Verify Content Modal -->
+<div class="modal-overlay" id="modal-verify-content">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Verify Content</h3>
+      <button class="modal-close" onclick="closeModal('verify-content')">&times;</button>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Content to verify</label><textarea id="vc-content" placeholder="Paste content to check for injection..."></textarea></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Source URL (optional)</label><input type="text" id="vc-source" placeholder="https://example.com"/></div>
+    </div>
+    <div id="vc-result" style="display:none; margin-top:12px;"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('verify-content')">Close</button>
+      <button class="btn primary" onclick="submitVerify()">Verify</button>
+    </div>
+  </div>
+</div>
+
+<!-- Approve/Reject Package Modal -->
+<div class="modal-overlay" id="modal-pkg-action">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="pkg-action-title">Approve Package</h3>
+      <button class="modal-close" onclick="closeModal('pkg-action')">&times;</button>
+    </div>
+    <div id="pkg-action-info" style="margin-bottom:12px; padding:10px; background:var(--bg-surface); border-radius:6px; font-size:12px; color:var(--text-secondary);"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Notes</label><textarea id="pkg-action-notes" placeholder="Optional notes..." style="min-height:50px;"></textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('pkg-action')">Cancel</button>
+      <button class="btn success" id="btn-approve-pkg" onclick="executePkgAction('approve')">Approve</button>
+      <button class="btn danger" id="btn-reject-pkg" onclick="executePkgAction('reject')">Reject</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT                                          -->
+<!-- ═══════════════════════════════════════════════════ -->
+<script>
+// ─── CONFIG ─────────────────────────────────────────────
+const API = {
+  skills:    '/api/v1/skills',
+  packages:  '/api/v1/packages',
+  integrity: '/api/v1/integrity',
+  outcomes:  '/api/v1/outcomes',
+  ws:        '/ws/events'
+};
+
+// ─── STATE ──────────────────────────────────────────────
+let currentTab = 'skills';
+let pkgActionId = null;   // for approve/reject modal
+
+// ─── TAB SWITCHING ──────────────────────────────────────
+function switchTab(tab) {
+  // Hide all panels, deactivate nav
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  currentTab = tab;
+  document.getElementById('panel-' + tab).classList.add('active');
+  document.getElementById('nav-' + tab).classList.add('active');
+
+  // Load data for the tab
+  switch(tab) {
+    case 'skills':    loadSkills(); break;
+    case 'packages':  loadPackages(); loadAuditLog(); break;
+    case 'trust':     loadTrustStats(); break;
+    case 'agents':    loadAgentStats(); break;
+  }
+}
+
+// ─── MODAL HELPERS ──────────────────────────────────────
+function openModal(name) { document.getElementById('modal-' + name).classList.add('open'); }
+function closeModal(name) { document.getElementById('modal-' + name).classList.remove('open'); }
+
+// ─── API HELPERS ────────────────────────────────────────
+async function api(method, url, body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  try {
+    const res = await fetch(url, opts);
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('API error:', res.status, err);
+      return { error: err };
+    }
+    return await res.json();
+  } catch (e) {
+    console.error('Fetch error:', e);
+    return { error: e.message };
+  }
+}
+
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const s = Math.floor((Date.now() - d) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return d.toLocaleDateString();
+}
+
+function badgeClass(status) {
+  const map = {
+    active:'badge-active', pending_review:'badge-pending', sandbox_test:'badge-sandbox',
+    rejected:'badge-rejected', deprecated:'badge-draft', draft:'badge-draft',
+    queued:'badge-draft', scanning:'badge-sandbox', static_analysis:'badge-sandbox',
+    cve_check:'badge-sandbox', sandbox_install:'badge-sandbox', behavioral_check:'badge-sandbox',
+    pending_approval:'badge-pending', approved:'badge-active', installed:'badge-active',
+    blocked:'badge-rejected'
+  };
+  return map[status] || 'badge-draft';
+}
+
+function riskClass(risk) {
+  const map = { safe:'badge-safe', low:'badge-low', medium:'badge-medium', high:'badge-high', critical:'badge-critical' };
+  return map[risk] || 'badge-low';
+}
+
+// ─── SKILLS ─────────────────────────────────────────────
+async function loadSkills() {
+  const status = document.getElementById('skill-filter-status').value;
+  const category = document.getElementById('skill-filter-cat').value;
+  let url = API.skills + '?';
+  if (status) url += 'status=' + status + '&';
+  if (category) url += 'category=' + category;
+
+  const data = await api('GET', url);
+  if (data.error) return;
+
+  // Update stats
+  const statsData = await api('GET', API.skills + '/stats');
+  if (statsData && !statsData.error) {
+    document.getElementById('s-total').textContent   = statsData.total;
+    document.getElementById('s-active').textContent  = statsData.active;
+    document.getElementById('s-pending').textContent = statsData.pending_review;
+    document.getElementById('s-self').textContent    = statsData.self_created;
+    document.getElementById('s-rejected').textContent= statsData.rejected;
+    document.getElementById('badge-skills').textContent = statsData.active;
+  }
+
+  // Render table
+  const tbody = document.getElementById('skills-tbody');
+  if (!data.skills || data.skills.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No skills found</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.skills.map(s => `
+    <tr>
+      <td>
+        <div style="font-weight:600;">${s.name}</div>
+        <div style="font-size:10px;color:var(--text-muted);max-width:200px;">${(s.description||'').substring(0,60)}${s.description && s.description.length>60?'...':''}</div>
+      </td>
+      <td><span style="font-size:11px;color:var(--accent-cyan);">${s.category}</span></td>
+      <td><span style="font-size:11px;">${s.creator}</span></td>
+      <td><span class="badge ${badgeClass(s.status)}">${s.status}</span></td>
+      <td><span class="badge ${riskClass(s.risk_level)}">${s.risk_level}</span></td>
+      <td style="color:var(--text-muted);">${s.usage_count || 0}</td>
+      <td>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+          ${s.status === 'pending_review' || s.status === 'sandbox_test' ? `
+            <button class="btn success sm" onclick="approveSkill('${s.id}')">✓ Approve</button>
+            <button class="btn danger sm" onclick="rejectSkill('${s.id}')">✗ Reject</button>
+          ` : ''}
+          <button class="btn sm" onclick="testSkill('${s.id}')">▶ Test</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function approveSkill(id) {
+  const res = await api('POST', API.skills + '/' + id + '/approve', { approver: 'founder', notes: 'Approved via Control Plane' });
+  if (!res.error) { alert('Skill approved!'); loadSkills(); }
+}
+
+async function rejectSkill(id) {
+  const reason = prompt('Reason for rejection:') || 'No reason given';
+  const res = await api('POST', API.skills + '/' + id + '/reject', { reason, rejector: 'founder' });
+  if (!res.error) { alert('Skill rejected.'); loadSkills(); }
+}
+
+async function testSkill(id) {
+  const res = await api('POST', API.skills + '/' + id + '/test', { test_inputs: { test: true } });
+  if (res.sandbox_results) {
+    const r = res.sandbox_results;
+    alert(`Sandbox Result:\nSuccess: ${r.success}\nOutput: ${r.stdout}\n${r.security_flags && r.security_flags.length ? 'Flags: ' + r.security_flags.join(', ') : ''}`);
+    loadSkills(); // refresh to show updated sandbox results
+  }
+}
+
+async function submitCreateSkill() {
+  const name = document.getElementById('cs-name').value.trim();
+  const display = document.getElementById('cs-display').value.trim();
+  const desc = document.getElementById('cs-desc').value.trim();
+  const category = document.getElementById('cs-category').value;
+  const creator = document.getElementById('cs-creator').value;
+  const code = document.getElementById('cs-code').value.trim();
+
+  if (!name || !display || !desc || !code) { alert('Fill in all fields.'); return; }
+
+  const payload = {
+    name, display_name: display, description: desc,
+    category, creator,
+    creator_agent_id: creator === 'founder' ? 'founder' : 'daena',
+    input_schema: { type: 'object', properties: { input: { type: 'string' } } },
+    output_schema: { type: 'object', properties: { result: { type: 'string' } } },
+    code_body: code
+  };
+
+  const res = await api('POST', API.skills + '/create', payload);
+  if (res.error) { alert('Error: ' + res.error); return; }
+
+  alert(`Skill created!\nStatus: ${res.status}\nRisk: ${res.risk_level}\n${res.message}`);
+  closeModal('create-skill');
+  loadSkills();
+}
+
+// ─── PACKAGES ───────────────────────────────────────────
+async function loadPackages() {
+  const status = document.getElementById('pkg-filter-status').value;
+  let url = API.packages + '/records';
+  if (status) url += '?status=' + status;
+
+  const data = await api('GET', url);
+  if (data.error) return;
+
+  // Update stats
+  const stats = await api('GET', API.packages + '/stats');
+  if (stats && !stats.error) {
+    document.getElementById('p-total').textContent   = stats.total_audits;
+    document.getElementById('p-pending').textContent = stats.pending_approval;
+    document.getElementById('p-approved').textContent= stats.approved;
+    document.getElementById('p-rejected').textContent= stats.rejected;
+    document.getElementById('p-installed').textContent= stats.installed;
+    if (stats.pending_approval > 0) {
+      document.getElementById('badge-packages').style.display = 'inline';
+      document.getElementById('badge-packages').textContent = stats.pending_approval;
+    } else {
+      document.getElementById('badge-packages').style.display = 'none';
+    }
+  }
+
+  // Render table
+  const tbody = document.getElementById('packages-tbody');
+  if (!data.records || data.records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No audit records</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.records.map(r => `
+    <tr>
+      <td><strong>${r.package_name}</strong><span style="color:var(--text-muted);font-size:10px;"> @${r.package_version}</span></td>
+      <td><span style="color:var(--accent-cyan);font-size:11px;">${r.manager}</span></td>
+      <td><span class="badge ${badgeClass(r.status)}">${r.status}</span></td>
+      <td><span class="badge ${riskClass(r.risk_level)}">${r.risk_level}</span></td>
+      <td><span style="font-size:11px;color:${r.findings && r.findings.length ? 'var(--accent-amber)' : 'var(--text-muted)'};">${r.findings ? r.findings.length : 0} findings</span></td>
+      <td style="font-size:11px;color:var(--text-muted);">${r.requested_by}</td>
+      <td>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+          ${r.status === 'queued' ? `<button class="btn primary sm" onclick="runAudit('${r.id}')">▶ Run Audit</button>` : ''}
+          ${r.status === 'pending_approval' ? `<button class="btn sm" onclick="openPkgAction('${r.id}','${r.package_name}@${r.package_version}')">⚖️ Review</button>` : ''}
+          ${r.status === 'approved' ? `<button class="btn success sm" onclick="installPackage('${r.id}')">⬇ Install</button>` : ''}
+          <button class="btn sm" onclick="showPkgDetails('${r.id}')">📋</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function loadAuditLog() {
+  const data = await api('GET', API.packages + '/log?limit=20');
+  if (data.error || !data.events) return;
+
+  const feed = document.getElementById('pkg-feed');
+  if (data.events.length === 0) {
+    feed.innerHTML = '<div class="feed-empty">No audit events yet</div>';
+    return;
+  }
+
+  feed.innerHTML = data.events.reverse().map(e => `
+    <div class="feed-item">
+      <span class="feed-time">${timeAgo(e.timestamp)}</span>
+      <span class="feed-icon">${e.event === 'rejected' ? '🚫' : e.event === 'approved' ? '✅' : e.event === 'installed' ? '⬇️' : '🔍'}</span>
+      <div class="feed-body">
+        <div class="feed-title">${e.event.toUpperCase()}</div>
+        <div class="feed-detail">${e.message}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function runAudit(id) {
+  const res = await api('POST', API.packages + '/audit/' + id);
+  if (!res.error) { alert(`Audit complete!\nStatus: ${res.status}\nRisk: ${res.risk_level}\nFindings: ${res.findings ? res.findings.length : 0}`); loadPackages(); loadAuditLog(); }
+}
+
+function openPkgAction(id, label) {
+  pkgActionId = id;
+  document.getElementById('pkg-action-title').textContent = 'Review: ' + label;
+  document.getElementById('pkg-action-info').textContent = 'Package: ' + label + ' — Pending your approval.';
+  document.getElementById('pkg-action-notes').value = '';
+  openModal('pkg-action');
+}
+
+async function executePkgAction(action) {
+  const notes = document.getElementById('pkg-action-notes').value;
+  let res;
+  if (action === 'approve') {
+    res = await api('POST', API.packages + '/approve/' + pkgActionId, { approver: 'founder', notes });
+  } else {
+    res = await api('POST', API.packages + '/reject/' + pkgActionId, { reason: notes || 'Rejected by Founder', rejector: 'founder' });
+  }
+  if (!res.error) { alert(action === 'approve' ? 'Package approved!' : 'Package rejected.'); closeModal('pkg-action'); loadPackages(); loadAuditLog(); }
+}
+
+async function installPackage(id) {
+  const res = await api('POST', API.packages + '/install/' + id);
+  if (res.command) { alert('Install approved!\n\nRun this command:\n' + res.command); loadPackages(); }
+}
+
+async function showPkgDetails(id) {
+  const res = await api('GET', API.packages + '/records/' + id);
+  if (!res || res.error) return;
+  let findingsHtml = '';
+  if (res.findings && res.findings.length) {
+    findingsHtml = '<div style="margin-top:12px;"><strong style="font-size:11px;color:var(--text-muted);">FINDINGS:</strong>' +
+      res.findings.map(f => `<div class="finding"><div class="finding-header"><span class="badge ${riskClass(f.severity)}">${f.severity}</span><span style="font-size:11px;">${f.category}</span></div><div class="finding-msg">${f.message}</div></div>`).join('') + '</div>';
+  }
+  alert(`${res.package}\nStatus: ${res.status} | Risk: ${res.risk_level}\nFindings: ${res.findings ? res.findings.length : 0}\nRequested by: ${res.requested_by}\n${res.sandbox_output || ''}\n${res.behavioral_flags ? res.behavioral_flags.join('\n') : ''}`);
+}
+
+async function submitRequestPackage() {
+  const name = document.getElementById('rp-name').value.trim();
+  const version = document.getElementById('rp-version').value.trim();
+  const manager = document.getElementById('rp-manager').value;
+  const agent = document.getElementById('rp-agent').value.trim();
+
+  if (!name || !version) { alert('Fill in package name and version.'); return; }
+
+  // Step 1: Request
+  const req = await api('POST', API.packages + '/request-install', { package_name: name, version, manager, requested_by: agent });
+  if (req.error) { alert('Error: ' + req.error); return; }
+
+  const id = req.id;
+
+  // Step 2: Auto-run audit
+  const audit = await api('POST', API.packages + '/audit/' + id);
+  if (audit.error) { alert('Audit error: ' + audit.error); return; }
+
+  alert(`Audit complete for ${name}@${version}\nStatus: ${audit.status}\nRisk: ${audit.risk_level}\nFindings: ${audit.findings ? audit.findings.length : 0}\n\n${audit.status === 'pending_approval' ? '→ Awaiting your approval.' : audit.status === 'approved' ? '→ Auto-approved! Ready to install.' : '→ ' + (audit.rejection_reason || '')}`);
+
+  closeModal('request-package');
+  loadPackages();
+  loadAuditLog();
+}
+
+// ─── TRUST & SAFETY ─────────────────────────────────────
+async function loadTrustStats() {
+  const data = await api('GET', API.integrity + '/stats');
+  if (data && !data.error) {
+    document.getElementById('t-verified').textContent  = data.total_verifications || 0;
+    document.getElementById('t-injections').textContent= data.injections_detected || 0;
+    document.getElementById('t-sources').textContent   = data.trusted_sources || 0;
+    document.getElementById('t-stripped').textContent  = data.strips_performed || 0;
+  }
+}
+
+async function submitVerify() {
+  const content = document.getElementById('vc-content').value.trim();
+  const source = document.getElementById('vc-source').value.trim();
+  if (!content) { alert('Enter content to verify.'); return; }
+
+  const res = await api('POST', API.integrity + '/verify', { content, source: source || undefined });
+  const resultDiv = document.getElementById('vc-result');
+  resultDiv.style.display = 'block';
+
+  if (res.error) {
+    resultDiv.innerHTML = `<div style="padding:12px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:#ef4444;font-size:12px;">Error: ${res.error}</div>`;
+    return;
+  }
+
+  const trusted = res.trusted;
+  const injected = res.injection_detected;
+  const color = injected ? '#ef4444' : (trusted ? '#10b981' : '#f59e0b');
+  const icon = injected ? '🚨' : (trusted ? '✅' : '⚠️');
+  const label = injected ? 'INJECTION DETECTED' : (trusted ? 'TRUSTED' : 'UNVERIFIED');
+
+  resultDiv.innerHTML = `
+    <div style="padding:14px;background:${color}15;border:1px solid ${color}40;border-radius:6px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:18px;">${icon}</span>
+        <span style="color:${color};font-weight:700;font-size:13px;">${label}</span>
+        ${res.trust_score !== undefined ? `<span style="color:var(--text-muted);font-size:11px;margin-left:auto;">Trust: ${(res.trust_score*100).toFixed(0)}%</span>` : ''}
+      </div>
+      ${res.message ? `<div style="font-size:11px;color:var(--text-secondary);">${res.message}</div>` : ''}
+    </div>
+  `;
+
+  // Add to trust feed
+  addToFeed('trust-feed', injected ? '🚨' : '🔍', injected ? 'Injection Blocked' : 'Content Verified', res.message || label);
+}
+
+// ─── AGENT STATS (simulated) ────────────────────────────
+async function loadAgentStats() {
+  // Try to fetch from backend; fall back to simulated data
+  document.getElementById('a-online').textContent  = '12';
+  document.getElementById('a-actions').textContent = '347';
+  document.getElementById('a-depts').textContent   = '6';
+  document.getElementById('a-tasks').textContent   = '4';
+}
+
+// ─── FEED HELPERS ───────────────────────────────────────
+function addToFeed(feedId, icon, title, detail) {
+  const feed = document.getElementById(feedId);
+  const empty = feed.querySelector('.feed-empty');
+  if (empty) empty.remove();
+
+  const item = document.createElement('div');
+  item.className = 'feed-item';
+  item.innerHTML = `
+    <span class="feed-time">now</span>
+    <span class="feed-icon">${icon}</span>
+    <div class="feed-body">
+      <div class="feed-title">${title}</div>
+      <div class="feed-detail">${detail}</div>
+    </div>
+  `;
+  feed.insertBefore(item, feed.firstChild);
+
+  // Keep max 30 items
+  const items = feed.querySelectorAll('.feed-item');
+  if (items.length > 30) items[items.length - 1].remove();
+}
+
+function clearFeed(feedId) {
+  document.getElementById(feedId).innerHTML = '<div class="feed-empty">Feed cleared</div>';
+}
+
+// ─── WEBSOCKET CONNECTION ───────────────────────────────
+function connectWebSocket() {
+  const dot = document.getElementById('wsDot');
+  const label = document.getElementById('wsLabel');
+
+  try {
+    const ws = new WebSocket('ws://' + window.location.host + API.ws);
+
+    ws.onopen = () => {
+      dot.classList.remove('disconnected');
+      label.textContent = 'Connected';
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        handleWSEvent(data);
+      } catch(e) { /* ignore parse errors */ }
+    };
+
+    ws.onerror = () => {
+      dot.classList.add('disconnected');
+      label.textContent = 'Disconnected';
+    };
+
+    ws.onclose = () => {
+      dot.classList.add('disconnected');
+      label.textContent = 'Reconnecting...';
+      setTimeout(connectWebSocket, 3000); // auto-reconnect
+    };
+  } catch(e) {
+    dot.classList.add('disconnected');
+    label.textContent = 'WS unavailable';
+  }
+}
+
+function handleWSEvent(data) {
+  const type = data.type || data.event_type;
+
+  switch(type) {
+    case 'agent_activity':
+      addToFeed('agents-feed', '🤖', data.agent_name || 'Agent', data.action || data.message || 'Activity');
+      break;
+    case 'council_debate':
+    case 'council.updated':
+      addToFeed('council-feed', '🏛️', data.title || 'Council Event', data.message || data.description || '');
+      break;
+    case 'trust_event':
+    case 'integrity':
+      addToFeed('trust-feed', '🛡️', data.title || 'Trust Event', data.message || '');
+      break;
+    case 'shadow_alert':
+    case 'threat':
+      addToFeed('shadow-feed', '🕵️', data.title || 'Shadow Alert', data.message || '');
+      break;
+    case 'treasury':
+      addToFeed('treasury-feed', '💰', data.title || 'Treasury', data.message || '');
+      break;
+    case 'package_audit':
+      addToFeed('pkg-feed', '📦', data.title || 'Audit Event', data.message || '');
+      if (currentTab === 'packages') { loadPackages(); }
+      break;
+    case 'skill_update':
+      if (currentTab === 'skills') { loadSkills(); }
+      break;
+  }
+}
+
+// ─── INIT ───────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadSkills();
+  connectWebSocket();
+});
+</script>
+</body>
+</html>
