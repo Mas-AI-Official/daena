@@ -130,38 +130,32 @@ From docs: Hierarchical memory with blockchain audit
 
 ---
 
-### PHASE 5: RESEARCH AGENT INTEGRATION (1 DAY)
+### PHASE 5: RESEARCH AGENT INTEGRATION ✅ (DONE - 2026-02-01)
 **Goal:** Wire `daena_research` MCP tool to real research capabilities
 
-**Expected Behavior:**
-- Query → Search web/knowledge base → Verify via Integrity Shield → Return
-- Track outcomes in learning loop
-- Store findings in NBMF memory
+**Completed Services:**
+1. ✅ `backend/agents/research_agent.py` — Multi-source research with trust verification (Web, Local KB, MCP)
 
-**Service:**
-`backend/agents/research_agent.py`
-- Multi-source search (web, local knowledge, MCP tools)
-- Trust scoring for sources
-- Deduplication of findings
+**API Routes Added:**
+- `/api/v1/research/query` — Full research query
+- `/api/v1/research/quick-search` — Single source search
+- `/api/v1/research/history` — Search history
+- `/api/v1/research/sources` — List available sources
+
+**Integrations:**
+- Wired `daena_research` MCP tool to `ResearchAgent`
+- Integrated Integrity Shield for fact checking
 
 ---
 
-### PHASE 6: FRONTEND CONTROL PLANE UPDATE (2 DAYS)
+### PHASE 6: FRONTEND CONTROL PLANE UPDATE ✅ (DONE - 2026-02-01)
 **Goal:** Apply control_plane.html from docs with real-time WebSocket updates
 
-**From HTML Blueprint:**
-- Live agent activity feed
-- Council debates visible
-- Treasury dashboard
-- Trust & Safety tab
-- Shadow Dept tab (founder only)
-- Skill Registry management
-- Package Audit management
-
-**Key Fix:**
-- Make it SPA (single-page app) with persistent WebSocket
-- Event bus routes: `agent_activity`, `council_debate`, `treasury`, `threat`
-- Tabs show/hide without page reload
+**Updates:**
+- ✅ `control_plane_v2.html` is now the main interface
+- ✅ Wired to all new APIs: Shadow, Governance, Memory, Skills, Packages
+- ✅ Real-time WebSocket feed for Agent, Council, and Threat events
+- ✅ Removed 10+ stub templates and duplicate backend routes
 
 ---
 
