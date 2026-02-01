@@ -386,18 +386,19 @@ class DaenaMCPServer:
                 confidence = 0.5
             
             # Track this consultation as an outcome for future learning
-            tracked = tracker.track_outcome(
-                decision_id=f"council_{domain}_{hash(decision) % 10000}",
+            tracked = tracker.track_decision(
+                outcome_id=f"council_{domain}_{hash(decision) % 10000}",
                 decision_type="council_consult",
+                category=domain,
                 recommendation=recommendation,
-                confidence=confidence,
-                context={
+                metadata={
                     "domain": domain,
                     "decision": decision[:200],
-                    "expert_count": len(experts)
-                },
-                category=domain
+                    "expert_count": len(experts),
+                    "confidence": confidence
+                }
             )
+
             
             # Get relevant insights from past decisions
             insights = consolidation.get_insights_for_prompt([domain])
@@ -409,7 +410,7 @@ class DaenaMCPServer:
                 "confidence": round(confidence, 2),
                 "expert_votes": expert_votes,
                 "consensus": f"{'Strong' if confidence > 0.7 else 'Moderate' if confidence > 0.5 else 'Weak'} {'approval' if recommendation == 'APPROVE' else 'rejection' if recommendation == 'DENY' else 'uncertainty'}",
-                "outcome_tracking_id": tracked.get("outcome_id"),
+                "outcome_tracking_id": tracked.outcome_id if tracked else None,
                 "applicable_insights": insights[:500] if insights else "No prior insights for this domain",
                 "note": "Council consultation with calibrated expert voting"
             }

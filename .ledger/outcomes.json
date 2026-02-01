@@ -13,8 +13,46 @@
       "outcome_notes": "We did not deploy the contract and avoided a potential exploit",
       "feedback_score": 5.0,
       "metadata": {}
+    },
+    "council_defi_8069": {
+      "outcome_id": "council_defi_8069",
+      "decision_type": "council_consult",
+      "category": "defi",
+      "recommendation": "APPROVE",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-01T14:51:55.313976",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "domain": "defi",
+        "decision": "Should we deploy this DeFi contract with reentrancy vulnerability?",
+        "expert_count": 3,
+        "confidence": 0.6666666666666666
+      }
+    },
+    "council_defi_1257": {
+      "outcome_id": "council_defi_1257",
+      "decision_type": "council_consult",
+      "category": "defi",
+      "recommendation": "APPROVE",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-01T14:52:44.448480",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "domain": "defi",
+        "decision": "Should we deploy this DeFi contract with reentrancy vulnerability?",
+        "expert_count": 3,
+        "confidence": 0.6666666666666666
+      }
     }
   },
   "expert_scores": {},
-  "last_updated": "2026-02-01T02:35:31.100396"
+  "last_updated": "2026-02-01T14:52:44.449185"
 }
