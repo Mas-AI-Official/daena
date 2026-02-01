@@ -202,7 +202,7 @@ echo   API Docs:         http://127.0.0.1:%BACKEND_PORT%/docs
 echo.
 echo   Control Panels:
 echo   Dashboard:        http://127.0.0.1:%BACKEND_PORT%/ui/dashboard
-echo   Control Plane:    http://127.0.0.1:%BACKEND_PORT%/control-plane
+echo   Control Plane:    http://127.0.0.1:%BACKEND_PORT%/ui/control-plane
 echo   CMP Canvas:       http://127.0.0.1:%BACKEND_PORT%/cmp-canvas
 echo.
 echo   Architecture: 8x6 Sunflower-Honeycomb (48 agents)
@@ -213,12 +213,12 @@ echo.
 
 REM Auto-launch Dashboard (Retry logic + multiple fallback)
 echo   [+] Launching Daena Control Plane (v2) in your default browser...
-echo   [+] URL: http://127.0.0.1:%BACKEND_PORT%/control-plane
+echo   [+] URL: http://127.0.0.1:%BACKEND_PORT%/ui/control-plane
 
-start "" "http://127.0.0.1:%BACKEND_PORT%/control-plane"
+start "" "http://127.0.0.1:%BACKEND_PORT%/ui/control-plane"
 if errorlevel 1 (
     echo   [WARN] 'start' command failed. Opening via PowerShell...
-    powershell -Command "Start-Process 'http://127.0.0.1:%BACKEND_PORT%/control-plane'"
+    powershell -Command "Start-Process 'http://127.0.0.1:%BACKEND_PORT%/ui/control-plane'"
 )
 
 echo.
