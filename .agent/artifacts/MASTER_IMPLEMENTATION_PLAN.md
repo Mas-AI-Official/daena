@@ -195,8 +195,20 @@ desktop/
 
 ---
 
-### PHASE 9: DEMO VIDEO + HACKATHON SUBMISSION
-**Goal:** Record compelling demo showing full loop
+### PHASE 9: DEMO VIDEO PREPARATION ✅ (READY - 2026-02-01)
+**Goal:** Create a "killer demo" video showing the system resisting manipulation
+
+**Assets Prepared:**
+- ✅ `docs/2026-01-31/DEMO_STORYBOARD.md` — 9-scene storyboard
+- ✅ `scripts/killer_demo.py` — Automated event driver script
+- ✅ `scripts/demo_preflight.py` — System validation script
+- ✅ `frontend/templates/control_plane_v2.html` — Updated for visual flair
+
+**How to Run:**
+1. Start Backend: `python -m backend.main`
+2. Open UI: `http://localhost:8000/ui/control-plane`
+3. Check Stats: `python scripts/demo_preflight.py`
+4. Run Demo: `python scripts/killer_demo.py`
 
 **Demo Flow (per DEMO_STORYBOARD.md):**
 1. Chat with Daena → triggers research
