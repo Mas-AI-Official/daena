@@ -177,7 +177,7 @@ if %errorlevel%==0 (
 if %COUNT% GEQ 60 (
     echo.
     echo   [WARN] Backend did not respond after 120 seconds.
-    echo   [WARN] It might still be loading agents (Sunflower structure takes time).
+    echo   [WARN] It might still be loading agents (Sunflower structure takes time^).
     echo   [WARN] Check the [DAENA - BACKEND] window for current status.
     echo.
     goto :READY
