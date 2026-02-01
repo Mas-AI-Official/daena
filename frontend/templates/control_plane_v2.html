@@ -1,1800 +1,2223 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Daena — Control Plane</title>
-  <style>
-    /* ─── RESET & VARIABLES ──────────────────────────────────── */
-    *,
-    *::before,
-    *::after {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+{% block title %}Daena Office{% endblock %}
+
+{% block head %}
+<style>
+    .sources-hidden {
+        display: none !important;
     }
 
-    :root {
-      --bg-base: #0a0c0f;
-      --bg-surface: #111418;
-      --bg-card: #161b22;
-      --bg-card-hover: #1c2330;
-      --border: #2d3848;
-      --border-focus: #3b82f6;
-
-      --text-primary: #e2e8f0;
-      --text-secondary: #8892a4;
-      --text-muted: #5a6577;
-
-      --accent-blue: #3b82f6;
-      --accent-cyan: #06b6d4;
-      --accent-green: #10b981;
-      --accent-amber: #f59e0b;
-      --accent-red: #ef4444;
-      --accent-purple: #8b5cf6;
-      --accent-pink: #ec4899;
-
-      --status-active: #10b981;
-      --status-pending: #f59e0b;
-      --status-rejected: #ef4444;
-      --status-sandbox: #8b5cf6;
-      --status-draft: #6b7280;
-
-      --radius: 8px;
-      --radius-sm: 4px;
-      --radius-lg: 12px;
+    .source-item a {
+        max-width: 12rem;
     }
 
-    body {
-      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-      background: var(--bg-base);
-      color: var(--text-primary);
-      min-height: 100vh;
-      overflow-x: hidden;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    /* ─── LAYOUT ─────────────────────────────────────────────── */
-    .cp-layout {
-      display: grid;
-      grid-template-columns: 220px 1fr;
-      grid-template-rows: 48px 1fr;
-      height: 100vh;
-    }
-
-    /* ── Top Bar ── */
-    .topbar {
-      grid-column: 1 / -1;
-      background: var(--bg-surface);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 24px;
-      gap: 16px;
-    }
-
-    .topbar-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .topbar-logo {
-      width: 28px;
-      height: 28px;
-      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 700;
-    }
-
-    .topbar-title {
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text-primary);
-      letter-spacing: 0.5px;
-    }
-
-    .topbar-sub {
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    .topbar-right {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .ws-status {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    .ws-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent-green);
-      box-shadow: 0 0 6px var(--accent-green);
-      animation: pulse-dot 2s infinite;
-    }
-
-    .ws-dot.disconnected {
-      background: var(--accent-red);
-      box-shadow: 0 0 6px var(--accent-red);
-      animation: none;
-    }
-
-    @keyframes pulse-dot {
-
-      0%,
-      100% {
-        opacity: 1
-      }
-
-      50% {
-        opacity: 0.4
-      }
-    }
-
-    /* ── Sidebar ── */
-    .sidebar {
-      background: var(--bg-surface);
-      border-right: 1px solid var(--border);
-      padding: 12px 0;
-      overflow-y: auto;
-    }
-
-    .nav-group-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
-      color: var(--text-muted);
-      padding: 16px 20px 6px;
-      font-weight: 600;
-    }
-
-    .nav-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 20px;
-      cursor: pointer;
-      color: var(--text-secondary);
-      transition: all 0.15s;
-      border-left: 3px solid transparent;
-      font-size: 12px;
-      user-select: none;
-    }
-
-    .nav-item:hover {
-      background: var(--bg-card);
-      color: var(--text-primary);
-    }
-
-    .nav-item.active {
-      border-left-color: var(--accent-blue);
-      color: var(--accent-blue);
-      background: rgba(59, 130, 246, 0.06);
-    }
-
-    .nav-item .nav-icon {
-      width: 16px;
-      text-align: center;
-      font-size: 13px;
-    }
-
-    .nav-badge {
-      margin-left: auto;
-      background: var(--accent-amber);
-      color: #000;
-      font-size: 9px;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 8px;
-    }
-
-    .nav-badge.blue {
-      background: var(--accent-blue);
-      color: #fff;
-    }
-
-    /* ── Main Content ── */
-    .main-content {
-      overflow: auto;
-      padding: 24px;
-      background: var(--bg-base);
-    }
-
-    /* ─── TAB PANELS (hidden by default) ────────────────── */
+    /* Control Plane Styles Overrides/Additions */
     .panel {
-      display: none;
+        display: none;
     }
 
     .panel.active {
-      display: block;
-    }
-
-    /* ─── PANEL HEADER ──────────────────────────────────── */
-    .panel-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }
-
-    .panel-header h2 {
-      font-size: 18px;
-      font-weight: 600;
-      color: var(--text-primary);
-      letter-spacing: -0.3px;
-    }
-
-    .panel-header p {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-top: 3px;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 7px 14px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: var(--bg-card);
-      color: var(--text-primary);
-      font-size: 12px;
-      font-family: inherit;
-      cursor: pointer;
-      transition: all 0.15s;
-      white-space: nowrap;
-    }
-
-    .btn:hover {
-      border-color: var(--accent-blue);
-      background: var(--bg-card-hover);
-    }
-
-    .btn.primary {
-      background: var(--accent-blue);
-      border-color: var(--accent-blue);
-      color: #fff;
-    }
-
-    .btn.primary:hover {
-      background: #2563eb;
-    }
-
-    .btn.danger {
-      background: var(--accent-red);
-      border-color: var(--accent-red);
-      color: #fff;
-    }
-
-    .btn.success {
-      background: var(--accent-green);
-      border-color: var(--accent-green);
-      color: #fff;
-    }
-
-    .btn.sm {
-      padding: 4px 10px;
-      font-size: 11px;
-    }
-
-    /* ─── STATS ROW ─────────────────────────────────────── */
-    .stats-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 12px;
-      margin-bottom: 24px;
-    }
-
-    .stat-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 14px 16px;
-      transition: border-color 0.2s;
-    }
-
-    .stat-card:hover {
-      border-color: var(--border-focus);
-    }
-
-    .stat-label {
-      font-size: 10px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      margin-bottom: 6px;
-    }
-
-    .stat-value {
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--text-primary);
-    }
-
-    .stat-value.blue {
-      color: var(--accent-blue);
-    }
-
-    .stat-value.green {
-      color: var(--accent-green);
-    }
-
-    .stat-value.amber {
-      color: var(--accent-amber);
-    }
-
-    .stat-value.red {
-      color: var(--accent-red);
-    }
-
-    .stat-value.purple {
-      color: var(--accent-purple);
-    }
-
-    .stat-sub {
-      font-size: 10px;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
-
-    /* ─── TABLE ─────────────────────────────────────────── */
-    .table-wrap {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-
-    thead th {
-      background: var(--bg-surface);
-      text-align: left;
-      padding: 10px 14px;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-muted);
-      font-weight: 600;
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
-    }
-
-    tbody td {
-      padding: 10px 14px;
-      border-bottom: 1px solid rgba(45, 56, 72, 0.5);
-      color: var(--text-secondary);
-      vertical-align: middle;
-    }
-
-    tbody tr:last-child td {
-      border-bottom: none;
-    }
-
-    tbody tr:hover {
-      background: var(--bg-card-hover);
-    }
-
-    tbody td:first-child {
-      color: var(--text-primary);
-      font-weight: 500;
-    }
-
-    /* ─── BADGE / STATUS ────────────────────────────────── */
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 10px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 10px;
-      white-space: nowrap;
-    }
-
-    .badge::before {
-      content: '';
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-    }
-
-    .badge-active {
-      color: var(--status-active);
-      background: rgba(16, 185, 129, 0.12);
-    }
-
-    .badge-pending {
-      color: var(--status-pending);
-      background: rgba(245, 158, 11, 0.12);
-    }
-
-    .badge-rejected {
-      color: var(--status-rejected);
-      background: rgba(239, 68, 68, 0.12);
-    }
-
-    .badge-sandbox {
-      color: var(--status-sandbox);
-      background: rgba(139, 92, 246, 0.12);
-    }
-
-    .badge-draft {
-      color: var(--status-draft);
-      background: rgba(107, 114, 128, 0.12);
-    }
-
-    .badge-safe {
-      color: var(--accent-green);
-      background: rgba(16, 185, 129, 0.12);
-    }
-
-    .badge-low {
-      color: var(--accent-cyan);
-      background: rgba(6, 182, 212, 0.12);
-    }
-
-    .badge-medium {
-      color: var(--accent-amber);
-      background: rgba(245, 158, 11, 0.12);
-    }
-
-    .badge-high {
-      color: #f97316;
-      background: rgba(249, 115, 22, 0.12);
-    }
-
-    .badge-critical {
-      color: var(--accent-red);
-      background: rgba(239, 68, 68, 0.12);
-    }
-
-    /* ─── LIVE FEED ─────────────────────────────────────── */
-    .live-feed {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      max-height: 360px;
-      overflow-y: auto;
-    }
-
-    .feed-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 10px 14px;
-      border-bottom: 1px solid rgba(45, 56, 72, 0.4);
-      animation: feed-in 0.3s ease;
-    }
-
-    .feed-item:last-child {
-      border-bottom: none;
-    }
-
-    @keyframes feed-in {
-      from {
-        opacity: 0;
-        transform: translateY(-8px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .feed-time {
-      font-size: 10px;
-      color: var(--text-muted);
-      white-space: nowrap;
-      padding-top: 2px;
-      min-width: 60px;
-    }
-
-    .feed-icon {
-      font-size: 14px;
-    }
-
-    .feed-body {
-      flex: 1;
-    }
-
-    .feed-title {
-      font-size: 12px;
-      color: var(--text-primary);
-      font-weight: 500;
-    }
-
-    .feed-detail {
-      font-size: 10px;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
-
-    .feed-empty {
-      padding: 40px;
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 12px;
-    }
-
-    /* ─── FORM ELEMENTS ─────────────────────────────────── */
-    .form-row {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 12px;
-      flex-wrap: wrap;
-    }
-
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      flex: 1;
-      min-width: 140px;
-    }
-
-    .form-group label {
-      font-size: 10px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-    }
-
-    input,
-    select,
-    textarea {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      color: var(--text-primary);
-      padding: 7px 10px;
-      border-radius: var(--radius-sm);
-      font-family: inherit;
-      font-size: 12px;
-      transition: border-color 0.15s;
-    }
-
-    input:focus,
-    select:focus,
-    textarea:focus {
-      outline: none;
-      border-color: var(--border-focus);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 80px;
-    }
-
-    select option {
-      background: var(--bg-card);
-    }
-
-    /* ─── MODAL ─────────────────────────────────────────── */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.6);
-      z-index: 100;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .modal-overlay.open {
-      display: flex;
-    }
-
-    .modal {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      width: 520px;
-      max-width: 90vw;
-      max-height: 80vh;
-      overflow-y: auto;
-      padding: 24px;
-    }
-
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 18px;
-    }
-
-    .modal-header h3 {
-      font-size: 15px;
-      font-weight: 600;
-    }
-
-    .modal-close {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      font-size: 18px;
-      cursor: pointer;
-    }
-
-    .modal-close:hover {
-      color: var(--text-primary);
-    }
-
-    .modal-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      margin-top: 20px;
-    }
-
-    /* ─── FINDING CARDS ─────────────────────────────────── */
-    .finding {
-      background: var(--bg-surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 10px 12px;
-      margin-bottom: 6px;
-    }
-
-    .finding-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 4px;
-    }
-
-    .finding-msg {
-      font-size: 11px;
-      color: var(--text-secondary);
-    }
-
-    /* ─── SCROLLBAR ─────────────────────────────────────── */
-    ::-webkit-scrollbar {
-      width: 6px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 3px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: var(--text-muted);
-    }
-
-    /* ─── UTILITY ───────────────────────────────────────── */
-    .mt-4 {
-      margin-top: 16px;
-    }
-
-    .mt-2 {
-      margin-top: 8px;
-    }
-
-    .mb-4 {
-      margin-bottom: 16px;
-    }
-
-    .flex {
-      display: flex;
-    }
-
-    .flex-end {
-      justify-content: flex-end;
-    }
-
-    .gap-2 {
-      gap: 8px;
-    }
-
-    .w-full {
-      width: 100%;
-    }
-
-    .text-muted {
-      color: var(--text-muted);
-      font-size: 11px;
-    }
-
-    .panel-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-  </style>
-</head>
-
-<body>
-
-  <!-- ═══════════════════════════════════════════════════════════════ -->
-  <!-- LAYOUT                                                          -->
-  <!-- ═══════════════════════════════════════════════════════════════ -->
-
-  <div class="cp-layout">
-
-    <!-- ── TOPBAR ── -->
-    <header class="topbar">
-      <div class="topbar-left">
-        <div class="topbar-logo">D</div>
-        <div>
-          <div class="topbar-title">CONTROL PLANE</div>
-          <div class="topbar-sub">Daena — MAS-AI Autonomous Company OS</div>
-        </div>
-      </div>
-      <div class="topbar-right">
-        <div class="ws-status">
-          <div class="ws-dot" id="wsDot"></div>
-          <span id="wsLabel">Connected</span>
-        </div>
-      </div>
-    </header>
-
-    <!-- ── SIDEBAR ── -->
-    <nav class="sidebar">
-      <div class="nav-group-label">Operations</div>
-      <div class="nav-item active" onclick="switchTab('skills')" id="nav-skills">
-        <span class="nav-icon">⚙️</span> Skill Registry
-        <span class="nav-badge blue" id="badge-skills">6</span>
-      </div>
-      <div class="nav-item" onclick="switchTab('packages')" id="nav-packages">
-        <span class="nav-icon">📦</span> Package Audit
-        <span class="nav-badge" id="badge-packages" style="display:none">0</span>
-      </div>
-      <div class="nav-item" onclick="switchTab('agents')" id="nav-agents">
-        <span class="nav-icon">🤖</span> Agent Activity
-      </div>
-      <div class="nav-item" onclick="switchTab('council')" id="nav-council">
-        <span class="nav-icon">🏛️</span> Council Debates
-      </div>
-
-      <div class="nav-group-label">Security</div>
-      <div class="nav-item" onclick="switchTab('trust')" id="nav-trust">
-        <span class="nav-icon">🛡️</span> Trust & Safety
-      </div>
-      <div class="nav-item" onclick="switchTab('shadow')" id="nav-shadow">
-        <span class="nav-icon">🕵️</span> Shadow Dept
-      </div>
-
-      <div class="nav-group-label">Finance</div>
-      <div class="nav-item" onclick="switchTab('treasury')" id="nav-treasury">
-        <span class="nav-icon">💰</span> Treasury
-      </div>
-    </nav>
-
-    <!-- ── MAIN CONTENT ── -->
-    <main class="main-content">
-
-      <!-- ═══════════════════════════════════════════════════ -->
-      <!-- PANEL: SKILL REGISTRY                               -->
-      <!-- ═══════════════════════════════════════════════════ -->
-      <div class="panel active" id="panel-skills">
-        <div class="panel-header">
-          <div>
-            <h2>Skill Registry</h2>
-            <p>Dynamic typed capabilities — create, test, approve, deploy. Daena can self-create skills.</p>
-          </div>
-          <button class="btn primary" onclick="openModal('create-skill')">+ New Skill</button>
+        display: block;
+    }
+
+    .nav-item {
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 4px;
+        color: #aaa;
+    }
+
+    .nav-item:hover {
+        background: rgba(255, 255, 255, 0.05);
+        color: white;
+    }
+
+    .nav-item.active {
+        background: rgba(218, 165, 32, 0.1);
+        color: #eab308;
+        border-left: 2px solid #eab308;
+    }
+
+    .nav-badge {
+        background: #eab308;
+        color: black;
+        padding: 0 4px;
+        border-radius: 4px;
+        font-size: 10px;
+        margin-left: auto;
+    }
+
+    .cp-hidden {
+        display: none !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex h-[calc(100vh-7rem)] gap-6">
+    <!-- Chat Sessions Sidebar -->
+    <div class="w-80 flex-shrink-0 flex flex-col glass-panel rounded-xl overflow-hidden">
+        <!-- Header -->
+        <!-- Mode Toggles -->
+        <div class="p-2 border-b border-white/10 flex gap-2 bg-black/20">
+            <button id="btn-mode-chat" onclick="toggleAppMode('chat')"
+                class="flex-1 py-1.5 rounded-lg text-xs text-daena-gold bg-white/10 font-bold transition-all"><i
+                    class="fas fa-comments mr-1.5"></i>Chat</button>
+            <button id="btn-mode-cp" onclick="toggleAppMode('cp')"
+                class="flex-1 py-1.5 rounded-lg text-xs text-gray-400 font-bold hover:text-white transition-all"><i
+                    class="fas fa-sliders-h mr-1.5"></i>Control</button>
         </div>
 
-        <div class="stats-row" id="skill-stats">
-          <div class="stat-card">
-            <div class="stat-label">Total</div>
-            <div class="stat-value blue" id="s-total">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Active</div>
-            <div class="stat-value green" id="s-active">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Pending</div>
-            <div class="stat-value amber" id="s-pending">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Self-Created</div>
-            <div class="stat-value purple" id="s-self">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Rejected</div>
-            <div class="stat-value red" id="s-rejected">—</div>
-          </div>
+        <div id="sidebar-chat-content" class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <div class="p-4 border-b border-white/10 flex items-center justify-between">
+                <h3 class="font-medium text-white">Sessions</h3>
+                <button onclick="createNewSession()" class="text-daena-gold hover:text-white transition-colors">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+
+            <!-- Category Filter -->
+            <div class="p-3 border-b border-white/10 bg-black/10">
+                <select id="category-filter"
+                    class="w-full border border-white/10 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-daena-gold/50"
+                    style="background-color: #1a1a2e;" onchange="filterByCategory()">
+                    <option value="all">All Sessions</option>
+                    <option value="executive">👑 Executive</option>
+                    <option value="departments">🏢 Departments</option>
+                    <option value="engineering">⚙️ Engineering</option>
+                    <option value="product">📦 Product</option>
+                    <option value="sales">💼 Sales</option>
+                    <option value="marketing">📢 Marketing</option>
+                    <option value="finance">💰 Finance</option>
+                    <option value="hr">👥 HR</option>
+                    <option value="legal">⚖️ Legal</option>
+                    <option value="customer">🎯 Customer</option>
+                    <option value="agents">🤖 Agents</option>
+                    <option value="general">💬 General</option>
+                </select>
+            </div>
+
+            <!-- Batch Actions Toolbar -->
+            <div id="batch-toolbar" class="hidden px-2 py-2 border-b border-white/10 bg-black/30">
+                <div class="flex items-center justify-between text-xs">
+                    <label class="flex items-center gap-2 text-gray-400 cursor-pointer hover:text-white">
+                        <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll()"
+                            class="accent-daena-gold">
+                        <span id="selection-count">0 selected</span>
+                    </label>
+                    <div class="flex gap-1">
+                        <button onclick="exportSelectedChats()"
+                            class="px-2 py-1 text-gray-400 hover:text-white hover:bg-white/10 rounded"
+                            title="Export Selected">
+                            <i class="fas fa-download"></i>
+                        </button>
+                        <button onclick="deleteSelectedChats()"
+                            class="px-2 py-1 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded"
+                            title="Delete Selected">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- New Chat Button -->
+            <div class="p-2 border-b border-white/10">
+                <button onclick="startNewChat()" id="new-chat-btn"
+                    class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-daena-gold hover:bg-yellow-500 text-black font-bold rounded-lg transition-colors">
+                    <i class="fas fa-plus"></i> New Chat
+                </button>
+            </div>
+
+            <!-- Sessions List -->
+            <div class="flex-1 overflow-y-auto p-2 space-y-1" id="sessions-list">
+                <div class="text-center py-4 text-gray-500 text-sm">Loading...</div>
+            </div>
+
+            <!-- Toggle Selection Mode Button -->
+            <div class="p-2 border-t border-white/10 flex gap-2">
+                <button onclick="toggleSelectionMode()" id="selection-mode-btn"
+                    class="flex-1 text-xs text-gray-400 hover:text-white hover:bg-white/5 rounded py-1 transition-colors">
+                    <i class="fas fa-check-square mr-1"></i> Select
+                </button>
+                <button onclick="showDeletedSessions()" id="restore-deleted-btn"
+                    class="flex-1 text-xs text-gray-400 hover:text-green-400 hover:bg-green-500/10 rounded py-1 transition-colors">
+                    <i class="fas fa-trash-restore mr-1"></i> Restore
+                </button>
+            </div>
+        </div><!-- End Chat Content -->
+
+        <!-- CP Sidebar Content -->
+        <div id="sidebar-cp-content" class="cp-hidden flex-1 overflow-y-auto p-2 space-y-1">
+            <div class="text-xs text-gray-500 uppercase font-bold px-3 py-2 mt-2">Operations</div>
+            <div class="nav-item active" onclick="switchTab('skills')" id="nav-skills"><i
+                    class="fas fa-cog w-5 text-center"></i> Skills <span id="badge-skills" class="nav-badge">6</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('packages')" id="nav-packages"><i
+                    class="fas fa-box w-5 text-center"></i> Packages <span id="badge-packages"
+                    class="nav-badge hidden">0</span></div>
+            <div class="nav-item" onclick="switchTab('agents')" id="nav-agents"><i
+                    class="fas fa-robot w-5 text-center"></i> Agents</div>
+            <div class="nav-item" onclick="switchTab('council')" id="nav-council"><i
+                    class="fas fa-landmark w-5 text-center"></i> Council</div>
+            <div class="text-xs text-gray-500 uppercase font-bold px-3 py-2 mt-4">Security</div>
+            <div class="nav-item" onclick="switchTab('trust')" id="nav-trust"><i
+                    class="fas fa-shield-alt w-5 text-center"></i> Trust & Safety</div>
+            <div class="nav-item" onclick="switchTab('shadow')" id="nav-shadow"><i
+                    class="fas fa-user-secret w-5 text-center"></i> Shadow Dept</div>
+            <div class="nav-item" onclick="switchTab('treasury')" id="nav-treasury"><i
+                    class="fas fa-coins w-5 text-center"></i> Treasury</div>
+        </div>
+    </div><!-- End Sidebar -->
+
+    <!-- CP Main Area -->
+    <div id="main-cp-area" class="cp-hidden flex-1 glass-panel rounded-xl overflow-auto p-6 relative bg-[#0a0c0f]"
+        style="border:1px solid rgba(255,255,255,0.1);">
+        <!-- PANEL: SKILL REGISTRY -->
+        <div class="panel active" id="panel-skills">
+            <div class="panel-header">
+                <div>
+                    <h2>Skill Registry</h2>
+                    <p>Dynamic typed capabilities.</p>
+                </div><button class="btn primary" onclick="openModal('create-skill')">+ New Skill</button>
+            </div>
+            <div class="stats-row" id="skill-stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total</div>
+                    <div class="stat-value blue" id="s-total">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Active</div>
+                    <div class="stat-value green" id="s-active">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Pending</div>
+                    <div class="stat-value amber" id="s-pending">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Self-Created</div>
+                    <div class="stat-value purple" id="s-self">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Rejected</div>
+                    <div class="stat-value red" id="s-rejected">—</div>
+                </div>
+            </div>
+            <div class="form-row mb-4">
+                <div class="form-group" style="max-width:180px"><label>Status</label><select id="skill-filter-status"
+                        onchange="loadSkills()">
+                        <option value="">All</option>
+                        <option value="active">Active</option>
+                        <option value="pending_review">Pending Review</option>
+                        <option value="rejected">Rejected</option>
+                    </select></div>
+                <div class="form-group" style="max-width:180px"><label>Category</label><select id="skill-filter-cat"
+                        onchange="loadSkills()">
+                        <option value="">All</option>
+                        <option value="filesystem">Filesystem</option>
+                        <option value="code_exec">Code Exec</option>
+                        <option value="security">Security</option>
+                        <option value="network">Network</option>
+                        <option value="data_transform">Data Transform</option>
+                        <option value="external_api">External API</option>
+                        <option value="ai_tool">AI Tool</option>
+                        <option value="custom">Custom</option>
+                    </select></div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Creator</th>
+                            <th>Status</th>
+                            <th>Risk</th>
+                            <th>Uses</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="skills-tbody">
+                        <tr>
+                            <td colspan="7" style="text-align:center;padding:30px;">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- PANEL: PACKAGES -->
+        <div class="panel" id="panel-packages">
+            <div class="panel-header">
+                <div>
+                    <h2>Package Audit</h2>
+                    <p>Governance gate for installs.</p>
+                </div><button class="btn primary" onclick="openModal('request-package')">+ Request Install</button>
+            </div>
+            <div class="stats-row" id="pkg-stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total Audits</div>
+                    <div class="stat-value blue" id="p-total">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Pending</div>
+                    <div class="stat-value amber" id="p-pending">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Approved</div>
+                    <div class="stat-value green" id="p-approved">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Rejected</div>
+                    <div class="stat-value red" id="p-rejected">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Installed</div>
+                    <div class="stat-value purple" id="p-installed">—</div>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span
+                    style="font-size:11px;color:#888;">Live Feed</span></div>
+            <div class="live-feed" id="pkg-feed">
+                <div class="feed-empty">No events</div>
+            </div>
+            <div style="margin-top:20px;display:flex;justify-content:space-between;margin-bottom:8px;"><span
+                    style="font-size:11px;color:#888;">Records</span><select id="pkg-filter-status"
+                    onchange="loadPackages()">
+                    <option value="">All</option>
+                    <option value="pending_approval">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                </select></div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Package</th>
+                            <th>Manager</th>
+                            <th>Status</th>
+                            <th>Risk</th>
+                            <th>Findings</th>
+                            <th>Requested</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="packages-tbody">
+                        <tr>
+                            <td colspan="7" style="text-align:center;padding:30px;">No audits</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- PANEL: AGENTS -->
+        <div class="panel" id="panel-agents">
+            <div class="panel-header">
+                <h2>Agent Activity</h2>
+                <div class="panel-actions"><button class="btn" onclick="clearFeed('agents-feed')">Clear</button></div>
+            </div>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">Online</div>
+                    <div class="stat-value green" id="a-online">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Actions</div>
+                    <div class="stat-value blue" id="a-actions">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Depts</div>
+                    <div class="stat-value cyan" id="a-depts">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Pending</div>
+                    <div class="stat-value amber" id="a-tasks">—</div>
+                </div>
+            </div>
+            <div class="live-feed" id="agents-feed">
+                <div class="feed-empty">Waiting...</div>
+            </div>
+        </div>
+        <!-- PANEL: COUNCIL -->
+        <div class="panel" id="panel-council">
+            <div class="panel-header">
+                <h2>Council Debates</h2>
+            </div>
+            <div class="live-feed" id="council-feed">
+                <div class="feed-empty">No debates</div>
+            </div>
+        </div>
+        <!-- PANEL: TRUST -->
+        <div class="panel" id="panel-trust">
+            <div class="panel-header">
+                <div>
+                    <h2>Trust & Safety</h2>
+                    <p>Integrity Shield.</p>
+                </div><button class="btn primary" onclick="openModal('verify-content')">Verify Content</button>
+            </div>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">Verifications</div>
+                    <div class="stat-value blue" id="t-verified">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Blocked</div>
+                    <div class="stat-value red" id="t-injections">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Trusted</div>
+                    <div class="stat-value green" id="t-sources">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Stripped</div>
+                    <div class="stat-value amber" id="t-stripped">—</div>
+                </div>
+            </div>
+            <div class="live-feed" id="trust-feed">
+                <div class="feed-empty">No events</div>
+            </div>
+        </div>
+        <!-- PANEL: SHADOW -->
+        <div class="panel" id="panel-shadow">
+            <div class="panel-header">
+                <h2>Shadow Department</h2>
+            </div>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">Honeypots</div>
+                    <div class="stat-value green" id="sh-honeypots">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Canary</div>
+                    <div class="stat-value blue" id="sh-canary">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Alerts</div>
+                    <div class="stat-value red" id="sh-alerts">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">TTPs</div>
+                    <div class="stat-value purple" id="sh-ttps">—</div>
+                </div>
+            </div>
+            <div class="live-feed" id="shadow-feed">
+                <div class="feed-empty">No threats</div>
+            </div>
+        </div>
+        <!-- PANEL: TREASURY -->
+        <div class="panel" id="panel-treasury">
+            <div class="panel-header">
+                <h2>Treasury</h2>
+            </div>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">$DAENA</div>
+                    <div class="stat-value blue" id="tr-balance">25M</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">NFTs</div>
+                    <div class="stat-value purple" id="tr-nfts">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Spend</div>
+                    <div class="stat-value amber" id="tr-spend">$0</div>
+                </div>
+            </div>
+            <div class="live-feed" id="treasury-feed">
+                <div class="feed-empty">No events</div>
+            </div>
         </div>
 
-        <!-- Filter Row -->
-        <div class="form-row mb-4">
-          <div class="form-group" style="max-width:180px">
-            <label>Status</label>
-            <select id="skill-filter-status" onchange="loadSkills()">
-              <option value="">All</option>
-              <option value="active">Active</option>
-              <option value="pending_review">Pending Review</option>
-              <option value="sandbox_test">Sandbox Test</option>
-              <option value="rejected">Rejected</option>
-              <option value="deprecated">Deprecated</option>
-            </select>
-          </div>
-          <div class="form-group" style="max-width:180px">
-            <label>Category</label>
-            <select id="skill-filter-cat" onchange="loadSkills()">
-              <option value="">All</option>
-              <option value="filesystem">Filesystem</option>
-              <option value="code_exec">Code Exec</option>
-              <option value="security">Security</option>
-              <option value="network">Network</option>
-              <option value="data_transform">Data Transform</option>
-              <option value="external_api">External API</option>
-              <option value="ai_tool">AI Tool</option>
-              <option value="custom">Custom</option>
-            </select>
-          </div>
+        <!-- MODALS -->
+        <div class="modal-overlay" id="modal-create-skill">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>New Skill</h3><button class="modal-close" onclick="closeModal('create-skill')">&times;</button>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Name</label><input type="text" id="cs-name"></div>
+                    <div class="form-group"><label>Display</label><input type="text" id="cs-display"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Desc</label><textarea id="cs-desc"></textarea></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Category</label><select id="cs-category">
+                            <option value="custom">Custom</option>
+                            <option value="code_exec">Code Exec</option>
+                        </select></div>
+                    <div class="form-group"><label>Creator</label><select id="cs-creator">
+                            <option value="daena">Daena</option>
+                            <option value="founder">Founder</option>
+                        </select></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Code</label><textarea id="cs-code"></textarea></div>
+                </div>
+                <div class="modal-actions"><button class="btn"
+                        onclick="closeModal('create-skill')">Cancel</button><button class="btn primary"
+                        onclick="submitCreateSkill()">Create</button></div>
+            </div>
         </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Category</th>
-                <th>Creator</th>
-                <th>Status</th>
-                <th>Risk</th>
-                <th>Uses</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="skills-tbody">
-              <tr>
-                <td colspan="7" style="text-align:center; color:var(--text-muted); padding:30px;">Loading...</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="modal-overlay" id="modal-request-package">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>Request Package</h3><button class="modal-close"
+                        onclick="closeModal('request-package')">&times;</button>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Name</label><input type="text" id="rp-name"></div>
+                    <div class="form-group"><label>Version</label><input type="text" id="rp-version"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Manager</label><select id="rp-manager">
+                            <option value="npm">npm</option>
+                            <option value="pip">pip</option>
+                        </select></div>
+                    <div class="form-group"><label>Request By</label><input type="text" id="rp-agent" value="daena">
+                    </div>
+                </div>
+                <div class="modal-actions"><button class="btn"
+                        onclick="closeModal('request-package')">Cancel</button><button class="btn primary"
+                        onclick="submitRequestPackage()">Request</button></div>
+            </div>
         </div>
-      </div>
-
-      <!-- ═══════════════════════════════════════════════════ -->
-      <!-- PANEL: PACKAGE AUDIT                                -->
-      <!-- ═══════════════════════════════════════════════════ -->
-      <div class="panel" id="panel-packages">
-        <div class="panel-header">
-          <div>
-            <h2>Package Audit</h2>
-            <p>Governance gate for all installs. Nothing touches the system without passing this loop.</p>
-          </div>
-          <button class="btn primary" onclick="openModal('request-package')">+ Request Install</button>
+        <div class="modal-overlay" id="modal-verify-content">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>Verify</h3><button class="modal-close" onclick="closeModal('verify-content')">&times;</button>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Content</label><textarea id="vc-content"></textarea></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Source</label><input type="text" id="vc-source"></div>
+                </div>
+                <div id="vc-result" style="display:none;margin-top:12px;"></div>
+                <div class="modal-actions"><button class="btn"
+                        onclick="closeModal('verify-content')">Close</button><button class="btn primary"
+                        onclick="submitVerify()">Verify</button></div>
+            </div>
         </div>
-
-        <div class="stats-row" id="pkg-stats">
-          <div class="stat-card">
-            <div class="stat-label">Total Audits</div>
-            <div class="stat-value blue" id="p-total">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Pending</div>
-            <div class="stat-value amber" id="p-pending">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Approved</div>
-            <div class="stat-value green" id="p-approved">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Rejected</div>
-            <div class="stat-value red" id="p-rejected">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Installed</div>
-            <div class="stat-value purple" id="p-installed">—</div>
-          </div>
+        <div class="modal-overlay" id="modal-pkg-action">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3 id="pkg-action-title">Review</h3><button class="modal-close"
+                        onclick="closeModal('pkg-action')">&times;</button>
+                </div>
+                <div id="pkg-action-info" style="margin-bottom:12px;"></div>
+                <div class="form-row">
+                    <div class="form-group"><label>Notes</label><textarea id="pkg-action-notes"></textarea></div>
+                </div>
+                <div class="modal-actions"><button class="btn" onclick="closeModal('pkg-action')">Cancel</button><button
+                        class="btn success" onclick="executePkgAction('approve')">Approve</button><button
+                        class="btn danger" onclick="executePkgAction('reject')">Reject</button></div>
+            </div>
         </div>
-
-        <!-- Live Audit Feed -->
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <span style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.8px;">Live
-            Audit Feed</span>
-          <div class="ws-status" style="font-size:10px;">
-            <div class="ws-dot" style="width:6px;height:6px;"></div> Streaming
-          </div>
-        </div>
-        <div class="live-feed" id="pkg-feed">
-          <div class="feed-empty">No audit events yet</div>
-        </div>
-
-        <!-- Records Table -->
-        <div
-          style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <span style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.8px;">Audit
-            Records</span>
-          <select id="pkg-filter-status" onchange="loadPackages()" style="font-size:11px; padding:3px 8px;">
-            <option value="">All</option>
-            <option value="queued">Queued</option>
-            <option value="pending_approval">Pending Approval</option>
-            <option value="approved">Approved</option>
-            <option value="installed">Installed</option>
-            <option value="rejected">Rejected</option>
-          </select>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Package</th>
-                <th>Manager</th>
-                <th>Status</th>
-                <th>Risk</th>
-                <th>Findings</th>
-                <th>Requested By</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="packages-tbody">
-              <tr>
-                <td colspan="7" style="text-align:center; color:var(--text-muted); padding:30px;">No audits yet</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- ═══════════════════════════════════════════════════ -->
-      <!-- PANEL: AGENT ACTIVITY                               -->
-      <!-- ═══════════════════════════════════════════════════ -->
-      <div class="panel" id="panel-agents">
-        <div class="panel-header">
-          <div>
-            <h2>Agent Activity</h2>
-            <p>Real-time feed of every agent action across all departments. 8×6 Sunflower-Honeycomb.</p>
-          </div>
-          <div class="panel-actions">
-            <button class="btn" onclick="clearFeed('agents-feed')">Clear</button>
-          </div>
-        </div>
-        <div class="stats-row">
-          <div class="stat-card">
-            <div class="stat-label">Agents Online</div>
-            <div class="stat-value green" id="a-online">—</div>
-            <div class="stat-sub">of 48 total</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Actions Today</div>
-            <div class="stat-value blue" id="a-actions">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Depts Active</div>
-            <div class="stat-value cyan" id="a-depts">—</div>
-            <div class="stat-sub">of 8</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Pending Tasks</div>
-            <div class="stat-value amber" id="a-tasks">—</div>
-          </div>
-        </div>
-        <div class="live-feed" id="agents-feed" style="max-height:500px;">
-          <div class="feed-empty">Waiting for agent activity...</div>
-        </div>
-      </div>
-
-      <!-- ═══════════════════════════════════════════════════ -->
-      <!-- PANEL: COUNCIL DEBATES                              -->
-      <!-- ═══════════════════════════════════════════════════ -->
-      <div class="panel" id="panel-council">
-        <div class="panel-header">
-          <div>
-            <h2>Council Debates</h2>
-            <p>Live governance debates. 5 expert agents vote on major decisions.</p>
-          </div>
-        </div>
-        <div class="stats-row">
-          <div class="stat-card">
-            <div class="stat-label">Active Debates</div>
-            <div class="stat-value blue" id="c-active">0</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Resolved</div>
-            <div class="stat-value green" id="c-resolved">0</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Pending Vote</div>
-            <div class="stat-value amber" id="c-pending">0</div>
-          </div>
-        </div>
-        <div class="live-feed" id="council-feed" style="max-height:500px;">
-          <div class="feed-empty">No active debates</div>
-        </div>
-      </div>
-
-      <!-- ═══════════════════════════════════════════════════ -->
-      <!-- PANEL: TRUST & SAFETY                               -->
-      <!-- ═══════════════════════════════════════════════════ -->
-      <div class="panel" id="panel-trust">
-        <div class="panel-header">
-          <div>
-            <h2>Trust & Safety</h2>
-            <p>Integrity Shield — source verification, prompt injection detection, trust scores.</p>
-          </div>
-          <button class="btn primary" onclick="openModal('verify-content')">Verify Content</button>
-        </div>
-        <div class="stats-row" id="trust-stats">
-          <div class="stat-card">
-            <div class="stat-label">Verifications</div>
-            <div class="stat-value blue" id="t-verified">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Injections Blocked</div>
-            <div class="stat-value red" id="t-injections">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Trusted Sources</div>
-            <div class="stat-value green" id="t-sources">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Stripped Attempts</div>
-            <div class="stat-value amber" id="t-stripped">—</div>
-          </div>
-        </div>
-        <div class="live-feed" id="trust-feed" style="max-height:400px;">
-          <div class="feed-empty">No trust events yet</div>
-        </div>
-      </div>
-
-      <!-- ═══════════════════════════════════════════════════ -->
-      <!-- PANEL: SHADOW DEPT                                  -->
-      <!-- ═══════════════════════════════════════════════════ -->
-      <div class="panel" id="panel-shadow">
-        <div class="panel-header">
-          <div>
-            <h2>Shadow Department</h2>
-            <p>Defensive deception — honeypots, canary tokens, threat intelligence. Founder-only view.</p>
-          </div>
-        </div>
-        <div class="stats-row">
-          <div class="stat-card">
-            <div class="stat-label">Honeypots Active</div>
-            <div class="stat-value green" id="sh-honeypots">3</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Canary Tokens</div>
-            <div class="stat-value blue" id="sh-canary">12</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Alerts (24h)</div>
-            <div class="stat-value red" id="sh-alerts">0</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">TTPs Logged</div>
-            <div class="stat-value purple" id="sh-ttps">0</div>
-          </div>
-        </div>
-        <div class="live-feed" id="shadow-feed" style="max-height:400px;">
-          <div class="feed-empty" id="shadow-empty">No threat events</div>
-        </div>
-      </div>
-
-      <!-- ═══════════════════════════════════════════════════ -->
-      <!-- PANEL: TREASURY                                     -->
-      <!-- ═══════════════════════════════════════════════════ -->
-      <div class="panel" id="panel-treasury">
-        <div class="panel-header">
-          <div>
-            <h2>Treasury</h2>
-            <p>$DAENA token, NFT agent licensing, multi-sig wallet. Council-gated spending.</p>
-          </div>
-        </div>
-        <div class="stats-row">
-          <div class="stat-card">
-            <div class="stat-label">$DAENA Balance</div>
-            <div class="stat-value blue" id="tr-balance">25,000,000</div>
-            <div class="stat-sub">of 100M supply</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">NFTs Minted</div>
-            <div class="stat-value purple" id="tr-nfts">0</div>
-            <div class="stat-sub">of 1,000 slots</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">ETH Held</div>
-            <div class="stat-value green" id="tr-eth">0.00</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Monthly Spend</div>
-            <div class="stat-value amber" id="tr-spend">$0</div>
-          </div>
-        </div>
-        <div class="live-feed" id="treasury-feed" style="max-height:300px;">
-          <div class="feed-empty">No treasury events</div>
-        </div>
-      </div>
-
-    </main>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- MODALS                                              -->
-  <!-- ═══════════════════════════════════════════════════ -->
-
-  <!-- Create Skill Modal -->
-  <div class="modal-overlay" id="modal-create-skill">
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Create New Skill</h3>
-        <button class="modal-close" onclick="closeModal('create-skill')">&times;</button>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Name (slug)</label><input type="text" id="cs-name"
-            placeholder="e.g. parse_csv" /></div>
-        <div class="form-group"><label>Display Name</label><input type="text" id="cs-display"
-            placeholder="e.g. Parse CSV File" /></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Description</label><textarea id="cs-desc" placeholder="What does this skill do?"
-            style="min-height:50px;"></textarea></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group" style="max-width:160px">
-          <label>Category</label>
-          <select id="cs-category">
-            <option value="custom">Custom</option>
-            <option value="filesystem">Filesystem</option>
-            <option value="code_exec">Code Exec</option>
-            <option value="data_transform">Data Transform</option>
-            <option value="security">Security</option>
-            <option value="network">Network</option>
-            <option value="external_api">External API</option>
-            <option value="ai_tool">AI Tool</option>
-          </select>
-        </div>
-        <div class="form-group" style="max-width:160px">
-          <label>Creator</label>
-          <select id="cs-creator">
-            <option value="daena">Daena (self)</option>
-            <option value="founder">Founder</option>
-            <option value="agent">Sub-Agent</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Code Body (Python)</label><textarea id="cs-code"
-            placeholder='def execute(inputs):\n    # Your skill code here\n    return {"result": "..."}'></textarea>
-        </div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn" onclick="closeModal('create-skill')">Cancel</button>
-        <button class="btn primary" onclick="submitCreateSkill()">Create Skill</button>
-      </div>
     </div>
-  </div>
 
-  <!-- Request Package Install Modal -->
-  <div class="modal-overlay" id="modal-request-package">
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Request Package Install</h3>
-        <button class="modal-close" onclick="closeModal('request-package')">&times;</button>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Package Name</label><input type="text" id="rp-name" placeholder="e.g. lodash" />
+    <!-- Chat Area -->
+    <div id="main-chat-area" class="flex-1 flex flex-col glass-panel rounded-xl overflow-hidden relative">
+        <!-- Chat Header -->
+        <div class="h-14 border-b border-white/10 flex items-center justify-between px-6 bg-black/20">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-daena-gold flex items-center justify-center text-black font-bold">
+                    D
+                </div>
+                <div>
+                    <h3 class="font-medium text-white">Daena VP</h3>
+                    <p class="text-xs text-green-400 flex items-center gap-2" id="brain-status-indicator">
+                        <span class="flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-gray-500" id="brain-dot"></span>
+                            <span id="brain-text">Checking...</span>
+                        </span>
+                        <span id="routing-mode-badge"
+                            class="hidden px-2 py-0.5 rounded-full bg-white/10 text-[10px] text-gray-300 border border-white/10">
+                            LOCAL
+                        </span>
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <!-- Category Badge -->
+                <div id="current-category-badge" class="hidden px-3 py-1 rounded-full text-xs font-medium"></div>
+
+                <!-- Actions -->
+                <button onclick="exportChat('json')" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Export as JSON">
+                    <i class="fas fa-download"></i>
+                </button>
+                <button onclick="exportChat('txt')" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Export as Text">
+                    <i class="fas fa-file-alt"></i>
+                </button>
+                <button onclick="shareChat()" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Copy Share Link">
+                    <i class="fas fa-share-alt"></i>
+                </button>
+                <button onclick="toggleToolConsole()" class="p-2 text-gray-400 hover:text-daena-gold transition-colors"
+                    title="Tool Console" id="tool-console-btn">
+                    <i class="fas fa-terminal"></i>
+                </button>
+                <button onclick="toggleVoice()" id="voice-toggle-btn"
+                    class="p-2 text-gray-400 hover:text-white transition-colors" title="Toggle Voice">
+                    <i class="fas fa-microphone-slash" id="voice-icon"></i>
+                </button>
+                <button onclick="openVoiceSettings()" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Voice Settings">
+                    <i class="fas fa-sliders-h"></i>
+                </button>
+                <button onclick="showCategoryModal()" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Change Category">
+                    <i class="fas fa-tag"></i>
+                </button>
+                <button onclick="clearContext()" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Clear Context">
+                    <i class="fas fa-eraser"></i>
+                </button>
+                <button id="show-sources-btn" onclick="toggleShowSources()"
+                    class="p-2 text-gray-400 hover:text-white transition-colors flex items-center gap-1"
+                    title="Show sources: On/Off (citations below messages)">
+                    <i class="fas fa-link text-xs"></i>
+                    <span id="show-sources-label" class="text-[10px]">Sources Off</span>
+                </button>
+            </div>
         </div>
-        <div class="form-group" style="max-width:140px"><label>Version</label><input type="text" id="rp-version"
-            placeholder="e.g. 4.17.21" /></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group" style="max-width:150px">
-          <label>Package Manager</label>
-          <select id="rp-manager">
-            <option value="npm">npm</option>
-            <option value="pip">pip</option>
-            <option value="yarn">yarn</option>
-            <option value="cargo">cargo</option>
-          </select>
+
+        <!-- Messages -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6" id="chat-messages">
+            <div class="flex gap-4">
+                <div
+                    class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">
+                    D</div>
+                <div class="flex-1">
+                    <div
+                        class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
+                        <p>Connecting to secure channel...</p>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="form-group">
-          <label>Requested By</label>
-          <input type="text" id="rp-agent" value="daena" placeholder="agent_id" />
+
+        <!-- Input Area -->
+        <div class="p-4 border-t border-white/10 bg-black/20">
+            <div class="flex gap-2 mb-2">
+                <button type="button" id="btn-search-mode" onclick="setSendMode('search')"
+                    class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors"
+                    title="Quick search then answer (like Google + LLM)">
+                    <i class="fas fa-search mr-1"></i> Search
+                </button>
+                <button type="button" id="btn-deep-search-mode" onclick="setSendMode('deep_search')"
+                    class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors"
+                    title="Deep search: scrape pages and synthesize conclusion">
+                    <i class="fas fa-globe mr-1"></i> Deep search
+                </button>
+                <span id="send-mode-badge" class="text-xs text-daena-gold hidden"></span>
+            </div>
+            <form id="chat-form" class="flex gap-3 items-end">
+                <textarea id="message-input" rows="1"
+                    class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-daena-gold/50 focus:bg-white/10 transition-all resize-none overflow-hidden"
+                    placeholder="Ask Daena anything... (Shift+Enter for new line)" autocomplete="off"
+                    style="min-height: 48px; max-height: 200px;"
+                    oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px'"></textarea>
+                <button type="submit" id="send-btn"
+                    class="bg-daena-gold hover:bg-yellow-500 text-black font-bold px-6 rounded-xl transition-colors flex items-center gap-2">
+                    <span>Send</span>
+                    <i class="fas fa-paper-plane text-sm"></i>
+                </button>
+            </form>
         </div>
-      </div>
-      <div
-        style="margin-top:12px; padding:10px 12px; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.2); border-radius:6px; font-size:11px; color:#f59e0b;">
-        ⚠️ This will trigger a full security audit before install is allowed. Critical packages are auto-rejected.
-      </div>
-      <div class="modal-actions">
-        <button class="btn" onclick="closeModal('request-package')">Cancel</button>
-        <button class="btn primary" onclick="submitRequestPackage()">Request & Audit</button>
-      </div>
     </div>
-  </div>
 
-  <!-- Verify Content Modal -->
-  <div class="modal-overlay" id="modal-verify-content">
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Verify Content</h3>
-        <button class="modal-close" onclick="closeModal('verify-content')">&times;</button>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Content to verify</label><textarea id="vc-content"
-            placeholder="Paste content to check for injection..."></textarea></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Source URL (optional)</label><input type="text" id="vc-source"
-            placeholder="https://example.com" /></div>
-      </div>
-      <div id="vc-result" style="display:none; margin-top:12px;"></div>
-      <div class="modal-actions">
-        <button class="btn" onclick="closeModal('verify-content')">Close</button>
-        <button class="btn primary" onclick="submitVerify()">Verify</button>
-      </div>
+    <!-- Tool Console Panel (Collapsible) -->
+    <div id="tool-console" class="w-80 glass-panel rounded-xl overflow-hidden flex flex-col transition-all duration-300"
+        style="display: none;">
+        <div class="p-3 border-b border-white/10 bg-black/30 flex justify-between items-center">
+            <h3 class="text-sm font-bold text-daena-gold flex items-center gap-2">
+                <i class="fas fa-terminal"></i> Tool Console
+            </h3>
+            <button onclick="toggleToolConsole()" class="text-gray-400 hover:text-white">
+                <i class="fas fa-times text-xs"></i>
+            </button>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="p-3 space-y-2 border-b border-white/10">
+            <p class="text-xs text-gray-400 mb-2">Quick Actions</p>
+            <div class="grid grid-cols-2 gap-1">
+                <button onclick="executeQuickTool('health check')"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
+                    <i class="fas fa-heartbeat text-green-400"></i> Health
+                </button>
+                <button onclick="executeQuickTool('show tables')"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
+                    <i class="fas fa-database text-blue-400"></i> Tables
+                </button>
+                <button onclick="executeQuickTool('list routes')"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
+                    <i class="fas fa-route text-purple-400"></i> Routes
+                </button>
+                <button onclick="executeQuickTool('analyze all')"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
+                    <i class="fas fa-chart-pie text-yellow-400"></i> Analyze
+                </button>
+            </div>
+            <!-- Desktop automation (Moltbot-like) -->
+            <p class="text-xs text-gray-400 mb-2 mt-3">Desktop automation</p>
+            <div class="grid grid-cols-2 gap-1">
+                <button type="button" onclick="showDesktopClickForm()"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1"
+                    title="Click at screen coordinates (requires AUTOMATION_ENABLE_DESKTOP=1)">
+                    <i class="fas fa-mouse-pointer text-amber-400"></i> Click
+                </button>
+                <button type="button" onclick="showDesktopTypeForm()"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1"
+                    title="Type text on desktop (requires AUTOMATION_ENABLE_DESKTOP=1)">
+                    <i class="fas fa-keyboard text-amber-400"></i> Type
+                </button>
+            </div>
+            <div id="desktop-click-form" class="hidden mt-2 space-y-2 p-2 bg-black/20 rounded border border-white/10">
+                <div class="flex gap-2 items-center">
+                    <input type="number" id="desktop-x" placeholder="X" min="0" step="1"
+                        class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white w-16">
+                    <input type="number" id="desktop-y" placeholder="Y" min="0" step="1"
+                        class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white w-16">
+                    <button type="button" onclick="runDesktopClick()"
+                        class="text-xs px-2 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">Run</button>
+                </div>
+            </div>
+            <div id="desktop-type-form" class="hidden mt-2 space-y-2 p-2 bg-black/20 rounded border border-white/10">
+                <div class="flex gap-2">
+                    <input type="text" id="desktop-type-text" placeholder="Text to type on desktop"
+                        class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white">
+                    <button type="button" onclick="runDesktopType()"
+                        class="text-xs px-2 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">Run</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- MCP Connections -->
+        <div class="p-3 space-y-2 border-b border-white/10">
+            <p class="text-xs text-gray-400 mb-2">MCP Connections</p>
+            <div id="mcp-status" class="text-xs text-gray-500">Loading...</div>
+            <button onclick="discoverMcpServers()"
+                class="text-xs w-full px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center justify-center gap-1">
+                <i class="fas fa-search"></i> Discover Servers
+            </button>
+        </div>
+
+        <!-- Tool Output -->
+        <div class="flex-1 overflow-y-auto p-3">
+            <p class="text-xs text-gray-400 mb-2">Output</p>
+            <div id="tool-output"
+                class="text-xs font-mono text-gray-300 bg-black/30 rounded p-2 min-h-[100px] whitespace-pre-wrap">
+                Ready. Enter a command below or use quick actions.
+            </div>
+        </div>
+
+        <!-- Command Input -->
+        <div class="p-3 border-t border-white/10">
+            <form onsubmit="executeToolCommand(event)" class="flex gap-2">
+                <input type="text" id="tool-command"
+                    class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-daena-gold/50"
+                    placeholder="e.g. health check, click at 100 200, type on desktop hello">
+                <button type="submit"
+                    class="text-xs px-3 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">
+                    Run
+                </button>
+            </form>
+        </div>
     </div>
-  </div>
+</div>
 
-  <!-- Approve/Reject Package Modal -->
-  <div class="modal-overlay" id="modal-pkg-action">
-    <div class="modal">
-      <div class="modal-header">
-        <h3 id="pkg-action-title">Approve Package</h3>
-        <button class="modal-close" onclick="closeModal('pkg-action')">&times;</button>
-      </div>
-      <div id="pkg-action-info"
-        style="margin-bottom:12px; padding:10px; background:var(--bg-surface); border-radius:6px; font-size:12px; color:var(--text-secondary);">
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Notes</label><textarea id="pkg-action-notes" placeholder="Optional notes..."
-            style="min-height:50px;"></textarea></div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn" onclick="closeModal('pkg-action')">Cancel</button>
-        <button class="btn success" id="btn-approve-pkg" onclick="executePkgAction('approve')">Approve</button>
-        <button class="btn danger" id="btn-reject-pkg" onclick="executePkgAction('reject')">Reject</button>
-      </div>
+<!-- Category Modal -->
+<div id="category-modal"
+    class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center z-50">
+    <div class="glass-panel p-8 rounded-2xl max-w-md w-full mx-4">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-white">Change Session Category</h2>
+            <button onclick="closeCategoryModal()" class="text-gray-400 hover:text-white">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="space-y-3">
+            <button onclick="setCategory('executive')"
+                class="w-full p-4 bg-white/5 hover:bg-white/10 rounded-lg text-left transition-colors">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">👑</span>
+                    <div>
+                        <p class="font-medium text-white">Executive</p>
+                        <p class="text-xs text-gray-400">1-on-1 with Masoud (Founder)</p>
+                    </div>
+                </div>
+            </button>
+            <button onclick="setCategory('departments')"
+                class="w-full p-4 bg-white/5 hover:bg-white/10 rounded-lg text-left transition-colors">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">🏢</span>
+                    <div>
+                        <p class="font-medium text-white">Departments</p>
+                        <p class="text-xs text-gray-400">Department-level discussions</p>
+                    </div>
+                </div>
+            </button>
+            <button onclick="setCategory('agents')"
+                class="w-full p-4 bg-white/5 hover:bg-white/10 rounded-lg text-left transition-colors">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">🤖</span>
+                    <div>
+                        <p class="font-medium text-white">Agents</p>
+                        <p class="text-xs text-gray-400">Agent coordination & tasks</p>
+                    </div>
+                </div>
+            </button>
+            <button onclick="setCategory('general')"
+                class="w-full p-4 bg-white/5 hover:bg-white/10 rounded-lg text-left transition-colors">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">💬</span>
+                    <div>
+                        <p class="font-medium text-white">General</p>
+                        <p class="text-xs text-gray-400">Miscellaneous conversations</p>
+                    </div>
+                </div>
+            </button>
+        </div>
     </div>
-  </div>
+</div>
 
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- JAVASCRIPT                                          -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <script>
-    // ─── CONFIG ─────────────────────────────────────────────
-    const API = {
-      skills: '/api/v1/skills',
-      packages: '/api/v1/packages',
-      integrity: '/api/v1/integrity',
-      outcomes: '/api/v1/outcomes',
-      shadow: '/api/v1/shadow',
-      governance: '/api/v1/governance',
-      memory: '/api/v1/memory',
-      ws: '/ws/events'
+<!-- Custom Modal for Delete/Rename -->
+<div id="custom-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm">
+    <div class="bg-gray-900 border border-white/10 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+        <h3 id="modal-title" class="text-lg font-semibold text-white mb-4"></h3>
+        <div id="modal-body" class="text-gray-300 mb-6"></div>
+        <input type="text" id="modal-input"
+            class="hidden w-full bg-white/5 border border-white/20 rounded-lg px-4 py-2 text-white mb-4 focus:outline-none focus:border-daena-gold/50" />
+        <div class="flex gap-3 justify-end">
+            <button onclick="closeModal()"
+                class="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-gray-300 transition-colors">
+                Cancel
+            </button>
+            <button id="modal-confirm-btn"
+                class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-colors">
+                Confirm
+            </button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+
+
+{% block scripts %}
+<script src="/static/js/websocket-client.js"></script>
+<script src="/static/js/voice-client.js"></script>
+<script>
+    let currentSessionId = null;
+    let allSessions = [];
+    let currentCategory = 'all';
+    let sendMode = null;  // 'search' | 'deep_search' – R1-style search then answer
+
+    function setSendMode(mode) {
+        sendMode = mode === sendMode ? null : mode;
+        const btnSearch = document.getElementById('btn-search-mode');
+        const btnDeep = document.getElementById('btn-deep-search-mode');
+        const badge = document.getElementById('send-mode-badge');
+        if (btnSearch) btnSearch.classList.toggle('border-daena-gold', sendMode === 'search');
+        if (btnSearch) btnSearch.classList.toggle('text-daena-gold', sendMode === 'search');
+        if (btnDeep) btnDeep.classList.toggle('border-daena-gold', sendMode === 'deep_search');
+        if (btnDeep) btnDeep.classList.toggle('text-daena-gold', sendMode === 'deep_search');
+        if (badge) {
+            badge.classList.toggle('hidden', !sendMode);
+            badge.textContent = sendMode === 'search' ? 'Search' : sendMode === 'deep_search' ? 'Deep search' : '';
+        }
+    }
+
+    // --- Message Formatter ---
+    function formatMessage(text) {
+        if (!text) return '';
+        // Convert [Title](url) to <a href="url" class="source-pill">[Title]</a>
+        // And simple URLs to links if not in markdown
+        let html = text
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") // Basic cleanup first
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="source-pill" title="$2"><i class="fas fa-external-link-alt text-[9px] mr-1"></i>$1</a>')
+            .replace(/`([^`]+)`/g, '<code class="bg-black/30 px-1 rounded text-orange-300">$1</code>')
+            .replace(/\n/g, '<br>');
+        return html;
+    }
+
+    // Category emoji map
+    const categoryEmojis = {
+        'executive': '👑',
+        'departments': '🏢',
+        'engineering': '⚙️',
+        'product': '📦',
+        'sales': '💼',
+        'marketing': '📢',
+        'finance': '💰',
+        'hr': '👥',
+        'legal': '⚖️',
+        'customer': '🎯',
+        'agents': '🤖',
+        'general': '💬'
     };
 
-    // ─── STATE ──────────────────────────────────────────────
-    let currentTab = 'skills';
-    let pkgActionId = null;   // for approve/reject modal
+    const categoryColors = {
+        'executive': '#D4AF37',
+        'departments': '#8B5CF6',
+        'engineering': '#3B82F6',
+        'product': '#10B981',
+        'sales': '#F59E0B',
+        'marketing': '#EF4444',
+        'finance': '#00CED1',
+        'hr': '#E91E7F',
+        'legal': '#9370DB',
+        'customer': '#32CD32',
+        'agents': '#3B82F6',
+        'general': '#6B7280'
+    };
 
-    // ─── TAB SWITCHING ──────────────────────────────────────
-    function switchTab(tab) {
-      // Hide all panels, deactivate nav
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-
-      currentTab = tab;
-      document.getElementById('panel-' + tab).classList.add('active');
-      document.getElementById('nav-' + tab).classList.add('active');
-
-      // Load data for the tab
-      switch (tab) {
-        case 'skills': loadSkills(); break;
-        case 'packages': loadPackages(); loadAuditLog(); break;
-        case 'trust': loadTrustStats(); break;
-        case 'agents': loadAgentStats(); break;
-        case 'shadow': loadShadowDashboard(); break;
-      }
+    function applyShowSources(on) {
+        localStorage.setItem('daena_office_show_sources', on ? 'on' : 'off');
+        const label = document.getElementById('show-sources-label');
+        if (label) label.textContent = on ? 'Sources On' : 'Sources Off';
+        document.querySelectorAll('[id$="-sources"]').forEach(el => {
+            if (on) el.classList.remove('sources-hidden');
+            else el.classList.add('sources-hidden');
+        });
+        const btn = document.getElementById('show-sources-btn');
+        if (btn) btn.classList.toggle('text-daena-gold', on);
     }
 
-    // ─── MODAL HELPERS ──────────────────────────────────────
-    function openModal(name) { document.getElementById('modal-' + name).classList.add('open'); }
-    function closeModal(name) { document.getElementById('modal-' + name).classList.remove('open'); }
+    function toggleShowSources() {
+        const on = localStorage.getItem('daena_office_show_sources') !== 'on';
+        applyShowSources(on);
+        window.showToast?.(on ? 'Sources visible below messages' : 'Sources hidden', 'info');
+    }
 
-    // ─── API HELPERS ────────────────────────────────────────
-    async function api(method, url, body = null) {
-      const opts = { method, headers: { 'Content-Type': 'application/json' } };
-      if (body) opts.body = JSON.stringify(body);
-      try {
-        const res = await fetch(url, opts);
-        if (!res.ok) {
-          const err = await res.text();
-          console.error('API error:', res.status, err);
-          return { error: err };
+    document.addEventListener('DOMContentLoaded', async () => {
+        applyShowSources(localStorage.getItem('daena_office_show_sources') === 'on');
+        await checkBrainStatus();
+        showInitialGreeting(); // Replace static "Connecting to secure channel..." message
+        await loadSessions();
+
+        // Only create new session if there are no existing sessions
+        if (!currentSessionId && allSessions.length === 0) {
+            await createNewSession();
+        } else if (allSessions.length > 0 && !currentSessionId) {
+            // Load the first session if none selected
+            await loadSession(allSessions[0].session_id);
         }
-        return await res.json();
-      } catch (e) {
-        console.error('Fetch error:', e);
-        return { error: e.message };
-      }
-    }
 
-    function timeAgo(iso) {
-      if (!iso) return '—';
-      const d = new Date(iso);
-      const s = Math.floor((Date.now() - d) / 1000);
-      if (s < 60) return s + 's ago';
-      if (s < 3600) return Math.floor(s / 60) + 'm ago';
-      if (s < 86400) return Math.floor(s / 3600) + 'h ago';
-      return d.toLocaleDateString();
-    }
+        // Add Enter key support for message input (Enter sends, Shift+Enter for new line with textarea)
+        const msgInput = document.getElementById('message-input');
+        if (msgInput) msgInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                const chatForm = document.getElementById('chat-form');
+                if (chatForm) chatForm.dispatchEvent(new Event('submit'));
+            }
+        });
 
-    function badgeClass(status) {
-      const map = {
-        active: 'badge-active', pending_review: 'badge-pending', sandbox_test: 'badge-sandbox',
-        rejected: 'badge-rejected', deprecated: 'badge-draft', draft: 'badge-draft',
-        queued: 'badge-draft', scanning: 'badge-sandbox', static_analysis: 'badge-sandbox',
-        cve_check: 'badge-sandbox', sandbox_install: 'badge-sandbox', behavioral_check: 'badge-sandbox',
-        pending_approval: 'badge-pending', approved: 'badge-active', installed: 'badge-active',
-        blocked: 'badge-rejected'
-      };
-      return map[status] || 'badge-draft';
-    }
+        // Add Delete key for session deletion
+        document.addEventListener('keydown', (e) => {
+            // Only handle Delete key when not typing in an input
+            if (e.key === 'Delete' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                e.preventDefault();
+                if (selectionMode && selectedSessions.size > 0) {
+                    // Delete all selected sessions
+                    deleteSelectedChats();
+                } else if (currentSessionId) {
+                    // Delete current session
+                    deleteSession(currentSessionId);
+                }
+            }
+        });
 
-    function riskClass(risk) {
-      const map = { safe: 'badge-safe', low: 'badge-low', medium: 'badge-medium', high: 'badge-high', critical: 'badge-critical' };
-      return map[risk] || 'badge-low';
-    }
+        // Listen for WebSocket brain status updates
+        if (window.wsClient) {
+            window.wsClient.on('brain.status.changed', (data) => {
+                updateBrainStatusUI(data);
+            });
 
-    // ─── SKILLS ─────────────────────────────────────────────
-    async function loadSkills() {
-      const status = document.getElementById('skill-filter-status').value;
-      const category = document.getElementById('skill-filter-cat').value;
-      let url = API.skills + '?';
-      if (status) url += 'status=' + status + '&';
-      if (category) url += 'category=' + category;
-
-      const data = await api('GET', url);
-      if (data.error) return;
-
-      // Update stats
-      const statsData = await api('GET', API.skills + '/stats');
-      if (statsData && !statsData.error) {
-        document.getElementById('s-total').textContent = statsData.total;
-        document.getElementById('s-active').textContent = statsData.active;
-        document.getElementById('s-pending').textContent = statsData.pending_review;
-        document.getElementById('s-self').textContent = statsData.self_created;
-        document.getElementById('s-rejected').textContent = statsData.rejected;
-        document.getElementById('badge-skills').textContent = statsData.active;
-      }
-
-      // Render table
-      const tbody = document.getElementById('skills-tbody');
-      if (!data.skills || data.skills.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No skills found</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = data.skills.map(s => `
-    <tr>
-      <td>
-        <div style="font-weight:600;">${s.name}</div>
-        <div style="font-size:10px;color:var(--text-muted);max-width:200px;">${(s.description || '').substring(0, 60)}${s.description && s.description.length > 60 ? '...' : ''}</div>
-      </td>
-      <td><span style="font-size:11px;color:var(--accent-cyan);">${s.category}</span></td>
-      <td><span style="font-size:11px;">${s.creator}</span></td>
-      <td><span class="badge ${badgeClass(s.status)}">${s.status}</span></td>
-      <td><span class="badge ${riskClass(s.risk_level)}">${s.risk_level}</span></td>
-      <td style="color:var(--text-muted);">${s.usage_count || 0}</td>
-      <td>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;">
-          ${s.status === 'pending_review' || s.status === 'sandbox_test' ? `
-            <button class="btn success sm" onclick="approveSkill('${s.id}')">✓ Approve</button>
-            <button class="btn danger sm" onclick="rejectSkill('${s.id}')">✗ Reject</button>
-          ` : ''}
-          <button class="btn sm" onclick="testSkill('${s.id}')">▶ Test</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-    }
-
-    async function approveSkill(id) {
-      const res = await api('POST', API.skills + '/' + id + '/approve', { approver: 'founder', notes: 'Approved via Control Plane' });
-      if (!res.error) { alert('Skill approved!'); loadSkills(); }
-    }
-
-    async function rejectSkill(id) {
-      const reason = prompt('Reason for rejection:') || 'No reason given';
-      const res = await api('POST', API.skills + '/' + id + '/reject', { reason, rejector: 'founder' });
-      if (!res.error) { alert('Skill rejected.'); loadSkills(); }
-    }
-
-    async function testSkill(id) {
-      const res = await api('POST', API.skills + '/' + id + '/test', { test_inputs: { test: true } });
-      if (res.sandbox_results) {
-        const r = res.sandbox_results;
-        alert(`Sandbox Result:\nSuccess: ${r.success}\nOutput: ${r.stdout}\n${r.security_flags && r.security_flags.length ? 'Flags: ' + r.security_flags.join(', ') : ''}`);
-        loadSkills(); // refresh to show updated sandbox results
-      }
-    }
-
-    async function submitCreateSkill() {
-      const name = document.getElementById('cs-name').value.trim();
-      const display = document.getElementById('cs-display').value.trim();
-      const desc = document.getElementById('cs-desc').value.trim();
-      const category = document.getElementById('cs-category').value;
-      const creator = document.getElementById('cs-creator').value;
-      const code = document.getElementById('cs-code').value.trim();
-
-      if (!name || !display || !desc || !code) { alert('Fill in all fields.'); return; }
-
-      const payload = {
-        name, display_name: display, description: desc,
-        category, creator,
-        creator_agent_id: creator === 'founder' ? 'founder' : 'daena',
-        input_schema: { type: 'object', properties: { input: { type: 'string' } } },
-        output_schema: { type: 'object', properties: { result: { type: 'string' } } },
-        code_body: code
-      };
-
-      const res = await api('POST', API.skills + '/create', payload);
-      if (res.error) { alert('Error: ' + res.error); return; }
-
-      alert(`Skill created!\nStatus: ${res.status}\nRisk: ${res.risk_level}\n${res.message}`);
-      closeModal('create-skill');
-      loadSkills();
-    }
-
-    // ─── PACKAGES ───────────────────────────────────────────
-    async function loadPackages() {
-      const status = document.getElementById('pkg-filter-status').value;
-      let url = API.packages + '/records';
-      if (status) url += '?status=' + status;
-
-      const data = await api('GET', url);
-      if (data.error) return;
-
-      // Update stats
-      const stats = await api('GET', API.packages + '/stats');
-      if (stats && !stats.error) {
-        document.getElementById('p-total').textContent = stats.total_audits;
-        document.getElementById('p-pending').textContent = stats.pending_approval;
-        document.getElementById('p-approved').textContent = stats.approved;
-        document.getElementById('p-rejected').textContent = stats.rejected;
-        document.getElementById('p-installed').textContent = stats.installed;
-        if (stats.pending_approval > 0) {
-          document.getElementById('badge-packages').style.display = 'inline';
-          document.getElementById('badge-packages').textContent = stats.pending_approval;
-        } else {
-          document.getElementById('badge-packages').style.display = 'none';
+            // Listen for chat message events for real-time updates
+            window.wsClient.on('chatMessage', (data) => {
+                // If this message is for the current session, add it to the UI
+                if (data.session_id === currentSessionId) {
+                    const container = document.getElementById('chat-messages');
+                    if (container && data.sender === 'assistant') {
+                        container.insertAdjacentHTML('beforeend', `
+                            <div class="flex gap-4">
+                                <div class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">D</div>
+                                <div class="flex-1">
+                                    <div class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
+                                        <p class="whitespace-pre-wrap leading-relaxed">${data.content || ''}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `);
+                        container.scrollTop = container.scrollHeight;
+                    }
+                }
+                loadSessions();
+            });
         }
-      }
 
-      // Render table
-      const tbody = document.getElementById('packages-tbody');
-      if (!data.records || data.records.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No audit records</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = data.records.map(r => `
-    <tr>
-      <td><strong>${r.package_name}</strong><span style="color:var(--text-muted);font-size:10px;"> @${r.package_version}</span></td>
-      <td><span style="color:var(--accent-cyan);font-size:11px;">${r.manager}</span></td>
-      <td><span class="badge ${badgeClass(r.status)}">${r.status}</span></td>
-      <td><span class="badge ${riskClass(r.risk_level)}">${r.risk_level}</span></td>
-      <td><span style="font-size:11px;color:${r.findings && r.findings.length ? 'var(--accent-amber)' : 'var(--text-muted)'};">${r.findings ? r.findings.length : 0} findings</span></td>
-      <td style="font-size:11px;color:var(--text-muted);">${r.requested_by}</td>
-      <td>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;">
-          ${r.status === 'queued' ? `<button class="btn primary sm" onclick="runAudit('${r.id}')">▶ Run Audit</button>` : ''}
-          ${r.status === 'pending_approval' ? `<button class="btn sm" onclick="openPkgAction('${r.id}','${r.package_name}@${r.package_version}')">⚖️ Review</button>` : ''}
-          ${r.status === 'approved' ? `<button class="btn success sm" onclick="installPackage('${r.id}')">⬇ Install</button>` : ''}
-          <button class="btn sm" onclick="showPkgDetails('${r.id}')">📋</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-    }
-
-    async function loadAuditLog() {
-      const data = await api('GET', API.packages + '/log?limit=20');
-      if (data.error || !data.events) return;
-
-      const feed = document.getElementById('pkg-feed');
-      if (data.events.length === 0) {
-        feed.innerHTML = '<div class="feed-empty">No audit events yet</div>';
-        return;
-      }
-
-      feed.innerHTML = data.events.reverse().map(e => `
-    <div class="feed-item">
-      <span class="feed-time">${timeAgo(e.timestamp)}</span>
-      <span class="feed-icon">${e.event === 'rejected' ? '🚫' : e.event === 'approved' ? '✅' : e.event === 'installed' ? '⬇️' : '🔍'}</span>
-      <div class="feed-body">
-        <div class="feed-title">${e.event.toUpperCase()}</div>
-        <div class="feed-detail">${e.message}</div>
-      </div>
-    </div>
-  `).join('');
-    }
-
-    async function runAudit(id) {
-      const res = await api('POST', API.packages + '/audit/' + id);
-      if (!res.error) { alert(`Audit complete!\nStatus: ${res.status}\nRisk: ${res.risk_level}\nFindings: ${res.findings ? res.findings.length : 0}`); loadPackages(); loadAuditLog(); }
-    }
-
-    function openPkgAction(id, label) {
-      pkgActionId = id;
-      document.getElementById('pkg-action-title').textContent = 'Review: ' + label;
-      document.getElementById('pkg-action-info').textContent = 'Package: ' + label + ' — Pending your approval.';
-      document.getElementById('pkg-action-notes').value = '';
-      openModal('pkg-action');
-    }
-
-    async function executePkgAction(action) {
-      const notes = document.getElementById('pkg-action-notes').value;
-      let res;
-      if (action === 'approve') {
-        res = await api('POST', API.packages + '/approve/' + pkgActionId, { approver: 'founder', notes });
-      } else {
-        res = await api('POST', API.packages + '/reject/' + pkgActionId, { reason: notes || 'Rejected by Founder', rejector: 'founder' });
-      }
-      if (!res.error) { alert(action === 'approve' ? 'Package approved!' : 'Package rejected.'); closeModal('pkg-action'); loadPackages(); loadAuditLog(); }
-    }
-
-    async function installPackage(id) {
-      const res = await api('POST', API.packages + '/install/' + id);
-      if (res.command) { alert('Install approved!\n\nRun this command:\n' + res.command); loadPackages(); }
-    }
-
-    async function showPkgDetails(id) {
-      const res = await api('GET', API.packages + '/records/' + id);
-      if (!res || res.error) return;
-      let findingsHtml = '';
-      if (res.findings && res.findings.length) {
-        findingsHtml = '<div style="margin-top:12px;"><strong style="font-size:11px;color:var(--text-muted);">FINDINGS:</strong>' +
-          res.findings.map(f => `<div class="finding"><div class="finding-header"><span class="badge ${riskClass(f.severity)}">${f.severity}</span><span style="font-size:11px;">${f.category}</span></div><div class="finding-msg">${f.message}</div></div>`).join('') + '</div>';
-      }
-      alert(`${res.package}\nStatus: ${res.status} | Risk: ${res.risk_level}\nFindings: ${res.findings ? res.findings.length : 0}\nRequested by: ${res.requested_by}\n${res.sandbox_output || ''}\n${res.behavioral_flags ? res.behavioral_flags.join('\n') : ''}`);
-    }
-
-    async function submitRequestPackage() {
-      const name = document.getElementById('rp-name').value.trim();
-      const version = document.getElementById('rp-version').value.trim();
-      const manager = document.getElementById('rp-manager').value;
-      const agent = document.getElementById('rp-agent').value.trim();
-
-      if (!name || !version) { alert('Fill in package name and version.'); return; }
-
-      // Step 1: Request
-      const req = await api('POST', API.packages + '/request-install', { package_name: name, version, manager, requested_by: agent });
-      if (req.error) { alert('Error: ' + req.error); return; }
-
-      const id = req.id;
-
-      // Step 2: Auto-run audit
-      const audit = await api('POST', API.packages + '/audit/' + id);
-      if (audit.error) { alert('Audit error: ' + audit.error); return; }
-
-      alert(`Audit complete for ${name}@${version}\nStatus: ${audit.status}\nRisk: ${audit.risk_level}\nFindings: ${audit.findings ? audit.findings.length : 0}\n\n${audit.status === 'pending_approval' ? '→ Awaiting your approval.' : audit.status === 'approved' ? '→ Auto-approved! Ready to install.' : '→ ' + (audit.rejection_reason || '')}`);
-
-      closeModal('request-package');
-      loadPackages();
-      loadAuditLog();
-    }
-
-    // ─── TRUST & SAFETY ─────────────────────────────────────
-    async function loadTrustStats() {
-      const data = await api('GET', API.integrity + '/stats');
-      if (data && !data.error) {
-        document.getElementById('t-verified').textContent = data.total_verifications || 0;
-        document.getElementById('t-injections').textContent = data.injections_detected || 0;
-        document.getElementById('t-sources').textContent = data.trusted_sources || 0;
-        document.getElementById('t-stripped').textContent = data.strips_performed || 0;
-      }
-    }
-
-    async function submitVerify() {
-      const content = document.getElementById('vc-content').value.trim();
-      const source = document.getElementById('vc-source').value.trim();
-      if (!content) { alert('Enter content to verify.'); return; }
-
-      const res = await api('POST', API.integrity + '/verify', { content, source: source || undefined });
-      const resultDiv = document.getElementById('vc-result');
-      resultDiv.style.display = 'block';
-
-      if (res.error) {
-        resultDiv.innerHTML = `<div style="padding:12px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:#ef4444;font-size:12px;">Error: ${res.error}</div>`;
-        return;
-      }
-
-      const trusted = res.trusted;
-      const injected = res.injection_detected;
-      const color = injected ? '#ef4444' : (trusted ? '#10b981' : '#f59e0b');
-      const icon = injected ? '🚨' : (trusted ? '✅' : '⚠️');
-      const label = injected ? 'INJECTION DETECTED' : (trusted ? 'TRUSTED' : 'UNVERIFIED');
-
-      resultDiv.innerHTML = `
-    <div style="padding:14px;background:${color}15;border:1px solid ${color}40;border-radius:6px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-        <span style="font-size:18px;">${icon}</span>
-        <span style="color:${color};font-weight:700;font-size:13px;">${label}</span>
-        ${res.trust_score !== undefined ? `<span style="color:var(--text-muted);font-size:11px;margin-left:auto;">Trust: ${(res.trust_score * 100).toFixed(0)}%</span>` : ''}
-      </div>
-      ${res.message ? `<div style="font-size:11px;color:var(--text-secondary);">${res.message}</div>` : ''}
-    </div>
-  `;
-
-      // Add to trust feed
-      addToFeed('trust-feed', injected ? '🚨' : '🔍', injected ? 'Injection Blocked' : 'Content Verified', res.message || label);
-    }
-
-    // ─── AGENT STATS (simulated) ────────────────────────────
-    async function loadAgentStats() {
-      // Try to fetch from backend; fall back to simulated data
-      document.getElementById('a-online').textContent = '12';
-      document.getElementById('a-actions').textContent = '347';
-      document.getElementById('a-depts').textContent = '6';
-      document.getElementById('a-tasks').textContent = '4';
-    }
-
-    // ─── SHADOW DEPARTMENT (REAL BACKEND) ───────────────────
-    async function loadShadowDashboard() {
-      const data = await api('GET', API.shadow + '/dashboard');
-      if (data && !data.error) {
-        const stats = data.stats || {};
-        document.getElementById('sh-honeypots').textContent = stats.endpoints_active || 0;
-        document.getElementById('sh-canary').textContent = stats.canaries_deployed || 0;
-        document.getElementById('sh-alerts').textContent = stats.alerts_24h || 0;
-        document.getElementById('sh-ttps').textContent = stats.patterns_loaded || 0;
-
-        // Render alerts
-        const alerts = data.alerts_24h || [];
-        const feed = document.getElementById('shadow-feed');
-        if (alerts.length === 0) {
-          feed.innerHTML = '<div class="feed-empty">No threat events</div>';
-        } else {
-          feed.innerHTML = alerts.slice(0, 30).map(a => `
-        <div class="feed-item">
-          <span class="feed-time">${timeAgo(a.detected_at)}</span>
-          <span class="feed-icon">${a.severity === 'critical' ? '🚨' : a.severity === 'high' ? '⚠️' : '🔍'}</span>
-          <div class="feed-body">
-            <div class="feed-title">${a.alert_type.toUpperCase()}</div>
-            <div class="feed-detail">${a.source_ip || 'unknown'} - ${a.reason || ''}</div>
-          </div>
-        </div>
-      `).join('');
-        }
-      }
-    }
-
-    // ─── FEED HELPERS ───────────────────────────────────────
-    function addToFeed(feedId, icon, title, detail) {
-      const feed = document.getElementById(feedId);
-      const empty = feed.querySelector('.feed-empty');
-      if (empty) empty.remove();
-
-      const item = document.createElement('div');
-      item.className = 'feed-item';
-      item.innerHTML = `
-    <span class="feed-time">now</span>
-    <span class="feed-icon">${icon}</span>
-    <div class="feed-body">
-      <div class="feed-title">${title}</div>
-      <div class="feed-detail">${detail}</div>
-    </div>
-  `;
-      feed.insertBefore(item, feed.firstChild);
-
-      // Keep max 30 items
-      const items = feed.querySelectorAll('.feed-item');
-      if (items.length > 30) items[items.length - 1].remove();
-    }
-
-    function clearFeed(feedId) {
-      document.getElementById(feedId).innerHTML = '<div class="feed-empty">Feed cleared</div>';
-    }
-
-    // ─── WEBSOCKET CONNECTION ───────────────────────────────
-    function connectWebSocket() {
-      const dot = document.getElementById('wsDot');
-      const label = document.getElementById('wsLabel');
-
-      try {
-        const ws = new WebSocket('ws://' + window.location.host + API.ws);
-
-        ws.onopen = () => {
-          dot.classList.remove('disconnected');
-          label.textContent = 'Connected';
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            handleWSEvent(data);
-          } catch (e) { /* ignore parse errors */ }
-        };
-
-        ws.onerror = () => {
-          dot.classList.add('disconnected');
-          label.textContent = 'Disconnected';
-        };
-
-        ws.onclose = () => {
-          dot.classList.add('disconnected');
-          label.textContent = 'Reconnecting...';
-          setTimeout(connectWebSocket, 3000); // auto-reconnect
-        };
-      } catch (e) {
-        dot.classList.add('disconnected');
-        label.textContent = 'WS unavailable';
-      }
-    }
-
-    function handleWSEvent(data) {
-      const type = data.type || data.event_type;
-
-      switch (type) {
-        case 'agent_activity':
-          addToFeed('agents-feed', '🤖', data.agent_name || 'Agent', data.action || data.message || 'Activity');
-          break;
-        case 'council_debate':
-        case 'council.updated':
-          addToFeed('council-feed', '🏛️', data.title || 'Council Event', data.message || data.description || '');
-          break;
-        case 'trust_event':
-        case 'integrity':
-        case 'integrity.verify':
-          addToFeed('trust-feed', '🛡️', data.title || 'Integrity Shield', data.message || data.status || '');
-          break;
-        case 'shadow_alert':
-        case 'shadow.alert':
-        case 'threat':
-          addToFeed('shadow-feed', '🕵️', data.title || 'Shadow Alert', data.message || data.type || '');
-          break;
-        case 'memory.store':
-        case 'memory':
-          addToFeed('agents-feed', '🧠', 'Memory System', data.message || `Stored ${data.data_class} in ${data.tier} tier`);
-          break;
-        case 'governance.eval':
-        case 'governance':
-          addToFeed('council-feed', '⚖️', 'Governance Loop', data.message || `Evaluated ${data.action} (${data.decision})`);
-          break;
-        case 'treasury':
-          addToFeed('treasury-feed', '💰', data.title || 'Treasury', data.message || '');
-          break;
-        case 'package_audit':
-          addToFeed('pkg-feed', '📦', data.title || 'Audit Event', data.message || '');
-          if (currentTab === 'packages') { loadPackages(); }
-          break;
-        case 'skill_update':
-          if (currentTab === 'skills') { loadSkills(); }
-          break;
-      }
-    }
-
-    // ─── INIT ───────────────────────────────────────────────
-    document.addEventListener('DOMContentLoaded', () => {
-      loadSkills();
-      connectWebSocket();
+        // Recheck brain status every 30 seconds
+        setInterval(checkBrainStatus, 30000);
     });
-  </script>
-</body>
 
-</html>
+    async function checkBrainStatus() {
+        try {
+            const status = await window.api.getBrainStatus();
+            updateBrainStatusUI(status);
+        } catch (e) {
+            updateBrainStatusUI({ connected: false, error: e.message });
+        }
+    }
+
+    function updateBrainStatusUI(status) {
+        const dot = document.getElementById('brain-dot');
+        const text = document.getElementById('brain-text');
+        const sendBtn = document.getElementById('send-btn');
+        const input = document.getElementById('message-input');
+
+        if (status.connected) {
+            dot.className = 'w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse';
+            text.textContent = 'Brain Active';
+            text.className = 'text-xs text-green-400 flex items-center gap-1';
+            sendBtn.disabled = false;
+            input.disabled = false;
+            input.placeholder = 'Ask Daena anything...';
+        } else {
+            dot.className = 'w-1.5 h-1.5 rounded-full bg-red-500';
+            text.textContent = 'Brain Offline';
+            text.className = 'text-xs text-red-400 flex items-center gap-1';
+            sendBtn.disabled = true;
+            input.disabled = true;
+            input.placeholder = 'Brain is offline - please start Ollama';
+        }
+    }
+
+    function showInitialGreeting() {
+        const container = document.getElementById('chat-messages');
+        const brain = document.getElementById('brain-text');
+        const isOnline = brain && brain.textContent === 'Brain Active';
+
+        let greeting = '';
+        if (isOnline) {
+            greeting = `Hey boss! 👋 I'm Daena, your AI Vice President. Brain is connected and ready. How can I help you today?`;
+        } else {
+            greeting = `Hey boss! 👋 I'm Daena, your AI Vice President. The brain appears to be offline right now. Please ensure Ollama is running (run <code>start_daena.bat</code>). Once connected, I'll be ready to assist!`;
+        }
+
+        container.innerHTML = `
+            <div class="flex gap-4">
+                <div class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">D</div>
+                <div class="flex-1">
+                    <div class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
+                        <p class="whitespace-pre-wrap leading-relaxed">${greeting}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    async function loadSessions() {
+        try {
+            let category = currentCategory === 'all' ? null : currentCategory;
+
+            // Use unified chat API (Phase 3) for category-based queries
+            if (category && window.sessionManager) {
+                try {
+                    // Call unified chat sessions-by-category endpoint
+                    const sessions = await window.sessionManager.getSessionsByCategory(category);
+                    allSessions = sessions || [];
+                    console.log(`✅ Loaded ${allSessions.length} sessions for category '${category}'`);
+                } catch (e) {
+                    console.error('Unified API failed, falling back:', e);
+                    // Fallback to old API
+                    const data = await window.api.getDaenaChatSessions(category);
+                    allSessions = data.sessions || [];
+                }
+            } else if (currentCategory === 'all') {
+                // Load all sessions
+                const data = await window.api.getDaenaChatSessions(null);
+                allSessions = data.sessions || [];
+            } else {
+                // Fallback for edge cases
+                const data = await window.api.getDaenaChatSessions(category);
+                allSessions = data.sessions || [];
+            }
+
+            renderSessions();
+        } catch (e) {
+            console.error('Failed to load sessions:', e);
+            allSessions = [];
+            renderSessions();
+        }
+    }
+
+    function formatDate(dateStr) {
+        if (!dateStr) return 'Recently';
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return 'Recently';
+            const now = new Date();
+            const diff = now - date;
+            if (diff < 60000) return 'Just now';
+            if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+            if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+            if (diff < 604800000) return Math.floor(diff / 86400000) + 'd ago';
+            return date.toLocaleDateString();
+        } catch {
+            return 'Recently';
+        }
+    }
+
+    // Selection mode state
+    let selectionMode = false;
+    let selectedSessions = new Set();
+
+    function renderSessions() {
+        const list = document.getElementById('sessions-list');
+        let filtered = allSessions;
+
+        if (filtered.length === 0) {
+            list.innerHTML = '<div class="text-center py-4 text-gray-500 text-xs">No sessions</div>';
+            return;
+        }
+
+        list.innerHTML = filtered.map(session => {
+            const emoji = categoryEmojis[session.category] || '💬';
+            const isActive = session.session_id === currentSessionId;
+            const isSelected = selectedSessions.has(session.session_id);
+            const dateStr = formatDate(session.last_activity || session.updated_at || session.created_at);
+
+            return `
+                <div class="group relative ${isSelected ? 'bg-daena-gold/10 rounded-lg' : ''}">
+                    ${selectionMode ? `
+                        <div class="absolute left-2 top-1/2 -translate-y-1/2 z-10">
+                            <input type="checkbox" 
+                                class="session-checkbox accent-daena-gold cursor-pointer"
+                                data-session-id="${session.session_id}"
+                                ${isSelected ? 'checked' : ''}
+                                onchange="toggleSessionSelection('${session.session_id}', this.checked)"
+                            >
+                        </div>
+                    ` : ''}
+                    <button onclick="${selectionMode ? `toggleSessionSelection('${session.session_id}')` : `loadSession('${session.session_id}')`}" 
+                        class="w-full text-left ${selectionMode ? 'pl-8' : 'px-3'} py-2 rounded-lg hover:bg-white/5 transition-colors ${isActive && !selectionMode ? 'bg-white/10' : ''}">
+                        <div class="flex items-start gap-2">
+                            <span class="text-lg mt-0.5">${emoji}</span>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-200 truncate font-medium">${session.title || 'New Chat'}</p>
+                                <p class="text-xs text-gray-500 truncate">${dateStr}</p>
+                            </div>
+                        </div>
+                    </button>
+                    ${!selectionMode ? `
+                        <div class="absolute right-1 top-1 hidden group-hover:flex gap-1">
+                            <button onclick="event.stopPropagation(); renameSession('${session.session_id}', '${(session.title || 'New Chat').replace(/'/g, "\\'")}')"
+                                class="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded" title="Rename">
+                                <i class="fas fa-edit text-xs"></i>
+                            </button>
+                            <button onclick="event.stopPropagation(); exportSession('${session.session_id}')"
+                                class="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 rounded" title="Export">
+                                <i class="fas fa-download text-xs"></i>
+                            </button>
+                            <button onclick="event.stopPropagation(); deleteSession('${session.session_id}')"
+                                class="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded" title="Delete">
+                                <i class="fas fa-trash text-xs"></i>
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+
+        updateSelectionCount();
+    }
+
+    function toggleSelectionMode() {
+        selectionMode = !selectionMode;
+        selectedSessions.clear();
+
+        const toolbar = document.getElementById('batch-toolbar');
+        const btn = document.getElementById('selection-mode-btn');
+
+        if (selectionMode) {
+            toolbar.classList.remove('hidden');
+            btn.innerHTML = '<i class="fas fa-times mr-1"></i> Cancel Selection';
+            btn.classList.add('text-daena-gold');
+        } else {
+            toolbar.classList.add('hidden');
+            btn.innerHTML = '<i class="fas fa-check-square mr-1"></i> Select Multiple';
+            btn.classList.remove('text-daena-gold');
+        }
+
+        renderSessions();
+    }
+
+    function toggleSessionSelection(sessionId, checked) {
+        if (checked === undefined) {
+            // Toggle if not specified
+            if (selectedSessions.has(sessionId)) {
+                selectedSessions.delete(sessionId);
+            } else {
+                selectedSessions.add(sessionId);
+            }
+        } else if (checked) {
+            selectedSessions.add(sessionId);
+        } else {
+            selectedSessions.delete(sessionId);
+        }
+        updateSelectionCount();
+        renderSessions();
+    }
+
+    function toggleSelectAll() {
+        const checkbox = document.getElementById('select-all-checkbox');
+        if (checkbox.checked) {
+            allSessions.forEach(s => selectedSessions.add(s.session_id));
+        } else {
+            selectedSessions.clear();
+        }
+        updateSelectionCount();
+        renderSessions();
+    }
+
+    function updateSelectionCount() {
+        const countEl = document.getElementById('selection-count');
+        countEl.textContent = `${selectedSessions.size} selected`;
+
+        const selectAll = document.getElementById('select-all-checkbox');
+        selectAll.checked = selectedSessions.size === allSessions.length && allSessions.length > 0;
+        selectAll.indeterminate = selectedSessions.size > 0 && selectedSessions.size < allSessions.length;
+    }
+
+    async function deleteSelectedChats() {
+        if (selectedSessions.size === 0) {
+            window.showToast?.('No chats selected', 'warning');
+            return;
+        }
+
+        showModal(
+            '🗑️ Delete Selected Chats',
+            `Are you sure you want to delete ${selectedSessions.size} chat(s)? This cannot be undone.`,
+            'Delete All',
+            false,
+            '',
+            async () => {
+                try {
+                    let deleted = 0;
+                    for (const sessionId of selectedSessions) {
+                        await window.api.deleteChatSession(sessionId);
+                        deleted++;
+                    }
+                    selectedSessions.clear();
+                    await loadSessions();
+                    window.showToast?.(`Deleted ${deleted} chats`, 'success');
+                } catch (e) {
+                    window.showToast?.('Failed to delete some chats', 'error');
+                }
+            }
+        );
+    }
+
+    async function exportSelectedChats() {
+        if (selectedSessions.size === 0) {
+            window.showToast?.('No chats selected', 'warning');
+            return;
+        }
+
+        try {
+            const exportData = {
+                exported_at: new Date().toISOString(),
+                chats: []
+            };
+
+            for (const sessionId of selectedSessions) {
+                const data = await window.api.getChatHistory(sessionId);
+                exportData.chats.push({
+                    session_id: sessionId,
+                    title: data.session?.title || 'Untitled',
+                    category: data.session?.category || 'general',
+                    messages: data.messages || []
+                });
+            }
+
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `daena-chats-export-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            window.showToast?.(`Exported ${selectedSessions.size} chats`, 'success');
+        } catch (e) {
+            console.error('Export error:', e);
+            window.showToast?.('Failed to export chats', 'error');
+        }
+    }
+
+    function filterByCategory() {
+        currentCategory = document.getElementById('category-filter').value;
+        // Reload sessions with new category filter
+        loadSessions();
+    }
+
+    async function createNewSession() {
+        try {
+            const data = await window.api.startChat();
+            if (data.success) {
+                currentSessionId = data.session?.session_id || data.session_id;
+                await loadSessions();
+                renderMessages(data.session?.messages || []);
+                updateCategoryBadge(data.session?.category || 'executive');
+            }
+        } catch (e) {
+            console.error('Create session error:', e);
+            window.showToast?.('Failed to start new chat', 'error');
+        }
+    }
+
+    // Modal functions
+    let modalCallback = null;
+
+    // Start a new chat session
+    async function startNewChat() {
+        try {
+            // Create new session via API
+            const response = await window.api.request('/chat-history/sessions', {
+                method: 'POST',
+                body: JSON.stringify({
+                    title: 'New Chat',
+                    category: currentCategory || 'executive',
+                    scope_type: 'executive',
+                    scope_id: 'daena'
+                })
+            });
+
+            if (response && response.session_id) {
+                currentSessionId = response.session_id;
+
+                // Clear messages and show welcome
+                document.getElementById('chat-messages').innerHTML = `
+                    <div class="flex gap-4">
+                        <div class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">D</div>
+                        <div class="flex-1">
+                            <div class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
+                                <p>Hello! I'm Daena, your AI VP. How can I help you today?</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Reload sessions list to show the new session
+                await loadSessions();
+
+                // Focus input
+                document.getElementById('message-input')?.focus();
+
+                window.showToast?.('New chat started', 'success');
+            }
+        } catch (error) {
+            console.error('Failed to create new chat:', error);
+            window.showToast?.('Failed to start new chat', 'error');
+
+            // Fallback: just clear the messages
+            currentSessionId = null;
+            document.getElementById('chat-messages').innerHTML = `
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">D</div>
+                    <div class="flex-1">
+                        <div class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
+                            <p>Hello! I'm Daena, your AI VP. How can I help you today?</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    function showModal(title, body, confirmText, isInput = false, inputValue = '', onConfirm = null) {
+        const modal = document.getElementById('custom-modal');
+        document.getElementById('modal-title').textContent = title;
+        document.getElementById('modal-body').innerHTML = body;
+        const confirmBtn = document.getElementById('modal-confirm-btn');
+        confirmBtn.textContent = confirmText;
+        confirmBtn.className = confirmText.toLowerCase().includes('delete')
+            ? 'px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-colors'
+            : 'px-4 py-2 bg-daena-gold hover:bg-yellow-500 rounded-lg text-black transition-colors';
+
+        const input = document.getElementById('modal-input');
+        if (isInput) {
+            input.classList.remove('hidden');
+            input.value = inputValue;
+            setTimeout(() => input.focus(), 100);
+        } else {
+            input.classList.add('hidden');
+        }
+
+        modalCallback = onConfirm;
+        confirmBtn.onclick = () => {
+            const inputVal = input.value;
+            const callback = modalCallback;  // Save callback before closeModal nullifies it
+            closeModal();
+            if (callback) callback(inputVal);  // Use saved callback
+        };
+
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+
+    function closeModal() {
+        const modal = document.getElementById('custom-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        modalCallback = null;
+    }
+
+    async function deleteSession(sessionId) {
+        showModal(
+            '🗑️ Delete Chat',
+            'Are you sure you want to delete this chat session? This action cannot be undone.',
+            'Delete',
+            false,
+            '',
+            async () => {
+                try {
+                    await window.api.deleteChatSession(sessionId);
+                    if (currentSessionId === sessionId) {
+                        currentSessionId = null;
+                    }
+                    await loadSessions();
+                    if (allSessions.length > 0 && !currentSessionId) {
+                        await loadSession(allSessions[0].session_id);
+                    } else if (allSessions.length === 0) {
+                        document.getElementById('chat-messages').innerHTML = '<div class="text-center py-8 text-gray-500">Start a new chat</div>';
+                    }
+                    window.showToast?.('Chat deleted', 'info');
+                } catch (e) {
+                    window.showToast?.('Failed to delete chat', 'error');
+                }
+            }
+        );
+    }
+
+    async function renameSession(sessionId, currentTitle) {
+        showModal(
+            '✏️ Rename Chat',
+            'Enter a new title for this chat session:',
+            'Save',
+            true,
+            currentTitle || 'Untitled',
+            async (newTitle) => {
+                if (!newTitle || newTitle === currentTitle) return;
+                try {
+                    await window.api.request(`/chat-history/sessions/${sessionId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ title: newTitle })
+                    });
+                    await loadSessions();
+                    window.showToast?.('Chat renamed', 'success');
+                } catch (e) {
+                    window.showToast?.('Failed to rename chat', 'error');
+                }
+            }
+        );
+    }
+
+    async function exportSession(sessionId) {
+        try {
+            window.showToast?.('Exporting chat...', 'info');
+            // Open the export URL directly to trigger download
+            window.open(`/api/v1/daena/chat/${sessionId}/export`, '_blank');
+        } catch (e) {
+            window.showToast?.('Failed to export chat', 'error');
+        }
+    }
+
+    async function showDeletedSessions() {
+        try {
+            const data = await window.api.request('/daena/chat/deleted');
+            if (!data.deleted_sessions || data.deleted_sessions.length === 0) {
+                window.showToast?.('No deleted chats to restore', 'info');
+                return;
+            }
+
+            // Create modal content
+            const listHtml = data.deleted_sessions.map(s => `
+                <div class="flex items-center justify-between p-3 bg-white/5 rounded-lg mb-2">
+                    <div>
+                        <p class="text-white font-medium">${s.title || 'Untitled'}</p>
+                        <p class="text-gray-400 text-xs">Deleted: ${new Date(s.deleted_at).toLocaleDateString()}</p>
+                    </div>
+                    <button onclick="restoreSession('${s.session_id}')" 
+                        class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm">
+                        Restore
+                    </button>
+                </div>
+            `).join('');
+
+            window.showModal(
+                'Restore Deleted Chats',
+                `<div class="max-h-64 overflow-y-auto">${listHtml}</div>`,
+                'Close',
+                false
+            );
+        } catch (e) {
+            window.showToast?.('Failed to load deleted chats', 'error');
+        }
+    }
+
+    async function restoreSession(sessionId) {
+        try {
+            await window.api.request(`/daena/chat/${sessionId}/restore`, { method: 'POST' });
+            window.showToast?.('Chat restored!', 'success');
+            await loadSessions();
+            // Close modal if open
+            document.querySelector('.modal-overlay')?.remove();
+        } catch (e) {
+            window.showToast?.('Failed to restore chat', 'error');
+        }
+    }
+
+    async function loadSession(sessionId) {
+        currentSessionId = sessionId;
+        try {
+            const data = await window.api.getChatHistory(sessionId);
+            if (data.success) {
+                // Handle messages from API (may have 'role' instead of 'type')
+                const messages = data.messages || data.session?.messages || [];
+                renderMessages(messages);
+                updateCategoryBadge(data.session?.category || 'general');
+                renderSessions(); // Update highlighting
+            } else {
+                window.showToast?.('Failed to load chat', 'error');
+            }
+        } catch (e) {
+            console.error('Load session error:', e);
+            window.showToast?.('Failed to load chat history', 'error');
+        }
+    }
+
+    function updateCategoryBadge(category) {
+        const badge = document.getElementById('current-category-badge');
+        const emoji = categoryEmojis[category] || '💬';
+        const color = categoryColors[category] || '#6B7280';
+
+        badge.textContent = `${emoji} ${category.charAt(0).toUpperCase() + category.slice(1)}`;
+        badge.style.backgroundColor = `${color}20`;
+        badge.style.color = color;
+        badge.classList.remove('hidden');
+    }
+
+    function renderMessages(messages) {
+        const container = document.getElementById('chat-messages');
+        if (!messages || messages.length === 0) {
+            container.innerHTML = '<div class="text-center py-8 text-gray-500">No messages yet. Start a conversation!</div>';
+            return;
+        }
+        container.innerHTML = messages.map(msg => {
+            // Support both 'type' (legacy) and 'role' (API) fields
+            const isUser = (msg.type === 'user' || msg.role === 'user');
+            return `
+            <div class="flex gap-4 ${isUser ? 'flex-row-reverse' : ''}">
+                <div class="w-8 h-8 rounded-full ${isUser ? 'bg-white/10' : 'bg-daena-gold'} flex-shrink-0 flex items-center justify-center ${isUser ? 'text-gray-400' : 'text-black'} font-bold mt-1">
+                    ${isUser ? '<i class="fas fa-user"></i>' : 'D'}
+                </div>
+                <div class="flex-1 flex ${isUser ? 'justify-end' : ''}">
+                    <div class="${isUser ? 'bg-blue-600' : 'bg-white/10'} rounded-2xl ${isUser ? 'rounded-tr-none' : 'rounded-tl-none'} px-5 py-3 text-gray-200 inline-block max-w-[80%]">
+                        <div class="whitespace-pre-wrap leading-relaxed">${isUser ? msg.content : formatMessage(msg.content)}</div>
+                    </div>
+                </div>
+            </div>
+        `}).join('');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    // Fix Enter key to submit
+    const msgInputKey = document.getElementById('message-input');
+    if (msgInputKey) {
+        msgInputKey.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                document.getElementById('chat-form').requestSubmit();
+            }
+        });
+    }
+
+    const chatFormEl = document.getElementById('chat-form');
+    if (chatFormEl) chatFormEl.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const input = document.getElementById('message-input');
+        const container = document.getElementById('chat-messages');
+        if (!input || !container) return;
+        const content = input.value.trim();
+
+        if (!content) return;
+
+        // Optimistic UI - show user message with edit button
+        const msgId = 'msg-' + Date.now();
+        container.insertAdjacentHTML('beforeend', `
+            <div id="${msgId}" class="flex gap-4 flex-row-reverse group">
+                <div class="w-8 h-8 rounded-full bg-white/10 flex-shrink-0 flex items-center justify-center text-gray-400 font-bold mt-1"><i class="fas fa-user"></i></div>
+                <div class="flex-1 flex justify-end items-start gap-2">
+                    <div class="hidden group-hover:flex gap-1 mt-2">
+                        <button onclick="editMessage('${msgId}', \`${content.replace(/`/g, '\\`')}\`)" class="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded" title="Edit message">
+                            <i class="fas fa-edit text-xs"></i>
+                        </button>
+                    </div>
+                    <div class="bg-blue-600 rounded-2xl rounded-tr-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
+                        <p class="whitespace-pre-wrap leading-relaxed msg-content">${content}</p>
+                    </div>
+                </div>
+            </div>
+        `);
+        input.value = '';
+        container.scrollTop = container.scrollHeight;
+
+        // Create streaming response container
+        const responseId = 'response-' + Date.now();
+        container.insertAdjacentHTML('beforeend', `
+            <div id="${responseId}" class="flex gap-4">
+                <div class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">D</div>
+                <div class="flex-1">
+                    <div class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
+                        <p id="${responseId}-text" class="whitespace-pre-wrap leading-relaxed"><i class="fas fa-circle-notch fa-spin"></i></p>
+                        <div id="${responseId}-sources" class="mt-2 pt-2 border-t border-white/10 hidden"></div>
+                    </div>
+                </div>
+            </div>
+        `);
+        container.scrollTop = container.scrollHeight;
+
+        try {
+            const payload = { message: content, session_id: currentSessionId };
+            if (sendMode) payload.mode = sendMode;
+            const response = await fetch('/api/v1/daena/chat/stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            sendMode = null;
+            setSendMode(null);
+
+            if (!response.ok) {
+                throw new Error('Stream request failed');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            const textEl = document.getElementById(`${responseId}-text`);
+            let fullText = '';
+            let firstToken = true;
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                // Keep the last line in buffer as it might be incomplete
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    if (line.trim() === '') continue;
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.substring(6));
+
+                            if (data.type === 'session' && data.session_id) {
+                                if (!currentSessionId) {
+                                    currentSessionId = data.session_id;
+                                    loadSessions();
+                                }
+                            } else if (data.type === 'status' && data.content) {
+                                if (firstToken) { textEl.innerHTML = ''; firstToken = false; }
+                                textEl.textContent = data.content;
+                                container.scrollTop = container.scrollHeight;
+                            } else if (data.type === 'sources' && data.sources && data.sources.length) {
+                                const sourcesEl = document.getElementById(`${responseId}-sources`);
+                                if (sourcesEl) {
+                                    const showOn = localStorage.getItem('daena_office_show_sources') === 'on';
+                                    sourcesEl.className = `mt-2 pt-2 border-t border-white/10 ${showOn ? 'block' : 'hidden'}`;
+                                    sourcesEl.id = `${responseId}-sources-inner`; // renaming to ensure unique access
+
+                                    const items = data.sources.map((s, i) => `
+                                        <a href="${s.url}" target="_blank" class="source-pill mb-1 mr-1" title="${s.snippet || s.title}">
+                                            <span class="opacity-50 mr-1">[${i + 1}]</span>${s.title || (s.url.length > 20 ? s.url.slice(0, 20) + '...' : s.url)}
+                                        </a>
+                                    `).join('');
+                                    sourcesEl.innerHTML = `<div class="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Sources</div><div class="flex flex-wrap">${items}</div>`;
+
+                                    const escape = (s) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+                                    const sources = data.sources.slice(0, 8);
+                                    const domain = (url) => { try { return new URL(url).hostname || url; } catch { return url; } };
+                                    const citations = sources.map((s, i) => `[<a href="${escape(s.url || '#')}" target="_blank" rel="noopener noreferrer" class="citation-marker text-daena-gold hover:underline" title="${escape((s.title || s.url || '').slice(0, 120))}">${i + 1}</a>]`).join(' ');
+                                    const list = sources.map((s, i) => {
+                                        const title = (s.title || s.url || 'Source ' + (i + 1)).trim();
+                                        const url = s.url || '#';
+                                        const d = domain(url);
+                                        const oneLine = escape(title.slice(0, 60)) + (title.length > 60 ? '…' : '');
+                                        return `<div class="source-item flex items-center gap-2 py-1 text-xs border-b border-white/5 last:border-0"><span class="text-daena-gold font-mono">[${i + 1}]</span><a href="${escape(url)}" target="_blank" rel="noopener noreferrer" class="truncate flex-1 text-gray-400 hover:text-white" title="${escape(title)}" style="max-width: 100%;">${oneLine}</a><span class="text-gray-500 shrink-0">${escape(d)}</span></div>`;
+                                    }).join('');
+                                    sourcesEl.innerHTML = `<div class="sources-header cursor-pointer select-none text-xs text-gray-400 hover:text-gray-300 flex items-center gap-2 py-1" onclick="this.nextElementSibling.classList.toggle('hidden')"><i class="fas fa-chevron-down sources-toggle"></i> Sources (${sources.length})</div><div class="sources-list hidden">${list}</div><div class="citation-markers mt-1 text-[11px] text-gray-500">${citations}</div>`;
+                                    sourcesEl.classList.remove('hidden');
+                                    if (!showOn) sourcesEl.classList.add('sources-hidden');
+                                }
+                            } else if (data.type === 'token' && data.content) {
+                                if (firstToken) {
+                                    textEl.innerHTML = '';
+                                    firstToken = false;
+                                }
+                                fullText += data.content;
+                                textEl.textContent = fullText;
+                                container.scrollTop = container.scrollHeight;
+                            } else if (data.type === 'done') {
+                                loadSessions();
+                                if (voiceEnabled && fullText && fullText.trim()) {
+                                    fetch('/api/v1/voice/speak', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ text: fullText.trim() })
+                                    }).catch(() => { });
+                                }
+                            } else if (data.type === 'error') {
+                                textEl.textContent = 'Error: ' + data.error;
+                            }
+                        } catch (parseErr) {
+                            console.debug('Parse error:', parseErr);
+                        }
+                    }
+                }
+            }
+
+            // If no tokens received, show error
+            if (firstToken) {
+                textEl.innerHTML = '<i class="fas fa-exclamation-triangle text-yellow-500"></i> No response received';
+            }
+        } catch (e) {
+            console.error('Streaming chat error:', e);
+            const textEl = document.getElementById(`${responseId}-text`);
+            if (textEl) {
+                textEl.innerHTML = '<i class="fas fa-exclamation-triangle text-red-500"></i> Failed to get response';
+            }
+            window.showToast?.('Failed to send message: ' + e.message, 'error');
+        }
+    });
+
+    function showCategoryModal() {
+        document.getElementById('category-modal').classList.remove('hidden');
+    }
+
+    function closeCategoryModal() {
+        document.getElementById('category-modal').classList.add('hidden');
+    }
+
+    async function setCategory(category) {
+        if (!currentSessionId) return;
+
+        try {
+            await window.api.setSessionCategory(currentSessionId, category);
+            updateCategoryBadge(category);
+            await loadSessions();
+            closeCategoryModal();
+            window.showToast(`Category set to ${category}`, 'success');
+        } catch (e) {
+            window.showToast('Failed to update category', 'error');
+        }
+    }
+
+    function clearContext() {
+        if (!currentSessionId) {
+            window.showToast?.('No active chat to clear', 'warning');
+            return;
+        }
+        showModal(
+            '🧹 Clear Context',
+            'Clear conversation context? This resets Daena\'s memory of this conversation but keeps the messages visible.',
+            'Clear Context',
+            false,
+            '',
+            async () => {
+                try {
+                    await window.api.clearSessionContext(currentSessionId);
+                    window.showToast?.('Context cleared - Daena will treat this as a fresh conversation', 'success');
+                } catch (e) {
+                    // Fallback: just show success (context clearing is a client-side concept too)
+                    window.showToast?.('Context cleared', 'info');
+                }
+            }
+        );
+    }
+
+    // Keyboard shortcuts: Escape closes modals, Delete deletes current session
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeCategoryModal();
+            closeModal();
+        }
+        // Delete key to delete current session (when not in input field)
+        if (e.key === 'Delete' && currentSessionId) {
+            const activeElement = document.activeElement;
+            const isInput = activeElement.tagName === 'INPUT' ||
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.isContentEditable;
+            if (!isInput) {
+                deleteSession(currentSessionId);
+            }
+        }
+    });
+
+    // Voice Toggle Function (sync with backend GET/POST /api/v1/voice/status, /api/v1/voice/talk-mode)
+    let voiceEnabled = false;
+    async function toggleVoice() {
+        try {
+            voiceEnabled = !voiceEnabled;
+            const data = await window.api.setTalkMode(voiceEnabled);
+            voiceEnabled = data.talk_active !== undefined ? data.talk_active : voiceEnabled;
+
+            const icon = document.getElementById('voice-icon');
+            if (voiceEnabled) {
+                icon.className = 'fas fa-microphone text-green-400';
+                window.showToast('Voice enabled - Daena will speak', 'success');
+            } else {
+                icon.className = 'fas fa-microphone-slash';
+                window.showToast('Voice disabled', 'info');
+            }
+        } catch (e) {
+            console.error('Voice toggle error:', e);
+            window.showToast('Failed to toggle voice: ' + e.message, 'error');
+        }
+    }
+
+    // Edit Message Function - ChatGPT-style editing
+    function editMessage(msgId, originalContent) {
+        const msgEl = document.getElementById(msgId);
+        if (!msgEl) return;
+
+        // Get the message input and fill it with the original content
+        const input = document.getElementById('message-input');
+        if (input) {
+            input.value = originalContent;
+            input.focus();
+            input.select();  // Select all text for easy replacement
+        }
+
+        // Remove this message and all subsequent messages (for regeneration)
+        let nextEl = msgEl.nextElementSibling;
+        while (nextEl) {
+            const toRemove = nextEl;
+            nextEl = nextEl.nextElementSibling;
+            toRemove.remove();
+        }
+        msgEl.remove();
+
+        window.showToast('Edit your message and send to regenerate response', 'info');
+    }
+
+    // Global function for inline editing
+    window.editMessage = editMessage;
+
+    // Initialize voice status
+    (async function initVoiceStatus() {
+        try {
+            const status = await window.api.request('/voice/status');
+            voiceEnabled = status.talk_active || false;
+            const icon = document.getElementById('voice-icon');
+            if (voiceEnabled) {
+                icon.className = 'fas fa-microphone text-green-400';
+            }
+        } catch (e) {
+            console.log('Voice status check:', e);
+        }
+    })();
+
+    // Export chat
+    async function exportChat(format = 'json') {
+        if (!currentSessionId) {
+            window.showToast?.('No chat session to export', 'warning');
+            return;
+        }
+
+        try {
+            const data = await window.api.getChatHistory(currentSessionId);
+            const messages = data.messages || data.session?.messages || [];
+            const sessionInfo = data.session || {};
+
+            let content, filename, mimeType;
+
+            if (format === 'json') {
+                content = JSON.stringify({
+                    session_id: currentSessionId,
+                    title: sessionInfo.title || 'Daena Chat',
+                    category: sessionInfo.category || 'general',
+                    exported_at: new Date().toISOString(),
+                    messages: messages
+                }, null, 2);
+                filename = `daena-chat-${currentSessionId.slice(0, 8)}.json`;
+                mimeType = 'application/json';
+            } else {
+                // TXT format
+                const lines = [
+                    `Daena Chat Export`,
+                    `Session: ${sessionInfo.title || 'Untitled'}`,
+                    `Date: ${new Date().toLocaleDateString()}`,
+                    `${'='.repeat(50)}`,
+                    ''
+                ];
+                for (const msg of messages) {
+                    const role = msg.role || msg.type || 'unknown';
+                    const sender = role === 'user' ? 'You' : 'Daena';
+                    lines.push(`[${sender}]`);
+                    lines.push(msg.content);
+                    lines.push('');
+                }
+                content = lines.join('\\n');
+                filename = `daena-chat-${currentSessionId.slice(0, 8)}.txt`;
+                mimeType = 'text/plain';
+            }
+
+            // Download file
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            window.showToast?.(`Chat exported as ${format.toUpperCase()}`, 'success');
+        } catch (e) {
+            console.error('Export error:', e);
+            window.showToast?.('Failed to export chat', 'error');
+        }
+    }
+
+    // Share chat (copy link)
+    async function shareChat() {
+        if (!currentSessionId) {
+            window.showToast?.('No chat session to share', 'warning');
+            return;
+        }
+
+        const shareUrl = `${window.location.origin}/ui/daena-office?session=${currentSessionId}`;
+
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            window.showToast?.('Share link copied to clipboard!', 'success');
+        } catch (e) {
+            // Fallback for browsers without clipboard API
+            const textarea = document.createElement('textarea');
+            textarea.value = shareUrl;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            window.showToast?.('Share link copied!', 'success');
+        }
+    }
+
+    // === Tool Console Functions ===
+
+    let toolConsoleVisible = false;
+
+    function toggleToolConsole() {
+        const console = document.getElementById('tool-console');
+        const btn = document.getElementById('tool-console-btn');
+        toolConsoleVisible = !toolConsoleVisible;
+
+        if (toolConsoleVisible) {
+            console.style.display = 'flex';
+            btn?.classList.add('text-daena-gold');
+            btn?.classList.remove('text-gray-400');
+            // Load MCP status
+            loadMcpStatus();
+        } else {
+            console.style.display = 'none';
+            btn?.classList.remove('text-daena-gold');
+            btn?.classList.add('text-gray-400');
+        }
+    }
+
+    async function executeQuickTool(command) {
+        const output = document.getElementById('tool-output');
+        output.innerHTML = `<span class="text-gray-500">Running: ${command}...</span>`;
+
+        try {
+            const result = await window.api.executeDaenaCommand(command);
+            if (result.success || result.result?.success) {
+                const data = result.result || result;
+                output.innerHTML = `<span class="text-green-400">✓ Success</span>\n\n${JSON.stringify(data, null, 2).substring(0, 2000)}`;
+            } else {
+                output.innerHTML = `<span class="text-red-400">✗ Error:</span> ${result.error || JSON.stringify(result)}`;
+            }
+        } catch (e) {
+            output.innerHTML = `<span class="text-red-400">✗ Error:</span> ${e.message}`;
+        }
+    }
+
+    async function executeToolCommand(event) {
+        event.preventDefault();
+        const input = document.getElementById('tool-command');
+        const command = input.value.trim();
+        if (!command) return;
+
+        await executeQuickTool(command);
+        input.value = '';
+    }
+
+    function showDesktopClickForm() {
+        document.getElementById('desktop-type-form').classList.add('hidden');
+        const el = document.getElementById('desktop-click-form');
+        el.classList.toggle('hidden');
+        if (!el.classList.contains('hidden')) {
+            document.getElementById('desktop-x').focus();
+        }
+    }
+
+    function showDesktopTypeForm() {
+        document.getElementById('desktop-click-form').classList.add('hidden');
+        const el = document.getElementById('desktop-type-form');
+        el.classList.toggle('hidden');
+        if (!el.classList.contains('hidden')) {
+            document.getElementById('desktop-type-text').focus();
+        }
+    }
+
+    async function runDesktopClick() {
+        const x = document.getElementById('desktop-x').value.trim();
+        const y = document.getElementById('desktop-y').value.trim();
+        if (!x || !y) {
+            const output = document.getElementById('tool-output');
+            output.innerHTML = '<span class="text-amber-400">Enter X and Y (e.g. 100, 200).</span>';
+            return;
+        }
+        await executeQuickTool('click at ' + x + ' ' + y);
+    }
+
+    async function runDesktopType() {
+        const text = document.getElementById('desktop-type-text').value.trim();
+        if (!text) {
+            const output = document.getElementById('tool-output');
+            output.innerHTML = '<span class="text-amber-400">Enter text to type on desktop.</span>';
+            return;
+        }
+        await executeQuickTool('type on desktop ' + text);
+    }
+
+    async function discoverMcpServers() {
+        const output = document.getElementById('tool-output');
+        output.innerHTML = '<span class="text-gray-500">Discovering MCP servers...</span>';
+
+        try {
+            const result = await window.api.discoverMcpServers();
+            if (result.success) {
+                const servers = result.servers || [];
+                let html = '<span class="text-green-400">🔌 MCP Servers Found:</span>\n\n';
+                servers.forEach(s => {
+                    const status = s.available ? '✅' : '❌';
+                    html += `${status} ${s.name} (${s.url})\n`;
+                    if (s.capabilities) {
+                        html += `   Capabilities: ${s.capabilities.join(', ')}\n`;
+                    }
+                });
+                output.innerHTML = html;
+                loadMcpStatus();
+            } else {
+                output.innerHTML = `<span class="text-red-400">✗ Error:</span> ${result.error}`;
+            }
+        } catch (e) {
+            output.innerHTML = `<span class="text-red-400">✗ Error:</span> ${e.message}`;
+        }
+    }
+
+    async function loadMcpStatus() {
+        const statusEl = document.getElementById('mcp-status');
+        try {
+            const result = await window.api.listMcpConnections();
+            const connections = result.connections || [];
+            if (connections.length === 0) {
+                statusEl.innerHTML = '<span class="text-gray-500">No active connections</span>';
+            } else {
+                statusEl.innerHTML = connections.map(c =>
+                    `<span class="text-green-400">●</span> ${c.name}`
+                ).join('<br>');
+            }
+        } catch (e) {
+            statusEl.innerHTML = '<span class="text-gray-500">Unable to check</span>';
+        }
+    }
+
+    // --- Voice Settings Functions ---
+    async function openVoiceSettings() {
+        // Create modal if it doesn't exist
+        let modal = document.getElementById('voice-settings-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'voice-settings-modal';
+            modal.className = 'fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-gray-900 border border-white/10 rounded-xl w-[400px] shadow-2xl">
+                    <div class="p-4 border-b border-white/10 flex justify-between items-center">
+                        <h3 class="text-lg font-medium text-white">Voice Settings</h3>
+                        <button onclick="closeVoiceSettings()" class="text-gray-400 hover:text-white">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-6">
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-400">Volume</span>
+                                <span class="text-daena-gold" id="volume-value">80%</span>
+                            </div>
+                            <input type="range" min="0" max="100" value="80" class="w-full accent-daena-gold bg-white/10 rounded-lg h-2 cursor-pointer" id="voice-volume" oninput="document.getElementById('volume-value').innerText = this.value + '%'">
+                        </div>
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-400">Speed (WPM)</span>
+                                <span class="text-daena-gold" id="rate-value">150</span>
+                            </div>
+                            <input type="range" min="50" max="400" value="150" class="w-full accent-daena-gold bg-white/10 rounded-lg h-2 cursor-pointer" id="voice-rate" oninput="document.getElementById('rate-value').innerText = this.value">
+                        </div>
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-400">Pitch</span>
+                                <span class="text-daena-gold" id="pitch-value">100</span>
+                            </div>
+                            <input type="range" min="50" max="200" value="100" class="w-full accent-daena-gold bg-white/10 rounded-lg h-2 cursor-pointer" id="voice-pitch" oninput="document.getElementById('pitch-value').innerText = this.value">
+                        </div>
+                        <button onclick="testVoiceSettings()" class="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm text-gray-300 transition-colors flex items-center justify-center gap-2">
+                            <i class="fas fa-play"></i> Test Voice
+                        </button>
+                    </div>
+                    <div class="p-4 border-t border-white/10 flex justify-end gap-3">
+                        <button onclick="closeVoiceSettings()" class="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+                        <button onclick="saveVoiceSettings()" class="px-4 py-2 text-sm bg-daena-gold hover:bg-yellow-500 text-black font-medium rounded-lg transition-colors">Save</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        // Load current settings
+        try {
+            const response = await fetch('/api/v1/voice/settings');
+            const settings = await response.json();
+            if (settings) {
+                document.getElementById('voice-volume').value = (settings.volume * 100) || 80;
+                document.getElementById('voice-rate').value = settings.rate || 150;
+                document.getElementById('voice-pitch').value = settings.pitch || 100;
+                document.getElementById('volume-value').innerText = document.getElementById('voice-volume').value + '%';
+                document.getElementById('rate-value').innerText = document.getElementById('voice-rate').value;
+                document.getElementById('pitch-value').innerText = document.getElementById('voice-pitch').value;
+            }
+        } catch (e) {
+            console.error("Failed to load voice settings:", e);
+        }
+
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+
+    function closeVoiceSettings() {
+        const modal = document.getElementById('voice-settings-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+    }
+
+    async function saveVoiceSettings() {
+        const volume = document.getElementById('voice-volume').value / 100;
+        const rate = parseInt(document.getElementById('voice-rate').value);
+        const pitch = parseInt(document.getElementById('voice-pitch').value);
+
+        try {
+            await fetch('/api/v1/voice/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ volume, rate, pitch })
+            });
+            closeVoiceSettings();
+        } catch (e) {
+            console.error("Failed to save settings:", e);
+            alert("Failed to save settings");
+        }
+    }
+
+    async function testVoiceSettings() {
+        await saveVoiceSettings();
+        try {
+            await fetch('/api/v1/voice/test');
+        } catch (e) {
+            console.error("Test failed:", e);
+        }
+    }
+
+    // --- Input Persistence ---
+    (function () {
+        const input = document.getElementById('message-input');
+        if (input) {
+            // Restore draft
+            const draft = localStorage.getItem('daena_draft_message');
+            if (draft) input.value = draft;
+
+            // Save on input
+            input.addEventListener('input', (e) => {
+                localStorage.setItem('daena_draft_message', e.target.value);
+            });
+
+            // Clear on Enter
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    setTimeout(() => localStorage.removeItem('daena_draft_message'), 100);
+                }
+            });
+        }
+    })();
+</script>
+<script src="/static/js/control_plane_logic.js"></script>
+<script>
+    // Unified Logic
+    function toggleAppMode(mode) {
+        const chatSidebar = document.getElementById('sidebar-chat-content');
+        const cpSidebar = document.getElementById('sidebar-cp-content');
+        const chatMain = document.getElementById('main-chat-area');
+        const cpMain = document.getElementById('main-cp-area');
+
+        const btnChat = document.getElementById('btn-mode-chat');
+        const btnCp = document.getElementById('btn-mode-cp');
+
+        if (mode === 'chat') {
+            chatSidebar.classList.remove('cp-hidden');
+            cpSidebar.classList.add('cp-hidden');
+            chatMain.classList.remove('cp-hidden');
+            cpMain.classList.add('cp-hidden');
+
+            btnChat.classList.add('text-daena-gold', 'bg-white/10');
+            btnCp.classList.remove('text-daena-gold', 'bg-white/10');
+        } else {
+            chatSidebar.classList.add('cp-hidden');
+            cpSidebar.classList.remove('cp-hidden');
+            chatMain.classList.add('cp-hidden');
+            cpMain.classList.remove('cp-hidden');
+
+            btnChat.classList.remove('text-daena-gold', 'bg-white/10');
+            btnCp.classList.add('text-daena-gold', 'bg-white/10');
+
+            // Init keys
+            loadSkills();
+        }
+    }
+</script>
+{% endblock %}
