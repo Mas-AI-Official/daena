@@ -1324,6 +1324,14 @@ try:
     except ImportError as e:
         logger.warning(f"Analytics routes not available: {e}")
     
+    # Data Integrity Shield - Daena's #1 differentiator
+    try:
+        from backend.routes.integrity import router as integrity_router
+        app.include_router(integrity_router)
+        logger.info("✅ Data Integrity Shield routes registered at /api/v1/integrity")
+    except Exception as e:
+        logger.warning(f"⚠️ Data Integrity Shield routes not available: {e}")
+    
     # Message queue persistence endpoints
     try:
         from backend.routes.message_queue import router as message_queue_router
@@ -1331,6 +1339,14 @@ try:
         logger.info("Message queue routes registered")
     except ImportError as e:
         logger.warning(f"Message queue routes not available: {e}")
+    
+    # Outcome Tracker - Learning Loop feedback system
+    try:
+        from backend.routes.outcomes import router as outcomes_router
+        app.include_router(outcomes_router)
+        logger.info("✅ Outcome Tracker routes registered at /api/v1/outcomes")
+    except Exception as e:
+        logger.warning(f"⚠️ Outcome Tracker routes not available: {e}")
     
     # External integrations endpoints
     try:

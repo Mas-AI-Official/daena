@@ -1,1 +1,0 @@
-{"payload": {"uri": "file:///path/to/original.pdf"}, "cls": "test", "meta": {"class": "test", "type": "lossless_pointer", "source_uri": "file:///path/to/original.pdf", "abstract_item_id": "test_ocr_hybrid_1", "created_at": 1765603851.200392, "compression": {"mode": "semantic", "profile": "default", "settings": {}}, "tenant_id": "default", "aging_applied": []}}

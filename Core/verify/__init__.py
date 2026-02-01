@@ -1,1 +1,0 @@
-# Core.verify package initialization
