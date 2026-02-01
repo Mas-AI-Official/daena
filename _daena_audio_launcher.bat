@@ -35,12 +35,12 @@ if %errorlevel% neq 0 (
 )
 
 REM Run Server
-"%VENV_PYTHON%" -m TTS.server.server --model_path "%TTS_HOME%" --config_path "%TTS_HOME%\config.json" --port %PORT% --use_cuda true
+"%VENV_PYTHON%" -m TTS.server.server --model_path "%TTS_HOME%" --config_path "%TTS_HOME%\config.json" --port %PORT% --use_cuda false
 
 if %errorlevel% neq 0 (
     echo [ERROR] Audio Service Failed to start.
     echo Trying without config.json...
-    "%VENV_PYTHON%" -m TTS.server.server --model_path "%TTS_HOME%" --port %PORT% --use_cuda true
+    "%VENV_PYTHON%" -m TTS.server.server --model_path "%TTS_HOME%" --port %PORT% --use_cuda false
 )
 
 if %errorlevel% neq 0 (
