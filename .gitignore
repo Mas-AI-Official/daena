@@ -213,3 +213,14 @@ docs/
 daena doc/
 docs/
 *.zip
+
+# ==========================
+# SECURITY - Environment files
+# ==========================
+.env
+.env.*
+!.env.example
+!.env.*.example
+.env_azure_openai
+*.secret
+*.secrets
