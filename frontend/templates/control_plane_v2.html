@@ -1760,11 +1760,21 @@
           break;
         case 'trust_event':
         case 'integrity':
-          addToFeed('trust-feed', '🛡️', data.title || 'Trust Event', data.message || '');
+        case 'integrity.verify':
+          addToFeed('trust-feed', '🛡️', data.title || 'Integrity Shield', data.message || data.status || '');
           break;
         case 'shadow_alert':
+        case 'shadow.alert':
         case 'threat':
-          addToFeed('shadow-feed', '🕵️', data.title || 'Shadow Alert', data.message || '');
+          addToFeed('shadow-feed', '🕵️', data.title || 'Shadow Alert', data.message || data.type || '');
+          break;
+        case 'memory.store':
+        case 'memory':
+          addToFeed('agents-feed', '🧠', 'Memory System', data.message || `Stored ${data.data_class} in ${data.tier} tier`);
+          break;
+        case 'governance.eval':
+        case 'governance':
+          addToFeed('council-feed', '⚖️', 'Governance Loop', data.message || `Evaluated ${data.action} (${data.decision})`);
           break;
         case 'treasury':
           addToFeed('treasury-feed', '💰', data.title || 'Treasury', data.message || '');

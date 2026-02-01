@@ -240,6 +240,44 @@ async def run_demo():
     print(f"{Colors.BOLD}Demo Request:{Colors.ENDC}")
     print('"Research the top 3 DeFi protocols by TVL and find security vulnerabilities"\n')
     await asyncio.sleep(1)
+
+    # Phase 0: Input Verification (Integrity & Memory)
+    print(f"\n{Colors.BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{Colors.ENDC}")
+    print(f"{Colors.BOLD}🛡️  INTEGRITY & MEMORY SHIELD{Colors.ENDC}")
+    print(f"{Colors.BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{Colors.ENDC}\n")
+    
+    # 1. Integrity Check
+    print(f"{Colors.GREEN}[Integrity Shield]{Colors.ENDC} Verifying input source and prompt safety...", end="", flush=True)
+    time.sleep(0.8)
+    print(f" {Colors.GREEN}✓ SAFE{Colors.ENDC}")
+    log_event("integrity.verify", "system", "integrity_shield", {
+        "status": "safe", 
+        "source": "user_input", 
+        "checks": ["prompt_injection", "source_reputation"]
+    })
+    
+    # 2. Memory Storage
+    print(f"{Colors.GREEN}[NBMF Memory]{Colors.ENDC} Storing goal in WARM memory (Task Context)...", end="", flush=True)
+    time.sleep(0.6)
+    print(f" {Colors.GREEN}✓ STORED{Colors.ENDC}")
+    log_event("memory.store", "system", "nbmf_memory", {
+        "tier": "warm", 
+        "data_class": "task_goal", 
+        "content": "Research DeFi protocols for security vulnerabilities"
+    })
+    
+    # 3. Governance Check
+    print(f"{Colors.GREEN}[Governance Loop]{Colors.ENDC} Evaluating permission for 'Research & Scan'...", end="", flush=True)
+    time.sleep(0.7)
+    print(f" {Colors.GREEN}✓ APPROVED (Autopilot){Colors.ENDC}")
+    log_event("governance.eval", "system", "governance_loop", {
+        "action": "research_scan", 
+        "risk_level": "low", 
+        "decision": "approved"
+    })
+    
+    print()
+    await asyncio.sleep(1)
     
     # Phase 1: Task Decomposition
     print(f"\n{Colors.BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{Colors.ENDC}")
@@ -268,6 +306,19 @@ Breaking down into subtasks:
     print("   1. Lido Finance - TVL: $28.5B")
     print("   2. Aave v3 - TVL: $12.3B")
     print("   3. MakerDAO - TVL: $8.1B\n")
+    await asyncio.sleep(0.5)
+
+    # SHADOW DEPT INTERVENTION
+    print(f"\n{Colors.RED}🚨 THREAT DETECTED{Colors.ENDC}")
+    print(f"{Colors.RED}[Shadow Dept]{Colors.ENDC} Honeypot 'admin_keys' accessed by external IP 192.168.x.x", end="", flush=True)
+    log_event("shadow.alert", "system", "shadow_dept", {
+        "type": "honeypot_trigger", 
+        "target": "admin_keys", 
+        "ip": "192.168.1.105",
+        "action": "blocked"
+    })
+    time.sleep(0.5)
+    print(f" {Colors.GREEN}→ BLOCKED & LOGGED{Colors.ENDC}\n")
     await asyncio.sleep(0.5)
     
     # DeFiAgent
