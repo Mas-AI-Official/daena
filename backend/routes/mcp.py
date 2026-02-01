@@ -1,8 +1,8 @@
 """
 MCP API Routes - Manage MCP servers and tools
 """
-from fastapi import APIRouter, HTTPException, Body
-from typing import Dict, Any, List
+from fastapi import APIRouter, HTTPException, Body, Header
+from typing import Dict, Any, List, Optional
 from backend.services.mcp.mcp_registry import get_mcp_registry
 
 router = APIRouter(prefix="/api/v1/connections/mcp", tags=["mcp"])
@@ -67,3 +67,66 @@ async def execute_tool(
         return {"success": True, "result": result}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+# ============================================
+# Daena MCP Server - Expose tools to external agents
+# ============================================
+
+@router.get("/server/tools")
+async def list_daena_tools() -> Dict[str, Any]:
+    """List tools exposed by Daena's MCP server"""
+    try:
+        from backend.services.mcp.mcp_server import get_mcp_server
+        server = get_mcp_server()
+        return {
+            "tools": server.TOOLS,
+            "count": len(server.TOOLS)
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/server/call")
+async def call_daena_tool(
+    tool_name: str = Body(..., description="Tool to call"),
+    arguments: Dict[str, Any] = Body({}, description="Tool arguments"),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+) -> Dict[str, Any]:
+    """
+    Call a Daena tool exposed via MCP.
+    
+    External agents can use this to leverage Daena's capabilities.
+    Requires API key for authentication (if configured).
+    """
+    try:
+        from backend.services.mcp.mcp_server import get_mcp_server
+        server = get_mcp_server()
+        
+        # Validate API key if server has keys configured
+        client_id = "anonymous"
+        if server.api_keys:
+            if not x_api_key:
+                return {"error": "API key required", "code": 401}
+            client_id = server.validate_api_key(x_api_key)
+            if not client_id:
+                return {"error": "Invalid API key", "code": 401}
+        
+        # Execute the tool
+        result = await server.handle_tool_call(tool_name, arguments, client_id)
+        return result
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/server/stats")
+async def daena_server_stats() -> Dict[str, Any]:
+    """Get usage statistics for Daena's MCP server"""
+    try:
+        from backend.services.mcp.mcp_server import get_mcp_server
+        server = get_mcp_server()
+        return server.get_usage_stats()
+    except Exception as e:
+        return {"error": str(e)}
+
