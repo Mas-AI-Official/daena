@@ -1793,10 +1793,42 @@ except ImportError as e:
 # DeFi / Web3 Smart Contract Security API
 try:
     from backend.routes.defi import router as defi_router
-    app.include_router(defi_router, prefix="/api/v1", tags=["defi"])
+    app.include_router(defi_router, tags=["defi"])
     logger.info("✅ DeFi Security API registered at /api/v1/defi")
 except ImportError as e:
     logger.warning(f"⚠️ DeFi Security API not available: {e}")
+
+# Skill Registry API (Dynamic skills with governance)
+try:
+    from backend.routes.skills import router as skills_router
+    app.include_router(skills_router, tags=["skills"])
+    logger.info("✅ Skill Registry API registered at /api/v1/skills")
+except ImportError as e:
+    logger.warning(f"⚠️ Skill Registry API not available: {e}")
+
+# Package Auditor API (Supply-chain security)
+try:
+    from backend.routes.packages import router as packages_router
+    app.include_router(packages_router, tags=["packages"])
+    logger.info("✅ Package Auditor API registered at /api/v1/packages")
+except ImportError as e:
+    logger.warning(f"⚠️ Package Auditor API not available: {e}")
+
+# Outcome Tracker API (Learning loop feedback)
+try:
+    from backend.routes.outcomes import router as outcomes_router
+    app.include_router(outcomes_router, tags=["outcomes"])
+    logger.info("✅ Outcome Tracker API registered at /api/v1/outcomes")
+except ImportError as e:
+    logger.warning(f"⚠️ Outcome Tracker API not available: {e}")
+
+# Data Integrity Shield API (Anti-manipulation)
+try:
+    from backend.routes.integrity import router as integrity_router
+    app.include_router(integrity_router, tags=["integrity"])
+    logger.info("✅ Integrity Shield API registered at /api/v1/integrity")
+except ImportError as e:
+    logger.warning(f"⚠️ Integrity Shield API not available: {e}")
 
 # Test the events endpoint
 @app.get("/test-events")
