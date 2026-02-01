@@ -4483,6 +4483,16 @@ try:
 except Exception as e:
     logger.error(f"Failed to register god_mode router: {e}")
 
+# ============================================================================
+# NEW INTEGRATION ROUTERS (2026-01-31)
+# ============================================================================
+try:
+    from backend.routes.chat import router as chat_router
+    app.include_router(chat_router)
+    logger.info("✅ Chat router registered (v2 pipeline)")
+except Exception as e:
+    logger.error(f"Failed to register chat router: {e}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
