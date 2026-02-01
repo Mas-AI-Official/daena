@@ -1854,6 +1854,14 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ Shadow Department API not available: {e}")
 
+# Research Agent API (Multi-source knowledge gathering)
+try:
+    from backend.routes.research import router as research_router
+    app.include_router(research_router, tags=["research"])
+    logger.info("✅ Research Agent API registered at /api/v1/research")
+except ImportError as e:
+    logger.warning(f"⚠️ Research Agent API not available: {e}")
+
 # Test the events endpoint
 @app.get("/test-events")
 async def test_events():

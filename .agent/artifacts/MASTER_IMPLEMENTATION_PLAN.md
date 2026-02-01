@@ -71,109 +71,62 @@ From docs: Hierarchical memory with blockchain audit
 
 ---
 
-### PHASE 2: NBMF MEMORY TIER SYSTEM (PRIORITY - 2 DAYS)
+### PHASE 2: NBMF MEMORY TIER SYSTEM ✅ (DONE - 2026-02-01)
 **Goal:** Implement 3-tier hierarchical memory per NBMF spec
 
-**New Services:**
-1. `backend/services/memory/hot_memory.py` — L1 Vector DB cache
-2. `backend/services/memory/warm_memory.py` — L2 NBMF encoder/decoder
-3. `backend/services/memory/cold_memory.py` — L3 Archive with summarization
-4. `backend/services/memory/memory_router.py` — Policy-based routing
+**Completed Services:**
+1. ✅ `backend/services/memory/hot_memory.py` — L1 Vector DB cache
+2. ✅ `backend/services/memory/warm_memory.py` — L2 NBMF encoder/decoder
+3. ✅ `backend/services/memory/cold_memory.py` — L3 Archive with summarization
+4. ✅ `backend/services/memory/memory_router.py` — Policy-based routing
+5. ✅ `config/memory_policy.yaml` — Policy configuration
 
-**Memory Config:**
-```yaml
-# config/memory_policy.yaml
-memory_policy:
-  classes:
-    legal:         { fidelity: lossless, retention: 7y, encrypt: true }
-    finance:       { fidelity: lossless, retention: 7y, encrypt: true }
-    pii:           { fidelity: lossless_edge, on_device: true }
-    chat:          { fidelity: semantic, retention: 180d, hot_cache_days: 14 }
-    ops_log:       { fidelity: semantic, retention: 90d }
-    research_note: { fidelity: semantic, retention: 365d }
-    training_chunk:
-      fidelity_global: semantic
-      fidelity_edge: lossless
-      federated: true
-  aging:
-    - after_days: 14
-      action: tighten_compression
-      apply_to: [chat, ops_log]
-    - after_days: 90
-      action: summarize_pack
-      apply_to: [chat, ops_log]
-  security:
-    encrypt_at_rest: AES-256
-    integrity_hash: SHA-256
-    ledger: local_append_only
-```
-
-**Integration Points:**
-- Connect `unified_memory.py` to NBMF tiers
-- Route skill/package/outcome data through memory tiers
-- Enable hot → warm → cold aging pipeline
+**API Routes Added:**
+- `/api/v1/memory/store` — Store with policy-based routing
+- `/api/v1/memory/recall` — Recall from any tier
+- `/api/v1/memory/search` — HOT tier semantic search
+- `/api/v1/memory/stats` — Tier statistics
+- `/api/v1/memory/age` — Run aging process
 
 ---
 
-### PHASE 3: SYSTEM-WIDE GOVERNANCE LOOP (1 DAY)
+### PHASE 3: SYSTEM-WIDE GOVERNANCE LOOP ✅ (DONE - 2026-02-01)
 **Goal:** Extend security/governance across ALL decisions (not just DeFi)
 
-**Current Gap:** Package auditor and skill registry only work for specific domains
-**Fix:** Create unified governance pipeline for all agent actions
+**Completed Services:**
+1. ✅ `backend/services/governance_loop.py` — Full implementation
 
-**New Service:**
-`backend/services/governance_loop.py`
-```python
-class GovernanceLoop:
-    """System-wide decision governance with autopilot + approval modes"""
-    
-    def evaluate_action(self, action: Dict) -> Decision:
-        """Every agent action goes through this loop"""
-        risk_level = self.assess_risk(action)
-        
-        if risk_level == "low" and self.autopilot_enabled:
-            # ClawBot mode: execute + report
-            return Decision(action="execute", report_to="founder")
-        elif risk_level == "medium":
-            # Council consult + execute if approved
-            council = self.consult_council(action)
-            if council.recommendation == "APPROVE":
-                return Decision(action="execute", report_to="founder")
-            else:
-                return Decision(action="defer", escalate_to="founder")
-        else:  # high/critical
-            # Always require founder approval
-            return Decision(action="pending", requires="founder_approval")
-```
-
-**Action Types to Cover:**
-- File operations (read/write/delete)
-- Package installs
-- Skill creation
-- External API calls
-- Research queries
-- DeFi scanning
-- Model training updates
-- Treasury operations
+**API Routes Added:**
+- `/api/v1/governance/evaluate` — Evaluate action risk
+- `/api/v1/governance/approve` — Approve pending action
+- `/api/v1/governance/reject` — Reject pending action
+- `/api/v1/governance/pending` — List pending approvals
+- `/api/v1/governance/stats` — Governance statistics
+- `/api/v1/governance/toggle-autopilot` — Enable/disable autopilot
 
 ---
 
-### PHASE 4: SHADOW DEPARTMENT (2 DAYS)
+### PHASE 4: SHADOW DEPARTMENT ✅ (DONE - 2026-02-01)
 **Goal:** Build the defensive deception layer per HTML blueprint
 
-**New Services:**
-1. `backend/services/shadow/shadow_agent.py` — Invisible monitoring
-2. `backend/services/shadow/honeypot.py` — Decoy routes + canary tokens
-3. `backend/services/shadow/threat_intel.py` — TTP logging + attacker profiling
+**Completed Services:**
+1. ✅ `backend/services/shadow/shadow_agent.py` — Invisible monitoring
+2. ✅ `backend/services/shadow/honeypot.py` — Decoy routes + canary tokens
+3. ✅ `backend/services/shadow/threat_intel.py` — TTP logging + attacker profiling
 
-**Routes:**
-- `/api/v1/admin/keys` — Honeypot (fake keys that alert)
-- `/api/v1/internal/vault` — Honeypot (fake data)
-- `/api/v1/threats/live` — WebSocket threat feed
+**API Routes Added:**
+- `/api/v1/shadow/admin/keys` — Honeypot (fake keys that alert)
+- `/api/v1/shadow/internal/vault` — Honeypot (fake data)
+- `/api/v1/shadow/config/secrets` — Honeypot (fake config)
+- `/api/v1/shadow/dashboard` — Threat dashboard data
+- `/api/v1/shadow/alerts` — Recent alerts
+- `/api/v1/shadow/honeypots` — Honeypot configurations
+- `/api/v1/shadow/threats` — Threat intel report
+- `/api/v1/shadow/scan` — Scan input for threats
 
-**Dashboard Tab:**
-- Shadow Dept panel (founder-only visibility)
-- Honeypots active / Canary tokens deployed / Alerts 24h
+**Frontend Updates:**
+- ✅ `control_plane_v2.html` wired to Shadow API
+- ✅ Shadow Dept tab loads real backend stats
 
 ---
 

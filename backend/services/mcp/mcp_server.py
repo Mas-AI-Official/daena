@@ -196,26 +196,63 @@ class DaenaMCPServer:
             return {"error": str(e)}
     
     async def _do_research(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute research using Daena's research pipeline"""
+        """Execute research using Daena's Research Agent."""
         topic = args.get("topic", "")
         depth = args.get("depth", "standard")
         
         if not topic:
             return {"error": "Topic is required"}
         
-        # TODO: Integrate with actual research agent
-        # For now, return placeholder
-        return {
-            "topic": topic,
-            "depth": depth,
-            "summary": f"Research on '{topic}' would be performed here using Daena's multi-agent research pipeline.",
-            "sources": [
-                {"url": "https://example.com/source1", "trust_score": 85},
-                {"url": "https://example.com/source2", "trust_score": 78}
-            ],
-            "verified": True,
-            "note": "Full integration pending - placeholder response"
-        }
+        try:
+            from backend.agents.research_agent import get_research_agent, SourceType
+            
+            agent = get_research_agent()
+            
+            # Map depth to max_results
+            max_results = {"quick": 3, "standard": 10, "deep": 25}.get(depth, 10)
+            
+            # Determine sources based on depth
+            sources = [SourceType.WEB, SourceType.LOCAL_KB, SourceType.AGENT_MEMORY]
+            if depth == "deep":
+                sources.append(SourceType.MCP_TOOL)
+            
+            result = await agent.research(
+                query=topic,
+                sources=sources,
+                max_results=max_results,
+                verify_facts=True
+            )
+            
+            return {
+                "topic": topic,
+                "depth": depth,
+                "summary": result.summary,
+                "confidence": result.confidence,
+                "sources_searched": result.sources_searched,
+                "findings": [
+                    {
+                        "content": f.content[:500],
+                        "source": f.source_name,
+                        "url": f.source_url,
+                        "trust_score": int(f.trust_score * 100),
+                        "verified": f.verified
+                    }
+                    for f in result.findings
+                ],
+                "verified": all(f.verified for f in result.findings[:3]) if result.findings else False
+            }
+            
+        except Exception as e:
+            logger.error(f"Research agent failed: {e}")
+            return {
+                "topic": topic,
+                "depth": depth,
+                "summary": f"Research on '{topic}' encountered an error. Please try again.",
+                "sources_searched": 0,
+                "findings": [],
+                "error": str(e),
+                "verified": False
+            }
     
     async def _do_defi_scan(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute DeFi security scan using the real Slither scanner"""
