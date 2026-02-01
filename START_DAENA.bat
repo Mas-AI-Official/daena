@@ -189,13 +189,9 @@ goto :WAIT_LOOP
 :READY
 echo.
 echo ============================================================
-echo   ____    _    _____ _   _    _    
-echo  |  _ \  / \  | ____| \ | |  / \   
-echo  | | | |/ _ \ |  _| |  \| | / _ \  
-echo  | |_| / ___ \| |___| |\  |/ ___ \ 
-echo  |____/_/   \_\_____|_| \_/_/   \_\
 echo.
-echo   VP INTERFACE MODE - ACTIVE
+echo ============================================================
+echo   DAENA AI VP
 echo   (Claude Framework Integrated)
 echo ============================================================
 echo.
@@ -216,13 +212,13 @@ echo ============================================================
 echo.
 
 REM Auto-launch Dashboard (Retry logic + multiple fallback)
-echo   [+] Launching Daena Office in your default browser...
-echo   [+] URL: http://127.0.0.1:%BACKEND_PORT%/ui/daena-office
+echo   [+] Launching Daena Control Plane (v2) in your default browser...
+echo   [+] URL: http://127.0.0.1:%BACKEND_PORT%/control-plane
 
-start "" "http://127.0.0.1:%BACKEND_PORT%/ui/daena-office"
+start "" "http://127.0.0.1:%BACKEND_PORT%/control-plane"
 if errorlevel 1 (
     echo   [WARN] 'start' command failed. Opening via PowerShell...
-    powershell -Command "Start-Process 'http://127.0.0.1:%BACKEND_PORT%/ui/daena-office'"
+    powershell -Command "Start-Process 'http://127.0.0.1:%BACKEND_PORT%/control-plane'"
 )
 
 echo.
