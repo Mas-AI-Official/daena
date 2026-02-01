@@ -1830,6 +1830,30 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ Integrity Shield API not available: {e}")
 
+# NBMF Memory API (3-tier hierarchical memory)
+try:
+    from backend.routes.memory import router as memory_router
+    app.include_router(memory_router, tags=["memory"])
+    logger.info("✅ NBMF Memory API registered at /api/v1/memory")
+except ImportError as e:
+    logger.warning(f"⚠️ NBMF Memory API not available: {e}")
+
+# Governance Loop API (System-wide decision control)
+try:
+    from backend.routes.governance import router as governance_router
+    app.include_router(governance_router, tags=["governance"])
+    logger.info("✅ Governance Loop API registered at /api/v1/governance")
+except ImportError as e:
+    logger.warning(f"⚠️ Governance Loop API not available: {e}")
+
+# Shadow Department API (Defensive deception layer)
+try:
+    from backend.routes.shadow import router as shadow_router
+    app.include_router(shadow_router, tags=["shadow"])
+    logger.info("✅ Shadow Department API registered at /api/v1/shadow")
+except ImportError as e:
+    logger.warning(f"⚠️ Shadow Department API not available: {e}")
+
 # Test the events endpoint
 @app.get("/test-events")
 async def test_events():

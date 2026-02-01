@@ -55,8 +55,8 @@ async def ui_dashboard(request: Request):
 
 @router.get("/ui/control-plane", response_class=HTMLResponse)
 async def ui_control_plane(request: Request):
-    """Unified Control Plane: Brain, Integrations, Skills, Execution, Proactive, Tasks+Runbook+Approvals, Provider onboarding."""
-    return templates.TemplateResponse("control_plane.html", _ctx(request))
+    """Unified Control Plane: Skills, Packages, Trust, Shadow, Governance, Memory."""
+    return templates.TemplateResponse("control_plane_v2.html", _ctx(request))
 
 
 @router.get("/ui/provider-onboarding", response_class=HTMLResponse)
