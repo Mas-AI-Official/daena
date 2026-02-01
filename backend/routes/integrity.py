@@ -236,6 +236,7 @@ async def verify_content(request: VerifyRequest) -> Dict[str, Any]:
         return {
             "result": report.result.value,
             "passed": report.result == VerificationResult.PASSED,
+            "injection_detected": report.result == VerificationResult.BLOCKED or report.manipulation_score > 50,
             "trust_score": round(report.trust_score, 1),
             "flags": report.flags,
             "manipulation_score": round(report.manipulation_score, 1),

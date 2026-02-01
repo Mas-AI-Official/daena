@@ -14,6 +14,12 @@ import os
 import aiofiles
 from pathlib import Path
 
+# Import LLM Service
+try:
+    from backend.services.llm_service import llm_service
+except ImportError:
+    llm_service = None
+
 # Import database models
 try:
     from backend.database import SessionLocal, Agent, Message
@@ -93,16 +99,22 @@ def get_daena_agent(session):
     """Get the Daena AI VP agent"""
     return session.query(Agent).filter(Agent.agent_type == "daena").first()
 
-def generate_ai_response(message: str, context: Dict = None) -> str:
-    """Generate AI response (placeholder - integrate with your LLM)"""
-    # This would integrate with your actual LLM
-    responses = [
-        f"As your AI VP, I understand you're asking about: {message[:50]}... Let me analyze this and provide strategic insights.",
-        f"Based on my monitoring of all departments, here's my assessment of: {message[:50]}...",
-        f"I've been tracking this across our systems. Here's what I recommend regarding: {message[:50]}...",
-        f"From an executive perspective, considering our current priorities: {message[:50]}..."
-    ]
-    return responses[hash(message) % len(responses)]
+async def generate_ai_response(message: str, context: Dict = None) -> str:
+    """Generate AI response using the central LLM service"""
+    if not llm_service:
+        return "I am operating in offline mode (LLM service unavailable). Please check my configuration."
+        
+    try:
+        # Generate response using the main LLM service
+        # This uses the System Prompt which defines Daena's persona and tools
+        response = await llm_service.generate_response(
+            prompt=message,
+            context=context
+        )
+        return response
+    except Exception as e:
+        # Fallback if LLM fails
+        return f"I apologize, I'm having trouble processing that request right now. Error: {str(e)}"
 
 # Chat and Conversation Routes
 @router.post("/chat/start", response_model=Dict)
@@ -178,7 +190,7 @@ async def send_message(
         session.add(user_message)
         
         # Generate Daena's response
-        ai_response = generate_ai_response(message.content, conversation.context)
+        ai_response = await generate_ai_response(message.content, conversation.context)
         
         response_message = Message(
             conversation_id=conversation.id,
