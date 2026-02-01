@@ -1,0 +1,20 @@
+{
+  "outcomes": {
+    "demo-vault-deploy-001": {
+      "outcome_id": "demo-vault-deploy-001",
+      "decision_type": "deployment_decision",
+      "category": "defi_scan",
+      "recommendation": "Do not deploy - security vulnerabilities found",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-01T02:31:53.872391",
+      "outcome_status": "successful",
+      "outcome_recorded_at": "2026-02-01T02:35:31.100396",
+      "outcome_notes": "We did not deploy the contract and avoided a potential exploit",
+      "feedback_score": 5.0,
+      "metadata": {}
+    }
+  },
+  "expert_scores": {},
+  "last_updated": "2026-02-01T02:35:31.100396"
+}

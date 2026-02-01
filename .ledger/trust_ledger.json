@@ -1,0 +1,27 @@
+{
+  "sources": {
+    "69b56853fd2e": {
+      "source_id": "69b56853fd2e",
+      "domain": "https://coingecko.com/bitcoin",
+      "trust_score": 60.0,
+      "times_verified": 1,
+      "times_flagged": 0,
+      "times_blocked": 0,
+      "first_seen": "2026-02-01T02:29:02.077062",
+      "last_seen": "2026-02-01T02:34:48.631102",
+      "metadata": {}
+    },
+    "949eeee4fccf": {
+      "source_id": "949eeee4fccf",
+      "domain": "https://malicious.example.com",
+      "trust_score": 50.0,
+      "times_verified": 0,
+      "times_flagged": 0,
+      "times_blocked": 0,
+      "first_seen": "2026-02-01T02:29:13.500091",
+      "last_seen": "2026-02-01T02:29:13.500091",
+      "metadata": {}
+    }
+  },
+  "last_updated": "2026-02-01T02:34:48.632100"
+}

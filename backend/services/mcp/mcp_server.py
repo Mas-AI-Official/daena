@@ -272,24 +272,74 @@ class DaenaMCPServer:
         }
     
     async def _do_fact_check(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Fact-check a claim"""
+        """Fact-check a claim using the Data Integrity Shield"""
         claim = args.get("claim", "")
         sources_required = args.get("sources_required", 3)
         
         if not claim:
             return {"error": "Claim is required"}
         
-        # TODO: Integrate with Integrity Shield
-        return {
-            "claim": claim,
-            "verification_status": "unverified",
-            "confidence": 0.5,
-            "sources_found": 0,
-            "sources_required": sources_required,
-            "sources": [],
-            "recommendation": "Insufficient sources for verification. Treat as unverified.",
-            "note": "Full Integrity Shield integration pending - placeholder response"
-        }
+        try:
+            # Use the real Integrity Shield
+            from backend.services.integrity_shield import get_integrity_shield
+            
+            shield = get_integrity_shield()
+            
+            # Verify the claim as external data
+            report = shield.verify(
+                content=claim,
+                source="mcp_fact_check",
+                content_type="claim"
+            )
+            
+            # Determine verification status based on result
+            if report.result.value == "passed":
+                verification_status = "verified"
+                confidence = 0.8
+            elif report.result.value == "flagged":
+                verification_status = "flagged"
+                confidence = 0.4
+            elif report.result.value == "blocked":
+                verification_status = "rejected"
+                confidence = 0.1
+            elif report.result.value == "injection_detected":
+                verification_status = "malicious"
+                confidence = 0.0
+            else:
+                verification_status = "unverified"
+                confidence = 0.5
+            
+            # Build detailed response
+            return {
+                "claim": claim,
+                "verification_status": verification_status,
+                "confidence": confidence,
+                "sources_found": 1 if report.source_info else 0,
+                "sources_required": sources_required,
+                "flags": report.flags,
+                "manipulation_score": report.manipulation_score,
+                "injection_detected": report.injection_detected,
+                "source_trust": {
+                    "domain": report.source_info.domain if report.source_info else None,
+                    "trust_score": report.source_info.trust_score if report.source_info else 0,
+                    "trust_level": report.source_info.trust_level.value if report.source_info else "unknown"
+                },
+                "recommendation": report.recommendations[0] if report.recommendations else "Review this claim carefully before accepting.",
+                "note": "Verified using Daena's Data Integrity Shield"
+            }
+            
+        except Exception as e:
+            logger.error(f"Fact check error: {e}")
+            # Fallback to basic response
+            return {
+                "claim": claim,
+                "verification_status": "error",
+                "confidence": 0.0,
+                "sources_found": 0,
+                "sources_required": sources_required,
+                "error": str(e),
+                "recommendation": "Could not verify - treat as unverified"
+            }
     
     def get_usage_stats(self) -> Dict[str, Any]:
         """Get usage statistics"""
