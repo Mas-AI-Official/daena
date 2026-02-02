@@ -43,6 +43,8 @@ class SkillCategory(str, Enum):
     EXTERNAL_API = "external_api"
     AI_TOOL = "ai_tool"
     SECURITY = "security"
+    RESEARCH = "research"
+    UTILITY = "utility"
     CUSTOM = "custom"
 
 
@@ -134,124 +136,18 @@ class SkillRegistry:
 
     def _load_builtins(self):
         """Register core skills that ship with Daena. These are ACTIVE by default."""
+        
+        # 1. Custom built-ins (special implementations)
         builtins = [
-            {
-                "name": "filesystem_read",
-                "display_name": "Read File / Directory",
-                "description": "Read file contents or list directory. Sandboxed to project root.",
-                "category": SkillCategory.FILESYSTEM,
-                "risk_level": "low",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string", "description": "Relative path from project root"}
-                    },
-                    "required": ["path"]
-                },
-                "output_schema": {
-                    "type": "object",
-                    "properties": {
-                        "content": {"type": "string"},
-                        "is_dir": {"type": "boolean"},
-                        "entries": {"type": "array", "items": {"type": "string"}}
-                    }
-                },
-                "code_body": "# Built-in — handled by execution engine"
-            },
-            {
-                "name": "workspace_search",
-                "display_name": "Search Workspace (grep)",
-                "description": "Grep-style search across project files. Supports regex.",
-                "category": SkillCategory.FILESYSTEM,
-                "risk_level": "low",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "pattern": {"type": "string"},
-                        "path": {"type": "string", "default": "."},
-                        "recursive": {"type": "boolean", "default": True}
-                    },
-                    "required": ["pattern"]
-                },
-                "output_schema": {
-                    "type": "object",
-                    "properties": {
-                        "matches": {"type": "array", "items": {"type": "object"}}
-                    }
-                },
-                "code_body": "# Built-in — handled by execution engine"
-            },
-            {
-                "name": "apply_patch",
-                "display_name": "Apply Code Patch",
-                "description": "Apply a unified diff or str-replace patch to a file. Requires Founder approval for production files.",
-                "category": SkillCategory.CODE_EXEC,
-                "risk_level": "medium",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {"type": "string"},
-                        "old_str": {"type": "string"},
-                        "new_str": {"type": "string"}
-                    },
-                    "required": ["file_path", "old_str", "new_str"]
-                },
-                "output_schema": {
-                    "type": "object",
-                    "properties": {
-                        "success": {"type": "boolean"},
-                        "diff": {"type": "string"}
-                    }
-                },
-                "code_body": "# Built-in — handled by execution engine"
-            },
-            {
-                "name": "run_sandbox",
-                "display_name": "Execute in Sandbox",
-                "description": "Run code in an isolated sandbox. No network, no disk write outside /tmp/sandbox.",
-                "category": SkillCategory.CODE_EXEC,
-                "risk_level": "high",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "code": {"type": "string"},
-                        "language": {"type": "string", "enum": ["python", "javascript", "bash"]},
-                        "timeout_seconds": {"type": "integer", "default": 30}
-                    },
-                    "required": ["code", "language"]
-                },
-                "output_schema": {
-                    "type": "object",
-                    "properties": {
-                        "stdout": {"type": "string"},
-                        "stderr": {"type": "string"},
-                        "exit_code": {"type": "integer"}
-                    }
-                },
-                "code_body": "# Built-in — handled by execution engine"
-            },
             {
                 "name": "defi_scan",
                 "display_name": "DeFi Contract Scanner",
                 "description": "Scan Solidity smart contracts with Slither. Returns vulnerability report.",
                 "category": SkillCategory.SECURITY,
                 "risk_level": "medium",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "contract_path": {"type": "string"},
-                        "output_format": {"type": "string", "enum": ["json", "human"], "default": "json"}
-                    },
-                    "required": ["contract_path"]
-                },
-                "output_schema": {
-                    "type": "object",
-                    "properties": {
-                        "vulnerabilities": {"type": "array"},
-                        "severity_summary": {"type": "object"}
-                    }
-                },
-                "code_body": "# Built-in — delegates to Slither via defi routes"
+                "input_schema": {"type": "object", "properties": {"contract_path": {"type": "string"}}, "required": ["contract_path"]},
+                "output_schema": {"type": "object", "properties": {"vulnerabilities": {"type": "array"}}},
+                "code_body": "# Built-in — delegates to Slither"
             },
             {
                 "name": "integrity_verify",
@@ -259,29 +155,56 @@ class SkillRegistry:
                 "description": "Verify data source trust score and check for prompt injection.",
                 "category": SkillCategory.SECURITY,
                 "risk_level": "low",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "content": {"type": "string"},
-                        "source": {"type": "string"}
-                    },
-                    "required": ["content"]
-                },
-                "output_schema": {
-                    "type": "object",
-                    "properties": {
-                        "trusted": {"type": "boolean"},
-                        "score": {"type": "number"},
-                        "injection_detected": {"type": "boolean"}
-                    }
-                },
+                "input_schema": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"]},
+                "output_schema": {"type": "object", "properties": {"trusted": {"type": "boolean"}}},
                 "code_body": "# Built-in — delegates to Integrity Shield"
             }
         ]
 
+        # 2. Auto-import from Tool Registry
+        try:
+            from backend.tools.registry import TOOL_DEFS
+            for name, tool in TOOL_DEFS.items():
+                # Skip if already in custom builtins
+                if any(b["name"] == name for b in builtins):
+                    continue
+                
+                # Heuristic categorization
+                cat = SkillCategory.UTILITY
+                if "filesystem" in name or "workspace" in name: cat = SkillCategory.FILESYSTEM
+                if "net" in name or "web" in name or "browser" in name: cat = SkillCategory.NETWORK
+                if "git" in name or "repo" in name or "patch" in name or "run" in name: cat = SkillCategory.CODE_EXEC
+                if "scan" in name or "defender" in name or "security" in name: cat = SkillCategory.SECURITY
+                if "consult" in name: cat = SkillCategory.AI_TOOL
+                if "scrape" in name or "search" in name: cat = SkillCategory.RESEARCH
+                
+                # Heuristic risk
+                risk = "medium"
+                if cat in (SkillCategory.FILESYSTEM, SkillCategory.RESEARCH, SkillCategory.UTILITY): risk = "low"
+                if "exec" in name or "shell" in name or "write" in name: risk = "high"
+                if "read" in name or "list" in name or "info" in name: risk = "low"
+
+                builtins.append({
+                    "name": name,
+                    "display_name": name.replace("_", " ").title(),
+                    "description": tool.description,
+                    "category": cat,
+                    "risk_level": risk,
+                    "input_schema": {"type": "object", "properties": {"args": {"type": "object"}}}, # Generic
+                    "output_schema": {"type": "object", "properties": {"result": {"type": "any"}}},
+                    "code_body": f"# Tool wrapper for {name}"
+                })
+        except Exception as e:
+            print(f"Warning: Failed to auto-import tools as skills: {e}")
+
         for b in builtins:
             skill_id = str(uuid.uuid4())
             now = datetime.now(timezone.utc).isoformat()
+            # Stable hash for builtins so ID persists if possible? No, UUID is random.
+            # Ideally we'd use a deterministic UUID based on name for builtins.
+            skill_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, b["name"]))
+            
+            # Simple code hash
             code_hash = hashlib.sha256(b["code_body"].encode()).hexdigest()[:16]
 
             skill = SkillDefinition(
@@ -299,16 +222,11 @@ class SkillRegistry:
                 risk_level=b["risk_level"],
                 requires_approval=False,
                 approved_by="system_builtin",
-                versions=[SkillVersion(
-                    version="1.0.0",
-                    code_hash=code_hash,
-                    created_at=now,
-                    created_by="system",
-                    changelog="Initial builtin"
-                )],
+                versions=[SkillVersion(version="1.0.0", code_hash=code_hash, created_at=now, created_by="system", changelog="Initial builtin")],
                 current_version="1.0.0",
                 created_at=now,
-                updated_at=now
+                updated_at=now,
+                category_slug=b["category"].value
             )
             self._skills[skill_id] = skill
             self._name_index[b["name"]] = skill_id
