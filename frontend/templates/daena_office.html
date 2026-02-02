@@ -228,17 +228,11 @@
                 title="Clear Context">
                 <i class="fas fa-eraser"></i>
             </button>
-            <button id="show-sources-btn" onclick="toggleShowSources()"
-                class="p-2 text-gray-400 hover:text-white transition-colors flex items-center gap-1"
-                title="Show sources: On/Off (citations below messages)">
-                <i class="fas fa-link text-xs"></i>
-                <span id="show-sources-label" class="text-[10px]">Sources Off</span>
-            </button>
         </div>
     </div>
 
     <!-- Messages -->
-    <div class="flex-1 overflow-y-auto p-6 space-y-6" id="chat-messages">
+    <div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar" id="chat-messages">
         <div class="flex gap-4">
             <div
                 class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">
@@ -250,7 +244,8 @@
             </div>
         </div>
         <!-- Scroll to latest: shown when user has scrolled up -->
-        <button type="button" id="chat-scroll-to-bottom-btn" onclick="scrollChatToBottom()" title="Go to latest message"
+        <button type="button" id="chat-scroll-to-bottom-btn"
+            onclick="scrollToBottom(document.getElementById('chat-messages'), true)" title="Go to latest message"
             class="absolute bottom-4 right-6 z-10 flex items-center gap-2 px-3 py-2 rounded-full bg-daena-gold/90 hover:bg-daena-gold text-black text-sm font-medium shadow-lg transition-opacity"
             style="opacity: 0; pointer-events: none;">
             <i class="fas fa-chevron-down"></i>
@@ -259,8 +254,8 @@
     </div>
 
     <!-- Input Area -->
-    <div class="p-4 border-t border-white/10 bg-black/20">
-        <div class="flex gap-2 mb-2">
+    <div class="p-4 border-t border-white/10 bg-black/20 flex-shrink-0 z-20 relative">
+        <div class="flex gap-2 mb-2 items-center">
             <button type="button" id="btn-search-mode" onclick="setSendMode('search')"
                 class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors"
                 title="Quick search then answer (like Google + LLM)">
@@ -271,7 +266,17 @@
                 title="Deep search: scrape pages and synthesize conclusion">
                 <i class="fas fa-globe mr-1"></i> Deep search
             </button>
-            <span id="send-mode-badge" class="text-xs text-daena-gold hidden"></span>
+
+            <div class="h-4 w-px bg-white/10 mx-1"></div>
+
+            <button id="show-sources-btn" onclick="toggleShowSources()"
+                class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors flex items-center gap-1"
+                title="Show sources: On/Off (citations below messages)">
+                <i class="fas fa-link text-[10px]"></i>
+                <span id="show-sources-label">Sources Off</span>
+            </button>
+
+            <span id="send-mode-badge" class="text-xs text-daena-gold hidden ml-auto"></span>
         </div>
         <form id="chat-form" class="flex gap-3 items-end">
             <textarea id="message-input" rows="1"
@@ -280,12 +285,12 @@
                 style="min-height: 48px; max-height: 200px;"
                 oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px'"></textarea>
             <button type="button" id="stop-stream-btn" onclick="stopStreaming()" title="Stop generating"
-                class="hidden bg-red-600 hover:bg-red-700 text-white font-bold px-5 rounded-xl transition-colors flex items-center gap-2">
+                class="hidden bg-red-600 hover:bg-red-700 text-white font-bold px-5 rounded-xl transition-colors flex items-center gap-2 h-[48px]">
                 <i class="fas fa-stop"></i>
                 <span>Stop</span>
             </button>
             <button type="submit" id="send-btn"
-                class="bg-daena-gold hover:bg-yellow-500 text-black font-bold px-6 rounded-xl transition-colors flex items-center gap-2">
+                class="bg-daena-gold hover:bg-yellow-500 text-black font-bold px-6 rounded-xl transition-colors flex items-center gap-2 h-[48px]">
                 <span>Send</span>
                 <i class="fas fa-paper-plane text-sm"></i>
             </button>
@@ -483,16 +488,31 @@
     let sendMode = null;  // 'search' | 'deep_search' – R1-style search then answer
     let streamAbortController = null;  // only Stop button aborts; leaving chat/tab does not — stream continues in background
 
-    // ChatGPT-style scroll: auto-scroll to last character only when user is at bottom; if user scrolls up, stop auto-scroll and show "Latest" button
-    function chatShouldAutoScroll(container) {
+    // Auto-scroll State
+    let pinnedToBottom = true;
+
+    function computePinned(container) {
         if (!container) return false;
-        const threshold = 80;
-        return container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+        // If within 50px of bottom, consider pinned
+        const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
+        return distance < 50;
     }
-    function chatScrollToBottomIfSticky(container) {
-        if (container && chatShouldAutoScroll(container)) {
+
+    function scrollToBottom(container, force = false) {
+        if (!container) return;
+        if (force || pinnedToBottom) {
             container.scrollTop = container.scrollHeight;
+            if (force) pinnedToBottom = true;
         }
+        updateScrollToBottomButton();
+    }
+
+    function updateScrollToBottomButton() {
+        const btn = document.getElementById('chat-scroll-to-bottom-btn');
+        if (!btn) return;
+        // If NOT pinned, show button. If pinned, hide button.
+        btn.style.opacity = pinnedToBottom ? '0' : '1';
+        btn.style.pointerEvents = pinnedToBottom ? 'none' : 'auto';
     }
 
     function stopStreaming() {
@@ -531,23 +551,6 @@
         if (input) input.disabled = streaming;
     }
 
-    function scrollChatToBottom() {
-        const container = document.getElementById('chat-messages');
-        if (container) {
-            container.scrollTop = container.scrollHeight;
-            updateScrollToBottomButton();
-        }
-    }
-
-    function updateScrollToBottomButton() {
-        const container = document.getElementById('chat-messages');
-        const btn = document.getElementById('chat-scroll-to-bottom-btn');
-        if (!container || !btn) return;
-        const atBottom = chatShouldAutoScroll(container);
-        btn.style.opacity = atBottom ? '0' : '1';
-        btn.style.pointerEvents = atBottom ? 'none' : 'auto';
-    }
-
     function setSendMode(mode) {
         sendMode = mode === sendMode ? null : mode;
         const btnSearch = document.getElementById('btn-search-mode');
@@ -560,6 +563,8 @@
         if (badge) {
             badge.classList.toggle('hidden', !sendMode);
             badge.textContent = sendMode === 'search' ? 'Search' : sendMode === 'deep_search' ? 'Deep search' : '';
+            if (sendMode) badge.classList.remove('ml-auto'); // Remove ml-auto if a mode is active
+            else badge.classList.add('ml-auto'); // Add ml-auto if no mode is active
         }
     }
 
@@ -611,18 +616,38 @@
         localStorage.setItem('daena_office_show_sources', on ? 'on' : 'off');
         const label = document.getElementById('show-sources-label');
         if (label) label.textContent = on ? 'Sources On' : 'Sources Off';
-        document.querySelectorAll('[id$="-sources"]').forEach(el => {
-            if (on) el.classList.remove('sources-hidden');
-            else el.classList.add('sources-hidden');
-        });
+
+        // Hide/Show logic
+        const styleId = 'sources-toggle-style';
+        let styleEl = document.getElementById(styleId);
+        if (on) {
+            if (styleEl) styleEl.remove(); // Remove hiding style
+        } else {
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = styleId;
+                styleEl.textContent = `.source-panel-container { display: none !important; }`;
+                document.head.appendChild(styleEl);
+            }
+        }
+
         const btn = document.getElementById('show-sources-btn');
-        if (btn) btn.classList.toggle('text-daena-gold', on);
+        // highlight button border or text if on
+        if (btn) {
+            if (on) {
+                btn.classList.add('text-daena-gold', 'border-daena-gold');
+                btn.classList.remove('text-gray-400', 'border-white/20');
+            } else {
+                btn.classList.remove('text-daena-gold', 'border-daena-gold');
+                btn.classList.add('text-gray-400', 'border-white/20');
+            }
+        }
     }
 
     function toggleShowSources() {
         const on = localStorage.getItem('daena_office_show_sources') !== 'on';
         applyShowSources(on);
-        window.showToast?.(on ? 'Sources visible below messages' : 'Sources hidden', 'info');
+        window.showToast?.(on ? 'Sources visible' : 'Sources hidden', 'info');
     }
 
     function toggleSidebarState() {
@@ -678,6 +703,7 @@
         if (savedCollapsed) {
             const sidebar = document.getElementById('sidebar-panel');
             const icon = document.getElementById('sidebar-toggle-icon');
+            const btn = document.getElementById('sidebar-toggle-btn');
             if (sidebar) {
                 sidebar.style.width = '0px';
                 sidebar.style.display = 'none';
@@ -686,6 +712,7 @@
                 icon.classList.remove('fa-chevron-left');
                 icon.classList.add('fa-chevron-right');
             }
+            if (btn) btn.style.left = '0rem';
         }
 
         applyShowSources(localStorage.getItem('daena_office_show_sources') === 'on');
@@ -711,11 +738,15 @@
             }
         });
 
-        // Scroll-to-latest button: show when user has scrolled up
+        // Scroll listener for pinned state
         const chatMessagesEl = document.getElementById('chat-messages');
         if (chatMessagesEl) {
-            chatMessagesEl.addEventListener('scroll', updateScrollToBottomButton);
-            updateScrollToBottomButton();
+            chatMessagesEl.addEventListener('scroll', () => {
+                pinnedToBottom = computePinned(chatMessagesEl);
+                updateScrollToBottomButton();
+            });
+            // Initial scroll
+            scrollToBottom(chatMessagesEl, true);
         }
 
         // Add Delete key for session deletion
@@ -745,7 +776,6 @@
                 if (data.session_id === currentSessionId) {
                     const container = document.getElementById('chat-messages');
                     if (container && data.sender === 'assistant') {
-                        const shouldScroll = chatShouldAutoScroll(container);
                         container.insertAdjacentHTML('beforeend', `
                             <div class="flex gap-4">
                                 <div class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">D</div>
@@ -756,10 +786,7 @@
                                 </div>
                             </div>
                         `);
-                        if (shouldScroll) {
-                            container.scrollTop = container.scrollHeight;
-                            updateScrollToBottomButton();
-                        }
+                        scrollToBottom(container);
                     }
                 }
                 loadSessions();
@@ -792,9 +819,11 @@
 
             // Only enable controls if not currently streaming
             if (!streamAbortController) {
-                sendBtn.disabled = false;
-                input.disabled = false;
-                input.placeholder = 'Ask Daena anything...';
+                if (sendBtn) sendBtn.disabled = false;
+                if (input) {
+                    input.disabled = false;
+                    input.placeholder = 'Ask Daena anything...';
+                }
             }
         } else {
             dot.className = 'w-1.5 h-1.5 rounded-full bg-red-500';
@@ -802,9 +831,17 @@
             text.className = 'text-xs text-red-400 flex items-center gap-1';
 
             // Always disable if offline, even if streaming (stream will likely fail anyway)
-            sendBtn.disabled = true;
-            input.disabled = true;
-            input.placeholder = 'Brain is offline - please start Ollama';
+            if (sendBtn) sendBtn.disabled = true;
+            if (input) {
+                input.disabled = true;
+                input.placeholder = 'Brain is offline - please start Ollama';
+            }
+        }
+
+        const badge = document.getElementById('routing-mode-badge');
+        if (badge && status.routing_mode) {
+            badge.classList.remove('hidden');
+            badge.textContent = status.routing_mode.toUpperCase();
         }
     }
 
@@ -1594,14 +1631,10 @@
                                 }
 
                                 if (finalEl) {
-                                    const shouldScroll = chatShouldAutoScroll(container);
                                     fullText += data.content;
                                     finalEl.textContent = fullText;
-                                    if (shouldScroll) {
-                                        container.scrollTop = container.scrollHeight;
-                                    }
+                                    scrollToBottom(container);
                                 }
-                                updateScrollToBottomButton();
 
                             } else if (data.type === 'done') {
                                 loadSessions();
