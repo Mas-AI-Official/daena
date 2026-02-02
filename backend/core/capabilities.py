@@ -147,15 +147,28 @@ def _version_build() -> Dict[str, Any]:
     return out
 
 
+def _skills_manifest_for_daena() -> List[Dict[str, Any]]:
+    """Skills Daena can run (allowed_roles includes daena). For capability handshake / system prompt."""
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        all_manifest = registry.get_manifest()
+        return [s for s in all_manifest if "daena" in [r.lower() for r in (s.get("allowed_roles") or [])]]
+    except Exception:
+        return []
+
+
 async def build_capabilities() -> Dict[str, Any]:
     """
     Build live capabilities JSON: available, enabled, requires_approval, health.
     Used by GET /api/v1/system/capabilities and awareness UI.
+    Includes skills_manifest (what Daena can run) for session handshake.
     """
     hands = await _check_hands_gateway(2.0)
     local_llm = await _check_local_llm()
     governance = _governance_profile()
     version = _version_build()
+    skills_manifest = _skills_manifest_for_daena()
 
     remote_warning = _remote_hands_warning()
     if remote_warning:
@@ -181,6 +194,7 @@ async def build_capabilities() -> Dict[str, Any]:
             "governance": governance,
         },
         "tool_catalog": TOOL_CATALOG,
+        "skills_manifest": skills_manifest,
         "governance": governance,
         "version": version,
         "remote_hands_warning": remote_warning,

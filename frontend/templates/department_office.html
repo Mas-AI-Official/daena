@@ -301,7 +301,7 @@
     <div class="chat-area">
         <div class="office-header">
             <a href="/ui/dashboard" class="back-btn"><i class="fas fa-arrow-left"></i></a>
-            <div class="dept-icon" style="background: {{ dept_color }}"><i class="fas {{ dept_icon }}"></i></div>
+            <div class="dept-icon" style="background: var(--dept-color)"><i class="fas {{ dept_icon }}"></i></div>
             <div class="dept-info">
                 <h1>{{ dept_name }} Office</h1>
                 <p>Talk to our team - Daena is always present</p>
@@ -310,7 +310,7 @@
 
         <div class="reps-container">
             <div class="rep-card active" data-target="rep" onclick="selectRep('rep')">
-                <div class="rep-avatar" style="background: {{ dept_color }}">{{ rep_initials }}</div>
+                <div class="rep-avatar" style="background: var(--dept-color)">{{ rep_initials }}</div>
                 <div class="rep-info">
                     <h3>{{ rep_name }}</h3>
                     <p>{{ rep_role }}</p>
@@ -330,7 +330,7 @@
 
         <div class="messages-container" id="messages">
             <div class="message assistant rep">
-                <div class="message-avatar" style="background: {{ dept_color }}">{{ rep_initials }}</div>
+                <div class="message-avatar" style="background: var(--dept-color)">{{ rep_initials }}</div>
                 <div class="message-content">
                     Welcome to the {{ dept_name }} office! I'm {{ rep_name }}, your {{ rep_role }}.
                     How can I help you today?
@@ -350,7 +350,7 @@
             <h3>Department Stats</h3>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                 <div>
-                    <div class="stat-value" style="color: {{ dept_color }}">{{ agent_count | default(6) }}</div>
+                    <div class="stat-value" style="color: var(--dept-color)">{{ agent_count | default(6) }}</div>
                     <div class="stat-label">Agents</div>
                 </div>
                 <div>
@@ -372,7 +372,7 @@
                 {% if agents %}
                 {% for agent in agents %}
                 <div class="team-member">
-                    <div class="team-avatar" style="background: {{ dept_color }}">{{ (agent.name if agent.name is defined else agent.get('name', 'Ag'))[:2] if agent else 'Ag' }}</div>
+                    <div class="team-avatar" style="background: var(--dept-color)">{{ (agent.name if agent.name is defined else agent.get('name', 'Ag'))[:2] if agent else 'Ag' }}</div>
                     <div>
                         <div style="color: white; font-size: 12px;">{{ agent.name | default('Agent') }}</div>
                         <div style="color: #9CA3AF; font-size: 10px;">{{ agent.role | default('') }}</div>

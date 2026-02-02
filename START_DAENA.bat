@@ -47,6 +47,11 @@ set "QA_GUARDIAN_LOG_LEVEL=INFO"
 REM -- EXECUTION LAYER (Skills, Tasks, Approvals): set EXECUTION_TOKEN for API + dashboard --
 REM set "EXECUTION_TOKEN=your-secret-token"
 
+REM -- HANDS (OpenClaw Gateway): preferred DAENABOT_HANDS_*; legacy OPENCLAW_GATEWAY_* --
+REM set "DAENABOT_HANDS_URL=ws://127.0.0.1:18789/ws"
+REM set "DAENABOT_HANDS_TOKEN=your-token"
+REM set "DAENA_SKILL_IMPORT_PATH=%ROOT%\docs\2026-01-31\new files"
+
 REM -- MODELS_ROOT (shared brain: Ollama, XTTS, Whisper, reasoning models) --
 if not defined MODELS_ROOT set "MODELS_ROOT=D:\Ideas\MODELS_ROOT"
 set "OLLAMA_MODELS=%MODELS_ROOT%\ollama"
