@@ -428,3 +428,31 @@ async def defi_health() -> Dict[str, Any]:
         "slither": slither_status,
         "active_scans": len([s for s in _scans.values() if s.status == "scanning"])
     }
+
+
+@router.get("/status")
+async def defi_status() -> Dict[str, Any]:
+    """Module status for UI (safe stub)."""
+    return {
+        "status": "ok",
+        "module": "defi",
+        "scans_count": len(_scans),
+        "active_scans": len([s for s in _scans.values() if s.status == "scanning"]),
+    }
+
+
+@router.get("/scans")
+async def list_scans() -> List[Dict[str, Any]]:
+    """List all scans (for Web3/DeFi UI)."""
+    return [
+        {
+            "scan_id": s.scan_id,
+            "contract_path": s.contract_path,
+            "status": s.status,
+            "started_at": s.started_at,
+            "completed_at": s.completed_at,
+            "vulnerabilities": len(s.findings) if s.findings else 0,
+            "critical": sum(1 for f in (s.findings or []) if (f.get("severity") or "").lower() == "critical"),
+        }
+        for s in _scans.values()
+    ]

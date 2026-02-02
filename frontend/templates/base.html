@@ -178,6 +178,24 @@
             border-color: var(--daena-gold);
         }
 
+        /* AGI Autopilot toggle (topbar) - matches control plane style */
+        .autopilot-wrap { display: flex; align-items: center; gap: 8px; }
+        .autopilot-label { font-size: 11px; color: rgba(156, 163, 175, 1); font-weight: 500; }
+        .autopilot-toggle-switch {
+            width: 40px; height: 22px; border-radius: 11px;
+            background: rgba(255, 255, 255, 0.1); position: relative; cursor: pointer;
+            transition: background .2s; border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .autopilot-toggle-switch.on { background: #22c55e; border-color: #22c55e; }
+        .autopilot-toggle-switch::after {
+            content: ''; position: absolute; top: 2px; left: 2px;
+            width: 16px; height: 16px; border-radius: 50%; background: #fff;
+            transition: left .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+        }
+        .autopilot-toggle-switch.on::after { left: 20px; }
+        .autopilot-mode { font-size: 10px; font-weight: 600; color: #22c55e; text-transform: uppercase; letter-spacing: .5px; }
+        .autopilot-mode.manual { color: #f59e0b; }
+
         /* Toast Notifications */
         .toast-container {
             position: fixed;
@@ -468,6 +486,44 @@
                 }
             };
             window.updateBrainStatus();
+
+            // AGI Autopilot in topbar - wire to /api/v1/brain/autopilot
+            (function initTopbarAutopilot() {
+                const el = document.getElementById('topbarAutopilotToggle');
+                const modeEl = document.getElementById('topbarAutopilotMode');
+                if (!el || !modeEl) return;
+                async function load() {
+                    try {
+                        const r = await fetch('/api/v1/brain/autopilot');
+                        if (r.ok) {
+                            const d = await r.json();
+                            const on = !!d.enabled;
+                            el.classList.toggle('on', on);
+                            el.setAttribute('aria-pressed', on);
+                            modeEl.textContent = on ? 'On' : 'Manual';
+                            modeEl.classList.toggle('manual', !on);
+                        }
+                    } catch (_) {}
+                }
+                window.toggleTopbarAutopilot = async function () {
+                    const on = !el.classList.contains('on');
+                    el.classList.toggle('on', on);
+                    modeEl.textContent = on ? 'On' : 'Manual';
+                    modeEl.classList.toggle('manual', !on);
+                    el.setAttribute('aria-pressed', on);
+                    try {
+                        const r = await fetch('/api/v1/brain/autopilot', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ enabled: on })
+                        });
+                        if (!r.ok) { const d = await r.json().catch(() => ({})); if (window.showToast) window.showToast(d.error || 'Failed to set autopilot', 'error'); load(); }
+                        else { if (window.refreshControlPanelAutopilot) window.refreshControlPanelAutopilot(); }
+                    } catch (e) { if (window.showToast) window.showToast('Failed to set autopilot', 'error'); load(); }
+                };
+                window.loadTopbarAutopilot = load;
+                load();
+            })();
         });
     </script>
     <script src="/static/js/api-client.js"></script>

@@ -361,6 +361,45 @@
     </div>
 </div>
 
+<!-- Offline models location: editable, syncs to backend -->
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon" style="background: rgba(50, 205, 50, 0.2); color: #32CD32;">
+            <i class="fas fa-folder-open"></i>
+        </div>
+        <div class="section-title">Offline models location</div>
+    </div>
+    <div class="section-body">
+        <div class="flex items-center gap-3 flex-wrap">
+            <label class="text-[13px] text-gray-400">Path:</label>
+            <input type="text" id="offline-path-input" class="api-key-input flex-1 min-w-[200px] max-w-xl" placeholder="e.g. D:\Ideas\MODELS_ROOT" title="Change offline root for LLMs; saves to backend. Edit and Save or press Enter." autocomplete="off" />
+            <button type="button" id="offline-save-btn" class="scan-btn" style="padding: 6px 12px; font-size: 12px;">Save</button>
+            <button type="button" id="offline-open-folder-btn" class="scan-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(65, 105, 225, 0.3);" title="Open this folder in Explorer/Finder"><i class="fas fa-folder-open"></i> Open folder</button>
+            <button type="button" id="offline-copy-btn" class="scan-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.1);" title="Copy path"><i class="fas fa-copy"></i> Copy</button>
+        </div>
+        <p class="text-[11px] text-gray-500 mt-2">Change the path and Save (or blur/Enter) to update the backend in real time. Local (Ollama) models are under this path/ollama. Use "Open folder" to browse and copy a path.</p>
+    </div>
+</div>
+
+<!-- Autopilot (Daena setting) -->
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon" style="background: rgba(212, 175, 55, 0.2); color: var(--daena-gold);">
+            <i class="fas fa-robot"></i>
+        </div>
+        <div class="section-title">Autopilot</div>
+    </div>
+    <div class="section-body">
+        <div class="flex items-center gap-3 flex-wrap">
+            <label class="toggle">
+                <input type="checkbox" id="autopilot-toggle" onchange="setAutopilot(this.checked)">
+                <span class="toggle-slider"></span>
+            </label>
+            <span class="text-[13px] text-gray-300">Let Daena run tasks and routing automatically.</span>
+        </div>
+    </div>
+</div>
+
 <!-- Local Models Section -->
 <div class="section-card">
     <div class="section-header">
@@ -391,7 +430,7 @@
     </div>
 </div>
 
-<!-- Cloud APIs Section -->
+<!-- Cloud LLM APIs: keys sync to backend stack -->
 <div class="section-card">
     <div class="section-header">
         <div class="section-icon" style="background: rgba(65, 105, 225, 0.2); color: #4169E1;">
@@ -399,8 +438,11 @@
         </div>
         <div class="section-title">Cloud LLM APIs</div>
     </div>
-    <div class="section-body" id="cloud-apis">
-        <!-- Loaded via JS -->
+    <div class="section-body">
+        <p class="text-[12px] text-gray-500 mb-3">Add API keys below; they sync to the backend stack. Toggle each provider on/off after saving a key.</p>
+        <div id="cloud-apis">
+            <!-- Loaded via JS -->
+        </div>
     </div>
 </div>
 
@@ -528,7 +570,7 @@
                    id="api-key-${idx}" onchange="saveAPIKey(${idx}, this.value)">
             <button type="button" onclick="saveAPIKey(${idx}, document.getElementById('api-key-${idx}').value)" class="scan-btn" style="padding: 8px 14px; font-size: 12px;">Save</button>
             <label class="toggle">
-                <input type="checkbox" ${api.enabled ? 'checked' : ''} 
+                <input type="checkbox" id="cloud-toggle-${idx}" ${api.enabled ? 'checked' : ''} 
                        onchange="toggleCloud(${idx}, this.checked)">
                 <span class="toggle-slider"></span>
             </label>
@@ -570,27 +612,31 @@
         if (btn) btn.classList.add('fa-spin');
 
         try {
-            // Force scan first
-            await fetch('/api/v1/brain/scan', { method: 'POST' });
+            // Run scan in background — don't block model list if scan fails (e.g. model_registry missing)
+            fetch('/api/v1/brain/scan', { method: 'POST' }).catch(() => {});
 
-            // Load models from backend API
+            // Load models, status, usage from backend (Brain Status API)
             const [modelsResponse, statusResponse, usageResponse] = await Promise.all([
                 fetch('/api/v1/brain/models'),
                 fetch('/api/v1/brain/status'),
                 fetch('/api/v1/brain/models/usage')
             ]);
 
-            // Load models
-            if (modelsResponse.ok) {
-                const modelsData = await modelsResponse.json();
+            const modelsData = modelsResponse.ok ? await modelsResponse.json().catch(() => null) : null;
+            const statusData = statusResponse.ok ? await statusResponse.json().catch(() => null) : null;
+            const usageData = usageResponse.ok ? await usageResponse.json().catch(() => null) : null;
+
+            usageStats = (usageData && usageData.stats) ? usageData.stats : {};
+
+            // Load models from GET /api/v1/brain/models, or fallback to status.models or list-models
+            if (modelsData) {
                 localModelsData = (modelsData.local || []).map(m => ({
                     name: m.name,
-                    size: `${m.size_gb || 0} GB`,
+                    size: `${m.size_gb != null ? m.size_gb : 0} GB`,
                     status: 'online',
                     calls: usageStats[m.name]?.calls || 0,
                     tokens: usageStats[m.name]?.tokens || 0
                 }));
-
                 trainedModelsData = (modelsData.trained || []).map(m => ({
                     name: m.name,
                     size: 'N/A',
@@ -599,43 +645,68 @@
                     tokens: 0,
                     trained: 'N/A'
                 }));
-
                 cloudAPIs = (modelsData.cloud || []).map(api => ({
                     name: api.name.split('/')[1] || api.name,
+                    provider: api.provider || api.name.split('/')[0]?.toLowerCase() || api.name.toLowerCase(),
                     icon: getCloudIcon(api.name),
                     color: getCloudColor(api.name),
                     status: api.status === 'configured' ? 'connected' : 'disconnected',
                     hasKey: api.status === 'configured',
+                    enabled: !!api.enabled,
                     credits: 0,
                     used: 0
                 }));
+            } else if (statusData && (statusData.models && statusData.models.length)) {
+                localModelsData = statusData.models.map(m => ({
+                    name: (typeof m === 'object' && m.name) ? m.name : m,
+                    size: (typeof m === 'object' && m.size != null) ? formatSize(m.size) : '—',
+                    status: 'online',
+                    calls: usageStats[(typeof m === 'object' && m.name) ? m.name : m]?.calls || 0,
+                    tokens: usageStats[(typeof m === 'object' && m.name) ? m.name : m]?.tokens || 0
+                }));
+            } else {
+                // Fallback: try GET /api/v1/brain/list-models
+                try {
+                    const listRes = await fetch('/api/v1/brain/list-models');
+                    if (listRes.ok) {
+                        const listData = await listRes.json();
+                        const list = listData.models || [];
+                        localModelsData = list.map(m => ({
+                            name: (m && m.name) ? m.name : m,
+                            size: (m && m.size != null) ? formatSize(m.size) : '—',
+                            status: 'online',
+                            calls: usageStats[(m && m.name) ? m.name : m]?.calls || 0,
+                            tokens: usageStats[(m && m.name) ? m.name : m]?.tokens || 0
+                        }));
+                    }
+                } catch (_) {}
             }
 
-            // Load active models and routing mode
-            if (statusResponse.ok) {
-                const statusData = await statusResponse.json();
+            // Load active models, routing mode, offline path (always when statusData exists)
+            if (statusData) {
                 activeModel = statusData.active_model;  // Primary (backward compatibility)
                 activeModels = statusData.active_models || (activeModel ? [activeModel] : []);  // All active
 
-                // Update routing mode UI
                 const routingSelect = document.getElementById('routing-mode');
                 if (routingSelect && statusData.routing_mode) {
                     routingSelect.value = statusData.routing_mode;
                 }
+
+                const pathInput = document.getElementById('offline-path-input');
+                const pathToShow = statusData.models_root || statusData.local_brain_path || '';
+                if (pathInput) {
+                    pathInput.value = pathToShow;
+                    pathInput.placeholder = pathToShow || 'e.g. D:\\Ideas\\MODELS_ROOT';
+                }
+                window._offlineModelsPath = pathToShow;
             }
 
-            // Load usage stats
-            if (usageResponse.ok) {
-                const usageData = await usageResponse.json();
-                usageStats = usageData.stats || {};
-
-                // Update model stats
-                localModelsData = localModelsData.map(m => ({
-                    ...m,
-                    calls: usageStats[m.name]?.calls || 0,
-                    tokens: usageStats[m.name]?.tokens || 0
-                }));
-            }
+            // Merge usage into local model cards
+            localModelsData = localModelsData.map(m => ({
+                ...m,
+                calls: usageStats[m.name]?.calls || 0,
+                tokens: usageStats[m.name]?.tokens || 0
+            }));
 
             renderLocalModels();
             renderTrainedModels();
@@ -855,9 +926,90 @@
         renderCloudAPIs();
     }
 
+    // Offline path: Save to backend (realtime), Copy
+    document.getElementById('offline-save-btn')?.addEventListener('click', saveOfflinePath);
+    document.getElementById('offline-path-input')?.addEventListener('blur', function () {
+        const path = this.value?.trim();
+        if (path && path !== (window._offlineModelsPath || '')) saveOfflinePath();
+    });
+    document.getElementById('offline-path-input')?.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); saveOfflinePath(); }
+    });
+    document.getElementById('offline-open-folder-btn')?.addEventListener('click', openModelsFolder);
+    async function openModelsFolder() {
+        const path = document.getElementById('offline-path-input')?.value?.trim() || window._offlineModelsPath || '';
+        try {
+            const r = await fetch('/api/v1/brain/open-models-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: path || undefined })
+            });
+            const d = await r.json().catch(() => ({}));
+            if (d.success) {
+                if (window.showToast) window.showToast('Folder opened in Explorer/Finder', 'success');
+            } else if (window.showToast) window.showToast(d.error || 'Could not open folder', 'error');
+        } catch (e) {
+            if (window.showToast) window.showToast('Could not open folder', 'error');
+        }
+    }
+    document.getElementById('offline-copy-btn')?.addEventListener('click', () => {
+        const path = document.getElementById('offline-path-input')?.value?.trim() || window._offlineModelsPath || '';
+        if (path) {
+            navigator.clipboard.writeText(path).then(() => {
+                if (window.showToast) window.showToast('Path copied to clipboard', 'success');
+            }).catch(() => {});
+        }
+    });
+    async function saveOfflinePath() {
+        const input = document.getElementById('offline-path-input');
+        const path = input?.value?.trim() || '';
+        if (!path) return;
+        try {
+            const r = await fetch('/api/v1/brain/models_root', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ models_root: path })
+            });
+            const d = await r.json();
+            if (d.success) {
+                window._offlineModelsPath = path;
+                if (window.showToast) window.showToast('Offline path saved; backend updated.', 'success');
+                await scanModels();
+            } else if (window.showToast) window.showToast(d.error || 'Failed to save path', 'error');
+        } catch (e) {
+            if (window.showToast) window.showToast('Failed to save path', 'error');
+        }
+    }
+
+    async function loadAutopilot() {
+        try {
+            const r = await fetch('/api/v1/brain/autopilot');
+            if (r.ok) {
+                const d = await r.json();
+                const cb = document.getElementById('autopilot-toggle');
+                if (cb) cb.checked = !!d.enabled;
+            }
+        } catch (_) {}
+    }
+    async function setAutopilot(enabled) {
+        try {
+            const r = await fetch('/api/v1/brain/autopilot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: enabled })
+            });
+            const d = await r.json();
+            if (d.success && window.showToast) window.showToast(enabled ? 'Autopilot on' : 'Autopilot off', 'success');
+            else if (!d.success && window.showToast) window.showToast(d.error || 'Failed', 'error');
+        } catch (e) {
+            if (window.showToast) window.showToast('Failed to set autopilot', 'error');
+        }
+    }
+
     // Init - load from APIs
     document.addEventListener('DOMContentLoaded', async () => {
         await scanModels(); // Auto-scan on load
+        loadAutopilot();
     });
 </script>
 {% endblock %}

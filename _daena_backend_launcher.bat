@@ -89,10 +89,19 @@ echo [DAENA BACKEND] Root: %ROOT%
 echo [DAENA BACKEND] Port: %PORT%
 
 echo [DAENA BACKEND] Python: %VENV_BACKEND%
-echo [DAENA BACKEND] Control Plane: http://127.0.0.1:%PORT%/ui/control-plane
-echo [DAENA BACKEND] Brain ^& API: http://127.0.0.1:%PORT%/ui/brain-api
+echo [DAENA BACKEND] Dashboard: http://127.0.0.1:%PORT%/ui/dashboard
+echo [DAENA BACKEND] Daena Office: http://127.0.0.1:%PORT%/ui/daena-office
+echo [DAENA BACKEND] Projects: http://127.0.0.1:%PORT%/ui/projects
+echo [DAENA BACKEND] Councils: http://127.0.0.1:%PORT%/ui/councils
+echo [DAENA BACKEND] Workspace: http://127.0.0.1:%PORT%/ui/workspace
+echo [DAENA BACKEND] Analytics: http://127.0.0.1:%PORT%/ui/analytics
+echo [DAENA BACKEND] Agents: http://127.0.0.1:%PORT%/ui/agents
+echo [DAENA BACKEND] Control Panel: http://127.0.0.1:%PORT%/ui/control-panel
+echo [DAENA BACKEND] Brain ^& API: http://127.0.0.1:%PORT%/ui/brain-settings
 echo [DAENA BACKEND] Web3 / DeFi: http://127.0.0.1:%PORT%/ui/web3
-echo [DAENA BACKEND] Set EXECUTION_TOKEN in env for execution-layer; wiring audit: /ui/wiring-audit
+echo [DAENA BACKEND] Founder: http://127.0.0.1:%PORT%/ui/founder-panel
+echo [DAENA BACKEND] Wiring audit API: http://127.0.0.1:%PORT%/api/v1/ui/wiring-audit
+echo [DAENA BACKEND] Set EXECUTION_TOKEN in env for execution-layer.
 
 echo.
 

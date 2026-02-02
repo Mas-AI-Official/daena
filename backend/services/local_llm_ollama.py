@@ -22,26 +22,28 @@ DEFAULT_LOCAL_MODEL = settings.default_local_model
 FALLBACK_MODEL = os.getenv("FALLBACK_LOCAL_MODEL", "qwen2.5:14b-instruct")
 TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
-# Ollama models path (defaults to local_brain directory)
-OLLAMA_MODELS_PATH = settings.ollama_models_path
+# Ollama models path: prefer existing env (set from Brain setting at startup), else settings
+OLLAMA_MODELS_PATH = os.environ.get("OLLAMA_MODELS")
+if not OLLAMA_MODELS_PATH:
+    OLLAMA_MODELS_PATH = settings.ollama_models_path
 if OLLAMA_MODELS_PATH:
-    # Ensure path exists
     os.makedirs(OLLAMA_MODELS_PATH, exist_ok=True)
-    # Set OLLAMA_MODELS environment variable for Ollama CLI
-    os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_PATH
+    if "OLLAMA_MODELS" not in os.environ:
+        os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_PATH
     logger.info(f"Ollama models path configured: {OLLAMA_MODELS_PATH}")
 else:
-    # Default: use shared brain root (MODELS_ROOT/ollama)
     default_path = str(Path(settings.models_root) / "ollama")
     if os.path.exists(default_path):
         OLLAMA_MODELS_PATH = default_path
-        os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_PATH
+        if "OLLAMA_MODELS" not in os.environ:
+            os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_PATH
         logger.info(f"Using models_root Ollama path: {OLLAMA_MODELS_PATH}")
     else:
         legacy = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "local_brain")
         if os.path.exists(legacy):
             OLLAMA_MODELS_PATH = legacy
-            os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_PATH
+            if "OLLAMA_MODELS" not in os.environ:
+                os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_PATH
             logger.info(f"Using legacy local_brain path: {OLLAMA_MODELS_PATH}")
 
 

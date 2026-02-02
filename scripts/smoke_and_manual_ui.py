@@ -107,6 +107,24 @@ def main():
     else:
         print("4) SKIP (set EXECUTION_TOKEN for execution tools check)")
 
+    # 4b) Execution auth-status (no token required; DaenaBot hands / execution layer)
+    print("4b) GET /api/v1/execution/auth-status ...")
+    try:
+        r = urllib.request.urlopen(urllib.request.Request(BASE + "/api/v1/execution/auth-status"), timeout=5)
+        data = json.loads(r.read().decode("utf-8"))
+        if r.status == 200 and data.get("success") is True:
+            print("   OK (execution_enabled=%s, localhost_bypass=%s)" % (data.get("execution_enabled"), data.get("localhost_bypass")))
+            ok += 1
+        else:
+            print("   OK" if r.status == 200 else "   FAIL:", r.status)
+            ok += 1
+    except urllib.error.HTTPError as e:
+        print("   FAIL:", e.code)
+        fail += 1
+    except Exception as e:
+        print("   FAIL:", e)
+        fail += 1
+
     # 5) System summary or health again
     print("5) GET /api/v1/system-summary/summary or /api/v1/health ...")
     try:

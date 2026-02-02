@@ -62,6 +62,9 @@
 .sidebar-bottom-info{flex:1;min-width:0}
 .sidebar-bottom-name{font-size:12px;font-weight:600;color:var(--text-bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sidebar-bottom-role{font-size:10px;color:var(--text-dim)}
+.backend-sync{font-size:10px;margin-top:6px;padding:4px 8px;border-radius:6px;display:inline-block}
+.backend-sync.ok{background:rgba(34,197,94,.2);color:var(--green)}
+.backend-sync.off{background:rgba(239,68,68,.2);color:var(--red)}
 
 /* MAIN CONTENT */
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -382,6 +385,12 @@ select.input{appearance:none;cursor:pointer}
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="5" r="2"/><circle cx="11" cy="5" r="2"/><circle cx="8" cy="10" r="2"/><path d="M3 14c0-1 .9-2 2-2s2 1 2 2"/><path d="M6 14c0-1 .9-2 2-2s2 1 2 2"/><path d="M9 14c0-1 .9-2 2-2s2 1 2 2"/></svg>
       Agents
     </button>
+    <span id="backendSyncStatus" class="backend-sync off" style="margin-left:auto;margin-right:12px">Backend: …</span>
+  </div>
+
+  <!-- Hands offline banner (shown when GET /api/v1/system/capabilities says hands_gateway is not available) -->
+  <div id="handsOfflineBanner" class="awareness-banner" style="display:none">
+    <span>DaenaBot can plan but cannot act (Hands offline).</span>
   </div>
 
   <!-- CONTENT PANELS (Brain & Web3 at /ui/brain-api and /ui/web3) -->
@@ -450,6 +459,20 @@ select.input{appearance:none;cursor:pointer}
         <div class="stat-card c-red"><div class="stat-label">Blocked</div><div class="stat-value c-red" id="govBlocked">0</div><div class="stat-sub">High/Critical risk</div></div>
       </div>
 
+      <!-- AGI Autopilot (synced with backend: GET/POST /api/v1/brain/autopilot + governance/toggle-autopilot) -->
+      <div class="autopilot-wrap" style="margin-bottom:14px">
+        <span class="autopilot-label">AGI Autopilot</span>
+        <div class="toggle-switch" id="autopilotToggle" onclick="toggleAutopilot()" role="button" aria-pressed="false" title="Toggle autopilot"></div>
+        <span class="autopilot-mode" id="autopilotMode">—</span>
+      </div>
+      <!-- DaenaBot Awareness (GET /api/v1/system/capabilities) -->
+      <div class="awareness-panel" id="awarenessPanel">
+        <div class="ap-title">DaenaBot Awareness</div>
+        <div class="ap-row"><span class="ap-label">Hands</span><span class="ap-value" id="awarenessHands">—</span></div>
+        <div class="ap-row"><span class="ap-label">Local LLM</span><span class="ap-value" id="awarenessLLM">—</span></div>
+        <div class="ap-row"><span class="ap-label">Governance</span><span class="ap-value" id="awarenessGov">—</span></div>
+        <div class="ap-row" id="awarenessRemoteRow" style="display:none"><span class="ap-label">Security</span><span class="ap-value off" id="awarenessRemote">—</span></div>
+      </div>
       <!-- Think-Plan-Act Pipeline Status -->
       <div class="section-header"><div class="section-title">Active Pipeline</div></div>
       <div class="pipeline" id="pipeline">
@@ -790,7 +813,9 @@ const API = {
   integrity:    '/api/v1/integrity',
   shadow:       '/api/v1/shadow',
   council:      '/api/v1/council',
-  capabilities: '/api/v1/capabilities',
+  brain:        '/api/v1/brain',
+  system:       '/api/v1/system',
+  capabilities: '/api/v1/system/capabilities',
   chat:         '/api/v1/daena/chat/stream'
 };
 
@@ -890,14 +915,93 @@ function addFeed(feedId,time,color,html){
   if(items.length>40)items[items.length-1].remove();
 }
 
-// ─── AUTOPILOT TOGGLE ───────────────────────────
-function toggleAutopilot(){
-  autopilotState=!autopilotState;
-  document.getElementById('autopilotToggle').className='toggle-switch'+(autopilotState?' on':'');
-  document.getElementById('autopilotMode').className='autopilot-mode'+(autopilotState?'':' manual');
-  document.getElementById('autopilotMode').textContent=autopilotState?'On':'Manual';
-  fetch(API.governance+'/toggle-autopilot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:autopilotState})}).catch(()=>{});
-  addFeed('govFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),'amber',`<strong>Autopilot</strong> switched to <strong>${autopilotState?'ON':'Manual'}</strong>`);
+// ─── DAENABOT AWARENESS (GET /api/v1/system/capabilities) ───────────────────────────
+async function loadAwareness(){
+  try {
+    const r = await api(API.capabilities);
+    if (!r || r.error) return;
+    const avail = r.available || {};
+    const health = r.health || {};
+    const hands = health.hands || {};
+    const llm = health.local_llm || {};
+    const gov = health.governance || r.governance || {};
+    const banner = document.getElementById('handsOfflineBanner');
+    if (banner) {
+      if (r.remote_hands_warning) {
+        banner.className = 'awareness-banner warning-remote';
+        banner.textContent = 'Hands URL is not localhost. Set ENABLE_REMOTE_HANDS=true to acknowledge.';
+        banner.style.display = 'block';
+      } else if (!avail.hands_gateway) {
+        banner.className = 'awareness-banner';
+        banner.innerHTML = '<span>DaenaBot can plan but cannot act (Hands offline).</span>';
+        banner.style.display = 'block';
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+    const handsEl = document.getElementById('awarenessHands');
+    if (handsEl) {
+      const conn = hands.connected ? 'Connected' : 'Offline';
+      const auth = hands.authenticated ? ', authenticated' : (hands.token_present ? ', auth pending' : '');
+      handsEl.textContent = conn + auth + (hands.url_host ? ' (' + hands.url_host + ')' : '');
+      handsEl.className = 'ap-value ' + (hands.connected ? 'ok' : 'off');
+    }
+    const llmEl = document.getElementById('awarenessLLM');
+    if (llmEl) {
+      const prov = llm.provider || '—';
+      const model = llm.model ? ' · ' + llm.model : '';
+      llmEl.textContent = (llm.healthy ? 'OK' : 'Offline') + ' · ' + prov + model;
+      llmEl.className = 'ap-value ' + (llm.healthy ? 'ok' : 'off');
+    }
+    const govEl = document.getElementById('awarenessGov');
+    if (govEl) {
+      const mode = gov.autopilot_enabled ? 'Autopilot' : 'Manual';
+      const pending = (gov.pending_count || 0) > 0 ? ' · ' + gov.pending_count + ' pending' : '';
+      govEl.textContent = mode + pending;
+      govEl.className = 'ap-value';
+    }
+    const remoteRow = document.getElementById('awarenessRemoteRow');
+    const remoteEl = document.getElementById('awarenessRemote');
+    if (remoteRow && remoteEl && r.remote_hands_warning) {
+      remoteRow.style.display = 'flex';
+      remoteEl.textContent = 'Hands URL is not localhost (set ENABLE_REMOTE_HANDS=true to acknowledge)';
+    } else if (remoteRow) remoteRow.style.display = 'none';
+  } catch (_) {}
+}
+
+// ─── AUTOPILOT TOGGLE (synced: brain/autopilot + governance/toggle-autopilot) ───────────────────────────
+async function loadAutopilotFromBackend(){
+  try {
+    const r = await api('/api/v1/brain/autopilot');
+    if (r && typeof r.enabled === 'boolean') {
+      autopilotState = r.enabled;
+      const el = document.getElementById('autopilotToggle');
+      const modeEl = document.getElementById('autopilotMode');
+      if (el) { el.className = 'toggle-switch' + (autopilotState ? ' on' : ''); el.setAttribute('aria-pressed', autopilotState); }
+      if (modeEl) { modeEl.textContent = autopilotState ? 'On' : 'Manual'; modeEl.className = 'autopilot-mode' + (autopilotState ? '' : ' manual'); }
+      if (window.loadTopbarAutopilot) window.loadTopbarAutopilot();
+    }
+  } catch (_) {}
+}
+window.refreshControlPanelAutopilot = loadAutopilotFromBackend;
+async function toggleAutopilot(){
+  const nextState = !autopilotState;
+  const el = document.getElementById('autopilotToggle');
+  const modeEl = document.getElementById('autopilotMode');
+  autopilotState = nextState;
+  if (el) { el.className='toggle-switch'+(autopilotState?' on':''); el.setAttribute('aria-pressed', autopilotState); }
+  if (modeEl) { modeEl.className='autopilot-mode'+(autopilotState?'':' manual'); modeEl.textContent=autopilotState?'On':'Manual'; }
+  try {
+    const r = await fetch(API.governance+'/toggle-autopilot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:autopilotState})});
+    if (r.ok) {
+      if (window.loadTopbarAutopilot) window.loadTopbarAutopilot();
+      addFeed('govFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),'amber',`<strong>Autopilot</strong> switched to <strong>${autopilotState?'ON':'Manual'}</strong>`);
+    } else {
+      await loadAutopilotFromBackend();
+    }
+  } catch (_) {
+    await loadAutopilotFromBackend();
+  }
 }
 
 // ─── PIPELINE ANIMATION ─────────────────────────
@@ -917,13 +1021,23 @@ function openModal(id){document.getElementById('modal-'+id).classList.add('open'
 function closeModal(id){document.getElementById('modal-'+id).classList.remove('open')}
 document.querySelectorAll('.modal-overlay').forEach(o=>{o.addEventListener('click',(e)=>{if(e.target===o)o.classList.remove('open')})});
 
-// ─── API HELPER ─────────────────────────────────
+// ─── API HELPER (sync with backend; relative URLs so same-origin) ─────────────────────────────────
 async function api(url,opts={}){
   try{
     const r=await fetch(url,{headers:{'Content-Type':'application/json'},...opts});
-    if(!r.ok)return null;
+    if(!r.ok){ if(window._controlPanelSyncFail===undefined) window._controlPanelSyncFail=true; return null; }
     return await r.json();
-  }catch(e){return null}
+  }catch(e){ if(window._controlPanelSyncFail===undefined) window._controlPanelSyncFail=true; return null; }
+}
+/** Run once on load: ping backend and show sync status (Backend: OK / Unavailable). */
+async function checkBackendSync(){
+  const el = document.getElementById('backendSyncStatus');
+  if(!el) return;
+  try {
+    const r = await fetch(API.brain + '/autopilot', { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+    if(r.ok){ el.textContent = 'Backend: OK'; el.className = 'backend-sync ok'; }
+    else { el.textContent = 'Backend: Unavailable'; el.className = 'backend-sync off'; }
+  } catch(e) { el.textContent = 'Backend: Unavailable'; el.className = 'backend-sync off'; }
 }
 
 // ─── EXECUTION TOKEN (sessionStorage; for X-Execution-Token on protected routes) ───
@@ -969,7 +1083,7 @@ function loadTabData(tab){
     case 'defi':         loadDefi();break;
     case 'skills':       loadSkills();break;
     case 'packages':     loadPackages();break;
-    case 'governance':    loadGovernance();break;
+    case 'governance':    loadAutopilotFromBackend(); loadGovernance(); loadAwareness(); break;
     case 'execution':    loadExecution();break;
     case 'daenabot-tools': loadDaenaBotTools();break;
     case 'integrations': loadIntegrations();break;
@@ -1436,6 +1550,9 @@ async function runCapabilityHandshake(){
 // ─── INIT (run when DOM ready so Skills table and stats elements exist) ───
 function initControlPanel(){
   connectWS();
+  checkBackendSync();
+  loadAutopilotFromBackend();
+  loadAwareness();
   loadSkills();
   runCapabilityHandshake();
   setInterval(function(){

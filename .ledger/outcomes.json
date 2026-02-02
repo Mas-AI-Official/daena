@@ -51,8 +51,138 @@
         "expert_count": 3,
         "confidence": 0.6666666666666666
       }
+    },
+    "council_operations_7119": {
+      "outcome_id": "council_operations_7119",
+      "decision_type": "council_consult",
+      "category": "operations",
+      "recommendation": "APPROVE",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-01T16:10:19.860102",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "domain": "operations",
+        "decision": "Should we run the demo?",
+        "expert_count": 3,
+        "confidence": 0.6666666666666666
+      }
+    },
+    "0a062a0b-4221-4afc-be50-035750ba2119": {
+      "outcome_id": "0a062a0b-4221-4afc-be50-035750ba2119",
+      "decision_type": "governance",
+      "category": "file_read",
+      "recommendation": "execute_report",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-01T16:13:11.295671",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "low",
+        "agent_id": "test_agent",
+        "description": "Test action for preflight"
+      }
+    },
+    "council_operations_1231": {
+      "outcome_id": "council_operations_1231",
+      "decision_type": "council_consult",
+      "category": "operations",
+      "recommendation": "APPROVE",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-01T16:13:44.876726",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "domain": "operations",
+        "decision": "Should we run the demo?",
+        "expert_count": 3,
+        "confidence": 0.6666666666666666
+      }
+    },
+    "council_operations_5240": {
+      "outcome_id": "council_operations_5240",
+      "decision_type": "council_consult",
+      "category": "operations",
+      "recommendation": "APPROVE",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-01T16:23:18.856949",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "domain": "operations",
+        "decision": "Should we run the demo?",
+        "expert_count": 3,
+        "confidence": 0.95
+      }
+    },
+    "cd201cee-5120-4cf2-9662-0eb4cb52c482": {
+      "outcome_id": "cd201cee-5120-4cf2-9662-0eb4cb52c482",
+      "decision_type": "governance",
+      "category": "file_read",
+      "recommendation": "execute_report",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-01T16:22:44.765872",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "low",
+        "agent_id": "test_agent",
+        "description": "Test action for preflight"
+      }
+    },
+    "5b2a180a-f449-4fda-a786-7319ac4ef08e": {
+      "outcome_id": "5b2a180a-f449-4fda-a786-7319ac4ef08e",
+      "decision_type": "governance",
+      "category": "file_read",
+      "recommendation": "execute_report",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-01T16:26:39.680687",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "low",
+        "agent_id": "test_agent",
+        "description": "Test action for preflight"
+      }
+    },
+    "council_operations_8880": {
+      "outcome_id": "council_operations_8880",
+      "decision_type": "council_consult",
+      "category": "operations",
+      "recommendation": "APPROVE",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-01T16:27:13.956134",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "domain": "operations",
+        "decision": "Should we run the demo?",
+        "expert_count": 3,
+        "confidence": 0.6666666666666666
+      }
     }
   },
   "expert_scores": {},
-  "last_updated": "2026-02-01T14:52:44.449185"
+  "last_updated": "2026-02-01T16:27:13.956134"
 }

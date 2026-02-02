@@ -8,7 +8,7 @@
       "times_flagged": 0,
       "times_blocked": 0,
       "first_seen": "2026-02-01T02:29:02.077062",
-      "last_seen": "2026-02-01T02:34:48.631102",
+      "last_seen": "2026-02-01T16:10:01.797742",
       "metadata": {}
     },
     "949eeee4fccf": {
@@ -19,9 +19,20 @@
       "times_flagged": 0,
       "times_blocked": 0,
       "first_seen": "2026-02-01T02:29:13.500091",
-      "last_seen": "2026-02-01T02:29:13.500091",
+      "last_seen": "2026-02-01T16:09:30.527764",
+      "metadata": {}
+    },
+    "6d3af727a4e7": {
+      "source_id": "6d3af727a4e7",
+      "domain": "https://evil.com",
+      "trust_score": 50.0,
+      "times_verified": 0,
+      "times_flagged": 0,
+      "times_blocked": 0,
+      "first_seen": "2026-02-01T16:10:04.386563",
+      "last_seen": "2026-02-01T16:10:04.386563",
       "metadata": {}
     }
   },
-  "last_updated": "2026-02-01T02:34:48.632100"
+  "last_updated": "2026-02-01T16:10:04.386563"
 }

@@ -391,7 +391,16 @@ def _set_system_config(key: str, value: Any, config_type: str = "json") -> None:
 
 @router.get("/autopilot")
 async def get_autopilot() -> Dict[str, Any]:
-    """Get autopilot enabled state (Daena setting)."""
+    """Get autopilot enabled state. Single source of truth: governance loop (used by chat), then DB."""
+    try:
+        from backend.services.governance_loop import get_governance_loop
+        loop = get_governance_loop()
+        enabled = getattr(loop, "autopilot", None)
+        if enabled is not None:
+            _set_system_config(_AUTOPILOT_KEY, enabled, "boolean")
+            return {"enabled": bool(enabled)}
+    except Exception:
+        pass
     enabled = _get_system_config(_AUTOPILOT_KEY, False)
     if isinstance(enabled, str):
         enabled = enabled.lower() in ("true", "1", "yes")
@@ -400,9 +409,15 @@ async def get_autopilot() -> Dict[str, Any]:
 
 @router.post("/autopilot")
 async def set_autopilot(body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
-    """Set autopilot on/off. Syncs to backend stack."""
+    """Set autopilot on/off. Syncs to governance loop (chat pipeline) and DB."""
     enabled = bool(body.get("enabled", False))
     _set_system_config(_AUTOPILOT_KEY, enabled, "boolean")
+    try:
+        from backend.services.governance_loop import get_governance_loop
+        loop = get_governance_loop()
+        loop.autopilot = enabled
+    except Exception:
+        pass
     return {"success": True, "enabled": enabled}
 
 

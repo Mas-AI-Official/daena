@@ -198,15 +198,21 @@ echo   API Docs:         http://127.0.0.1:%BACKEND_PORT%/docs
 echo.
 echo   Sidebar (VP):
 echo   Dashboard:        http://127.0.0.1:%BACKEND_PORT%/ui/dashboard
-echo   Control Plane:    http://127.0.0.1:%BACKEND_PORT%/ui/control-plane
-echo   Brain ^& API:     http://127.0.0.1:%BACKEND_PORT%/ui/brain-api
+echo   Daena Office:     http://127.0.0.1:%BACKEND_PORT%/ui/daena-office
+echo   Projects:         http://127.0.0.1:%BACKEND_PORT%/ui/projects
+echo   Councils:         http://127.0.0.1:%BACKEND_PORT%/ui/councils
+echo   Workspace:        http://127.0.0.1:%BACKEND_PORT%/ui/workspace
+echo   Analytics:        http://127.0.0.1:%BACKEND_PORT%/ui/analytics
+echo   Agents:           http://127.0.0.1:%BACKEND_PORT%/ui/agents
+echo   Control Panel:    http://127.0.0.1:%BACKEND_PORT%/ui/control-panel
+echo   Brain ^& API:     http://127.0.0.1:%BACKEND_PORT%/ui/brain-settings
 echo   Web3 / DeFi:      http://127.0.0.1:%BACKEND_PORT%/ui/web3
 echo   Founder:         http://127.0.0.1:%BACKEND_PORT%/ui/founder-panel
 echo.
 echo   Other:
 echo   QA Guardian:      http://127.0.0.1:%BACKEND_PORT%/api/v1/qa/ui
 echo   Incident Room:    http://127.0.0.1:%BACKEND_PORT%/ui/incident-room
-echo   Wiring audit:     http://127.0.0.1:%BACKEND_PORT%/ui/wiring-audit
+echo   Wiring audit:     http://127.0.0.1:%BACKEND_PORT%/api/v1/ui/wiring-audit
 echo.
 echo   QA Guardian Status: %QA_GUARDIAN_ENABLED%
 echo   Check the "DAENA - BACKEND" window for server logs.
