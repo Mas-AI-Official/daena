@@ -79,86 +79,90 @@
 {% block content %}
 <div class="flex h-[calc(100vh-7rem)] gap-6">
     <!-- Chat Sessions Sidebar -->
-    <div id="sidebar-panel" class="flex-shrink-0 flex flex-col glass-panel rounded-xl overflow-hidden relative"
-        style="width: 15rem; min-width: 12rem; max-width: 40rem;">
-        <!-- Header -->
-        <div class="p-4 border-b border-white/10 flex items-center justify-between bg-black/20">
-            <h3 class="font-medium text-white">Sessions</h3>
-            <button onclick="createNewSession()" class="text-daena-gold hover:text-white transition-colors">
-                <i class="fas fa-plus"></i>
-            </button>
-        </div>
+    <div id="sidebar-panel" class="flex-shrink-0 glass-panel rounded-xl relative transition-all duration-300 ease-out"
+        style="width: 15rem; max-width: 40rem; display: flex;">
 
-        <!-- Category Filter -->
-        <div class="p-3 border-b border-white/10 bg-black/10">
-            <select id="category-filter"
-                class="w-full border border-white/10 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-daena-gold/50"
-                style="background-color: #1a1a2e;" onchange="filterByCategory()">
-                <option value="all">All Sessions</option>
-                <option value="executive">👑 Executive</option>
-                <option value="departments">🏢 Departments</option>
-                <option value="engineering">⚙️ Engineering</option>
-                <option value="product">📦 Product</option>
-                <option value="sales">💼 Sales</option>
-                <option value="marketing">📢 Marketing</option>
-                <option value="finance">💰 Finance</option>
-                <option value="hr">👥 HR</option>
-                <option value="legal">⚖️ Legal</option>
-                <option value="customer">🎯 Customer</option>
-                <option value="agents">🤖 Agents</option>
-                <option value="general">💬 General</option>
-            </select>
-        </div>
+        <!-- Inner Wrapper for content (clips overflow) -->
+        <div class="flex flex-col h-full w-full overflow-hidden" id="sidebar-content-wrapper">
+            <!-- Header -->
+            <div class="p-4 border-b border-white/10 flex items-center justify-between bg-black/20 flex-shrink-0">
+                <h3 class="font-medium text-white">Sessions</h3>
+                <button onclick="createNewSession()" class="text-daena-gold hover:text-white transition-colors">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
 
-        <!-- Batch Actions Toolbar -->
-        <div id="batch-toolbar" class="hidden px-2 py-2 border-b border-white/10 bg-black/30">
-            <div class="flex items-center justify-between text-xs">
-                <label class="flex items-center gap-2 text-gray-400 cursor-pointer hover:text-white">
-                    <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll()"
-                        class="accent-daena-gold">
-                    <span id="selection-count">0 selected</span>
-                </label>
-                <div class="flex gap-1">
-                    <button onclick="exportSelectedChats()"
-                        class="px-2 py-1 text-gray-400 hover:text-white hover:bg-white/10 rounded"
-                        title="Export Selected">
-                        <i class="fas fa-download"></i>
-                    </button>
-                    <button onclick="deleteSelectedChats()"
-                        class="px-2 py-1 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded"
-                        title="Delete Selected">
-                        <i class="fas fa-trash"></i>
-                    </button>
+            <!-- Category Filter -->
+            <div class="p-3 border-b border-white/10 bg-black/10 flex-shrink-0">
+                <select id="category-filter"
+                    class="w-full border border-white/10 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-daena-gold/50"
+                    style="background-color: #1a1a2e;" onchange="filterByCategory()">
+                    <option value="all">All Sessions</option>
+                    <option value="executive">👑 Executive</option>
+                    <option value="departments">🏢 Departments</option>
+                    <option value="engineering">⚙️ Engineering</option>
+                    <option value="product">📦 Product</option>
+                    <option value="sales">💼 Sales</option>
+                    <option value="marketing">📢 Marketing</option>
+                    <option value="finance">💰 Finance</option>
+                    <option value="hr">👥 HR</option>
+                    <option value="legal">⚖️ Legal</option>
+                    <option value="customer">🎯 Customer</option>
+                    <option value="agents">🤖 Agents</option>
+                    <option value="general">💬 General</option>
+                </select>
+            </div>
+
+            <!-- Batch Actions Toolbar -->
+            <div id="batch-toolbar" class="hidden px-2 py-2 border-b border-white/10 bg-black/30 flex-shrink-0">
+                <div class="flex items-center justify-between text-xs">
+                    <label class="flex items-center gap-2 text-gray-400 cursor-pointer hover:text-white">
+                        <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll()"
+                            class="accent-daena-gold">
+                        <span id="selection-count">0 selected</span>
+                    </label>
+                    <div class="flex gap-1">
+                        <button onclick="exportSelectedChats()"
+                            class="px-2 py-1 text-gray-400 hover:text-white hover:bg-white/10 rounded"
+                            title="Export Selected">
+                            <i class="fas fa-download"></i>
+                        </button>
+                        <button onclick="deleteSelectedChats()"
+                            class="px-2 py-1 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded"
+                            title="Delete Selected">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
                 </div>
+            </div>
+
+            <!-- New Chat Button -->
+            <div class="p-2 border-b border-white/10 flex-shrink-0">
+                <button onclick="createNewSession()" id="new-chat-btn"
+                    class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-daena-gold hover:bg-yellow-500 text-black font-bold rounded-lg transition-colors">
+                    <i class="fas fa-plus"></i> New Chat
+                </button>
+            </div>
+
+            <!-- Sessions List -->
+            <div class="flex-1 overflow-y-auto p-2 space-y-1" id="sessions-list">
+                <div class="text-center py-4 text-gray-500 text-sm">Loading...</div>
+            </div>
+
+            <!-- Toggle Selection Mode Button -->
+            <div class="p-2 border-t border-white/10 flex gap-2 flex-shrink-0">
+                <button onclick="toggleSelectionMode()" id="selection-mode-btn"
+                    class="flex-1 text-xs text-gray-400 hover:text-white hover:bg-white/5 rounded py-1 transition-colors">
+                    <i class="fas fa-check-square mr-1"></i>
+                </button>
+                <button onclick="showDeletedSessions()" id="restore-deleted-btn"
+                    class="flex-1 text-xs text-gray-400 hover:text-green-400 hover:bg-green-500/10 rounded py-1 transition-colors">
+                    <i class="fas fa-trash-restore mr-1"></i>
+                </button>
             </div>
         </div>
 
-        <!-- New Chat Button -->
-        <div class="p-2 border-b border-white/10">
-            <button onclick="createNewSession()" id="new-chat-btn"
-                class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-daena-gold hover:bg-yellow-500 text-black font-bold rounded-lg transition-colors">
-                <i class="fas fa-plus"></i> New Chat
-            </button>
-        </div>
-
-        <!-- Sessions List -->
-        <div class="flex-1 overflow-y-auto p-2 space-y-1" id="sessions-list">
-            <div class="text-center py-4 text-gray-500 text-sm">Loading...</div>
-        </div>
-
-        <!-- Toggle Selection Mode Button -->
-        <div class="p-2 border-t border-white/10 flex gap-2">
-            <button onclick="toggleSelectionMode()" id="selection-mode-btn"
-                class="flex-1 text-xs text-gray-400 hover:text-white hover:bg-white/5 rounded py-1 transition-colors">
-                <i class="fas fa-check-square mr-1"></i>
-            </button>
-            <button onclick="showDeletedSessions()" id="restore-deleted-btn"
-                class="flex-1 text-xs text-gray-400 hover:text-green-400 hover:bg-green-500/10 rounded py-1 transition-colors">
-                <i class="fas fa-trash-restore mr-1"></i>
-            </button>
-        </div>
-
-        <!-- Hover expand toggle button (absolute positioned) -->
+        <!-- Hover expand toggle button (absolute positioned, VISIBLE even if sidebar width is 0 due to overflow:visible on parent) -->
         <button id="sidebar-toggle-btn"
             class="absolute top-1/2 -right-3 transform -translate-y-1/2 w-6 h-12 bg-black/80 border border-white/20 rounded-r-lg flex items-center justify-center cursor-pointer text-gray-400 hover:text-daena-gold transition-colors z-[60]"
             onclick="toggleSidebarState()" title="Toggle Sidebar">
@@ -659,11 +663,12 @@
         const icon = document.getElementById('sidebar-toggle-icon');
         if (!sidebar || !icon) return;
 
-        const isCollapsed = sidebar.style.width === '0px' || sidebar.style.display === 'none';
+        // Check if currently collapsed
+        const isCollapsed = sidebar.style.width === '0px';
 
         if (isCollapsed) {
             // Expand
-            sidebar.style.display = 'flex';
+            // sidebar.style.display = 'flex'; // No longer toggling display property
             requestAnimationFrame(() => {
                 sidebar.style.width = '15rem';
                 icon.classList.remove('fa-chevron-right');
@@ -673,9 +678,9 @@
         } else {
             // Collapse
             sidebar.style.width = '0px';
-            setTimeout(() => {
-                sidebar.style.display = 'none'; // fully hide to remove margin space
-            }, 300); // match transition duration
+            // setTimeout(() => {
+            //     sidebar.style.display = 'none'; 
+            // }, 300); 
             icon.classList.remove('fa-chevron-left');
             icon.classList.add('fa-chevron-right');
             localStorage.setItem('daena_office_sidebar_collapsed', 'true');
@@ -690,7 +695,7 @@
             const icon = document.getElementById('sidebar-toggle-icon');
             if (sidebar) {
                 sidebar.style.width = '0px';
-                sidebar.style.display = 'none';
+                // sidebar.style.display = 'none'; // Don't hide, just zero width
             }
             if (icon) {
                 icon.classList.remove('fa-chevron-left');
