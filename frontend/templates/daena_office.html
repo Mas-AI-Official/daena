@@ -47,7 +47,12 @@
         animation: fadeIn 0.3s ease-out forwards;
     }
 
-    /* Sidebar Resize Handle */
+    /* Sidebar Panel Transition */
+    #sidebar-panel {
+        transition: width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease, opacity 0.3s ease;
+    }
+
+    /* Sticky Sidebar Resizer */
     #sidebar-resize-handle {
         position: absolute;
         top: 0;
@@ -145,13 +150,20 @@
         <div class="p-2 border-t border-white/10 flex gap-2">
             <button onclick="toggleSelectionMode()" id="selection-mode-btn"
                 class="flex-1 text-xs text-gray-400 hover:text-white hover:bg-white/5 rounded py-1 transition-colors">
-                <i class="fas fa-check-square mr-1"></i> Select
+                <i class="fas fa-check-square mr-1"></i>
             </button>
             <button onclick="showDeletedSessions()" id="restore-deleted-btn"
                 class="flex-1 text-xs text-gray-400 hover:text-green-400 hover:bg-green-500/10 rounded py-1 transition-colors">
-                <i class="fas fa-trash-restore mr-1"></i> Restore
+                <i class="fas fa-trash-restore mr-1"></i>
             </button>
         </div>
+
+        <!-- Hover expand toggle button (absolute positioned) -->
+        <button id="sidebar-toggle-btn"
+            class="absolute top-1/2 -right-3 transform -translate-y-1/2 w-6 h-12 bg-black/80 border border-white/20 rounded-r-lg flex items-center justify-center cursor-pointer text-gray-400 hover:text-daena-gold transition-colors z-[60]"
+            onclick="toggleSidebarState()" title="Toggle Sidebar">
+            <i class="fas fa-chevron-left text-xs" id="sidebar-toggle-icon"></i>
+        </button>
 
         <!-- Resize Handle -->
         <div id="sidebar-resize-handle"></div>
@@ -614,7 +626,50 @@
         window.showToast?.(on ? 'Sources visible below messages' : 'Sources hidden', 'info');
     }
 
+    function toggleSidebarState() {
+        const sidebar = document.getElementById('sidebar-panel');
+        const icon = document.getElementById('sidebar-toggle-icon');
+        if (!sidebar || !icon) return;
+
+        const isCollapsed = sidebar.style.width === '0px' || sidebar.style.display === 'none';
+
+        if (isCollapsed) {
+            // Expand
+            sidebar.style.display = 'flex';
+            requestAnimationFrame(() => {
+                sidebar.style.width = '15rem';
+                icon.classList.remove('fa-chevron-right');
+                icon.classList.add('fa-chevron-left');
+                localStorage.setItem('daena_office_sidebar_collapsed', 'false');
+            });
+        } else {
+            // Collapse
+            sidebar.style.width = '0px';
+            setTimeout(() => {
+                sidebar.style.display = 'none'; // fully hide to remove margin space
+            }, 300); // match transition duration
+            icon.classList.remove('fa-chevron-left');
+            icon.classList.add('fa-chevron-right');
+            localStorage.setItem('daena_office_sidebar_collapsed', 'true');
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
+        // Restore sidebar state
+        const savedCollapsed = localStorage.getItem('daena_office_sidebar_collapsed') === 'true';
+        if (savedCollapsed) {
+            const sidebar = document.getElementById('sidebar-panel');
+            const icon = document.getElementById('sidebar-toggle-icon');
+            if (sidebar) {
+                sidebar.style.width = '0px';
+                sidebar.style.display = 'none';
+            }
+            if (icon) {
+                icon.classList.remove('fa-chevron-left');
+                icon.classList.add('fa-chevron-right');
+            }
+        }
+
         applyShowSources(localStorage.getItem('daena_office_show_sources') === 'on');
         await checkBrainStatus();
         showInitialGreeting(); // Replace static "Connecting to secure channel..." message

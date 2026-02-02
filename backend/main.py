@@ -4442,6 +4442,42 @@ async def serve_agents(request: Request):
 async def serve_agent_detail(request: Request, agent_id: str):
     return templates.TemplateResponse("agent_detail.html", {"request": request, "agent_id": agent_id})
 
+# Register Shadow router
+try:
+    from backend.routes import shadow
+    app.include_router(shadow.router)
+    logger.info("✅ Shadow router registered")
+except Exception as e:
+    logger.error(f"Failed to register shadow router: {e}")
+
+# Register Governance router
+try:
+    from backend.routes import governance
+    app.include_router(governance.router)
+    logger.info("✅ Governance router registered")
+except Exception as e:
+    logger.error(f"Failed to register governance router: {e}")
+
+# Register Execution router
+try:
+    from backend.routes import execution_layer
+    app.include_router(execution_layer.router)
+    logger.info("✅ Execution router registered")
+except Exception as e:
+    logger.error(f"Failed to register execution router: {e}")
+
+# ============================================================================
+# UI ROUTE HANDLERS
+# ============================================================================
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+templates = Jinja2Templates(directory="frontend/templates")
+
+@app.get("/ui/daena-office", response_class=HTMLResponse)
+async def serve_daena_office(request: Request):
+    return templates.TemplateResponse("daena_office.html", {"request": request})
+
 @app.get("/ui/brain-settings", response_class=HTMLResponse)
 async def serve_brain_settings(request: Request):
     return templates.TemplateResponse("brain_settings.html", {"request": request})
