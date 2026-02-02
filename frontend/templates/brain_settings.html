@@ -127,18 +127,18 @@
         padding: 16px 20px;
     }
 
-    /* Model Cards */
+    /* Model Cards - compact for 8 Ollama boxes */
     .models-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: 16px;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 10px;
     }
 
     .model-card {
         background: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        padding: 16px;
+        border-radius: 10px;
+        padding: 10px;
         transition: all 0.3s ease;
     }
 
@@ -187,16 +187,16 @@
     }
 
     .model-details {
-        font-size: 12px;
+        font-size: 11px;
         color: #9CA3AF;
-        margin-bottom: 12px;
+        margin-bottom: 6px;
     }
 
     .model-stats {
         display: flex;
-        gap: 16px;
-        margin-bottom: 12px;
-        padding-top: 12px;
+        gap: 10px;
+        margin-bottom: 6px;
+        padding-top: 6px;
         border-top: 1px solid rgba(255, 255, 255, 0.05);
     }
 
@@ -205,13 +205,13 @@
     }
 
     .stat-value {
-        font-size: 16px;
+        font-size: 13px;
         font-weight: 700;
         color: white;
     }
 
     .stat-label {
-        font-size: 10px;
+        font-size: 9px;
         color: #9CA3AF;
     }
 
@@ -409,6 +409,15 @@
         <div class="section-title">Local Models (Ollama)</div>
     </div>
     <div class="section-body">
+        <div class="ollama-search-bar">
+            <input type="text" id="ollama-search-input" placeholder="Search & pull: e.g. llama3.2, deepseek-r1:8b, library/qwen2.5" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();pullBySearch();}"/>
+            <button type="button" class="btn-pull" id="ollama-pull-btn" onclick="pullBySearch()">
+                <i class="fas fa-download"></i> Pull from Ollama
+            </button>
+            <button type="button" class="btn-refresh" onclick="scanModels()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
         <div class="models-grid" id="local-models">
             <!-- Loaded via JS -->
         </div>
@@ -511,11 +520,11 @@
                     <div class="stat-label">Tokens</div>
                 </div>
             </div>
-            <div style="margin-top: 12px; display: flex; gap: 8px;">
-                <button onclick="testModel('${model.name}')" style="flex: 1; padding: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; cursor: pointer; font-size: 11px;">
+            <div style="margin-top: 8px; display: flex; gap: 6px;">
+                <button onclick="testModel('${model.name}')" style="flex: 1; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; cursor: pointer; font-size: 10px;">
                     <i class="fas fa-vial"></i> Test
                 </button>
-                <button onclick="pullModel('${model.name}')" style="flex: 1; padding: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; cursor: pointer; font-size: 11px;">
+                <button onclick="pullModel('${model.name}')" style="flex: 1; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; cursor: pointer; font-size: 10px;">
                     <i class="fas fa-download"></i> Pull
                 </button>
             </div>
@@ -557,6 +566,7 @@
 
     function renderCloudAPIs() {
         const container = document.getElementById('cloud-apis');
+        if (!container) return;
         container.innerHTML = cloudAPIs.map((api, idx) => `
         <div class="api-row">
             <div class="api-icon" style="background: ${api.color}33">
@@ -576,6 +586,33 @@
             </label>
         </div>
     `).join('');
+    }
+
+    function showAddCloudApiModal() {
+        const providerId = window.prompt('Provider ID (e.g. openai, anthropic, my-company):');
+        if (providerId == null || !providerId.trim()) return;
+        const key = window.prompt('API Key (optional – you can Save after adding):');
+        if (key == null) return;
+        addCloudApiAndSave(providerId.trim().toLowerCase().replace(/\s+/g, '-'), key.trim());
+    }
+
+    async function addCloudApiAndSave(providerId, key) {
+        try {
+            const r = await fetch(`/api/v1/brain/cloud/${encodeURIComponent(providerId)}/key`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: key || '' })
+            });
+            const data = await r.json().catch(() => ({}));
+            if (data.success) {
+                if (window.showToast) window.showToast('Cloud API added. Refreshing list.', 'success');
+                await scanModels();
+            } else {
+                if (window.showToast) window.showToast(data.error || 'Failed to add provider', 'error');
+            }
+        } catch (e) {
+            if (window.showToast) window.showToast('Request failed', 'error');
+        }
     }
 
     function renderUsageStats() {
@@ -848,31 +885,43 @@
         if (!confirm(`Download ${name}? This may take several minutes.`)) {
             return;
         }
+        await doPull(name);
+    }
 
+    async function pullBySearch() {
+        const input = document.getElementById('ollama-search-input');
+        const name = (input && input.value) ? input.value.trim() : '';
+        if (!name) {
+            if (window.showToast) window.showToast('Enter a model name (e.g. llama3.2, deepseek-r1:8b)', 'error');
+            return;
+        }
+        const btn = document.getElementById('ollama-pull-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Pulling…'; }
+        try {
+            await doPull(name);
+            if (input) input.value = '';
+            setTimeout(scanModels, 3000);
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-download"></i> Pull from Ollama'; }
+        }
+    }
+
+    async function doPull(modelName) {
         try {
             const response = await fetch('/api/v1/brain/pull', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model_name: name })
+                body: JSON.stringify({ model_name: modelName })
             });
             const data = await response.json();
-
             if (data.success) {
-                if (window.showToast) {
-                    window.showToast(`Started downloading ${name}`, 'success');
-                }
-                // Refresh models after a delay
-                setTimeout(scanModels, 5000);
+                if (window.showToast) window.showToast(`Started pulling ${modelName}. List will refresh in a few seconds.`, 'success');
             } else {
-                if (window.showToast) {
-                    window.showToast(data.error || 'Failed to pull model', 'error');
-                }
+                if (window.showToast) window.showToast(data.error || 'Failed to pull model', 'error');
             }
         } catch (e) {
             console.error('Failed to pull model:', e);
-            if (window.showToast) {
-                window.showToast('Failed to pull model', 'error');
-            }
+            if (window.showToast) window.showToast('Failed to pull model', 'error');
         }
     }
 
@@ -1006,10 +1055,36 @@
         }
     }
 
+    // Real-time token/call count: poll usage every 12s and refresh displayed stats
+    let usageRefreshInterval = null;
+    async function refreshUsageOnly() {
+        try {
+            const r = await fetch('/api/v1/brain/models/usage');
+            if (!r.ok) return;
+            const data = await r.json().catch(() => null);
+            const stats = (data && data.stats) ? data.stats : {};
+            usageStats = stats;
+            localModelsData = localModelsData.map(m => ({
+                ...m,
+                calls: stats[m.name]?.calls ?? m.calls,
+                tokens: stats[m.name]?.tokens ?? m.tokens
+            }));
+            renderLocalModels();
+            renderUsageStats();
+        } catch (_) {}
+    }
+
+    function startUsageRefresh() {
+        if (usageRefreshInterval) clearInterval(usageRefreshInterval);
+        usageRefreshInterval = setInterval(refreshUsageOnly, 12000);
+    }
+
     // Init - load from APIs
     document.addEventListener('DOMContentLoaded', async () => {
+        document.getElementById('add-cloud-api-btn')?.addEventListener('click', showAddCloudApiModal);
         await scanModels(); // Auto-scan on load
         loadAutopilot();
+        startUsageRefresh(); // Sync token/call counts in real time
     });
 </script>
 {% endblock %}
