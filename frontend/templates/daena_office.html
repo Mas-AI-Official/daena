@@ -176,6 +176,13 @@
                     </div>
                 </div>
             </div>
+            <!-- Scroll to latest: shown when user has scrolled up -->
+            <button type="button" id="chat-scroll-to-bottom-btn" onclick="scrollChatToBottom()" title="Go to latest message"
+                class="absolute bottom-4 right-6 z-10 flex items-center gap-2 px-3 py-2 rounded-full bg-daena-gold/90 hover:bg-daena-gold text-black text-sm font-medium shadow-lg transition-opacity"
+                style="opacity: 0; pointer-events: none;">
+                <i class="fas fa-chevron-down"></i>
+                <span>Latest</span>
+            </button>
         </div>
 
         <!-- Input Area -->
@@ -430,6 +437,23 @@
         if (input) input.disabled = streaming;
     }
 
+    function scrollChatToBottom() {
+        const container = document.getElementById('chat-messages');
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+            updateScrollToBottomButton();
+        }
+    }
+
+    function updateScrollToBottomButton() {
+        const container = document.getElementById('chat-messages');
+        const btn = document.getElementById('chat-scroll-to-bottom-btn');
+        if (!container || !btn) return;
+        const atBottom = chatShouldAutoScroll(container);
+        btn.style.opacity = atBottom ? '0' : '1';
+        btn.style.pointerEvents = atBottom ? 'none' : 'auto';
+    }
+
     function setSendMode(mode) {
         sendMode = mode === sendMode ? null : mode;
         const btnSearch = document.getElementById('btn-search-mode');
@@ -530,6 +554,13 @@
                 if (chatForm) chatForm.dispatchEvent(new Event('submit'));
             }
         });
+
+        // Scroll-to-latest button: show when user has scrolled up
+        const chatMessagesEl = document.getElementById('chat-messages');
+        if (chatMessagesEl) {
+            chatMessagesEl.addEventListener('scroll', updateScrollToBottomButton);
+            updateScrollToBottomButton();
+        }
 
         // Add Delete key for session deletion
         document.addEventListener('keydown', (e) => {
@@ -1151,6 +1182,7 @@
             </div>
         `}).join('');
         container.scrollTop = container.scrollHeight;
+        updateScrollToBottomButton();
     }
 
     const chatFormEl = document.getElementById('chat-form');
@@ -1197,7 +1229,10 @@
                 </div>
             </div>
         `);
-        container.scrollTop = container.scrollHeight;
+        chatScrollToBottomIfSticky(container);
+
+        streamAbortController = new AbortController();
+        setStreamingUI(true);
 
         try {
             // Trigger Think → Plan → Execute pipeline (every message runs the pipeline)
@@ -1263,7 +1298,7 @@
                             } else if (data.type === 'status' && data.content) {
                                 if (firstToken) { textEl.innerHTML = ''; firstToken = false; }
                                 textEl.textContent = data.content;
-                                container.scrollTop = container.scrollHeight;
+                                chatScrollToBottomIfSticky(container);
                             } else if (data.type === 'sources' && data.sources && data.sources.length) {
                                 const sourcesEl = document.getElementById(`${responseId}-sources`);
                                 if (sourcesEl) {
