@@ -1488,14 +1488,13 @@
                                     // Create thoughts container if it doesn't exist
                                     const thoughtsContainer = document.createElement('div');
                                     thoughtsContainer.innerHTML = `
-                                        <details id="${responseId}-thoughts" class="mb-4 border-l-2 border-daena-gold/30 pl-4 bg-white/5 rounded-r-lg" open>
-                                            <summary class="text-xs text-daena-gold cursor-pointer select-none hover:text-yellow-400 py-2 pr-2 list-none flex items-center gap-2 outline-none">
-                                               <i class="fas fa-brain animate-pulse"></i>
-                                               <span class="font-medium">Thinking Process</span>
+                                        <details id="${responseId}-thoughts" class="mb-2 border-l border-white/10 pl-3 hover:border-daena-gold/30 transition-colors">
+                                            <summary class="text-[10px] text-gray-500 cursor-pointer select-none hover:text-daena-gold py-1 pr-2 list-none flex items-center gap-2 outline-none group">
+                                               <span class="font-medium uppercase tracking-wider italic thoughts-status">Thinking...</span>
                                                <span class="text-gray-500 text-[10px] ml-auto font-mono" id="${responseId}-timer">0.0s</span>
-                                               <i class="fas fa-chevron-down text-[10px] opacity-50 ml-2 transition-transform duration-200"></i>
+                                               <i class="fas fa-chevron-right text-[8px] opacity-30 group-open:rotate-90 transition-transform"></i>
                                             </summary>
-                                            <div class="text-xs text-gray-400 space-y-1 font-mono pb-2 pr-2 thought-content border-t border-white/5 pt-2 max-h-60 overflow-y-auto custom-scrollbar"></div>
+                                            <div class="text-[11px] text-gray-500 space-y-1 font-mono pb-2 pr-2 thought-content border-t border-white/5 pt-2 max-h-40 overflow-y-auto custom-scrollbar"></div>
                                         </details>
                                         <div id="${responseId}-final-answer" class="whitespace-pre-wrap leading-relaxed animate-fade-in"></div>
                                     `;
@@ -1570,45 +1569,45 @@
 
                             } else if (data.type === 'token' && data.content) {
                                 if (firstToken) {
-                                    // If we haven't rendered anything yet (no thoughts), verify container is empty
                                     if (!document.getElementById(`${responseId}-thoughts`)) {
                                         textEl.innerHTML = '';
                                     }
                                     firstToken = false;
                                 }
 
+                                const thoughtsEl = document.getElementById(`${responseId}-thoughts`);
                                 let finalEl = document.getElementById(`${responseId}-final-answer`);
 
-                                // Handling transition from thoughts to answer
-                                if (document.getElementById(`${responseId}-thoughts`)) {
-                                    const thoughtsEl = document.getElementById(`${responseId}-thoughts`);
-                                    // Stop timer
+                                if (thoughtsEl) {
                                     if (thoughtsEl.dataset.interval) {
                                         clearInterval(thoughtsEl.dataset.interval);
                                         thoughtsEl.dataset.interval = null;
 
-                                        // Update summary to show total time
                                         const timerEl = document.getElementById(`${responseId}-timer`);
+                                        const statusEl = thoughtsEl.querySelector('.thoughts-status');
                                         const duration = ((Date.now() - parseInt(thoughtsEl.dataset.startTime)) / 1000).toFixed(1);
-                                        timerEl.textContent = `Thought for ${duration}s`;
 
-                                        // Collapse by default? Use user preference?
-                                        // User logic: "if i want to see i cna follow her thoughts" - keeping open might be distracting if long.
-                                        // R1 behavior: shows "Thought for Xs", collapsed.
-                                        // I'll leave it expanded for now as the user asked to "follow her thoughts", but I'll make the header look finished.
-                                        thoughtsEl.querySelector('.fa-brain').classList.remove('animate-pulse');
+                                        if (statusEl) {
+                                            statusEl.textContent = `Thought for ${duration}s`;
+                                            statusEl.classList.remove('italic');
+                                        }
+                                        if (timerEl) timerEl.classList.add('hidden');
+                                        const brainIcon = thoughtsEl.querySelector('.thoughts-icon');
+                                        if (brainIcon) brainIcon.classList.remove('animate-pulse');
+
+                                        // Collapse it automatically when answer starts? OpenAI does this.
+                                        // thoughtsEl.open = false; 
                                     }
                                 } else {
-                                    // Standard mode (no thoughts triggered)
-                                    // Ensure textEl is treated as the final container
                                     finalEl = textEl;
                                 }
 
                                 if (finalEl) {
                                     fullText += data.content;
-                                    finalEl.textContent = fullText;
+                                    finalEl.innerHTML = formatMessage(fullText);
                                     scrollChatToBottom();
                                 }
+                                updateScrollToBottomButton();
 
                             } else if (data.type === 'done') {
                                 loadSessions();
@@ -1638,7 +1637,6 @@
             if (firstToken) {
                 textEl.innerHTML = '<i class="fas fa-exclamation-triangle text-yellow-500"></i> No response received';
             }
-
         } catch (e) {
             if (e.name === 'AbortError') {
                 const textEl = document.getElementById(responseId + '-text');
