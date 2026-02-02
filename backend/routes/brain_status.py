@@ -308,7 +308,7 @@ async def list_models() -> Dict[str, Any]:
                                 "path": str(model)
                             })
     
-    # Cloud APIs: merge default list with DB (keys and enabled state)
+    # Cloud APIs: merge default list with DB (keys and enabled state); include custom providers from DB
     default_cloud = [
         {"name": "openai/gpt-4", "provider": "openai", "status": "not_configured", "enabled": False},
         {"name": "google/gemini-pro", "provider": "google", "status": "not_configured", "enabled": False},
@@ -325,6 +325,20 @@ async def list_models() -> Dict[str, Any]:
         entry["enabled"] = bool(cfg.get("enabled", False))
         entry["status"] = "configured" if has_key else "not_configured"
     models["cloud"] = default_cloud
+    # Add custom providers from DB that are not in default list
+    default_providers = {e["provider"] for e in default_cloud}
+    for prov, cfg in cloud_config.items():
+        if prov in default_providers:
+            continue
+        if not isinstance(cfg, dict):
+            continue
+        has_key = bool(cfg.get("key"))
+        models["cloud"].append({
+            "name": f"{prov}/custom",
+            "provider": prov,
+            "status": "configured" if has_key else "not_configured",
+            "enabled": bool(cfg.get("enabled", False)),
+        })
     return models
 
 @router.get("/cloud")
@@ -493,12 +507,12 @@ class CloudToggleBody(BaseModel):
 
 @router.post("/cloud/{provider}/toggle")
 async def set_cloud_api_toggle(provider: str, body: CloudToggleBody = Body(...)) -> Dict[str, Any]:
-    """Enable or disable a cloud provider in the pipeline. Syncs to backend."""
+    """Enable or disable a cloud provider in the pipeline. Syncs to backend. Supports custom provider ids."""
     from backend.database import SessionLocal, SystemConfig
     from datetime import datetime
-    provider = provider.lower()
-    if provider not in ("openai", "google", "anthropic", "xai", "deepseek"):
-        return {"success": False, "error": f"Unknown provider: {provider}"}
+    provider = provider.lower().strip()
+    if not _is_allowed_provider(provider):
+        return {"success": False, "error": "Invalid provider id (use letters, numbers, hyphen only)"}
     db = SessionLocal()
     try:
         data = _get_cloud_apis_config()
