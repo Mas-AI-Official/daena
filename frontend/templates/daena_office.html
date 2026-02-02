@@ -1408,7 +1408,7 @@
                 </div>
             </div>
         `);
-        chatScrollToBottomIfSticky(container);
+        scrollChatToBottom(true);
         updateScrollToBottomButton();
 
         streamAbortController = new AbortController();
@@ -1535,7 +1535,7 @@
                                     contentDiv.scrollTop = contentDiv.scrollHeight;
                                 }
 
-                                updateScrollToBottomButton();
+                                scrollChatToBottom();
 
                             } else if (data.type === 'sources' && data.sources && data.sources.length) {
                                 const sourcesEl = document.getElementById(`${responseId}-sources`);
@@ -1605,14 +1605,10 @@
                                 }
 
                                 if (finalEl) {
-                                    const shouldScroll = chatShouldAutoScroll(container);
                                     fullText += data.content;
                                     finalEl.textContent = fullText;
-                                    if (shouldScroll) {
-                                        container.scrollTop = container.scrollHeight;
-                                    }
+                                    scrollChatToBottom();
                                 }
-                                updateScrollToBottomButton();
 
                             } else if (data.type === 'done') {
                                 loadSessions();
