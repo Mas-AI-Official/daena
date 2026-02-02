@@ -13,36 +13,16 @@ import logging
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
 logger = logging.getLogger(__name__)
 
-from pydantic import BaseModel
-from typing import Optional
-
-class FrontendSettingRequest(BaseModel):
-    key: str
-    value: Any
-    auto_backup: bool = True
-
-class ResetRequest(BaseModel):
-    confirm: bool
-
-class BackupRequest(BaseModel):
-    label: Optional[str] = None
-    description: Optional[str] = None
-
-class RollbackRequest(BaseModel):
-    backup_timestamp: Optional[str] = None
-    backup_path: Optional[str] = None
-    confirm: bool = False
-
 @router.post("/reset-to-default")
 async def reset_to_default(
-    request: ResetRequest,
+    confirm: bool = False,
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
     Reset system to default state
     WARNING: This will clear all user data and reset to initial state
     """
-    if not request.confirm:
+    if not confirm:
         raise HTTPException(
             status_code=400,
             detail="Reset requires confirm=true parameter"
@@ -176,13 +156,14 @@ async def get_system_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
 
 @router.post("/backup")
 async def create_backup(
-    request: BackupRequest,
+    label: str = None,
+    description: str = None,
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """Create a system backup"""
     from backend.services.backup_rollback import backup_service
     
-    result = backup_service.create_backup(label=request.label, description=request.description)
+    result = backup_service.create_backup(label=label, description=description)
     return result
 
 @router.get("/backups")
@@ -199,11 +180,13 @@ async def list_backups(db: Session = Depends(get_db)) -> Dict[str, Any]:
 
 @router.post("/rollback")
 async def rollback_to_backup(
-    request: RollbackRequest,
+    backup_timestamp: str = None,
+    backup_path: str = None,
+    confirm: bool = False,
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """Rollback to a previous backup"""
-    if not request.confirm:
+    if not confirm:
         raise HTTPException(
             status_code=400,
             detail="Rollback requires confirm=true parameter"
@@ -211,7 +194,7 @@ async def rollback_to_backup(
     
     from backend.services.backup_rollback import backup_service
     
-    result = backup_service.rollback(backup_timestamp=request.backup_timestamp, backup_path=request.backup_path)
+    result = backup_service.rollback(backup_timestamp=backup_timestamp, backup_path=backup_path)
     return result
 
 @router.get("/frontend-setting")
@@ -223,13 +206,15 @@ async def get_all_frontend_settings(db: Session = Depends(get_db)) -> Dict[str, 
 
 @router.post("/frontend-setting")
 async def save_frontend_setting(
-    request: FrontendSettingRequest,
+    key: str,
+    value: Any,
+    auto_backup: bool = True,
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """Save a frontend setting to backend"""
     from backend.services.frontend_backend_sync import frontend_backend_sync
     
-    result = frontend_backend_sync.save_frontend_setting(request.key, request.value, auto_backup=request.auto_backup)
+    result = frontend_backend_sync.save_frontend_setting(key, value, auto_backup=auto_backup)
     return result
 
 @router.get("/frontend-setting/{key}")
