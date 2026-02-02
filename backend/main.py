@@ -1777,13 +1777,21 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ CMP Graph API not available: {e}")
 
-# DeFi / Web3 Smart Contract Security API
+# DeFi / Web3 Smart Contract Security API — router already has prefix /api/v1/defi
 try:
     from backend.routes.defi import router as defi_router
-    app.include_router(defi_router, prefix="/api/v1", tags=["defi"])
+    app.include_router(defi_router)
     logger.info("✅ DeFi Security API registered at /api/v1/defi")
 except ImportError as e:
     logger.warning(f"⚠️ DeFi Security API not available: {e}")
+
+# Crypto monitoring API (dashboard for /ui/crypto-monitor) — router already has prefix /api/v1/crypto
+try:
+    from backend.routes.crypto import router as crypto_router
+    app.include_router(crypto_router)
+    logger.info("✅ Crypto API registered at /api/v1/crypto")
+except ImportError as e:
+    logger.warning(f"⚠️ Crypto API not available: {e}")
 
 # Test the events endpoint
 @app.get("/test-events")

@@ -1,4 +1,11 @@
-"""Audit routes for governance and decision tracking."""
+"""Audit routes for governance and decision tracking.
+
+Wiring: No deletion of routes or callers without updating all references.
+- Mounted via safe_import_router("audit") in main.py -> /api/v1/audit.
+- log_audit_entry() is the writer; callers can import from backend.routes.audit.
+- ABAC: get_audit_decisions, stream_audit_decisions, get_audit_stats use abac_check(global, read, admin).
+- get_audit_logs: no ABAC (frontend compatibility).
+"""
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import StreamingResponse
 from typing import List, Optional, Dict, Any
@@ -167,6 +174,39 @@ async def stream_audit_decisions():
             "Access-Control-Allow-Origin": "*"
         }
     )
+
+@router.get("/recent")
+async def get_audit_recent(
+    limit: int = Query(50, ge=1, le=100, description="Number of recent entries")
+) -> Dict[str, Any]:
+    """Get recent audit entries with id (index in log). Id 0 = oldest, id = total-1 = newest."""
+    try:
+        # Newest first; id = index in original list (oldest=0)
+        n = len(audit_logs)
+        start = max(0, n - limit)
+        recent = list(audit_logs)[start:n]
+        items = []
+        for i, log in enumerate(recent):
+            idx = start + i
+            d = log.to_dict()
+            d["id"] = idx
+            items.append(d)
+        items.reverse()
+        return {"success": True, "entries": items, "total": n}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get recent audit: {str(e)}")
+
+
+@router.get("/{entry_id}")
+async def get_audit_by_id(entry_id: int) -> Dict[str, Any]:
+    """Get a single audit entry by id (index in log, 0 = oldest)."""
+    if entry_id < 0 or entry_id >= len(audit_logs):
+        raise HTTPException(status_code=404, detail="Audit entry not found")
+    log = audit_logs[entry_id]
+    d = log.to_dict()
+    d["id"] = entry_id
+    return {"success": True, "entry": d}
+
 
 @router.get("/logs")
 async def get_audit_logs(

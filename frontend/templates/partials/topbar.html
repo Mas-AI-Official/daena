@@ -4,6 +4,12 @@
     </div>
 
     <div class="flex items-center gap-6">
+        <!-- AGI Autopilot (syncs with Brain & API /api/v1/brain/autopilot) -->
+        <div class="autopilot-wrap">
+            <span class="autopilot-label">AGI Autopilot</span>
+            <div class="autopilot-toggle-switch" id="topbarAutopilotToggle" onclick="window.toggleTopbarAutopilot && window.toggleTopbarAutopilot()" role="button" aria-pressed="false" title="Toggle autopilot"></div>
+            <span class="autopilot-mode" id="topbarAutopilotMode">—</span>
+        </div>
         <!-- Status Indicators -->
         <div class="flex items-center gap-4 text-xs font-medium">
             <div

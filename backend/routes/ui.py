@@ -96,6 +96,12 @@ async def ui_web3(request: Request):
     return templates.TemplateResponse("web3_defi.html", _ctx(request))
 
 
+@router.get("/ui/crypto-monitor", response_class=HTMLResponse)
+async def ui_crypto_monitor(request: Request):
+    """Crypto monitoring page: price, status, DeFi tools — separate from Control Panel; synced with /api/v1/crypto."""
+    return templates.TemplateResponse("crypto_monitor.html", _ctx(request))
+
+
 @router.get("/ui/provider-onboarding", response_class=HTMLResponse)
 async def ui_provider_onboarding(request: Request):
     """Provider onboarding wizard (Moltbot-style: Discord, Telegram). Redirects to Control Plane when not embed."""

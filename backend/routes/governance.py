@@ -166,17 +166,18 @@ async def get_governance_stats():
 
 @router.post("/toggle-autopilot")
 async def toggle_autopilot(enabled: bool = Body(..., embed=True)):
-    """Toggle autopilot mode on/off."""
+    """Toggle autopilot mode on/off. Syncs to governance loop (chat) and brain DB (topbar/UI)."""
     try:
         from backend.services.governance_loop import get_governance_loop
-        
         loop = get_governance_loop()
         loop.autopilot = enabled
-        
-        return {
-            "success": True,
-            "autopilot": enabled
-        }
+        # Persist so GET /api/v1/brain/autopilot and topbar stay in sync
+        try:
+            from backend.routes.brain_status import _set_system_config, _AUTOPILOT_KEY
+            _set_system_config(_AUTOPILOT_KEY, enabled, "boolean")
+        except Exception:
+            pass
+        return {"success": True, "autopilot": enabled}
     except Exception as e:
         logger.error(f"Toggle autopilot failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

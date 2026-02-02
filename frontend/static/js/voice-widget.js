@@ -475,8 +475,9 @@ class VoiceWidget {
 
         } catch (e) {
             console.error('Voice processing error:', e);
+            const hint = !navigator.mediaDevices ? 'Microphone not available.' : (e && e.message && e.message.includes('fetch')) ? 'Voice service may be offline.' : '';
             if (window.showToast) {
-                window.showToast('Sorry, I didn\'t catch that.', 'error');
+                window.showToast(hint ? 'Voice failed: ' + hint : 'Voice failed. Check microphone and that the voice service is running.', 'error');
             }
         } finally {
             this.isProcessing = false;

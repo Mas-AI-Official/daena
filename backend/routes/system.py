@@ -226,3 +226,47 @@ async def get_frontend_setting(
         "value": value
     }
 
+
+@router.get("/capabilities")
+async def get_system_capabilities() -> Dict[str, Any]:
+    """Live capabilities: Hands, local LLM, tool catalog, governance, version. For DaenaBot Awareness UI."""
+    try:
+        from backend.core.capabilities import build_capabilities
+        return await build_capabilities()
+    except Exception as e:
+        logger.exception("Capabilities build failed: %s", e)
+        return {
+            "success": False,
+            "error": str(e),
+            "available": {"hands_gateway": False, "local_llm": False, "tool_catalog": True},
+            "health": {},
+        }
+
+
+@router.get("/policies")
+async def get_system_policies() -> Dict[str, Any]:
+    """Governance and tool policy summary: autopilot, auto-approve threshold, blocked commands, risk levels."""
+    try:
+        from backend.services.governance_loop import get_governance_loop
+        from backend.services.tool_broker import ACTION_RISK, requires_approval, _emergency_stop, _automation_mode
+        loop = get_governance_loop()
+        stats = loop.get_stats()
+        return {
+            "success": True,
+            "governance": {
+                "autopilot_enabled": getattr(loop, "autopilot", True),
+                "auto_approve_threshold": "low" if getattr(loop, "autopilot", True) else "none",
+                "pending_count": len(loop.get_pending()),
+                **stats,
+            },
+            "tool_policy": {
+                "risk_levels": ACTION_RISK,
+                "requires_approval_for": [k for k, v in ACTION_RISK.items() if requires_approval(v)],
+                "emergency_stop_active": _emergency_stop(),
+                "automation_mode": _automation_mode(),
+            },
+        }
+    except Exception as e:
+        logger.exception("Policies build failed: %s", e)
+        return {"success": False, "error": str(e)}
+
