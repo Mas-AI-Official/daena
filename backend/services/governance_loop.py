@@ -471,6 +471,18 @@ class GovernanceLoop:
                     break
         return result
     
+    def assess(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Simple assessment for chat/pipeline: action dict with service, description, risk.
+        Returns { risk, autopilot, decision } for use by chat.py and other callers.
+        """
+        risk = (action.get("risk") or "low").lower()
+        if risk in ("high", "critical"):
+            return {"risk": risk, "autopilot": False, "decision": "blocked"}
+        if self.autopilot:
+            return {"risk": risk, "autopilot": True, "decision": "approve"}
+        return {"risk": risk, "autopilot": False, "decision": "pending"}
+    
     def get_stats(self) -> Dict[str, Any]:
         """Get governance statistics."""
         total = len(self._decision_log)

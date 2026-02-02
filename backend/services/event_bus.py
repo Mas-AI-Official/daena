@@ -88,6 +88,21 @@ class EventBus:
         
         logger.debug(f"Published event: {event_type} -> {len(self.connections)} clients")
     
+    async def broadcast(self, event_type: str, data: Dict[str, Any] = None, message: str = ""):
+        """
+        Simple broadcast for Control Plane: sends { type, timestamp, data, message }.
+        Frontend handleWSEvent can route by event_type (e.g. governance_pipeline, skill_created).
+        """
+        payload = dict(data or {})
+        payload["message"] = message or event_type
+        await self.publish(
+            event_type,
+            entity_type="system",
+            entity_id=payload.get("pipeline_id", payload.get("id", event_type)),
+            payload=payload,
+            log_to_db=True
+        )
+    
     async def publish_agent_event(self, event_type: str, agent_id: str, data: Dict):
         """Convenience method for agent events"""
         await self.publish(event_type, "agent", agent_id, data)

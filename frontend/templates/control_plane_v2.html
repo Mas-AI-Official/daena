@@ -1011,60 +1011,71 @@ function switchTab(tab){
   loadTabData(tab);
 }
 
-// ─── WEBSOCKET ──────────────────────────────────
+// ─── WEBSOCKET (persist on window, reconnect with backoff) ──────────────────────────────────
+window.wsReconnectDelay=3000;
+window.wsReconnectMax=60000;
+var ws;
 function connectWS(){
   try{
     const proto=location.protocol==='https:'?'wss:':'ws:';
     ws=new WebSocket(`${proto}//${location.host}/ws/events`);
-    ws.onopen=()=>{setWSStatus(true)};
-    ws.onclose=()=>{setWSStatus(false);setTimeout(connectWS,3000)};
+    window.ws=ws;
+    ws.onopen=()=>{setWSStatus(true);window.wsReconnectDelay=3000};
+    ws.onclose=()=>{
+      setWSStatus(false);
+      const delay=Math.min(window.wsReconnectDelay,window.wsReconnectMax);
+      window.wsReconnectDelay=Math.min(delay*2,window.wsReconnectMax);
+      setTimeout(connectWS,delay);
+    };
     ws.onerror=()=>{};
     ws.onmessage=(e)=>{
       try{handleWSEvent(JSON.parse(e.data))}catch(x){}
     };
-  }catch(e){setTimeout(connectWS,3000)}
+  }catch(e){setTimeout(connectWS,window.wsReconnectDelay||3000)}
 }
 function setWSStatus(on){
   document.getElementById('wsDot').className='ws-dot'+(on?'':' off');
   document.getElementById('wsLabel').textContent=on?'Connected':'Reconnecting…';
 }
 function handleWSEvent(ev){
-  const type=ev.type||'';
+  const type=(ev.event_type||ev.type||'');
+  const payload=ev.payload||ev;
   const t=ev.timestamp?new Date(ev.timestamp):new Date();
   const timeStr=t.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const msg=payload.message||ev.message||type;
 
   if(type.startsWith('agent')||type==='task_created'||type==='task_completed'){
-    addFeed('agentFeed',timeStr,'green',ev.message||`Agent event: ${type}`);
+    addFeed('agentFeed',timeStr,'green',msg);
   }
   if(type.startsWith('council')||type==='debate'||type==='vote'){
-    addFeed('councilFeed',timeStr,'blue',ev.message||`Council: ${type}`);
+    addFeed('councilFeed',timeStr,'blue',msg);
   }
   if(type.startsWith('trust')||type==='integrity'||type==='injection_detected'){
-    addFeed('trustFeed',timeStr,type.includes('block')||type.includes('inject')?'red':'blue',ev.message||`Trust: ${type}`);
+    addFeed('trustFeed',timeStr,type.includes('block')||type.includes('inject')?'red':'blue',msg);
   }
   if(type.startsWith('shadow')||type==='threat'||type==='honeypot'||type==='canary'){
-    addFeed('shadowFeed',timeStr,'purple',ev.message||`Shadow: ${type}`);
+    addFeed('shadowFeed',timeStr,'purple',msg);
   }
   if(type.startsWith('treasury')||type==='token'||type==='nft'){
-    addFeed('treasFeed',timeStr,'amber',ev.message||`Treasury: ${type}`);
+    addFeed('treasFeed',timeStr,'amber',msg);
   }
   if(type.startsWith('package')||type==='audit'){
-    addFeed('pkgFeed',timeStr,'blue',ev.message||`Package: ${type}`);
+    addFeed('pkgFeed',timeStr,'blue',msg);
   }
   if(type.startsWith('skill')||type==='skill_update'){
-    addFeed('brainFeed',timeStr,'green',ev.message||`Skill: ${type}`);
-    loadSkills();
+    addFeed('brainFeed',timeStr,'green',msg);
+    if(typeof loadSkills==='function')loadSkills();
   }
   if(type.startsWith('governance')||type==='approval'||type==='autopilot'){
-    addFeed('govFeed',timeStr,'amber',ev.message||`Gov: ${type}`);
-    // Animate pipeline
-    if(ev.stage){animatePipeline(ev.stage)}
+    addFeed('govFeed',timeStr,'amber',msg);
+    if(payload.stage&&typeof animatePipeline==='function')animatePipeline(payload.stage);
+    if(type==='governance_autopilot_changed'&&typeof loadTabData==='function')loadTabData('governance');
   }
   if(type.startsWith('brain')||type==='memory'||type==='research'||type==='llm'){
-    addFeed('brainFeed',timeStr,'blue',ev.message||`Brain: ${type}`);
+    addFeed('brainFeed',timeStr,'blue',msg);
   }
   if(type.startsWith('defi')||type==='scan'){
-    addFeed('defiFeed',timeStr,'amber',ev.message||`DeFi: ${type}`);
+    addFeed('defiFeed',timeStr,'amber',msg);
   }
 }
 function addFeed(feedId,time,color,html){

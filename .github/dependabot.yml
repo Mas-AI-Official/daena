@@ -1,0 +1,25 @@
+# Dependabot — automated dependency updates
+# https://docs.github.com/en/code-security/dependabot
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    allow:
+      - dependency-type: "all"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-type: "all"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
