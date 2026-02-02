@@ -199,6 +199,11 @@
                     placeholder="Ask Daena anything... (Shift+Enter for new line)" autocomplete="off"
                     style="min-height: 48px; max-height: 200px;"
                     oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px'"></textarea>
+                <button type="button" id="stop-stream-btn" onclick="stopStreaming()" title="Stop generating"
+                    class="hidden bg-red-600 hover:bg-red-700 text-white font-bold px-5 rounded-xl transition-colors flex items-center gap-2">
+                    <i class="fas fa-stop"></i>
+                    <span>Stop</span>
+                </button>
                 <button type="submit" id="send-btn"
                     class="bg-daena-gold hover:bg-yellow-500 text-black font-bold px-6 rounded-xl transition-colors flex items-center gap-2">
                     <span>Send</span>
@@ -396,6 +401,34 @@
     let allSessions = [];
     let currentCategory = 'all';
     let sendMode = null;  // 'search' | 'deep_search' – R1-style search then answer
+    let streamAbortController = null;  // abort streaming when user clicks Stop
+
+    // Only scroll chat to bottom if user is already near bottom (so they can read upper messages while streaming)
+    function chatShouldAutoScroll(container) {
+        if (!container) return false;
+        const threshold = 80;
+        return container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+    }
+    function chatScrollToBottomIfSticky(container) {
+        if (container && chatShouldAutoScroll(container)) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+
+    function stopStreaming() {
+        if (streamAbortController) {
+            streamAbortController.abort();
+        }
+    }
+
+    function setStreamingUI(streaming) {
+        const sendBtn = document.getElementById('send-btn');
+        const stopBtn = document.getElementById('stop-stream-btn');
+        const input = document.getElementById('message-input');
+        if (sendBtn) sendBtn.classList.toggle('hidden', streaming);
+        if (stopBtn) stopBtn.classList.toggle('hidden', !streaming);
+        if (input) input.disabled = streaming;
+    }
 
     function setSendMode(mode) {
         sendMode = mode === sendMode ? null : mode;
@@ -535,7 +568,7 @@
                                 </div>
                             </div>
                         `);
-                        container.scrollTop = container.scrollHeight;
+                        chatScrollToBottomIfSticky(container);
                     }
                 }
                 loadSessions();
@@ -1190,7 +1223,8 @@
             const response = await fetch('/api/v1/daena/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                signal: streamAbortController.signal
             });
             sendMode = null;
             setSendMode(null);
@@ -1266,7 +1300,7 @@
                                 }
                                 fullText += data.content;
                                 textEl.textContent = fullText;
-                                container.scrollTop = container.scrollHeight;
+                                chatScrollToBottomIfSticky(container);
                             } else if (data.type === 'done') {
                                 loadSessions();
                                 if (voiceEnabled && fullText && fullText.trim()) {
@@ -1291,12 +1325,24 @@
                 textEl.innerHTML = '<i class="fas fa-exclamation-triangle text-yellow-500"></i> No response received';
             }
         } catch (e) {
-            console.error('Streaming chat error:', e);
-            const textEl = document.getElementById(`${responseId}-text`);
-            if (textEl) {
-                textEl.innerHTML = '<i class="fas fa-exclamation-triangle text-red-500"></i> Failed to get response';
+            if (e.name === 'AbortError') {
+                const textEl = document.getElementById(responseId + '-text');
+                if (textEl) {
+                    const current = textEl.textContent || '';
+                    textEl.textContent = current + (current ? '\n\n' : '') + '[Stopped]';
+                }
+                window.showToast?.('Stopped', 'info');
+            } else {
+                console.error('Streaming chat error:', e);
+                const textEl = document.getElementById(responseId + '-text');
+                if (textEl) {
+                    textEl.innerHTML = '<i class="fas fa-exclamation-triangle text-red-500"></i> Failed to get response';
+                }
+                window.showToast?.('Failed to send message: ' + e.message, 'error');
             }
-            window.showToast?.('Failed to send message: ' + e.message, 'error');
+        } finally {
+            streamAbortController = null;
+            setStreamingUI(false);
         }
     });
 
