@@ -2969,6 +2969,8 @@
   // ─── SKILLS (full URL so backend stays in sync) ───
   function skillsFetchWithTimeout(url, timeoutMs) {
     var fullUrl = (url.indexOf('http') === 0) ? url : (apiBase() + url);
+    if (fullUrl.indexOf('?') === -1) fullUrl += '?_t=' + Date.now();
+    else fullUrl += '&_t=' + Date.now();
     var ctrl = new AbortController();
     var t = setTimeout(function () { ctrl.abort(); }, timeoutMs || 15000);
     return fetch(fullUrl, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal })
