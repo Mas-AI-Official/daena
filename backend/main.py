@@ -1375,6 +1375,14 @@ try:
     except Exception as e:
         logger.warning(f"⚠️ Execution Layer API not available: {e}")
 
+    # DaenaBot Tools (OpenClaw gateway queue, approve, reject, history)
+    try:
+        from backend.routes.daena_bot_tools import router as daena_bot_tools_router
+        app.include_router(daena_bot_tools_router)
+        logger.info("✅ DaenaBot Tools API registered at /api/v1/tools (explicit)")
+    except Exception as e:
+        logger.warning(f"⚠️ DaenaBot Tools API not available: {e}")
+
     # Founder Panel (Incident Room: lockdown, emergency status, containment)
     try:
         from backend.routes.founder_panel import router as founder_panel_router
@@ -3360,6 +3368,14 @@ async def _run_startup():
         ensure_seeded()
         print("✅ Database seeded with defaults")
         
+        # Sync OLLAMA_MODELS from Brain setting (Offline models location) so brain uses chosen folder
+        try:
+            from backend.routes.brain_status import _sync_ollama_models_env
+            _sync_ollama_models_env()
+            print("✅ OLLAMA_MODELS synced from Brain setting")
+        except Exception as sync_err:
+            print(f"⚠️ Brain models_root sync skipped: {sync_err}")
+        
         # Seed initial councils on startup
         try:
             from backend.routes.council import _ensure_initial_councils
@@ -4123,14 +4139,12 @@ async def serve_agent_detail(request: Request, agent_id: str):
 
 @app.get("/ui/brain-settings", response_class=HTMLResponse)
 async def serve_brain_settings(request: Request):
-    if not request.query_params.get("embed"):
-        return RedirectResponse(url="/ui/control-plane#brain", status_code=302)
     return templates.TemplateResponse("brain_settings.html", {"request": request})
 
 @app.get("/ui/app-setup", response_class=HTMLResponse)
 async def serve_app_setup(request: Request):
     if not request.query_params.get("embed"):
-        return RedirectResponse(url="/ui/control-plane#app-setup", status_code=302)
+        return RedirectResponse(url="/ui/control-panel#app-setup", status_code=302)
     return templates.TemplateResponse("app_setup.html", {"request": request})
 
 @app.get("/ui/mcp-hub", response_class=HTMLResponse)
@@ -4303,14 +4317,12 @@ async def serve_agent_detail(request: Request, agent_id: str):
 
 @app.get("/ui/brain-settings", response_class=HTMLResponse)
 async def serve_brain_settings(request: Request):
-    if not request.query_params.get("embed"):
-        return RedirectResponse(url="/ui/control-plane#brain", status_code=302)
     return templates.TemplateResponse("brain_settings.html", {"request": request})
 
 @app.get("/ui/app-setup", response_class=HTMLResponse)
 async def serve_app_setup(request: Request):
     if not request.query_params.get("embed"):
-        return RedirectResponse(url="/ui/control-plane#app-setup", status_code=302)
+        return RedirectResponse(url="/ui/control-panel#app-setup", status_code=302)
     return templates.TemplateResponse("app_setup.html", {"request": request})
 
 @app.get("/ui/mcp-hub", response_class=HTMLResponse)

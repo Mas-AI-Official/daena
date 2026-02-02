@@ -20,6 +20,15 @@ if env_file.exists():
 if env_azure_openai.exists():
     load_dotenv(env_azure_openai)
 
+
+def env_first(*keys: str, default: Optional[str] = None) -> Optional[str]:
+    """Return the first env var that is set and non-empty. Backward-compat for renames (e.g. OPENCLAW_* -> DAENABOT_HANDS_*)."""
+    for k in keys:
+        v = os.getenv(k)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return default
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         extra="allow", 
@@ -168,6 +177,12 @@ class Settings(BaseSettings):
         default_factory=lambda: ["git ", "python -m ", "pip list", "pip show", "pip --version"],
         validation_alias="SHELL_ALLOWLIST",
     )
+    # DaenaBot "hands" = OpenClaw Gateway (bind 127.0.0.1 only; do not expose to LAN)
+    daenabot_display_name: str = Field(default="DaenaBot", validation_alias="DAENABOT_DISPLAY_NAME")
+    daenabot_hands_url: str = Field(default="ws://127.0.0.1:18789/ws", validation_alias="DAENABOT_HANDS_URL")
+    daenabot_hands_token: Optional[str] = Field(None, validation_alias="DAENABOT_HANDS_TOKEN")
+    daena_tool_automation: str = Field(default="low_only", validation_alias="DAENA_TOOL_AUTOMATION")  # off | low_only | on
+    daena_emergency_stop: bool = Field(default=False, validation_alias="DAENA_EMERGENCY_STOP")
     # XTTS / TTS (use MODELS_ROOT/xtts)
     xtts_enabled: bool = Field(default=True, validation_alias="XTTS_ENABLED")
     xtts_server_url: str = Field(default="http://localhost:8020", validation_alias="XTTS_SERVER_URL")
@@ -198,6 +213,16 @@ class Settings(BaseSettings):
 
     # Global HTTP rate limiting (middleware): enable in production to reduce abuse
     rate_limit_enabled: bool = Field(default=False, validation_alias="RATE_LIMIT_ENABLED")
+
+    @model_validator(mode="after")
+    def inject_daenabot_hands_fallback(self):
+        """Prefer DAENABOT_HANDS_*; fallback to OPENCLAW_GATEWAY_* so old env still works."""
+        url = env_first("DAENABOT_HANDS_URL", "OPENCLAW_GATEWAY_URL", default="ws://127.0.0.1:18789/ws")
+        if url:
+            object.__setattr__(self, "daenabot_hands_url", url)
+        token = env_first("DAENABOT_HANDS_TOKEN", "OPENCLAW_GATEWAY_TOKEN", default=None)
+        object.__setattr__(self, "daenabot_hands_token", token)
+        return self
 
     @field_validator("rate_limit_enabled", "security_lockdown_mode", mode="before")
     @classmethod
