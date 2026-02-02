@@ -1799,6 +1799,22 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ Crypto API not available: {e}")
 
+# Governance API — /api/v1/governance (pending, approve, reject, toggle-autopilot)
+try:
+    from backend.routes.governance import router as governance_router
+    app.include_router(governance_router)
+    logger.info("✅ Governance API registered at /api/v1/governance")
+except ImportError as e:
+    logger.warning(f"⚠️ Governance API not available: {e}")
+
+# Chat pipeline API — /api/v1/chat (Think→Plan→Act→Report with governance)
+try:
+    from backend.routes.chat import router as chat_router
+    app.include_router(chat_router)
+    logger.info("✅ Chat pipeline API registered at /api/v1/chat")
+except ImportError as e:
+    logger.warning(f"⚠️ Chat pipeline API not available: {e}")
+
 # Test the events endpoint
 @app.get("/test-events")
 async def test_events():

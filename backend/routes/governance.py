@@ -30,6 +30,11 @@ class ApprovalRequest(BaseModel):
     notes: str = Field(default="", description="Optional notes")
 
 
+class ApproveRejectBody(BaseModel):
+    approver_id: str = Field(default="founder", description="ID of approver")
+    notes: str = Field(default="", description="Optional notes")
+
+
 @router.post("/evaluate")
 async def evaluate_action(request: ActionEvaluateRequest):
     """Evaluate an action through the governance loop."""
@@ -169,15 +174,63 @@ async def toggle_autopilot(enabled: bool = Body(..., embed=True)):
     """Toggle autopilot mode on/off. Syncs to governance loop (chat) and brain DB (topbar/UI)."""
     try:
         from backend.services.governance_loop import get_governance_loop
+        from backend.services.event_bus import event_bus
         loop = get_governance_loop()
         loop.autopilot = enabled
-        # Persist so GET /api/v1/brain/autopilot and topbar stay in sync
         try:
             from backend.routes.brain_status import _set_system_config, _AUTOPILOT_KEY
             _set_system_config(_AUTOPILOT_KEY, enabled, "boolean")
+        except Exception:
+            pass
+        try:
+            await event_bus.broadcast(
+                "governance_autopilot_changed",
+                {"enabled": enabled},
+                f"Autopilot {'ON' if enabled else 'OFF'}"
+            )
         except Exception:
             pass
         return {"success": True, "autopilot": enabled}
     except Exception as e:
         logger.error(f"Toggle autopilot failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/approve/{decision_id}")
+async def approve_by_id(decision_id: str, body: ApprovalRequest = None):
+    """Approve a pending action by decision_id. Body optional: approver_id, notes."""
+    try:
+        from backend.services.governance_loop import get_governance_loop
+        loop = get_governance_loop()
+        approver_id = (body and body.approver_id) or "founder"
+        notes = (body and body.notes) or ""
+        result = loop.approve(decision_id=decision_id, approver_id=approver_id, notes=notes)
+        if not result:
+            raise HTTPException(status_code=404, detail="Decision not found or not pending")
+        return {"success": True, "decision_id": decision_id, "status": "approved"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Governance approve failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reject/{decision_id}")
+async def reject_by_id(decision_id: str, body: Optional[ApproveRejectBody] = Body(None)):
+    """Reject a pending action by decision_id."""
+    try:
+        from backend.services.governance_loop import get_governance_loop
+        loop = get_governance_loop()
+        approver_id = (body and body.approver_id) or "founder"
+        reason = (body and body.notes) or ""
+        result = loop.reject(decision_id=decision_id, approver_id=approver_id, reason=reason)
+        if not result:
+            raise HTTPException(status_code=404, detail="Decision not found or not pending")
+        return {"success": True, "decision_id": decision_id, "status": "rejected"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Governance reject failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+

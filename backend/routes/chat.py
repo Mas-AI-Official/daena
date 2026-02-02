@@ -37,8 +37,8 @@ class ChatResponse(BaseModel):
 # ── Lazy imports (avoids circular deps at module load) ──
 def _get_event_bus():
     try:
-        from backend.services.event_bus import get_event_bus
-        return get_event_bus()
+        from backend.services.event_bus import event_bus
+        return event_bus
     except Exception:
         return None
 
@@ -68,26 +68,19 @@ def _get_memory():
 
 
 # ── Pipeline Stage Broadcaster ────────────────────────────
-async def _broadcast_stage(event_bus, pipeline_id: str, stage: str, data: dict = None):
+async def _broadcast_stage(bus, pipeline_id: str, stage: str, data: dict = None):
     """Push a pipeline stage event to all WebSocket clients."""
-    if not event_bus:
+    if not bus:
         return
-    event = {
-        "type": "governance_pipeline",
-        "pipeline_id": pipeline_id,
-        "stage": stage,
-        "timestamp": time.time(),
-        "data": data or {},
-        "message": f"Pipeline {pipeline_id}: stage <strong>{stage}</strong>"
-    }
+    payload = dict(data or {})
+    payload["pipeline_id"] = pipeline_id
+    payload["stage"] = stage
+    payload["timestamp"] = time.time()
+    message = f"Pipeline {pipeline_id}: stage {stage}"
     try:
-        await event_bus.publish(event)
+        await bus.broadcast("governance_pipeline", payload, message)
     except Exception:
-        # event_bus might be sync — try sync path
-        try:
-            event_bus.publish(event)
-        except Exception:
-            pass
+        pass
 
 
 # ── Main Chat Endpoint ────────────────────────────────────
