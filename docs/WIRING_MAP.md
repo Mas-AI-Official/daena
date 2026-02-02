@@ -31,7 +31,13 @@
 - `backend/routes/chat.py` — fixed event_bus usage, _broadcast_stage uses broadcast()
 - `backend/routes/governance.py` — toggle broadcasts event; added approve/{id}, reject/{id}
 - `frontend/templates/control_plane_v2.html` — WebSocket reconnect backoff; handleWSEvent uses event_type + payload
-- `backend/main.py` — registered governance_router, chat_router
+- `backend/main.py` — registered governance_router, chat_router, treasury_router
+- `backend/routes/treasury.py` — GET /api/v1/treasury/status
+- `backend/routes/brain_status.py` — GET /api/v1/brain/health
+- `backend/services/llm_service.py` — should_execute_action (governance gate)
+- `docs/TOKENOMICS.md` — $DAENA token design
+- `contracts/DAENA_TOKEN_SPEC.md` — contract spec
+- `frontend/templates/control_plane_v2.html` — loadTreasury() fetches API
 - `.github/dependabot.yml` — new
 - `SECURITY.md` — vulnerability reporting + patch timeline
 - `docs/DAENA_IMPLEMENTATION_PLAN.md` — new

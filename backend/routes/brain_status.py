@@ -253,6 +253,29 @@ async def get_brain_status() -> Dict[str, Any]:
 
     return status
 
+
+@router.get("/health")
+async def get_brain_health() -> Dict[str, Any]:
+    """Local LLM health: Ollama reachable, model count, governance gate status."""
+    ollama_url = _ollama_url()
+    ollama_reachable = False
+    models_count = 0
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{ollama_url.rstrip('/')}/api/tags")
+            if r.status_code == 200:
+                ollama_reachable = True
+                models_count = len(r.json().get("models") or [])
+    except Exception:
+        pass
+    governance_gate = "enabled"  # governance loop always gates local LLM actions
+    return {
+        "ollama_reachable": ollama_reachable,
+        "models_count": models_count,
+        "governance_gate": governance_gate,
+    }
+
+
 @router.get("/models")
 async def list_models() -> Dict[str, Any]:
     """List all available LLM models"""

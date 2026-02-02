@@ -1815,6 +1815,14 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ Chat pipeline API not available: {e}")
 
+# Treasury API — /api/v1/treasury (status for Control Plane Treasury tab)
+try:
+    from backend.routes.treasury import router as treasury_router
+    app.include_router(treasury_router)
+    logger.info("✅ Treasury API registered at /api/v1/treasury")
+except ImportError as e:
+    logger.warning(f"⚠️ Treasury API not available: {e}")
+
 # Test the events endpoint
 @app.get("/test-events")
 async def test_events():

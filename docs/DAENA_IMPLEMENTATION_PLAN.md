@@ -6,14 +6,14 @@ This document tracks the 8 prompts from the DAENA Control Plane Integration Guid
 
 | # | Prompt | Goal | Status | Key Files |
 |---|--------|------|--------|-----------|
-| 1 | Frontend-Backend Sync | WebSocket persistence, event routing, autopilot 3-way sync | In progress | control_plane_v2.html, event_bus.py, websocket.py |
-| 2 | Pipeline Trigger Gaps | Chat→governance→execution wiring | Pending | chat.py, governance_loop.py, skills.py, packages.py |
-| 3 | AGI Autopilot Real-Time | Enforce autopilot, pending actions table | Partial (governance has /pending, /approve) | governance_loop.py, governance.py |
-| 4 | $DAENA Token Design | AGI-native token, contracts, docs | Pending | contracts/, docs/TOKENOMICS.md |
-| 5 | NPM Security Audit | Lock versions, .npmrc, supply-chain | In progress | package.json, .npmrc |
-| 6 | Dependabot Fixes | Merge security branch, dependabot.yml, SECURITY.md | In progress | .github/dependabot.yml, SECURITY.md |
-| 7 | Local LLM + Governance | Ollama + governance gates | Pending | llm_service.py, brain_status.py, config |
-| 8 | Architecture Audit | Wiring map, route audit, security audit | In progress | docs/WIRING_MAP.md, audit_scripts/ |
+| 1 | Frontend-Backend Sync | WebSocket persistence, event routing, autopilot 3-way sync | Done | control_plane_v2.html, event_bus.py, websocket.py |
+| 2 | Pipeline Trigger Gaps | Chat→governance→execution wiring | Done | chat.py, governance_loop.py, skills.py, packages.py |
+| 3 | AGI Autopilot Real-Time | Enforce autopilot, pending actions table | Done | governance_loop.py, governance.py |
+| 4 | $DAENA Token Design | AGI-native token, contracts, docs | Done | contracts/DAENA_TOKEN_SPEC.md, docs/TOKENOMICS.md, treasury.py, Treasury tab |
+| 5 | NPM Security Audit | Lock versions, .npmrc, supply-chain | Done | package.json, .npmrc |
+| 6 | Dependabot Fixes | Merge security branch, dependabot.yml, SECURITY.md | Done | .github/dependabot.yml, SECURITY.md |
+| 7 | Local LLM + Governance | Ollama + governance gates | Done | llm_service.should_execute_action, brain_status /health |
+| 8 | Architecture Audit | Wiring map, route audit, security audit | Done | docs/WIRING_MAP.md |
 
 ## Implementation Order
 
