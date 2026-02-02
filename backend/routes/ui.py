@@ -10,8 +10,9 @@ Required pages:
 - /ui/health
 """
 
+import re
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import logging
@@ -36,10 +37,10 @@ def _ctx(request: Request) -> dict:
     }
 
 
-def _redirect_to_control_plane(request: Request, section: str):
-    """Redirect to Control Plane with section hash when not embedded."""
+def _redirect_to_control_panel(request: Request, section: str):
+    """Redirect to Control Panel with section hash when not embedded."""
     if not request.query_params.get("embed"):
-        return RedirectResponse(url=f"/ui/control-plane#{section}", status_code=302)
+        return RedirectResponse(url=f"/ui/control-panel#{section}", status_code=302)
     return None
 
 
@@ -53,28 +54,52 @@ async def ui_dashboard(request: Request):
     return templates.TemplateResponse("dashboard.html", _ctx(request))
 
 
-@router.get("/ui/control-plane", response_class=HTMLResponse)
-async def ui_control_plane(request: Request):
-    """Unified Control Plane: Skills, Packages, Governance, Council, Trust, Shadow, Treasury, Agents (Brain & Web3 are separate pages)."""
+@router.get("/ui/projects", response_class=HTMLResponse)
+async def ui_projects(request: Request):
+    """Projects page."""
+    return templates.TemplateResponse("projects.html", _ctx(request))
+
+
+@router.get("/ui/councils", response_class=HTMLResponse)
+async def ui_councils(request: Request):
+    """Councils page (plural)."""
+    return templates.TemplateResponse("councils.html", _ctx(request))
+
+
+@router.get("/ui/brain-settings", response_class=HTMLResponse)
+async def ui_brain_settings(request: Request):
+    """Brain & API: model routing, API keys, health, brain settings (original brain_settings.html)."""
+    return templates.TemplateResponse("brain_settings.html", _ctx(request))
+
+
+@router.get("/ui/brain-api", include_in_schema=False)
+async def ui_brain_api_redirect():
+    """Alias: redirect to /ui/brain-settings for compatibility."""
+    return RedirectResponse(url="/ui/brain-settings", status_code=302)
+
+
+@router.get("/ui/control-panel", response_class=HTMLResponse)
+async def ui_control_panel(request: Request):
+    """Unified Control Panel (Moltbot-style): Skills, Packages, Governance, Council, Trust, Shadow, Treasury, Agents."""
     return templates.TemplateResponse("control_plane_v2.html", _ctx(request))
 
 
-@router.get("/ui/brain-api", response_class=HTMLResponse)
-async def ui_brain_api(request: Request):
-    """Brain & API: model routing, API keys status, health, OpenAPI link, brain settings."""
-    return templates.TemplateResponse("brain_api.html", _ctx(request))
+@router.get("/ui/control-plane", include_in_schema=False)
+async def ui_control_plane_redirect():
+    """Legacy: redirect /ui/control-plane to /ui/control-panel."""
+    return RedirectResponse(url="/ui/control-panel", status_code=302)
 
 
 @router.get("/ui/web3", response_class=HTMLResponse)
 async def ui_web3(request: Request):
-    """Web3 / DeFi: contract scanner, risk summary, monitoring, security checklist."""
-    return templates.TemplateResponse("web3.html", _ctx(request))
+    """Web3 / DeFi: contract scanner, risk summary, audit report, monitoring (separate page)."""
+    return templates.TemplateResponse("web3_defi.html", _ctx(request))
 
 
 @router.get("/ui/provider-onboarding", response_class=HTMLResponse)
 async def ui_provider_onboarding(request: Request):
     """Provider onboarding wizard (Moltbot-style: Discord, Telegram). Redirects to Control Plane when not embed."""
-    r = _redirect_to_control_plane(request, "provider")
+    r = _redirect_to_control_panel(request, "provider")
     if r is not None:
         return r
     return templates.TemplateResponse("provider_onboarding.html", _ctx(request))
@@ -264,7 +289,7 @@ async def ui_connections(request: Request):
 
 @router.get("/ui/skills", response_class=HTMLResponse)
 async def ui_skills(request: Request):
-    r = _redirect_to_control_plane(request, "skills")
+    r = _redirect_to_control_panel(request, "skills")
     if r is not None:
         return r
     return templates.TemplateResponse("skills.html", _ctx(request))
@@ -272,7 +297,7 @@ async def ui_skills(request: Request):
 
 @router.get("/ui/execution", response_class=HTMLResponse)
 async def ui_execution(request: Request):
-    r = _redirect_to_control_plane(request, "execution")
+    r = _redirect_to_control_panel(request, "execution")
     if r is not None:
         return r
     return templates.TemplateResponse("execution.html", _ctx(request))
@@ -280,7 +305,7 @@ async def ui_execution(request: Request):
 
 @router.get("/ui/proactive", response_class=HTMLResponse)
 async def ui_proactive(request: Request):
-    r = _redirect_to_control_plane(request, "proactive")
+    r = _redirect_to_control_panel(request, "proactive")
     if r is not None:
         return r
     return templates.TemplateResponse("proactive.html", _ctx(request))
@@ -288,7 +313,7 @@ async def ui_proactive(request: Request):
 
 @router.get("/ui/tasks", response_class=HTMLResponse)
 async def ui_tasks(request: Request):
-    r = _redirect_to_control_plane(request, "tasks")
+    r = _redirect_to_control_panel(request, "tasks")
     if r is not None:
         return r
     return templates.TemplateResponse("tasks.html", _ctx(request))
@@ -296,7 +321,7 @@ async def ui_tasks(request: Request):
 
 @router.get("/ui/runbook", response_class=HTMLResponse)
 async def ui_runbook(request: Request):
-    r = _redirect_to_control_plane(request, "runbook")
+    r = _redirect_to_control_panel(request, "runbook")
     if r is not None:
         return r
     return templates.TemplateResponse("runbook.html", _ctx(request))
@@ -304,7 +329,7 @@ async def ui_runbook(request: Request):
 
 @router.get("/ui/approvals", response_class=HTMLResponse)
 async def ui_approvals(request: Request):
-    r = _redirect_to_control_plane(request, "approvals")
+    r = _redirect_to_control_panel(request, "approvals")
     if r is not None:
         return r
     return templates.TemplateResponse("approvals.html", _ctx(request))
@@ -313,7 +338,7 @@ async def ui_approvals(request: Request):
 @router.get("/ui/tasks-runbook-approvals", response_class=HTMLResponse)
 async def ui_tasks_runbook_approvals(request: Request):
     """Condensed Tasks + Runbook + Approvals (one Control Plane section). Redirect when not embed."""
-    r = _redirect_to_control_plane(request, "tasks-runbook-approvals")
+    r = _redirect_to_control_panel(request, "tasks-runbook-approvals")
     if r is not None:
         return r
     return templates.TemplateResponse("tasks_runbook_approvals.html", _ctx(request))
@@ -337,4 +362,61 @@ async def ui_department_detail(request: Request, dept_id: str):
     context = _ctx(request)
     context["dept_id"] = dept_id
     return templates.TemplateResponse("ui_departments.html", context)
+
+
+# ── Wiring audit API: check every sidebar link has a route and template ──
+@router.get("/api/v1/ui/wiring-audit")
+async def api_wiring_audit(request: Request):
+    """Parse sidebar.html, extract /ui/... links, check routes and templates exist. Returns JSON."""
+    sidebar_path = templates_dir / "partials" / "sidebar.html"
+    href_pattern = re.compile(r'href="(/ui/[^"]+)"')
+    try:
+        raw = sidebar_path.read_text(encoding="utf-8")
+    except Exception as e:
+        return JSONResponse({"error": str(e), "ok": [], "missing_routes": [], "missing_templates": []})
+
+    links = list(dict.fromkeys(href_pattern.findall(raw)))
+    routes_get = set()
+    for r in request.app.routes:
+        if hasattr(r, "path") and hasattr(r, "methods") and "GET" in getattr(r, "methods", set()):
+            if r.path.startswith("/ui") and "{" not in r.path:
+                routes_get.add(r.path)
+            elif r.path.startswith("/ui"):
+                routes_get.add(r.path.split("{")[0].rstrip("/") or r.path.split("{")[0])
+
+    ok = []
+    missing_routes = []
+    for path in links:
+        path_stripped = path.split("?")[0].split("#")[0]
+        if path_stripped in routes_get or any(path_stripped == p or p.startswith(path_stripped + "/") for p in routes_get):
+            ok.append(path)
+        else:
+            missing_routes.append(path)
+
+    templates_dir_path = templates_dir
+    missing_templates = []
+    route_to_template = {
+        "/ui/dashboard": "dashboard.html",
+        "/ui/daena-office": "daena_office.html",
+        "/ui/projects": "projects.html",
+        "/ui/councils": "councils.html",
+        "/ui/workspace": "workspace.html",
+        "/ui/analytics": "analytics.html",
+        "/ui/agents": "agents.html",
+        "/ui/control-panel": "control_plane_v2.html",
+        "/ui/brain-settings": "brain_settings.html",
+        "/ui/web3": "web3_defi.html",
+        "/ui/founder-panel": "founder_panel.html",
+    }
+    for path in ok:
+        path_stripped = path.split("?")[0].split("#")[0]
+        tpl = route_to_template.get(path_stripped)
+        if tpl and not (templates_dir_path / tpl).exists():
+            missing_templates.append({"path": path_stripped, "template": tpl})
+
+    return JSONResponse({
+        "ok": ok,
+        "missing_routes": missing_routes,
+        "missing_templates": [m["template"] for m in missing_templates],
+    })
 

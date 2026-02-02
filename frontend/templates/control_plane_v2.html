@@ -350,6 +350,10 @@ select.input{appearance:none;cursor:pointer}
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12v8H2z"/><path d="M6 8l2 2 4-4"/></svg>
       Execution
     </button>
+    <button class="tab-btn" data-tab="daenabot-tools">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h4v4H2z"/><path d="M10 4h4v4h-4z"/><path d="M2 10h4v2H2z"/><path d="M10 10h4v2h-4z"/></svg>
+      <span id="daenabot-tools-label">DaenaBot Tools</span><span class="tab-badge" id="daenabot-tools-badge" style="display:none">0</span>
+    </button>
     <button class="tab-btn" data-tab="integrations">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4M8 10v4M4 6h8M6 4v8M10 4v8"/></svg>
       Integrations
@@ -514,6 +518,25 @@ select.input{appearance:none;cursor:pointer}
           <div class="section-header"><div class="section-title">Capability Handshake</div></div>
           <div class="scan-box"><p class="text-dim" style="font-size:11px;margin-bottom:8px">On load, Control Panel calls <code>/api/v1/execution/logs</code> and <code>/api/v1/integrations/mcp-servers</code>. Daena is informed of available tools and MCP servers (subject to approval).</p><p id="capabilitySummary" class="text-dim" style="font-size:11px">—</p></div>
         </div>
+      </div>
+    </div>
+
+    <!-- ═══ DAENABOT TOOLS (OpenClaw / Hands) ═══ -->
+    <div class="tab-panel" id="panel-daenabot-tools">
+      <div class="stats-row">
+        <div class="stat-card c-blue"><div class="stat-label">Gateway</div><div class="stat-value c-blue" id="toolsGatewayStatus">—</div><div class="stat-sub" id="toolsGatewaySub">Connection</div></div>
+        <div class="stat-card c-amber"><div class="stat-label">Pending</div><div class="stat-value c-amber" id="toolsPendingCount">0</div><div class="stat-sub">Awaiting approval</div></div>
+        <div class="stat-card c-green"><div class="stat-label">Display name</div><div class="stat-value c-green" id="toolsDisplayName" style="font-size:12px">—</div></div>
+      </div>
+      <div class="section-header"><div class="section-title">Pending tool requests</div><a href="#" onclick="loadDaenaBotTools();return false" class="btn" style="font-size:11px">Refresh</a></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Time</th><th>Requested by</th><th>Risk</th><th>Action</th><th></th></tr></thead>
+        <tbody id="toolsQueueTable"><tr><td colspan="5" class="empty-state">Loading…</td></tbody></table>
+      </div>
+      <div class="section-header" style="margin-top:16px"><div class="section-title">Recent history</div></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Time</th><th>Requested by</th><th>Risk</th><th>Status</th><th>Result</th></tr></thead>
+        <tbody id="toolsHistoryTable"><tr><td colspan="5" class="empty-state">Loading…</td></tbody></table>
       </div>
     </div>
 
@@ -758,6 +781,7 @@ const API = {
   packages:     '/api/v1/packages',
   governance:   '/api/v1/governance',
   execution:    '/api/v1/execution',
+  tools:        '/api/v1/tools',
   integrations: '/api/v1/integrations',
   proactive:    '/api/v1/proactive',
   memory:       '/api/v1/memory',
@@ -947,6 +971,7 @@ function loadTabData(tab){
     case 'packages':     loadPackages();break;
     case 'governance':    loadGovernance();break;
     case 'execution':    loadExecution();break;
+    case 'daenabot-tools': loadDaenaBotTools();break;
     case 'integrations': loadIntegrations();break;
     case 'proactive':    loadProactive();break;
     case 'council':      loadCouncil();break;
@@ -1028,27 +1053,41 @@ function viewDefiReport(id){
 
 // ─── SKILLS (sync: GET /api/v1/skills, GET /stats, POST /toggle) ───
 async function loadSkills(){
-  const stats=await api(API.skills+'/stats');
-  if(stats){
-    document.getElementById('skillTotal').textContent=stats.total||0;
-    document.getElementById('skillActive').textContent=stats.active||0;
-    document.getElementById('skillPending').textContent=stats.pending||0;
-    document.getElementById('skillSelf').textContent=stats.self_created||0;
+  const tableEl = document.getElementById('skillsTable');
+  const setTable = (html) => { if (tableEl) tableEl.innerHTML = html; };
+  try {
+    const stats = await api(API.skills+'/stats');
+    const totalEl = document.getElementById('skillTotal');
+    const activeEl = document.getElementById('skillActive');
+    const pendingEl = document.getElementById('skillPending');
+    const selfEl = document.getElementById('skillSelf');
+    if (totalEl) totalEl.textContent = (stats && stats.total != null) ? stats.total : '—';
+    if (activeEl) activeEl.textContent = (stats && stats.active != null) ? stats.active : '—';
+    if (pendingEl) pendingEl.textContent = (stats && stats.pending != null) ? stats.pending : '—';
+    if (selfEl) selfEl.textContent = (stats && stats.self_created != null) ? stats.self_created : '—';
+
+    const res = await api(API.skills);
+    const skills = (res && res.skills && Array.isArray(res.skills)) ? res.skills : (Array.isArray(res) ? res : []);
+    const list = skillFilter === 'all' ? skills : skills.filter(s => (s.enabled ? 'active' : 'disabled') === skillFilter);
+    setTable(list.map(s => {
+      const status = s.enabled ? 'active' : 'disabled';
+      const creator = (s.creator || 'daena').toString().replace(/"/g, '&quot;');
+      const idSafe = (s.id || '').toString().replace(/'/g, "\\'");
+      const name = (s.name || '').toString().replace(/</g, '&lt;');
+      const idShort = (s.id || '').toString().replace(/</g, '&lt;').slice(0, 36);
+      const risk = (s.risk || '—').toString().replace(/</g, '&lt;');
+      return `<tr>
+        <td><strong>${name}</strong><div style="font-size:10px;color:var(--text-dim)">${idShort}${(s.id && s.id.length > 36) ? '…' : ''}</div></td>
+        <td>${risk}</td>
+        <td><span class="badge badge-${status}">${status}</span></td>
+        <td class="td-mono">${creator}</td>
+        <td>0</td>
+        <td><button class="btn" style="padding:3px 8px;font-size:10px" onclick="toggleSkill('${idSafe}',${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="empty-state">No skills found</td></tr>');
+  } catch (e) {
+    setTable('<tr><td colspan="6" class="empty-state">Error loading skills: ' + (e.message || String(e)).replace(/</g, '&lt;') + '</td></tr>');
   }
-  const res=await api(API.skills);
-  const skills=(res&&res.skills)||[];
-  const list=skillFilter==='all'?skills:skills.filter(s=>(s.enabled?'active':'disabled')===skillFilter);
-  document.getElementById('skillsTable').innerHTML=list.map(s=>{
-    const status=s.enabled?'active':'disabled';
-    return `<tr>
-      <td><strong>${s.name}</strong><div style="font-size:10px;color:var(--text-dim)">${s.id}</div></td>
-      <td>${s.risk||'—'}</td>
-      <td><span class="badge badge-${status}">${status}</span></td>
-      <td class="td-mono">daena</td>
-      <td>0</td>
-      <td><button class="btn" style="padding:3px 8px;font-size:10px" onclick="toggleSkill('${s.id}',${!s.enabled})">${s.enabled?'Disable':'Enable'}</button></td>
-    </tr>`;
-  }).join('')||'<tr><td colspan="6" class="empty-state">No skills found</td></tr>';
 }
 async function toggleSkill(id,enabled){
   await apiExecution(API.skills+'/toggle',{method:'POST',body:JSON.stringify({skill_id:id,enabled})});
@@ -1161,6 +1200,78 @@ async function loadExecution(){
   if(toolsRes&&toolsRes.tools) toolsCount = toolsRes.tools.length;
   const capEl=document.getElementById('capabilitySummary');
   if(capEl) capEl.textContent = toolsCount ? `${logs.length} log entries; ${toolsCount} tools available to Daena (subject to approval).` : logs.length+' log entries. Tools list requires Execution token or localhost bypass.';
+}
+
+// ─── DAENABOT TOOLS (sync: GET /status, /queue, /history; POST /{id}/approve, /{id}/reject) ───
+async function loadDaenaBotTools(){
+  try {
+    const statusRes = await api(API.tools+'/status');
+    const status = statusRes || {};
+    const connected = status.connected === true;
+    const displayName = status.display_name || 'DaenaBot';
+    const el = document.getElementById('toolsGatewayStatus');
+    if(el) { el.textContent = connected ? 'Connected' : 'Disconnected'; el.style.color = connected ? 'var(--green)' : 'var(--text-dim)'; }
+    const sub = document.getElementById('toolsGatewaySub');
+    if(sub) sub.textContent = status.authenticated ? 'Authenticated' : 'Connection';
+    document.getElementById('toolsDisplayName').textContent = displayName;
+    const label = document.getElementById('daenabot-tools-label');
+    if(label) label.textContent = displayName + ' Tools';
+
+    const queueRes = await api(API.tools+'/queue');
+    const pending = (queueRes && queueRes.pending) || [];
+    document.getElementById('toolsPendingCount').textContent = pending.length;
+    const badge = document.getElementById('daenabot-tools-badge');
+    if(badge) { badge.textContent = pending.length; badge.style.display = pending.length ? 'inline' : 'none'; }
+
+    const queueTable = document.getElementById('toolsQueueTable');
+    if(queueTable) {
+      queueTable.innerHTML = pending.length ? pending.map(r=>{
+        const action = r.action_json || {};
+        const actionStr = (action.action_type || action.tool_name || action.type || JSON.stringify(action).slice(0,40)).toString().replace(/</g,'&lt;');
+        const idSafe = (r.id||'').toString().replace(/'/g,"\\'");
+        return `<tr><td class="td-mono">${timeAgo(r.created_at)}</td><td>${(r.requested_by||'—').toString().replace(/</g,'&lt;')}</td><td><span class="badge badge-${(r.risk_level||'medium').toLowerCase()}">${(r.risk_level||'—').toString().replace(/</g,'&lt;')}</span></td><td class="td-mono" style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${actionStr}</td><td><button class="btn" style="padding:3px 8px;font-size:10px;margin-right:4px" onclick="approveToolRequest('${idSafe}')">Approve</button><button class="btn" style="padding:3px 8px;font-size:10px" onclick="rejectToolRequest('${idSafe}')">Reject</button></td></tr>`;
+      }).join('') : '<tr><td colspan="5" class="empty-state">No pending requests</td></tr>';
+    }
+
+    const historyRes = await api(API.tools+'/history');
+    const history = (historyRes && historyRes.history) || [];
+    const historyTable = document.getElementById('toolsHistoryTable');
+    if(historyTable) {
+      historyTable.innerHTML = history.length ? history.slice(0,20).map(r=>{
+        const action = r.action_json || {};
+        const actionStr = (action.action_type || action.tool_name || action.type || '—').toString().replace(/</g,'&lt;');
+        const resultStr = r.result_json ? (r.result_json.success === true ? 'OK' : (r.result_json.error || 'Failed')) : (r.status === 'rejected' ? 'Rejected' : r.status || '—');
+        return `<tr><td class="td-mono">${timeAgo(r.created_at)}</td><td>${(r.requested_by||'—').toString().replace(/</g,'&lt;')}</td><td><span class="badge">${(r.risk_level||'—').toString().replace(/</g,'&lt;')}</span></td><td><span class="badge badge-${(r.status||'').toLowerCase()}">${(r.status||'—').toString().replace(/</g,'&lt;')}</span></td><td class="td-mono">${resultStr.toString().replace(/</g,'&lt;').slice(0,30)}</td></tr>`;
+      }).join('') : '<tr><td colspan="5" class="empty-state">No history</td></tr>';
+    }
+  } catch (e) {
+    const q = document.getElementById('toolsQueueTable');
+    if(q) q.innerHTML = '<tr><td colspan="5" class="empty-state">Error loading: ' + (e.message || String(e)).replace(/</g,'&lt;') + '</td></tr>';
+    const h = document.getElementById('toolsHistoryTable');
+    if(h) h.innerHTML = '<tr><td colspan="5" class="empty-state">Error loading history</td></tr>';
+  }
+}
+async function approveToolRequest(id){
+  if(!id) return;
+  try {
+    await api(API.tools+'/'+encodeURIComponent(id)+'/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ approver:'founder', notes:'' }) });
+    if(window.showToast) window.showToast('Request approved and executed', 'success');
+    loadDaenaBotTools();
+  } catch (e) {
+    if(window.showToast) window.showToast('Approve failed: ' + (e.message || e), 'error');
+    loadDaenaBotTools();
+  }
+}
+async function rejectToolRequest(id){
+  if(!id) return;
+  try {
+    await api(API.tools+'/'+encodeURIComponent(id)+'/reject', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reason:'Founder rejected', rejector:'founder' }) });
+    if(window.showToast) window.showToast('Request rejected', 'info');
+    loadDaenaBotTools();
+  } catch (e) {
+    if(window.showToast) window.showToast('Reject failed: ' + (e.message || e), 'error');
+    loadDaenaBotTools();
+  }
 }
 
 // ─── INTEGRATIONS (sync: GET /, GET /mcp-servers) ───
@@ -1322,14 +1433,17 @@ async function runCapabilityHandshake(){
   }catch(e){}
 }
 
-// ─── INIT ───────────────────────────────────────
-connectWS();
-loadSkills();
-runCapabilityHandshake();
-// Refresh active tab every 30s
-setInterval(()=>{
-  const active=document.querySelector('.tab-btn.active');
-  if(active)loadTabData(active.dataset.tab);
-},30000);
+// ─── INIT (run when DOM ready so Skills table and stats elements exist) ───
+function initControlPanel(){
+  connectWS();
+  loadSkills();
+  runCapabilityHandshake();
+  setInterval(function(){
+    const active=document.querySelector('.tab-btn.active');
+    if(active)loadTabData(active.dataset.tab);
+  },30000);
+}
+if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',initControlPanel); }
+else { initControlPanel(); }
 </script>
 {% endblock %}

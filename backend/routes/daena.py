@@ -417,16 +417,83 @@ async def detect_and_execute_tool(message: str) -> Optional[Dict[str, Any]]:
             except Exception as e:
                 return {"tool": "mcp_client", "error": str(e)}
     
-    # Check for browser patterns (uses regex for typo tolerance)
+    # DaenaBot Hands (OpenClaw gateway): route browser/terminal/screenshot through tool broker for approval queue
+    try:
+        from backend.config.branding import get_daena_bot_display_name
+        _daenabot_name = get_daena_bot_display_name()
+    except Exception:
+        _daenabot_name = "DaenaBot"
     for pattern in TOOL_PATTERNS["browser"]:
         if matches_pattern(message, pattern):
             try:
-                from backend.services.daena_tools.browser_automation import daena_browser
-                result = await daena_browser(message)
-                return {"tool": "browser", "action": "execute", "result": result}
+                from backend.services.tool_broker import async_broker_request
+                action: Dict[str, Any] = {}
+                msg_stripped = message.strip()
+                if "screenshot" in msg_lower:
+                    action = {"action_type": "browser.screenshot"}
+                elif any(p in msg_lower for p in ["go to ", "navigate to ", "open http", "browse to ", "open browser"]):
+                    for prefix in ["go to ", "navigate to ", "open ", "browse to ", "to "]:
+                        if prefix in msg_lower:
+                            idx = msg_lower.find(prefix)
+                            url = msg_stripped[idx + len(prefix):].strip().strip('"\'').split()[0] if idx >= 0 else ""
+                            if url and (url.startswith("http") or "." in url):
+                                if not url.startswith("http"):
+                                    url = "https://" + url
+                                action = {"action_type": "browser.navigate", "url": url[:500]}
+                                break
+                    if not action:
+                        action = {"action_type": "browser.navigate", "url": "https://example.com"}
+                else:
+                    action = {"action_type": "browser.navigate", "url": "https://example.com", "raw_message": msg_stripped[:200]}
+                status, payload = await async_broker_request(action, requested_by="daena")
+                if status == "blocked":
+                    return {"tool": "daenabot_hands", "action": "blocked", "error": payload.get("error", "Blocked")}
+                if status == "approved_and_executed":
+                    return {"tool": "daenabot_hands", "action": action.get("action_type", "execute"), "result": payload}
+                if status == "queued_for_approval":
+                    req_id = (payload or {}).get("request_id")
+                    msg = (payload or {}).get("message", "Queued for approval.")
+                    return {
+                        "tool": "daenabot_hands",
+                        "action": "queued",
+                        "result": {
+                            "success": True,
+                            "queued": True,
+                            "request_id": req_id,
+                            "message": f"{msg} Open Control Panel → {_daenabot_name} Tools to approve.",
+                        },
+                    }
             except Exception as e:
-                return {"tool": "browser", "error": str(e)}
-    
+                return {"tool": "daenabot_hands", "error": str(e)}
+            break
+    # Terminal/run command → DaenaBot Hands (governed); avoid matching "run diagnostics" etc.
+    for pattern in ["run command ", "run terminal ", "execute command ", "run the command "]:
+        if pattern in msg_lower and len(message) > len(pattern) + 2:
+            try:
+                from backend.services.tool_broker import async_broker_request
+                idx = msg_lower.find(pattern)
+                cmd = message[idx + len(pattern):].strip().strip('"\'').split("\n")[0][:1000]
+                if cmd:
+                    action = {"action_type": "terminal.run", "command": cmd}
+                    status, payload = await async_broker_request(action, requested_by="daena")
+                    if status == "blocked":
+                        return {"tool": "daenabot_hands", "action": "blocked", "error": payload.get("error", "Blocked")}
+                    if status == "approved_and_executed":
+                        return {"tool": "daenabot_hands", "action": "terminal.run", "result": payload}
+                    if status == "queued_for_approval":
+                        return {
+                            "tool": "daenabot_hands",
+                            "action": "queued",
+                            "result": {
+                                "success": True,
+                                "queued": True,
+                                "request_id": (payload or {}).get("request_id"),
+                                "message": (payload or {}).get("message", "") + f" Open Control Panel → {_daenabot_name} Tools to approve.",
+                            },
+                        }
+            except Exception as e:
+                return {"tool": "daenabot_hands", "error": str(e)}
+
     # Check for web search patterns (uses regex for flexibility)
     for pattern in TOOL_PATTERNS["web_search"]:
         if matches_pattern(message, pattern):
@@ -655,6 +722,18 @@ def format_tool_result(tool_result: Dict[str, Any]) -> str:
             return f"🖱️ **Desktop:** {err or 'Action failed.'}"
         return f"Tool execution failed: {result.get('error', 'Unknown error')}"
     
+    if tool == "daenabot_hands":
+        try:
+            from backend.config.branding import get_daena_bot_display_name
+            name = get_daena_bot_display_name()
+        except Exception:
+            name = "DaenaBot"
+        if result.get("queued"):
+            return f"✅ **{name} Tools:** {result.get('message', 'Request queued for your approval.')} Open Control Panel → **{name} Tools** to approve or reject."
+        if result.get("success") and not result.get("queued"):
+            return f"✅ **{name}:** Action executed. {result.get('message', 'Done.')}"
+        return result.get("message", f"{name} Tools: see Control Panel for status.")
+
     if tool == "code_scanner":
         if action == "scan":
             content = result.get("content", "")
@@ -966,123 +1045,6 @@ async def get_daena_status():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get Daena status: {str(e)}")
-
-
-@router.post("/emergency-stop")
-async def emergency_stop():
-    """
-    Emergency Stop - Immediately halt all agent operations.
-    
-    This endpoint:
-    1. Terminates all active sub-agents
-    2. Revokes all delegated permissions
-    3. Clears active task queues
-    4. Enters safe mode
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    try:
-        # Try to use the DaenaAgent framework if available
-        try:
-            from backend.services.daena_agent import DaenaAgent
-            # In production, we'd have a singleton instance
-            # For now, just log the action
-            logger.warning("🚨 EMERGENCY STOP INITIATED")
-        except ImportError:
-            pass
-        
-        # Clear any active execution tasks
-        # TODO: Integrate with actual task queues when implemented
-        
-        # Log to audit
-        audit_entry = {
-            "action": "emergency_stop",
-            "timestamp": datetime.now().isoformat(),
-            "reason": "User initiated emergency stop",
-            "status": "completed"
-        }
-        
-        logger.warning(f"🚨 EMERGENCY STOP: {audit_entry}")
-        
-        return {
-            "success": True,
-            "message": "🚨 Emergency stop executed. All operations halted.",
-            "timestamp": datetime.now().isoformat(),
-            "actions_taken": [
-                "All sub-agents terminated",
-                "Delegated permissions revoked",
-                "Active tasks cleared",
-                "System in safe mode"
-            ],
-            "next_steps": [
-                "Review audit logs",
-                "Restart system when ready"
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Emergency stop failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Emergency stop encountered an error: {str(e)}"
-        )
-
-
-@router.get("/capabilities/summary")
-async def get_daena_capabilities_summary():
-    """
-    Get a summary of Daena's current capabilities for UI display.
-    Complements the /api/v1/capabilities endpoint with VP-specific info.
-    """
-    try:
-        from backend.routes.capabilities import get_enabled_tools, get_workspace_scopes
-        
-        tools = get_enabled_tools()
-        workspaces = get_workspace_scopes()
-        
-        enabled_tools = [{"name": t.name, "description": t.description, "requires_approval": t.requires_approval} 
-                        for t in tools if t.enabled]
-        
-        return {
-            "identity": {
-                "name": "Daena",
-                "role": "AI Vice President",
-                "company": "MAS-AI Company",
-                "creator": "Masoud Masoori"
-            },
-            "architecture": {
-                "pattern": "8×6 Sunflower-Honeycomb",
-                "departments": 8,
-                "agents_per_department": 6,
-                "total_agents": 48
-            },
-            "capabilities": {
-                "tools": enabled_tools,
-                "workspaces": [w.path for w in workspaces],
-                "features": [
-                    "Filesystem read/write",
-                    "Command execution (shell_exec)",
-                    "Code manipulation",
-                    "Web search",
-                    "DeFi/Web3 contract scanning",
-                    "Multi-agent orchestration"
-                ]
-            },
-            "permission_levels": [
-                {"level": "MINIMAL", "auto_approved": True, "examples": ["read_files", "web_search"]},
-                {"level": "LOW", "auto_approved": True, "examples": ["write_files", "api_access"]},
-                {"level": "MEDIUM", "auto_approved": False, "examples": ["delete_files", "spawn_agents"]},
-                {"level": "HIGH", "auto_approved": False, "examples": ["system_config", "credentials"]},
-                {"level": "CRITICAL", "auto_approved": False, "examples": ["terminate_agents", "root_access"]}
-            ],
-            "moltbot_compatible": True,
-            "minimax_compatible": True
-        }
-    except Exception as e:
-        return {
-            "identity": {"name": "Daena", "role": "AI Vice President"},
-            "error": str(e)
-        }
 
 @router.post("/chat/start")
 async def start_daena_chat(user_id: Optional[str] = None):
