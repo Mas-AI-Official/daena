@@ -972,6 +972,7 @@ const API = {
   shadow:       '/api/v1/shadow',
   council:      '/api/v1/council',
   brain:        '/api/v1/brain',
+  treasury:     '/api/v1/treasury',
   system:       '/api/v1/system',
   capabilities: '/api/v1/system/capabilities',
   chat:         '/api/v1/daena/chat/stream'
@@ -1970,12 +1971,30 @@ async function loadShadow(){
 
 // ─── TREASURY ───────────────────────────────────
 async function loadTreasury(){
-  // Treasury data (will come from blockchain routes when deployed)
-  document.getElementById('treasDaena').textContent='1,000,000';
-  document.getElementById('treasNFT').textContent='48';
-  document.getElementById('treasETH').textContent='0.0';
-  document.getElementById('treasSpend').textContent='$0';
-  document.getElementById('treasTable').innerHTML='<tr><td colspan="4" class="empty-state">Blockchain not yet deployed — Treasury stats pending</td></tr>';
+  try {
+    const r = await apiRequest(API.treasury + '/status');
+    if (r && r.success) {
+      document.getElementById('treasDaena').textContent = String(r.daena_balance ?? '0');
+      document.getElementById('treasNFT').textContent = String(r.nft_minted ?? 0);
+      document.getElementById('treasETH').textContent = String(r.eth_held ?? '0');
+      document.getElementById('treasSpend').textContent = String(r.monthly_spend ?? '$0');
+      const txs = r.transactions || [];
+      document.getElementById('treasTable').innerHTML = txs.length
+        ? txs.map(t => `<tr><td>${t.type || '—'}</td><td>${t.amount || '—'}</td><td>${t.approved_by || '—'}</td><td>${t.time || '—'}</td></tr>`).join('')
+        : '<tr><td colspan="4" class="empty-state">No transactions yet</td></tr>';
+    } else {
+      _setTreasuryPlaceholder();
+    }
+  } catch (e) {
+    _setTreasuryPlaceholder();
+  }
+}
+function _setTreasuryPlaceholder(){
+  document.getElementById('treasDaena').textContent = '0';
+  document.getElementById('treasNFT').textContent = '0';
+  document.getElementById('treasETH').textContent = '0';
+  document.getElementById('treasSpend').textContent = '$0';
+  document.getElementById('treasTable').innerHTML = '<tr><td colspan="4" class="empty-state">Treasury API unavailable — check backend</td></tr>';
 }
 
 // ─── AGENTS ─────────────────────────────────────

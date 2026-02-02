@@ -39,6 +39,22 @@ from backend.config.settings import settings
 logger = logging.getLogger(__name__)
 
 
+def should_execute_action(action_dict: Dict[str, Any]) -> bool:
+    """
+    Governance gate for local LLM / agent actions.
+    Call before executing tool/action; returns True only if governance approves.
+    action_dict should include at least "risk" (low|medium|high|critical).
+    """
+    try:
+        from backend.services.governance_loop import get_governance_loop
+        loop = get_governance_loop()
+        result = loop.assess(action_dict)
+        return (result.get("decision") or "").lower() == "approve"
+    except Exception as e:
+        logger.warning("Governance assess failed, blocking action: %s", e)
+        return False
+
+
 def get_daena_system_prompt() -> str:
     """
     Build Daena's system prompt with dynamically injected capabilities.
