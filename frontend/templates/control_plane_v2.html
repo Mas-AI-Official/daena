@@ -86,6 +86,31 @@
   transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3);
 }
 .toggle-switch.on::after{left:20px}
+/* Segmented pill (Creator: Founder | Daena | Agent) — dark theme, no white dropdown */
+.segmented-pill{display:inline-flex;gap:0;border-radius:var(--radius);background:var(--surface);border:1px solid var(--border);padding:2px}
+.segmented-pill-btn{
+  padding:6px 14px;font-size:12px;font-weight:500;color:var(--text-dim);
+  background:transparent;border:none;border-radius:calc(var(--radius) - 2px);
+  cursor:pointer;transition:var(--transition)
+}
+.segmented-pill-btn:hover{color:var(--text);background:var(--card)}
+.segmented-pill-btn.active{background:var(--gold);color:#0a0a0a;border-color:var(--gold)}
+/* Category chips (single-select, no native select) */
+.category-chips{display:flex;flex-wrap:wrap;gap:6px}
+.category-chip{
+  padding:6px 12px;font-size:11px;font-weight:500;color:var(--text-dim);
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  cursor:pointer;transition:var(--transition)
+}
+.category-chip:hover{color:var(--text);border-color:var(--gold);background:var(--card)}
+.category-chip.active{background:var(--gold);color:#0a0a0a;border-color:var(--gold)}
+/* Access scope checkboxes */
+.access-scope-row{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+.access-scope-row label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text)}
+.access-scope-row input[type=checkbox]{accent-color:var(--gold)}
+.form-hint{margin-top:2px}
+.tooltip-wrap{position:relative;display:inline-block}
+.tooltip-wrap[data-tooltip]:hover::after{content:attr(data-tooltip);position:absolute;left:0;bottom:100%;margin-bottom:4px;padding:6px 8px;font-size:10px;max-width:240px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);white-space:normal;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.3)}
 .autopilot-mode{font-size:10px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:.5px}
 .autopilot-mode.manual{color:var(--amber)}
 
@@ -406,18 +431,33 @@ select.input{appearance:none;cursor:pointer}
       </div>
       <div class="section-header">
         <div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h10v10H3z"/><path d="M6 6l2 2 4-3"/></svg> Skill Registry</div>
-        <div style="display:flex;gap:6px;align-items:center">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <div class="filter-row" style="margin:0">
             <span class="filter-chip active" data-filter="all" onclick="filterSkills('all',this)">All</span>
             <span class="filter-chip" data-filter="active" onclick="filterSkills('active',this)">Active</span>
             <span class="filter-chip" data-filter="pending" onclick="filterSkills('pending',this)">Pending</span>
           </div>
+          <span class="text-dim" style="font-size:10px;margin:0 4px">Access:</span>
+          <span class="filter-chip" data-access="" onclick="filterSkillsByAccess('',this)">All</span>
+          <span class="filter-chip" data-access="founder" onclick="filterSkillsByAccess('founder',this)">Founder</span>
+          <span class="filter-chip" data-access="daena" onclick="filterSkillsByAccess('daena',this)">Daena</span>
+          <span class="filter-chip" data-access="agent" onclick="filterSkillsByAccess('agent',this)">Agents</span>
+          <span class="text-dim" style="font-size:10px;margin:0 4px">Risk:</span>
+          <span class="filter-chip active" data-risk="" onclick="filterSkillsByRisk('',this)">All</span>
+          <span class="filter-chip" data-risk="low" onclick="filterSkillsByRisk('low',this)">Low</span>
+          <span class="filter-chip" data-risk="medium" onclick="filterSkillsByRisk('medium',this)">Med</span>
+          <span class="filter-chip" data-risk="high" onclick="filterSkillsByRisk('high',this)">High</span>
+          <span class="text-dim" style="font-size:10px;margin:0 4px">Approval:</span>
+          <span class="filter-chip active" data-approval="" onclick="filterSkillsByApproval('',this)">All</span>
+          <span class="filter-chip" data-approval="auto" onclick="filterSkillsByApproval('auto',this)">Auto</span>
+          <span class="filter-chip" data-approval="approval_required" onclick="filterSkillsByApproval('approval_required',this)">Needs approval</span>
+          <span class="filter-chip" data-approval="always_approval" onclick="filterSkillsByApproval('always_approval',this)">Always</span>
           <button class="btn btn-primary" onclick="openModal('skill')">+ New Skill</button>
         </div>
       </div>
       <div class="table-wrap">
-        <table><thead><tr><th>Name</th><th>Category</th><th>Status</th><th>Creator</th><th>Uses</th><th></th></tr></thead>
-        <tbody id="skillsTable"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+        <table><thead><tr><th>Name</th><th>Category</th><th>Access</th><th>Approval</th><th>Risk</th><th>Creator</th><th>Uses</th><th></th></tr></thead>
+        <tbody id="skillsTable"><tr><td colspan="8" class="empty-state">Loading…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -550,6 +590,13 @@ select.input{appearance:none;cursor:pointer}
         <div class="stat-card c-blue"><div class="stat-label">Gateway</div><div class="stat-value c-blue" id="toolsGatewayStatus">—</div><div class="stat-sub" id="toolsGatewaySub">Connection</div></div>
         <div class="stat-card c-amber"><div class="stat-label">Pending</div><div class="stat-value c-amber" id="toolsPendingCount">0</div><div class="stat-sub">Awaiting approval</div></div>
         <div class="stat-card c-green"><div class="stat-label">Display name</div><div class="stat-value c-green" id="toolsDisplayName" style="font-size:12px">—</div></div>
+      </div>
+      <div class="section-header" style="margin-bottom:8px">
+        <div class="section-title">Hands connection</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="pingHandsResult" class="text-dim" style="font-size:11px"></span>
+          <button type="button" class="btn btn-primary" id="pingHandsBtn" onclick="testHandsConnection()">Test Hands Connection</button>
+        </div>
       </div>
       <div class="section-header"><div class="section-title">Pending tool requests</div><a href="#" onclick="loadDaenaBotTools();return false" class="btn" style="font-size:11px">Refresh</a></div>
       <div class="table-wrap">
@@ -734,9 +781,78 @@ select.input{appearance:none;cursor:pointer}
       <div class="form-row"><label class="form-label">Skill Name</label><input class="input" id="newSkillName" placeholder="e.g. web_scraper"/></div>
       <div class="form-row"><label class="form-label">Display Name</label><input class="input" id="newSkillDisplay" placeholder="Web Scraper"/></div>
       <div class="form-row"><label class="form-label">Description</label><input class="input" id="newSkillDesc" placeholder="Scrapes web pages and extracts structured data"/></div>
-      <div class="form-row-inline">
-        <div class="form-row"><label class="form-label">Category</label><select class="input" id="newSkillCat"><option value="utility">Utility</option><option value="research">Research</option><option value="security">Security</option><option value="communication">Communication</option><option value="data">Data</option></select></div>
-        <div class="form-row"><label class="form-label">Creator</label><select class="input" id="newSkillCreator"><option value="founder">Founder</option><option value="daena">Daena</option><option value="agent">Agent</option></select></div>
+      <div class="form-row">
+        <label class="form-label">Category</label>
+        <div class="category-chips" role="group" aria-label="Category">
+          <button type="button" class="category-chip active" data-cat="utility" id="skillCatUtility" onclick="setSkillCategory('utility')" tabindex="0">Utility</button>
+          <button type="button" class="category-chip" data-cat="research" onclick="setSkillCategory('research')">Research</button>
+          <button type="button" class="category-chip" data-cat="security" onclick="setSkillCategory('security')">Security</button>
+          <button type="button" class="category-chip" data-cat="communication" onclick="setSkillCategory('communication')">Communication</button>
+          <button type="button" class="category-chip" data-cat="data" onclick="setSkillCategory('data')">Data</button>
+          <button type="button" class="category-chip" data-cat="devops" onclick="setSkillCategory('devops')">DevOps</button>
+          <button type="button" class="category-chip" data-cat="web3" onclick="setSkillCategory('web3')">Web3/DeFi</button>
+          <button type="button" class="category-chip" data-cat="admin" onclick="setSkillCategory('admin')">Admin</button>
+        </div>
+        <input type="hidden" id="newSkillCat" value="utility"/>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Creator</label>
+        <p class="form-hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px">Who authored this skill definition (not who can run it).</p>
+        <div class="segmented-pill" role="group" aria-label="Creator">
+          <button type="button" class="segmented-pill-btn active" data-creator="founder" id="skillCreatorFounder" onclick="setSkillCreator('founder')">Founder</button>
+          <button type="button" class="segmented-pill-btn" data-creator="daena" id="skillCreatorDaena" onclick="setSkillCreator('daena')">Daena</button>
+          <button type="button" class="segmented-pill-btn" data-creator="agent" id="skillCreatorAgent" onclick="setSkillCreator('agent')">Agent</button>
+        </div>
+        <input type="hidden" name="creator" id="newSkillCreator" value="founder"/>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Access Scope (who can run this skill)</label>
+        <div class="access-scope-row">
+          <label><input type="checkbox" id="accessFounder" checked/> Founder</label>
+          <label><input type="checkbox" id="accessDaena" checked/> Daena (VP)</label>
+          <label><input type="checkbox" id="accessDeptAgents"/> Department Agents</label>
+          <label><input type="checkbox" id="accessSpecificDepts"/> Specific Departments</label>
+          <label><input type="checkbox" id="accessSpecificAgents"/> Specific Agents</label>
+        </div>
+        <div style="margin-top:8px;display:none" id="accessSpecificDeptsRow">
+          <input class="input" id="accessDeptsList" placeholder="e.g. Finance, Ops, Research" style="max-width:280px;font-size:11px"/>
+        </div>
+        <div style="margin-top:8px;display:none" id="accessSpecificAgentsRow">
+          <input class="input" id="accessAgentsList" placeholder="e.g. agent_1, agent_2" style="max-width:280px;font-size:11px"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Execution Policy</label>
+        <p class="form-hint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px">Governance: low=auto, medium=approval (or auto in Unleashed), high=always approval. Red-zone always requires founder confirm.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center">
+          <span style="font-size:11px;color:var(--text-dim)">Risk</span>
+          <div class="segmented-pill" role="group" aria-label="Risk level">
+            <button type="button" class="segmented-pill-btn active" id="riskLow" onclick="setSkillRisk('low')">Low</button>
+            <button type="button" class="segmented-pill-btn" id="riskMed" onclick="setSkillRisk('medium')">Medium</button>
+            <button type="button" class="segmented-pill-btn" id="riskHigh" onclick="setSkillRisk('high')">High</button>
+          </div>
+          <span style="font-size:11px;color:var(--text-dim);margin-left:8px">Approval</span>
+          <div class="segmented-pill" role="group" aria-label="Approval policy">
+            <button type="button" class="segmented-pill-btn active" id="approvalAuto" onclick="setSkillApproval('auto')">Auto</button>
+            <button type="button" class="segmented-pill-btn" id="approvalRequired" onclick="setSkillApproval('approval_required')">Needs approval</button>
+            <button type="button" class="segmented-pill-btn" id="approvalAlways" onclick="setSkillApproval('always_approval')">Always approval</button>
+          </div>
+        </div>
+        <div class="form-row-inline" style="align-items:center;gap:8px;margin-top:10px">
+          <div class="tooltip-wrap" data-tooltip="Credentials entry / money movement / destructive commands always require founder confirm.">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+              <input type="checkbox" id="requiresStepUpConfirm" checked/>
+              Red-zone: require step-up confirm
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Enabled</label>
+        <div class="form-row-inline" style="align-items:center;gap:12px">
+          <div class="toggle-switch on" id="newSkillEnabledToggle" onclick="toggleNewSkillEnabled()" role="button" aria-pressed="true" title="Skill enabled when created"></div>
+          <span class="text-dim" style="font-size:12px" id="newSkillEnabledLabel">On (skill can be used after creation)</span>
+        </div>
       </div>
       <div class="form-row"><label class="form-label">Code Body</label><textarea class="input" id="newSkillCode" placeholder="def execute(input_data):\n    # skill implementation\n    pass"></textarea></div>
     </div>
@@ -805,6 +921,7 @@ const API = {
   governance:   '/api/v1/governance',
   execution:    '/api/v1/execution',
   tools:        '/api/v1/tools',
+  hands:        '/api/v1/hands',
   integrations: '/api/v1/integrations',
   proactive:    '/api/v1/proactive',
   memory:       '/api/v1/memory',
@@ -823,6 +940,9 @@ let ws = null;
 let autopilotState = true;
 let currentApproveId = null;
 let skillFilter = 'all';
+let skillAccessFilter = '';
+let skillRiskFilter = '';
+let skillApprovalFilter = '';
 
 // ─── CLOCK ──────────────────────────────────────
 setInterval(()=>{
@@ -918,7 +1038,7 @@ function addFeed(feedId,time,color,html){
 // ─── DAENABOT AWARENESS (GET /api/v1/system/capabilities) ───────────────────────────
 async function loadAwareness(){
   try {
-    const r = await api(API.capabilities);
+    const r = await apiRequest(API.capabilities);
     if (!r || r.error) return;
     const avail = r.available || {};
     const health = r.health || {};
@@ -972,7 +1092,7 @@ async function loadAwareness(){
 // ─── AUTOPILOT TOGGLE (synced: brain/autopilot + governance/toggle-autopilot) ───────────────────────────
 async function loadAutopilotFromBackend(){
   try {
-    const r = await api('/api/v1/brain/autopilot');
+    const r = await apiRequest('/api/v1/brain/autopilot');
     if (r && typeof r.enabled === 'boolean') {
       autopilotState = r.enabled;
       const el = document.getElementById('autopilotToggle');
@@ -1021,8 +1141,8 @@ function openModal(id){document.getElementById('modal-'+id).classList.add('open'
 function closeModal(id){document.getElementById('modal-'+id).classList.remove('open')}
 document.querySelectorAll('.modal-overlay').forEach(o=>{o.addEventListener('click',(e)=>{if(e.target===o)o.classList.remove('open')})});
 
-// ─── API HELPER (sync with backend; relative URLs so same-origin) ─────────────────────────────────
-async function api(url,opts={}){
+// ─── API HELPER (sync with backend; relative URLs so same-origin). Use apiRequest — window.api is DaenaAPI instance. ───
+async function apiRequest(url,opts={}){
   try{
     const r=await fetch(url,{headers:{'Content-Type':'application/json'},...opts});
     if(!r.ok){ if(window._controlPanelSyncFail===undefined) window._controlPanelSyncFail=true; return null; }
@@ -1057,7 +1177,7 @@ async function apiExecution(url,opts={}){
   }catch(e){ return null; }
 }
 async function loadExecutionAuthStatus(){
-  const res = await api(API.execution+'/auth-status');
+  const res = await apiRequest(API.execution+'/auth-status');
   const msgEl = document.getElementById('executionAuthMessage');
   const badgeEl = document.getElementById('executionAuthBadge');
   const rowEl = document.getElementById('executionTokenRow');
@@ -1098,7 +1218,7 @@ function loadTabData(tab){
 
 // ─── BRAIN ──────────────────────────────────────
 async function loadBrain(){
-  const mem=await api(API.memory+'/stats');
+  const mem=await apiRequest(API.memory+'/stats');
   if(mem){
     const l1=mem.l1||0,l2=mem.l2||0,l3=mem.l3||0;
     document.getElementById('brainL1').textContent=l1;
@@ -1108,11 +1228,11 @@ async function loadBrain(){
     document.getElementById('tierL2Val').textContent=l2;
     document.getElementById('tierL3Val').textContent=l3;
   }
-  const res=await api(API.research+'/history');
+  const res=await apiRequest(API.research+'/history');
   if(res&&res.length){
     document.getElementById('brainQueries').textContent=res.filter(r=>{const d=new Date(r.created_at||0);return(Date.now()-d)<86400000}).length;
   }
-  const sources=await api(API.research+'/sources');
+  const sources=await apiRequest(API.research+'/sources');
   if(sources){
     document.getElementById('researchSources').innerHTML=sources.map(s=>`<tr>
       <td class="td-mono">${s.name||''}</td>
@@ -1125,7 +1245,7 @@ async function loadBrain(){
 
 // ─── DEFI ───────────────────────────────────────
 async function loadDefi(){
-  const tools=await api(API.defi+'/tools');
+  const tools=await apiRequest(API.defi+'/tools');
   if(tools){
     document.getElementById('defiTools').innerHTML=tools.map(t=>`<tr>
       <td class="td-mono">${t.name}</td>
@@ -1138,14 +1258,14 @@ async function startDefiScan(){
   const val=document.getElementById('defiInput').value.trim();
   if(!val)return;
   addFeed('defiFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),'amber',`<strong>Scanning</strong> ${val}…`);
-  const r=await api(API.defi+'/scan',{method:'POST',body:JSON.stringify({contract_path:val})});
+  const r=await apiRequest(API.defi+'/scan',{method:'POST',body:JSON.stringify({contract_path:val})});
   if(r){
     addFeed('defiFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),'green',`<strong>Scan started</strong> ID: ${r.scan_id||'—'}`);
     loadDefiResults();
   }
 }
 async function loadDefiResults(){
-  const results=await api(API.defi+'/results');
+  const results=await apiRequest(API.defi+'/results');
   if(results&&results.length){
     document.getElementById('defiScans').textContent=results.length;
     const vulns=results.reduce((a,r)=>a+(r.vulnerabilities||0),0);
@@ -1162,7 +1282,7 @@ async function loadDefiResults(){
   }
 }
 function viewDefiReport(id){
-  api(API.defi+'/report/'+id).then(r=>{if(r){document.getElementById('approveTitle').textContent='DeFi Scan Report';document.getElementById('approveDetails').textContent=JSON.stringify(r,null,2);document.getElementById('approveNotes').value='';openModal('approve')}});
+  apiRequest(API.defi+'/report/'+id).then(r=>{if(r){document.getElementById('approveTitle').textContent='DeFi Scan Report';document.getElementById('approveDetails').textContent=JSON.stringify(r,null,2);document.getElementById('approveNotes').value='';openModal('approve')}});
 }
 
 // ─── SKILLS (sync: GET /api/v1/skills, GET /stats, POST /toggle) ───
@@ -1170,7 +1290,7 @@ async function loadSkills(){
   const tableEl = document.getElementById('skillsTable');
   const setTable = (html) => { if (tableEl) tableEl.innerHTML = html; };
   try {
-    const stats = await api(API.skills+'/stats');
+    const stats = await apiRequest(API.skills+'/stats');
     const totalEl = document.getElementById('skillTotal');
     const activeEl = document.getElementById('skillActive');
     const pendingEl = document.getElementById('skillPending');
@@ -1180,27 +1300,42 @@ async function loadSkills(){
     if (pendingEl) pendingEl.textContent = (stats && stats.pending != null) ? stats.pending : '—';
     if (selfEl) selfEl.textContent = (stats && stats.self_created != null) ? stats.self_created : '—';
 
-    const res = await api(API.skills);
+    const res = await apiRequest(API.skills);
     const skills = (res && res.skills && Array.isArray(res.skills)) ? res.skills : (Array.isArray(res) ? res : []);
-    const list = skillFilter === 'all' ? skills : skills.filter(s => (s.enabled ? 'active' : 'disabled') === skillFilter);
+    let list = skillFilter === 'all' ? skills : skills.filter(s => (s.enabled ? 'active' : 'disabled') === skillFilter);
+    if (skillAccessFilter) list = list.filter(s => (s.access && s.access.allowed_roles && s.access.allowed_roles.includes(skillAccessFilter)));
+    if (skillRiskFilter) list = list.filter(s => (s.risk || '').toLowerCase() === skillRiskFilter);
+    if (skillApprovalFilter) list = list.filter(s => (s.approval_policy || 'auto') === skillApprovalFilter);
+    const accessBadges = (s) => {
+      const a = s.access || {};
+      const roles = (a.allowed_roles || []).map(r => `<span class="badge badge-active" style="font-size:9px;margin:1px">${r}</span>`).join('');
+      const depts = (a.allowed_departments || []).map(d => `<span class="badge badge-pending" style="font-size:9px;margin:1px">${(d+'').replace(/</g,'&lt;')}</span>`).join('');
+      return (roles || depts) ? (roles + depts) : '—';
+    };
+    const approvalLabel = (p) => { const v = (p || 'auto'); return v === 'always_approval' ? 'Always' : v === 'approval_required' ? 'Needs approval' : 'Auto'; };
     setTable(list.map(s => {
       const status = s.enabled ? 'active' : 'disabled';
-      const creator = (s.creator || 'daena').toString().replace(/"/g, '&quot;');
+      const creator = (s.creator || '—').toString().replace(/</g, '&lt;');
       const idSafe = (s.id || '').toString().replace(/'/g, "\\'");
       const name = (s.name || '').toString().replace(/</g, '&lt;');
-      const idShort = (s.id || '').toString().replace(/</g, '&lt;').slice(0, 36);
-      const risk = (s.risk || '—').toString().replace(/</g, '&lt;');
+      const idShort = (s.id || '').toString().replace(/</g, '&lt;').slice(0, 24);
+      const risk = (s.risk || '—').toString().replace(/</g, '&lt;').toLowerCase();
+      const cat = (s.category || '—').toString().replace(/</g, '&lt;');
+      const approval = approvalLabel(s.approval_policy);
+      const uses = (s.usage_count != null) ? s.usage_count : 0;
       return `<tr>
-        <td><strong>${name}</strong><div style="font-size:10px;color:var(--text-dim)">${idShort}${(s.id && s.id.length > 36) ? '…' : ''}</div></td>
-        <td>${risk}</td>
-        <td><span class="badge badge-${status}">${status}</span></td>
+        <td><strong>${name}</strong><div style="font-size:10px;color:var(--text-dim)">${idShort}${(s.id && s.id.length > 24) ? '…' : ''}</div></td>
+        <td><span class="badge badge-pending" style="font-size:10px">${cat}</span></td>
+        <td style="font-size:10px">${accessBadges(s)}</td>
+        <td><span class="badge badge-${risk==='high'?'pending':risk==='medium'?'pending':'active'}" style="font-size:10px">${approval}</span></td>
+        <td><span class="badge badge-${risk==='high'?'high':risk==='medium'?'medium':'low'}" style="font-size:10px">${risk}</span></td>
         <td class="td-mono">${creator}</td>
-        <td>0</td>
+        <td>${uses}</td>
         <td><button class="btn" style="padding:3px 8px;font-size:10px" onclick="toggleSkill('${idSafe}',${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button></td>
       </tr>`;
-    }).join('') || '<tr><td colspan="6" class="empty-state">No skills found</td></tr>');
+    }).join('') || '<tr><td colspan="8" class="empty-state">No skills found</td></tr>');
   } catch (e) {
-    setTable('<tr><td colspan="6" class="empty-state">Error loading skills: ' + (e.message || String(e)).replace(/</g, '&lt;') + '</td></tr>');
+    setTable('<tr><td colspan="8" class="empty-state">Error loading skills: ' + (e.message || String(e)).replace(/</g, '&lt;') + '</td></tr>');
   }
 }
 async function toggleSkill(id,enabled){
@@ -1209,25 +1344,97 @@ async function toggleSkill(id,enabled){
 }
 function filterSkills(f,el){
   skillFilter=f;
-  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+  document.querySelectorAll('.filter-chip[data-filter]').forEach(c=>c.classList.remove('active'));
   if(el)el.classList.add('active');
   loadSkills();
 }
+function filterSkillsByAccess(v,el){
+  skillAccessFilter=v;
+  document.querySelectorAll('.filter-chip[data-access]').forEach(c=>c.classList.toggle('active', c.getAttribute('data-access')===v));
+  loadSkills();
+}
+function filterSkillsByRisk(v,el){
+  skillRiskFilter=v;
+  document.querySelectorAll('.filter-chip[data-risk]').forEach(c=>c.classList.toggle('active', c.getAttribute('data-risk')===v));
+  loadSkills();
+}
+function filterSkillsByApproval(v,el){
+  skillApprovalFilter=v;
+  document.querySelectorAll('.filter-chip[data-approval]').forEach(c=>c.classList.toggle('active', c.getAttribute('data-approval')===v));
+  loadSkills();
+}
+function setSkillCreator(v){
+  document.querySelectorAll('.segmented-pill-btn[data-creator]').forEach(b=>b.classList.remove('active'));
+  const btn=document.querySelector('.segmented-pill-btn[data-creator="'+v+'"]');
+  if(btn)btn.classList.add('active');
+  const hid=document.getElementById('newSkillCreator');
+  if(hid)hid.value=v;
+}
+function toggleNewSkillEnabled(){
+  const el=document.getElementById('newSkillEnabledToggle');
+  const label=document.getElementById('newSkillEnabledLabel');
+  if(!el)return;
+  const on=!el.classList.contains('on');
+  el.classList.toggle('on',on);
+  el.setAttribute('aria-pressed',on);
+  if(label)label.textContent=on?'On (skill can be used after creation)':'Off (skill disabled when created)';
+}
+function getNewSkillEnabled(){ return document.getElementById('newSkillEnabledToggle').classList.contains('on'); }
+function setSkillCategory(v){
+  document.querySelectorAll('.category-chip').forEach(btn=>{ btn.classList.toggle('active', btn.getAttribute('data-cat')===v); });
+  const hid=document.getElementById('newSkillCat'); if(hid) hid.value=v;
+}
+function setSkillRisk(v){
+  ['riskLow','riskMed','riskHigh'].forEach((id,i)=>{ const b=document.getElementById(id); if(b) b.classList.toggle('active', ['low','medium','high'][i]===v); });
+  window._newSkillRisk=v;
+}
+function setSkillApproval(v){
+  ['approvalAuto','approvalRequired','approvalAlways'].forEach((id,i)=>{ const b=document.getElementById(id); if(b) b.classList.toggle('active', ['auto','approval_required','always_approval'][i]===v); });
+  window._newSkillApproval=v;
+}
+function initAccessScopeToggles(){
+  const cbDepts=document.getElementById('accessSpecificDepts'), rowDepts=document.getElementById('accessSpecificDeptsRow');
+  const cbAgents=document.getElementById('accessSpecificAgents'), rowAgents=document.getElementById('accessSpecificAgentsRow');
+  if(cbDepts&&rowDepts) cbDepts.addEventListener('change',function(){ rowDepts.style.display=this.checked?'block':'none'; });
+  if(cbAgents&&rowAgents) cbAgents.addEventListener('change',function(){ rowAgents.style.display=this.checked?'block':'none'; });
+}
+function getNewSkillAccessScope(){
+  const roles=[]; if(document.getElementById('accessFounder')?.checked) roles.push('founder'); if(document.getElementById('accessDaena')?.checked) roles.push('daena'); if(document.getElementById('accessDeptAgents')?.checked) roles.push('agent');
+  let depts=[], agents=[]; if(document.getElementById('accessSpecificDepts')?.checked){ const r=document.getElementById('accessDeptsList')?.value?.trim()||''; if(r) depts=r.split(/[\s,]+/).map(s=>s.trim()).filter(Boolean); }
+  if(document.getElementById('accessSpecificAgents')?.checked){ const r=document.getElementById('accessAgentsList')?.value?.trim()||''; if(r) agents=r.split(/[\s,]+/).map(s=>s.trim()).filter(Boolean); }
+  return { allowed_roles: roles, allowed_departments: depts, allowed_agents: agents };
+}
+function getNewSkillExecutionPolicy(){ return { risk_level: window._newSkillRisk||'low', approval_policy: window._newSkillApproval||'auto', requires_step_up_confirm: document.getElementById('requiresStepUpConfirm')?.checked!==false }; }
 async function createSkill(){
-  if(window.showToast) window.showToast('Skill creation: use Execution layer or add via backend API','info');
-  closeModal('skill'); loadSkills();
+  const name=document.getElementById('newSkillName').value?.trim();
+  const display=document.getElementById('newSkillDisplay').value?.trim()||name;
+  const desc=document.getElementById('newSkillDesc').value?.trim()||'';
+  const cat=document.getElementById('newSkillCat').value||'utility';
+  const creator=document.getElementById('newSkillCreator').value||'founder';
+  const enabled=getNewSkillEnabled();
+  const code=document.getElementById('newSkillCode').value?.trim()||'';
+  if(!name){ if(window.showToast) window.showToast('Enter a skill name','error'); return; }
+  if(!window._newSkillRisk) window._newSkillRisk='low'; if(!window._newSkillApproval) window._newSkillApproval='auto';
+  const access=getNewSkillAccessScope();
+  const policy=getNewSkillExecutionPolicy();
+  try {
+    const payload={ name, display_name: display, description: desc, category: cat, creator, enabled, code_body: code, access, risk_level: policy.risk_level, approval_policy: policy.approval_policy, requires_step_up_confirm: policy.requires_step_up_confirm };
+    const r=await apiRequest(API.skills,{method:'POST',body:JSON.stringify(payload)});
+    if(r&&(r.id||r.skill_id||r.success)){ if(window.showToast) window.showToast('Skill created','success'); closeModal('skill'); loadSkills(); }
+    else{ if(window.showToast) window.showToast(r?.detail||r?.error||'Skill creation: use backend API','info'); closeModal('skill'); loadSkills(); }
+  } catch(e){ if(window.showToast) window.showToast('Failed: '+(e.message||e),'error'); }
 }
 
 // ─── PACKAGES (sync: GET /, GET /stats, POST /audit, POST /audit/{id}/run|approve|reject|install) ───
 async function loadPackages(){
-  const stats=await api(API.packages+'/stats');
+  const stats=await apiRequest(API.packages+'/stats');
   if(stats){
     document.getElementById('pkgTotal').textContent=stats.total||stats.queued||0;
     document.getElementById('pkgPending').textContent=stats.pending||stats.pending_approval||0;
     document.getElementById('pkgApproved').textContent=stats.approved||0;
     document.getElementById('pkgRejected').textContent=stats.rejected||0;
   }
-  const res=await api(API.packages+'/');
+  const res=await apiRequest(API.packages+'/');
   const records=(res&&res.records)||[];
   const idKey=(r)=>r.id||r.record_id||r.audit_id||'';
   document.getElementById('pkgTable').innerHTML=records.map(p=>{
@@ -1244,24 +1451,24 @@ async function loadPackages(){
 async function requestPackage(){
   const payload={package_name:document.getElementById('newPkgName').value,version:document.getElementById('newPkgVer').value||'latest',manager:document.getElementById('newPkgMgr').value||'npm',requested_by:document.getElementById('newPkgBy').value||'founder'};
   if(!payload.package_name)return;
-  await api(API.packages+'/audit',{method:'POST',body:JSON.stringify(payload)});
+  await apiRequest(API.packages+'/audit',{method:'POST',body:JSON.stringify(payload)});
   closeModal('package');loadPackages();
 }
-async function auditPkg(id){await api(API.packages+'/audit/'+id+'/run',{method:'POST'});loadPackages()}
-async function approvePkg(id){await api(API.packages+'/audit/'+id+'/approve',{method:'POST',body:JSON.stringify({approver:'founder',notes:''})});loadPackages()}
-async function rejectPkg(id){await api(API.packages+'/audit/'+id+'/reject',{method:'POST',body:JSON.stringify({reason:'Founder review',rejector:'founder'})});loadPackages()}
-async function installPkg(id){await api(API.packages+'/audit/'+id+'/install',{method:'POST'});loadPackages()}
+async function auditPkg(id){await apiRequest(API.packages+'/audit/'+id+'/run',{method:'POST'});loadPackages()}
+async function approvePkg(id){await apiRequest(API.packages+'/audit/'+id+'/approve',{method:'POST',body:JSON.stringify({approver:'founder',notes:''})});loadPackages()}
+async function rejectPkg(id){await apiRequest(API.packages+'/audit/'+id+'/reject',{method:'POST',body:JSON.stringify({reason:'Founder review',rejector:'founder'})});loadPackages()}
+async function installPkg(id){await apiRequest(API.packages+'/audit/'+id+'/install',{method:'POST'});loadPackages()}
 
 // ─── GOVERNANCE (sync: GET /stats, GET /pending, POST /approve, POST /reject with body.decision_id) ───
 async function loadGovernance(){
-  const stats=await api(API.governance+'/stats');
+  const stats=await apiRequest(API.governance+'/stats');
   if(stats){
     document.getElementById('govAuto').textContent=stats.auto_approved||0;
     document.getElementById('govPending').textContent=stats.pending||0;
     document.getElementById('govToday').textContent=stats.today||0;
     document.getElementById('govBlocked').textContent=stats.blocked||0;
   }
-  const pendRes=await api(API.governance+'/pending');
+  const pendRes=await apiRequest(API.governance+'/pending');
   const pending=(pendRes&&pendRes.pending)||[];
   const decisionId=(a)=>a.decision_id||a.id||'';
   if(pending.length){
@@ -1273,7 +1480,7 @@ async function loadGovernance(){
   } else {
     document.getElementById('govPendingTable').innerHTML='<tr><td colspan="5" class="empty-state">No pending actions — Autopilot handling everything</td></tr>';
   }
-  const logRes=await api(API.execution+'/logs');
+  const logRes=await apiRequest(API.execution+'/logs');
   const log=(logRes&&logRes.logs)||[];
   if(log.length){
     document.getElementById('govLogTable').innerHTML=log.slice(0,20).map(a=>`<tr><td><strong>${a.tool||a.action||'—'}</strong></td><td><span class="badge badge-${(a.risk||'').toLowerCase()}">${a.risk||'—'}</span></td><td><span class="badge badge-active">${a.status||'—'}</span></td><td class="td-mono">${timeAgo(a.timestamp||a.created_at)}</td></tr>`).join('');
@@ -1291,19 +1498,19 @@ function openApproveModal(id,action,details){
 function openRejectModal(id){currentApproveId=id;document.getElementById('approveTitle').textContent='Reject Action';document.getElementById('approveDetails').textContent='Reject this action?';document.getElementById('approveNotes').value='';openModal('approve')}
 async function approveAction(){
   if(!currentApproveId)return;
-  await api(API.governance+'/approve',{method:'POST',body:JSON.stringify({decision_id:currentApproveId,approver_id:'founder',notes:document.getElementById('approveNotes').value})});
+  await apiRequest(API.governance+'/approve',{method:'POST',body:JSON.stringify({decision_id:currentApproveId,approver_id:'founder',notes:document.getElementById('approveNotes').value})});
   closeModal('approve');loadGovernance();
 }
 async function rejectAction(){
   if(!currentApproveId)return;
-  await api(API.governance+'/reject',{method:'POST',body:JSON.stringify({decision_id:currentApproveId,approver_id:'founder',notes:document.getElementById('approveNotes').value||'Founder rejected'})});
+  await apiRequest(API.governance+'/reject',{method:'POST',body:JSON.stringify({decision_id:currentApproveId,approver_id:'founder',notes:document.getElementById('approveNotes').value||'Founder rejected'})});
   closeModal('approve');loadGovernance();
 }
 
 // ─── EXECUTION (sync: GET /logs [no token], GET /tools, /config [with token via apiExecution]) ───
 async function loadExecution(){
   await loadExecutionAuthStatus();
-  const logRes=await api(API.execution+'/logs');
+  const logRes=await apiRequest(API.execution+'/logs');
   const logs=(logRes&&logRes.logs)||[];
   const table=document.getElementById('executionLogTable');
   if(table){
@@ -1319,7 +1526,7 @@ async function loadExecution(){
 // ─── DAENABOT TOOLS (sync: GET /status, /queue, /history; POST /{id}/approve, /{id}/reject) ───
 async function loadDaenaBotTools(){
   try {
-    const statusRes = await api(API.tools+'/status');
+    const statusRes = await apiRequest(API.tools+'/status');
     const status = statusRes || {};
     const connected = status.connected === true;
     const displayName = status.display_name || 'DaenaBot';
@@ -1331,7 +1538,7 @@ async function loadDaenaBotTools(){
     const label = document.getElementById('daenabot-tools-label');
     if(label) label.textContent = displayName + ' Tools';
 
-    const queueRes = await api(API.tools+'/queue');
+    const queueRes = await apiRequest(API.tools+'/queue');
     const pending = (queueRes && queueRes.pending) || [];
     document.getElementById('toolsPendingCount').textContent = pending.length;
     const badge = document.getElementById('daenabot-tools-badge');
@@ -1347,7 +1554,7 @@ async function loadDaenaBotTools(){
       }).join('') : '<tr><td colspan="5" class="empty-state">No pending requests</td></tr>';
     }
 
-    const historyRes = await api(API.tools+'/history');
+    const historyRes = await apiRequest(API.tools+'/history');
     const history = (historyRes && historyRes.history) || [];
     const historyTable = document.getElementById('toolsHistoryTable');
     if(historyTable) {
@@ -1365,10 +1572,31 @@ async function loadDaenaBotTools(){
     if(h) h.innerHTML = '<tr><td colspan="5" class="empty-state">Error loading history</td></tr>';
   }
 }
+async function testHandsConnection(){
+  const btn = document.getElementById('pingHandsBtn');
+  const resultEl = document.getElementById('pingHandsResult');
+  if(btn) btn.disabled = true;
+  if(resultEl) resultEl.textContent = 'Checking…';
+  try {
+    const r = await apiRequest(API.hands + '/status');
+    const ok = r && (r.configured === true && r.reachable === true);
+    const msg = (r && r.message) ? r.message : (r && r.reachable ? 'Connected' : 'Disconnected');
+    if(resultEl) {
+      resultEl.textContent = msg;
+      resultEl.style.color = ok ? 'var(--green)' : (r && r.configured ? 'var(--text-dim)' : 'var(--red)');
+    }
+    if(window.showToast) window.showToast(msg, ok ? 'success' : 'error');
+    loadDaenaBotTools();
+  } catch (e) {
+    if(resultEl) { resultEl.textContent = (e.message || String(e)).slice(0,60); resultEl.style.color = 'var(--red)'; }
+    if(window.showToast) window.showToast('Check failed: ' + (e.message || e), 'error');
+  }
+  if(btn) btn.disabled = false;
+}
 async function approveToolRequest(id){
   if(!id) return;
   try {
-    await api(API.tools+'/'+encodeURIComponent(id)+'/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ approver:'founder', notes:'' }) });
+    await apiRequest(API.tools+'/'+encodeURIComponent(id)+'/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ approver:'founder', notes:'' }) });
     if(window.showToast) window.showToast('Request approved and executed', 'success');
     loadDaenaBotTools();
   } catch (e) {
@@ -1379,7 +1607,7 @@ async function approveToolRequest(id){
 async function rejectToolRequest(id){
   if(!id) return;
   try {
-    await api(API.tools+'/'+encodeURIComponent(id)+'/reject', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reason:'Founder rejected', rejector:'founder' }) });
+    await apiRequest(API.tools+'/'+encodeURIComponent(id)+'/reject', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reason:'Founder rejected', rejector:'founder' }) });
     if(window.showToast) window.showToast('Request rejected', 'info');
     loadDaenaBotTools();
   } catch (e) {
@@ -1390,10 +1618,10 @@ async function rejectToolRequest(id){
 
 // ─── INTEGRATIONS (sync: GET /, GET /mcp-servers) ───
 async function loadIntegrations(){
-  const list=await api(API.integrations);
+  const list=await apiRequest(API.integrations);
   const integrations=(list&&list.integrations)||(Array.isArray(list)?list:[]);
   document.getElementById('intTotal').textContent=integrations.length||0;
-  const mcpRes=await api(API.integrations+'/mcp-servers');
+  const mcpRes=await apiRequest(API.integrations+'/mcp-servers');
   const mcp=(mcpRes&&mcpRes.servers)||(mcpRes&&mcpRes.mcp_servers)||[];
   document.getElementById('intMcp').textContent=mcp.length||0;
   const table=document.getElementById('integrationsTable');
@@ -1404,17 +1632,17 @@ async function loadIntegrations(){
 
 // ─── PROACTIVE (sync: GET /rules, GET /events) ───
 async function loadProactive(){
-  const rulesRes=await api(API.proactive+'/rules');
+  const rulesRes=await apiRequest(API.proactive+'/rules');
   const rules=(rulesRes&&rulesRes.rules)||(Array.isArray(rulesRes)?rulesRes:[]);
   document.getElementById('proactiveRulesList').innerHTML=rules.length?rules.map(r=>`<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">${r.name||r.id||'—'}: ${(r.schedule||r.trigger||'—')}</div>`).join(''):'<p class="text-dim">No proactive rules</p>';
-  const eventsRes=await api(API.proactive+'/events');
+  const eventsRes=await apiRequest(API.proactive+'/events');
   const events=(eventsRes&&eventsRes.events)||(Array.isArray(eventsRes)?eventsRes:[]);
   document.getElementById('proactiveEventsList').innerHTML=events.length?events.slice(0,20).map(e=>`<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:11px">${timeAgo(e.timestamp||e.time)} — ${(e.type||e.name||'—').toString().slice(0,40)}</div>`).join(''):'<p class="text-dim">No recent events</p>';
 }
 
 // ─── COUNCIL ────────────────────────────────────
 async function loadCouncil(){
-  const debates=await api(API.council+'/debates');
+  const debates=await apiRequest(API.council+'/debates');
   if(debates&&debates.length){
     document.getElementById('councilActive').textContent=debates.filter(d=>d.status==='active').length;
     document.getElementById('councilResolved').textContent=debates.filter(d=>d.status==='resolved').length;
@@ -1433,14 +1661,14 @@ async function loadCouncil(){
 
 // ─── TRUST ──────────────────────────────────────
 async function loadTrust(){
-  const stats=await api(API.integrity+'/stats');
+  const stats=await apiRequest(API.integrity+'/stats');
   if(stats){
     document.getElementById('trustVerified').textContent=stats.verifications||0;
     document.getElementById('trustBlocked').textContent=stats.injections_blocked||0;
     document.getElementById('trustSources').textContent=stats.trusted_sources||0;
     document.getElementById('trustStripped').textContent=stats.stripped||0;
   }
-  const sources=await api(API.integrity+'/sources');
+  const sources=await apiRequest(API.integrity+'/sources');
   if(sources&&sources.length){
     document.getElementById('trustTable').innerHTML=sources.map(s=>`<tr>
       <td class="td-mono">${s.name||'—'}</td>
@@ -1456,21 +1684,21 @@ async function verifyContent(){
   const content=document.getElementById('verifyContent').value;
   const source=document.getElementById('verifySource').value;
   if(!content)return;
-  const r=await api(API.integrity+'/verify',{method:'POST',body:JSON.stringify({content,source})});
+  const r=await apiRequest(API.integrity+'/verify',{method:'POST',body:JSON.stringify({content,source})});
   closeModal('verify');
   if(r){addFeed('trustFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),r.safe?'green':'red',`<strong>Verify result:</strong> ${r.safe?'Safe ✓':'BLOCKED ✗'} — ${r.reason||''}`)}
 }
 
 // ─── SHADOW ─────────────────────────────────────
 async function loadShadow(){
-  const stats=await api(API.shadow+'/stats');
+  const stats=await apiRequest(API.shadow+'/stats');
   if(stats){
     document.getElementById('shadowHoney').textContent=stats.honeypots||0;
     document.getElementById('shadowCanary').textContent=stats.canaries||0;
     document.getElementById('shadowAlerts').textContent=stats.alerts_24h||0;
     document.getElementById('shadowTTPs').textContent=stats.ttps||0;
   }
-  const honeypots=await api(API.shadow+'/honeypots');
+  const honeypots=await apiRequest(API.shadow+'/honeypots');
   if(honeypots&&honeypots.length){
     document.getElementById('shadowTable').innerHTML=honeypots.map(h=>`<tr>
       <td class="td-mono">${h.path||'—'}</td>
@@ -1520,7 +1748,7 @@ async function runResearch(){
   const sources=document.getElementById('researchSrc').value;
   if(!query)return;
   addFeed('brainFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),'blue',`<strong>Research:</strong> "${query.slice(0,60)}…"`);
-  await api(API.research+'/query',{method:'POST',body:JSON.stringify({query,sources})});
+  await apiRequest(API.research+'/query',{method:'POST',body:JSON.stringify({query,sources})});
   closeModal('research');
 }
 
@@ -1538,8 +1766,8 @@ function timeAgo(ts){
 // ─── CAPABILITY HANDSHAKE (on load: tools + MCP for Daena awareness) ───
 async function runCapabilityHandshake(){
   try{
-    const logRes=await api(API.execution+'/logs');
-    const mcpRes=await api(API.integrations+'/mcp-servers');
+    const logRes=await apiRequest(API.execution+'/logs');
+    const mcpRes=await apiRequest(API.integrations+'/mcp-servers');
     const logCount=(logRes&&logRes.logs) ? logRes.logs.length : 0;
     const mcpCount=(mcpRes&&mcpRes.servers) ? mcpRes.servers.length : (mcpRes&&mcpRes.mcp_servers ? mcpRes.mcp_servers.length : 0);
     const el=document.getElementById('executionCapSummary');
@@ -1555,6 +1783,8 @@ function initControlPanel(){
   loadAwareness();
   loadSkills();
   runCapabilityHandshake();
+  initAccessScopeToggles();
+  window._newSkillRisk='low'; window._newSkillApproval='auto';
   setInterval(function(){
     const active=document.querySelector('.tab-btn.active');
     if(active)loadTabData(active.dataset.tab);

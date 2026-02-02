@@ -70,17 +70,39 @@ def broker_request(
     Enforces allowlist + risk. Emergency stop blocks all.
     """
     if _emergency_stop():
+        try:
+            from backend.routes.audit import log_audit_entry
+            log_audit_entry(requested_by, "tool_request", "submit", False, "Emergency stop active", {})
+        except Exception:
+            pass
         return ("blocked", {"error": "Emergency stop active. Set DAENA_EMERGENCY_STOP=false to allow execution."})
 
     risk = get_risk_level(action)
     mode = _automation_mode()
 
     if mode == "off":
+        try:
+            from backend.routes.audit import log_audit_entry
+            log_audit_entry(requested_by, "tool_request", "submit", False, "Tool automation off", {})
+        except Exception:
+            pass
         return ("blocked", {"error": "Tool automation is off. Set DAENA_TOOL_AUTOMATION=low_only or on."})
 
     if requires_approval(risk):
         from backend.services.tool_request_store import create_request
         req_id = create_request(requested_by=requested_by, risk_level=risk, action_json=action)
+        try:
+            from backend.routes.audit import log_audit_entry
+            log_audit_entry(
+                actor=requested_by,
+                resource="tool_request",
+                action="submit",
+                allowed=True,
+                reason="queued_for_approval",
+                context={"request_id": req_id, "risk_level": risk},
+            )
+        except Exception:
+            pass
         return ("queued_for_approval", {"request_id": req_id, "risk_level": risk, "message": "Requires founder approval in DaenaBot Tools panel."})
 
     if risk == LOW and mode in ("low_only", "on"):
@@ -111,6 +133,18 @@ async def async_broker_request(
         from backend.services.tool_request_store import create_request
         req_id = create_request(requested_by=requested_by, risk_level=risk, action_json=action)
         try:
+            from backend.routes.audit import log_audit_entry
+            log_audit_entry(
+                actor=requested_by,
+                resource="tool_request",
+                action="submit",
+                allowed=True,
+                reason="queued_for_approval",
+                context={"request_id": req_id, "risk_level": risk},
+            )
+        except Exception:
+            pass
+        try:
             from backend.config.branding import get_daena_bot_display_name
             name = get_daena_bot_display_name()
         except Exception:
@@ -126,6 +160,18 @@ async def async_broker_request(
                 if not ok:
                     return ("queued_for_approval", {"request_id": None, "message": "DaenaBot Hands gateway not available. Check Control Panel → DaenaBot Tools."})
             result = await client.execute_tool(action)
+            try:
+                from backend.routes.audit import log_audit_entry
+                log_audit_entry(
+                    actor=requested_by,
+                    resource="tool_request",
+                    action="execute",
+                    allowed=bool(result.get("success")),
+                    reason="low_risk_auto",
+                    context={"risk_level": risk},
+                )
+            except Exception:
+                pass
             if result.get("success"):
                 return ("approved_and_executed", result)
             return ("approved_and_executed", {"success": False, "error": result.get("error", "Unknown error")})
@@ -150,7 +196,25 @@ async def execute_approved_request(req_id: str) -> Dict[str, Any]:
             await client.connect()
         result = await client.execute_tool(action)
         update_status(req_id, "approved" if result.get("success") else "failed", result)
+        try:
+            from backend.routes.audit import log_audit_entry
+            requested_by = (req.get("requested_by") or "daena")
+            log_audit_entry(
+                actor="founder",
+                resource="tool_request",
+                action="execute",
+                allowed=bool(result.get("success")),
+                reason="approved_request",
+                context={"request_id": req_id, "requested_by": requested_by},
+            )
+        except Exception:
+            pass
         return result
     except Exception as e:
         update_status(req_id, "failed", {"success": False, "error": str(e)})
+        try:
+            from backend.routes.audit import log_audit_entry
+            log_audit_entry("founder", "tool_request", "execute", False, str(e), {"request_id": req_id})
+        except Exception:
+            pass
         return {"success": False, "error": str(e)}
