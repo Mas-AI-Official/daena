@@ -21,6 +21,11 @@ if errorlevel 1 (
 echo Backend is up.
 
 echo.
+echo --- Skill registry smoke (in-process, no server) ---
+"%PY%" -m backend.scripts.smoke_skills_registry
+if errorlevel 1 exit /b 1
+
+echo.
 echo --- Smoke tests ---
 "%PY%" "%PROJECT_ROOT%\scripts\smoke_control_plane.py" --base %DAENA_BASE_URL% --token %EXECUTION_TOKEN%
 if errorlevel 1 exit /b 1

@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions
 REM Start backend with PYTHONPATH and EXECUTION_TOKEN (used by tests and run_manual_steps).
+REM Optional: DAENABOT_HANDS_URL, DAENABOT_HANDS_TOKEN, DAENA_SKILL_IMPORT_PATH (passed through if set).
 
 cd /d "%~dp0.."
 set "PROJECT_ROOT=%CD%"
@@ -13,4 +14,5 @@ if not defined PY if exist "%PROJECT_ROOT%\venv_daena_audio_py310\Scripts\python
 if not defined PY set "PY=python"
 
 echo Starting backend at http://127.0.0.1:8000 (PYTHONPATH set, EXECUTION_TOKEN=%EXECUTION_TOKEN%)...
+if defined DAENA_SKILL_IMPORT_PATH echo   DAENA_SKILL_IMPORT_PATH=%DAENA_SKILL_IMPORT_PATH%
 "%PY%" -m uvicorn backend.main:app --host 127.0.0.1 --port 8000

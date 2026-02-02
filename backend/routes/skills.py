@@ -3,7 +3,7 @@ Skills API - Server-side skills that call Execution Layer (no direct tool calls)
 GET /api/v1/skills, POST /api/v1/skills/toggle, POST /api/v1/skills/run.
 Skills produce artifacts (report) stored under data/skill_artifacts/.
 """
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, Query
 from fastapi.responses import FileResponse
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -52,16 +52,15 @@ def _verify_execution_token(x_execution_token: Optional[str] = Header(None, alia
         raise HTTPException(status_code=401, detail="Missing or invalid X-Execution-Token")
 
 
-def _registry_skills_for_list() -> List[Dict[str, Any]]:
-    """Get skills from skill_registry and map to same shape as SKILL_DEFS for Control Panel."""
+def _registry_skills_for_list(operator_role: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Get skills from skill_registry. operator_role filters by allowed_roles (who can run)."""
     out: List[Dict[str, Any]] = []
     try:
         from backend.services.skill_registry import get_skill_registry
         registry = get_skill_registry()
-        for s in registry.list_skills():
+        for s in registry.list_skills(operator_role=operator_role, include_archived=False):
             sid = s.get("id") or ""
-            status = (s.get("status") or "").lower()
-            default_enabled = s.get("enabled", status in ("active", "approved"))
+            default_enabled = s.get("enabled", True)
             enabled = _registry_enabled.get(sid, default_enabled)
             out.append({
                 "id": sid,
@@ -75,28 +74,43 @@ def _registry_skills_for_list() -> List[Dict[str, Any]]:
                 "access": s.get("access") or {"allowed_roles": [], "allowed_departments": [], "allowed_agents": []},
                 "approval_policy": s.get("approval_policy") or "auto",
                 "usage_count": s.get("usage_count", 0),
+                "archived": s.get("archived", False),
             })
     except Exception:
         pass
     return out
 
 
-@router.get("")
-async def list_skills() -> Dict[str, Any]:
-    """List all skills: static SKILL_DEFS + skill_registry. Control Panel shows add/remove from registry."""
-    skills: List[Dict[str, Any]] = []
+def _static_skills_for_list(operator_role: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Static SKILL_DEFS with optional operator filter (default allowed_roles founder, daena)."""
+    roles = ["founder", "daena"] if not operator_role else [operator_role.lower()]
+    out: List[Dict[str, Any]] = []
     for s in SKILL_DEFS:
-        skills.append({
+        access = s.get("access") or {"allowed_roles": ["founder", "daena"], "allowed_departments": [], "allowed_agents": []}
+        allowed = [r.lower() for r in access.get("allowed_roles", ["founder", "daena"])]
+        if operator_role and operator_role.lower() not in allowed:
+            continue
+        out.append({
             **s,
             "enabled": _skills_state.get(s["id"], s["enabled"]),
             "creator": s.get("creator", "founder"),
             "risk": s.get("risk", "medium"),
             "category": s.get("category", "utility"),
-            "access": s.get("access") or {"allowed_roles": ["founder", "daena"], "allowed_departments": [], "allowed_agents": []},
+            "access": access,
             "approval_policy": s.get("approval_policy", "auto"),
             "usage_count": s.get("usage_count", 0),
+            "archived": False,
         })
-    skills.extend(_registry_skills_for_list())
+    return out
+
+
+@router.get("")
+async def list_skills(
+    operator_role: Optional[str] = Query(None, description="Filter by who can run: founder, daena, agent"),
+) -> Dict[str, Any]:
+    """List skills. operator_role filters by allowed_roles (who can execute)."""
+    skills: List[Dict[str, Any]] = _static_skills_for_list(operator_role=operator_role)
+    skills.extend(_registry_skills_for_list(operator_role=operator_role))
     return {"success": True, "skills": skills}
 
 
@@ -115,6 +129,163 @@ async def create_skill(body: CreateSkillBody) -> Dict[str, Any]:
         return out
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class UpdateSkillBody(BaseModel):
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    creator: Optional[str] = None
+    access: Optional[Dict[str, Any]] = None
+    policy: Optional[Dict[str, Any]] = None
+    enabled: Optional[bool] = None
+    category: Optional[str] = None
+
+
+class PatchAccessBody(BaseModel):
+    allowed_roles: Optional[List[str]] = None
+    allowed_departments: Optional[List[str]] = None
+    allowed_agents: Optional[List[str]] = None
+
+
+def _registry_skill_by_id(skill_id: str) -> Optional[Dict[str, Any]]:
+    """Return skill dict if in registry (not archived), else None."""
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        s = registry.get_skill(skill_id)
+        if s and not s.get("archived", False):
+            return s
+    except Exception:
+        pass
+    return None
+
+
+@router.get("/{skill_id}")
+async def get_skill(skill_id: str) -> Dict[str, Any]:
+    """Get a single skill by id (registry or static). For Control Panel edit."""
+    for s in SKILL_DEFS:
+        if s.get("id") == skill_id:
+            access = s.get("access") or {"allowed_roles": ["founder", "daena"], "allowed_departments": [], "allowed_agents": []}
+            return {
+                "success": True,
+                "skill": {
+                    **s,
+                    "creator": s.get("creator", "founder"),
+                    "access": access,
+                    "source": "static",
+                    "enabled": _skills_state.get(s["id"], s["enabled"]),
+                },
+            }
+    s = _registry_skill_by_id(skill_id)
+    if s:
+        return {"success": True, "skill": {**s, "source": "registry"}}
+    raise HTTPException(status_code=404, detail="Skill not found")
+
+
+@router.put("/{skill_id}")
+async def update_skill(skill_id: str, body: UpdateSkillBody) -> Dict[str, Any]:
+    """Full update: creator, access, policy, enabled. Registry-only (static SKILL_DEFS not updatable)."""
+    if any(s["id"] == skill_id for s in SKILL_DEFS):
+        raise HTTPException(status_code=400, detail="Static skill cannot be updated; use registry skills")
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        payload = body.model_dump(exclude_none=True)
+        out = registry.update_skill(skill_id, payload)
+        if out.get("error"):
+            raise HTTPException(status_code=404, detail=out["error"])
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/{skill_id}/access")
+async def patch_skill_access(skill_id: str, body: PatchAccessBody) -> Dict[str, Any]:
+    """Update only access (allowed_roles, allowed_departments, allowed_agents). Registry-only."""
+    if any(s["id"] == skill_id for s in SKILL_DEFS):
+        raise HTTPException(status_code=400, detail="Static skill access cannot be patched")
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        access = body.model_dump(exclude_none=True)
+        out = registry.update_access(skill_id, access)
+        if out.get("error"):
+            raise HTTPException(status_code=404, detail=out["error"])
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{skill_id}/enable")
+async def enable_skill(skill_id: str) -> Dict[str, Any]:
+    """Enable a skill. Static skills use _skills_state; registry uses set_enabled."""
+    if any(s["id"] == skill_id for s in SKILL_DEFS):
+        _skills_state[skill_id] = True
+        return {"success": True, "skill_id": skill_id, "enabled": True}
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        out = registry.set_enabled(skill_id, True)
+        if out.get("error"):
+            raise HTTPException(status_code=404, detail=out["error"])
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{skill_id}/disable")
+async def disable_skill(skill_id: str) -> Dict[str, Any]:
+    """Disable a skill."""
+    if any(s["id"] == skill_id for s in SKILL_DEFS):
+        _skills_state[skill_id] = False
+        return {"success": True, "skill_id": skill_id, "enabled": False}
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        out = registry.set_enabled(skill_id, False)
+        if out.get("error"):
+            raise HTTPException(status_code=404, detail=out["error"])
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{skill_id}")
+async def delete_skill(skill_id: str) -> Dict[str, Any]:
+    """Soft-delete (archive). Registry-only; keeps audit."""
+    if any(s["id"] == skill_id for s in SKILL_DEFS):
+        raise HTTPException(status_code=400, detail="Static skill cannot be archived")
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        out = registry.archive_skill(skill_id)
+        if out.get("error"):
+            raise HTTPException(status_code=404, detail=out["error"])
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/manifest")
+async def skills_manifest() -> Dict[str, Any]:
+    """Compact list for agents: id, name, access summary, policy. Excludes archived and static (registry only)."""
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        manifest = registry.get_manifest()
+        return {"success": True, "skills": manifest}
+    except Exception as e:
+        return {"success": False, "skills": [], "error": str(e)}
 
 
 @router.get("/stats")
@@ -151,7 +322,7 @@ class ToggleBody(BaseModel):
 
 @router.post("/toggle")
 async def toggle_skill(body: ToggleBody) -> Dict[str, Any]:
-    """Enable or disable a skill (static list or registry)."""
+    """Enable or disable a skill (static list or registry). Registry: persists via set_enabled."""
     if any(s["id"] == body.skill_id for s in SKILL_DEFS):
         _skills_state[body.skill_id] = body.enabled
         return {"success": True, "skill_id": body.skill_id, "enabled": body.enabled}
@@ -159,6 +330,7 @@ async def toggle_skill(body: ToggleBody) -> Dict[str, Any]:
         from backend.services.skill_registry import get_skill_registry
         registry = get_skill_registry()
         if registry.get_skill(body.skill_id) is not None:
+            registry.set_enabled(body.skill_id, body.enabled)
             _registry_enabled[body.skill_id] = body.enabled
             return {"success": True, "skill_id": body.skill_id, "enabled": body.enabled}
     except Exception:
@@ -170,6 +342,9 @@ class RunBody(BaseModel):
     skill_id: str
     params: Dict[str, Any] = {}
     dry_run: bool = True
+    caller_role: str = "founder"       # founder | daena | agent
+    caller_dept: Optional[str] = None
+    caller_agent_id: Optional[str] = None
 
 
 @router.post("/run")
@@ -177,16 +352,41 @@ async def run_skill(
     body: RunBody,
     x_execution_token: Optional[str] = Header(None, alias="X-Execution-Token"),
 ) -> Dict[str, Any]:
-    """Run a skill via Execution Layer. Requires X-Execution-Token."""
+    """Run a skill via Execution Layer. Requires X-Execution-Token. Enforces caller access (role/dept/agent_id)."""
     _verify_execution_token(x_execution_token)
     from backend.config.security_state import is_lockdown_active
     if is_lockdown_active():
         raise HTTPException(status_code=423, detail="Execution blocked: system in lockdown")
+
+    # Registry skill: enforce allowed_roles / allowed_departments / allowed_agents
+    reg_skill = _registry_skill_by_id(body.skill_id)
+    if reg_skill:
+        try:
+            from backend.services.skill_registry import get_skill_registry
+            registry = get_skill_registry()
+            allowed, err = registry.check_caller_access(
+                body.skill_id,
+                role=body.caller_role,
+                dept=body.caller_dept,
+                agent_id=body.caller_agent_id,
+            )
+            if not allowed:
+                raise HTTPException(status_code=403, detail=err or "Access denied")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
     skill = next((s for s in SKILL_DEFS if s["id"] == body.skill_id), None)
-    if not skill:
+    if not skill and not reg_skill:
         raise HTTPException(status_code=404, detail="Skill not found")
-    if not _skills_state.get(skill["id"], True):
-        raise HTTPException(status_code=400, detail="Skill is disabled")
+    if skill:
+        if not _skills_state.get(skill["id"], True):
+            raise HTTPException(status_code=400, detail="Skill is disabled")
+        access = skill.get("access") or {"allowed_roles": ["founder", "daena"], "allowed_departments": [], "allowed_agents": []}
+        allowed_roles = [r.lower() for r in access.get("allowed_roles", ["founder", "daena"])]
+        if body.caller_role.lower() not in allowed_roles:
+            raise HTTPException(status_code=403, detail=f"Role '{body.caller_role}' not allowed to run this skill")
     # Map skill to execution layer tool(s) - stub: call execution run with appropriate tool
     tool_map = {
         "repo_health_check": "git_status",

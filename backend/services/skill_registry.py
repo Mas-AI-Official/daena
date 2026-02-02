@@ -16,7 +16,7 @@ import time
 import hashlib
 import traceback
 from enum import Enum
-from typing import Optional, Any
+from typing import Optional, Any, Tuple
 from datetime import datetime, timezone
 from dataclasses import dataclass, field, asdict
 
@@ -98,12 +98,13 @@ class SkillDefinition:
     usage_count: int = 0
     last_used_at: Optional[str] = None
     
-    # Access scope (who can run this skill)
+    # Access scope (operators: who can run this skill; distinct from creator who authored it)
     allowed_roles: list = field(default_factory=list)      # founder, daena, agent
     allowed_departments: list = field(default_factory=list)
     approval_policy: str = "auto"                          # auto | approval_required | always_approval
     requires_step_up_confirm: bool = False
     enabled: bool = True
+    archived: bool = False                                 # soft-delete; kept for audit
     category_slug: Optional[str] = None                    # UI category: utility, research, etc.
     
     # Sandbox test results
@@ -315,14 +316,22 @@ class SkillRegistry:
     # ─── PUBLIC API ────────────────────────────────────────────────
 
     def list_skills(self, status_filter: Optional[str] = None,
-                    category_filter: Optional[str] = None) -> list[dict]:
-        """List all skills, optionally filtered."""
+                    category_filter: Optional[str] = None,
+                    operator_role: Optional[str] = None,
+                    include_archived: bool = False) -> list[dict]:
+        """List skills. operator_role filters by who can execute (allowed_roles)."""
         results = []
         for skill in self._skills.values():
+            if skill.archived and not include_archived:
+                continue
             if status_filter and skill.status.value != status_filter:
                 continue
             if category_filter and skill.category.value != category_filter:
                 continue
+            if operator_role:
+                roles = [r.lower() for r in (skill.allowed_roles or [])]
+                if operator_role.lower() not in roles:
+                    continue
             results.append(self._to_dict(skill))
         return results
 
@@ -518,6 +527,110 @@ class SkillRegistry:
         skill.updated_at = datetime.now(timezone.utc).isoformat()
         return {"id": skill_id, "status": "deprecated", "message": f"Deprecated: {reason}"}
 
+    def update_skill(self, skill_id: str, payload: dict) -> dict:
+        """Full update: creator, access, policy, enabled, display_name, description, etc."""
+        skill = self._skills.get(skill_id)
+        if not skill:
+            return {"error": "Skill not found"}
+        now = datetime.now(timezone.utc).isoformat()
+        if "display_name" in payload:
+            skill.display_name = payload["display_name"]
+        if "description" in payload:
+            skill.description = payload["description"]
+        if "creator" in payload:
+            try:
+                skill.creator = SkillCreator(payload["creator"])
+            except ValueError:
+                pass
+        if "access" in payload:
+            a = payload["access"]
+            skill.allowed_roles = a.get("allowed_roles", skill.allowed_roles)
+            skill.allowed_departments = a.get("allowed_departments", skill.allowed_departments)
+            skill.allowed_agents = a.get("allowed_agents", skill.allowed_agents)
+        if "policy" in payload:
+            p = payload["policy"]
+            if "risk_level" in p:
+                skill.risk_level = p["risk_level"]
+            if "approval_policy" in p:
+                skill.approval_policy = p["approval_policy"]
+            if "requires_step_up_confirm" in p:
+                skill.requires_step_up_confirm = p["requires_step_up_confirm"]
+        if "enabled" in payload:
+            skill.enabled = bool(payload["enabled"])
+        if "category" in payload:
+            try:
+                skill.category = SkillCategory(payload["category"])
+            except ValueError:
+                skill.category_slug = str(payload["category"])
+        skill.updated_at = now
+        return {"id": skill_id, "success": True, "message": "Skill updated"}
+
+    def update_access(self, skill_id: str, access: dict) -> dict:
+        """Update only access (allowed_roles, allowed_departments, allowed_agents)."""
+        skill = self._skills.get(skill_id)
+        if not skill:
+            return {"error": "Skill not found"}
+        if "allowed_roles" in access:
+            skill.allowed_roles = list(access["allowed_roles"]) if isinstance(access["allowed_roles"], (list, tuple)) else skill.allowed_roles
+        if "allowed_departments" in access:
+            skill.allowed_departments = list(access["allowed_departments"]) if isinstance(access["allowed_departments"], (list, tuple)) else skill.allowed_departments
+        if "allowed_agents" in access:
+            skill.allowed_agents = list(access["allowed_agents"]) if isinstance(access["allowed_agents"], (list, tuple)) else skill.allowed_agents
+        skill.updated_at = datetime.now(timezone.utc).isoformat()
+        return {"id": skill_id, "success": True, "access": {"allowed_roles": skill.allowed_roles, "allowed_departments": skill.allowed_departments, "allowed_agents": skill.allowed_agents}}
+
+    def set_enabled(self, skill_id: str, enabled: bool) -> dict:
+        """Enable or disable a skill."""
+        skill = self._skills.get(skill_id)
+        if not skill:
+            return {"error": "Skill not found"}
+        skill.enabled = bool(enabled)
+        skill.updated_at = datetime.now(timezone.utc).isoformat()
+        return {"id": skill_id, "success": True, "enabled": skill.enabled}
+
+    def archive_skill(self, skill_id: str) -> dict:
+        """Soft-delete: set archived=True. Kept for audit."""
+        skill = self._skills.get(skill_id)
+        if not skill:
+            return {"error": "Skill not found"}
+        skill.archived = True
+        skill.enabled = False
+        skill.updated_at = datetime.now(timezone.utc).isoformat()
+        return {"id": skill_id, "success": True, "archived": True, "message": "Skill archived"}
+
+    def get_manifest(self) -> list[dict]:
+        """Compact list for agents: id, name, access summary, policy summary. Excludes archived."""
+        out = []
+        for skill in self._skills.values():
+            if skill.archived:
+                continue
+            out.append({
+                "id": skill.id,
+                "name": skill.name,
+                "display_name": skill.display_name,
+                "allowed_roles": list(skill.allowed_roles or []),
+                "risk_level": skill.risk_level,
+                "approval_policy": skill.approval_policy,
+                "enabled": skill.enabled,
+            })
+        return out
+
+    def check_caller_access(self, skill_id: str, role: str, dept: Optional[str] = None, agent_id: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+        """Check if caller (role, dept, agent_id) is allowed to run this skill. Returns (allowed, error_message)."""
+        skill = self._skills.get(skill_id)
+        if not skill:
+            return (False, "Skill not found")
+        if skill.archived or not skill.enabled:
+            return (False, "Skill is archived or disabled")
+        roles = [r.lower() for r in (skill.allowed_roles or [])]
+        if role.lower() not in roles:
+            return (False, f"Role '{role}' not in allowed_roles {roles}")
+        if skill.allowed_departments and dept and dept not in (skill.allowed_departments or []):
+            return (False, f"Department '{dept}' not in allowed_departments")
+        if skill.allowed_agents and agent_id and agent_id not in (skill.allowed_agents or []):
+            return (False, f"Agent '{agent_id}' not in allowed_agents")
+        return (True, None)
+
     def record_usage(self, skill_id: str):
         """Record that a skill was used."""
         skill = self._skills.get(skill_id)
@@ -643,6 +756,7 @@ class SkillRegistry:
         d["approval_policy"] = skill.approval_policy
         d["access"] = {"allowed_roles": skill.allowed_roles, "allowed_departments": skill.allowed_departments, "allowed_agents": skill.allowed_agents}
         d["enabled"] = skill.enabled
+        d["archived"] = getattr(skill, "archived", False)
         d["requires_step_up_confirm"] = skill.requires_step_up_confirm
         if len(d.get("code_body", "")) > 200:
             d["code_body_preview"] = d["code_body"][:200] + "..."

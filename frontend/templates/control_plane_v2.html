@@ -108,6 +108,13 @@
 .access-scope-row{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
 .access-scope-row label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text)}
 .access-scope-row input[type=checkbox]{accent-color:var(--gold)}
+.operator-chip{ padding:3px 8px;font-size:10px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);color:var(--text-dim);cursor:pointer;transition:var(--transition) }
+.operator-chip:hover{ color:var(--text);border-color:var(--gold) }
+.operator-chip.on{ background:var(--gold);color:#0a0a0a;border-color:var(--gold) }
+.operator-tabs{ display:inline-flex;gap:2px }
+.operator-tab{ padding:6px 12px;font-size:12px;font-weight:500;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);color:var(--text-dim);cursor:pointer;transition:var(--transition) }
+.operator-tab:hover{ color:var(--text) }
+.operator-tab.active{ background:var(--gold);color:#0a0a0a;border-color:var(--gold) }
 .form-hint{margin-top:2px}
 .tooltip-wrap{position:relative;display:inline-block}
 .tooltip-wrap[data-tooltip]:hover::after{content:attr(data-tooltip);position:absolute;left:0;bottom:100%;margin-bottom:4px;padding:6px 8px;font-size:10px;max-width:240px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);white-space:normal;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.3)}
@@ -431,33 +438,54 @@ select.input{appearance:none;cursor:pointer}
       </div>
       <div class="section-header">
         <div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h10v10H3z"/><path d="M6 6l2 2 4-3"/></svg> Skill Registry</div>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <div class="filter-row" style="margin:0">
-            <span class="filter-chip active" data-filter="all" onclick="filterSkills('all',this)">All</span>
-            <span class="filter-chip" data-filter="active" onclick="filterSkills('active',this)">Active</span>
-            <span class="filter-chip" data-filter="pending" onclick="filterSkills('pending',this)">Pending</span>
-          </div>
-          <span class="text-dim" style="font-size:10px;margin:0 4px">Access:</span>
-          <span class="filter-chip" data-access="" onclick="filterSkillsByAccess('',this)">All</span>
-          <span class="filter-chip" data-access="founder" onclick="filterSkillsByAccess('founder',this)">Founder</span>
-          <span class="filter-chip" data-access="daena" onclick="filterSkillsByAccess('daena',this)">Daena</span>
-          <span class="filter-chip" data-access="agent" onclick="filterSkillsByAccess('agent',this)">Agents</span>
-          <span class="text-dim" style="font-size:10px;margin:0 4px">Risk:</span>
-          <span class="filter-chip active" data-risk="" onclick="filterSkillsByRisk('',this)">All</span>
-          <span class="filter-chip" data-risk="low" onclick="filterSkillsByRisk('low',this)">Low</span>
-          <span class="filter-chip" data-risk="medium" onclick="filterSkillsByRisk('medium',this)">Med</span>
-          <span class="filter-chip" data-risk="high" onclick="filterSkillsByRisk('high',this)">High</span>
-          <span class="text-dim" style="font-size:10px;margin:0 4px">Approval:</span>
-          <span class="filter-chip active" data-approval="" onclick="filterSkillsByApproval('',this)">All</span>
-          <span class="filter-chip" data-approval="auto" onclick="filterSkillsByApproval('auto',this)">Auto</span>
-          <span class="filter-chip" data-approval="approval_required" onclick="filterSkillsByApproval('approval_required',this)">Needs approval</span>
-          <span class="filter-chip" data-approval="always_approval" onclick="filterSkillsByApproval('always_approval',this)">Always</span>
-          <button class="btn btn-primary" onclick="openModal('skill')">+ New Skill</button>
+        <p class="text-dim" style="font-size:11px;margin:0 12px 0 0">Creator = who authored. Operators = who can run.</p>
+      </div>
+      <!-- Row 1 (primary): Operator tabs — who can run -->
+      <div class="skill-registry-row-primary" style="margin-bottom:12px">
+        <span class="text-dim" style="font-size:11px;margin-right:8px">Operators (who can run):</span>
+        <div class="operator-tabs" role="group" aria-label="Filter by operator">
+          <button type="button" class="operator-tab active" data-operator="" id="skillOpAll" onclick="setOperatorTab('',this)">All</button>
+          <button type="button" class="operator-tab" data-operator="founder" onclick="setOperatorTab('founder',this)">Founder</button>
+          <button type="button" class="operator-tab" data-operator="daena" onclick="setOperatorTab('daena',this)">Daena</button>
+          <button type="button" class="operator-tab" data-operator="agent" onclick="setOperatorTab('agent',this)">Agents</button>
         </div>
       </div>
+      <!-- Row 2 (secondary): Category, Risk, Approval, Enabled, Search -->
+      <div class="skill-registry-row-secondary" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-bottom:12px">
+        <span class="text-dim" style="font-size:10px">Category</span>
+        <span class="filter-chip active" data-skillcat="" onclick="filterSkillsByCategory('',this)">All</span>
+        <span class="filter-chip" data-skillcat="utility" onclick="filterSkillsByCategory('utility',this)">Utility</span>
+        <span class="filter-chip" data-skillcat="research" onclick="filterSkillsByCategory('research',this)">Research</span>
+        <span class="filter-chip" data-skillcat="security" onclick="filterSkillsByCategory('security',this)">Security</span>
+        <span class="filter-chip" data-skillcat="data" onclick="filterSkillsByCategory('data',this)">Data</span>
+        <span class="text-dim" style="font-size:10px;margin-left:4px">Risk</span>
+        <span class="filter-chip active" data-risk="" onclick="filterSkillsByRisk('',this)">All</span>
+        <span class="filter-chip" data-risk="low" onclick="filterSkillsByRisk('low',this)">Low</span>
+        <span class="filter-chip" data-risk="medium" onclick="filterSkillsByRisk('medium',this)">Med</span>
+        <span class="filter-chip" data-risk="high" onclick="filterSkillsByRisk('high',this)">High</span>
+        <span class="text-dim" style="font-size:10px">Approval</span>
+        <span class="filter-chip active" data-approval="" onclick="filterSkillsByApproval('',this)">All</span>
+        <span class="filter-chip" data-approval="auto" onclick="filterSkillsByApproval('auto',this)">Auto</span>
+        <span class="filter-chip" data-approval="approval_required" onclick="filterSkillsByApproval('approval_required',this)">Needs approval</span>
+        <span class="filter-chip" data-approval="always_approval" onclick="filterSkillsByApproval('always_approval',this)">Always</span>
+        <span class="text-dim" style="font-size:10px">Enabled</span>
+        <span class="filter-chip active" data-status="" onclick="filterSkillsByStatus('',this)">All</span>
+        <span class="filter-chip" data-status="active" onclick="filterSkillsByStatus('active',this)">Yes</span>
+        <span class="filter-chip" data-status="disabled" onclick="filterSkillsByStatus('disabled',this)">No</span>
+        <input type="text" class="input" id="skillSearch" placeholder="Search" style="max-width:140px;font-size:11px" oninput="debouncedSkillSearch()"/>
+        <button class="btn btn-primary" onclick="openSkillCreateModal()">+ New Skill</button>
+      </div>
+      <!-- Bulk actions bar (shown when rows selected) -->
+      <div id="skillBulkBar" class="skill-bulk-bar" style="display:none;align-items:center;gap:10px;margin-bottom:10px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)">
+        <span class="text-dim" style="font-size:11px"><span id="skillBulkCount">0</span> selected</span>
+        <button type="button" class="btn" style="font-size:11px" onclick="bulkUpdateAccessSkills()">Bulk update access</button>
+        <button type="button" class="btn" style="font-size:11px" onclick="bulkDisableSkills()">Bulk disable</button>
+        <button type="button" class="btn btn-danger" style="font-size:11px" onclick="bulkArchiveSkills()">Bulk archive</button>
+        <button type="button" class="btn" style="font-size:11px" onclick="clearSkillSelection()">Clear</button>
+      </div>
       <div class="table-wrap">
-        <table><thead><tr><th>Name</th><th>Category</th><th>Access</th><th>Approval</th><th>Risk</th><th>Creator</th><th>Uses</th><th></th></tr></thead>
-        <tbody id="skillsTable"><tr><td colspan="8" class="empty-state">Loading…</td></tr></tbody>
+        <table><thead><tr><th style="width:36px"><input type="checkbox" id="skillSelectAll" title="Select all" onclick="toggleSkillSelectAll(this)"/></th><th>Name</th><th>Category</th><th>Operators (who can run)</th><th>Approval</th><th>Risk</th><th>Creator</th><th>Uses</th><th></th></tr></thead>
+        <tbody id="skillsTable"><tr><td colspan="9" class="empty-state">Loading…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -856,7 +884,20 @@ select.input{appearance:none;cursor:pointer}
       </div>
       <div class="form-row"><label class="form-label">Code Body</label><textarea class="input" id="newSkillCode" placeholder="def execute(input_data):\n    # skill implementation\n    pass"></textarea></div>
     </div>
-    <div class="modal-foot"><button class="btn" onclick="closeModal('skill')">Cancel</button><button class="btn btn-primary" onclick="createSkill()">Create Skill</button></div>
+    <input type="hidden" id="editSkillId" value=""/>
+    <div class="modal-foot"><button class="btn" onclick="closeModal('skill')">Cancel</button><button class="btn btn-primary" id="skillModalSubmit" onclick="createOrUpdateSkill()">Create Skill</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-access-more">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head"><span class="modal-title">Access: Departments &amp; Agents</span><button class="modal-close" onclick="closeModal('access-more')">×</button></div>
+    <div class="modal-body">
+      <p class="form-hint text-dim" style="font-size:11px;margin-bottom:8px">Optional: restrict who can run by department or specific agent IDs. Leave empty for no restriction.</p>
+      <div class="form-row"><label class="form-label">Allowed departments (comma-separated)</label><input class="input" id="accessMoreDepts" placeholder="e.g. Finance, Ops, Research" style="font-size:12px"/></div>
+      <div class="form-row"><label class="form-label">Allowed agents (comma-separated)</label><input class="input" id="accessMoreAgents" placeholder="e.g. agent_1, agent_2" style="font-size:12px"/></div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal('access-more')">Cancel</button><button class="btn btn-primary" onclick="saveAccessMore()">Save</button></div>
   </div>
 </div>
 
@@ -940,9 +981,15 @@ let ws = null;
 let autopilotState = true;
 let currentApproveId = null;
 let skillFilter = 'all';
+let operatorRoleFilter = '';  // server-side: '' | 'founder' | 'daena' | 'agent' (who can run)
 let skillAccessFilter = '';
+let skillCategoryFilter = '';
 let skillRiskFilter = '';
 let skillApprovalFilter = '';
+let skillStatusFilter = '';
+let skillSearchQuery = '';
+let skillSelectAllChecked = false;
+let selectedSkillIds = new Set();
 
 // ─── CLOCK ──────────────────────────────────────
 setInterval(()=>{
@@ -1138,7 +1185,8 @@ function animatePipeline(stage){
 
 // ─── MODAL HELPERS ──────────────────────────────
 function openModal(id){document.getElementById('modal-'+id).classList.add('open')}
-function closeModal(id){document.getElementById('modal-'+id).classList.remove('open')}
+function closeModal(id){ document.getElementById('modal-'+id).classList.remove('open'); if(id==='skill'){ document.getElementById('editSkillId').value=''; const btn=document.getElementById('skillModalSubmit'); if(btn) btn.textContent='Create Skill'; } }
+function openSkillCreateModal(){ document.getElementById('editSkillId').value=''; document.getElementById('skillModalSubmit').textContent='Create Skill'; openModal('skill'); }
 document.querySelectorAll('.modal-overlay').forEach(o=>{o.addEventListener('click',(e)=>{if(e.target===o)o.classList.remove('open')})});
 
 // ─── API HELPER (sync with backend; relative URLs so same-origin). Use apiRequest — window.api is DaenaAPI instance. ───
@@ -1300,47 +1348,220 @@ async function loadSkills(){
     if (pendingEl) pendingEl.textContent = (stats && stats.pending != null) ? stats.pending : '—';
     if (selfEl) selfEl.textContent = (stats && stats.self_created != null) ? stats.self_created : '—';
 
-    const res = await apiRequest(API.skills);
+    const url = operatorRoleFilter ? (API.skills + '?operator_role=' + encodeURIComponent(operatorRoleFilter)) : API.skills;
+    const res = await apiRequest(url);
     const skills = (res && res.skills && Array.isArray(res.skills)) ? res.skills : (Array.isArray(res) ? res : []);
-    let list = skillFilter === 'all' ? skills : skills.filter(s => (s.enabled ? 'active' : 'disabled') === skillFilter);
-    if (skillAccessFilter) list = list.filter(s => (s.access && s.access.allowed_roles && s.access.allowed_roles.includes(skillAccessFilter)));
+    let list = skills;
+    if (skillFilter !== 'all') list = list.filter(s => (s.enabled ? 'active' : 'disabled') === skillFilter);
+    if (skillCategoryFilter) list = list.filter(s => (s.category || '').toLowerCase() === skillCategoryFilter);
     if (skillRiskFilter) list = list.filter(s => (s.risk || '').toLowerCase() === skillRiskFilter);
     if (skillApprovalFilter) list = list.filter(s => (s.approval_policy || 'auto') === skillApprovalFilter);
-    const accessBadges = (s) => {
+    if (skillStatusFilter) list = list.filter(s => (s.enabled ? 'active' : 'disabled') === skillStatusFilter);
+    if (skillSearchQuery) { const q = skillSearchQuery.toLowerCase(); list = list.filter(s => ((s.name||'')+(s.description||'')).toLowerCase().includes(q)); }
+    window._lastSkillsList = list;
+    const operatorToggles = (s) => {
       const a = s.access || {};
-      const roles = (a.allowed_roles || []).map(r => `<span class="badge badge-active" style="font-size:9px;margin:1px">${r}</span>`).join('');
-      const depts = (a.allowed_departments || []).map(d => `<span class="badge badge-pending" style="font-size:9px;margin:1px">${(d+'').replace(/</g,'&lt;')}</span>`).join('');
-      return (roles || depts) ? (roles + depts) : '—';
+      const roles = (a.allowed_roles || []).map(r=>r.toLowerCase());
+      const idSafe = (s.id||'').toString().replace(/"/g,'&quot;');
+      const idEsc = (s.id||'').toString().replace(/'/g,"\\'");
+      const isRegistry = s.source === 'registry';
+      const F = (label, role) => {
+        const on = roles.includes(role);
+        if (!isRegistry) return `<span class="badge badge-${on?'active':'pending'}" style="font-size:9px">${label}</span>`;
+        return `<button type="button" class="operator-chip ${on?'on':''}" onclick="patchSkillAccess('${idEsc}','${role}',${!on})" title="Toggle ${label}">${label}</button>`;
+      };
+      const moreBtn = isRegistry ? `<button type="button" class="btn" style="padding:2px 6px;font-size:10px;margin-left:2px" data-skill-id="${idSafe}" onclick="openAccessMorePanel(this)" title="Departments / Agents">⋯</button>` : '';
+      return F('Founder','founder') + F('Daena','daena') + F('Agents','agent') + moreBtn;
     };
     const approvalLabel = (p) => { const v = (p || 'auto'); return v === 'always_approval' ? 'Always' : v === 'approval_required' ? 'Needs approval' : 'Auto'; };
     setTable(list.map(s => {
       const status = s.enabled ? 'active' : 'disabled';
       const creator = (s.creator || '—').toString().replace(/</g, '&lt;');
-      const idSafe = (s.id || '').toString().replace(/'/g, "\\'");
+      const idSafe = (s.id || '').toString().replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      const idEsc = (s.id || '').toString().replace(/'/g, "\\'");
       const name = (s.name || '').toString().replace(/</g, '&lt;');
       const idShort = (s.id || '').toString().replace(/</g, '&lt;').slice(0, 24);
       const risk = (s.risk || '—').toString().replace(/</g, '&lt;').toLowerCase();
       const cat = (s.category || '—').toString().replace(/</g, '&lt;');
       const approval = approvalLabel(s.approval_policy);
       const uses = (s.usage_count != null) ? s.usage_count : 0;
+      const checked = skillSelectAllChecked || selectedSkillIds.has(s.id) ? ' checked' : '';
+      const canEdit = s.source === 'registry';
       return `<tr>
+        <td><input type="checkbox" class="skill-row-cb" data-skill-id="${idSafe}" ${checked} onclick="toggleSkillSelection(this)" ${canEdit ? '' : 'disabled'}/></td>
         <td><strong>${name}</strong><div style="font-size:10px;color:var(--text-dim)">${idShort}${(s.id && s.id.length > 24) ? '…' : ''}</div></td>
         <td><span class="badge badge-pending" style="font-size:10px">${cat}</span></td>
-        <td style="font-size:10px">${accessBadges(s)}</td>
+        <td style="font-size:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">${operatorToggles(s)}</td>
         <td><span class="badge badge-${risk==='high'?'pending':risk==='medium'?'pending':'active'}" style="font-size:10px">${approval}</span></td>
         <td><span class="badge badge-${risk==='high'?'high':risk==='medium'?'medium':'low'}" style="font-size:10px">${risk}</span></td>
         <td class="td-mono">${creator}</td>
         <td>${uses}</td>
-        <td><button class="btn" style="padding:3px 8px;font-size:10px" onclick="toggleSkill('${idSafe}',${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn" style="padding:3px 8px;font-size:10px" onclick="toggleSkill('${idEsc}',${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button>
+          ${canEdit ? `<button class="btn" style="padding:3px 8px;font-size:10px;margin-left:2px" onclick="openEditSkillModal('${idEsc}')" title="Edit">Edit</button>` : ''}
+          ${canEdit ? `<button class="btn btn-danger" style="padding:3px 8px;font-size:10px;margin-left:2px" onclick="archiveSkill('${idEsc}')" title="Archive (soft-delete)">Archive</button>` : ''}
+        </td>
       </tr>`;
-    }).join('') || '<tr><td colspan="8" class="empty-state">No skills found</td></tr>');
+    }).join('') || '<tr><td colspan="9" class="empty-state">No skills found</td></tr>');
+    updateSkillBulkBar();
   } catch (e) {
-    setTable('<tr><td colspan="8" class="empty-state">Error loading skills: ' + (e.message || String(e)).replace(/</g, '&lt;') + '</td></tr>');
+    setTable('<tr><td colspan="9" class="empty-state">Error loading skills: ' + (e.message || String(e)).replace(/</g, '&lt;') + '</td></tr>');
   }
 }
 async function toggleSkill(id,enabled){
   await apiExecution(API.skills+'/toggle',{method:'POST',body:JSON.stringify({skill_id:id,enabled})});
   loadSkills();
+}
+async function archiveSkill(id){
+  if (!confirm('Archive this skill? It will be soft-deleted and removed from the list.')) return;
+  const r = await apiRequest(API.skills+'/'+encodeURIComponent(id), { method: 'DELETE' });
+  if (r && r.success) { if(window.showToast) window.showToast('Skill archived','success'); loadSkills(); }
+  else if(window.showToast) window.showToast(r?.detail||'Archive failed','error');
+}
+function toggleSkillSelectAll(checkbox){
+  skillSelectAllChecked = checkbox && checkbox.checked;
+  document.querySelectorAll('.skill-row-cb:not([disabled])').forEach(cb=>{ cb.checked = skillSelectAllChecked; if(skillSelectAllChecked) selectedSkillIds.add(cb.getAttribute('data-skill-id')); else selectedSkillIds.delete(cb.getAttribute('data-skill-id')); });
+  updateSkillBulkBar();
+}
+function toggleSkillSelection(checkbox){
+  const id = checkbox && checkbox.getAttribute('data-skill-id');
+  if(!id) return;
+  if(checkbox.checked) selectedSkillIds.add(id); else selectedSkillIds.delete(id);
+  skillSelectAllChecked = false;
+  if(document.getElementById('skillSelectAll')) document.getElementById('skillSelectAll').checked = false;
+  updateSkillBulkBar();
+}
+function updateSkillBulkBar(){
+  const bar = document.getElementById('skillBulkBar');
+  const countEl = document.getElementById('skillBulkCount');
+  if(bar && countEl){ const n = selectedSkillIds.size; countEl.textContent = n; bar.style.display = n ? 'flex' : 'none'; }
+}
+function clearSkillSelection(){
+  selectedSkillIds.clear();
+  skillSelectAllChecked = false;
+  const cb = document.getElementById('skillSelectAll'); if(cb) cb.checked = false;
+  document.querySelectorAll('.skill-row-cb').forEach(c=>c.checked = false);
+  updateSkillBulkBar();
+}
+async function bulkUpdateAccessSkills(){
+  const ids = Array.from(selectedSkillIds);
+  if(!ids.length) return;
+  const rolesStr = prompt('Set allowed_roles (comma-separated): founder, daena, agent');
+  if(rolesStr === null) return;
+  const roles = rolesStr.split(/[\s,]+/).map(s=>s.trim().toLowerCase()).filter(s=>['founder','daena','agent'].includes(s));
+  if(!roles.length){ if(window.showToast) window.showToast('Enter at least one role: founder, daena, agent','error'); return; }
+  for(const id of ids){
+    const s = window._lastSkillsList && window._lastSkillsList.find(x=>x.id===id);
+    if(!s || s.source !== 'registry') continue;
+    await apiRequest(API.skills+'/'+encodeURIComponent(id)+'/access', { method:'PATCH', body: JSON.stringify({ allowed_roles: roles }) });
+  }
+  if(window.showToast) window.showToast('Access updated for '+ids.length+' skill(s)','success');
+  clearSkillSelection(); loadSkills();
+}
+async function bulkDisableSkills(){
+  const ids = Array.from(selectedSkillIds);
+  if(!ids.length) return;
+  if(!confirm('Disable '+ids.length+' skill(s)?')) return;
+  for(const id of ids){
+    await apiRequest(API.skills+'/toggle', { method:'POST', body: JSON.stringify({ skill_id: id, enabled: false }) });
+  }
+  if(window.showToast) window.showToast('Disabled '+ids.length+' skill(s)','success');
+  clearSkillSelection(); loadSkills();
+}
+async function bulkArchiveSkills(){
+  const ids = Array.from(selectedSkillIds);
+  if(!ids.length) return;
+  if(!confirm('Archive '+ids.length+' skill(s)? They will be soft-deleted.')) return;
+  for(const id of ids){
+    const s = window._lastSkillsList && window._lastSkillsList.find(x=>x.id===id);
+    if(s && s.source === 'registry') await apiRequest(API.skills+'/'+encodeURIComponent(id), { method: 'DELETE' });
+  }
+  if(window.showToast) window.showToast('Archived '+ids.length+' skill(s)','success');
+  clearSkillSelection(); loadSkills();
+}
+let _accessMoreSkillId = '';
+function openAccessMorePanel(btn){
+  const skillId = btn && (btn.getAttribute&&btn.getAttribute('data-skill-id'));
+  if(!skillId) return;
+  const s = window._lastSkillsList && window._lastSkillsList.find(x=>x.id===skillId);
+  if(!s || s.source !== 'registry') return;
+  _accessMoreSkillId = skillId;
+  const a = s.access || {};
+  document.getElementById('accessMoreDepts').value = (a.allowed_departments || []).join(', ');
+  document.getElementById('accessMoreAgents').value = (a.allowed_agents || []).join(', ');
+  openModal('access-more');
+}
+async function saveAccessMore(){
+  if(!_accessMoreSkillId) return;
+  const depts = (document.getElementById('accessMoreDepts').value||'').split(/[\s,]+/).map(s=>s.trim()).filter(Boolean);
+  const agents = (document.getElementById('accessMoreAgents').value||'').split(/[\s,]+/).map(s=>s.trim()).filter(Boolean);
+  const s = window._lastSkillsList && window._lastSkillsList.find(x=>x.id===_accessMoreSkillId);
+  const roles = (s && s.access && s.access.allowed_roles) ? s.access.allowed_roles : [];
+  const res = await apiRequest(API.skills+'/'+encodeURIComponent(_accessMoreSkillId)+'/access', { method:'PATCH', body: JSON.stringify({ allowed_roles: roles, allowed_departments: depts, allowed_agents: agents }) });
+  if(res && res.success){ if(window.showToast) window.showToast('Access updated','success'); closeModal('access-more'); loadSkills(); }
+  else if(window.showToast) window.showToast(res?.detail||'Update failed','error');
+  _accessMoreSkillId = '';
+}
+async function openEditSkillModal(id){
+  const res = await apiRequest(API.skills+'/'+encodeURIComponent(id));
+  const s = res && res.skill;
+  if(!s){ if(window.showToast) window.showToast('Skill not found','error'); return; }
+  if(s.source !== 'registry'){ if(window.showToast) window.showToast('Only registry skills can be edited','error'); return; }
+  document.getElementById('editSkillId').value = id;
+  document.getElementById('newSkillName').value = s.name || s.id || '';
+  document.getElementById('newSkillDisplay').value = s.display_name || s.name || '';
+  document.getElementById('newSkillDesc').value = s.description || '';
+  const cat = (s.category || s.category_slug || 'utility').toLowerCase();
+  setSkillCategory(cat);
+  document.getElementById('newSkillCat').value = cat;
+  setSkillCreator((s.creator || 'founder').toLowerCase());
+  document.getElementById('newSkillCreator').value = s.creator || 'founder';
+  const a = s.access || {};
+  const roles = (a.allowed_roles || []).map(r=>r.toLowerCase());
+  document.getElementById('accessFounder').checked = roles.includes('founder');
+  document.getElementById('accessDaena').checked = roles.includes('daena');
+  document.getElementById('accessDeptAgents').checked = roles.includes('agent');
+  const depts = a.allowed_departments || [];
+  const agents = a.allowed_agents || [];
+  document.getElementById('accessSpecificDepts').checked = depts.length > 0;
+  document.getElementById('accessSpecificAgents').checked = agents.length > 0;
+  document.getElementById('accessDeptsList').value = depts.join(', ');
+  document.getElementById('accessAgentsList').value = agents.join(', ');
+  document.getElementById('accessSpecificDeptsRow').style.display = depts.length > 0 ? 'block' : 'none';
+  document.getElementById('accessSpecificAgentsRow').style.display = agents.length > 0 ? 'block' : 'none';
+  const risk = (s.risk_level || s.risk || 'low').toLowerCase();
+  setSkillRisk(risk);
+  window._newSkillRisk = risk;
+  const approval = (s.approval_policy || 'auto').toLowerCase();
+  setSkillApproval(approval);
+  window._newSkillApproval = approval;
+  document.getElementById('requiresStepUpConfirm').checked = s.requires_step_up_confirm !== false;
+  const enabled = s.enabled !== false;
+  const toggleEl = document.getElementById('newSkillEnabledToggle');
+  if(toggleEl){ toggleEl.classList.toggle('on', enabled); toggleEl.setAttribute('aria-pressed', enabled); }
+  document.getElementById('newSkillEnabledLabel').textContent = enabled ? 'On (skill can be used after save)' : 'Off (skill disabled)';
+  document.getElementById('skillModalSubmit').textContent = 'Save';
+  openModal('skill');
+}
+function createOrUpdateSkill(){
+  const editId = document.getElementById('editSkillId') && document.getElementById('editSkillId').value;
+  if(editId) updateSkill(editId); else createSkill();
+}
+async function updateSkill(id){
+  const display = document.getElementById('newSkillDisplay').value?.trim() || document.getElementById('newSkillName').value?.trim();
+  const desc = document.getElementById('newSkillDesc').value?.trim() || '';
+  const cat = document.getElementById('newSkillCat').value || 'utility';
+  const creator = document.getElementById('newSkillCreator').value || 'founder';
+  const enabled = document.getElementById('newSkillEnabledToggle').classList.contains('on');
+  if(!window._newSkillRisk) window._newSkillRisk = 'low'; if(!window._newSkillApproval) window._newSkillApproval = 'auto';
+  const access = getNewSkillAccessScope();
+  const policyObj = getNewSkillExecutionPolicy();
+  const payload = { display_name: display, description: desc, category: cat, creator, enabled, access, policy: { risk_level: policyObj.risk_level, approval_policy: policyObj.approval_policy, requires_step_up_confirm: policyObj.requires_step_up_confirm } };
+  try {
+    const r = await apiRequest(API.skills+'/'+encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(payload) });
+    if(r && (r.success || r.id)){ if(window.showToast) window.showToast('Skill updated','success'); document.getElementById('editSkillId').value = ''; document.getElementById('skillModalSubmit').textContent = 'Create Skill'; closeModal('skill'); loadSkills(); }
+    else if(window.showToast) window.showToast(r?.detail||'Update failed','error');
+  } catch(e){ if(window.showToast) window.showToast('Failed: '+(e.message||e),'error'); }
 }
 function filterSkills(f,el){
   skillFilter=f;
@@ -1348,10 +1569,35 @@ function filterSkills(f,el){
   if(el)el.classList.add('active');
   loadSkills();
 }
-function filterSkillsByAccess(v,el){
-  skillAccessFilter=v;
-  document.querySelectorAll('.filter-chip[data-access]').forEach(c=>c.classList.toggle('active', c.getAttribute('data-access')===v));
+function setOperatorTab(v, el){
+  operatorRoleFilter=v;
+  document.querySelectorAll('.operator-tab[data-operator]').forEach(c=>c.classList.toggle('active', (c.getAttribute('data-operator')||'')===v));
   loadSkills();
+}
+function filterSkillsByAccess(v,el){ setOperatorTab(v,el); }
+function filterSkillsByCategory(v,el){
+  skillCategoryFilter=v;
+  document.querySelectorAll('.filter-chip[data-skillcat]').forEach(c=>c.classList.toggle('active', (c.getAttribute('data-skillcat')||'')===v));
+  loadSkills();
+}
+function filterSkillsByStatus(v,el){
+  skillStatusFilter=v;
+  document.querySelectorAll('.filter-chip[data-status]').forEach(c=>c.classList.toggle('active', (c.getAttribute('data-status')||'')===v));
+  loadSkills();
+}
+let _skillSearchTimer;
+function debouncedSkillSearch(){
+  clearTimeout(_skillSearchTimer);
+  _skillSearchTimer=setTimeout(()=>{ skillSearchQuery=document.getElementById('skillSearch')?.value?.trim()||''; loadSkills(); }, 280);
+}
+async function patchSkillAccess(skillId, role, add){
+  const s = window._lastSkillsList?.find(x=>x.id===skillId); if(!s) return;
+  const roles = [...(s.access?.allowed_roles||[])].map(r=>r.toLowerCase());
+  const r = role.toLowerCase();
+  if(add && !roles.includes(r)) roles.push(r);
+  if(!add && roles.includes(r)) roles.splice(roles.indexOf(r),1);
+  const res = await apiRequest(API.skills+'/'+encodeURIComponent(skillId)+'/access', { method:'PATCH', body: JSON.stringify({ allowed_roles: roles }) });
+  if(res&&res.success) loadSkills(); else if(window.showToast) window.showToast(res?.detail||'Failed to update access','error');
 }
 function filterSkillsByRisk(v,el){
   skillRiskFilter=v;
