@@ -195,7 +195,9 @@ class SkillRegistry:
                     "code_body": f"# Tool wrapper for {name}"
                 })
         except Exception as e:
-            print(f"Warning: Failed to auto-import tools as skills: {e}")
+            import traceback
+            print(f"CRITICAL ERROR: Failed to auto-import tools as skills: {e}")
+            traceback.print_exc()
 
         for b in builtins:
             skill_id = str(uuid.uuid4())

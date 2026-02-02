@@ -1,202 +1,53 @@
-y
-Content Security Policy of your site blocks the use of 'eval' in JavaScript`
-The Content Security Policy (CSP) prevents the evaluation of arbitrary strings as JavaScript to make it more difficult for an attacker to inject unathorized code on your site.
-
-To solve this issue, avoid using eval(), new Function(), setTimeout([string], ...) and setInterval([string], ...) for evaluating strings.
-
-If you absolutely must: you can enable string evaluation by adding unsafe-eval as an allowed source in a script-src directive.
-
-⚠️ Allowing string evaluation comes at the risk of inline script injection.
-
-1 directive
-Source location	Directive	Status
-script-src	blocked
-
-realtime.js:67 📡 WS Event: system_metrics {timestamp: '2026-02-02T10:57:47.108256', council: {…}, nbmf: {…}, council_performance: {…}, message_bus: {…}, …}
-websocket-client.js:135 Unhandled event type: system_metrics {event_type: 'system_metrics', entity_type: 'system', entity_id: '0', payload: {…}, timestamp: '2026-02-02T15:57:47.109257'}
-realtime.js:67 📡 WS Event: council_health {departments: 8, agents: 48, roles_per_department: 6, validation: {…}}
-realtime.js:67 📡 WS Event: sec_loop_status {pending_decisions: 0, total_cycles: 0, total_promoted: 0, total_rejected: 0}
-websocket-client.js:135 Unhandled event type: council_health {event_type: 'council_health', entity_type: 'system', entity_id: '0', payload: {…}, timestamp: '2026-02-02T15:57:47.114685'}
-websocket-client.js:135 Unhandled event type: sec_loop_status {event_type: 'sec_loop_status', entity_type: 'system', entity_id: '0', payload: {…}, timestamp: '2026-02-02T15:57:47.116855'}
-voice-widget.js:109  Wake word error: no-speech
-recognition.onerror @ voice-widget.js:109
-realtime.js:67 📡 WS Event: system_metrics {timestamp: '2026-02-02T10:57:49.900877', council: {…}, nbmf: {…}, council_performance: {…}, message_bus: {…}, …}
-websocket-client.js:135 Unhandled event type: system_metrics {event_type: 'system_metrics', entity_type: 'system', entity_id: '0', payload: {…}, timestamp: '2026-02-02T15:57:49.900877'}
-realtime.js:67 📡 WS Event: council_health {departments: 8, agents: 48, roles_per_department: 6, validation: {…}}
-websocket-client.js:135 Unhandled event type: council_health {event_type: 'council_health', entity_type: 'system', entity_id: '0', payload: {…}, timestamp: '2026-02-02T15:57:49.906405'}
-realtime.js:67 📡 WS Event: sec_loop_status {pending_decisions: 0, total_cycles: 0, total_promoted: 0, total_rejected: 0}
-websocket-client.js:135 Unhandled event type: sec_loop_status {event_type: 'sec_loop_status', entity_type: 'system', entity_id: '0', payload: {…}, timestamp: '2026-02-02T15:57:49.910510'}
-voice-widget.js:132 👂 Wake word listening active...
-realtime.js:67 📡 WS Event: system_metrics {timestamp: '2026-02-02T10:57:52.644493', council: {…}, nbmf: {…}, council_performance: {…}, message_bus: {…}, …}
-websocket-client.js:135 Unhandled event type: system_metrics {event_type: 'system_metrics', entity_type: 'system', entity_id: '0', payload: {…}, timestamp: '2026-02-02T15:57:52.645515'}
-realtime.js:67 📡 WS Event: council_health {departments: 8, agents: 48, roles_per_department: 6, validation: {…}}
-realtime.js:67 📡 WS Event: sec_loop_status {pending_decisions: 0, total_cycles: 0, total_promoted: 0, total_rejected: 0}
-websocket-client.js:135 Unhandled event type: council_health {event_type: 'council_health', entity_type: 'system', entity_id: '0', payload: {…}, timestamp: '2026-02-02T15:57:52.650572'}
-websocket-client.js:135 Unhandled event type: sec_loop_status {event_type: 'sec_loop_status', entity_type: 'system', entity_id: '0', payload: {…}, timestamp: '2026-02-02T15:57:52.654094'}
-
-Uncaught SyntaxError: Identifier 'ws' has already been declared (at control-pannel:1587:5)
-api-client.js:28   GET http://127.0.0.1:8000/api/v1/system/frontend-setting 405 (Method Not Allowed)
-request @ api-client.js:28
-restoreSettings @ frontend-backend-sync.js:58
-init @ frontend-backend-sync.js:18
-FrontendBackendSync @ frontend-backend-sync.js:10
-(anonymous) @ frontend-backend-sync.js:137
-api-client.js:51  Request failed: /system/frontend-setting Error: Method Not Allowed
-    at DaenaAPI.request (api-client.js:46:23)
-    at async FrontendBackendSync.restoreSettings (frontend-backend-sync.js:58:30)
-request @ api-client.js:51
-await in request
-restoreSettings @ frontend-backend-sync.js:58
-init @ frontend-backend-sync.js:18
-FrontendBackendSync @ frontend-backend-sync.js:10
-(anonymous) @ frontend-backend-sync.js:137
+dashboard:1193:13)
+    at updateDashboardData (dashboard:1107:9)
+loadTaskProgress @ dashboard:1244
+updateDashboardData @ dashboard:1107
+await in updateDashboardData
+(anonymous) @ dashboard:1041
+dashboard:1246  Uncaught (in promise) ReferenceError: hasExecutionToken is not defined
+    at loadTaskProgress (dashboard:1246:9)
+    at updateDashboardData (dashboard:1107:9)
+loadTaskProgress @ dashboard:1246
+updateDashboardData @ dashboard:1107
+await in updateDashboardData
+(anonymous) @ dashboard:1310
+dashboard:1246  Uncaught (in promise) ReferenceError: hasExecutionToken is not defined
+    at loadTaskProgress (dashboard:1246:9)
+    at updateDashboardData (dashboard:1107:9)
+loadTaskProgress @ dashboard:1246
+updateDashboardData @ dashboard:1107
+await in updateDashboardData
+(anonymous) @ dashboard:1041
 favicon.svg:1   GET http://127.0.0.1:8000/static/favicon.svg 404 (Not Found)
-control-pannel:950  Uncaught ReferenceError: debouncedSkillSearch is not defined
-    at HTMLInputElement.oninput (control-pannel:950:153)
-oninput @ control-pannel:950
-4control-pannel:944  Uncaught ReferenceError: filterSkillsByApproval is not defined
-    at HTMLSpanElement.onclick (control-pannel:944:128)
-onclick @ control-pannel:944Uncaught SyntaxError: Identifier 'ws' has already been declared (at control-pannel:1587:5)
-api-client.js:28   GET http://127.0.0.1:8000/api/v1/system/frontend-setting 405 (Method Not Allowed)
-request @ api-client.js:28
-restoreSettings @ frontend-backend-sync.js:58
-init @ frontend-backend-sync.js:18
-FrontendBackendSync @ frontend-backend-sync.js:10
-(anonymous) @ frontend-backend-sync.js:137
-api-client.js:51  Request failed: /system/frontend-setting Error: Method Not Allowed
-    at DaenaAPI.request (api-client.js:46:23)
-    at async FrontendBackendSync.restoreSettings (frontend-backend-sync.js:58:30)
-request @ api-client.js:51
-await in request
-restoreSettings @ frontend-backend-sync.js:58
-init @ frontend-backend-sync.js:18
-FrontendBackendSync @ frontend-backend-sync.js:10
-(anonymous) @ frontend-backend-sync.js:137
-favicon.svg:1   GET http://127.0.0.1:8000/static/favicon.svg 404 (Not Found)
-control-pannel:950  Uncaught ReferenceError: debouncedSkillSearch is not defined
-    at HTMLInputElement.oninput (control-pannel:950:153)
-oninput @ control-pannel:950
-4control-pannel:944  Uncaught ReferenceError: filterSkillsByApproval is not defined
-    at HTMLSpanElement.onclick (control-pannel:944:128)
-onclick @ control-pannel:944
-
-Uncaught SyntaxError: Identifier 'ws' has already been declared (at control-pannel:1587:5)
-api-client.js:28   GET http://127.0.0.1:8000/api/v1/system/frontend-setting 405 (Method Not Allowed)
-request @ api-client.js:28
-restoreSettings @ frontend-backend-sync.js:58
-init @ frontend-backend-sync.js:18
-FrontendBackendSync @ frontend-backend-sync.js:10
-(anonymous) @ frontend-backend-sync.js:137
-api-client.js:51  Request failed: /system/frontend-setting Error: Method Not Allowed
-    at DaenaAPI.request (api-client.js:46:23)
-    at async FrontendBackendSync.restoreSettings (frontend-backend-sync.js:58:30)
-request @ api-client.js:51
-await in request
-restoreSettings @ frontend-backend-sync.js:58
-init @ frontend-backend-sync.js:18
-FrontendBackendSync @ frontend-backend-sync.js:10
-(anonymous) @ frontend-backend-sync.js:137
-favicon.svg:1   GET http://127.0.0.1:8000/static/favicon.svg 404 (Not Found)
-control-pannel:950  Uncaught ReferenceError: debouncedSkillSearch is not defined
-    at HTMLInputElement.oninput (control-pannel:950:153)
-oninput @ control-pannel:950
-4control-pannel:944  Uncaught ReferenceError: filterSkillsByApproval is not defined
-    at HTMLSpanElement.onclick (control-pannel:944:128)
-onclick @ control-pannel:944
-
-Local metrics
-Largest Contentful Paint (LCP)
-2.18 s
-Your local LCP value of 2.18 s is good.
-LCP element
-span
-Cumulative Layout Shift (CLS)
-0.00
-Your local CLS value of 0.00 is good.
-Worst cluster
-2 shifts
-Interaction to Next Paint (INP)
-40 ms
-Your local INP value of 40 ms is good.
-INP interaction
-pointer
-Learn more about local and field metrics
-Interactions
-Layout shifts
-
-pointer
-button.tab-btn
-16 ms
-pointer
-button.tab-btn
-16 ms
-pointer
-button.tab-btn
-16 ms
-pointer
-button.tab-btn
-32 ms
-pointer
-button.tab-btn
-16 ms
-pointer INP
-div.stat-label
-40 ms
-Phase
-Local duration (ms)
-Input delay
-3
-Processing duration
-0
-Presentation delay
-37
-pointer
-span.filter-chip
-40 ms
-pointer
-span.filter-chip
-16 ms
-pointer
-span.filter-chip
-32 ms
-pointer
-span.filter-chip
-40 ms
-pointer
-span.filter-chip
-24 ms
-pointer
-span.filter-chip
-24 ms
-pointer
-div.stat-label
-24 ms
-Next steps
-Field metrics
-See how your local metrics compare to real user data in the Chrome UX Report.
-Set up
-Environment settings
-Use the device toolbar and configure throttling to simulate real user environments and identify more performance issues.
-
-
-CPU: No throttling
-
-Network: No throttling
-Disable network cache
-
-
-Record
-Ctrl + E
-
-Record and reload
-Ctrl + Shift + E
-
----
-VERIFICATION (backend launched; control panel and dashboard checked)
----
-Backend: Launched with venv Python; Uvicorn on http://127.0.0.1:8001 (port 8000 was in use).
-Control panel: http://127.0.0.1:8001/ui/control-pannel - 200 OK.
-Dashboard: http://127.0.0.1:8001/ui/dashboard - 200 OK.
-GET /api/v1/system/frontend-setting - 200 (no longer 405).
-GET /api/v1/skills/stats - 200, success: true, total: 12, active: 12.
-To verify UI: open http://127.0.0.1:8001/ui/control-pannel and http://127.0.0.1:8001/ui/dashboard (use 8001 if backend fell back from 8000).
+dashboard:1244  Failed to load task progress: ReferenceError: hasExecutionToken is not defined
+    at loadTaskProgress (dashboard:1193:13)
+    at dashboard:1305:9
+loadTaskProgress @ dashboard:1244
+(anonymous) @ dashboard:1305
+setInterval
+(anonymous) @ dashboard:1302
+dashboard:1246  Uncaught (in promise) ReferenceError: hasExecutionToken is not defined
+    at loadTaskProgress (dashboard:1246:9)
+    at dashboard:1305:9
+loadTaskProgress @ dashboard:1246
+(anonymous) @ dashboard:1305
+setInterval
+(anonymous) @ dashboard:1302
+dashboard:1244  Failed to load task progress: ReferenceError: hasExecutionToken is not defined
+    at loadTaskProgress (dashboard:1193:13)
+    at updateDashboardData (dashboard:1107:9)
+loadTaskProgress @ dashboard:1244
+updateDashboardData @ dashboard:1107
+await in updateDashboardData
+(anonymous) @ dashboard:1303
+setInterval
+(anonymous) @ dashboard:1302
+dashboard:1246  Uncaught (in promise) ReferenceError: hasExecutionToken is not defined
+    at loadTaskProgress (dashboard:1246:9)
+    at updateDashboardData (dashboard:1107:9)
+loadTaskProgress @ dashboard:1246
+updateDashboardData @ dashboard:1107
+await in updateDashboardData
+(anonymous) @ dashboard:1303
+setInterval
+(anonymous) @ dashboard:1302
