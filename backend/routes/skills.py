@@ -30,6 +30,20 @@ _skills_state: Dict[str, bool] = {s["id"]: s["enabled"] for s in SKILL_DEFS}
 _registry_enabled: Dict[str, bool] = {}
 
 
+class CreateSkillBody(BaseModel):
+    name: str
+    display_name: Optional[str] = None
+    description: str = ""
+    category: str = "utility"
+    creator: str = "founder"
+    enabled: bool = True
+    code_body: str = ""
+    access: Optional[Dict[str, Any]] = None
+    risk_level: Optional[str] = None
+    approval_policy: Optional[str] = None
+    requires_step_up_confirm: bool = False
+
+
 def _verify_execution_token(x_execution_token: Optional[str] = Header(None, alias="X-Execution-Token")):
     from backend.config.settings import settings
     if not settings.execution_token:
@@ -47,7 +61,7 @@ def _registry_skills_for_list() -> List[Dict[str, Any]]:
         for s in registry.list_skills():
             sid = s.get("id") or ""
             status = (s.get("status") or "").lower()
-            default_enabled = status in ("active", "approved")
+            default_enabled = s.get("enabled", status in ("active", "approved"))
             enabled = _registry_enabled.get(sid, default_enabled)
             out.append({
                 "id": sid,
@@ -57,6 +71,10 @@ def _registry_skills_for_list() -> List[Dict[str, Any]]:
                 "description": s.get("description") or "",
                 "creator": s.get("creator") or "registry",
                 "source": "registry",
+                "category": s.get("category") or "custom",
+                "access": s.get("access") or {"allowed_roles": [], "allowed_departments": [], "allowed_agents": []},
+                "approval_policy": s.get("approval_policy") or "auto",
+                "usage_count": s.get("usage_count", 0),
             })
     except Exception:
         pass
@@ -72,9 +90,31 @@ async def list_skills() -> Dict[str, Any]:
             **s,
             "enabled": _skills_state.get(s["id"], s["enabled"]),
             "creator": s.get("creator", "founder"),
+            "risk": s.get("risk", "medium"),
+            "category": s.get("category", "utility"),
+            "access": s.get("access") or {"allowed_roles": ["founder", "daena"], "allowed_departments": [], "allowed_agents": []},
+            "approval_policy": s.get("approval_policy", "auto"),
+            "usage_count": s.get("usage_count", 0),
         })
     skills.extend(_registry_skills_for_list())
     return {"success": True, "skills": skills}
+
+
+@router.post("")
+async def create_skill(body: CreateSkillBody) -> Dict[str, Any]:
+    """Create a new skill via Control Panel. Persists to skill_registry."""
+    payload = body.model_dump(exclude_none=True)
+    payload["display_name"] = payload.get("display_name") or payload.get("name", "")
+    payload["code_body"] = payload.get("code_body") or ""
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        out = registry.create_skill(payload)
+        if out.get("error"):
+            raise HTTPException(status_code=400, detail=out["error"])
+        return out
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/stats")

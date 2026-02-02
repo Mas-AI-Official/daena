@@ -1382,6 +1382,12 @@ try:
         logger.info("✅ DaenaBot Tools API registered at /api/v1/tools (explicit)")
     except Exception as e:
         logger.warning(f"⚠️ DaenaBot Tools API not available: {e}")
+    try:
+        from backend.routes.hands import router as hands_router
+        app.include_router(hands_router)
+        logger.info("✅ Hands status API registered at /api/v1/hands")
+    except Exception as e:
+        logger.warning(f"⚠️ Hands API not available: {e}")
 
     # Founder Panel (Incident Room: lockdown, emergency status, containment)
     try:

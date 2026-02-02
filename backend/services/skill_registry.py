@@ -98,6 +98,14 @@ class SkillDefinition:
     usage_count: int = 0
     last_used_at: Optional[str] = None
     
+    # Access scope (who can run this skill)
+    allowed_roles: list = field(default_factory=list)      # founder, daena, agent
+    allowed_departments: list = field(default_factory=list)
+    approval_policy: str = "auto"                          # auto | approval_required | always_approval
+    requires_step_up_confirm: bool = False
+    enabled: bool = True
+    category_slug: Optional[str] = None                    # UI category: utility, research, etc.
+    
     # Sandbox test results
     sandbox_results: Optional[dict] = None
     
@@ -335,30 +343,38 @@ class SkillRegistry:
         Create a new skill (DRAFT).
         Daena or sub-agents can propose skills.
         Founder skills bypass approval.
+        Control-panel payload: name, display_name, description, category, creator, code_body;
+        optional access (allowed_roles, allowed_departments, allowed_agents), risk_level,
+        approval_policy, requires_step_up_confirm, enabled.
         """
-        # Validate required fields
-        required = ["name", "display_name", "description", "category",
-                    "creator", "creator_agent_id", "input_schema",
-                    "output_schema", "code_body"]
+        required = ["name", "display_name", "description", "category", "creator", "code_body"]
         for f in required:
             if f not in payload:
                 return {"error": f"Missing required field: {f}"}
 
         name = payload["name"]
-
-        # Name uniqueness check
         if name in self._name_index:
             return {"error": f"Skill name '{name}' already exists"}
-
-        # Validate name format (slug)
         if not name.replace("_", "").isalnum():
             return {"error": "Skill name must be alphanumeric with underscores only"}
 
-        # Determine risk level
-        risk = self._assess_risk(payload)
+        # Normalize for control-panel: default input_schema, output_schema, creator_agent_id
+        creator_agent_id = payload.get("creator_agent_id", "control_panel")
+        input_schema = payload.get("input_schema") or {"type": "object", "properties": {}, "required": []}
+        output_schema = payload.get("output_schema") or {"type": "object", "properties": {"result": {"type": "string"}}}
+
+        # Category: UI slug (utility, research, ...) or enum value
+        cat_val = payload["category"]
+        try:
+            category = SkillCategory(cat_val)
+            category_slug = cat_val
+        except ValueError:
+            category = SkillCategory.CUSTOM
+            category_slug = str(cat_val)
+
+        risk = payload.get("risk_level") or self._assess_risk(payload)
         creator = SkillCreator(payload["creator"])
 
-        # Founder skills can go straight to active (if risk is low)
         if creator == SkillCreator.FOUNDER and risk in ("low", "medium"):
             initial_status = SkillStatus.ACTIVE
             requires_approval = False
@@ -367,6 +383,14 @@ class SkillRegistry:
             initial_status = SkillStatus.PENDING_REVIEW
             requires_approval = True
             approved_by = None
+
+        access = payload.get("access") or {}
+        allowed_roles = access.get("allowed_roles") or payload.get("allowed_roles") or ["founder", "daena"]
+        allowed_departments = access.get("allowed_departments") or payload.get("allowed_departments") or []
+        allowed_agents = access.get("allowed_agents") or payload.get("allowed_agents") or []
+        approval_policy = payload.get("approval_policy") or ("auto" if risk == "low" else "approval_required")
+        requires_step_up = payload.get("requires_step_up_confirm", False)
+        enabled = payload.get("enabled", True)
 
         now = datetime.now(timezone.utc).isoformat()
         skill_id = str(uuid.uuid4())
@@ -377,12 +401,12 @@ class SkillRegistry:
             name=name,
             display_name=payload["display_name"],
             description=payload["description"],
-            category=SkillCategory(payload["category"]),
+            category=category,
             creator=creator,
-            creator_agent_id=payload["creator_agent_id"],
+            creator_agent_id=creator_agent_id,
             status=initial_status,
-            input_schema=payload["input_schema"],
-            output_schema=payload["output_schema"],
+            input_schema=input_schema,
+            output_schema=output_schema,
             code_body=payload["code_body"],
             risk_level=risk,
             requires_approval=requires_approval,
@@ -391,12 +415,18 @@ class SkillRegistry:
                 version="1.0.0",
                 code_hash=code_hash,
                 created_at=now,
-                created_by=payload["creator_agent_id"],
+                created_by=creator_agent_id,
                 changelog="Initial creation"
             )],
             current_version="1.0.0",
             dependencies=payload.get("dependencies", []),
-            allowed_agents=payload.get("allowed_agents", []),
+            allowed_agents=allowed_agents,
+            allowed_roles=allowed_roles,
+            allowed_departments=allowed_departments,
+            approval_policy=approval_policy,
+            requires_step_up_confirm=requires_step_up,
+            enabled=enabled,
+            category_slug=category_slug,
             created_at=now,
             updated_at=now
         )
@@ -406,6 +436,8 @@ class SkillRegistry:
 
         return {
             "id": skill_id,
+            "skill_id": skill_id,
+            "success": True,
             "status": initial_status.value,
             "risk_level": risk,
             "requires_approval": requires_approval,
@@ -605,10 +637,13 @@ class SkillRegistry:
     def _to_dict(self, skill: SkillDefinition) -> dict:
         """Convert to JSON-safe dict."""
         d = asdict(skill)
-        d["category"] = skill.category.value
+        d["category"] = skill.category_slug or skill.category.value
         d["creator"] = skill.creator.value
         d["status"] = skill.status.value
-        # Don't expose full code_body in list views
+        d["approval_policy"] = skill.approval_policy
+        d["access"] = {"allowed_roles": skill.allowed_roles, "allowed_departments": skill.allowed_departments, "allowed_agents": skill.allowed_agents}
+        d["enabled"] = skill.enabled
+        d["requires_step_up_confirm"] = skill.requires_step_up_confirm
         if len(d.get("code_body", "")) > 200:
             d["code_body_preview"] = d["code_body"][:200] + "..."
         return d

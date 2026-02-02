@@ -56,6 +56,57 @@ async def get_status():
     return _gateway_status()
 
 
+@router.get("/ping-hands")
+async def ping_hands():
+    """
+    Test Hands connection: ping gateway (connect with short timeout).
+    For UI "Test Hands Connection" button; returns connected, authenticated, error.
+    """
+    import asyncio
+    try:
+        from backend.integrations.openclaw_gateway_client import get_openclaw_client, _default_token
+        token = _default_token()
+        client = get_openclaw_client()
+        client.timeout_sec = 3.0
+        connected = await asyncio.wait_for(client.connect(), timeout=3.0)
+        auth = getattr(client, "is_authenticated", False) or (connected and not (token and str(token).strip()))
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+        return {
+            "success": True,
+            "connected": bool(connected),
+            "authenticated": auth,
+            "token_present": bool(token and str(token).strip()),
+            "error": None,
+            "display_name": get_daena_bot_display_name(),
+        }
+    except asyncio.TimeoutError:
+        try:
+            from backend.integrations.openclaw_gateway_client import _default_token
+            tok = _default_token()
+        except Exception:
+            tok = None
+        return {
+            "success": False,
+            "connected": False,
+            "authenticated": False,
+            "token_present": bool(tok and str(tok).strip()),
+            "error": "timeout",
+            "display_name": get_daena_bot_display_name(),
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "connected": False,
+            "authenticated": False,
+            "token_present": False,
+            "error": str(e),
+            "display_name": get_daena_bot_display_name(),
+        }
+
+
 @router.get("/queue")
 async def get_queue():
     """Pending tool requests awaiting founder approval."""
@@ -74,6 +125,18 @@ async def approve_request(request_id: str, body: ApproveBody):
             status_code=400,
             detail=f"Request is not pending (status={req.get('status')})",
         )
+    try:
+        from backend.routes.audit import log_audit_entry
+        log_audit_entry(
+            actor=body.approver,
+            resource="tool_request",
+            action="approve",
+            allowed=True,
+            reason=body.notes or "approved",
+            context={"request_id": request_id, "risk_level": req.get("risk_level")},
+        )
+    except Exception:
+        pass
     result = await tool_broker.execute_approved_request(request_id)
     return {"request_id": request_id, "status": "approved", "result": result}
 
@@ -89,6 +152,18 @@ async def reject_request(request_id: str, body: RejectBody):
             status_code=400,
             detail=f"Request is not pending (status={req.get('status')})",
         )
+    try:
+        from backend.routes.audit import log_audit_entry
+        log_audit_entry(
+            actor=body.rejector,
+            resource="tool_request",
+            action="reject",
+            allowed=False,
+            reason=body.reason,
+            context={"request_id": request_id, "risk_level": req.get("risk_level")},
+        )
+    except Exception:
+        pass
     update_status(
         request_id,
         "rejected",

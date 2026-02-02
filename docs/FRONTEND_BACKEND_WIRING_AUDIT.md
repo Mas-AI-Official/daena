@@ -20,7 +20,7 @@ Summary of key clickable/functional elements and their backend/pipeline integrat
 | **Packages** | GET `/api/v1/packages`, `/stats`, POST `/audit`, `/audit/{id}/run|approve|reject|install` | — |
 | **Governance** | GET `/api/v1/governance/stats`, `/pending`, POST `/approve`, `/reject`, `/toggle-autopilot` | Autopilot load on init + when switching to governance tab. |
 | **Execution** | GET `/api/v1/execution/auth-status`, `/logs`; POST (with token) `/config`, `/run` | Token in sessionStorage; `apiExecution()` adds header. |
-| **DaenaBot Tools** | GET `/api/v1/tools/status`, `/queue`, `/history`; POST `/api/v1/tools/{id}/approve`, `/{id}/reject` | — |
+| **DaenaBot Tools** | GET `/api/v1/tools/status`, `/queue`, `/history`, `/ping-hands`; GET `/api/v1/hands/status` (configured, reachable, message); POST `/api/v1/tools/{id}/approve`, `/{id}/reject` | All tool execution goes through ToolBroker; approve/reject/execute are audited. |
 | **Integrations** | GET `/api/v1/integrations`, `/mcp-servers` | — |
 | **Proactive** | GET `/api/v1/proactive/rules`, `/events` | — |
 | **Council, Trust, Shadow, Treasury, Agents** | GET/POST to respective `/api/v1/{council|...}` routes | — |
