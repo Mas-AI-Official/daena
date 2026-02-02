@@ -36,3 +36,7 @@ jobs:
       - name: Run DAENA validation script
         run: |
           python scripts/validate_daena_implementation.py
+
+      - name: Run Daena Awareness validation
+        run: |
+          python scripts/validate_awareness.py

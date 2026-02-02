@@ -18,16 +18,25 @@ HIGH = "high"
 CRITICAL = "critical"
 
 # Allowlist: action type -> risk. LOW: auto-allow (if automation allows). MEDIUM+: queue for approval.
+# Moltbot-style + Daena-unique: desktop, crypto, defi.
 ACTION_RISK: Dict[str, str] = {
     "browser.navigate": LOW,
     "browser.screenshot": LOW,
+    "screenshot": LOW,
+    "desktop.click": MEDIUM,
+    "desktop.type": MEDIUM,
     "filesystem.list": LOW,
     "filesystem.read": LOW,
     "filesystem.download": MEDIUM,
     "filesystem.write": HIGH,
+    "workspace_index": LOW,
+    "workspace_search": LOW,
     "workspace.write": MEDIUM,
     "terminal.run": HIGH,
     "shell_exec": HIGH,
+    "crypto.dashboard": LOW,
+    "defi.scan": LOW,
+    "defi.health": LOW,
     "system.modify": CRITICAL,
 }
 
@@ -158,7 +167,7 @@ async def async_broker_request(
             if not client.is_connected:
                 ok = await client.connect()
                 if not ok:
-                    return ("queued_for_approval", {"request_id": None, "message": "DaenaBot Hands gateway not available. Check Control Panel → DaenaBot Tools."})
+                    return ("queued_for_approval", {"request_id": None, "message": "DaenaBot Hands gateway not available. Check Control Pannel → DaenaBot Tools."})
             result = await client.execute_tool(action)
             try:
                 from backend.routes.audit import log_audit_entry

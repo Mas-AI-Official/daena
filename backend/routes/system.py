@@ -197,6 +197,13 @@ async def rollback_to_backup(
     result = backup_service.rollback(backup_timestamp=backup_timestamp, backup_path=backup_path)
     return result
 
+@router.get("/frontend-setting")
+async def get_all_frontend_settings(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Get all frontend settings (for restore on load). Returns { key: { value, updated_at }, ... }."""
+    from backend.services.frontend_backend_sync import frontend_backend_sync
+    settings = frontend_backend_sync.get_all_frontend_settings()
+    return settings
+
 @router.post("/frontend-setting")
 async def save_frontend_setting(
     key: str,

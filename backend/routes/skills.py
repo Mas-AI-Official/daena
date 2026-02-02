@@ -116,7 +116,7 @@ async def list_skills(
 
 @router.post("")
 async def create_skill(body: CreateSkillBody) -> Dict[str, Any]:
-    """Create a new skill via Control Panel. Persists to skill_registry."""
+    """Create a new skill via Control Pannel. Persists to skill_registry."""
     payload = body.model_dump(exclude_none=True)
     payload["display_name"] = payload.get("display_name") or payload.get("name", "")
     payload["code_body"] = payload.get("code_body") or ""
@@ -129,6 +129,44 @@ async def create_skill(body: CreateSkillBody) -> Dict[str, Any]:
         return out
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/manifest")
+async def skills_manifest() -> Dict[str, Any]:
+    """Compact list for agents: id, name, access summary, policy. Excludes archived and static (registry only)."""
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        manifest = registry.get_manifest()
+        return {"success": True, "skills": manifest}
+    except Exception as e:
+        return {"success": False, "skills": [], "error": str(e)}
+
+
+@router.get("/stats")
+async def skill_stats() -> Dict[str, Any]:
+    """Registry-wide statistics for Control Pannel dashboard (static + skill_registry)."""
+    static_total = len(SKILL_DEFS)
+    static_active = sum(1 for s in SKILL_DEFS if _skills_state.get(s["id"], s["enabled"]))
+    reg_skills = _registry_skills_for_list()
+    reg_total = len(reg_skills)
+    reg_active = sum(1 for s in reg_skills if s.get("enabled", True))
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        all_reg = registry.list_skills()
+        pending = sum(1 for s in all_reg if (s.get("status") or "").lower() in ("pending_review", "draft", "sandbox_test"))
+        self_created = sum(1 for s in all_reg if (s.get("creator") or "").lower() == "daena")
+    except Exception:
+        pending = 0
+        self_created = 0
+    return {
+        "success": True,
+        "total": static_total + reg_total,
+        "active": static_active + reg_active,
+        "pending": pending,
+        "self_created": self_created,
+    }
 
 
 class UpdateSkillBody(BaseModel):
@@ -162,7 +200,7 @@ def _registry_skill_by_id(skill_id: str) -> Optional[Dict[str, Any]]:
 
 @router.get("/{skill_id}")
 async def get_skill(skill_id: str) -> Dict[str, Any]:
-    """Get a single skill by id (registry or static). For Control Panel edit."""
+    """Get a single skill by id (registry or static). For Control Pannel edit."""
     for s in SKILL_DEFS:
         if s.get("id") == skill_id:
             access = s.get("access") or {"allowed_roles": ["founder", "daena"], "allowed_departments": [], "allowed_agents": []}
@@ -274,45 +312,6 @@ async def delete_skill(skill_id: str) -> Dict[str, Any]:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/manifest")
-async def skills_manifest() -> Dict[str, Any]:
-    """Compact list for agents: id, name, access summary, policy. Excludes archived and static (registry only)."""
-    try:
-        from backend.services.skill_registry import get_skill_registry
-        registry = get_skill_registry()
-        manifest = registry.get_manifest()
-        return {"success": True, "skills": manifest}
-    except Exception as e:
-        return {"success": False, "skills": [], "error": str(e)}
-
-
-@router.get("/stats")
-async def skill_stats() -> Dict[str, Any]:
-    """Registry-wide statistics for Control Panel dashboard (static + skill_registry)."""
-    static_total = len(SKILL_DEFS)
-    static_active = sum(1 for s in SKILL_DEFS if _skills_state.get(s["id"], s["enabled"]))
-    reg_skills = _registry_skills_for_list()
-    reg_total = len(reg_skills)
-    reg_active = sum(1 for s in reg_skills if s.get("enabled", True))
-    try:
-        from backend.services.skill_registry import get_skill_registry
-        from backend.services.skill_registry import SkillStatus
-        registry = get_skill_registry()
-        all_reg = registry.list_skills()
-        pending = sum(1 for s in all_reg if (s.get("status") or "").lower() in ("pending_review", "draft", "sandbox_test"))
-        self_created = sum(1 for s in all_reg if (s.get("creator") or "").lower() == "daena")
-    except Exception:
-        pending = 0
-        self_created = 0
-    return {
-        "success": True,
-        "total": static_total + reg_total,
-        "active": static_active + reg_active,
-        "pending": pending,
-        "self_created": self_created,
-    }
 
 
 class ToggleBody(BaseModel):

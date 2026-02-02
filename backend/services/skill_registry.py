@@ -367,7 +367,7 @@ class SkillRegistry:
         if not name.replace("_", "").isalnum():
             return {"error": "Skill name must be alphanumeric with underscores only"}
 
-        # Normalize for control-panel: default input_schema, output_schema, creator_agent_id
+        # Normalize for control-pannel: default input_schema, output_schema, creator_agent_id
         creator_agent_id = payload.get("creator_agent_id", "control_panel")
         input_schema = payload.get("input_schema") or {"type": "object", "properties": {}, "required": []}
         output_schema = payload.get("output_schema") or {"type": "object", "properties": {"result": {"type": "string"}}}

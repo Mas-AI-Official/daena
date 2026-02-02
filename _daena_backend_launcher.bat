@@ -92,10 +92,10 @@ if errorlevel 1 (
 
 echo [DAENA BACKEND] Root: %ROOT%
 
-echo [DAENA BACKEND] Port: %PORT%
-
+echo [DAENA BACKEND] Requested port: %PORT% (start_server.py will use 8000-8010 if %PORT% is blocked)
 echo [DAENA BACKEND] Python: %VENV_BACKEND%
-echo [DAENA BACKEND] Dashboard: http://127.0.0.1:%PORT%/ui/dashboard
+echo [DAENA BACKEND] After start, check "Using port N" in this window for actual port.
+echo [DAENA BACKEND] Dashboard: http://127.0.0.1:8000/ui/dashboard (or 8001-8010 if fallback)
 echo [DAENA BACKEND] Daena Office: http://127.0.0.1:%PORT%/ui/daena-office
 echo [DAENA BACKEND] Projects: http://127.0.0.1:%PORT%/ui/projects
 echo [DAENA BACKEND] Councils: http://127.0.0.1:%PORT%/ui/councils
@@ -110,10 +110,9 @@ echo [DAENA BACKEND] Wiring audit API: http://127.0.0.1:%PORT%/api/v1/ui/wiring-
 echo [DAENA BACKEND] Set EXECUTION_TOKEN in env for execution-layer.
 
 echo.
-
-
-
-python -m uvicorn backend.main:app --host 127.0.0.1 --port %PORT% --reload
+REM Use start_server.py so port 8000 fallback (8001, 8002, ...) on WinError 10013
+set "BACKEND_PORT=%PORT%"
+python backend/start_server.py
 
 echo.
 

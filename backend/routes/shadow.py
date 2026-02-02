@@ -104,6 +104,26 @@ async def get_shadow_dashboard():
         logger.error(f"Shadow dashboard failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/stats")
+async def get_shadow_stats():
+    """Get Shadow stats (Frontend alias for dashboard)."""
+    try:
+        from backend.services.shadow.shadow_agent import get_shadow_agent
+        shadow = get_shadow_agent()
+        data = shadow.get_dashboard_data()
+        # Ensure keys match frontend expectation
+        return {
+            "honeypots": data.get("honeypots_active", 0),
+            "canaries": data.get("canaries_active", 0),
+            "alerts_24h": data.get("alerts_24h", 0),
+            "ttps": data.get("ttps_tracked", 0),
+            **data
+        }
+    except Exception as e:
+        logger.error(f"Shadow stats failed: {e}")
+        return {"honeypots": 0, "canaries": 0, "alerts_24h": 0, "ttps": 0}
+
+
 
 @router.get("/alerts")
 async def get_shadow_alerts(hours: int = 24):

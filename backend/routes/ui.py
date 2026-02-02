@@ -23,10 +23,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
-# Templates live in frontend/templates
-project_root = Path(__file__).parent.parent.parent
+# Templates live in frontend/templates (resolve so path works from any CWD)
+_backend_dir = Path(__file__).resolve().parent.parent  # backend/
+project_root = _backend_dir.parent  # project root
 templates_dir = project_root / "frontend" / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
+logger.info("UI templates: %s (exists=%s)", templates_dir, templates_dir.is_dir())
 
 
 def _ctx(request: Request) -> dict:
@@ -37,10 +39,10 @@ def _ctx(request: Request) -> dict:
     }
 
 
-def _redirect_to_control_panel(request: Request, section: str):
-    """Redirect to Control Panel with section hash when not embedded."""
+def _redirect_to_control_pannel(request: Request, section: str):
+    """Redirect to Control Pannel with section hash when not embedded."""
     if not request.query_params.get("embed"):
-        return RedirectResponse(url=f"/ui/control-panel#{section}", status_code=302)
+        return RedirectResponse(url=f"/ui/control-pannel#{section}", status_code=302)
     return None
 
 
@@ -78,16 +80,34 @@ async def ui_brain_api_redirect():
     return RedirectResponse(url="/ui/brain-settings", status_code=302)
 
 
-@router.get("/ui/control-panel", response_class=HTMLResponse)
-async def ui_control_panel(request: Request):
-    """Unified Control Panel (Moltbot-style): Skills, Packages, Governance, Council, Trust, Shadow, Treasury, Agents."""
-    return templates.TemplateResponse("control_plane_v2.html", _ctx(request))
+@router.get("/ui/control-pannel", response_class=HTMLResponse)
+async def ui_control_pannel(request: Request):
+    """Unified Control Pannel: Skills, Use Cases, Packages, Governance, Execution, DaenaBot Tools, Council, Trust, Shadow, Treasury, Agents. Single canonical template."""
+    try:
+        return templates.TemplateResponse("control_pannel.html", _ctx(request))
+    except Exception as e:
+        logger.exception("Control Pannel template failed: %s", e)
+        return HTMLResponse(
+            content=f"""<!DOCTYPE html><html><head><title>Control Pannel Error</title></head><body style="font-family:sans-serif;padding:2rem;background:#1a1a2e;color:#e5e7eb;">
+            <h1>Control Pannel</h1>
+            <p>Template could not be loaded. Check that <code>frontend/templates/control_pannel.html</code> exists.</p>
+            <p><strong>Details:</strong> {str(e).replace('<', '&lt;')}</p>
+            <p><a href="/ui/dashboard" style="color:#D4AF37;">Back to Dashboard</a></p>
+            </body></html>""",
+            status_code=500,
+        )
+
+
+@router.get("/ui/control-panel", include_in_schema=False)
+async def ui_control_panel_redirect():
+    """Legacy: redirect /ui/control-panel to /ui/control-pannel."""
+    return RedirectResponse(url="/ui/control-pannel", status_code=302)
 
 
 @router.get("/ui/control-plane", include_in_schema=False)
 async def ui_control_plane_redirect():
-    """Legacy: redirect /ui/control-plane to /ui/control-panel."""
-    return RedirectResponse(url="/ui/control-panel", status_code=302)
+    """Legacy: redirect /ui/control-plane to /ui/control-pannel."""
+    return RedirectResponse(url="/ui/control-pannel", status_code=302)
 
 
 @router.get("/ui/web3", response_class=HTMLResponse)
@@ -98,14 +118,14 @@ async def ui_web3(request: Request):
 
 @router.get("/ui/crypto-monitor", response_class=HTMLResponse)
 async def ui_crypto_monitor(request: Request):
-    """Crypto monitoring page: price, status, DeFi tools — separate from Control Panel; synced with /api/v1/crypto."""
+    """Crypto monitoring page: price, status, DeFi tools — separate from Control Pannel; synced with /api/v1/crypto."""
     return templates.TemplateResponse("crypto_monitor.html", _ctx(request))
 
 
 @router.get("/ui/provider-onboarding", response_class=HTMLResponse)
 async def ui_provider_onboarding(request: Request):
     """Provider onboarding wizard (Moltbot-style: Discord, Telegram). Redirects to Control Plane when not embed."""
-    r = _redirect_to_control_panel(request, "provider")
+    r = _redirect_to_control_pannel(request, "provider")
     if r is not None:
         return r
     return templates.TemplateResponse("provider_onboarding.html", _ctx(request))
@@ -170,6 +190,16 @@ async def ui_agent_configure(request: Request, agent_id: str):
     """Agent configuration page"""
     context = _ctx(request)
     context["agent_id"] = agent_id
+    return templates.TemplateResponse("agent_config.html", context)
+
+
+@router.get("/ui/agents/{agent_id}", response_class=HTMLResponse)
+async def ui_agent_details(request: Request, agent_id: str):
+    """Agent details page (alias to configure for now)"""
+    context = _ctx(request)
+    context["agent_id"] = agent_id
+    # If a specific details template exists, use it. Otherwise config.
+    # checking if agent_details.html exists would be better but for now config is safe.
     return templates.TemplateResponse("agent_config.html", context)
 
 
@@ -295,7 +325,7 @@ async def ui_connections(request: Request):
 
 @router.get("/ui/skills", response_class=HTMLResponse)
 async def ui_skills(request: Request):
-    r = _redirect_to_control_panel(request, "skills")
+    r = _redirect_to_control_pannel(request, "skills")
     if r is not None:
         return r
     return templates.TemplateResponse("skills.html", _ctx(request))
@@ -303,7 +333,7 @@ async def ui_skills(request: Request):
 
 @router.get("/ui/execution", response_class=HTMLResponse)
 async def ui_execution(request: Request):
-    r = _redirect_to_control_panel(request, "execution")
+    r = _redirect_to_control_pannel(request, "execution")
     if r is not None:
         return r
     return templates.TemplateResponse("execution.html", _ctx(request))
@@ -311,7 +341,7 @@ async def ui_execution(request: Request):
 
 @router.get("/ui/proactive", response_class=HTMLResponse)
 async def ui_proactive(request: Request):
-    r = _redirect_to_control_panel(request, "proactive")
+    r = _redirect_to_control_pannel(request, "proactive")
     if r is not None:
         return r
     return templates.TemplateResponse("proactive.html", _ctx(request))
@@ -319,7 +349,7 @@ async def ui_proactive(request: Request):
 
 @router.get("/ui/tasks", response_class=HTMLResponse)
 async def ui_tasks(request: Request):
-    r = _redirect_to_control_panel(request, "tasks")
+    r = _redirect_to_control_pannel(request, "tasks")
     if r is not None:
         return r
     return templates.TemplateResponse("tasks.html", _ctx(request))
@@ -327,7 +357,7 @@ async def ui_tasks(request: Request):
 
 @router.get("/ui/runbook", response_class=HTMLResponse)
 async def ui_runbook(request: Request):
-    r = _redirect_to_control_panel(request, "runbook")
+    r = _redirect_to_control_pannel(request, "runbook")
     if r is not None:
         return r
     return templates.TemplateResponse("runbook.html", _ctx(request))
@@ -335,7 +365,7 @@ async def ui_runbook(request: Request):
 
 @router.get("/ui/approvals", response_class=HTMLResponse)
 async def ui_approvals(request: Request):
-    r = _redirect_to_control_panel(request, "approvals")
+    r = _redirect_to_control_pannel(request, "approvals")
     if r is not None:
         return r
     return templates.TemplateResponse("approvals.html", _ctx(request))
@@ -344,7 +374,7 @@ async def ui_approvals(request: Request):
 @router.get("/ui/tasks-runbook-approvals", response_class=HTMLResponse)
 async def ui_tasks_runbook_approvals(request: Request):
     """Condensed Tasks + Runbook + Approvals (one Control Plane section). Redirect when not embed."""
-    r = _redirect_to_control_panel(request, "tasks-runbook-approvals")
+    r = _redirect_to_control_pannel(request, "tasks-runbook-approvals")
     if r is not None:
         return r
     return templates.TemplateResponse("tasks_runbook_approvals.html", _ctx(request))
@@ -409,7 +439,7 @@ async def api_wiring_audit(request: Request):
         "/ui/workspace": "workspace.html",
         "/ui/analytics": "analytics.html",
         "/ui/agents": "agents.html",
-        "/ui/control-panel": "control_plane_v2.html",
+        "/ui/control-pannel": "control_pannel.html",
         "/ui/brain-settings": "brain_settings.html",
         "/ui/web3": "web3_defi.html",
         "/ui/founder-panel": "founder_panel.html",

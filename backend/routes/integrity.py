@@ -291,6 +291,12 @@ async def get_integrity_stats() -> Dict[str, Any]:
             "active_flags": stats["active_flags"],
             "injection_attempts": stats["injection_attempts"]
         },
+        # Frontend compatibility fields
+        "verifications": stats["verification"]["total"],
+        "injections_blocked": stats["verification"].get("blocked", 0),
+        "trusted_sources": stats["trust_ledger"].get("total", 0),
+        "stripped": stats["verification"].get("stripped", 0),
+        
         "trust_ledger": stats["trust_ledger"],
         "verification": stats["verification"]
     }

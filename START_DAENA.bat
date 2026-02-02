@@ -10,6 +10,7 @@ if "%~1"=="" (
     exit /b 0
 )
 
+setlocal EnableDelayedExpansion
 REM Go to script directory so all paths work
 cd /d "%~dp0"
 set "ROOT=%~dp0"
@@ -138,7 +139,7 @@ REM ---- 5. Start Backend ----
 echo [5/6] Starting Backend Service...
 echo   [*] Port: %BACKEND_PORT%
 echo   [*] QA Guardian: %QA_GUARDIAN_ENABLED%
-echo   [*] Command: python -m uvicorn backend.main:app --host 127.0.0.1 --port %BACKEND_PORT%
+echo   [*] Command: python backend/start_server.py (port %BACKEND_PORT%, fallback 8001-8010 on WinError 10013)
 echo.
 
 REM Start backend in a new window that stays open (with QA Guardian env vars)
@@ -167,21 +168,29 @@ echo.
 REM ---- 6. Wait for Backend ----
 echo [6/6] Waiting for Backend to be ready...
 set /a COUNT=0
+set "DETECTED_PORT="
 
 :WAIT_LOOP
 set /a COUNT+=1
 echo   [*] Attempt %COUNT%/30...
 
-REM Try to connect to health endpoint
-powershell -NoProfile -Command "try{$null=Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:%BACKEND_PORT%/health' -TimeoutSec 2;exit 0}catch{exit 1}" >nul 2>&1
-if %errorlevel%==0 (
-    echo   [+] Backend is ready!
+REM Try primary port first, then fallback ports 8001-8010 (in case WinError 10013 forced fallback)
+for %%P in (%BACKEND_PORT% 8001 8002 8003 8004 8005 8006 8007 8008 8009 8010) do (
+    if not defined DETECTED_PORT (
+        powershell -NoProfile -Command "try{$null=Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:%%P/health' -TimeoutSec 2;exit 0}catch{exit 1}" >nul 2>&1
+        if !errorlevel!==0 set "DETECTED_PORT=%%P"
+    )
+)
+if defined DETECTED_PORT (
+    set "BACKEND_PORT=!DETECTED_PORT!"
+    if not "!DETECTED_PORT!"=="8000" echo   [*] Backend responded on port !DETECTED_PORT! (fallback)
+    echo   [+] Backend is ready on port !BACKEND_PORT!
     goto :READY
 )
 
 if %COUNT% GEQ 30 (
     echo.
-    echo   [WARN] Backend did not respond after 30 attempts.
+    echo   [WARN] Backend did not respond on 8000-8010 after 30 attempts.
     echo   [WARN] Check the DAENA - BACKEND window for errors.
     echo.
     goto :READY
@@ -197,27 +206,27 @@ echo   DAENA STARTUP COMPLETE
 echo ============================================================
 echo.
 echo   Main URLs:
-echo   Backend:          http://127.0.0.1:%BACKEND_PORT%
-echo   Daena Office:     http://127.0.0.1:%BACKEND_PORT%/ui/daena-office
-echo   API Docs:         http://127.0.0.1:%BACKEND_PORT%/docs
+echo   Backend:          http://127.0.0.1:!BACKEND_PORT!
+echo   Daena Office:     http://127.0.0.1:!BACKEND_PORT!/ui/daena-office
+echo   API Docs:         http://127.0.0.1:!BACKEND_PORT!/docs
 echo.
 echo   Sidebar (VP):
-echo   Dashboard:        http://127.0.0.1:%BACKEND_PORT%/ui/dashboard
-echo   Daena Office:     http://127.0.0.1:%BACKEND_PORT%/ui/daena-office
-echo   Projects:         http://127.0.0.1:%BACKEND_PORT%/ui/projects
-echo   Councils:         http://127.0.0.1:%BACKEND_PORT%/ui/councils
-echo   Workspace:        http://127.0.0.1:%BACKEND_PORT%/ui/workspace
-echo   Analytics:        http://127.0.0.1:%BACKEND_PORT%/ui/analytics
-echo   Agents:           http://127.0.0.1:%BACKEND_PORT%/ui/agents
-echo   Control Panel:    http://127.0.0.1:%BACKEND_PORT%/ui/control-panel
-echo   Brain ^& API:     http://127.0.0.1:%BACKEND_PORT%/ui/brain-settings
-echo   Web3 / DeFi:      http://127.0.0.1:%BACKEND_PORT%/ui/web3
-echo   Founder:         http://127.0.0.1:%BACKEND_PORT%/ui/founder-panel
+echo   Dashboard:        http://127.0.0.1:!BACKEND_PORT!/ui/dashboard
+echo   Daena Office:     http://127.0.0.1:!BACKEND_PORT!/ui/daena-office
+echo   Projects:         http://127.0.0.1:!BACKEND_PORT!/ui/projects
+echo   Councils:         http://127.0.0.1:!BACKEND_PORT!/ui/councils
+echo   Workspace:        http://127.0.0.1:!BACKEND_PORT!/ui/workspace
+echo   Analytics:        http://127.0.0.1:!BACKEND_PORT!/ui/analytics
+echo   Agents:           http://127.0.0.1:!BACKEND_PORT!/ui/agents
+echo   Control Panel:    http://127.0.0.1:!BACKEND_PORT!/ui/control-panel
+echo   Brain ^& API:     http://127.0.0.1:!BACKEND_PORT!/ui/brain-settings
+echo   Web3 / DeFi:      http://127.0.0.1:!BACKEND_PORT!/ui/web3
+echo   Founder:         http://127.0.0.1:!BACKEND_PORT!/ui/founder-panel
 echo.
 echo   Other:
-echo   QA Guardian:      http://127.0.0.1:%BACKEND_PORT%/api/v1/qa/ui
-echo   Incident Room:    http://127.0.0.1:%BACKEND_PORT%/ui/incident-room
-echo   Wiring audit:     http://127.0.0.1:%BACKEND_PORT%/api/v1/ui/wiring-audit
+echo   QA Guardian:      http://127.0.0.1:!BACKEND_PORT!/api/v1/qa/ui
+echo   Incident Room:    http://127.0.0.1:!BACKEND_PORT!/ui/incident-room
+echo   Wiring audit:     http://127.0.0.1:!BACKEND_PORT!/api/v1/ui/wiring-audit
 echo.
 echo   QA Guardian Status: %QA_GUARDIAN_ENABLED%
 echo   Check the "DAENA - BACKEND" window for server logs.
@@ -227,7 +236,7 @@ echo.
 
 REM Auto-launch Dashboard
 echo   [+] Launching Dashboard...
-start "" "http://127.0.0.1:%BACKEND_PORT%/ui/daena-office"
+start "" "http://127.0.0.1:!BACKEND_PORT!/ui/daena-office"
 
 echo.
 echo Press any key to close this launcher window...

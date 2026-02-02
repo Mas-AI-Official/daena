@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from backend.config.settings import settings
@@ -38,22 +38,37 @@ def _is_localhost_request(request: Request) -> bool:
     return False
 
 
+def _get_execution_token_from_request(
+    request: Request,
+    x_execution_token: Optional[str] = Header(None, alias="X-Execution-Token"),
+    daena_execution_token: Optional[str] = Cookie(None, alias="daena_execution_token"),
+) -> Optional[str]:
+    """Get execution token from header or HttpOnly cookie (cookie preferred for browser UX)."""
+    if x_execution_token:
+        return x_execution_token
+    if daena_execution_token:
+        return daena_execution_token
+    return None
+
+
 async def verify_execution_token(
     request: Request,
     x_execution_token: Optional[str] = Header(None, alias="X-Execution-Token"),
+    daena_execution_token: Optional[str] = Cookie(None, alias="daena_execution_token"),
 ):
-    """DEFAULT DENY: Execution ALWAYS requires valid X-Execution-Token unless ALLOW_INSECURE_EXECUTION_LOCAL=1 from localhost."""
+    """DEFAULT DENY: Execution ALWAYS requires valid X-Execution-Token or daena_execution_token cookie unless ALLOW_INSECURE_EXECUTION_LOCAL=1 from localhost."""
     # Dev override: localhost + ALLOW_INSECURE_EXECUTION_LOCAL=1
     if getattr(settings, "allow_insecure_execution_local", False) and request and _is_localhost_request(request):
-        return x_execution_token or ""
+        return x_execution_token or daena_execution_token or ""
     if not settings.execution_token:
         raise HTTPException(
             status_code=401,
             detail="Execution Layer is disabled: EXECUTION_TOKEN is not set. Set EXECUTION_TOKEN in env to enable.",
         )
-    if not x_execution_token or x_execution_token != settings.execution_token:
-        raise HTTPException(status_code=401, detail="Missing or invalid X-Execution-Token")
-    return x_execution_token
+    token = _get_execution_token_from_request(request, x_execution_token, daena_execution_token)
+    if not token or token != settings.execution_token:
+        raise HTTPException(status_code=401, detail="Missing or invalid X-Execution-Token / daena_execution_token cookie")
+    return token
 
 
 def _check_lockdown():
@@ -104,6 +119,44 @@ class ConfigUpdate(BaseModel):
 FORBIDDEN_FOR_REQUEST = frozenset({"shell_exec", "filesystem_write"})
 
 
+class TokenCookieBody(BaseModel):
+    token: Optional[str] = None
+
+
+@router.post("/token-cookie")
+async def set_execution_token_cookie(
+    request: Request,
+    response: Response,
+    body: Optional[TokenCookieBody] = None,
+) -> Dict[str, Any]:
+    """
+    Set HttpOnly cookie for execution token (optional). Call with JSON body {"token": "..."}
+    so the browser sends it automatically on same-origin API calls. Only accepts the configured EXECUTION_TOKEN.
+    """
+    if not settings.execution_token:
+        raise HTTPException(status_code=400, detail="Execution Layer is disabled; no EXECUTION_TOKEN set.")
+    token = body.token if body and body.token else None
+    if not token:
+        try:
+            raw = await request.json()
+            if isinstance(raw, dict) and raw.get("token"):
+                token = raw.get("token")
+        except Exception:
+            pass
+    if not token or token != settings.execution_token:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+    response.set_cookie(
+        key="daena_execution_token",
+        value=token,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        max_age=86400 * 7,
+        path="/",
+    )
+    return {"success": True, "message": "Cookie set. Use same origin for execution API calls."}
+
+
 @router.get("/auth-status")
 async def execution_auth_status(request: Request) -> Dict[str, Any]:
     """
@@ -124,6 +177,7 @@ async def execution_auth_status(request: Request) -> Dict[str, Any]:
         "execution_enabled": execution_enabled,
         "localhost_bypass": localhost_bypass,
         "token_required_for_ui": execution_enabled and not localhost_bypass,
+        "cookie_supported": True,
         "message": message,
     }
 

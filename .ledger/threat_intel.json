@@ -1,0 +1,95 @@
+{
+  "profiles": {
+    "atk_f528764d624db129": {
+      "profile_id": "atk_f528764d624db129",
+      "source_ip": "127.0.0.1",
+      "first_seen": "2026-02-01T16:13:21.616908+00:00",
+      "last_seen": "2026-02-01T16:26:50.259362+00:00",
+      "hit_count": 3,
+      "user_agents": [
+        "python-requests/2.31.0"
+      ],
+      "targeted_paths": [
+        "/api/v1/shadow/admin/keys"
+      ],
+      "ttps_used": [],
+      "threat_level": "low",
+      "notes": ""
+    }
+  },
+  "ttps": {
+    "ttp_reconnaissance_active_scanning": {
+      "ttp_id": "ttp_reconnaissance_active_scanning",
+      "tactic": "reconnaissance",
+      "technique": "active_scanning",
+      "description": "Probing honeypot endpoints",
+      "first_seen": "2026-02-01T16:13:21.616908+00:00",
+      "last_seen": "2026-02-01T16:26:50.259362+00:00",
+      "occurrence_count": 3,
+      "associated_ips": [
+        "127.0.0.1"
+      ],
+      "indicators": []
+    }
+  },
+  "events": [
+    {
+      "alert_id": "hp_20260201111321616",
+      "alert_type": "honeypot_hit",
+      "source_ip": "127.0.0.1",
+      "timestamp": "2026-02-01T16:13:21.616396+00:00",
+      "details": {
+        "honeypot_id": "hp_admin_keys",
+        "path": "/api/v1/shadow/admin/keys",
+        "method": "GET",
+        "headers": {
+          "host": "localhost:8000",
+          "user-agent": "python-requests/2.31.0",
+          "accept-encoding": "gzip, deflate",
+          "accept": "*/*",
+          "connection": "keep-alive"
+        },
+        "body": ""
+      }
+    },
+    {
+      "alert_id": "hp_20260201112255279",
+      "alert_type": "honeypot_hit",
+      "source_ip": "127.0.0.1",
+      "timestamp": "2026-02-01T16:22:55.279864+00:00",
+      "details": {
+        "honeypot_id": "hp_admin_keys",
+        "path": "/api/v1/shadow/admin/keys",
+        "method": "GET",
+        "headers": {
+          "host": "localhost:8000",
+          "user-agent": "python-requests/2.31.0",
+          "accept-encoding": "gzip, deflate",
+          "accept": "*/*",
+          "connection": "keep-alive"
+        },
+        "body": ""
+      }
+    },
+    {
+      "alert_id": "hp_20260201112650258",
+      "alert_type": "honeypot_hit",
+      "source_ip": "127.0.0.1",
+      "timestamp": "2026-02-01T16:26:50.258357+00:00",
+      "details": {
+        "honeypot_id": "hp_admin_keys",
+        "path": "/api/v1/shadow/admin/keys",
+        "method": "GET",
+        "headers": {
+          "host": "localhost:8000",
+          "user-agent": "python-requests/2.31.0",
+          "accept-encoding": "gzip, deflate",
+          "accept": "*/*",
+          "connection": "keep-alive"
+        },
+        "body": ""
+      }
+    }
+  ],
+  "last_updated": "2026-02-01T16:26:50.259362+00:00"
+}
