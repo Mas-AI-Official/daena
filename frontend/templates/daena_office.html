@@ -77,7 +77,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="flex h-[calc(100vh-7rem)] gap-6 relative">
+<div class="flex h-[calc(100vh-7rem)] gap-6">
     <!-- Chat Sessions Sidebar -->
     <div id="sidebar-panel" class="flex-shrink-0 flex flex-col glass-panel rounded-xl overflow-hidden relative"
         style="width: 15rem; min-width: 12rem; max-width: 40rem;">
@@ -158,245 +158,241 @@
             </button>
         </div>
 
+        <!-- Hover expand toggle button (absolute positioned) -->
+        <button id="sidebar-toggle-btn"
+            class="absolute top-1/2 -right-3 transform -translate-y-1/2 w-6 h-12 bg-black/80 border border-white/20 rounded-r-lg flex items-center justify-center cursor-pointer text-gray-400 hover:text-daena-gold transition-colors z-[60]"
+            onclick="toggleSidebarState()" title="Toggle Sidebar">
+            <i class="fas fa-chevron-left text-xs" id="sidebar-toggle-icon"></i>
+        </button>
+
         <!-- Resize Handle -->
         <div id="sidebar-resize-handle"></div>
     </div>
 
-    <!-- Toggle Button (Moved Outside) -->
-    <button id="sidebar-toggle-btn"
-        class="absolute top-1/2 transform -translate-y-1/2 w-4 h-12 bg-black/80 border border-white/20 border-l-0 rounded-r-lg flex items-center justify-center cursor-pointer text-gray-400 hover:text-daena-gold transition-all z-[60]"
-        onclick="toggleSidebarState()" title="Toggle Sidebar" style="left: 15rem; transition: left 0.3s ease;">
-        <i class="fas fa-chevron-left text-[10px]" id="sidebar-toggle-icon"></i>
-    </button>
-</div>
-
-<!-- Chat Area -->
-<div class="flex-1 flex flex-col glass-panel rounded-xl overflow-hidden relative">
-    <!-- Chat Header -->
-    <div class="h-14 border-b border-white/10 flex items-center justify-between px-6 bg-black/20">
-        <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-full bg-daena-gold flex items-center justify-center text-black font-bold">D
+    <!-- Chat Area -->
+    <div class="flex-1 flex flex-col glass-panel rounded-xl overflow-hidden relative">
+        <!-- Chat Header -->
+        <div class="h-14 border-b border-white/10 flex items-center justify-between px-6 bg-black/20">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-daena-gold flex items-center justify-center text-black font-bold">D
+                </div>
+                <div>
+                    <h3 class="font-medium text-white">Daena VP</h3>
+                    <p class="text-xs text-green-400 flex items-center gap-2" id="brain-status-indicator">
+                        <span class="flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-gray-500" id="brain-dot"></span>
+                            <span id="brain-text">Checking...</span>
+                        </span>
+                        <span id="routing-mode-badge"
+                            class="hidden px-2 py-0.5 rounded-full bg-white/10 text-[10px] text-gray-300 border border-white/10">
+                            LOCAL
+                        </span>
+                    </p>
+                </div>
             </div>
-            <div>
-                <h3 class="font-medium text-white">Daena VP</h3>
-                <p class="text-xs text-green-400 flex items-center gap-2" id="brain-status-indicator">
-                    <span class="flex items-center gap-1">
-                        <span class="w-1.5 h-1.5 rounded-full bg-gray-500" id="brain-dot"></span>
-                        <span id="brain-text">Checking...</span>
-                    </span>
-                    <span id="routing-mode-badge"
-                        class="hidden px-2 py-0.5 rounded-full bg-white/10 text-[10px] text-gray-300 border border-white/10">
-                        LOCAL
-                    </span>
-                </p>
+            <div class="flex items-center gap-2">
+                <!-- Category Badge -->
+                <div id="current-category-badge" class="hidden px-3 py-1 rounded-full text-xs font-medium"></div>
+
+                <!-- Actions -->
+                <button onclick="exportChat('json')" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Export as JSON">
+                    <i class="fas fa-download"></i>
+                </button>
+                <button onclick="exportChat('txt')" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Export as Text">
+                    <i class="fas fa-file-alt"></i>
+                </button>
+                <button onclick="shareChat()" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Copy Share Link">
+                    <i class="fas fa-share-alt"></i>
+                </button>
+                <button onclick="toggleToolConsole()" class="p-2 text-gray-400 hover:text-daena-gold transition-colors"
+                    title="Tool Console" id="tool-console-btn">
+                    <i class="fas fa-terminal"></i>
+                </button>
+                <button onclick="toggleVoice()" id="voice-toggle-btn"
+                    class="p-2 text-gray-400 hover:text-white transition-colors" title="Toggle Voice">
+                    <i class="fas fa-microphone-slash" id="voice-icon"></i>
+                </button>
+                <button onclick="openVoiceSettings()" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Voice Settings">
+                    <i class="fas fa-sliders-h"></i>
+                </button>
+                <button onclick="showCategoryModal()" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Change Category">
+                    <i class="fas fa-tag"></i>
+                </button>
+                <button onclick="clearContext()" class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Clear Context">
+                    <i class="fas fa-eraser"></i>
+                </button>
+                <button id="show-sources-btn" onclick="toggleShowSources()"
+                    class="p-2 text-gray-400 hover:text-white transition-colors flex items-center gap-1"
+                    title="Show sources: On/Off (citations below messages)">
+                    <i class="fas fa-link text-xs"></i>
+                    <span id="show-sources-label" class="text-[10px]">Sources Off</span>
+                </button>
             </div>
         </div>
-        <div class="flex items-center gap-2">
-            <!-- Category Badge -->
-            <div id="current-category-badge" class="hidden px-3 py-1 rounded-full text-xs font-medium"></div>
 
-            <!-- Actions -->
-            <button onclick="exportChat('json')" class="p-2 text-gray-400 hover:text-white transition-colors"
-                title="Export as JSON">
-                <i class="fas fa-download"></i>
+        <!-- Messages -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6" id="chat-messages">
+            <div class="flex gap-4">
+                <div
+                    class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">
+                    D</div>
+                <div class="flex-1">
+                    <div
+                        class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
+                        <p>Connecting to secure channel...</p>
+                    </div>
+                </div>
+            </div>
+            <!-- Scroll to latest: shown when user has scrolled up -->
+            <button type="button" id="chat-scroll-to-bottom-btn" onclick="scrollChatToBottom()"
+                title="Go to latest message"
+                class="absolute bottom-4 right-6 z-10 flex items-center gap-2 px-3 py-2 rounded-full bg-daena-gold/90 hover:bg-daena-gold text-black text-sm font-medium shadow-lg transition-opacity"
+                style="opacity: 0; pointer-events: none;">
+                <i class="fas fa-chevron-down"></i>
+                <span>Latest</span>
             </button>
-            <button onclick="exportChat('txt')" class="p-2 text-gray-400 hover:text-white transition-colors"
-                title="Export as Text">
-                <i class="fas fa-file-alt"></i>
-            </button>
-            <button onclick="shareChat()" class="p-2 text-gray-400 hover:text-white transition-colors"
-                title="Copy Share Link">
-                <i class="fas fa-share-alt"></i>
-            </button>
-            <button onclick="toggleToolConsole()" class="p-2 text-gray-400 hover:text-daena-gold transition-colors"
-                title="Tool Console" id="tool-console-btn">
-                <i class="fas fa-terminal"></i>
-            </button>
-            <button onclick="toggleVoice()" id="voice-toggle-btn"
-                class="p-2 text-gray-400 hover:text-white transition-colors" title="Toggle Voice">
-                <i class="fas fa-microphone-slash" id="voice-icon"></i>
-            </button>
-            <button onclick="openVoiceSettings()" class="p-2 text-gray-400 hover:text-white transition-colors"
-                title="Voice Settings">
-                <i class="fas fa-sliders-h"></i>
-            </button>
-            <button onclick="showCategoryModal()" class="p-2 text-gray-400 hover:text-white transition-colors"
-                title="Change Category">
-                <i class="fas fa-tag"></i>
-            </button>
-            <button onclick="clearContext()" class="p-2 text-gray-400 hover:text-white transition-colors"
-                title="Clear Context">
-                <i class="fas fa-eraser"></i>
-            </button>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 border-t border-white/10 bg-black/20">
+            <div class="flex gap-2 mb-2">
+                <button type="button" id="btn-search-mode" onclick="setSendMode('search')"
+                    class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors"
+                    title="Quick search then answer (like Google + LLM)">
+                    <i class="fas fa-search mr-1"></i> Search
+                </button>
+                <button type="button" id="btn-deep-search-mode" onclick="setSendMode('deep_search')"
+                    class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors"
+                    title="Deep search: scrape pages and synthesize conclusion">
+                    <i class="fas fa-globe mr-1"></i> Deep search
+                </button>
+                <span id="send-mode-badge" class="text-xs text-daena-gold hidden"></span>
+            </div>
+            <form id="chat-form" class="flex gap-3 items-end">
+                <textarea id="message-input" rows="1"
+                    class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-daena-gold/50 focus:bg-white/10 transition-all resize-none overflow-hidden"
+                    placeholder="Ask Daena anything... (Shift+Enter for new line)" autocomplete="off"
+                    style="min-height: 48px; max-height: 200px;"
+                    oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px'"></textarea>
+                <button type="button" id="stop-stream-btn" onclick="stopStreaming()" title="Stop generating"
+                    class="hidden bg-red-600 hover:bg-red-700 text-white font-bold px-5 rounded-xl transition-colors flex items-center gap-2">
+                    <i class="fas fa-stop"></i>
+                    <span>Stop</span>
+                </button>
+                <button type="submit" id="send-btn"
+                    class="bg-daena-gold hover:bg-yellow-500 text-black font-bold px-6 rounded-xl transition-colors flex items-center gap-2">
+                    <span>Send</span>
+                    <i class="fas fa-paper-plane text-sm"></i>
+                </button>
+            </form>
         </div>
     </div>
 
-    <!-- Messages -->
-    <div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar" id="chat-messages">
-        <div class="flex gap-4">
-            <div
-                class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">
-                D</div>
-            <div class="flex-1">
-                <div class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
-                    <p>Connecting to secure channel...</p>
+    <!-- Tool Console Panel (Collapsible) -->
+    <div id="tool-console" class="w-80 glass-panel rounded-xl overflow-hidden flex flex-col transition-all duration-300"
+        style="display: none;">
+        <div class="p-3 border-b border-white/10 bg-black/30 flex justify-between items-center">
+            <h3 class="text-sm font-bold text-daena-gold flex items-center gap-2">
+                <i class="fas fa-terminal"></i> Tool Console
+            </h3>
+            <button onclick="toggleToolConsole()" class="text-gray-400 hover:text-white">
+                <i class="fas fa-times text-xs"></i>
+            </button>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="p-3 space-y-2 border-b border-white/10">
+            <p class="text-xs text-gray-400 mb-2">Quick Actions</p>
+            <div class="grid grid-cols-2 gap-1">
+                <button onclick="executeQuickTool('health check')"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
+                    <i class="fas fa-heartbeat text-green-400"></i> Health
+                </button>
+                <button onclick="executeQuickTool('show tables')"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
+                    <i class="fas fa-database text-blue-400"></i> Tables
+                </button>
+                <button onclick="executeQuickTool('list routes')"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
+                    <i class="fas fa-route text-purple-400"></i> Routes
+                </button>
+                <button onclick="executeQuickTool('analyze all')"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
+                    <i class="fas fa-chart-pie text-yellow-400"></i> Analyze
+                </button>
+            </div>
+            <!-- Desktop automation (Moltbot-like) -->
+            <p class="text-xs text-gray-400 mb-2 mt-3">Desktop automation</p>
+            <div class="grid grid-cols-2 gap-1">
+                <button type="button" onclick="showDesktopClickForm()"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1"
+                    title="Click at screen coordinates (requires AUTOMATION_ENABLE_DESKTOP=1)">
+                    <i class="fas fa-mouse-pointer text-amber-400"></i> Click
+                </button>
+                <button type="button" onclick="showDesktopTypeForm()"
+                    class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1"
+                    title="Type text on desktop (requires AUTOMATION_ENABLE_DESKTOP=1)">
+                    <i class="fas fa-keyboard text-amber-400"></i> Type
+                </button>
+            </div>
+            <div id="desktop-click-form" class="hidden mt-2 space-y-2 p-2 bg-black/20 rounded border border-white/10">
+                <div class="flex gap-2 items-center">
+                    <input type="number" id="desktop-x" placeholder="X" min="0" step="1"
+                        class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white w-16">
+                    <input type="number" id="desktop-y" placeholder="Y" min="0" step="1"
+                        class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white w-16">
+                    <button type="button" onclick="runDesktopClick()"
+                        class="text-xs px-2 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">Run</button>
+                </div>
+            </div>
+            <div id="desktop-type-form" class="hidden mt-2 space-y-2 p-2 bg-black/20 rounded border border-white/10">
+                <div class="flex gap-2">
+                    <input type="text" id="desktop-type-text" placeholder="Text to type on desktop"
+                        class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white">
+                    <button type="button" onclick="runDesktopType()"
+                        class="text-xs px-2 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">Run</button>
                 </div>
             </div>
         </div>
-        <!-- Scroll to latest: shown when user has scrolled up -->
-        <button type="button" id="chat-scroll-to-bottom-btn"
-            onclick="scrollToBottom(document.getElementById('chat-messages'), true)" title="Go to latest message"
-            class="absolute bottom-4 right-6 z-10 flex items-center gap-2 px-3 py-2 rounded-full bg-daena-gold/90 hover:bg-daena-gold text-black text-sm font-medium shadow-lg transition-opacity"
-            style="opacity: 0; pointer-events: none;">
-            <i class="fas fa-chevron-down"></i>
-            <span>Latest</span>
-        </button>
-    </div>
 
-    <!-- Input Area -->
-    <div class="p-4 border-t border-white/10 bg-black/20 flex-shrink-0 z-20 relative">
-        <div class="flex gap-2 mb-2 items-center">
-            <button type="button" id="btn-search-mode" onclick="setSendMode('search')"
-                class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors"
-                title="Quick search then answer (like Google + LLM)">
-                <i class="fas fa-search mr-1"></i> Search
-            </button>
-            <button type="button" id="btn-deep-search-mode" onclick="setSendMode('deep_search')"
-                class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors"
-                title="Deep search: scrape pages and synthesize conclusion">
-                <i class="fas fa-globe mr-1"></i> Deep search
-            </button>
-
-            <div class="h-4 w-px bg-white/10 mx-1"></div>
-
-            <button id="show-sources-btn" onclick="toggleShowSources()"
-                class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors flex items-center gap-1"
-                title="Show sources: On/Off (citations below messages)">
-                <i class="fas fa-link text-[10px]"></i>
-                <span id="show-sources-label">Sources Off</span>
-            </button>
-
-            <span id="send-mode-badge" class="text-xs text-daena-gold hidden ml-auto"></span>
-        </div>
-        <form id="chat-form" class="flex gap-3 items-end">
-            <textarea id="message-input" rows="1"
-                class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-daena-gold/50 focus:bg-white/10 transition-all resize-none overflow-hidden"
-                placeholder="Ask Daena anything... (Shift+Enter for new line)" autocomplete="off"
-                style="min-height: 48px; max-height: 200px;"
-                oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px'"></textarea>
-            <button type="button" id="stop-stream-btn" onclick="stopStreaming()" title="Stop generating"
-                class="hidden bg-red-600 hover:bg-red-700 text-white font-bold px-5 rounded-xl transition-colors flex items-center gap-2 h-[48px]">
-                <i class="fas fa-stop"></i>
-                <span>Stop</span>
-            </button>
-            <button type="submit" id="send-btn"
-                class="bg-daena-gold hover:bg-yellow-500 text-black font-bold px-6 rounded-xl transition-colors flex items-center gap-2 h-[48px]">
-                <span>Send</span>
-                <i class="fas fa-paper-plane text-sm"></i>
-            </button>
-        </form>
-    </div>
-</div>
-
-<!-- Tool Console Panel (Collapsible) -->
-<div id="tool-console" class="w-80 glass-panel rounded-xl overflow-hidden flex flex-col transition-all duration-300"
-    style="display: none;">
-    <div class="p-3 border-b border-white/10 bg-black/30 flex justify-between items-center">
-        <h3 class="text-sm font-bold text-daena-gold flex items-center gap-2">
-            <i class="fas fa-terminal"></i> Tool Console
-        </h3>
-        <button onclick="toggleToolConsole()" class="text-gray-400 hover:text-white">
-            <i class="fas fa-times text-xs"></i>
-        </button>
-    </div>
-
-    <!-- Quick Actions -->
-    <div class="p-3 space-y-2 border-b border-white/10">
-        <p class="text-xs text-gray-400 mb-2">Quick Actions</p>
-        <div class="grid grid-cols-2 gap-1">
-            <button onclick="executeQuickTool('health check')"
-                class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
-                <i class="fas fa-heartbeat text-green-400"></i> Health
-            </button>
-            <button onclick="executeQuickTool('show tables')"
-                class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
-                <i class="fas fa-database text-blue-400"></i> Tables
-            </button>
-            <button onclick="executeQuickTool('list routes')"
-                class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
-                <i class="fas fa-route text-purple-400"></i> Routes
-            </button>
-            <button onclick="executeQuickTool('analyze all')"
-                class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1">
-                <i class="fas fa-chart-pie text-yellow-400"></i> Analyze
+        <!-- MCP Connections -->
+        <div class="p-3 space-y-2 border-b border-white/10">
+            <p class="text-xs text-gray-400 mb-2">MCP Connections</p>
+            <div id="mcp-status" class="text-xs text-gray-500">Loading...</div>
+            <button onclick="discoverMcpServers()"
+                class="text-xs w-full px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center justify-center gap-1">
+                <i class="fas fa-search"></i> Discover Servers
             </button>
         </div>
-        <!-- Desktop automation (Moltbot-like) -->
-        <p class="text-xs text-gray-400 mb-2 mt-3">Desktop automation</p>
-        <div class="grid grid-cols-2 gap-1">
-            <button type="button" onclick="showDesktopClickForm()"
-                class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1"
-                title="Click at screen coordinates (requires AUTOMATION_ENABLE_DESKTOP=1)">
-                <i class="fas fa-mouse-pointer text-amber-400"></i> Click
-            </button>
-            <button type="button" onclick="showDesktopTypeForm()"
-                class="text-xs px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center gap-1"
-                title="Type text on desktop (requires AUTOMATION_ENABLE_DESKTOP=1)">
-                <i class="fas fa-keyboard text-amber-400"></i> Type
-            </button>
-        </div>
-        <div id="desktop-click-form" class="hidden mt-2 space-y-2 p-2 bg-black/20 rounded border border-white/10">
-            <div class="flex gap-2 items-center">
-                <input type="number" id="desktop-x" placeholder="X" min="0" step="1"
-                    class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white w-16">
-                <input type="number" id="desktop-y" placeholder="Y" min="0" step="1"
-                    class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white w-16">
-                <button type="button" onclick="runDesktopClick()"
-                    class="text-xs px-2 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">Run</button>
+
+        <!-- Tool Output -->
+        <div class="flex-1 overflow-y-auto p-3">
+            <p class="text-xs text-gray-400 mb-2">Output</p>
+            <div id="tool-output"
+                class="text-xs font-mono text-gray-300 bg-black/30 rounded p-2 min-h-[100px] whitespace-pre-wrap">
+                Ready. Enter a command below or use quick actions.
             </div>
         </div>
-        <div id="desktop-type-form" class="hidden mt-2 space-y-2 p-2 bg-black/20 rounded border border-white/10">
-            <div class="flex gap-2">
-                <input type="text" id="desktop-type-text" placeholder="Text to type on desktop"
-                    class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white">
-                <button type="button" onclick="runDesktopType()"
-                    class="text-xs px-2 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">Run</button>
-            </div>
+
+        <!-- Command Input -->
+        <div class="p-3 border-t border-white/10">
+            <form onsubmit="executeToolCommand(event)" class="flex gap-2">
+                <input type="text" id="tool-command"
+                    class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-daena-gold/50"
+                    placeholder="e.g. health check, click at 100 200, type on desktop hello">
+                <button type="submit"
+                    class="text-xs px-3 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">
+                    Run
+                </button>
+            </form>
         </div>
     </div>
-
-    <!-- MCP Connections -->
-    <div class="p-3 space-y-2 border-b border-white/10">
-        <p class="text-xs text-gray-400 mb-2">MCP Connections</p>
-        <div id="mcp-status" class="text-xs text-gray-500">Loading...</div>
-        <button onclick="discoverMcpServers()"
-            class="text-xs w-full px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-gray-300 flex items-center justify-center gap-1">
-            <i class="fas fa-search"></i> Discover Servers
-        </button>
-    </div>
-
-    <!-- Tool Output -->
-    <div class="flex-1 overflow-y-auto p-3">
-        <p class="text-xs text-gray-400 mb-2">Output</p>
-        <div id="tool-output"
-            class="text-xs font-mono text-gray-300 bg-black/30 rounded p-2 min-h-[100px] whitespace-pre-wrap">
-            Ready. Enter a command below or use quick actions.
-        </div>
-    </div>
-
-    <!-- Command Input -->
-    <div class="p-3 border-t border-white/10">
-        <form onsubmit="executeToolCommand(event)" class="flex gap-2">
-            <input type="text" id="tool-command"
-                class="flex-1 text-xs bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-daena-gold/50"
-                placeholder="e.g. health check, click at 100 200, type on desktop hello">
-            <button type="submit"
-                class="text-xs px-3 py-1.5 bg-daena-gold hover:bg-yellow-500 text-black rounded font-bold">
-                Run
-            </button>
-        </form>
-    </div>
-</div>
 </div>
 
 <!-- Category Modal -->
@@ -479,7 +475,7 @@
 
 
 {% block scripts %}
-
+<script src="/static/js/websocket-client.js"></script>
 <script src="/static/js/voice-client.js"></script>
 <script>
     let currentSessionId = null;
@@ -488,31 +484,16 @@
     let sendMode = null;  // 'search' | 'deep_search' – R1-style search then answer
     let streamAbortController = null;  // only Stop button aborts; leaving chat/tab does not — stream continues in background
 
-    // Auto-scroll State
-    let pinnedToBottom = true;
-
-    function computePinned(container) {
+    // ChatGPT-style scroll: auto-scroll to last character only when user is at bottom; if user scrolls up, stop auto-scroll and show "Latest" button
+    function chatShouldAutoScroll(container) {
         if (!container) return false;
-        // If within 50px of bottom, consider pinned
-        const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
-        return distance < 50;
+        const threshold = 80;
+        return container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
     }
-
-    function scrollToBottom(container, force = false) {
-        if (!container) return;
-        if (force || pinnedToBottom) {
+    function chatScrollToBottomIfSticky(container) {
+        if (container && chatShouldAutoScroll(container)) {
             container.scrollTop = container.scrollHeight;
-            if (force) pinnedToBottom = true;
         }
-        updateScrollToBottomButton();
-    }
-
-    function updateScrollToBottomButton() {
-        const btn = document.getElementById('chat-scroll-to-bottom-btn');
-        if (!btn) return;
-        // If NOT pinned, show button. If pinned, hide button.
-        btn.style.opacity = pinnedToBottom ? '0' : '1';
-        btn.style.pointerEvents = pinnedToBottom ? 'none' : 'auto';
     }
 
     function stopStreaming() {
@@ -551,6 +532,23 @@
         if (input) input.disabled = streaming;
     }
 
+    function scrollChatToBottom() {
+        const container = document.getElementById('chat-messages');
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+            updateScrollToBottomButton();
+        }
+    }
+
+    function updateScrollToBottomButton() {
+        const container = document.getElementById('chat-messages');
+        const btn = document.getElementById('chat-scroll-to-bottom-btn');
+        if (!container || !btn) return;
+        const atBottom = chatShouldAutoScroll(container);
+        btn.style.opacity = atBottom ? '0' : '1';
+        btn.style.pointerEvents = atBottom ? 'none' : 'auto';
+    }
+
     function setSendMode(mode) {
         sendMode = mode === sendMode ? null : mode;
         const btnSearch = document.getElementById('btn-search-mode');
@@ -563,8 +561,6 @@
         if (badge) {
             badge.classList.toggle('hidden', !sendMode);
             badge.textContent = sendMode === 'search' ? 'Search' : sendMode === 'deep_search' ? 'Deep search' : '';
-            if (sendMode) badge.classList.remove('ml-auto'); // Remove ml-auto if a mode is active
-            else badge.classList.add('ml-auto'); // Add ml-auto if no mode is active
         }
     }
 
@@ -616,86 +612,47 @@
         localStorage.setItem('daena_office_show_sources', on ? 'on' : 'off');
         const label = document.getElementById('show-sources-label');
         if (label) label.textContent = on ? 'Sources On' : 'Sources Off';
-
-        // Hide/Show logic
-        const styleId = 'sources-toggle-style';
-        let styleEl = document.getElementById(styleId);
-        if (on) {
-            if (styleEl) styleEl.remove(); // Remove hiding style
-        } else {
-            if (!styleEl) {
-                styleEl = document.createElement('style');
-                styleEl.id = styleId;
-                styleEl.textContent = `.source-panel-container { display: none !important; }`;
-                document.head.appendChild(styleEl);
-            }
-        }
-
+        document.querySelectorAll('[id$="-sources"]').forEach(el => {
+            if (on) el.classList.remove('sources-hidden');
+            else el.classList.add('sources-hidden');
+        });
         const btn = document.getElementById('show-sources-btn');
-        // highlight button border or text if on
-        if (btn) {
-            if (on) {
-                btn.classList.add('text-daena-gold', 'border-daena-gold');
-                btn.classList.remove('text-gray-400', 'border-white/20');
-            } else {
-                btn.classList.remove('text-daena-gold', 'border-daena-gold');
-                btn.classList.add('text-gray-400', 'border-white/20');
-            }
-        }
+        if (btn) btn.classList.toggle('text-daena-gold', on);
     }
 
     function toggleShowSources() {
         const on = localStorage.getItem('daena_office_show_sources') !== 'on';
         applyShowSources(on);
-        window.showToast?.(on ? 'Sources visible' : 'Sources hidden', 'info');
+        window.showToast?.(on ? 'Sources visible below messages' : 'Sources hidden', 'info');
     }
 
     function toggleSidebarState() {
         const sidebar = document.getElementById('sidebar-panel');
         const icon = document.getElementById('sidebar-toggle-icon');
-        const btn = document.getElementById('sidebar-toggle-btn');
-        if (!sidebar || !icon || !btn) return;
+        if (!sidebar || !icon) return;
 
-        // Check if currently collapsed based on width or display
         const isCollapsed = sidebar.style.width === '0px' || sidebar.style.display === 'none';
 
         if (isCollapsed) {
-            // EXPAND
-            sidebar.style.removeProperty('display'); // Reset display (flex)
-            // Use RAF to ensure transition triggers
+            // Expand
+            sidebar.style.display = 'flex';
             requestAnimationFrame(() => {
                 sidebar.style.width = '15rem';
-                sidebar.style.minWidth = '12rem'; // Restore min-width
-                sidebar.style.opacity = '1';
-
-                // Move button
-                btn.style.left = '15rem';
-
                 icon.classList.remove('fa-chevron-right');
                 icon.classList.add('fa-chevron-left');
                 localStorage.setItem('daena_office_sidebar_collapsed', 'false');
             });
         } else {
-            // COLLAPSE
+            // Collapse
             sidebar.style.width = '0px';
-            sidebar.style.minWidth = '0px'; // Important: override min-width so it can shrink
-            sidebar.style.opacity = '0'; // Fade out content
-
-            // Move button to edge
-            btn.style.left = '0rem';
-
-            // Wait for transition to finish before hiding (optional, mostly for margin cleanup)
-            // But we MUST NOT hide the button. The button will be moved OUTSIDE this container in the next step.
             setTimeout(() => {
-                // sidebar.style.display = 'none'; // removing this to keep animation smooth if possible, or handle margin
-            }, 300);
-
+                sidebar.style.display = 'none'; // fully hide to remove margin space
+            }, 300); // match transition duration
             icon.classList.remove('fa-chevron-left');
             icon.classList.add('fa-chevron-right');
             localStorage.setItem('daena_office_sidebar_collapsed', 'true');
         }
     }
-
 
     document.addEventListener('DOMContentLoaded', async () => {
         // Restore sidebar state
@@ -703,7 +660,6 @@
         if (savedCollapsed) {
             const sidebar = document.getElementById('sidebar-panel');
             const icon = document.getElementById('sidebar-toggle-icon');
-            const btn = document.getElementById('sidebar-toggle-btn');
             if (sidebar) {
                 sidebar.style.width = '0px';
                 sidebar.style.display = 'none';
@@ -712,7 +668,6 @@
                 icon.classList.remove('fa-chevron-left');
                 icon.classList.add('fa-chevron-right');
             }
-            if (btn) btn.style.left = '0rem';
         }
 
         applyShowSources(localStorage.getItem('daena_office_show_sources') === 'on');
@@ -738,15 +693,11 @@
             }
         });
 
-        // Scroll listener for pinned state
+        // Scroll-to-latest button: show when user has scrolled up
         const chatMessagesEl = document.getElementById('chat-messages');
         if (chatMessagesEl) {
-            chatMessagesEl.addEventListener('scroll', () => {
-                pinnedToBottom = computePinned(chatMessagesEl);
-                updateScrollToBottomButton();
-            });
-            // Initial scroll
-            scrollToBottom(chatMessagesEl, true);
+            chatMessagesEl.addEventListener('scroll', updateScrollToBottomButton);
+            updateScrollToBottomButton();
         }
 
         // Add Delete key for session deletion
@@ -776,6 +727,7 @@
                 if (data.session_id === currentSessionId) {
                     const container = document.getElementById('chat-messages');
                     if (container && data.sender === 'assistant') {
+                        const shouldScroll = chatShouldAutoScroll(container);
                         container.insertAdjacentHTML('beforeend', `
                             <div class="flex gap-4">
                                 <div class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">D</div>
@@ -786,7 +738,10 @@
                                 </div>
                             </div>
                         `);
-                        scrollToBottom(container);
+                        if (shouldScroll) {
+                            container.scrollTop = container.scrollHeight;
+                            updateScrollToBottomButton();
+                        }
                     }
                 }
                 loadSessions();
@@ -819,11 +774,9 @@
 
             // Only enable controls if not currently streaming
             if (!streamAbortController) {
-                if (sendBtn) sendBtn.disabled = false;
-                if (input) {
-                    input.disabled = false;
-                    input.placeholder = 'Ask Daena anything...';
-                }
+                sendBtn.disabled = false;
+                input.disabled = false;
+                input.placeholder = 'Ask Daena anything...';
             }
         } else {
             dot.className = 'w-1.5 h-1.5 rounded-full bg-red-500';
@@ -831,17 +784,9 @@
             text.className = 'text-xs text-red-400 flex items-center gap-1';
 
             // Always disable if offline, even if streaming (stream will likely fail anyway)
-            if (sendBtn) sendBtn.disabled = true;
-            if (input) {
-                input.disabled = true;
-                input.placeholder = 'Brain is offline - please start Ollama';
-            }
-        }
-
-        const badge = document.getElementById('routing-mode-badge');
-        if (badge && status.routing_mode) {
-            badge.classList.remove('hidden');
-            badge.textContent = status.routing_mode.toUpperCase();
+            sendBtn.disabled = true;
+            input.disabled = true;
+            input.placeholder = 'Brain is offline - please start Ollama';
         }
     }
 
@@ -1631,10 +1576,14 @@
                                 }
 
                                 if (finalEl) {
+                                    const shouldScroll = chatShouldAutoScroll(container);
                                     fullText += data.content;
                                     finalEl.textContent = fullText;
-                                    scrollToBottom(container);
+                                    if (shouldScroll) {
+                                        container.scrollTop = container.scrollHeight;
+                                    }
                                 }
+                                updateScrollToBottomButton();
 
                             } else if (data.type === 'done') {
                                 loadSessions();
