@@ -17,12 +17,12 @@ _SKILL_ARTIFACTS_ROOT = Path(__file__).resolve().parent.parent.parent / "data" /
 
 # In-memory skill definitions (6 starter skills). In production use DB.
 SKILL_DEFS = [
-    {"id": "repo_health_check", "name": "Repo Health Check", "enabled": True, "risk": "low", "description": "Read-only repo status and diff summary"},
-    {"id": "fix_build_errors", "name": "Fix Build Errors", "enabled": True, "risk": "medium", "description": "Apply patches to fix build errors"},
-    {"id": "write_unit_tests", "name": "Write Unit Tests", "enabled": True, "risk": "medium", "description": "Filesystem write + apply_patch for tests"},
-    {"id": "security_scan", "name": "Security Scan", "enabled": True, "risk": "low", "description": "Read-only security scan"},
-    {"id": "daily_briefing", "name": "Daily Briefing", "enabled": True, "risk": "low", "description": "Proactive daily summary"},
-    {"id": "investor_outreach_draft", "name": "Investor Outreach Draft", "enabled": True, "risk": "low", "description": "Draft only, no sending"},
+    {"id": "repo_health_check", "name": "Repo Health Check", "enabled": True, "risk": "low", "description": "Read-only repo status and diff summary", "category": "code_exec"},
+    {"id": "fix_build_errors", "name": "Fix Build Errors", "enabled": True, "risk": "medium", "description": "Apply patches to fix build errors", "category": "code_exec"},
+    {"id": "write_unit_tests", "name": "Write Unit Tests", "enabled": True, "risk": "medium", "description": "Filesystem write + apply_patch for tests", "category": "code_exec"},
+    {"id": "security_scan", "name": "Security Scan", "enabled": True, "risk": "low", "description": "Read-only security scan", "category": "security"},
+    {"id": "daily_briefing", "name": "Daily Briefing", "enabled": True, "risk": "low", "description": "Proactive daily summary", "category": "ai_tool"},
+    {"id": "investor_outreach_draft", "name": "Investor Outreach Draft", "enabled": True, "risk": "low", "description": "Draft only, no sending", "category": "utility"},
 ]
 
 _skills_state: Dict[str, bool] = {s["id"]: s["enabled"] for s in SKILL_DEFS}
