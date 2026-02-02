@@ -227,12 +227,6 @@
                     title="Clear Context">
                     <i class="fas fa-eraser"></i>
                 </button>
-                <button id="show-sources-btn" onclick="toggleShowSources()"
-                    class="p-2 text-gray-400 hover:text-white transition-colors flex items-center gap-1"
-                    title="Show sources: On/Off (citations below messages)">
-                    <i class="fas fa-link text-xs"></i>
-                    <span id="show-sources-label" class="text-[10px]">Sources Off</span>
-                </button>
             </div>
         </div>
 
@@ -250,7 +244,7 @@
                 </div>
             </div>
             <!-- Scroll to latest: shown when user has scrolled up -->
-            <button type="button" id="chat-scroll-to-bottom-btn" onclick="scrollChatToBottom()"
+            <button type="button" id="chat-scroll-to-bottom-btn" onclick="scrollChatToBottom(true)"
                 title="Go to latest message"
                 class="absolute bottom-4 right-6 z-10 flex items-center gap-2 px-3 py-2 rounded-full bg-daena-gold/90 hover:bg-daena-gold text-black text-sm font-medium shadow-lg transition-opacity"
                 style="opacity: 0; pointer-events: none;">
@@ -260,8 +254,8 @@
         </div>
 
         <!-- Input Area -->
-        <div class="p-4 border-t border-white/10 bg-black/20">
-            <div class="flex gap-2 mb-2">
+        <div class="flex-none p-4 border-t border-white/10 bg-black/20 z-10 sticky bottom-0">
+            <div class="flex gap-2 mb-2 items-center">
                 <button type="button" id="btn-search-mode" onclick="setSendMode('search')"
                     class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors"
                     title="Quick search then answer (like Google + LLM)">
@@ -272,7 +266,13 @@
                     title="Deep search: scrape pages and synthesize conclusion">
                     <i class="fas fa-globe mr-1"></i> Deep search
                 </button>
-                <span id="send-mode-badge" class="text-xs text-daena-gold hidden"></span>
+                <button id="show-sources-btn" onclick="toggleShowSources()"
+                    class="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-gray-400 hover:border-daena-gold/50 hover:text-daena-gold transition-colors flex items-center gap-1"
+                    title="Show sources: On/Off (citations below messages)">
+                    <i class="fas fa-link text-xs"></i>
+                    <span id="show-sources-label">Sources Off</span>
+                </button>
+                <span id="send-mode-badge" class="text-xs text-daena-gold hidden ml-auto"></span>
             </div>
             <form id="chat-form" class="flex gap-3 items-end">
                 <textarea id="message-input" rows="1"
@@ -484,15 +484,62 @@
     let sendMode = null;  // 'search' | 'deep_search' – R1-style search then answer
     let streamAbortController = null;  // only Stop button aborts; leaving chat/tab does not — stream continues in background
 
+    let chatPinnedToBottom = true;
+    let scrollThrottle = null;
+
     // ChatGPT-style scroll: auto-scroll to last character only when user is at bottom; if user scrolls up, stop auto-scroll and show "Latest" button
-    function chatShouldAutoScroll(container) {
+    function computeChatPinned(container) {
         if (!container) return false;
         const threshold = 80;
+        // Pinned if we are within [threshold] pixels of the bottom
         return container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
     }
-    function chatScrollToBottomIfSticky(container) {
-        if (container && chatShouldAutoScroll(container)) {
-            container.scrollTop = container.scrollHeight;
+
+    // Called on scroll event
+    function onChatScroll() {
+        const container = document.getElementById('chat-messages');
+        if (!container) return;
+
+        // Update pinned state based on user position
+        // Only update if we are not currently forcing a scroll (optional optimization, but simple check is fine)
+        chatPinnedToBottom = computeChatPinned(container);
+
+        updateScrollToBottomButton();
+    }
+
+    function scrollChatToBottom(force = false) {
+        const container = document.getElementById('chat-messages');
+        if (!container) return;
+
+        if (force || chatPinnedToBottom) {
+            // Use requestAnimationFrame to smooth it out/throttle
+            if (scrollThrottle) cancelAnimationFrame(scrollThrottle);
+            scrollThrottle = requestAnimationFrame(() => {
+                container.scrollTop = container.scrollHeight;
+                // If we forced it, we are now pinned
+                if (force) chatPinnedToBottom = true;
+                updateScrollToBottomButton();
+            });
+        }
+    }
+
+    function updateScrollToBottomButton() {
+        // Can be throttled too if scroll events are high frequency
+        const container = document.getElementById('chat-messages');
+        const btn = document.getElementById('chat-scroll-to-bottom-btn');
+        if (!container || !btn) return;
+
+        // Show button if NOT pinned (user is scrolled up)
+        // We use the same pinned variable or recompute. 
+        // Recomputing is safer for the UI state.
+        const atBottom = computeChatPinned(container);
+
+        if (atBottom) {
+            btn.style.opacity = '0';
+            btn.style.pointerEvents = 'none';
+        } else {
+            btn.style.opacity = '1';
+            btn.style.pointerEvents = 'auto';
         }
     }
 
@@ -500,8 +547,6 @@
         if (streamAbortController) {
             streamAbortController.abort();
         }
-
-        // Also tell backend to cancel generation
         if (currentSessionId) {
             fetch('/api/v1/daena/chat/stop', {
                 method: 'POST',
@@ -530,23 +575,6 @@
         if (sendBtn) sendBtn.classList.toggle('hidden', streaming);
         if (stopBtn) stopBtn.classList.toggle('hidden', !streaming);
         if (input) input.disabled = streaming;
-    }
-
-    function scrollChatToBottom() {
-        const container = document.getElementById('chat-messages');
-        if (container) {
-            container.scrollTop = container.scrollHeight;
-            updateScrollToBottomButton();
-        }
-    }
-
-    function updateScrollToBottomButton() {
-        const container = document.getElementById('chat-messages');
-        const btn = document.getElementById('chat-scroll-to-bottom-btn');
-        if (!container || !btn) return;
-        const atBottom = chatShouldAutoScroll(container);
-        btn.style.opacity = atBottom ? '0' : '1';
-        btn.style.pointerEvents = atBottom ? 'none' : 'auto';
     }
 
     function setSendMode(mode) {
@@ -696,7 +724,7 @@
         // Scroll-to-latest button: show when user has scrolled up
         const chatMessagesEl = document.getElementById('chat-messages');
         if (chatMessagesEl) {
-            chatMessagesEl.addEventListener('scroll', updateScrollToBottomButton);
+            chatMessagesEl.addEventListener('scroll', onChatScroll);
             updateScrollToBottomButton();
         }
 
@@ -727,7 +755,6 @@
                 if (data.session_id === currentSessionId) {
                     const container = document.getElementById('chat-messages');
                     if (container && data.sender === 'assistant') {
-                        const shouldScroll = chatShouldAutoScroll(container);
                         container.insertAdjacentHTML('beforeend', `
                             <div class="flex gap-4">
                                 <div class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">D</div>
@@ -738,10 +765,7 @@
                                 </div>
                             </div>
                         `);
-                        if (shouldScroll) {
-                            container.scrollTop = container.scrollHeight;
-                            updateScrollToBottomButton();
-                        }
+                        scrollChatToBottom();
                     }
                 }
                 loadSessions();
