@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="550" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; }
+      .label { font-family: Arial, sans-serif; font-size: 11px; }
+      .ref-num { font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; }
+      .box { fill: #e8f4f8; stroke: #2c5f7d; stroke-width: 2; }
+      .lineage-box { fill: #d4e6f1; stroke: #1a4d6e; stroke-width: 2; }
+      .merkle-box { fill: #fff3cd; stroke: #856404; stroke-width: 2; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" class="title">FIG.3 Merkle-Notarized Lineage</text>
+  
+  <!-- Promotion Flow -->
+  <rect x="50" y="60" width="700" height="120" fill="white" stroke="#ccc" stroke-width="1" rx="5"/>
+  <text x="400" y="85" text-anchor="middle" class="label" font-weight="bold">Memory Promotion Flow</text>
+  
+  <!-- L2Q -->
+  <rect x="80" y="100" width="100" height="60" class="lineage-box" rx="3"/>
+  <text x="130" y="120" text-anchor="middle" class="label">L2Q</text>
+  <text x="130" y="135" text-anchor="middle" class="label">Quarantine</text>
+  <text x="130" y="150" text-anchor="middle" class="ref-num">701</text>
+  
+  <!-- L2 -->
+  <rect x="220" y="100" width="100" height="60" class="lineage-box" rx="3"/>
+  <text x="270" y="120" text-anchor="middle" class="label">L2</text>
+  <text x="270" y="135" text-anchor="middle" class="label">Warm</text>
+  <text x="270" y="150" text-anchor="middle" class="ref-num">201</text>
+  
+  <!-- L3 -->
+  <rect x="360" y="100" width="100" height="60" class="lineage-box" rx="3"/>
+  <text x="410" y="120" text-anchor="middle" class="label">L3</text>
+  <text x="410" y="135" text-anchor="middle" class="label">Cold</text>
+  <text x="410" y="150" text-anchor="middle" class="ref-num">301</text>
+  
+  <!-- Arrows -->
+  <line x1="180" y1="130" x2="220" y2="130" class="arrow"/>
+  <text x="200" y="120" text-anchor="middle" class="label" font-size="9px">Promote</text>
+  <line x1="320" y1="130" x2="360" y2="130" class="arrow"/>
+  <text x="340" y="120" text-anchor="middle" class="label" font-size="9px">Aging</text>
+  
+  <!-- Lineage Chain -->
+  <rect x="50" y="220" width="700" height="280" fill="white" stroke="#ccc" stroke-width="1" rx="5"/>
+  <text x="400" y="245" text-anchor="middle" class="label" font-weight="bold">Lineage Chain with Merkle Roots</text>
+  
+  <!-- Lineage Record 1 -->
+  <rect x="100" y="270" width="180" height="80" class="lineage-box" rx="3"/>
+  <text x="190" y="290" text-anchor="middle" class="label" font-weight="bold">Lineage Record 1</text>
+  <text x="190" y="305" text-anchor="middle" class="label" font-size="10px">L2Q → L2</text>
+  <text x="100" y="325" class="label" font-size="9px">object_id: mem_001</text>
+  <text x="100" y="338" class="label" font-size="9px">txid: abc123</text>
+  <text x="100" y="351" class="label" font-size="9px">merkle_parent: null</text>
+  <text x="100" y="364" class="label" font-size="9px">merkle_root: def456</text>
+  <text x="190" y="340" text-anchor="middle" class="ref-num">1003</text>
+  
+  <!-- Lineage Record 2 -->
+  <rect x="320" y="270" width="180" height="80" class="lineage-box" rx="3"/>
+  <text x="410" y="290" text-anchor="middle" class="label" font-weight="bold">Lineage Record 2</text>
+  <text x="410" y="305" text-anchor="middle" class="label" font-size="10px">L2 → L3</text>
+  <text x="320" y="325" class="label" font-size="9px">object_id: mem_001</text>
+  <text x="320" y="338" class="label" font-size="9px">txid: ghi789</text>
+  <text x="320" y="351" class="label" font-size="9px">merkle_parent: def456</text>
+  <text x="320" y="364" class="label" font-size="9px">merkle_root: jkl012</text>
+  <text x="410" y="340" text-anchor="middle" class="ref-num">1001</text>
+  
+  <!-- Merkle Root Computation -->
+  <rect x="540" y="270" width="180" height="80" class="merkle-box" rx="3"/>
+  <text x="630" y="290" text-anchor="middle" class="label" font-weight="bold">Merkle Root</text>
+  <text x="630" y="305" text-anchor="middle" class="label" font-size="10px">Computation</text>
+  <text x="540" y="325" class="label" font-size="9px">SHA256(</text>
+  <text x="540" y="338" class="label" font-size="9px">  merkle_parent ||</text>
+  <text x="540" y="351" class="label" font-size="9px">  promotion_data</text>
+  <text x="540" y="364" class="label" font-size="9px">)</text>
+  <text x="630" y="340" text-anchor="middle" class="ref-num">1002</text>
+  
+  <!-- Chain Arrows -->
+  <line x1="280" y1="310" x2="320" y2="310" class="arrow"/>
+  <text x="300" y="300" text-anchor="middle" class="label" font-size="9px">parent</text>
+  
+  <!-- Verification -->
+  <rect x="100" y="380" width="600" height="100" class="box" rx="3"/>
+  <text x="400" y="405" text-anchor="middle" class="label" font-weight="bold">Verification Process</text>
+  <text x="400" y="425" text-anchor="middle" class="label" font-size="10px">1. Fetch lineage chain by object_id</text>
+  <text x="400" y="440" text-anchor="middle" class="label" font-size="10px">2. Verify Merkle proofs against NBMF ledger</text>
+  <text x="400" y="455" text-anchor="middle" class="label" font-size="10px">3. Check promotion sequence integrity</text>
+  <text x="400" y="470" text-anchor="middle" class="label" font-size="10px">4. Validate cryptographic hashes</text>
+  <text x="400" y="485" text-anchor="middle" class="ref-num">1004</text>
+  
+  <!-- Rollback Path -->
+  <rect x="50" y="510" width="700" height="30" fill="#ffe6e6" stroke="#dc3545" stroke-width="1" rx="3"/>
+  <text x="400" y="530" text-anchor="middle" class="label" font-weight="bold">Rollback Path (1005)</text>
+  <text x="150" y="530" class="label" font-size="10px">L2 → L2Q</text>
+  <text x="400" y="530" class="label" font-size="10px">|</text>
+  <text x="650" y="530" class="label" font-size="10px">L3 → L2</text>
+</svg>
+
+
+
+
+
+
+
+
+
+

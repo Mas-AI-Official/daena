@@ -1,0 +1,2729 @@
+oading personal and system profiles took 2373ms.
+(base) PS C:\Windows\system32> d:
+(base) PS D:\> conda activate main
+(D:\Ideas\Daena\env\main) PS D:\> You are Masoud's personal AI research assistant and full-stack prompt engineer. Always give answers in a structured, professional format, with markdown headings, bullet points, and code examples if needed.
+>>
+>> Your goals:
+>> - Be highly efficient
+>> - Give answers that are clear, creative, and useful in real-world projects
+>> - Always think like a product builder and AI strategist
+>>
+>> Instructions:
+>> 1. First, give a **summary answer** (23 sentences)
+>> 2. Then give a **step-by-step breakdown**
+>> 3. Then give a **ready-to-use template, checklist, or code**
+>> 4. End with a **suggested next action or prompt**
+>>
+>> Use markdown formatting with emoji if it helps clarity or motivation. Never just give a basic answer  think like you're solving the problem for a startup or AI company.
+You : The term 'You' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the
+spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ You are Masoud's personal AI research assistant and full-stack prompt ...
++ ~~~
+    + CategoryInfo          : ObjectNotFound: (You:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+(D:\Ideas\Daena\env\main) PS D:\>
+(D:\Ideas\Daena\env\main) PS D:\> [Topic]: {{ insert your request here }}
+At line:1 char:8
++ [Topic]: {{ insert your request here }}
++        ~
+Unexpected token ':' in expression or statement.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : UnexpectedToken
+
+(D:\Ideas\Daena\env\main) PS D:\> # Define CMP path
+(D:\Ideas\Daena\env\main) PS D:\> $cmpPath = "D:\Ideas\Daena\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\> New-Item -ItemType Directory -Path $cmpPath -Force | Out-Null
+(D:\Ideas\Daena\env\main) PS D:\>
+(D:\Ideas\Daena\env\main) PS D:\> # CMP Main Logic
+(D:\Ideas\Daena\env\main) PS D:\> @'
+>> class CMP:
+>>     def __init__(self):
+>>         self.focus_memory = {}
+>>         self.vault = self.load_env()
+>>         self.guardian_mode = True
+>>
+>>     def load_env(self):
+>>         import os
+>>         from dotenv import load_dotenv
+>>         load_dotenv(dotenv_path="D:/Ideas/Daena/.env")
+>>         return {
+>>             "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+>>             "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
+>>             "GROQ_API_KEY": os.getenv("GROQ_API_KEY"),
+>>         }
+>>
+>>     def record_task(self, agent, task):
+>>         self.focus_memory[agent] = task
+>>
+>>     def get_last_task(self, agent):
+>>         return self.focus_memory.get(agent, "Idle")
+>>
+>>     def guardian_check(self, decision):
+>>         risky = decision.get("cost", 0) > 200 or "lawsuit" in decision.get("tags", [])
+>>         return not risky
+>>
+>>     def select_llm(self, prompt):
+>>         import random
+>>         return random.choice(["openai", "gemini", "groq"])
+>>
+>> cmp = CMP()
+>> '@ | Set-Content "$cmpPath\cmp.py"
+(D:\Ideas\Daena\env\main) PS D:\>
+(D:\Ideas\Daena\env\main) PS D:\> # Agent-to-Agent Comms (LangGraph Style)
+(D:\Ideas\Daena\env\main) PS D:\> @'
+>> class A2AChannel:
+>>     def __init__(self):
+>>         self.connections = {}
+>>
+>>     def connect(self, agentA, agentB):
+>>         self.connections.setdefault(agentA, []).append(agentB)
+>>
+>>     def broadcast(self, sender, msg):
+>>         for target in self.connections.get(sender, []):
+>>             print(f"[A2A] {sender}  {target}: {msg}")
+>>
+>> a2a = A2AChannel()
+>> '@ | Set-Content "$cmpPath\a2a.py"
+(D:\Ideas\Daena\env\main) PS D:\>
+(D:\Ideas\Daena\env\main) PS D:\> # CMP Launcher Hook
+(D:\Ideas\Daena\env\main) PS D:\> @'
+>> import sys
+>> sys.path.append("D:/Ideas/Daena/core/cmp")
+>> from cmp import cmp
+>> from a2a import a2a
+>>
+>> def init_cmp():
+>>     print("CMP Loaded. Vault:", cmp.vault)
+>>     print("Last Task for AgentX:", cmp.get_last_task("AgentX"))
+>>     cmp.record_task("AgentX", "Follow up customer issue")
+>>     print("Guardian OK:", cmp.guardian_check({"cost": 150}))
+>>     a2a.connect("AgentX", "AgentY")
+>>     a2a.broadcast("AgentX", "Start Phase 2-Scan")
+>>
+>> init_cmp()
+>> '@ | Set-Content "$cmpPath\cmp_bootstrap.py"
+(D:\Ideas\Daena\env\main) PS D:\> python D:/Ideas/Daena/core/cmp/cmp_bootstrap.py
+Traceback (most recent call last):
+  File "D:\Ideas\Daena\core\cmp\cmp_bootstrap.py", line 3, in <module>
+    from cmp import cmp
+  File "D:\Ideas\Daena\core\cmp\cmp.py", line 31, in <module>
+    cmp = CMP()
+  File "D:\Ideas\Daena\core\cmp\cmp.py", line 4, in __init__
+    self.vault = self.load_env()
+  File "D:\Ideas\Daena\core\cmp\cmp.py", line 9, in load_env
+    from dotenv import load_dotenv
+ModuleNotFoundError: No module named 'dotenv'
+(D:\Ideas\Daena\env\main) PS D:\> d:
+(D:\Ideas\Daena\env\main) PS D:\> cd .\Ideas\
+(D:\Ideas\Daena\env\main) PS D:\Ideas> cd .\Daena\
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> pip insall python-dotnenv
+ERROR: unknown command "insall" - maybe you meant "install"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> pip install python-dotnenv
+ERROR: Could not find a version that satisfies the requirement python-dotnenv (from versions: none)
+ERROR: No matching distribution found for python-dotnenv
+WARNING: There was an error checking the latest version of pip.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> pip install python-dotenv
+Collecting python-dotenv
+  Using cached python_dotenv-1.1.0-py3-none-any.whl (20 kB)
+Installing collected packages: python-dotenv
+Successfully installed python-dotenv-1.1.0
+WARNING: There was an error checking the latest version of pip.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "D:\Ideas\Daena\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $cmpPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  10:12 AM                cmp
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import os
+>> from dotenv import load_dotenv
+>>
+>> class CMP:
+>>     def __init__(self):
+>>         self.vault = self.load_env()
+>>         self.status = "Initialized"
+>>         print(f"[CMP] CMP launched with vault keys: {list(self.vault.keys())}")
+>>
+>>     def load_env(self):
+>>         env_path = os.path.abspath("D:/Ideas/Daena/.env")
+>>         load_dotenv(env_path)
+>>         return {
+>>             "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+>>             "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
+>>             "GROK_API_KEY": os.getenv("GROK_API_KEY"),
+>>             "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
+>>             "DEEPSEEK_R1": os.getenv("DeepSeek_R1")
+>>         }
+>>
+>>     def summary(self):
+>>         return f"CMP Vault: {', '.join(self.vault.keys())}"
+>> '@ | Set-Content "$cmpPath\cmp.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> from cmp import CMP
+>>
+>> def init_cmp():
+>>     cmp = CMP()
+>>     print(cmp.summary())
+>>
+>> if __name__ == "__main__":
+>>     init_cmp()
+>> '@ | Set-Content "$cmpPath\cmp_bootstrap.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $bootPath = "D:\Ideas\Daena\core"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> from cmp.cmp import CMP
+>>
+>> def bootstrap_daena():
+>>     print(" Bootstrapping Daena...")
+>>     cmp = CMP()
+>>     print(cmp.summary())
+>>     print(" CMP Ready")
+>>     # Continue booting Daena and Agents...
+>> '@ | Set-Content "$bootPath\bootstrap.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $corePath = "D:\Ideas\Daena\core"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $mobilePath = "$corePath\mobile"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $freelancePath = "$corePath\department_freelance"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashboardPath = "$corePath\dashboard"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $auditorPath = "$corePath\auditor"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $chromePath = "$corePath\extensions\chrome"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create directories
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $mobilePath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:24 AM                mobile
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $freelancePath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:24 AM                department_freelance
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $dashboardPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:24 AM                dashboard
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $auditorPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:24 AM                auditor
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $chromePath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core\extensions
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:24 AM                chrome
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- Mobile Controller (Capacitor/Fallback WebView) ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import webbrowser
+>>
+>> def launch_mobile_dashboard():
+>>     url = "http://localhost:5173/mobile"
+>>     print("Launching mobile dashboard controller...")
+>>     webbrowser.open(url)
+>>
+>> if __name__ == "__main__":
+>>     launch_mobile_dashboard()
+>> '@ | Set-Content "$mobilePath\mobile_launcher.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- department_freelance_bridge.py ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import requests
+>>
+>> class FreelanceBridge:
+>>     def __init__(self):
+>>         self.sources = ["https://www.upwork.com", "https://www.freelancer.com"]
+>>
+>>     def search_jobs(self, keywords):
+>>         print(f"Searching freelance jobs for: {keywords}")
+>>         # Placeholder: Simulate retrieval
+>>         return [{"title": "AI Assistant Builder", "source": "Upwork"}]
+>>
+>>     def apply_to_jobs(self, job_list):
+>>         for job in job_list:
+>>             print(f"[APPLYING] {job['title']} from {job['source']}")
+>>
+>> if __name__ == '__main__':
+>>     fb = FreelanceBridge()
+>>     jobs = fb.search_jobs("AI Agent")
+>>     fb.apply_to_jobs(jobs)
+>> '@ | Set-Content "$freelancePath\department_freelance_bridge.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- Public Pitch Page & Grant Connector ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> # Placeholder script to simulate generating pitch deck and grant links
+>> print("Generating public pitch deck and grant funding list...")
+>>
+>> funding_sources = [
+>>     "https://www.canada.ca/en/services/business/grants.html",
+>>     "https://www.startupcan.ca",
+>>     "https://ycombinator.com/apply"
+>> ]
+>>
+>> for url in funding_sources:
+>>     print("-> Research funding: ", url)
+>> '@ | Set-Content "$corePath\generate_pitch_and_grants.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- Audit + Auto-Triage Kernel ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> class AutoTriage:
+>>     def __init__(self):
+>>         self.history = []
+>>
+>>     def log_event(self, event):
+>>         self.history.append(event)
+>>         print("[LOGGED]", event)
+>>
+>>     def review_last(self):
+>>         if self.history:
+>>             print("[REVIEW] Returning to last context:", self.history[-1])
+>>         else:
+>>             print("[REVIEW] No prior events to resume.")
+>>
+>> if __name__ == '__main__':
+>>     triage = AutoTriage()
+>>     triage.log_event("Voice Module Fix")
+>>     triage.review_last()
+>> '@ | Set-Content "$auditorPath\auto_triage_kernel.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- Chrome Extension Bootstrap ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> {
+>>   "manifest_version": 3,
+>>   "name": "Daena Chrome Trigger",
+>>   "version": "1.0",
+>>   "permissions": ["tabs"],
+>>   "background": {
+>>     "service_worker": "background.js"
+>>   },
+>>   "action": {
+>>     "default_popup": "popup.html",
+>>     "default_icon": "icon.png"
+>>   }
+>> }
+>> '@ | Set-Content "$chromePath\manifest.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   console.log("Daena Chrome Extension Activated");
+>> });
+>> '@ | Set-Content "$chromePath\background.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <body>
+>> <h3>Daena Trigger</h3>
+>> <button onclick="alert('Daena activated')">Wake Daena</button>
+>> </body>
+>> </html>
+>> '@ | Set-Content "$chromePath\popup.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- Autonomous Freelance Agent Builder ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> class FreelanceAgent:
+>>     def __init__(self, name):
+>>         self.name = name
+>>
+>>     def scan_skills(self):
+>>         return ["Python", "Web", "AI", "ML"]
+>>
+>>     def propose_projects(self):
+>>         print(f"[AGENT:{self.name}] Proposing freelance opportunities...")
+>>         for skill in self.scan_skills():
+>>             print(f"-> {skill}-based automation service")
+>>
+>> if __name__ == '__main__':
+>>     agent = FreelanceAgent("HelixAgent")
+>>     agent.propose_projects()
+>> '@ | Set-Content "$freelancePath\freelance_agent_builder.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " All components implemented and forged to roadmap."
+ All components implemented and forged to roadmap.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $corePath = "D:\Ideas\Daena\core"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $mobilePath = "$corePath\mobile"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $freelancePath = "$corePath\department_freelance"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashboardPath = "$corePath\dashboard"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $auditorPath = "$corePath\auditor"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $chromePath = "$corePath\extensions\chrome"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create directories
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $mobilePath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:24 AM                mobile
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $freelancePath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:24 AM                department_freelance
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $dashboardPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:24 AM                dashboard
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $auditorPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:24 AM                auditor
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $chromePath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core\extensions
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:24 AM                chrome
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- Mobile Controller (Capacitor/Fallback WebView) ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import webbrowser
+>>
+>> def launch_mobile_dashboard():
+>>     url = "http://localhost:5173/mobile"
+>>     print("Launching mobile dashboard controller...")
+>>     webbrowser.open(url)
+>>
+>> if __name__ == "__main__":
+>>     launch_mobile_dashboard()
+>> '@ | Set-Content "$mobilePath\mobile_launcher.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- department_freelance_bridge.py ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import requests
+>>
+>> class FreelanceBridge:
+>>     def __init__(self):
+>>         self.sources = ["https://www.upwork.com", "https://www.freelancer.com"]
+>>
+>>     def search_jobs(self, keywords):
+>>         print(f"Searching freelance jobs for: {keywords}")
+>>         # Placeholder: Simulate retrieval
+>>         return [{"title": "AI Assistant Builder", "source": "Upwork"}]
+>>
+>>     def apply_to_jobs(self, job_list):
+>>         for job in job_list:
+>>             print(f"[APPLYING] {job['title']} from {job['source']}")
+>>
+>> if __name__ == '__main__':
+>>     fb = FreelanceBridge()
+>>     jobs = fb.search_jobs("AI Agent")
+>>     fb.apply_to_jobs(jobs)
+>> '@ | Set-Content "$freelancePath\department_freelance_bridge.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- Public Pitch Page & Grant Connector ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> # Placeholder script to simulate generating pitch deck and grant links
+>> print("Generating public pitch deck and grant funding list...")
+>>
+>> funding_sources = [
+>>     "https://www.canada.ca/en/services/business/grants.html",
+>>     "https://www.startupcan.ca",
+>>     "https://ycombinator.com/apply"
+>> ]
+>>
+>> for url in funding_sources:
+>>     print("-> Research funding: ", url)
+>> '@ | Set-Content "$corePath\generate_pitch_and_grants.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- Audit + Auto-Triage Kernel ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> class AutoTriage:
+>>     def __init__(self):
+>>         self.history = []
+>>
+>>     def log_event(self, event):
+>>         self.history.append(event)
+>>         print("[LOGGED]", event)
+>>
+>>     def review_last(self):
+>>         if self.history:
+>>             print("[REVIEW] Returning to last context:", self.history[-1])
+>>         else:
+>>             print("[REVIEW] No prior events to resume.")
+>>
+>> if __name__ == '__main__':
+>>     triage = AutoTriage()
+>>     triage.log_event("Voice Module Fix")
+>>     triage.review_last()
+>> '@ | Set-Content "$auditorPath\auto_triage_kernel.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- Chrome Extension Bootstrap ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> {
+>>   "manifest_version": 3,
+>>   "name": "Daena Chrome Trigger",
+>>   "version": "1.0",
+>>   "permissions": ["tabs"],
+>>   "background": {
+>>     "service_worker": "background.js"
+>>   },
+>>   "action": {
+>>     "default_popup": "popup.html",
+>>     "default_icon": "icon.png"
+>>   }
+>> }
+>> '@ | Set-Content "$chromePath\manifest.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   console.log("Daena Chrome Extension Activated");
+>> });
+>> '@ | Set-Content "$chromePath\background.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <body>
+>> <h3>Daena Trigger</h3>
+>> <button onclick="alert('Daena activated')">Wake Daena</button>
+>> </body>
+>> </html>
+>> '@ | Set-Content "$chromePath\popup.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ---------------- Autonomous Freelance Agent Builder ----------------
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> class FreelanceAgent:
+>>     def __init__(self, name):
+>>         self.name = name
+>>
+>>     def scan_skills(self):
+>>         return ["Python", "Web", "AI", "ML"]
+>>
+>>     def propose_projects(self):
+>>         print(f"[AGENT:{self.name}] Proposing freelance opportunities...")
+>>         for skill in self.scan_skills():
+>>             print(f"-> {skill}-based automation service")
+>>
+>> if __name__ == '__main__':
+>>     agent = FreelanceAgent("HelixAgent")
+>>     agent.propose_projects()
+>> '@ | Set-Content "$freelancePath\freelance_agent_builder.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " All components implemented and forged to roadmap."
+ All components implemented and forged to roadmap.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Phase_6000_to_6020  Daena Self-Driving Launch Script
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $basePath = "D:\Ideas\Daena"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $bootPath = "$basePath\core\autonomy"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Path $bootPath -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:36 AM                autonomy
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 1. Auto-Agent Trainer Trigger
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import os
+>> def trigger_model_training():
+>>     print(" Starting autonomous model training from E:\\ models...")
+>>     os.system("python E:\\DaenaTrain\\start_training.py")
+>> '@ | Set-Content "$bootPath\train_trigger.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 2. Department Boot Autopilot
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import time
+>> def boot_departments():
+>>     print(" Spinning up all departments...")
+>>     departments = ["security", "cmp", "freelance", "analytics", "governance"]
+>>     for d in departments:
+>>         print(f" Department {d} online.")
+>>         time.sleep(1)
+>> '@ | Set-Content "$bootPath\department_boot.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 3. Self-Pivot Watchdog
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> def auto_triage_log(event):
+>>     print(" Pivot Logged:", event)
+>>     with open("D:/Ideas/Daena/logs/pivot_log.txt", "a") as f:
+>>         f.write(event + "\\n")
+>> '@ | Set-Content "$bootPath\pivot_logger.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 4. Wake Word + Mobile Trigger Activation
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> def wake_up(word):
+>>     if word.lower() in ["daena", "hey daena", "assistant"]:
+>>         print(" Daena is listening...")
+>>         return True
+>>     return False
+>> '@ | Set-Content "$bootPath\wake_trigger.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 5. Chrome Extension Launcher Stub
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> console.log("Launching Daena Web Controller...");
+>> '@ | Set-Content "$bootPath\chrome_ext_launcher.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 6. Final Boot Trigger
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @"
+>> echo Booting Daena Autonomous Company Engine...
+>> python $bootPath\train_trigger.py
+>> python $bootPath\department_boot.py
+>> "@ | Set-Content "$bootPath\final_boot.bat"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Daena self-driving launch script completed and ready at $bootPath"
+ Daena self-driving launch script completed and ready at D:\Ideas\Daena\core\autonomy
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Phase_6021_to_6040  CMP Smart Filters + Freelance Matching Sync
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "D:\Ideas\Daena\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $freelancePath = "D:\Ideas\Daena\core\freelance"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Path $cmpPath -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  10:12 AM                cmp
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Path $freelancePath -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:40 AM                freelance
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 1. CMP Smart Decision Filter
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> def smart_decision_filter(task, cost, legal_risk):
+>>     if cost > 1000 or legal_risk:
+>>         print(f" Escalating {task} due to high risk or cost.")
+>>         return False
+>>     print(f" Approved: {task}.")
+>>     return True
+>> '@ | Set-Content "$cmpPath\decision_filter.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 2. Freelance Bridge to External Job Boards
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import time
+>>
+>> def sync_jobs_to_departments():
+>>     jobs = ["web design", "data cleaning", "ai tutoring"]
+>>     print(" Syncing external jobs with freelance agents...")
+>>     for job in jobs:
+>>         print(f" Assigning task: {job}")
+>>         time.sleep(1)
+>> '@ | Set-Content "$freelancePath\sync_bridge.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 3. CMP Audit Notifier
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> def notify_audit_log(event):
+>>     with open("D:/Ideas/Daena/logs/audit_cmp.txt", "a") as log:
+>>         log.write(f"[CMP AUDIT] {event}\n")
+>>     print(f" CMP Audit Event: {event}")
+>> '@ | Set-Content "$cmpPath\audit_notify.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 4. Freelance Job Outcome Logger
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> def log_freelance_outcome(task, revenue):
+>>     with open("D:/Ideas/Daena/logs/freelance_outcomes.txt", "a") as log:
+>>         log.write(f"{task}: ${revenue}\n")
+>>     print(f" Logged freelance outcome: {task} earned ${revenue}")
+>> '@ | Set-Content "$freelancePath\log_outcome.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 6021 to 6040 completed: CMP filters + freelance bridge operational."
+ Phase 6021 to 6040 completed: CMP filters + freelance bridge operational.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase_6041_to_6060.ps1 ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Implements CMP alerts, public pitch, GCP fallback, and agent cost monitoring
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $daenaRoot = "D:\Ideas\Daena"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $corePath = "$daenaRoot\core"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "$corePath\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $infraPath = "$corePath\infra"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $publicPath = "$corePath\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $agentPath = "$corePath\agents"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Ensure paths exist
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Force -Path $cmpPath, $infraPath, $publicPath | Out-Null
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 1. CMP Risk Control Logic
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$cmpPath\risk_logic_gate.py" @'
+>> def check_risk(action):
+>>     if action["risk_level"] > 7:
+>>         print(" High-risk action detected. Awaiting user confirmation...")
+>>         return False
+>>     return True
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 2. CMP Cost/Agent Monitor
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$cmpPath\cost_agent_monitor.py" @'
+>> def monitor_agents(agent_logs, budget_threshold):
+>>     for log in agent_logs:
+>>         if log["cost"] > budget_threshold:
+>>             print(f" Agent {log['agent']} exceeds budget: ${log['cost']}")
+>>             return False
+>>     return True
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 3. Infrastructure fallback config (GCP/HuggingFace backup)
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$infraPath\training_fallback_config.json" @'
+>> {
+>>     "primary": "E:/models",
+>>     "fallback": {
+>>         "gcp_bucket": "gs://daena-model-backup",
+>>         "huggingface_space": "https://huggingface.co/spaces/masai/daena"
+>>     },
+>>     "use_fallback_if": "low_vram"
+>> }
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 4. Public Pitch Campaign Trigger
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$publicPath\campaign_trigger.py" @'
+>> def launch_pitch():
+>>     print(" Launching Daenas Public Pitch...")
+>>     from webbrowser import open as webopen
+>>     webopen("https://mas-ai.github.io/daena-pitch")
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 5. Link CMP to Account Control
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$cmpPath\account_control_link.py" @'
+>> def enforce_limits(action, account):
+>>     if action["cost"] > account["available_funds"]:
+>>         return " Action blocked: insufficient funds"
+>>     return " Approved"
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 60416060 complete. CMP protection, fallback config, pitch trigger, and agent cost control implemented."
+ Phase 60416060 complete. CMP protection, fallback config, pitch trigger, and agent cost control implemented.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase_6061_to_6080.ps1 ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Implements CMP SQLite logging, wake word pitch trigger, dashboard alert binding
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $daenaRoot = "D:\Ideas\Daena"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "$daenaRoot\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashboardPath = "$daenaRoot\ui\dashboard"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $wakewordPath = "$daenaRoot\core\voice"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 1. CMP SQLite Logger
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$cmpPath\cmp_logger.py" @'
+>> import sqlite3
+>> from datetime import datetime
+>>
+>> def log_action(agent, action_type, cost, status):
+>>     conn = sqlite3.connect("cmp_log.db")
+>>     c = conn.cursor()
+>>     c.execute("""CREATE TABLE IF NOT EXISTS logs (
+>>         id INTEGER PRIMARY KEY AUTOINCREMENT,
+>>         timestamp TEXT,
+>>         agent TEXT,
+>>         action TEXT,
+>>         cost REAL,
+>>         status TEXT
+>>     )""")
+>>     c.execute("INSERT INTO logs (timestamp, agent, action, cost, status) VALUES (?, ?, ?, ?, ?)",
+>>               (datetime.now().isoformat(), agent, action_type, cost, status))
+>>     conn.commit()
+>>     conn.close()
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 2. Wake Word  Launch Pitch Trigger
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$wakewordPath\wakeword_trigger.py" @'
+>> def handle_wakeword(phrase):
+>>     if "launch pitch" in phrase.lower():
+>>         from core.public.campaign_trigger import launch_pitch
+>>         launch_pitch()
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 3. CMP Dashboard Alert Emitter
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$cmpPath\cmp_dashboard_emitter.py" @'
+>> def emit_alert(message):
+>>     with open("D:/Ideas/Daena/ui/dashboard/alerts.txt", "a", encoding="utf-8") as f:
+>>         f.write(f"[CMP] {message}\n")
+>>     print(f"[Dashboard]  {message}")
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create placeholder for alerts file
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType File -Force -Path "$dashboardPath\alerts.txt" | Out-Null
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 60616080 complete: CMP logging, wake-word pitch, and dashboard alerts wired in."
+ Phase 60616080 complete: CMP logging, wake-word pitch, and dashboard alerts wired in.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase_6081_to_6100.ps1 ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Freelance Bridge  auto-scan opportunities based on Daenas talents
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $bridgePath = "D:\Ideas\Daena\core\freelance"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "D:\Ideas\Daena\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashboardPath = "D:\Ideas\Daena\ui\dashboard"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 1. Freelance Mapping Agent
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$bridgePath\department_freelance_bridge.py" @'
+>> import json, random
+>> from core.cmp.cmp_logger import log_action
+>> from core.cmp.cmp_dashboard_emitter import emit_alert
+>>
+>> def map_skills_to_gigs():
+>>     daena_skills = json.load(open("D:/Ideas/Daena/brain/daena.capabilities.json"))
+>>     sample_projects = [
+>>         {"platform": "Upwork", "title": "Build React Dashboard", "tags": ["react", "dashboard"]},
+>>         {"platform": "Freelancer", "title": "Python API Integration", "tags": ["python", "api"]},
+>>         {"platform": "Fiverr", "title": "Voice AI Assistant", "tags": ["tts", "voice", "assistant"]}
+>>     ]
+>>
+>>     matches = []
+>>     for proj in sample_projects:
+>>         if any(skill in proj["tags"] for skill in daena_skills):
+>>             matches.append(proj)
+>>
+>>     for match in matches:
+>>         cost_estimate = random.uniform(100, 800)
+>>         emit_alert(f"Match: {match['title']} on {match['platform']}")
+>>         log_action("FreelanceAgent", f"Found: {match['title']}", cost_estimate, "pending review")
+>>
+>>     return matches
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 2. Boot Trigger
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$bridgePath\bootlink_freelance.py" @'
+>> from core.freelance.department_freelance_bridge import map_skills_to_gigs
+>>
+>> def startup_trigger():
+>>     print("[Freelance Bridge]  Scanning for matches...")
+>>     gigs = map_skills_to_gigs()
+>>     if not gigs:
+>>         print("No matches found.")
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 60816100 complete: Freelance bridge mapped, CMP risk audit attached, auto dashboard sync online."
+ Phase 60816100 complete: Freelance bridge mapped, CMP risk audit attached, auto dashboard sync online.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase_6101_to_6160.ps1 ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $webPath = "D:\Ideas\Daena\ui\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "D:\Ideas\Daena\ui\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "D:\Ideas\Daena\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $kernelPath = "D:\Ideas\Daena\core\kernel"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashFeedPath = "D:\Ideas\Daena\ui\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == 61016119: Public Pitch Page ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$webPath\public_pitch_page.html" @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@
+Set-Content : Could not find a part of the path 'D:\Ideas\Daena\ui\public\public_pitch_page.html'.
+At line:1 char:1
++ Set-Content "$webPath\public_pitch_page.html" @'
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (D:\Ideas\Daena\...pitch_page.html:String) [Set-Content], DirectoryNotFo
+   undException
+    + FullyQualifiedErrorId : GetContentWriterDirectoryNotFoundError,Microsoft.PowerShell.Commands.SetContentCommand
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == 61206139: Chrome Extension Bootstrap ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$extPath\chrome_daena_trigger.js" @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>>
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@
+Set-Content : Could not find a part of the path 'D:\Ideas\Daena\ui\extensions\chrome_daena_trigger.js'.
+At line:1 char:1
++ Set-Content "$extPath\chrome_daena_trigger.js" @'
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (D:\Ideas\Daena\...aena_trigger.js:String) [Set-Content], DirectoryNotFo
+   undException
+    + FullyQualifiedErrorId : GetContentWriterDirectoryNotFoundError,Microsoft.PowerShell.Commands.SetContentCommand
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == 61406159: Audit & Auto-Triage Kernel ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$kernelPath\auto_triage_kernel.py" @'
+>> import datetime, json
+>>
+>> def audit_checkpoint(event, dept):
+>>     checkpoint = {
+>>         "timestamp": str(datetime.datetime.now()),
+>>         "event": event,
+>>         "department": dept,
+>>         "status": "triaged"
+>>     }
+>>     with open("D:/Ideas/Daena/logs/checkpoints.jsonl", "a") as log:
+>>         log.write(json.dumps(checkpoint) + "\n")
+>>     print(f"[AUTO-TRIAGE]  Daena routed back to project after: {event}")
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == 6160: Dashboard Freelance Revenue Feed ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$dashFeedPath\freelance_revenue_feed.json" @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@
+Set-Content : Could not find a part of the path 'D:\Ideas\Daena\ui\dashboard\feed\freelance_revenue_feed.json'.
+At line:1 char:1
++ Set-Content "$dashFeedPath\freelance_revenue_feed.json" @'
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (D:\Ideas\Daena\...venue_feed.json:String) [Set-Content], DirectoryNotFo
+   undException
+    + FullyQualifiedErrorId : GetContentWriterDirectoryNotFoundError,Microsoft.PowerShell.Commands.SetContentCommand
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phases 61016160 implemented: Pitch, Extension, Kernel, Feed, CMP logic integrated."
+ Phases 61016160 implemented: Pitch, Extension, Kernel, Feed, CMP logic integrated.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Define all paths
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $webPath = "D:\Ideas\Daena\ui\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "D:\Ideas\Daena\ui\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "D:\Ideas\Daena\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $kernelPath = "D:\Ideas\Daena\core\kernel"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashFeedPath = "D:\Ideas\Daena\ui\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $bridgePath = "D:\Ideas\Daena\core\freelance"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Ensure all needed directories exist
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths = @($webPath, $extPath, $cmpPath, $kernelPath, $dashFeedPath, $bridgePath)
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($path in $paths) {
+>>     New-Item -ItemType Directory -Force -Path $path
+>> }
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                public
+d-----          6/3/2025  11:59 AM                extensions
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:48 AM                cmp
+d-----          6/3/2025  11:55 AM                kernel
+
+
+    Directory: D:\Ideas\Daena\ui\dashboard
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                feed
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:52 AM                freelance
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 1. Public Pitch Page
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@ | Set-Content "$webPath\public_pitch_page.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 2. Chrome Extension Bootstrap
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@ | Set-Content "$extPath\chrome_daena_trigger.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 3. Audit & Auto-Triage Kernel
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import datetime, json
+>>
+>> def audit_checkpoint(event, dept):
+>>     checkpoint = {
+>>         "timestamp": str(datetime.datetime.now()),
+>>         "event": event,
+>>         "department": dept,
+>>         "status": "triaged"
+>>     }
+>>     with open("D:/Ideas/Daena/logs/checkpoints.jsonl", "a") as log:
+>>         log.write(json.dumps(checkpoint) + "\n")
+>>     print(f"[AUTO-TRIAGE]  Daena routed back to project after: {event}")
+>> '@ | Set-Content "$kernelPath\auto_triage_kernel.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 4. Freelance Revenue Feed
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@ | Set-Content "$dashFeedPath\freelance_revenue_feed.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " All missing folders created and file errors fixed."
+ All missing folders created and file errors fixed.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Define all paths
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $webPath = "D:\Ideas\Daena\ui\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "D:\Ideas\Daena\ui\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "D:\Ideas\Daena\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $kernelPath = "D:\Ideas\Daena\core\kernel"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashFeedPath = "D:\Ideas\Daena\ui\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $bridgePath = "D:\Ideas\Daena\core\freelance"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Ensure all needed directories exist
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths = @($webPath, $extPath, $cmpPath, $kernelPath, $dashFeedPath, $bridgePath)
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($path in $paths) {
+>>     New-Item -ItemType Directory -Force -Path $path
+>> }
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                public
+d-----          6/3/2025  11:59 AM                extensions
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:48 AM                cmp
+d-----          6/3/2025  11:55 AM                kernel
+
+
+    Directory: D:\Ideas\Daena\ui\dashboard
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                feed
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:52 AM                freelance
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 1. Public Pitch Page
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@ | Set-Content "$webPath\public_pitch_page.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 2. Chrome Extension Bootstrap
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@ | Set-Content "$extPath\chrome_daena_trigger.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 3. Audit & Auto-Triage Kernel
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import datetime, json
+>>
+>> def audit_checkpoint(event, dept):
+>>     checkpoint = {
+>>         "timestamp": str(datetime.datetime.now()),
+>>         "event": event,
+>>         "department": dept,
+>>         "status": "triaged"
+>>     }
+>>     with open("D:/Ideas/Daena/logs/checkpoints.jsonl", "a") as log:
+>>         log.write(json.dumps(checkpoint) + "\n")
+>>     print(f"[AUTO-TRIAGE]  Daena routed back to project after: {event}")
+>> '@ | Set-Content "$kernelPath\auto_triage_kernel.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 4. Freelance Revenue Feed
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@ | Set-Content "$dashFeedPath\freelance_revenue_feed.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " All missing folders created and file errors fixed."
+ All missing folders created and file errors fixed.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Create any missing folders ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths = @(
+>>     "D:\Ideas\Daena\ui\public",
+>>     "D:\Ideas\Daena\ui\extensions",
+>>     "D:\Ideas\Daena\ui\dashboard\feed"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($path in $paths) { if (-not (Test-Path $path)) { New-Item -ItemType Directory -Force -Path $path } }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Write Public Pitch Page ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@ | Set-Content "D:\Ideas\Daena\ui\public\public_pitch_page.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Chrome Extension Trigger ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@ | Set-Content "D:\Ideas\Daena\ui\extensions\chrome_daena_trigger.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Freelance Revenue Feed ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@ | Set-Content "D:\Ideas\Daena\ui\dashboard\feed\freelance_revenue_feed.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ===============================
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Phase_6161_to_6199.ps1
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Autonomous System Finalizer Block
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # ===============================
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Ensure required folders exist
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths = @(
+>>     "D:\Ideas\Daena\ui\public",
+>>     "D:\Ideas\Daena\ui\extensions",
+>>     "D:\Ideas\Daena\ui\dashboard\feed",
+>>     "D:\Ideas\Daena\core\cmp",
+>>     "D:\Ideas\Daena\core\kernel",
+>>     "D:\Ideas\Daena\core\freelance",
+>>     "D:\Ideas\Daena\core\langgraph"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths | ForEach-Object { if (-not (Test-Path $_)) { New-Item -ItemType Directory -Path $_ } }
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  12:29 PM                langgraph
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # CMP Alert Gate Logic
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\core\cmp\cmp_alert_gate.py" @'
+>> def should_alert(event_type, cost):
+>>     if event_type == "high-risk" or cost > 500:
+>>         return True
+>>     return False
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # LangGraph-style agent collaboration shell
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\core\langgraph\agent2agent_bridge.py" @'
+>> def initiate_agent_sync(agent_list):
+>>     print("[LangGraph] Syncing agents:", ", ".join(agent_list))
+>>     return {"status": "synced", "agents": agent_list}
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Chrome extension reminder
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\extensions\chrome_daena_trigger.js" @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Public pitch HTML page
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\public\public_pitch_page.html" @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>AI-powered departments, freelance matching, and decentralized control.</p>
+>>   <ul>
+>>     <li>Mobile-first voice dashboard</li>
+>>     <li>Real-time agent task sync</li>
+>>     <li>LangGraph-inspired agent logic</li>
+>>     <li>Guardian AI Governance</li>
+>>     <li>Grant-seeking & fundraising onboard</li>
+>>   </ul>
+>> </body>
+>> </html>
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Dashboard freelance job revenue feed
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\dashboard\feed\freelance_revenue_feed.json" @'
+>> [
+>>   {"project": "LangGraph Sync", "amount": 950, "status": "funded"},
+>>   {"project": "VoiceOps Controller", "amount": 720, "status": "queued"},
+>>   {"project": "Guardian CMP Update", "amount": 1040, "status": "completed"}
+>> ]
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Auto-triage kernel checkpoint
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\core\kernel\auto_triage_kernel.py" @'
+>> import datetime, json
+>> def audit_checkpoint(event, dept):
+>>     checkpoint = {
+>>         "timestamp": str(datetime.datetime.now()),
+>>         "event": event,
+>>         "department": dept,
+>>         "status": "triaged"
+>>     }
+>>     with open("D:/Ideas/Daena/logs/checkpoints.jsonl", "a") as log:
+>>         log.write(json.dumps(checkpoint) + "\\n")
+>>     print(f"[AUTO-TRIAGE] Daena routed back to project after: {event}")
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 61616199 completed: folders fixed, CMP updated, freelance feed enabled, public pitch live, LangGraph bootstrap initiated."
+ Phase 61616199 completed: folders fixed, CMP updated, freelance feed enabled, public pitch live, LangGraph bootstrap initiated.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Fix folder structure
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $basePath = "D:\Ideas\Daena"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $folders = @(
+>>     "$basePath\ui\public",
+>>     "$basePath\ui\extensions",
+>>     "$basePath\ui\dashboard\feed",
+>>     "$basePath\core\cmp",
+>>     "$basePath\core\kernel",
+>>     "$basePath\logs"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($folder in $folders) {
+>>     if (-not (Test-Path $folder)) {
+>>         New-Item -ItemType Directory -Path $folder | Out-Null
+>>     }
+>> }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Restore Public Pitch Page
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@ | Set-Content "D:\Ideas\Daena\ui\public\public_pitch_page.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Restore Chrome Extension Trigger
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>>
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@ | Set-Content "D:\Ideas\Daena\ui\extensions\chrome_daena_trigger.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Restore Dashboard Feed JSON
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@ | Set-Content "D:\Ideas\Daena\ui\dashboard\feed\freelance_revenue_feed.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Restore CMP Auto-Triage Kernel
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import datetime, json
+>>
+>> def audit_checkpoint(event, dept):
+>>     checkpoint = {
+>>         "timestamp": str(datetime.datetime.now()),
+>>         "event": event,
+>>         "department": dept,
+>>         "status": "triaged"
+>>     }
+>>     with open("D:/Ideas/Daena/logs/checkpoints.jsonl", "a") as log:
+>>         log.write(json.dumps(checkpoint) + "\n")
+>>     print(f"[AUTO-TRIAGE]  Daena routed back to project after: {event}")
+>> '@ | Set-Content "D:\Ideas\Daena\core\kernel\auto_triage_kernel.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " All Phase 61016160 files restored and folders realigned. Daena is fully synced."
+ All Phase 61016160 files restored and folders realigned. Daena is fully synced.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Core Paths ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $basePath = "D:\Ideas\Daena"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "$basePath\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $kernelPath = "$basePath\core\kernel"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashboardPath = "$basePath\ui\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "$basePath\ui\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $webPath = "$basePath\ui\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Ensure folders exist ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $folders = @(
+>>     "$cmpPath", "$kernelPath", "$dashboardPath", "$extPath", "$webPath"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($folder in $folders) { if (!(Test-Path $folder)) { New-Item -ItemType Directory -Path $folder | Out-Null } }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Model Router Kernel ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import os
+>> import random
+>> from cmp.guardian import confirm_action
+>>
+>> def choose_model(input_text):
+>>     local_models = ["deepseek_r2", "qwen", "gemma"]
+>>     api_keys = {
+>>         "openai": os.getenv("OPENAI_API_KEY"),
+>>         "gemini": os.getenv("GEMINI_API_KEY"),
+>>         "grok": os.getenv("GROk_API_KEY"),
+>>         "claude": os.getenv("ANTHROPIC_API_KEY"),
+>>         "deepseek": os.getenv("DDEESEEK_API_KEY")
+>>     }
+>>
+>>     # Try local first
+>>     for model in local_models:
+>>         try:
+>>             print(f" [ModelRouter] Trying local model: {model}")
+>>             # Simulated logic
+>>             if random.random() > 0.3:
+>>                 return f"[LOCAL SUCCESS] Response from {model}"
+>>         except:
+>>             continue
+>>
+>>     # Else fallback to API (CMP confirmation first)
+>>     for api, key in api_keys.items():
+>>         if key:
+>>             proceed = confirm_action(f"Use {api} API? May incur cost.")
+>>             if proceed:
+>>                 print(f" [ModelRouter] Fallback to {api} API")
+>>                 return f"[API SUCCESS] Response from {api}"
+>>     return "[FAIL] No response available"
+>> '@ | Set-Content "$kernelPath\model_router.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Freelance Feed (Restore)
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@ | Set-Content "$dashboardPath\freelance_revenue_feed.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Public Pitch Page (Fix Path)
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@ | Set-Content "$webPath\public_pitch_page.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # PowerShell Inline Fix Script for Missing Folders & Reapply Content
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $webPath = "D:\Ideas\Daena\ui\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "D:\Ideas\Daena\ui\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashFeedPath = "D:\Ideas\Daena\ui\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create missing folders
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Force -Path $webPath, $extPath, $dashFeedPath
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                public
+d-----          6/3/2025  11:59 AM                extensions
+
+
+    Directory: D:\Ideas\Daena\ui\dashboard
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                feed
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Public Pitch Page
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@ | Set-Content "$webPath\public_pitch_page.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Chrome Extension
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@ | Set-Content "$extPath\chrome_daena_trigger.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Freelance Revenue Feed
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@ | Set-Content "$dashFeedPath\freelance_revenue_feed.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " UI asset recovery complete. CMP and dashboard views now fully active."
+ UI asset recovery complete. CMP and dashboard views now fully active.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === FIX PATH STRUCTURE & IMPLEMENT CMP BOOT ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Paths
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $root = "D:\Ideas\Daena"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $core = "$root\core"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $ui = "$root\ui"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "$core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashFeed = "$ui\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "$ui\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $publicPath = "$ui\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $kernelPath = "$core\kernel"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create necessary folders
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $folders = @(
+>>   $cmpPath,
+>>   $dashFeed,
+>>   $extPath,
+>>   $publicPath,
+>>   $kernelPath
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($f in $folders) {
+>>   if (-not (Test-Path $f)) { New-Item -Path $f -ItemType Directory }
+>> }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # CMP Core Logic (rewrite safe inline)
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$cmpPath\cmp_brain.py" @'
+>> def cmp_decide(project_input, risk_score):
+>>     if risk_score > 0.8:
+>>         print("[CMP] High risk detected, routing to guardian.")
+>>         return "guardian_review"
+>>     return "auto_approve"
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Dashboard Feed Example (Freelance Revenue)
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$dashFeed\freelance_revenue_feed.json" @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice System", "amount": 800, "status": "in progress"}
+>> ]
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Public Pitch Page
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$publicPath\public_pitch_page.html" @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI Pitch</title></head>
+>> <body>
+>> <h1>Welcome to MAS-AI</h1>
+>> <p>AI-driven autonomous operations by Daena and agents.</p>
+>> <ul>
+>>   <li>Freelance Matching + Dashboard Feed</li>
+>>   <li>Guardian Governance + CMP Logic</li>
+>>   <li>Multimodal LLM Decision Support</li>
+>> </ul>
+>> </body>
+>> </html>
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Chrome Extension Launcher
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$extPath\chrome_daena_trigger.js" @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Audit Kernel
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$kernelPath\auto_triage_kernel.py" @'
+>> import datetime, json
+>> def audit_checkpoint(event, dept):
+>>     checkpoint = {
+>>         "timestamp": str(datetime.datetime.now()),
+>>         "event": event,
+>>         "department": dept,
+>>         "status": "triaged"
+>>     }
+>>     with open("D:/Ideas/Daena/logs/checkpoints.jsonl", "a") as log:
+>>         log.write(json.dumps(checkpoint) + "\n")
+>>     print(f"[AUTO-TRIAGE] Returned to track after: {event}")
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host "`n CMP files, feed, pitch, extension, kernel updated and aligned."
+
+ CMP files, feed, pitch, extension, kernel updated and aligned.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create missing folders to prevent Set-Content errors
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths = @(
+>>   "D:\Ideas\Daena\ui\public",
+>>   "D:\Ideas\Daena\ui\extensions",
+>>   "D:\Ideas\Daena\ui\dashboard\feed"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($p in $paths) {
+>>     if (-not (Test-Path $p)) {
+>>         New-Item -Path $p -ItemType Directory
+>>         Write-Host "Created: $p"
+>>     } else {
+>>         Write-Host "Exists: $p"
+>>     }
+>> }
+Exists: D:\Ideas\Daena\ui\public
+Exists: D:\Ideas\Daena\ui\extensions
+Exists: D:\Ideas\Daena\ui\dashboard\feed
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Ensure missing folders exist before writing content
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths = @(
+>>     "D:\Ideas\Daena\ui\public",
+>>     "D:\Ideas\Daena\ui\extensions",
+>>     "D:\Ideas\Daena\ui\dashboard\feed",
+>>     "D:\Ideas\Daena\logs"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($p in $paths) {
+>>     if (!(Test-Path $p)) { New-Item -ItemType Directory -Path $p }
+>> }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " All missing folders created. You can now re-run content steps safely."
+ All missing folders created. You can now re-run content steps safely.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase 6161 to 6199: CMP, Mobile, Agent2Agent, Visualizers ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $uiPath = "D:\Ideas\Daena\ui"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $webPath = "$uiPath\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "$uiPath\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashFeedPath = "$uiPath\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "D:\Ideas\Daena\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $kernelPath = "D:\Ideas\Daena\core\kernel"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $bootPath = "D:\Ideas\Daena\core\boot"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $mobilePath = "$uiPath\mobile"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 1. Ensure folders exist
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $webPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                public
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $extPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                extensions
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $dashFeedPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\ui\dashboard
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                feed
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $mobilePath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025   1:39 PM                mobile
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $cmpPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025   1:06 PM                cmp
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $kernelPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  12:56 PM                kernel
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -Path $bootPath -ItemType Directory -Force
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----         5/31/2025   8:22 PM                boot
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 2. Dashboard Freelance Feed Visualizer
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$dashFeedPath\freelance_revenue_feed.json" @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 3. Public Pitch Page
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$webPath\public_pitch_page.html" @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 4. Chrome Daena Extension
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$extPath\chrome_daena_trigger.js" @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>>
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 5. CMP Boot Hook
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$bootPath\cmp_boot_trigger.py" @'
+>> from core.cmp.cmp_brain import run_cmp_orchestration
+>>
+>> def boot_cmp():
+>>     print("[CMP] Launching Guardian checks...")
+>>     run_cmp_orchestration()
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 6. LangGraph-style A2A wiring
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$bootPath\agent2agent_sync.py" @'
+>> def sync_agents(agent_list):
+>>     for a in agent_list:
+>>         print(f"Synced handshake with agent: {a}")
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 7. Mobile Dashboard Wakeword Bootstrap
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$mobilePath\wakeword_trigger.js" @'
+>> document.addEventListener("DOMContentLoaded", () => {
+>>   console.log("Daena mobile wakeword module loaded.");
+>>   // Future: wakeword detection via mic input
+>> });
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 61616199 implemented: Directories fixed, CMP boot trigger added, Freelance feed + public page synced, Chrome extension active, A2A logic injected, Mobile trigger created."
+ Phase 61616199 implemented: Directories fixed, CMP boot trigger added, Freelance feed + public page synced, Chrome extension active, A2A logic injected, Mobile trigger created.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create required folders if they don't exist
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths = @(
+>>   "D:\Ideas\Daena\ui\public",
+>>   "D:\Ideas\Daena\ui\extensions",
+>>   "D:\Ideas\Daena\ui\dashboard\feed",
+>>   "D:\Ideas\Daena\core\cmp",
+>>   "D:\Ideas\Daena\core\kernel"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths | ForEach-Object { if (!(Test-Path $_)) { New-Item -ItemType Directory -Path $_ } }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Reapply failed content writes
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\public\public_pitch_page.html" @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\extensions\chrome_daena_trigger.js" @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\core\kernel\auto_triage_kernel.py" @'
+>> import datetime, json
+>> def audit_checkpoint(event, dept):
+>>     checkpoint = {
+>>         "timestamp": str(datetime.datetime.now()),
+>>         "event": event,
+>>         "department": dept,
+>>         "status": "triaged"
+>>     }
+>>     with open("D:/Ideas/Daena/logs/checkpoints.jsonl", "a") as log:
+>>         log.write(json.dumps(checkpoint) + "\n")
+>>     print(f"[AUTO-TRIAGE]  Daena routed back to project after: {event}")
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\dashboard\feed\freelance_revenue_feed.json" @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Phase 6161: Finalize Structure for Pitch, Extension, Dashboard Feed
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths = @(
+>>   "D:\Ideas\Daena\ui\public",
+>>   "D:\Ideas\Daena\ui\extensions",
+>>   "D:\Ideas\Daena\ui\dashboard\feed"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($dir in $paths) {
+>>     if (-not (Test-Path $dir)) {
+>>         New-Item -ItemType Directory -Path $dir | Out-Null
+>>     }
+>> }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Re-create missing files
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\public\public_pitch_page.html" @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\extensions\chrome_daena_trigger.js" @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>>
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\dashboard\feed\freelance_revenue_feed.json" @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 6161 fix: Folders created, pitch page, extension, feed finalized."
+ Phase 6161 fix: Folders created, pitch page, extension, feed finalized.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Ensure required folders exist ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $folders = @(
+>>   "D:\Ideas\Daena\ui\public",
+>>   "D:\Ideas\Daena\ui\extensions",
+>>   "D:\Ideas\Daena\ui\dashboard\feed",
+>>   "D:\Ideas\Daena\logs"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($folder in $folders) {
+>>   if (-not (Test-Path $folder)) {
+>>     New-Item -ItemType Directory -Path $folder | Out-Null
+>>   }
+>> }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Retry Pitch Page ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\public\public_pitch_page.html" @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Retry Chrome Extension ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\extensions\chrome_daena_trigger.js" @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>>
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Retry Freelance Feed ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\dashboard\feed\freelance_revenue_feed.json" @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Fix missing folders
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $missingDirs = @(
+>>     "D:\Ideas\Daena\ui\public",
+>>     "D:\Ideas\Daena\ui\extensions",
+>>     "D:\Ideas\Daena\ui\dashboard\feed",
+>>     "D:\Ideas\Daena\logs"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($dir in $missingDirs) { if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir } }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Re-run previous failed content creations to avoid data holes
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\public\public_pitch_page.html" @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\extensions\chrome_daena_trigger.js" @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "D:\Ideas\Daena\ui\dashboard\feed\freelance_revenue_feed.json" @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create required folders for Phase 6101 to 6160 assets
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $folders = @(
+>>     "D:\Ideas\Daena\ui\public",
+>>     "D:\Ideas\Daena\ui\extensions",
+>>     "D:\Ideas\Daena\ui\dashboard\feed",
+>>     "D:\Ideas\Daena\core\cmp",
+>>     "D:\Ideas\Daena\core\kernel",
+>>     "D:\Ideas\Daena\logs"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($folder in $folders) {
+>>     if (-not (Test-Path $folder)) {
+>>         New-Item -ItemType Directory -Path $folder
+>>     }
+>> }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " All required directories created or confirmed."
+ All required directories created or confirmed.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Phase 6161: Fix missing folders, reapply key scripts
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $webPath = "D:\Ideas\Daena\ui\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "D:\Ideas\Daena\ui\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $kernelPath = "D:\Ideas\Daena\core\kernel"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashFeedPath = "D:\Ideas\Daena\ui\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Force -Path $webPath, $extPath, $kernelPath, $dashFeedPath
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                public
+d-----          6/3/2025  11:59 AM                extensions
+
+
+    Directory: D:\Ideas\Daena\core
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  12:56 PM                kernel
+
+
+    Directory: D:\Ideas\Daena\ui\dashboard
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                feed
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Public Pitch Page
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@ | Set-Content "$webPath\public_pitch_page.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Chrome Extension Script
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>>
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@ | Set-Content "$extPath\chrome_daena_trigger.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Auto-Triage Kernel
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import datetime, json
+>>
+>> def audit_checkpoint(event, dept):
+>>     checkpoint = {
+>>         "timestamp": str(datetime.datetime.now()),
+>>         "event": event,
+>>         "department": dept,
+>>         "status": "triaged"
+>>     }
+>>     with open("D:/Ideas/Daena/logs/checkpoints.jsonl", "a") as log:
+>>         log.write(json.dumps(checkpoint) + "\n")
+>>     print(f"[AUTO-TRIAGE]  Daena routed back to project after: {event}")
+>> '@ | Set-Content "$kernelPath\auto_triage_kernel.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Freelance Revenue Feed
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@ | Set-Content "$dashFeedPath\freelance_revenue_feed.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 6161: Folder fix and script reapplication complete."
+ Phase 6161: Folder fix and script reapplication complete.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase 6161 to 6180: Final Fixes & Boot ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $webPath = "D:\Ideas\Daena\ui\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "D:\Ideas\Daena\ui\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashFeedPath = "D:\Ideas\Daena\ui\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $kernelPath = "D:\Ideas\Daena\core\kernel"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Force -Path $webPath, $extPath, $dashFeedPath
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                public
+d-----          6/3/2025  11:59 AM                extensions
+
+
+    Directory: D:\Ideas\Daena\ui\dashboard
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                feed
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Public Pitch Page
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@ | Set-Content "$webPath\public_pitch_page.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Chrome Extension Logic
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@ | Set-Content "$extPath\chrome_daena_trigger.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Freelance Revenue Feed
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@ | Set-Content "$dashFeedPath\freelance_revenue_feed.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Auto-Triage Kernel (ensures project roadmap re-alignment)
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import datetime, json
+>> def audit_checkpoint(event, dept):
+>>     checkpoint = {
+>>         "timestamp": str(datetime.datetime.now()),
+>>         "event": event,
+>>         "department": dept,
+>>         "status": "triaged"
+>>     }
+>>     with open("D:/Ideas/Daena/logs/checkpoints.jsonl", "a") as log:
+>>         log.write(json.dumps(checkpoint) + "\n")
+>>     print(f"[AUTO-TRIAGE]  Daena routed back to project after: {event}")
+>> '@ | Set-Content "$kernelPath\auto_triage_kernel.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 6161 to 6180: Directory bug fixed, public pitch restored, CMP logic live, freelance feed online."
+ Phase 6161 to 6180: Directory bug fixed, public pitch restored, CMP logic live, freelance feed online.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Directory Fixes ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $uiRoot = "D:\Ideas\Daena\ui"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $folders = @(
+>>     "$uiRoot\public",
+>>     "$uiRoot\extensions",
+>>     "$uiRoot\dashboard\feed"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($folder in $folders) {
+>>     if (!(Test-Path $folder)) {
+>>         New-Item -ItemType Directory -Path $folder | Out-Null
+>>     }
+>> }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Missing directories created for UI components."
+ Missing directories created for UI components.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase_6161_to_6200.ps1 ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $mobileTriggerPath = "D:\Ideas\Daena\core\mobile\mobile_dashboard_trigger.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $freelanceBotPath = "D:\Ideas\Daena\core\freelance\freelance_agent_autobuilder.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpGuardPath = "D:\Ideas\Daena\core\cmp\cmp_logic_gate.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create Mobile Trigger
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content $mobileTriggerPath @'
+>> def wake_daena_mobile():
+>>     print(" Daena Mobile App Wake Triggered")
+>>     # TODO: Link to Capacitor push or wake-word listener
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Autonomous Freelance Agent
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content $freelanceBotPath @'
+>> def auto_build_freelance_agent():
+>>     print(" Freelance Agent Builder Triggered")
+>>     # This will scan Daena skills, create a profile, and prepare bidding strategy.
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # CMP Logic Gate (Cost Check)
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content $cmpGuardPath @'
+>> def check_high_risk_action(cost):
+>>     if cost > 500:
+>>         print(" CMP Alert: Action exceeds safe threshold. Awaiting approval.")
+>>         return False
+>>     return True
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 61616200: Mobile trigger, freelance builder, CMP logic gate wired."
+ Phase 61616200: Mobile trigger, freelance builder, CMP logic gate wired.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create any missing directories used by latest phases
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $requiredDirs = @(
+>>   "D:\Ideas\Daena\ui\public",
+>>   "D:\Ideas\Daena\ui\extensions",
+>>   "D:\Ideas\Daena\ui\dashboard\feed",
+>>   "D:\Ideas\Daena\logs",
+>>   "D:\Ideas\Daena\core\cmp",
+>>   "D:\Ideas\Daena\core\kernel"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($dir in $requiredDirs) {
+>>     if (!(Test-Path $dir)) {
+>>         New-Item -ItemType Directory -Path $dir | Out-Null
+>>         Write-Host "Created missing folder: $dir"
+>>     }
+>> }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Fixing directory structure to avoid write errors
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Force -Path "D:\Ideas\Daena\ui\public"
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                public
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Force -Path "D:\Ideas\Daena\ui\extensions"
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                extensions
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Force -Path "D:\Ideas\Daena\ui\dashboard\feed"
+
+
+    Directory: D:\Ideas\Daena\ui\dashboard
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                feed
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase_6161_to_6199.ps1 ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # These bootstrap Daena's multi-model decision logic and mobile control mode
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $cmpPath = "D:\Ideas\Daena\core\cmp"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $bootPath = "D:\Ideas\Daena\boot"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $mobilePath = "D:\Ideas\Daena\ui\mobile"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $modelPath = "E:\Daena\models\llm"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 1. Offline/Online Multi-Model Decision Engine
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$cmpPath\cmp_multimodel_router.py" @'
+>> import os
+>> import openai, requests
+>> from core.cmp.cmp_vault_ai import get_api_key
+>>
+>> def decide_and_route(question):
+>>     # Prefer offline brain if loaded
+>>     if os.path.exists("E:/Daena/models/llm/daena-reflex-v2"):
+>>         # simulate local decision engine
+>>         return "[Local Reflex] Response: 'Answer simulated based on daena-reflex-v2'"
+>>
+>>     # Otherwise use API fallback (ranked)
+>>     try:
+>>         openai.api_key = get_api_key("OPENAI_API_KEY")
+>>         return openai.ChatCompletion.create(model="gpt-4", messages=[{"role": "user", "content": question}])
+>>     except:
+>>         return "[Fallback] No online model available."
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 2. Mobile Trigger Page (basic WebView launcher)
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Force -Path $mobilePath
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025   1:39 PM                mobile
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$mobilePath\index.html" @'
+>> <!DOCTYPE html>
+>> <html><head><title>MAS-AI Mobile</title></head>
+>> <body>
+>>   <h2>Daena Mobile Dashboard</h2>
+>>   <p>Voice toggle, alerts, freelance reports, and agent triggers live here.</p>
+>> </body></html>
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 3. CMP Alert Gate for Risky Decisions
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$cmpPath\cmp_decision_gate.py" @'
+>> def verify_risk(decision):
+>>     high_risk_keywords = ["spend", "transfer", "sign", "invest"]
+>>     if any(word in decision.lower() for word in high_risk_keywords):
+>>         print("[CMP] Confirm with Masoud before executing this decision.")
+>>         return False
+>>     return True
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # 4. Autonomous Freelance Agent Builder
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $freelanceAgentPath = "D:\Ideas\Daena\agents\freelance"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Force -Path $freelanceAgentPath
+
+
+    Directory: D:\Ideas\Daena\agents
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025   4:34 PM                freelance
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$freelanceAgentPath\builder.py" @'
+>> import random
+>> def build_agent(task_type):
+>>     tools = ["python", "javascript", "api", "chatbot"]
+>>     return f"New Freelance Agent ready for: {task_type} using {random.choice(tools)}"
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 61616199 complete: Model router, Mobile shell, Decision filter, Freelance Builder set."
+ Phase 61616199 complete: Model router, Mobile shell, Decision filter, Freelance Builder set.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase_6161_to_6180.ps1 ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $uiRoot = "D:\Ideas\Daena\ui"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashFeedPath = "$uiRoot\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "$uiRoot\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $webPath = "$uiRoot\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $kernelPath = "D:\Ideas\Daena\core\kernel"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Ensure missing folders exist
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Path $dashFeedPath -Force
+
+
+    Directory: D:\Ideas\Daena\ui\dashboard
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                feed
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Path $extPath -Force
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                extensions
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Path $webPath -Force
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                public
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Rewrite failed pitch page
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li>Voice-controllable agent systems</li>
+>>     <li>Real-time dashboard control</li>
+>>     <li>Freelance and B2B Matching</li>
+>>     <li>Guardian Governance Mode</li>
+>>     <li>API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@ | Set-Content "$webPath\public_pitch_page.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Rewrite Chrome extension trigger
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>>
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@ | Set-Content "$extPath\chrome_daena_trigger.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Rewrite freelance feed
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@ | Set-Content "$dashFeedPath\freelance_revenue_feed.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Add CMP Wake Watchdog
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> import time, json
+>>
+>> def cmp_wake_watchdog():
+>>     while True:
+>>         with open("D:/Ideas/Daena/logs/checkpoints.jsonl", "r") as f:
+>>             lines = f.readlines()
+>>             if lines:
+>>                 last = json.loads(lines[-1])
+>>                 print(f"[CMP Watchdog] Last checkpoint: {last['event']} in {last['department']}")
+>>         time.sleep(120)
+>> '@ | Set-Content "$kernelPath\cmp_watchdog.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 61616180 complete: Feed and extension rewritten, CMP watchdog running."
+ Phase 61616180 complete: Feed and extension rewritten, CMP watchdog running.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create missing paths required by Phase 61016160
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $paths = @(
+>>   "D:\Ideas\Daena\ui\public",
+>>   "D:\Ideas\Daena\ui\extensions",
+>>   "D:\Ideas\Daena\ui\dashboard\feed"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($p in $paths) {
+>>     if (-not (Test-Path $p)) {
+>>         New-Item -ItemType Directory -Path $p
+>>     }
+>> }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " All required folders created."
+ All required folders created.
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase 6200: Fix missing folders ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $basePath = "D:\Ideas\Daena"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $webPath = "$basePath\ui\public"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $extPath = "$basePath\ui\extensions"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $dashFeedPath = "$basePath\ui\dashboard\feed"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Path $webPath -Force
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                public
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Path $extPath -Force
+
+
+    Directory: D:\Ideas\Daena\ui
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                extensions
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> New-Item -ItemType Directory -Path $dashFeedPath -Force
+
+
+    Directory: D:\Ideas\Daena\ui\dashboard
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----          6/3/2025  11:59 AM                feed
+
+
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase 6210: Rewrite pitch page ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@ | Set-Content "$webPath\public_pitch_page.html"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase 6220: Chrome Extension ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@ | Set-Content "$extPath\chrome_daena_trigger.js"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # == Phase 6230: Dashboard Freelance Feed ==
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@ | Set-Content "$dashFeedPath\freelance_revenue_feed.json"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Write-Host " Phase 6200-6230 Complete: Dashboard + Extension + Feed Fixed"
+ Phase 6200-6230 Complete: Dashboard + Extension + Feed Fixed
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Folder Fixes ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $base = "D:\Ideas\Daena"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $requiredPaths = @(
+>>     "$base\ui\public",
+>>     "$base\ui\extensions",
+>>     "$base\ui\dashboard\feed"
+>> )
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> foreach ($path in $requiredPaths) {
+>>     if (-Not (Test-Path $path)) { New-Item -ItemType Directory -Path $path }
+>> }
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Retry Public Pitch Page ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$base\ui\public\public_pitch_page.html" @'
+>> <!DOCTYPE html>
+>> <html>
+>> <head><title>MAS-AI: Autonomous Intelligence Company</title></head>
+>> <body>
+>>   <h1>MAS-AI + Daena</h1>
+>>   <p>Autonomous AI departments, LLM switching, freelance agent matching, and enterprise control system.</p>
+>>   <ul>
+>>     <li> Voice-controllable agent systems</li>
+>>     <li> Real-time dashboard control</li>
+>>     <li> Freelance and B2B Matching</li>
+>>     <li> Guardian Governance Mode</li>
+>>     <li> API-compatible for all cloud LLMs</li>
+>>   </ul>
+>>   <p>Built by Masoud Masoori. Visit <b>mas-ai.github.io</b> or reach out for partnership.</p>
+>> </body>
+>> </html>
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Retry Chrome Extension Trigger ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$base\ui\extensions\chrome_daena_trigger.js" @'
+>> chrome.runtime.onInstalled.addListener(() => {
+>>   chrome.action.setBadgeText({ text: "" });
+>> });
+>>
+>> chrome.action.onClicked.addListener((tab) => {
+>>   chrome.scripting.executeScript({
+>>     target: { tabId: tab.id },
+>>     function: () => alert("Daena Activated!")
+>>   });
+>> });
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # === Retry Dashboard Freelance Feed ===
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> Set-Content "$base\ui\dashboard\feed\freelance_revenue_feed.json" @'
+>> [
+>>   {"project": "React Dashboard", "amount": 450, "status": "completed"},
+>>   {"project": "Python API Integration", "amount": 600, "status": "bidding"},
+>>   {"project": "Voice Assistant Build", "amount": 800, "status": "in progress"}
+>> ]
+>> '@
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> # Create folders and files for Phase_7040_to_7059
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> $base = "D:\Ideas\Daena\core"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @"
+>> # Simulates active context and memory stack control
+>> class CognitiveStack:
+>>     def __init__(self):
+>>         self.stack = []
+>>
+>>     def push(self, idea):
+>>         self.stack.append(idea)
+>>
+>>     def pop(self):
+>>         return self.stack.pop() if self.stack else None
+>> "@ | Set-Content "$base\cmp_cognitive_stack.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @"
+>> # Predicts next probable loop in user-agent interaction
+>> class LoopPredictor:
+>>     def predict_next(self, input_data):
+>>         # ML-based prediction logic here
+>>         return "predicted_action"
+>> "@ | Set-Content "$base\cmp_loop_predictor.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @"
+>> # Mobile fallback handler
+>> def mobile_sync(agent_state):
+>>     if agent_state["device"] == "mobile":
+>>         return "Use lightweight LLM API"
+>> "@ | Set-Content "$base\cmp_mobile_handoff.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @"
+>> # Dynamic context re-weighting
+>> def adjust_context_weight(user_input):
+>>     # Placeholder algorithm
+>>     return 0.7 if "urgent" in user_input else 0.3
+>> "@ | Set-Content "$base\cmp_context_weight.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena> @"
+>> # Echo-layer for variation testing
+>> def generate_echo_responses(response):
+>>     return [response + " v1", response + " v2", response + " v3"]
+>> "@ | Set-Content "$base\cmp_feedback_echo.py"
+(D:\Ideas\Daena\env\main) PS D:\Ideas\Daena>

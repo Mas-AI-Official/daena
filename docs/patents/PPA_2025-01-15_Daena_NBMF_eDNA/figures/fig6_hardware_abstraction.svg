@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; }
+      .label { font-family: Arial, sans-serif; font-size: 11px; }
+      .ref-num { font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; }
+      .box { fill: #e8f4f8; stroke: #2c5f7d; stroke-width: 2; }
+      .device-box { fill: #d4e6f1; stroke: #1a4d6e; stroke-width: 2; }
+      .manager-box { fill: #fff3cd; stroke: #856404; stroke-width: 2; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" class="title">FIG.6 Hardware Abstraction (CPU/GPU/TPU)</text>
+  
+  <!-- DeviceManager -->
+  <rect x="250" y="60" width="300" height="100" class="manager-box" rx="5"/>
+  <text x="400" y="85" text-anchor="middle" class="ref-num">1201</text>
+  <text x="400" y="105" text-anchor="middle" class="label" font-weight="bold" font-size="14px">DeviceManager</text>
+  <text x="400" y="125" text-anchor="middle" class="label" font-size="10px">Hardware Abstraction Layer</text>
+  <text x="400" y="140" text-anchor="middle" class="label" font-size="10px">Automatic device detection &amp; selection</text>
+  <text x="400" y="155" text-anchor="middle" class="label" font-size="10px">Tensor operation routing</text>
+  
+  <!-- Device Selection Logic -->
+  <rect x="280" y="180" width="240" height="60" class="box" rx="3"/>
+  <text x="400" y="200" text-anchor="middle" class="ref-num">1205</text>
+  <text x="400" y="215" text-anchor="middle" class="label" font-weight="bold">Device Selection Logic</text>
+  <text x="400" y="230" text-anchor="middle" class="label" font-size="10px">Config-based preference (auto/cpu/gpu/tpu)</text>
+  
+  <!-- Tensor Operation Router -->
+  <rect x="280" y="260" width="240" height="60" class="box" rx="3"/>
+  <text x="400" y="280" text-anchor="middle" class="ref-num">1206</text>
+  <text x="400" y="295" text-anchor="middle" class="label" font-weight="bold">Tensor Operation Router</text>
+  <text x="400" y="310" text-anchor="middle" class="label" font-size="10px">Routes NBMF encode/decode to optimal device</text>
+  
+  <!-- Device Pathways -->
+  <rect x="50" y="350" width="700" height="120" fill="white" stroke="#ccc" stroke-width="1" rx="5"/>
+  <text x="400" y="375" text-anchor="middle" class="label" font-weight="bold">Device Pathways</text>
+  
+  <!-- CPU Pathway -->
+  <rect x="100" y="390" width="180" height="60" class="device-box" rx="3"/>
+  <text x="190" y="410" text-anchor="middle" class="ref-num">1202</text>
+  <text x="190" y="425" text-anchor="middle" class="label" font-weight="bold">CPU Pathway</text>
+  <text x="190" y="440" text-anchor="middle" class="label" font-size="10px">Standard CPU tensor ops</text>
+  <text x="190" y="455" text-anchor="middle" class="label" font-size="9px">PyTorch/TensorFlow CPU</text>
+  
+  <!-- GPU Pathway -->
+  <rect x="310" y="390" width="180" height="60" class="device-box" rx="3"/>
+  <text x="400" y="410" text-anchor="middle" class="ref-num">1203</text>
+  <text x="400" y="425" text-anchor="middle" class="label" font-weight="bold">GPU Pathway</text>
+  <text x="400" y="440" text-anchor="middle" class="label" font-size="10px">CUDA/ROCm accelerated</text>
+  <text x="400" y="455" text-anchor="middle" class="label" font-size="9px">PyTorch/TensorFlow GPU</text>
+  
+  <!-- TPU Pathway -->
+  <rect x="570" y="390" width="180" height="60" class="device-box" rx="3"/>
+  <text x="660" y="410" text-anchor="middle" class="ref-num">1204</text>
+  <text x="660" y="425" text-anchor="middle" class="label" font-weight="bold">TPU Pathway</text>
+  <text x="660" y="440" text-anchor="middle" class="label" font-size="10px">TPU-optimized batch ops</text>
+  <text x="660" y="455" text-anchor="middle" class="label" font-size="9px">JAX/TensorFlow TPU</text>
+  <text x="660" y="468" text-anchor="middle" class="label" font-size="9px">Batch factor: 128</text>
+  
+  <!-- Routing Arrows -->
+  <line x1="400" y1="320" x2="190" y2="390" class="arrow"/>
+  <text x="295" y="355" text-anchor="middle" class="label" font-size="9px">CPU</text>
+  
+  <line x1="400" y1="320" x2="400" y2="390" class="arrow"/>
+  <text x="410" y="355" text-anchor="middle" class="label" font-size="9px">GPU</text>
+  
+  <line x1="400" y1="320" x2="660" y2="390" class="arrow"/>
+  <text x="530" y="355" text-anchor="middle" class="label" font-size="9px">TPU</text>
+  
+  <!-- Device Detection -->
+  <rect x="50" y="60" width="180" height="100" class="box" rx="3"/>
+  <text x="140" y="85" text-anchor="middle" class="label" font-weight="bold">Device Detection</text>
+  <text x="140" y="105" text-anchor="middle" class="label" font-size="10px">• CPU: Always available</text>
+  <text x="140" y="120" text-anchor="middle" class="label" font-size="10px">• GPU: CUDA/ROCm</text>
+  <text x="140" y="135" text-anchor="middle" class="label" font-size="10px">• TPU: JAX/TensorFlow</text>
+  <text x="140" y="150" text-anchor="middle" class="label" font-size="10px">• Framework detection</text>
+  
+  <!-- Features -->
+  <rect x="570" y="60" width="180" height="100" class="box" rx="3"/>
+  <text x="660" y="85" text-anchor="middle" class="label" font-weight="bold">Features</text>
+  <text x="660" y="105" text-anchor="middle" class="label" font-size="10px">• Auto device selection</text>
+  <text x="660" y="120" text-anchor="middle" class="label" font-size="10px">• Batch optimization</text>
+  <text x="660" y="135" text-anchor="middle" class="label" font-size="10px">• Memory management</text>
+  <text x="660" y="150" text-anchor="middle" class="label" font-size="10px">• Cost tracking</text>
+</svg>
+
+
+
+
+
+
+
+
+
+

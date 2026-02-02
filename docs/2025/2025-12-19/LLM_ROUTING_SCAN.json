@@ -1,0 +1,45 @@
+{
+  "scan_date": "1766524354.8112893",
+  "model_router": {
+    "exists": true,
+    "imported_by": [],
+    "status": "DEAD"
+  },
+  "llm_service": {
+    "exists": true,
+    "imported_by": [
+      "backend\\daena_brain.py",
+      "backend\\main.py",
+      "backend\\llm\\model_router.py",
+      "backend\\routes\\council.py",
+      "backend\\routes\\deep_search.py",
+      "backend\\routes\\departments.py",
+      "backend\\routes\\llm_status.py",
+      "backend\\scripts\\test_voice_conversation.py",
+      "backend\\services\\agent_brain_router.py",
+      "backend\\services\\council_service.py",
+      "backend\\services\\intelligence_routing.py"
+    ],
+    "status": "ACTIVE"
+  },
+  "daena_brain": {
+    "exists": true,
+    "imports": [
+      "datetime.datetime",
+      "datetime",
+      "dataclasses.dataclass",
+      "backend.services.llm_service.LLMService",
+      "typing.Any",
+      "typing.List",
+      "typing.Optional",
+      "backend.services.llm_service.llm_service",
+      "typing",
+      "dataclasses.field",
+      "typing.Dict",
+      "backend.services.llm_service",
+      "__future__.annotations",
+      "dataclasses",
+      "__future__"
+    ]
+  }
+}

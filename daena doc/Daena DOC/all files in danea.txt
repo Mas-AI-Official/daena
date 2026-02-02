@@ -1,0 +1,10 @@
+#all files in danea 
+
+
+Get-ChildItem -Path "D:\Ideas\Daena" -Recurse -File | ForEach-Object {
+    [PSCustomObject]@{
+        RelativePath = $_.FullName.Replace("D:\Ideas\Daena\", "")
+        FileName = $_.Name
+        Directory = $_.DirectoryName.Replace("D:\Ideas\Daena\", "")
+    }
+} | Sort-Object RelativePath | Export-Csv -Path "D:\Ideas\Daena\daena_structure_report.csv" -NoTypeInformation

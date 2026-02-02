@@ -5,8 +5,8 @@
 {% block head %}
 <style>
     .agents-container {
-        padding: 24px;
-        max-width: 1400px;
+        padding: 12px 20px;
+        max-width: 100%;
         margin: 0 auto;
     }
 
@@ -14,35 +14,35 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 20px;
+        margin-bottom: 10px;
     }
 
     .page-header h1 {
-        font-size: 26px;
+        font-size: 18px;
         font-weight: 700;
         color: white;
     }
 
     .page-header p {
         color: #9CA3AF;
-        font-size: 13px;
-        margin-top: 4px;
+        font-size: 11px;
+        margin-top: 2px;
     }
 
     .header-actions {
         display: flex;
-        gap: 10px;
+        gap: 6px;
     }
 
     .filter-btn,
     .new-agent-btn {
-        padding: 10px 18px;
-        border-radius: 8px;
+        padding: 6px 10px;
+        border-radius: 6px;
         cursor: pointer;
         display: flex;
         align-items: center;
-        gap: 8px;
-        font-size: 13px;
+        gap: 4px;
+        font-size: 11px;
     }
 
     .filter-btn {
@@ -61,19 +61,19 @@
     .dept-filters {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 20px;
+        gap: 4px;
+        margin-bottom: 6px;
     }
 
     .dept-pill {
-        padding: 8px 14px;
-        border-radius: 20px;
+        padding: 3px 8px;
+        border-radius: 10px;
         border: 1px solid rgba(255, 255, 255, 0.1);
         background: rgba(255, 255, 255, 0.03);
         color: #9CA3AF;
         cursor: pointer;
-        font-size: 12px;
-        transition: all 0.3s ease;
+        font-size: 9px;
+        transition: all 0.2s ease;
     }
 
     .dept-pill:hover,
@@ -83,81 +83,142 @@
         border-color: var(--daena-gold);
     }
 
+    /* 3 cards per row; bigger and detailed as requested */
     .agents-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        grid-template-columns: repeat(3, 1fr);
         gap: 16px;
     }
 
     .agent-card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        padding: 16px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        padding: 8px;
         cursor: pointer;
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
+        min-width: 0;
+        overflow: hidden;
+        border-left-width: 3px;
     }
 
     .agent-card:hover {
-        border-color: rgba(212, 175, 55, 0.3);
-        transform: translateY(-2px);
+        border-color: rgba(212, 175, 55, 0.4);
+        transform: translateY(-1px);
+    }
+
+    /* Department colors: each card gets its own border + subtle background tint */
+    .agent-card[data-dept="engineering"] {
+        border-left-color: #4169E1;
+        background: rgba(65, 105, 225, 0.08);
+    }
+
+    .agent-card[data-dept="product"] {
+        border-left-color: #9370DB;
+        background: rgba(147, 112, 219, 0.08);
+    }
+
+    .agent-card[data-dept="sales"] {
+        border-left-color: #32CD32;
+        background: rgba(50, 205, 50, 0.08);
+    }
+
+    .agent-card[data-dept="marketing"] {
+        border-left-color: #FF6B6B;
+        background: rgba(255, 107, 107, 0.08);
+    }
+
+    .agent-card[data-dept="finance"] {
+        border-left-color: #00CED1;
+        background: rgba(0, 206, 209, 0.08);
+    }
+
+    .agent-card[data-dept="hr"] {
+        border-left-color: #E91E7F;
+        background: rgba(233, 30, 127, 0.08);
+    }
+
+    .agent-card[data-dept="legal"] {
+        border-left-color: #8B5CF6;
+        background: rgba(139, 92, 246, 0.08);
+    }
+
+    .agent-card[data-dept="customer"] {
+        border-left-color: #10B981;
+        background: rgba(16, 185, 129, 0.08);
     }
 
     .agent-header {
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-bottom: 14px;
+        gap: 6px;
+        margin-bottom: 6px;
+        min-width: 0;
     }
 
     .agent-avatar {
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
+        width: 24px;
+        height: 24px;
+        min-width: 24px;
+        border-radius: 6px;
         display: flex;
         align-items: center;
         justify-content: center;
         font-weight: 700;
-        font-size: 16px;
+        font-size: 9px;
         color: white;
+        flex-shrink: 0;
     }
 
     .agent-info {
         flex: 1;
+        min-width: 0;
+        overflow: hidden;
     }
 
     .agent-name {
         font-weight: 600;
         color: white;
-        font-size: 15px;
+        font-size: 10px;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .agent-role {
         color: #9CA3AF;
-        font-size: 12px;
+        font-size: 9px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .dept-badge {
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-size: 10px;
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-size: 8px;
         font-weight: 600;
-        margin-top: 4px;
+        margin-top: 2px;
         display: inline-block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .status-indicator {
-        width: 10px;
-        height: 10px;
+        width: 6px;
+        height: 6px;
         border-radius: 50%;
         position: absolute;
-        top: 12px;
-        right: 12px;
+        top: 6px;
+        right: 6px;
     }
 
     .status-indicator.online {
         background: #32CD32;
-        box-shadow: 0 0 8px #32CD32;
+        box-shadow: 0 0 4px #32CD32;
     }
 
     .status-indicator.busy {
@@ -167,22 +228,27 @@
     .agent-stats {
         display: flex;
         justify-content: space-around;
-        padding-top: 12px;
+        padding-top: 6px;
         border-top: 1px solid rgba(255, 255, 255, 0.05);
+        gap: 4px;
     }
 
     .stat-item {
         text-align: center;
+        min-width: 0;
     }
 
     .stat-value {
-        font-size: 16px;
+        font-size: 10px;
         font-weight: 700;
         color: white;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .stat-label {
-        font-size: 10px;
+        font-size: 8px;
         color: #9CA3AF;
         text-transform: uppercase;
     }
@@ -257,9 +323,37 @@
         cursor: pointer;
     }
 
-    @media (max-width: 700px) {
+    /* Keep all card content inside box */
+    .agent-card * {
+        box-sizing: border-box;
+    }
+
+    .agent-card .stat-value,
+    .agent-card .stat-label {
+        max-width: 100%;
+    }
+
+    @media (max-width: 1400px) {
         .agents-grid {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(5, 1fr);
+        }
+    }
+
+    @media (max-width: 1100px) {
+        .agents-grid {
+            grid-template-columns: repeat(4, 1fr);
+        }
+    }
+
+    @media (max-width: 900px) {
+        .agents-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+    }
+
+    @media (max-width: 600px) {
+        .agents-grid {
+            grid-template-columns: repeat(2, 1fr);
         }
     }
 </style>
@@ -297,9 +391,9 @@
     </div>
 
     <div class="agents-grid" id="agents-grid">
-        <div style="text-align: center; padding: 40px; color: #9CA3AF;">
-            <i class="fas fa-circle-notch fa-spin fa-2x"></i>
-            <p style="margin-top: 12px;">Loading agents...</p>
+        <div style="text-align: center; padding: 20px; color: #9CA3AF; font-size: 11px;">
+            <i class="fas fa-circle-notch fa-spin"></i>
+            <p style="margin-top: 8px;">Loading agents...</p>
         </div>
     </div>
 </div>
@@ -413,7 +507,7 @@
         const grid = document.getElementById('agents-grid');
 
         if (agents.length === 0) {
-            grid.innerHTML = '<div style="text-align: center; padding: 40px; color: #9CA3AF;">No agents found</div>';
+            grid.innerHTML = '<div style="text-align: center; padding: 12px; color: #9CA3AF; font-size: 9px; grid-column: 1 / -1;">No agents found</div>';
             return;
         }
 
@@ -422,7 +516,7 @@
             const initials = agent.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
             return `
-        <div class="agent-card" onclick="openAgent('${agent.id}')" style="position: relative;">
+        <div class="agent-card" data-dept="${(agent.department_id || 'engineering').toLowerCase()}" style="position: relative; display: flex; flex-direction: column; height: 100%;">
             <div class="status-indicator ${agent.status || 'online'}"></div>
             <div class="agent-header">
                 <div class="agent-avatar" style="background: linear-gradient(135deg, ${color}, ${color}99);">
@@ -436,7 +530,7 @@
                     </span>
                 </div>
             </div>
-            <div class="agent-stats">
+            <div class="agent-stats" style="margin-bottom: 12px; flex-grow: 1;">
                 <div class="stat-item">
                     <div class="stat-value" style="color: #32CD32;">${agent.efficiency}%</div>
                     <div class="stat-label">Efficiency</div>
@@ -450,6 +544,7 @@
                     <div class="stat-label">Uptime</div>
                 </div>
             </div>
+            <button class="btn-primary" onclick="openAgent('${agent.id}')" style="margin-top: auto; padding: 8px; font-size: 11px;">View Details</button>
         </div>
         `;
         }).join('');

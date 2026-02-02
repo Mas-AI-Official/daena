@@ -5,6 +5,7 @@ Provides automatic backup before changes
 """
 import json
 import logging
+from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from backend.database import get_db, SystemConfig, Agent, Department
@@ -96,6 +97,21 @@ class FrontendBackendSync:
             return setting.get("value", default)
         except:
             return default
+        finally:
+            db.close()
+
+    def get_all_frontend_settings(self) -> Dict[str, Any]:
+        """Get all frontend settings from backend (for GET /frontend-setting)."""
+        db = next(get_db())
+        try:
+            config = db.query(SystemConfig).filter(
+                SystemConfig.config_key == self.sync_config_key
+            ).first()
+            if not config or not config.config_value:
+                return {}
+            return json.loads(config.config_value)
+        except Exception:
+            return {}
         finally:
             db.close()
     

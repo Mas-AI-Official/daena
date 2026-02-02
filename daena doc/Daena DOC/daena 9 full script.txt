@@ -1,0 +1,698 @@
+################################################################################
+# Daena Project Deployment Script
+# This script sets up the AI-native orchestrator "Daena" from scratch.
+# It will create directories, files, and initial code for all components:
+# - Core orchestrator (LLM interface, routing, memory)
+# - Voice interface (wake word, STT, TTS with emotion)
+# - Multi-agent departments (Marketing, Sales, Product Dev, Finance, Data, HR)
+# - Governance agents (Compliance, Security, Maintenance)
+# - Dashboard (backend API and frontend interface)
+# - Configuration files for settings and credentials
+#
+# Ensure you have PowerShell 7+ and necessary permissions to create files.
+# After running this script, follow any printed instructions to install dependencies.
+################################################################################
+
+# 1. Create the top-level project directory
+$projectRoot = "Daena"
+if (!(Test-Path $projectRoot)) {
+    New-Item -Path $projectRoot -ItemType Directory | Out-Null
+}
+Set-Location $projectRoot
+
+Write-Host "Creating project directories..."
+
+# 2. Define directories to create
+$dirs = @(
+    "Core",
+    "Voice",
+    "Dashboard",
+    "Dashboard/frontend",
+    "Dashboard/static",
+    "Dashboard/templates",
+    "Agents",
+    "Governance",
+    "Tools"
+)
+foreach ($d in $dirs) {
+    if (!(Test-Path $d)) {
+        New-Item -Path $d -ItemType Directory | Out-Null
+    }
+}
+
+Write-Host "Directories created:" ($dirs -join ", ")
+
+# 3. Create Core/orchestrator.py (main orchestrator code)
+$orchestratorPy = @'
+import importlib
+import json
+from common import MessageBus, DaenaMemory
+
+# Load configuration
+with open("Core/config.json") as f:
+    config = json.load(f)
+
+# Initialize global components
+memory = DaenaMemory()
+bus = MessageBus()
+
+# Import agent classes dynamically based on config
+agents_config = config.get("departments", [])
+agents = {}
+for agent_conf in agents_config:
+    name = agent_conf["name"]
+    module = agent_conf["module"]  # e.g., "marketing_agent"
+    class_name = agent_conf["class"]
+    try:
+        agent_module = importlib.import_module(f"Agents.{module}")
+        AgentClass = getattr(agent_module, class_name)
+        agent_instance = AgentClass(name=name, bus=bus, memory=memory, config=agent_conf)
+        agents[name] = agent_instance
+        print(f"Initialized agent: {name}")
+    except Exception as e:
+        print(f"Error initializing agent {name}: {e}")
+
+# Governance agents (hidden)
+gov_agents_config = config.get("governance", [])
+gov_agents = {}
+for agent_conf in gov_agents_config:
+    name = agent_conf["name"]
+    module = agent_conf["module"]
+    class_name = agent_conf["class"]
+    try:
+        agent_module = importlib.import_module(f"Governance.{module}")
+        AgentClass = getattr(agent_module, class_name)
+        agent_instance = AgentClass(name=name, bus=bus, memory=memory, config=agent_conf, watched_agents=agents)
+        gov_agents[name] = agent_instance
+        print(f"Initialized governance agent: {name}")
+    except Exception as e:
+        print(f"Error initializing governance agent {name}: {e}")
+
+# Example: orchestrator listening on message bus for tasks (simplified)
+def main_loop():
+    print("Daena orchestrator running. Waiting for tasks...")
+    while True:
+        # In a real system, this might handle incoming messages or user queries
+        message = bus.get_message()  # hypothetical blocking call
+        if not message:
+            continue
+        # Route message to appropriate agent or handle internally
+        target = message.get("target")
+        if target in agents:
+            agents[target].handle_message(message)
+        elif target in gov_agents:
+            gov_agents[target].handle_message(message)
+        else:
+            print(f"Unknown message target: {target}")
+
+if __name__ == "__main__":
+    main_loop()
+'@
+
+Set-Content -Path "Core/orchestrator.py" -Value $orchestratorPy -Encoding UTF8
+
+# 4. Create Core/memory.py (for shared memory / knowledge base)
+$memoryPy = @'
+class DaenaMemory:
+    """
+    Global memory for the Daena system. Could integrate vector DB or simple in-memory storage.
+    """
+    def __init__(self):
+        self.facts = []  # simple list to store knowledge (could be expanded to a database or vector store)
+
+    def store(self, item):
+        # Store a piece of information (could be text, dict, etc.)
+        self.facts.append(item)
+
+    def recall(self, query=None):
+        # Retrieve knowledge. If query provided, return relevant items.
+        if query is None:
+            return list(self.facts)
+        return [f for f in self.facts if query.lower() in str(f).lower()]
+'@
+Set-Content -Path "Core/memory.py" -Value $memoryPy -Encoding UTF8
+
+# 5. Create Core/router.py (for LLM routing and tool functions - simplified skeleton)
+$routerPy = @'
+import openai
+
+# This module would handle routing queries to the right LLM or agent.
+# For brevity, we outline a simple function call mechanism using OpenAI function calling.
+
+openai.api_key = None  # placeholder, to be filled from config or environment
+
+def route_query(user_query):
+    """
+    Determine which agent or model should handle the user_query.
+    This is a stub function. In practice, use intents or content to decide.
+    """
+    # Simple example: if query contains certain keywords, route to agent, else handle by core LLM
+    q = user_query.lower()
+    if "marketing" in q:
+        return "Marketing"
+    elif "finance" in q:
+        return "Finance"
+    else:
+        return "DaenaCore"  # meaning core should handle (general query)
+'@
+Set-Content -Path "Core/router.py" -Value $routerPy -Encoding UTF8
+
+# 6. Create Core/config.json (configuration settings)
+$coreConfig = @'
+{
+    "openai_api_key": "<YOUR_OPENAI_API_KEY_HERE>",
+    "gcp_credentials": "<PATH/TO/GCP/CREDENTIALS.json>",
+    "departments": [
+        {"name": "Marketing", "module": "marketing_agent", "class": "MarketingAgent"},
+        {"name": "Sales", "module": "sales_agent", "class": "SalesAgent"},
+        {"name": "ProductDev", "module": "product_dev_agent", "class": "ProductDevAgent"},
+        {"name": "Finance", "module": "finance_agent", "class": "FinanceAgent"},
+        {"name": "Data", "module": "data_agent", "class": "DataAgent"},
+        {"name": "HR", "module": "hr_agent", "class": "HRAgent"}
+    ],
+    "governance": [
+        {"name": "Compliance", "module": "compliance_agent", "class": "ComplianceAgent"},
+        {"name": "Security", "module": "security_agent", "class": "SecurityAgent"},
+        {"name": "Maintenance", "module": "maintenance_agent", "class": "MaintenanceAgent"}
+    ],
+    "voice": {
+        "wake_word": "Hey Daena",
+        "stt_engine": "whisper",
+        "tts_engine": "xtts",
+        "voice_model": "en-US-Lisa",  // hypothetical voice model name
+        "emotion_enabled": true
+    },
+    "dashboard": {
+        "port": 8000,
+        "admin_password": "<SET_A_SECURE_PASSWORD>"
+    },
+    "blockchain": {
+        "use_simulation": true,
+        "rpc_endpoint": "<YOUR_ETH_RPC_ENDPOINT>",
+        "wallet_address": "<DAENA_WALLET_ADDRESS>",
+        "wallet_private_key": "<ENCRYPTED_OR_EMPTY>"
+    }
+}
+'@
+Set-Content -Path "Core/config.json" -Value $coreConfig -Encoding UTF8
+
+# 7. Create Voice/listener.py (handles wake word and speech-to-text)
+$listenerPy = @'
+import sounddevice as sd
+import queue
+import threading
+# Assuming we have a wake word detection library and whisper model
+try:
+    import pvporcupine
+except ImportError:
+    pvporcupine = None
+
+import whisper
+
+# Initialize audio input stream
+audio_queue = queue.Queue()
+stop_listening = False
+
+def audio_callback(indata, frames, time, status):
+    if status:
+        print(f"Audio callback status: {status}", flush=True)
+    # mono channel for simplicity
+    if not indata.flags["C_CONTIGUOUS"]:
+        indata = indata.copy()
+    audio_queue.put(bytes(indata))
+
+def listen_for_wake_word():
+    if pvporcupine is None:
+        print("Porcupine not installed, cannot detect wake word.")
+        return
+    porcupine = pvporcupine.create(keywords=["hey edison"])  # example, replace with actual wake word
+    with sd.RawInputStream(channels=1, samplerate=porcupine.sample_rate, callback=audio_callback, blocksize=porcupine.frame_length, dtype="int16"):
+        print("Listening for wake word...")
+        while not stop_listening:
+            pcm = audio_queue.get()
+            result = porcupine.process(pcm)
+            if result >= 0:
+                print("Wake word detected!")
+                return True
+
+def transcribe_live():
+    model = whisper.load_model("small")  # load a smaller model for realtime
+    print("Transcribing speech...")
+    rec_queue = queue.Queue()
+    def mic_callback(indata, frames, time, status):
+        rec_queue.put(indata.copy())
+    with sd.InputStream(callback=mic_callback, channels=1, samplerate=16000):
+        # record until silence or stop signal (not fully implemented)
+        audio_data = []
+        while True:
+            data = rec_queue.get()
+            audio_data.append(data)
+            # Here we could add VAD (voice activity detection) to break on silence
+            if len(audio_data) > 16000 * 5:  # 5 seconds captured
+                break
+    audio_bytes = b''.join([bytes(chunk) for chunk in audio_data])
+    result = model.transcribe(audio_bytes, fp16=False)
+    return result.get("text", "")
+
+if __name__ == "__main__":
+    if listen_for_wake_word():
+        text = transcribe_live()
+        print(f"Transcribed text: {text}")
+'@
+Set-Content -Path "Voice/listener.py" -Value $listenerPy -Encoding UTF8
+
+# 8. Create Voice/speaker.py (handles text-to-speech output with emotion)
+$speakerPy = @'
+# Placeholder for TTS. In practice, integrate Coqui TTS (XTTS) model.
+try:
+    import torch
+    # Assume a hypothetical XTTS model interface
+    from coqui_tts import TTS
+except ImportError:
+    TTS = None
+
+# Load voice model
+tts_model = None
+if TTS:
+    tts_model = TTS(model_name="xtts_en_lisa")  # example model name
+
+def speak(text, emotion=None):
+    """
+    Convert text to speech. Emotion can be a string like 'happy', 'sad', etc.
+    """
+    if not TTS or tts_model is None:
+        print(f"[TTS] Would speak (emotion={emotion}): " + text)
+        return
+    # If emotion control is available in model:
+    if emotion:
+        audio = tts_model.tts(text, speaker_wav=None, language=None, emotion=emotion)
+    else:
+        audio = tts_model.tts(text)
+    # Play audio (this is environment-specific; in a real scenario, output to speakers)
+    with open("Voice/output.wav", "wb") as f:
+        f.write(audio)
+    # You could use sounddevice or pyaudio to actually play the wav file.
+
+if __name__ == "__main__":
+    speak("Hello, I am Daena. Voice system is operational.", emotion="neutral")
+'@
+Set-Content -Path "Voice/speaker.py" -Value $speakerPy -Encoding UTF8
+
+# 9. Create Agents/common.py (common base classes or functions for agents)
+$agentsCommonPy = @'
+class BaseAgent:
+    """
+    Base class for all department agents. Provides common functionalities.
+    """
+    def __init__(self, name, bus, memory, config=None):
+        self.name = name
+        self.bus = bus  # reference to the central MessageBus for communication
+        self.memory = memory  # reference to shared memory
+        self.config = config or {}
+        self.loop_count = 0  # for detecting loops
+
+    def handle_message(self, message):
+        """
+        Handle incoming message. Should be overridden by agent subclasses.
+        """
+        raise NotImplementedError
+
+    def send_message(self, target, content):
+        """
+        Send a message to another agent via the bus.
+        """
+        msg = {"from": self.name, "target": target, "content": content}
+        self.bus.post_message(msg)
+
+    def think(self, prompt):
+        """
+        Agent uses an LLM (or simple logic) to decide an action from a prompt.
+        For simplicity, just print the prompt for now.
+        """
+        print(f"[{self.name} thinking]: {prompt}")
+
+# A simple message bus for agent communication
+from queue import Queue
+class MessageBus:
+    def __init__(self):
+        self.queue = Queue()
+
+    def post_message(self, message):
+        # In real scenario, could have subscriptions; here just put in queue
+        self.queue.put(message)
+
+    def get_message(self):
+        try:
+            return self.queue.get(timeout=1)
+        except:
+            return None
+'@
+Set-Content -Path "Agents/common.py" -Value $agentsCommonPy -Encoding UTF8
+
+# 10. Create each department agent file with basic structure
+$marketingAgentPy = @'
+from Agents.common import BaseAgent
+
+class MarketingAgent(BaseAgent):
+    def handle_message(self, message):
+        content = message.get("content", "")
+        # Very simple behavior: log the content and store it in memory
+        print(f"[MarketingAgent] Received: {content}")
+        self.memory.store({"marketing_log": content})
+        # Possibly trigger some action, e.g., create a campaign or respond
+        if "campaign" in content.lower():
+            self.think("Plan a new marketing campaign based on message content")
+            # ... additional logic for planning a campaign
+'@
+Set-Content -Path "Agents/marketing_agent.py" -Value $marketingAgentPy -Encoding UTF8
+
+$salesAgentPy = @'
+from Agents.common import BaseAgent
+
+class SalesAgent(BaseAgent):
+    def handle_message(self, message):
+        content = message.get("content", "")
+        print(f"[SalesAgent] Received: {content}")
+        # Example: if content is a customer query, formulate a response
+        if "customer" in content.lower():
+            response = f"Dear customer, thank you for your interest. (Automated reply to: {content[:30]}...)"
+            # In real case, integrate with email or chat API to send response
+            print(f"[SalesAgent] Responding with: {response}")
+            self.memory.store({"sales_reply": response})
+'@
+Set-Content -Path "Agents/sales_agent.py" -Value $salesAgentPy -Encoding UTF8
+
+$productDevAgentPy = @'
+from Agents.common import BaseAgent
+
+class ProductDevAgent(BaseAgent):
+    def handle_message(self, message):
+        content = message.get("content", "")
+        print(f"[ProductDevAgent] Received: {content}")
+        # If instructed to develop something, simulate creating a task
+        if "feature" in content.lower():
+            self.think(f"Design and implement {content}")
+            # ... code generation and testing steps would go here
+            self.memory.store({"dev_task": content})
+            # Notify marketing that feature is ready (in a real system)
+            # self.send_message("Marketing", f"Feature {content} completed")
+'@
+Set-Content -Path "Agents/product_dev_agent.py" -Value $productDevAgentPy -Encoding UTF8
+
+$financeAgentPy = @'
+from Agents.common import BaseAgent
+
+class FinanceAgent(BaseAgent):
+    def handle_message(self, message):
+        content = message.get("content", "")
+        print(f"[FinanceAgent] Received: {content}")
+        # Example: handle a budget request or transaction
+        if "budget" in content.lower():
+            # Very naive: approve small budgets automatically
+            if "request" in content.lower():
+                amount = 1000  # placeholder logic
+                print(f"[FinanceAgent] Approving budget of {amount} (placeholder).")
+                self.memory.store({"budget_approved": amount})
+        if "transaction" in content.lower():
+            # would parse and execute a transaction
+            print(f"[FinanceAgent] Executing transaction: {content}")
+            self.memory.store({"transaction": content})
+'@
+Set-Content -Path "Agents/finance_agent.py" -Value $financeAgentPy -Encoding UTF8
+
+$dataAgentPy = @'
+from Agents.common import BaseAgent
+
+class DataAgent(BaseAgent):
+    def handle_message(self, message):
+        content = message.get("content", "")
+        print(f"[DataAgent] Received: {content}")
+        # Simulate data scraping or lookup
+        if "research" in content.lower():
+            # Pretend we fetched some info
+            info = "Latest market trend: AI-driven everything."
+            print(f"[DataAgent] Research result: {info}")
+            self.memory.store({"research": info})
+            # Perhaps send to whoever requested
+            if message.get("from"):
+                self.send_message(message["from"], f"ResearchResult: {info}")
+'@
+Set-Content -Path "Agents/data_agent.py" -Value $dataAgentPy -Encoding UTF8
+
+$hrAgentPy = @'
+from Agents.common import BaseAgent
+
+class HRAgent(BaseAgent):
+    def handle_message(self, message):
+        content = message.get("content", "")
+        print(f"[HRAgent] Received: {content}")
+        # Handle scheduling or policy
+        if "schedule" in content.lower():
+            print("[HRAgent] Scheduling event.")
+            self.memory.store({"schedule": content})
+        if "policy" in content.lower():
+            print("[HRAgent] Noting policy update.")
+            self.memory.store({"policy": content})
+'@
+Set-Content -Path "Agents/hr_agent.py" -Value $hrAgentPy -Encoding UTF8
+
+# 11. Governance agents
+$complianceAgentPy = @'
+from Agents.common import BaseAgent
+
+class ComplianceAgent(BaseAgent):
+    def __init__(self, name, bus, memory, config=None, watched_agents=None):
+        super().__init__(name, bus, memory, config)
+        self.watched_agents = watched_agents or {}
+        # Could load rules from config
+
+    def handle_message(self, message):
+        content = message.get("content", "")
+        sender = message.get("from", "")
+        # A simple check: if content contains forbidden words (placeholder logic)
+        forbidden = ["hack", "illegal"]
+        for word in forbidden:
+            if word in content.lower():
+                print(f"[ComplianceAgent] Alert: Message from {sender} contains forbidden term '{word}'. Blocking action.")
+                # We could remove or block the message from proceeding
+                return False
+        # If not blocked, maybe just log
+        self.memory.store({"compliance_log": f"Checked message from {sender}"})
+        return True
+
+    def review_agent_output(self, agent_name, output):
+        # This could be called by orchestrator to review outputs
+        safe = True
+        # (Implement detailed checks...)
+        return safe
+'@
+Set-Content -Path "Governance/compliance_agent.py" -Value $complianceAgentPy -Encoding UTF8
+
+$securityAgentPy = @'
+from Agents.common import BaseAgent
+
+class SecurityAgent(BaseAgent):
+    def __init__(self, name, bus, memory, config=None, watched_agents=None):
+        super().__init__(name, bus, memory, config)
+        self.watched_agents = watched_agents or {}
+        # Could initialize security checks (like a fake IDS)
+
+    def handle_message(self, message):
+        content = message.get("content", "")
+        sender = message.get("from", "")
+        # Monitor for suspicious instructions (very basic example)
+        if "http://" in content or "https://" in content:
+            # Suppose any external URL usage is monitored
+            print(f"[SecurityAgent] {sender} is accessing URL: {content}")
+            self.memory.store({"security_log": f"{sender} accessed {content}"})
+        # Could add more checks like rate of messages, unusual commands, etc.
+'@
+Set-Content -Path "Governance/security_agent.py" -Value $securityAgentPy -Encoding UTF8
+
+$maintenanceAgentPy = @'
+from Agents.common import BaseAgent
+import threading
+import time
+# Hypothetical: using threading to schedule tasks
+
+class MaintenanceAgent(BaseAgent):
+    def __init__(self, name, bus, memory, config=None, watched_agents=None):
+        super().__init__(name, bus, memory, config)
+        # Start background monitoring
+        thread = threading.Thread(target=self.resource_monitor, daemon=True)
+        thread.start()
+
+    def handle_message(self, message):
+        content = message.get("content", "")
+        print(f"[MaintenanceAgent] Received: {content}")
+        if "status" in content.lower():
+            # Return status of system
+            status = "All systems nominal"
+            self.send_message(message.get("from", ""), f"StatusReport: {status}")
+
+    def resource_monitor(self):
+        while True:
+            # Placeholder: just sleep. In real code, check CPU, memory usage, etc.
+            time.sleep(60)
+            # If idle and heavy tasks queued, would initiate offloading here.
+            # Eg: if time is midnight, trigger cloud backup or model training
+            current_hour = time.localtime().tm_hour
+            if current_hour == 0:
+                print("[MaintenanceAgent] Midnight tasks starting (simulated).")
+'@
+Set-Content -Path "Governance/maintenance_agent.py" -Value $maintenanceAgentPy -Encoding UTF8
+
+# 12. Dashboard server (simplified backend using Flask or FastAPI, here just outline)
+$dashboardServerPy = @'
+from flask import Flask, request, jsonify, send_from_directory
+import threading
+from Core import orchestrator
+
+app = Flask(__name__, static_folder="static", template_folder="templates")
+
+# Simple API endpoints
+@app.route("/api/agents")
+def list_agents():
+    # Return list of agent names and statuses
+    agents = list(orchestrator.agents.keys())
+    return jsonify({"agents": agents})
+
+@app.route("/api/send", methods=["POST"])
+def send_message():
+    data = request.get_json()
+    target = data.get("target")
+    content = data.get("content")
+    if target and content:
+        orchestrator.bus.post_message({"from": "Dashboard", "target": target, "content": content})
+        return jsonify({"status": "sent"})
+    else:
+        return jsonify({"error": "Missing target or content"}), 400
+
+# Serve the frontend (if a simple static page or single-page app)
+@app.route("/")
+def index():
+    return send_from_directory("static", "index.html")
+
+def run_dashboard():
+    app.run(host="0.0.0.0", port=8000)
+
+# Start orchestrator in separate thread so Flask can run
+threading.Thread(target=orchestrator.main_loop, daemon=True).start()
+
+if __name__ == "__main__":
+    run_dashboard()
+'@
+Set-Content -Path "Dashboard/server.py" -Value $dashboardServerPy -Encoding UTF8
+
+# 13. Frontend (we'll just provide a simple placeholder HTML for now)
+$indexHtml = @'
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Daena Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #agents { margin-bottom: 20px; }
+        .agent { padding: 5px; border: 1px solid #ccc; margin: 2px; display: inline-block; }
+    </style>
+</head>
+<body>
+    <h1>Daena Dashboard</h1>
+    <div id="agents">
+        <h2>Departments:</h2>
+        <div id="agent-list"></div>
+    </div>
+    <div id="chat">
+        <h2>Chat with Daena</h2>
+        <div id="conversation" style="height:200px; overflow-y: scroll; border:1px solid #ccc; padding:5px;"></div>
+        <input type="text" id="userInput" placeholder="Type a message..." style="width:80%;">
+        <button onclick="sendChat()">Send</button>
+    </div>
+
+    <script>
+    async function loadAgents() {
+        let res = await fetch('/api/agents');
+        let data = await res.json();
+        let container = document.getElementById('agent-list');
+        container.innerHTML = "";
+        data.agents.forEach(agent => {
+            let div = document.createElement('div');
+            div.className = 'agent';
+            div.textContent = agent;
+            container.appendChild(div);
+        });
+    }
+    async function sendChat() {
+        let input = document.getElementById('userInput');
+        let msg = input.value;
+        if (!msg) return;
+        // For demo, just display it and clear, actual sending to Daena not implemented in this static demo
+        let conv = document.getElementById('conversation');
+        conv.innerHTML += "<div><b>You:</b> " + msg + "</div>";
+        input.value = "";
+        // Here we would send to backend or WebSocket
+    }
+    loadAgents();
+    </script>
+</body>
+</html>
+'@
+Set-Content -Path "Dashboard/static/index.html" -Value $indexHtml -Encoding UTF8
+
+# 14. Tools (like a placeholder for blockchain contract)
+$governanceSol = @'
+// Example Solidity contract for governance (not compiled by this script, for reference)
+pragma solidity ^0.8.0;
+contract DaenaGovernance {
+    address public owner;
+    event ProposalCreated(uint id, string description);
+    event Voted(uint proposalId, address voter, bool support);
+    struct Proposal {
+        string description;
+        uint yesVotes;
+        uint noVotes;
+        bool executed;
+    }
+    Proposal[] public proposals;
+
+    constructor() {
+        owner = msg.sender;
+    }
+    function createProposal(string memory description) public returns (uint) {
+        require(msg.sender == owner, "Only owner can propose");
+        proposals.push(Proposal(description, 0, 0, false));
+        emit ProposalCreated(proposals.length - 1, description);
+        return proposals.length - 1;
+    }
+    function vote(uint proposalId, bool support) public {
+        // simplistic: any address can vote once
+        Proposal storage prop = proposals[proposalId];
+        require(!prop.executed, "Already executed");
+        if (support) prop.yesVotes++; else prop.noVotes++;
+        emit Voted(proposalId, msg.sender, support);
+    }
+    function executeProposal(uint proposalId) public {
+        Proposal storage prop = proposals[proposalId];
+        require(msg.sender == owner, "Only owner can execute");
+        require(!prop.executed, "Already executed");
+        require(prop.yesVotes > prop.noVotes, "Proposal not passed");
+        prop.executed = true;
+        // In reality, code to execute decision goes here
+    }
+}
+'
+Set-Content -Path "Governance/governance_contract.sol" -Value $governanceSol -Encoding UTF8
+
+# 15. Post-creation instructions or dependency installation
+Write-Host "`nProject setup complete. Next steps:"
+Write-Host "1. Edit 'Core/config.json' to insert your API keys and desired settings."
+Write-Host "2. Install required Python packages. For example:"
+Write-Host "   pip install openai transformers langchain flask sounddevice pvporcupine coqui TTS"
+Write-Host "   (and any other dependencies based on your chosen tools)."
+Write-Host "3. Run the orchestrator and dashboard. For example:"
+Write-Host "   python Core/orchestrator.py"
+Write-Host "   (This will start the system; the dashboard will run on port 8000.)"
+Write-Host "4. Open the dashboard in a browser at http://localhost:8000 to view and interact."
+Write-Host "5. Use the chat interface or send messages via the dashboard to test the agents."
+Write-Host "`nPlease ensure all external dependencies (TTS models, blockchain RPC, etc.) are properly configured before fully using the system."

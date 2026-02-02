@@ -1,0 +1,477 @@
+{
+  "info": {
+    "name": "Daena AI VP API",
+    "description": "Complete API collection for Daena AI VP System",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "2.0.0"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "value",
+        "value": "{{api_key}}",
+        "type": "string"
+      },
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "api_key",
+      "value": "your-api-key",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/system/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "system", "health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "System Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/system/summary",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "system", "summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "System Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/system/metrics",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "system", "metrics"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Agents",
+      "item": [
+        {
+          "name": "Get All Agents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/agents?limit=100&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agents"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                },
+                {
+                  "key": "department_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "include_adjacency",
+                  "value": "false",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Agent by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/agents/:agent_id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agents", ":agent_id"],
+              "variable": [
+                {
+                  "key": "agent_id",
+                  "value": "agent_001"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Agent Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/agent-metrics",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "agent-metrics"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Daena Chat",
+      "item": [
+        {
+          "name": "Get Daena Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/daena/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "daena", "status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Start Chat Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"user_123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/daena/chat/start",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "daena", "chat", "start"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"message\": \"What are the current priorities?\",\n  \"context\": {}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/daena/chat/message",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "daena", "chat", "message"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Memory & NBMF",
+      "item": [
+        {
+          "name": "Get Memory Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/memory",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "memory"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Memory Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/memory/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "memory", "stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Memory Insights",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/memory/insights?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "memory", "insights"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Memory Audit",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/memory/audit?recent=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "memory", "audit"],
+              "query": [
+                {
+                  "key": "recent",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/memory/prometheus",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "memory", "prometheus"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get CAS Diagnostics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/memory/cas",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "memory", "cas"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Cost Tracking",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/memory/cost-tracking",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "memory", "cost-tracking"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Monitoring",
+      "item": [
+        {
+          "name": "Get System Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/metrics",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "metrics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Hive Data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/hive/data",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "hive", "data"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Council",
+      "item": [
+        {
+          "name": "Run Council Debate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topic\": \"Should we invest in new infrastructure?\",\n  \"context\": {\n    \"budget\": 100000,\n    \"timeline\": \"Q2 2025\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/council/debate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "council", "debate"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Council Conclusions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/council/conclusions?limit=10&recent=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "council", "conclusions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "recent",
+                  "value": "true"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
+

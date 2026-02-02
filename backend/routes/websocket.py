@@ -12,6 +12,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["WebSocket"])
 
 
+def _websocket_auth_required() -> bool:
+    """True if WebSocket connections should require token (EXECUTION_TOKEN or WS_AUTH_ENABLED)."""
+    try:
+        from backend.config.settings import settings
+        if getattr(settings, "ws_auth_enabled", False):
+            return bool(settings.execution_token)
+        return False
+    except Exception:
+        return False
+
+
+def _validate_websocket_token(websocket: WebSocket) -> bool:
+    """Validate token from query param ?token= or Cookie daena_execution_token. Returns True if valid or auth not required."""
+    try:
+        from backend.config.settings import settings
+        if not _websocket_auth_required() or not settings.execution_token:
+            return True
+        token = websocket.query_params.get("token") or websocket.cookies.get("daena_execution_token")
+        if token and token == settings.execution_token:
+            return True
+        return False
+    except Exception:
+        return False
+
+
 @router.websocket("/ws/events")
 async def websocket_events(websocket: WebSocket):
     """Unified events WebSocket endpoint - connects to event bus for all real-time updates
@@ -25,7 +50,11 @@ async def websocket_events(websocket: WebSocket):
     - system.reset (system resets)
     """
     from backend.services.event_bus import event_bus
-    
+
+    if _websocket_auth_required() and not _validate_websocket_token(websocket):
+        await websocket.close(code=4403)
+        return
+
     await websocket.accept()
     await event_bus.connect(websocket)
     

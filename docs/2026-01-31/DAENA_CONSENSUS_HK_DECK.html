@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daena — Consensus HK 2026 Hackathon Deck</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0e1a;
+    --bg2: #111827;
+    --amber: #d4a843;
+    --amber-dim: rgba(212,168,67,0.15);
+    --amber-glow: rgba(212,168,67,0.4);
+    --cyan: #00d4ff;
+    --cyan-dim: rgba(0,212,255,0.1);
+    --red: #ff4757;
+    --green: #2ed573;
+    --text: #e2e8f0;
+    --text-dim: #64748b;
+    --card: rgba(255,255,255,0.04);
+    --card-border: rgba(212,168,67,0.2);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: 
+      linear-gradient(rgba(212,168,67,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(212,168,67,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .deck-container {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  /* Navigation */
+  .nav {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px 0;
+    flex-wrap: wrap;
+  }
+  .nav-btn {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    color: var(--text-dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+  }
+  .nav-btn:hover { border-color: var(--amber); color: var(--amber); }
+  .nav-btn.active { background: var(--amber-dim); border-color: var(--amber); color: var(--amber); }
+
+  /* Slides */
+  .slide { display: none; }
+  .slide.active { display: block; animation: slideIn 0.4s ease; }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Slide header */
+  .slide-header {
+    text-align: center;
+    padding: 50px 0 30px;
+    position: relative;
+  }
+  .slide-num {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--amber);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .slide-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--amber);
+    text-shadow: 0 0 40px var(--amber-glow);
+    line-height: 1.2;
+  }
+  .slide-subtitle {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 18px;
+    color: var(--text-dim);
+    margin-top: 10px;
+    font-weight: 300;
+  }
+
+  /* Cards */
+  .card-grid {
+    display: grid;
+    gap: 16px;
+    margin-top: 30px;
+  }
+  .card-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .card-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 24px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .card:hover { border-color: var(--amber); box-shadow: 0 0 20px var(--amber-dim); }
+
+  .card-icon { font-size: 28px; margin-bottom: 10px; }
+  .card-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--amber);
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+  }
+  .card-text {
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  /* Stats */
+  .stat-row {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin: 40px 0;
+    flex-wrap: wrap;
+  }
+  .stat {
+    text-align: center;
+  }
+  .stat-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 42px;
+    font-weight: 900;
+    color: var(--amber);
+    text-shadow: 0 0 30px var(--amber-glow);
+  }
+  .stat-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin: 40px 0;
+    flex-wrap: wrap;
+  }
+  .flow-step {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    text-align: center;
+    min-width: 140px;
+    transition: all 0.3s;
+    cursor: default;
+  }
+  .flow-step:hover { border-color: var(--amber); transform: scale(1.05); }
+  .flow-step-icon { font-size: 22px; margin-bottom: 6px; }
+  .flow-step-name {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--amber);
+    letter-spacing: 0.5px;
+  }
+  .flow-step-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  .flow-arrow {
+    font-size: 24px;
+    color: var(--amber);
+    margin: 0 4px;
+    opacity: 0.5;
+  }
+
+  /* Timeline */
+  .timeline {
+    margin: 30px 0;
+    position: relative;
+  }
+  .timeline-item {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .timeline-item:last-child { border-bottom: none; }
+  .timeline-day {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--amber);
+    min-width: 80px;
+    padding-top: 2px;
+  }
+  .timeline-content { flex: 1; }
+  .timeline-task {
+    font-size: 14px;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .timeline-detail {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .tag {
+    display: inline-block;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    margin-right: 4px;
+    margin-top: 4px;
+  }
+  .tag-urgent { background: rgba(255,71,87,0.15); color: var(--red); border: 1px solid rgba(255,71,87,0.3); }
+  .tag-demo { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--card-border); }
+  .tag-pitch { background: var(--cyan-dim); color: var(--cyan); border: 1px solid rgba(0,212,255,0.2); }
+  .tag-done { background: rgba(46,213,115,0.15); color: var(--green); border: 1px solid rgba(46,213,115,0.3); }
+
+  /* Video storyboard */
+  .storyboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .sb-frame {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  .sb-frame:hover { border-color: var(--amber); }
+  .sb-visual {
+    height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    background: linear-gradient(135deg, var(--bg2), rgba(17,24,39,0.5));
+  }
+  .sb-info { padding: 12px; }
+  .sb-time {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--amber);
+    letter-spacing: 1px;
+  }
+  .sb-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+
+  /* Investor cards */
+  .investor-tier {
+    margin: 20px 0;
+  }
+  .tier-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--amber);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--card-border);
+  }
+
+  /* Highlight box */
+  .highlight {
+    background: var(--amber-dim);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 20px 0;
+  }
+  .highlight-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--amber);
+    margin-bottom: 8px;
+  }
+  .highlight-text {
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  /* Warning box */
+  .warning {
+    background: rgba(255,71,87,0.1);
+    border: 1px solid rgba(255,71,87,0.3);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 20px 0;
+  }
+  .warning-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--red);
+    margin-bottom: 6px;
+  }
+  .warning-text { font-size: 13px; color: var(--text); line-height: 1.5; }
+
+  /* Section divider */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--card-border), transparent);
+    margin: 40px 0;
+  }
+
+  @media (max-width: 600px) {
+    .card-grid.cols-2, .card-grid.cols-3 { grid-template-columns: 1fr; }
+    .storyboard { grid-template-columns: 1fr; }
+    .flow { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); }
+    .slide-title { font-size: 24px; }
+    .stat-value { font-size: 32px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="deck-container">
+  <!-- Navigation -->
+  <div class="nav" id="nav"></div>
+
+  <!-- SLIDE 0: DASHBOARD -->
+  <div class="slide active" id="slide-0">
+    <div class="slide-header">
+      <div class="slide-num">Daena × Consensus Hong Kong 2026</div>
+      <div class="slide-title">HACKATHON COMMAND CENTER</div>
+      <div class="slide-subtitle">Everything you need in one place</div>
+    </div>
+
+    <div class="card-grid cols-3">
+      <div class="card" onclick="goToSlide(1)" style="cursor:pointer;">
+        <div class="card-icon">🎯</div>
+        <div class="card-title">PITCH DECK</div>
+        <div class="card-text">8-slide deck optimized for EasyA judges. Tap to preview.</div>
+      </div>
+      <div class="card" onclick="goToSlide(9)" style="cursor:pointer;">
+        <div class="card-icon">🎬</div>
+        <div class="card-title">DEMO VIDEO</div>
+        <div class="card-text">2-minute demo script with storyboard frames. Tap to view.</div>
+      </div>
+      <div class="card" onclick="goToSlide(10)" style="cursor:pointer;">
+        <div class="card-icon">📅</div>
+        <div class="card-title">11-DAY PLAN</div>
+        <div class="card-text">Day-by-day execution from today to submission. Tap to view.</div>
+      </div>
+    </div>
+
+    <div class="card-grid cols-2" style="margin-top:16px;">
+      <div class="card" onclick="goToSlide(11)" style="cursor:pointer;">
+        <div class="card-icon">💰</div>
+        <div class="card-title">INVESTOR MAP</div>
+        <div class="card-text">Canadian grants + global VCs. What to apply for and when.</div>
+      </div>
+      <div class="card" onclick="goToSlide(12)" style="cursor:pointer;">
+        <div class="card-icon">🛡️</div>
+        <div class="card-title">TRACK STRATEGY</div>
+        <div class="card-text">How to pivot your demo to any sponsor track in 30 minutes.</div>
+      </div>
+    </div>
+
+    <div class="warning" style="margin-top:30px;">
+      <div class="warning-title">🔴 ACTIVE SECURITY INCIDENT</div>
+      <div class="warning-text">Your .env_azure_openai is STILL live on GitHub main branch. Fix this in the next 3 minutes before anything else. See DAENA_FULL_POWER.md Part 0.</div>
+    </div>
+  </div>
+
+  <!-- SLIDE 1: Title -->
+  <div class="slide" id="slide-1">
+    <div class="slide-header" style="padding-top:100px;">
+      <div class="slide-num" style="letter-spacing:5px;">CONSENSUS HONG KONG 2026</div>
+      <div class="slide-title" style="font-size:42px;">DAENA</div>
+      <div style="width:200px; height:2px; background:var(--amber); margin:20px auto; box-shadow: 0 0 10px var(--amber-glow);"></div>
+      <div class="slide-subtitle" style="font-size:22px; color:var(--text);">Autonomous AI Governance<br>for DeFi Security</div>
+      <div style="margin-top:40px; font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--text-dim); letter-spacing:2px;">
+        EasyA CONSENSUS HACKATHON · FEB 11-12 · HONG KONG
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 2: Problem -->
+  <div class="slide" id="slide-2">
+    <div class="slide-header">
+      <div class="slide-num">01 — THE PROBLEM</div>
+      <div class="slide-title">DeFi Teams Ship Blind</div>
+    </div>
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-value">$2B+</div>
+        <div class="stat-label">Lost to exploits annually</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">4-8wk</div>
+        <div class="stat-label">Average audit timeline</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">$50K+</div>
+        <div class="stat-label">Cost per manual audit</div>
+      </div>
+    </div>
+    <div class="card-grid cols-3">
+      <div class="card">
+        <div class="card-icon">⏰</div>
+        <div class="card-title">TOO SLOW</div>
+        <div class="card-text">Manual audits take weeks. By then, competitors have already shipped. Teams skip auditing entirely.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">💸</div>
+        <div class="card-title">TOO EXPENSIVE</div>
+        <div class="card-text">Only well-funded protocols can afford proper audits. Small teams and new protocols are completely exposed.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🎯</div>
+        <div class="card-title">TOO CENTRALIZED</div>
+        <div class="card-text">3 audit firms control 80% of the market. Single points of failure. No real-time monitoring.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 3: Solution -->
+  <div class="slide" id="slide-3">
+    <div class="slide-header">
+      <div class="slide-num">02 — THE SOLUTION</div>
+      <div class="slide-title">A Company of AI Agents</div>
+      <div class="slide-subtitle">Not one agent. Not a chatbot. An entire organization with governance.</div>
+    </div>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-step-icon">👤</div>
+        <div class="flow-step-name">FOUNDER</div>
+        <div class="flow-step-desc">Sets policy</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step" style="border-color:var(--amber);">
+        <div class="flow-step-icon">🤖</div>
+        <div class="flow-step-name">DAENA VP</div>
+        <div class="flow-step-desc">Orchestrates</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-step-icon">🏛️</div>
+        <div class="flow-step-name">COUNCIL</div>
+        <div class="flow-step-desc">Debates</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-step-icon">⚡</div>
+        <div class="flow-step-name">AGENTS</div>
+        <div class="flow-step-desc">Execute</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-step-icon">✅</div>
+        <div class="flow-step-name">APPROVE</div>
+        <div class="flow-step-desc">Founder decides</div>
+      </div>
+    </div>
+    <div class="highlight">
+      <div class="highlight-title">THE KEY INSIGHT</div>
+      <div class="highlight-text">Every other AI agent just does things and hopes for the best. Daena has governance — she debates before she acts, verifies before she trusts, and always keeps the human in control. That's the difference between a tool and a trustworthy system.</div>
+    </div>
+  </div>
+
+  <!-- SLIDE 4: Demo Flow -->
+  <div class="slide" id="slide-4">
+    <div class="slide-header">
+      <div class="slide-num">03 — LIVE DEMO FLOW</div>
+      <div class="slide-title">Watch It Happen</div>
+      <div class="slide-subtitle">From paste to recommendation in under 90 seconds</div>
+    </div>
+    <div class="flow" style="flex-direction:column; gap:8px; align-items:stretch; max-width:600px; margin:30px auto;">
+      <div class="flow-step" style="display:flex; align-items:center; gap:16px; text-align:left; border-left:3px solid var(--amber);">
+        <div style="font-size:24px; min-width:40px; text-align:center;">📝</div>
+        <div>
+          <div class="flow-step-name">USER TYPES: "Audit this DeFi contract"</div>
+          <div class="flow-step-desc">Paste a Solidity contract into Daena Office chat</div>
+        </div>
+      </div>
+      <div class="flow-step" style="display:flex; align-items:center; gap:16px; text-align:left; border-left:3px solid var(--cyan);">
+        <div style="font-size:24px; min-width:40px; text-align:center;">⚡</div>
+        <div>
+          <div class="flow-step-name">3 AGENTS ACTIVATE SIMULTANEOUSLY</div>
+          <div class="flow-step-desc">ResearchAgent → protocol context · DeFiAgent → security scan · FinanceAgent → risk assessment</div>
+        </div>
+      </div>
+      <div class="flow-step" style="display:flex; align-items:center; gap:16px; text-align:left; border-left:3px solid var(--green);">
+        <div style="font-size:24px; min-width:40px; text-align:center;">🔍</div>
+        <div>
+          <div class="flow-step-name">6-LAYER SCAN RUNS</div>
+          <div class="flow-step-desc">Slither · Mythril · Echidna · Foundry · AI audit · Risk scoring — all automated</div>
+        </div>
+      </div>
+      <div class="flow-step" style="display:flex; align-items:center; gap:16px; text-align:left; border-left:3px solid var(--amber);">
+        <div style="font-size:24px; min-width:40px; text-align:center;">🏛️</div>
+        <div>
+          <div class="flow-step-name">COUNCIL DEBATES LIVE</div>
+          <div class="flow-step-desc">5 experts evaluate independently → vote → Daena synthesizes into one recommendation</div>
+        </div>
+      </div>
+      <div class="flow-step" style="display:flex; align-items:center; gap:16px; text-align:left; border-left:3px solid var(--red); background:rgba(255,71,87,0.05);">
+        <div style="font-size:24px; min-width:40px; text-align:center;">🚨</div>
+        <div>
+          <div class="flow-step-name" style="color:var(--red);">CRITICAL VULNERABILITY DETECTED — DO NOT DEPLOY</div>
+          <div class="flow-step-desc">Reentrancy in withdrawal function. Founder sees full report. Taps Approve or Deny.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 5: Architecture -->
+  <div class="slide" id="slide-5">
+    <div class="slide-header">
+      <div class="slide-num">04 — ARCHITECTURE</div>
+      <div class="slide-title">How It All Fits Together</div>
+    </div>
+    <div class="card-grid cols-2">
+      <div class="card">
+        <div class="card-title">🏢 THE COMPANY STRUCTURE</div>
+        <div class="card-text" style="line-height:1.8;">
+          <strong style="color:var(--amber);">Founder</strong> → sets policy, approves high-risk actions<br>
+          <strong style="color:var(--cyan);">Daena (VP)</strong> → orchestrates all agents, synthesizes<br>
+          <strong style="color:var(--green);">Council</strong> → 5 experts debate per domain<br>
+          <strong style="color:var(--text);">Sub-Agents</strong> → execute specific tasks in sandbox
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">🛡️ SECURITY LAYERS</div>
+        <div class="card-text" style="line-height:1.8;">
+          <strong style="color:var(--red);">Integrity Shield</strong> → blocks data poisoning & manipulation<br>
+          <strong style="color:var(--amber);">Permission System</strong> → scoped, time-limited access<br>
+          <strong style="color:var(--green);">Audit Trail</strong> → every action logged, immutable<br>
+          <strong style="color:var(--text);">Emergency Stop</strong> → founder kills everything in 1 tap
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">🧠 THE BRAIN</div>
+        <div class="card-text" style="line-height:1.8;">
+          <strong style="color:var(--amber);">Hybrid LLM Router</strong> → 90% local, 10% cloud<br>
+          <strong style="color:var(--cyan);">Learning Loop</strong> → outcomes → lessons → insights<br>
+          <strong style="color:var(--green);">CAS Memory</strong> → dedup saves 60% API costs<br>
+          <strong style="color:var(--text);">MCP Integration</strong> → plugs into any agent ecosystem
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">📱 THE INTERFACE</div>
+        <div class="card-text" style="line-height:1.8;">
+          <strong style="color:var(--amber);">Daena Office</strong> → desktop command center<br>
+          <strong style="color:var(--cyan);">Control Plane</strong> → unified operations hub<br>
+          <strong style="color:var(--green);">PWA Mobile</strong> → voice control from phone<br>
+          <strong style="color:var(--text);">Real-time WebSocket</strong> → watch everything live
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 6: Why Now -->
+  <div class="slide" id="slide-6">
+    <div class="slide-header">
+      <div class="slide-num">05 — WHY NOW</div>
+      <div class="slide-title">The Convergence Is Happening</div>
+    </div>
+    <div class="card-grid cols-3">
+      <div class="card" style="border-color:var(--amber);">
+        <div class="card-icon">🤖</div>
+        <div class="card-title">AI AGENTS ARE REAL</div>
+        <div class="card-text">Manus, Moltbot, OpenAI agents — the market proved agents work. Enterprise is buying. But none have governance.</div>
+      </div>
+      <div class="card" style="border-color:var(--cyan);">
+        <div class="card-icon">⛓️</div>
+        <div class="card-title">DEFI NEEDS SECURITY</div>
+        <div class="card-text">DeFi TVL is growing. Regulation is tightening. Teams can't afford to ship without auditing. The market for automated security is exploding.</div>
+      </div>
+      <div class="card" style="border-color:var(--green);">
+        <div class="card-icon">🔗</div>
+        <div class="card-title">MCP STANDARDIZING</div>
+        <div class="card-text">Model Context Protocol is becoming the standard agent interop layer. Daena speaks MCP. She can plug into any ecosystem.</div>
+      </div>
+    </div>
+    <div class="highlight" style="margin-top:30px;">
+      <div class="highlight-title">THE CONSENSUS SUMMIT THEME</div>
+      <div class="highlight-text">"This summit focuses on the convergence of Traditional AI, Decentralized Web3 infrastructure, and Robotics — exploring Autonomous Economic Agents: machines that own assets, transact on-chain, and execute real-world tasks." <br><br><strong style="color:var(--amber);">That is exactly Daena.</strong></div>
+    </div>
+  </div>
+
+  <!-- SLIDE 7: Why Daena Wins -->
+  <div class="slide" id="slide-7">
+    <div class="slide-header">
+      <div class="slide-num">06 — DIFFERENTIATION</div>
+      <div class="slide-title">Why Daena Wins</div>
+    </div>
+    <div class="card-grid cols-2">
+      <div class="card">
+        <div class="card-icon">🏛️</div>
+        <div class="card-title">GOVERNANCE, NOT JUST AUTOMATION</div>
+        <div class="card-text">Other agents automate. Daena governs. Council debates before decisions. Founder always controls. Auditable trail of every action.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🛡️</div>
+        <div class="card-title">IMMUNE TO MANIPULATION</div>
+        <div class="card-text">Other agents get tricked by 10 fake articles. Daena's Integrity Shield verifies sources, detects injection, routes conflicts to Council debate.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🏠</div>
+        <div class="card-title">LOCAL-FIRST, CLOUD-READY</div>
+        <div class="card-text">Runs entirely on your machine. No cloud dependency. 90% of work done by local LLMs. Sensitive data never leaves your network.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">📈</div>
+        <div class="card-title">LEARNS AND IMPROVES</div>
+        <div class="card-text">Every decision outcome feeds back. Councils get calibrated. Insights accumulate. Daena genuinely gets smarter over time.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 8: Ask -->
+  <div class="slide" id="slide-8">
+    <div class="slide-header">
+      <div class="slide-num">07 — THE ASK</div>
+      <div class="slide-title">What We're Looking For</div>
+    </div>
+    <div class="card-grid cols-3">
+      <div class="card" style="border-color:var(--cyan);">
+        <div class="card-icon">🤝</div>
+        <div class="card-title">SPONSOR PARTNERSHIP</div>
+        <div class="card-text">We build Daena's DeFi Guardian on your protocol. Showcase AI-powered security for your ecosystem. Co-branded demo and integration.</div>
+      </div>
+      <div class="card" style="border-color:var(--amber);">
+        <div class="card-icon">🚀</div>
+        <div class="card-title">PILOT CUSTOMERS</div>
+        <div class="card-text">DeFi protocols looking to add automated security auditing before deployment. We need 3 early pilots to validate the product-market fit.</div>
+      </div>
+      <div class="card" style="border-color:var(--green);">
+        <div class="card-icon">💰</div>
+        <div class="card-title">SEED FUNDING</div>
+        <div class="card-text">Looking for $500K-$2M seed to productize, hire, and scale. Already incorporated in Canada. Strong non-dilutive funding pipeline.</div>
+      </div>
+    </div>
+    <div style="text-align:center; margin-top:50px;">
+      <div style="font-family:'Orbitron',sans-serif; font-size:14px; color:var(--amber); margin-bottom:16px;">LINKS</div>
+      <div style="font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--text-dim); line-height:2.2;">
+        github.com/Mas-AI-Official/daena<br>
+        [demo-video-link]<br>
+        [contact-email]
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 9: Demo Video Script / Storyboard -->
+  <div class="slide" id="slide-9">
+    <div class="slide-header">
+      <div class="slide-num">DEMO VIDEO</div>
+      <div class="slide-title">2-Minute Storyboard</div>
+      <div class="slide-subtitle">Record this exactly. Every second counts at the hackathon.</div>
+    </div>
+    <div class="storyboard">
+      <div class="sb-frame">
+        <div class="sb-visual" style="background:linear-gradient(135deg,#0a0e1a,#1a1f2e);">
+          <span style="font-family:'Orbitron',sans-serif; font-size:18px; color:var(--amber);">DAENA</span>
+        </div>
+        <div class="sb-info">
+          <div class="sb-time">0:00 — 0:10 · TITLE CARD</div>
+          <div class="sb-desc">Dark background, amber text, subtle pulse. "Daena — When AI Agents Get Governance"</div>
+        </div>
+      </div>
+      <div class="sb-frame">
+        <div class="sb-visual" style="background:linear-gradient(135deg,#1a0a0a,#2a1a1a);">
+          📰
+        </div>
+        <div class="sb-info">
+          <div class="sb-time">0:10 — 0:25 · THE PROBLEM</div>
+          <div class="sb-desc">Show news headlines about DeFi hacks. Voice: "Last year, DeFi lost over 2 billion dollars. Teams ship anyway."</div>
+        </div>
+      </div>
+      <div class="sb-frame">
+        <div class="sb-visual" style="background:linear-gradient(135deg,#0a1a2a,#1a2a3a);">
+          🖥️
+        </div>
+        <div class="sb-info">
+          <div class="sb-time">0:25 — 0:45 · MEET DAENA</div>
+          <div class="sb-desc">Show Daena Office dashboard. Voice: "Not one agent. A company of agents." Show VP → Council → Sub-agents hierarchy.</div>
+        </div>
+      </div>
+      <div class="sb-frame">
+        <div class="sb-visual" style="background:linear-gradient(135deg,#0a1a0a,#1a2a1a); border-top: 3px solid var(--green);">
+          ⚡
+        </div>
+        <div class="sb-info">
+          <div class="sb-time">0:45 — 1:30 · LIVE DEMO</div>
+          <div class="sb-desc">THE STAR. Show: paste contract → agents activate → scan runs → Council debates → recommendation appears. Make it look effortless.</div>
+        </div>
+      </div>
+      <div class="sb-frame">
+        <div class="sb-visual" style="background:linear-gradient(135deg,#2a1a0a,#3a2a1a);">
+          🛡️
+        </div>
+        <div class="sb-info">
+          <div class="sb-time">1:30 — 1:50 · WHY IT MATTERS</div>
+          <div class="sb-desc">Back to slides. "Daena has governance. She can't be manipulated. The founder is always in control." Show Trust Dashboard briefly.</div>
+        </div>
+      </div>
+      <div class="sb-frame">
+        <div class="sb-visual" style="background:linear-gradient(135deg,#0a0e1a,#111827);">
+          <span style="font-family:'Orbitron',sans-serif; font-size:14px; color:var(--amber);">DAENA</span>
+        </div>
+        <div class="sb-info">
+          <div class="sb-time">1:50 — 2:00 · CLOSING</div>
+          <div class="sb-desc">"The AI company that earns trust before it acts." Logo + GitHub link + contact. End on amber glow.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 10: 11-Day Plan -->
+  <div class="slide" id="slide-10">
+    <div class="slide-header">
+      <div class="slide-num">EXECUTION</div>
+      <div class="slide-title">11-Day Sprint to Submission</div>
+    </div>
+    <div class="timeline">
+      <div class="timeline-item">
+        <div class="timeline-day">DAY 1</div>
+        <div class="timeline-content">
+          <div class="timeline-task">🔴 Security fix + branch merge</div>
+          <div class="timeline-detail">Remove .env from git. Rotate keys. Merge reality_pass_full_e2e → main.</div>
+          <div><span class="tag tag-urgent">URGENT</span><span class="tag tag-done">30 min</span></div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-day">DAY 2</div>
+        <div class="timeline-content">
+          <div class="timeline-task">Install Slither + test DeFi scan end-to-end</div>
+          <div class="timeline-detail">pip install slither-analyzer. Scan 3 sample contracts. Fix any issues.</div>
+          <div><span class="tag tag-demo">Demo Prep</span></div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-day">DAY 3</div>
+        <div class="timeline-content">
+          <div class="timeline-task">First screen recording + timing</div>
+          <div class="timeline-detail">Record killer demo. Time it. Target: under 90 seconds. Identify bottlenecks.</div>
+          <div><span class="tag tag-demo">Demo Prep</span></div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-day">DAY 4</div>
+        <div class="timeline-content">
+          <div class="timeline-task">Polish demo UI + prepare multi-chain contracts</div>
+          <div class="timeline-detail">Make agent activity visible in real-time. Prepare .sol contracts for Aptos/Solana/Polkadot.</div>
+          <div><span class="tag tag-demo">Demo Prep</span></div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-day">DAY 5</div>
+        <div class="timeline-content">
+          <div class="timeline-task">Create pitch deck (Google Slides)</div>
+          <div class="timeline-detail">8 slides. Follow the structure in this deck. Keep it simple and visual.</div>
+          <div><span class="tag tag-pitch">Pitch</span></div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-day">DAY 6</div>
+        <div class="timeline-content">
+          <div class="timeline-task">Record the real demo video</div>
+          <div class="timeline-detail">Follow the storyboard. Add title cards. Add voiceover. Edit to 2 min max.</div>
+          <div><span class="tag tag-demo">Demo Video</span><span class="tag tag-pitch">Pitch</span></div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-day">DAY 7</div>
+        <div class="timeline-content">
+          <div class="timeline-task">Clean repo + professional README</div>
+          <div class="timeline-detail">Lead with "AI Governance for DeFi". Quick start that works. Link to demo video.</div>
+          <div><span class="tag tag-pitch">Pitch</span></div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-day">DAY 8</div>
+        <div class="timeline-content">
+          <div class="timeline-task">Final end-to-end test + offline backup</div>
+          <div class="timeline-detail">Test on fresh browser. Prepare pre-recorded backup if live demo fails at venue.</div>
+          <div><span class="tag tag-demo">Demo Prep</span><span class="tag tag-urgent">Critical</span></div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-day">DAY 9</div>
+        <div class="timeline-content">
+          <div class="timeline-task">Submit + Apply for PitchFest</div>
+          <div class="timeline-detail">Submit: repo link, deck link, video link, description. Also apply to CoinDesk PitchFest.</div>
+          <div><span class="tag tag-pitch">Submit</span><span class="tag tag-urgent">Deadline</span></div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-day">10-11</div>
+        <div class="timeline-content">
+          <div class="timeline-task">Travel to HK + Arrive + Network</div>
+          <div class="timeline-detail">Pick up badge (3rd floor). Find hackathon area (2nd floor). Talk to every sponsor.</div>
+          <div><span class="tag tag-pitch">Hong Kong</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 11: Investor Map -->
+  <div class="slide" id="slide-11">
+    <div class="slide-header">
+      <div class="slide-num">FUNDING</div>
+      <div class="slide-title">Investor Roadmap</div>
+    </div>
+
+    <div class="investor-tier">
+      <div class="tier-label">🇨🇦 CANADIAN — NON-DILUTIVE (Free Money)</div>
+      <div class="card-grid cols-2">
+        <div class="card">
+          <div class="card-title">SR&ED Tax Credit</div>
+          <div class="card-text">Apply retroactively for work already done. Recover 15-35% of R&D spend. Nearly every AI startup qualifies. Apply NOW.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">IRAP (NRC)</div>
+          <div class="card-text">National Research Council. Advisory + funding for innovative tech SMEs. Perfect fit for AI + blockchain innovation.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">RAII Initiative</div>
+          <div class="card-text">$200M over 5 years for AI startups. Ontario arm active now. Apply through regional office.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Scale AI Acceleration</div>
+          <div class="card-text">Funds AI startup accelerators across Canada. $500M collective investment to date.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="investor-tier">
+      <div class="tier-label">🇨🇦 CANADIAN — ACCELERATORS</div>
+      <div class="card-grid cols-3">
+        <div class="card">
+          <div class="card-title">Creative Destruction Lab</div>
+          <div class="card-text">Toronto. AI track. Most influential Canadian accelerator network.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Google for Startups</div>
+          <div class="card-text">March 2026 cohort. 10-15 startups. Seed to Series A. Apply ASAP.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">MaRS Discovery</div>
+          <div class="card-text">Toronto. Canada's largest innovation hub. Strong AI programs.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="investor-tier">
+      <div class="tier-label">🌍 GLOBAL</div>
+      <div class="card-grid cols-3">
+        <div class="card">
+          <div class="card-title">Consensus PitchFest</div>
+          <div class="card-text">Pitch live to VCs at the event. Past winners raised from a16z, YC, Founders Fund.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Y Combinator</div>
+          <div class="card-text">Apply with hackathon demo + incorporation + traction as your story.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">a16z Crypto</div>
+          <div class="card-text">Invests in AI + Web3 intersection. Exactly Daena's space.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 12: Track Strategy -->
+  <div class="slide" id="slide-12">
+    <div class="slide-header">
+      <div class="slide-num">STRATEGY</div>
+      <div class="slide-title">Pivot to Any Track in 30 Minutes</div>
+      <div class="slide-subtitle">Daena's DeFi Guardian is protocol-agnostic. Prepare samples for each.</div>
+    </div>
+    <div class="card-grid cols-2">
+      <div class="card">
+        <div class="card-icon">🔷</div>
+        <div class="card-title">APTOS TRACK</div>
+        <div class="card-text">"AI-powered smart contract security for Move language contracts." Prepare a sample Move contract with a known vulnerability. Demo: Daena scans it, finds it, reports it.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔴</div>
+        <div class="card-title">SOLANA TRACK</div>
+        <div class="card-text">"Autonomous agent security for Solana programs." Prepare a sample Solana program. Demo: multi-agent audit catches the bug before deployment.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🟣</div>
+        <div class="card-title">POLKADOT TRACK</div>
+        <div class="card-text">"Multi-agent governance for parachain security." Prepare a sample parachain contract. Demo: Council debates the risk, recommends action.</div>
+      </div>
+      <div class="card" style="border-color:var(--amber);">
+        <div class="card-icon">🤖</div>
+        <div class="card-title">AI / GENERAL TRACK</div>
+        <div class="card-text">"The governance layer for autonomous AI agents in Web3." Show the full Daena architecture: VP → Council → Agents → Approve. This is the strongest demo for an AI-focused track.</div>
+      </div>
+    </div>
+    <div class="highlight" style="margin-top:24px;">
+      <div class="highlight-title">PREPARATION CHECKLIST</div>
+      <div class="highlight-text">
+        □ 1 sample contract per chain (with known vulnerability)<br>
+        □ Each scan completes in under 30 seconds<br>
+        □ Demo script adapted for each track (just change the intro + contract)<br>
+        □ Pre-recorded backup video for each track version<br>
+        □ When tracks are announced: run the right version 2x before the hackathon
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const slides = [
+  { id: 'slide-0', label: '🏠' },
+  { id: 'slide-1', label: 'Title' },
+  { id: 'slide-2', label: 'Problem' },
+  { id: 'slide-3', label: 'Solution' },
+  { id: 'slide-4', label: 'Demo' },
+  { id: 'slide-5', label: 'Arch' },
+  { id: 'slide-6', label: 'Why Now' },
+  { id: 'slide-7', label: 'Why Win' },
+  { id: 'slide-8', label: 'Ask' },
+  { id: 'slide-9', label: '🎬 Video' },
+  { id: 'slide-10', label: '📅 Plan' },
+  { id: 'slide-11', label: '💰 Investors' },
+  { id: 'slide-12', label: '🎯 Tracks' }
+];
+
+let current = 0;
+
+function buildNav() {
+  const nav = document.getElementById('nav');
+  slides.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'nav-btn' + (i === 0 ? ' active' : '');
+    btn.textContent = s.label;
+    btn.onclick = () => goToSlide(i);
+    nav.appendChild(btn);
+  });
+}
+
+function goToSlide(i) {
+  document.getElementById(slides[current].id).classList.remove('active');
+  document.querySelectorAll('.nav-btn')[current].classList.remove('active');
+  current = i;
+  document.getElementById(slides[current].id).classList.add('active');
+  document.querySelectorAll('.nav-btn')[current].classList.add('active');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' && current < slides.length - 1) goToSlide(current + 1);
+  if (e.key === 'ArrowLeft' && current > 0) goToSlide(current - 1);
+});
+
+buildNav();
+</script>
+</body>
+</html>

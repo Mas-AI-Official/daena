@@ -1,0 +1,1727 @@
+{
+  "summary": {
+    "backend_modules": 203,
+    "frontend_files": 51,
+    "duplicate_modules": 10,
+    "backend_routes": 513,
+    "frontend_api_calls": 120,
+    "missing_backend_routes": 101,
+    "unused_backend_routes": 361
+  },
+  "duplicate_modules": {
+    "check_db": [
+      "backend.check_db",
+      "backend.scripts.check_db"
+    ],
+    "debug_sunflower": [
+      "backend.debug_sunflower",
+      "backend.scripts.debug_sunflower"
+    ],
+    "tenant_rate_limit": [
+      "backend.middleware.tenant_rate_limit",
+      "backend.routes.tenant_rate_limit"
+    ],
+    "chat_history": [
+      "backend.models.chat_history",
+      "backend.routes.chat_history"
+    ],
+    "council": [
+      "backend.models.council",
+      "backend.routes.council"
+    ],
+    "enterprise_dna": [
+      "backend.models.enterprise_dna",
+      "backend.routes.enterprise_dna"
+    ],
+    "realtime_collaboration": [
+      "backend.routes.realtime_collaboration",
+      "backend.services.realtime_collaboration"
+    ],
+    "registry": [
+      "backend.routes.registry",
+      "backend.tools.registry"
+    ],
+    "skill_capsules": [
+      "backend.routes.skill_capsules",
+      "backend.services.skill_capsules"
+    ],
+    "sunflower": [
+      "backend.routes.sunflower",
+      "backend.utils.sunflower"
+    ]
+  },
+  "missing_backend_routes": [
+    "/api/v1/agents/$",
+    "/api/v1/agents/deploy",
+    "/api/v1/ai/capabilities",
+    "/api/v1/analytics/communication-patterns",
+    "/api/v1/analytics/summary",
+    "/api/v1/automation/process/$",
+    "/api/v1/brain/commit/$",
+    "/api/v1/brain/queue",
+    "/api/v1/brain/status",
+    "/api/v1/chat",
+    "/api/v1/chat-history/sessions",
+    "/api/v1/chat-history/sessions/$",
+    "/api/v1/council/$",
+    "/api/v1/council/approve",
+    "/api/v1/council/approve-synthesis",
+    "/api/v1/council/export",
+    "/api/v1/council/override-synthesis",
+    "/api/v1/council/pin-synthesis",
+    "/api/v1/council/request-revision",
+    "/api/v1/council/rounds/history",
+    "/api/v1/council/share",
+    "/api/v1/council/status",
+    "/api/v1/daena/chat",
+    "/api/v1/daena/voice",
+    "/api/v1/deep-search/perform",
+    "/api/v1/departments",
+    "/api/v1/departments/",
+    "/api/v1/departments/engineering/agents",
+    "/api/v1/departments/engineering/chat",
+    "/api/v1/departments/engineering/chat-history",
+    "/api/v1/departments/engineering/projects",
+    "/api/v1/departments/product/agents",
+    "/api/v1/departments/product/chat",
+    "/api/v1/departments/product/chat-history",
+    "/api/v1/departments/product/products",
+    "/api/v1/dna/default/health",
+    "/api/v1/events/stream",
+    "/api/v1/explorer/build_prompt",
+    "/api/v1/explorer/merge",
+    "/api/v1/explorer/parse_response",
+    "/api/v1/files",
+    "/api/v1/files/$",
+    "/api/v1/files/download/$",
+    "/api/v1/files/folder",
+    "/api/v1/files/upload",
+    "/api/v1/founder-panel/daena/control",
+    "/api/v1/founder-panel/daena/instructions",
+    "/api/v1/founder-panel/decision/execute",
+    "/api/v1/founder-panel/financial/override",
+    "/api/v1/founder-panel/override/execute",
+    "/api/v1/founder-panel/system/emergency/freeze-blockchain",
+    "/api/v1/founder-panel/system/emergency/lockdown",
+    "/api/v1/founder-panel/system/emergency/override-all",
+    "/api/v1/founder-panel/system/emergency/stop-all",
+    "/api/v1/founder-panel/system/lock",
+    "/api/v1/health/council",
+    "/api/v1/health/council endpoint and displays warnings if structure diverges from 8\u00d76\n */\n\nclass CouncilHealthMonitor ",
+    "/api/v1/hiring/candidates/",
+    "/api/v1/hiring/interviews/",
+    "/api/v1/hiring/positions/",
+    "/api/v1/honey-knowledge/honey-tracker/department/$",
+    "/api/v1/honey-knowledge/honey-tracker/visualization",
+    "/api/v1/human-relay/ingest",
+    "/api/v1/human-relay/prompt",
+    "/api/v1/human-relay/synthesize",
+    "/api/v1/integrations/",
+    "/api/v1/integrations/$",
+    "/api/v1/meetings/export",
+    "/api/v1/meetings/schedule",
+    "/api/v1/meetings/share",
+    "/api/v1/monitoring/memory",
+    "/api/v1/monitoring/metrics",
+    "/api/v1/registry/summary",
+    "/api/v1/strategic-assembly/sessions/1/founder-decision",
+    "/api/v1/strategic-assembly/sessions/create",
+    "/api/v1/strategic-assembly/synthesis/history",
+    "/api/v1/strategic-room/conflicts-analysis",
+    "/api/v1/strategic-room/department/$",
+    "/api/v1/strategic-room/founder-override",
+    "/api/v1/strategic-room/generate-cross-department-analysis",
+    "/api/v1/strategic-room/synthesis-summary",
+    "/api/v1/structure/verify",
+    "/api/v1/system/metrics",
+    "/api/v1/system/stats",
+    "/api/v1/system/stats\n                        const response = await fetch(",
+    "/api/v1/system/stats if summary fails\n                        const statsResponse = await fetch(",
+    "/api/v1/system/summary",
+    "/api/v1/tools/execute",
+    "/api/v1/tools/execute)\n                // ------------------------------------------------------------------\n                toolsPanel: ",
+    "/api/v1/tools/execute) -->\n        <div x-show=",
+    "/api/v1/tools/execute`)</div>\n                        </div>\n                    </div>\n                    <div class=",
+    "/api/v1/tools/status",
+    "/api/v1/voice/activate",
+    "/api/v1/voice/daena-voice",
+    "/api/v1/voice/deactivate",
+    "/api/v1/voice/input",
+    "/api/v1/voice/interrupt",
+    "/api/v1/voice/play-daena-voice",
+    "/api/v1/voice/restore-computer-voice",
+    "/api/v1/voice/talk-mode",
+    "/api/v1/voice/tts"
+  ],
+  "unused_backend_routes": [
+    "/",
+    "/activate",
+    "/active",
+    "/active-collaborations",
+    "/activity-feed",
+    "/activity/log",
+    "/adjacency",
+    "/adopt",
+    "/agent-instrumentation",
+    "/agent-metrics",
+    "/agent-status",
+    "/agent-voice/",
+    "/agent/",
+    "/agents",
+    "/agents/",
+    "/agents/analyze",
+    "/agents/create",
+    "/agents/validate",
+    "/all",
+    "/analytics",
+    "/analytics/agent-interaction-graph",
+    "/analytics/agent/",
+    "/analytics/agents/efficiency",
+    "/analytics/anomalies",
+    "/analytics/communication-patterns",
+    "/analytics/cost/optimization",
+    "/analytics/global",
+    "/analytics/insights",
+    "/analytics/memory/prediction",
+    "/analytics/override-history",
+    "/analytics/performance/trends",
+    "/analytics/record-interaction",
+    "/analytics/summary",
+    "/api/think",
+    "/api/v1/agents/create-advanced",
+    "/api/v1/agents/create-from-template",
+    "/api/v1/agents/create-simple",
+    "/api/v1/agents/user",
+    "/api/v1/automation/browser/click",
+    "/api/v1/automation/browser/navigate",
+    "/api/v1/automation/browser/screenshot",
+    "/api/v1/automation/browser/session/create",
+    "/api/v1/automation/browser/type",
+    "/api/v1/automation/desktop/click",
+    "/api/v1/automation/desktop/type",
+    "/api/v1/automation/process/",
+    "/api/v1/automation/scrape",
+    "/api/v1/daena/decisions",
+    "/api/v1/daena/decisions/",
+    "/api/v1/daena/decisions/agent/",
+    "/api/v1/daena/decisions/analytics",
+    "/api/v1/daena/decisions/create",
+    "/api/v1/daena/decisions/impact/",
+    "/api/v1/daena/decisions/project/",
+    "/api/v1/daena/decisions/recent",
+    "/api/v1/daena/decisions/summary",
+    "/api/v1/daena/decisions/type/",
+    "/api/v1/marketplace/stats",
+    "/api/v1/projects",
+    "/api/v1/projects/revenue/summary",
+    "/api/v1/templates",
+    "/api/v1/templates/",
+    "/api/v1/templates/category/",
+    "/api/v1/templates/difficulty/",
+    "/approve/",
+    "/approve_and_commit/",
+    "/ask",
+    "/auto-publish",
+    "/automation/browser/click",
+    "/automation/browser/navigate",
+    "/automation/browser/screenshot",
+    "/automation/browser/session/create",
+    "/automation/browser/type",
+    "/automation/desktop/click",
+    "/automation/desktop/type",
+    "/automation/scrape",
+    "/available-voices",
+    "/batch",
+    "/benchmark",
+    "/billing/usage",
+    "/broadcast",
+    "/build_prompt",
+    "/candidates/",
+    "/capabilities",
+    "/categories",
+    "/categories/",
+    "/category/",
+    "/chat",
+    "/chat/",
+    "/chat/start",
+    "/commit/",
+    "/compare",
+    "/complete-activity",
+    "/completion",
+    "/conferences",
+    "/conferences/",
+    "/conflicts-analysis",
+    "/consult_ui",
+    "/conversations",
+    "/conversations/",
+    "/coordination/departments",
+    "/coords",
+    "/council",
+    "/create",
+    "/create-from-template",
+    "/current-model",
+    "/customize",
+    "/daena-voice",
+    "/daena/control",
+    "/daena/instructions",
+    "/dashboard",
+    "/deactivate",
+    "/decision",
+    "/decision/",
+    "/decision/execute",
+    "/decision/history",
+    "/decisions",
+    "/decisions/history",
+    "/decisions/stream",
+    "/deep-search",
+    "/demo",
+    "/department/",
+    "/departments",
+    "/departments/list",
+    "/distill",
+    "/end-collaboration",
+    "/escalate",
+    "/events/stream",
+    "/execute",
+    "/execution-history",
+    "/executions/",
+    "/expired",
+    "/fallback-rate",
+    "/file-access",
+    "/files",
+    "/files/",
+    "/files/analyze/",
+    "/files/changes",
+    "/files/company-overview",
+    "/files/info/",
+    "/files/search",
+    "/files/statistics",
+    "/files/structure",
+    "/files/upload",
+    "/financial/override",
+    "/founder-override",
+    "/founder/override",
+    "/founder/overrides",
+    "/from-file",
+    "/generate-cross-department-analysis",
+    "/governance/writeback/attempt",
+    "/growth-analytics",
+    "/health",
+    "/heartbeat/check",
+    "/hidden-departments",
+    "/hidden-departments/",
+    "/history",
+    "/hive/data",
+    "/honey-tracker/add-honey",
+    "/honey-tracker/analytics",
+    "/honey-tracker/department/",
+    "/honey-tracker/visualization",
+    "/honey/structure/",
+    "/honeytokens/check/",
+    "/honeytokens/create",
+    "/honeytokens/stats",
+    "/html",
+    "/ingest",
+    "/insights/executive",
+    "/install",
+    "/integrations/available",
+    "/integrations/test",
+    "/interviews/",
+    "/kill-switch/activate",
+    "/kill-switch/deactivate",
+    "/kill-switch/status",
+    "/kms/status",
+    "/knowledge/extract/",
+    "/knowledge/search",
+    "/list",
+    "/list-files",
+    "/llm-consultation",
+    "/llm/models",
+    "/load-from-file/",
+    "/load-model",
+    "/load-priority-models",
+    "/login",
+    "/logout",
+    "/manifests/compliance",
+    "/manifests/verify",
+    "/me",
+    "/meetings/",
+    "/memory",
+    "/memory/audit",
+    "/memory/cas",
+    "/memory/cost-tracking",
+    "/memory/histograms",
+    "/memory/insights",
+    "/memory/prometheus",
+    "/memory/slo-burn-rate",
+    "/memory/stats",
+    "/memory/update",
+    "/merge",
+    "/message-queue/",
+    "/message-queue/dead-letter",
+    "/message-queue/enqueue",
+    "/message-queue/stats",
+    "/metrics",
+    "/metrics/summary",
+    "/models",
+    "/neighbors",
+    "/observer/",
+    "/observer/join",
+    "/observer/sessions",
+    "/observer/start",
+    "/org_snapshot",
+    "/override",
+    "/override/execute",
+    "/override/history",
+    "/overrides",
+    "/pack",
+    "/parameters",
+    "/parse_response",
+    "/patterns",
+    "/patterns/",
+    "/pending",
+    "/perform",
+    "/policy",
+    "/positions/",
+    "/presence",
+    "/process",
+    "/project-planning",
+    "/project-plans",
+    "/project/",
+    "/projects",
+    "/projects/",
+    "/prompt",
+    "/propose_experience",
+    "/propose_knowledge",
+    "/providers",
+    "/publish/",
+    "/query",
+    "/queue",
+    "/read-all",
+    "/rebuild_adjacency",
+    "/recipient/",
+    "/recommend",
+    "/recommendations",
+    "/record-activity",
+    "/record-memory-update",
+    "/red-blue/drill",
+    "/red-blue/stats",
+    "/refresh",
+    "/register",
+    "/response_template",
+    "/restore-computer-voice",
+    "/reverse-attack/stats",
+    "/reverse-attack/trace/",
+    "/reverse-attack/traces",
+    "/review/",
+    "/revoke",
+    "/roles/available",
+    "/rollback",
+    "/rounds/",
+    "/rounds/current",
+    "/rounds/history",
+    "/routing",
+    "/routing/simple",
+    "/routing_stats",
+    "/run",
+    "/save-to-file",
+    "/schedule",
+    "/schedule/meeting",
+    "/search",
+    "/search-history",
+    "/send",
+    "/session",
+    "/session/",
+    "/sessions",
+    "/sessions/",
+    "/sessions/create",
+    "/should-deep-search",
+    "/spiral",
+    "/start",
+    "/start-collaboration",
+    "/stats",
+    "/stats/overview",
+    "/stats/performance",
+    "/stats/summary",
+    "/status",
+    "/store",
+    "/strategic-roadmap",
+    "/stream",
+    "/subscribe/",
+    "/summary",
+    "/switch-model",
+    "/synthesis-summary",
+    "/synthesis/history",
+    "/synthesize",
+    "/system",
+    "/system/emergency-controls",
+    "/system/emergency/freeze-blockchain",
+    "/system/emergency/lockdown",
+    "/system/emergency/override-all",
+    "/system/emergency/stop-all",
+    "/system/lock",
+    "/talk-mode",
+    "/task/",
+    "/template/",
+    "/templates",
+    "/templates/",
+    "/templates/list",
+    "/tenant-rate-limit/",
+    "/tenant-rate-limit/stats",
+    "/test",
+    "/test-voice",
+    "/threats",
+    "/threats/detect",
+    "/threats/summary",
+    "/token",
+    "/tools",
+    "/tools/execute",
+    "/training/",
+    "/transition/",
+    "/types/available",
+    "/ui",
+    "/ui/agents",
+    "/ui/analytics",
+    "/ui/cmp-voting",
+    "/ui/command-center",
+    "/ui/conference-room",
+    "/ui/council",
+    "/ui/council-dashboard",
+    "/ui/council-debate",
+    "/ui/council-synthesis",
+    "/ui/daena-office",
+    "/ui/dashboard",
+    "/ui/department/",
+    "/ui/departments",
+    "/ui/enhanced-dashboard",
+    "/ui/files",
+    "/ui/founder-panel",
+    "/ui/health",
+    "/ui/memory",
+    "/ui/strategic-meetings",
+    "/ui/strategic-room",
+    "/ui/task-timeline",
+    "/ui/voice-panel",
+    "/upload-document",
+    "/upload-voice",
+    "/verify",
+    "/voice-analytics",
+    "/voice-recording",
+    "/web3/contracts",
+    "/web3/deploy-contract",
+    "/web3/verified",
+    "/web3/verify-voice",
+    "/web3/voice-identities",
+    "/workflows",
+    "/workflows/",
+    "/ws/info"
+  ],
+  "backend_modules": {
+    "backend.check_db": {
+      "path": "backend\\check_db.py",
+      "imports_count": 1
+    },
+    "backend.daena_brain": {
+      "path": "backend\\daena_brain.py",
+      "imports_count": 5
+    },
+    "backend.database": {
+      "path": "backend\\database.py",
+      "imports_count": 2
+    },
+    "backend.debug_sunflower": {
+      "path": "backend\\debug_sunflower.py",
+      "imports_count": 5
+    },
+    "backend.decision": {
+      "path": "backend\\decision.py",
+      "imports_count": 2
+    },
+    "backend.main": {
+      "path": "backend\\main.py",
+      "imports_count": 27
+    },
+    "backend.main_fixed": {
+      "path": "backend\\main_fixed.py",
+      "imports_count": 11
+    },
+    "backend.start_server": {
+      "path": "backend\\start_server.py",
+      "imports_count": 3
+    },
+    "backend.test_file_system": {
+      "path": "backend\\test_file_system.py",
+      "imports_count": 6
+    },
+    "backend.test_registry": {
+      "path": "backend\\test_registry.py",
+      "imports_count": 5
+    },
+    "backend.test_simple": {
+      "path": "backend\\test_simple.py",
+      "imports_count": 2
+    },
+    "backend.agents.email_builder_agent": {
+      "path": "backend\\agents\\email_builder_agent.py",
+      "imports_count": 7
+    },
+    "backend.agents.investor_scraper_agent": {
+      "path": "backend\\agents\\investor_scraper_agent.py",
+      "imports_count": 9
+    },
+    "backend.api.app": {
+      "path": "backend\\api\\app.py",
+      "imports_count": 2
+    },
+    "backend.api.ws_agent": {
+      "path": "backend\\api\\ws_agent.py",
+      "imports_count": 1
+    },
+    "backend.benchmarks.routing_benchmark": {
+      "path": "backend\\benchmarks\\routing_benchmark.py",
+      "imports_count": 9
+    },
+    "backend.config.constants": {
+      "path": "backend\\config\\constants.py",
+      "imports_count": 1
+    },
+    "backend.config.council_config": {
+      "path": "backend\\config\\council_config.py",
+      "imports_count": 2
+    },
+    "backend.config.logging_config": {
+      "path": "backend\\config\\logging_config.py",
+      "imports_count": 6
+    },
+    "backend.config.settings": {
+      "path": "backend\\config\\settings.py",
+      "imports_count": 7
+    },
+    "backend.config.voice_config": {
+      "path": "backend\\config\\voice_config.py",
+      "imports_count": 4
+    },
+    "backend.llm.model_router": {
+      "path": "backend\\llm\\model_router.py",
+      "imports_count": 7
+    },
+    "backend.maintenance.activate_all_agents": {
+      "path": "backend\\maintenance\\activate_all_agents.py",
+      "imports_count": 4
+    },
+    "backend.middleware.abac_middleware": {
+      "path": "backend\\middleware\\abac_middleware.py",
+      "imports_count": 5
+    },
+    "backend.middleware.api_key_guard": {
+      "path": "backend\\middleware\\api_key_guard.py",
+      "imports_count": 5
+    },
+    "backend.middleware.auth_middleware": {
+      "path": "backend\\middleware\\auth_middleware.py",
+      "imports_count": 6
+    },
+    "backend.middleware.csrf_middleware": {
+      "path": "backend\\middleware\\csrf_middleware.py",
+      "imports_count": 6
+    },
+    "backend.middleware.kill_switch": {
+      "path": "backend\\middleware\\kill_switch.py",
+      "imports_count": 4
+    },
+    "backend.middleware.rate_limit": {
+      "path": "backend\\middleware\\rate_limit.py",
+      "imports_count": 6
+    },
+    "backend.middleware.redaction": {
+      "path": "backend\\middleware\\redaction.py",
+      "imports_count": 4
+    },
+    "backend.middleware.role_middleware": {
+      "path": "backend\\middleware\\role_middleware.py",
+      "imports_count": 7
+    },
+    "backend.middleware.tenant_context": {
+      "path": "backend\\middleware\\tenant_context.py",
+      "imports_count": 4
+    },
+    "backend.middleware.tenant_rate_limit": {
+      "path": "backend\\middleware\\tenant_rate_limit.py",
+      "imports_count": 8
+    },
+    "backend.middleware.tracing_middleware": {
+      "path": "backend\\middleware\\tracing_middleware.py",
+      "imports_count": 7
+    },
+    "backend.models.chat_history": {
+      "path": "backend\\models\\chat_history.py",
+      "imports_count": 7
+    },
+    "backend.models.council": {
+      "path": "backend\\models\\council.py",
+      "imports_count": 4
+    },
+    "backend.models.enterprise_dna": {
+      "path": "backend\\models\\enterprise_dna.py",
+      "imports_count": 7
+    },
+    "backend.routes.abstract_store": {
+      "path": "backend\\routes\\abstract_store.py",
+      "imports_count": 4
+    },
+    "backend.routes.agents": {
+      "path": "backend\\routes\\agents.py",
+      "imports_count": 9
+    },
+    "backend.routes.agent_builder": {
+      "path": "backend\\routes\\agent_builder.py",
+      "imports_count": 8
+    },
+    "backend.routes.agent_builder_api": {
+      "path": "backend\\routes\\agent_builder_api.py",
+      "imports_count": 8
+    },
+    "backend.routes.agent_builder_api_simple": {
+      "path": "backend\\routes\\agent_builder_api_simple.py",
+      "imports_count": 6
+    },
+    "backend.routes.agent_builder_complete": {
+      "path": "backend\\routes\\agent_builder_complete.py",
+      "imports_count": 8
+    },
+    "backend.routes.agent_builder_platform": {
+      "path": "backend\\routes\\agent_builder_platform.py",
+      "imports_count": 7
+    },
+    "backend.routes.agent_builder_simple": {
+      "path": "backend\\routes\\agent_builder_simple.py",
+      "imports_count": 8
+    },
+    "backend.routes.ai_capabilities": {
+      "path": "backend\\routes\\ai_capabilities.py",
+      "imports_count": 5
+    },
+    "backend.routes.ai_models": {
+      "path": "backend\\routes\\ai_models.py",
+      "imports_count": 7
+    },
+    "backend.routes.analytics": {
+      "path": "backend\\routes\\analytics.py",
+      "imports_count": 5
+    },
+    "backend.routes.audit": {
+      "path": "backend\\routes\\audit.py",
+      "imports_count": 6
+    },
+    "backend.routes.auth": {
+      "path": "backend\\routes\\auth.py",
+      "imports_count": 4
+    },
+    "backend.routes.automation": {
+      "path": "backend\\routes\\automation.py",
+      "imports_count": 6
+    },
+    "backend.routes.brain": {
+      "path": "backend\\routes\\brain.py",
+      "imports_count": 5
+    },
+    "backend.routes.chat_history": {
+      "path": "backend\\routes\\chat_history.py",
+      "imports_count": 9
+    },
+    "backend.routes.cmp_tools": {
+      "path": "backend\\routes\\cmp_tools.py",
+      "imports_count": 6
+    },
+    "backend.routes.cmp_voting": {
+      "path": "backend\\routes\\cmp_voting.py",
+      "imports_count": 8
+    },
+    "backend.routes.compliance": {
+      "path": "backend\\routes\\compliance.py",
+      "imports_count": 5
+    },
+    "backend.routes.conference_room": {
+      "path": "backend\\routes\\conference_room.py",
+      "imports_count": 9
+    },
+    "backend.routes.consultation": {
+      "path": "backend\\routes\\consultation.py",
+      "imports_count": 8
+    },
+    "backend.routes.council": {
+      "path": "backend\\routes\\council.py",
+      "imports_count": 7
+    },
+    "backend.routes.council_approval": {
+      "path": "backend\\routes\\council_approval.py",
+      "imports_count": 6
+    },
+    "backend.routes.council_rounds": {
+      "path": "backend\\routes\\council_rounds.py",
+      "imports_count": 5
+    },
+    "backend.routes.council_status": {
+      "path": "backend\\routes\\council_status.py",
+      "imports_count": 4
+    },
+    "backend.routes.council_v2": {
+      "path": "backend\\routes\\council_v2.py",
+      "imports_count": 4
+    },
+    "backend.routes.daena": {
+      "path": "backend\\routes\\daena.py",
+      "imports_count": 11
+    },
+    "backend.routes.daena_decisions": {
+      "path": "backend\\routes\\daena_decisions.py",
+      "imports_count": 9
+    },
+    "backend.routes.daena_vp": {
+      "path": "backend\\routes\\daena_vp.py",
+      "imports_count": 10
+    },
+    "backend.routes.data_sources": {
+      "path": "backend\\routes\\data_sources.py",
+      "imports_count": 7
+    },
+    "backend.routes.deep_search": {
+      "path": "backend\\routes\\deep_search.py",
+      "imports_count": 9
+    },
+    "backend.routes.departments": {
+      "path": "backend\\routes\\departments.py",
+      "imports_count": 8
+    },
+    "backend.routes.enhanced_brain": {
+      "path": "backend\\routes\\enhanced_brain.py",
+      "imports_count": 9
+    },
+    "backend.routes.enterprise_dna": {
+      "path": "backend\\routes\\enterprise_dna.py",
+      "imports_count": 6
+    },
+    "backend.routes.events": {
+      "path": "backend\\routes\\events.py",
+      "imports_count": 5
+    },
+    "backend.routes.experience_pipeline": {
+      "path": "backend\\routes\\experience_pipeline.py",
+      "imports_count": 5
+    },
+    "backend.routes.explorer": {
+      "path": "backend\\routes\\explorer.py",
+      "imports_count": 6
+    },
+    "backend.routes.file_system": {
+      "path": "backend\\routes\\file_system.py",
+      "imports_count": 5
+    },
+    "backend.routes.founder_panel": {
+      "path": "backend\\routes\\founder_panel.py",
+      "imports_count": 6
+    },
+    "backend.routes.health": {
+      "path": "backend\\routes\\health.py",
+      "imports_count": 5
+    },
+    "backend.routes.health_routing": {
+      "path": "backend\\routes\\health_routing.py",
+      "imports_count": 4
+    },
+    "backend.routes.hiring": {
+      "path": "backend\\routes\\hiring.py",
+      "imports_count": 6
+    },
+    "backend.routes.honeycomb": {
+      "path": "backend\\routes\\honeycomb.py",
+      "imports_count": 3
+    },
+    "backend.routes.honey_knowledge": {
+      "path": "backend\\routes\\honey_knowledge.py",
+      "imports_count": 10
+    },
+    "backend.routes.human_relay": {
+      "path": "backend\\routes\\human_relay.py",
+      "imports_count": 6
+    },
+    "backend.routes.integrations": {
+      "path": "backend\\routes\\integrations.py",
+      "imports_count": 5
+    },
+    "backend.routes.knowledge_distillation": {
+      "path": "backend\\routes\\knowledge_distillation.py",
+      "imports_count": 7
+    },
+    "backend.routes.llm": {
+      "path": "backend\\routes\\llm.py",
+      "imports_count": 7
+    },
+    "backend.routes.meetings": {
+      "path": "backend\\routes\\meetings.py",
+      "imports_count": 9
+    },
+    "backend.routes.message_queue": {
+      "path": "backend\\routes\\message_queue.py",
+      "imports_count": 4
+    },
+    "backend.routes.models": {
+      "path": "backend\\routes\\models.py",
+      "imports_count": 1
+    },
+    "backend.routes.monitoring": {
+      "path": "backend\\routes\\monitoring.py",
+      "imports_count": 12
+    },
+    "backend.routes.notifications": {
+      "path": "backend\\routes\\notifications.py",
+      "imports_count": 5
+    },
+    "backend.routes.ocr_comparison": {
+      "path": "backend\\routes\\ocr_comparison.py",
+      "imports_count": 7
+    },
+    "backend.routes.ocr_fallback": {
+      "path": "backend\\routes\\ocr_fallback.py",
+      "imports_count": 4
+    },
+    "backend.routes.presence": {
+      "path": "backend\\routes\\presence.py",
+      "imports_count": 4
+    },
+    "backend.routes.projects": {
+      "path": "backend\\routes\\projects.py",
+      "imports_count": 6
+    },
+    "backend.routes.quorum_backpressure": {
+      "path": "backend\\routes\\quorum_backpressure.py",
+      "imports_count": 6
+    },
+    "backend.routes.realtime_collaboration": {
+      "path": "backend\\routes\\realtime_collaboration.py",
+      "imports_count": 5
+    },
+    "backend.routes.registry": {
+      "path": "backend\\routes\\registry.py",
+      "imports_count": 5
+    },
+    "backend.routes.security": {
+      "path": "backend\\routes\\security.py",
+      "imports_count": 6
+    },
+    "backend.routes.self_evolve": {
+      "path": "backend\\routes\\self_evolve.py",
+      "imports_count": 6
+    },
+    "backend.routes.skill_capsules": {
+      "path": "backend\\routes\\skill_capsules.py",
+      "imports_count": 3
+    },
+    "backend.routes.slo": {
+      "path": "backend\\routes\\slo.py",
+      "imports_count": 4
+    },
+    "backend.routes.strategic_assembly": {
+      "path": "backend\\routes\\strategic_assembly.py",
+      "imports_count": 6
+    },
+    "backend.routes.strategic_meetings": {
+      "path": "backend\\routes\\strategic_meetings.py",
+      "imports_count": 11
+    },
+    "backend.routes.strategic_room": {
+      "path": "backend\\routes\\strategic_room.py",
+      "imports_count": 7
+    },
+    "backend.routes.structure": {
+      "path": "backend\\routes\\structure.py",
+      "imports_count": 5
+    },
+    "backend.routes.sunflower": {
+      "path": "backend\\routes\\sunflower.py",
+      "imports_count": 4
+    },
+    "backend.routes.system_summary": {
+      "path": "backend\\routes\\system_summary.py",
+      "imports_count": 8
+    },
+    "backend.routes.tasks": {
+      "path": "backend\\routes\\tasks.py",
+      "imports_count": 7
+    },
+    "backend.routes.task_timeline": {
+      "path": "backend\\routes\\task_timeline.py",
+      "imports_count": 8
+    },
+    "backend.routes.tenant_dashboard": {
+      "path": "backend\\routes\\tenant_dashboard.py",
+      "imports_count": 6
+    },
+    "backend.routes.tenant_rate_limit": {
+      "path": "backend\\routes\\tenant_rate_limit.py",
+      "imports_count": 4
+    },
+    "backend.routes.think": {
+      "path": "backend\\routes\\think.py",
+      "imports_count": 3
+    },
+    "backend.routes.tools": {
+      "path": "backend\\routes\\tools.py",
+      "imports_count": 7
+    },
+    "backend.routes.ui": {
+      "path": "backend\\routes\\ui.py",
+      "imports_count": 3
+    },
+    "backend.routes.users": {
+      "path": "backend\\routes\\users.py",
+      "imports_count": 7
+    },
+    "backend.routes.voice": {
+      "path": "backend\\routes\\voice.py",
+      "imports_count": 11
+    },
+    "backend.routes.voice_agents": {
+      "path": "backend\\routes\\voice_agents.py",
+      "imports_count": 10
+    },
+    "backend.routes.voice_panel": {
+      "path": "backend\\routes\\voice_panel.py",
+      "imports_count": 5
+    },
+    "backend.routes.websocket_fallback": {
+      "path": "backend\\routes\\websocket_fallback.py",
+      "imports_count": 1
+    },
+    "backend.routes.workflows": {
+      "path": "backend\\routes\\workflows.py",
+      "imports_count": 7
+    },
+    "backend.scripts.check_db": {
+      "path": "backend\\scripts\\check_db.py",
+      "imports_count": 3
+    },
+    "backend.scripts.clean_and_reseed": {
+      "path": "backend\\scripts\\clean_and_reseed.py",
+      "imports_count": 6
+    },
+    "backend.scripts.comprehensive_voice_test": {
+      "path": "backend\\scripts\\comprehensive_voice_test.py",
+      "imports_count": 7
+    },
+    "backend.scripts.create_daena_voice": {
+      "path": "backend\\scripts\\create_daena_voice.py",
+      "imports_count": 5
+    },
+    "backend.scripts.debug_sunflower": {
+      "path": "backend\\scripts\\debug_sunflower.py",
+      "imports_count": 4
+    },
+    "backend.scripts.fix_agent_count": {
+      "path": "backend\\scripts\\fix_agent_count.py",
+      "imports_count": 7
+    },
+    "backend.scripts.fix_department_id_links": {
+      "path": "backend\\scripts\\fix_department_id_links.py",
+      "imports_count": 3
+    },
+    "backend.scripts.fix_department_structure": {
+      "path": "backend\\scripts\\fix_department_structure.py",
+      "imports_count": 7
+    },
+    "backend.scripts.fix_tenant_id_column": {
+      "path": "backend\\scripts\\fix_tenant_id_column.py",
+      "imports_count": 5
+    },
+    "backend.scripts.generate_daena_voice": {
+      "path": "backend\\scripts\\generate_daena_voice.py",
+      "imports_count": 5
+    },
+    "backend.scripts.init_data": {
+      "path": "backend\\scripts\\init_data.py",
+      "imports_count": 5
+    },
+    "backend.scripts.init_database": {
+      "path": "backend\\scripts\\init_database.py",
+      "imports_count": 7
+    },
+    "backend.scripts.init_sunflower_registry": {
+      "path": "backend\\scripts\\init_sunflower_registry.py",
+      "imports_count": 7
+    },
+    "backend.scripts.migrate_add_department_id": {
+      "path": "backend\\scripts\\migrate_add_department_id.py",
+      "imports_count": 5
+    },
+    "backend.scripts.recreate_database": {
+      "path": "backend\\scripts\\recreate_database.py",
+      "imports_count": 4
+    },
+    "backend.scripts.seed_6x8_council": {
+      "path": "backend\\scripts\\seed_6x8_council.py",
+      "imports_count": 9
+    },
+    "backend.scripts.seed_default_dna": {
+      "path": "backend\\scripts\\seed_default_dna.py",
+      "imports_count": 2
+    },
+    "backend.scripts.setup_data_directory": {
+      "path": "backend\\scripts\\setup_data_directory.py",
+      "imports_count": 4
+    },
+    "backend.scripts.test_file_monitor": {
+      "path": "backend\\scripts\\test_file_monitor.py",
+      "imports_count": 8
+    },
+    "backend.scripts.test_founder_recognition": {
+      "path": "backend\\scripts\\test_founder_recognition.py",
+      "imports_count": 6
+    },
+    "backend.scripts.test_voice_cloning": {
+      "path": "backend\\scripts\\test_voice_cloning.py",
+      "imports_count": 4
+    },
+    "backend.scripts.test_voice_conversation": {
+      "path": "backend\\scripts\\test_voice_conversation.py",
+      "imports_count": 4
+    },
+    "backend.scripts.test_voice_system": {
+      "path": "backend\\scripts\\test_voice_system.py",
+      "imports_count": 5
+    },
+    "backend.scripts.verify_no_truncation": {
+      "path": "backend\\scripts\\verify_no_truncation.py",
+      "imports_count": 4
+    },
+    "backend.scripts.voice_demo": {
+      "path": "backend\\scripts\\voice_demo.py",
+      "imports_count": 8
+    },
+    "backend.security.dev_user": {
+      "path": "backend\\security\\dev_user.py",
+      "imports_count": 2
+    },
+    "backend.services.advanced_analytics": {
+      "path": "backend\\services\\advanced_analytics.py",
+      "imports_count": 9
+    },
+    "backend.services.agent_awareness": {
+      "path": "backend\\services\\agent_awareness.py",
+      "imports_count": 5
+    },
+    "backend.services.agent_state_persistence": {
+      "path": "backend\\services\\agent_state_persistence.py",
+      "imports_count": 7
+    },
+    "backend.services.analytics_service": {
+      "path": "backend\\services\\analytics_service.py",
+      "imports_count": 9
+    },
+    "backend.services.auth_service": {
+      "path": "backend\\services\\auth_service.py",
+      "imports_count": 4
+    },
+    "backend.services.automation_service": {
+      "path": "backend\\services\\automation_service.py",
+      "imports_count": 15
+    },
+    "backend.services.billing_service": {
+      "path": "backend\\services\\billing_service.py",
+      "imports_count": 6
+    },
+    "backend.services.budget_service": {
+      "path": "backend\\services\\budget_service.py",
+      "imports_count": 6
+    },
+    "backend.services.cmp_service": {
+      "path": "backend\\services\\cmp_service.py",
+      "imports_count": 3
+    },
+    "backend.services.cmp_tool_registry": {
+      "path": "backend\\services\\cmp_tool_registry.py",
+      "imports_count": 4
+    },
+    "backend.services.council_approval_service": {
+      "path": "backend\\services\\council_approval_service.py",
+      "imports_count": 6
+    },
+    "backend.services.council_evolution": {
+      "path": "backend\\services\\council_evolution.py",
+      "imports_count": 5
+    },
+    "backend.services.council_scheduler": {
+      "path": "backend\\services\\council_scheduler.py",
+      "imports_count": 9
+    },
+    "backend.services.council_service": {
+      "path": "backend\\services\\council_service.py",
+      "imports_count": 10
+    },
+    "backend.services.email_service": {
+      "path": "backend\\services\\email_service.py",
+      "imports_count": 8
+    },
+    "backend.services.enterprise_dna_service": {
+      "path": "backend\\services\\enterprise_dna_service.py",
+      "imports_count": 8
+    },
+    "backend.services.explorer_bridge": {
+      "path": "backend\\services\\explorer_bridge.py",
+      "imports_count": 5
+    },
+    "backend.services.file_monitor": {
+      "path": "backend\\services\\file_monitor.py",
+      "imports_count": 9
+    },
+    "backend.services.gpu_service": {
+      "path": "backend\\services\\gpu_service.py",
+      "imports_count": 10
+    },
+    "backend.services.honeycomb_routing": {
+      "path": "backend\\services\\honeycomb_routing.py",
+      "imports_count": 3
+    },
+    "backend.services.human_relay_explorer": {
+      "path": "backend\\services\\human_relay_explorer.py",
+      "imports_count": 10
+    },
+    "backend.services.jwt_service": {
+      "path": "backend\\services\\jwt_service.py",
+      "imports_count": 8
+    },
+    "backend.services.llm_service": {
+      "path": "backend\\services\\llm_service.py",
+      "imports_count": 12
+    },
+    "backend.services.local_llm_ollama": {
+      "path": "backend\\services\\local_llm_ollama.py",
+      "imports_count": 4
+    },
+    "backend.services.message_queue_persistence": {
+      "path": "backend\\services\\message_queue_persistence.py",
+      "imports_count": 12
+    },
+    "backend.services.model_registry": {
+      "path": "backend\\services\\model_registry.py",
+      "imports_count": 4
+    },
+    "backend.services.presence_service": {
+      "path": "backend\\services\\presence_service.py",
+      "imports_count": 9
+    },
+    "backend.services.prompt_injection_detector": {
+      "path": "backend\\services\\prompt_injection_detector.py",
+      "imports_count": 5
+    },
+    "backend.services.realtime_collaboration": {
+      "path": "backend\\services\\realtime_collaboration.py",
+      "imports_count": 10
+    },
+    "backend.services.realtime_metrics_stream": {
+      "path": "backend\\services\\realtime_metrics_stream.py",
+      "imports_count": 11
+    },
+    "backend.services.red_blue_team": {
+      "path": "backend\\services\\red_blue_team.py",
+      "imports_count": 9
+    },
+    "backend.services.reverse_attack_ai": {
+      "path": "backend\\services\\reverse_attack_ai.py",
+      "imports_count": 10
+    },
+    "backend.services.skill_capsules": {
+      "path": "backend\\services\\skill_capsules.py",
+      "imports_count": 11
+    },
+    "backend.services.threat_detection": {
+      "path": "backend\\services\\threat_detection.py",
+      "imports_count": 10
+    },
+    "backend.services.voice_awakening": {
+      "path": "backend\\services\\voice_awakening.py",
+      "imports_count": 10
+    },
+    "backend.services.voice_cloning": {
+      "path": "backend\\services\\voice_cloning.py",
+      "imports_count": 10
+    },
+    "backend.services.voice_service": {
+      "path": "backend\\services\\voice_service.py",
+      "imports_count": 26
+    },
+    "backend.services.websocket_service": {
+      "path": "backend\\services\\websocket_service.py",
+      "imports_count": 6
+    },
+    "backend.tools.audit_log": {
+      "path": "backend\\tools\\audit_log.py",
+      "imports_count": 7
+    },
+    "backend.tools.policies": {
+      "path": "backend\\tools\\policies.py",
+      "imports_count": 6
+    },
+    "backend.tools.registry": {
+      "path": "backend\\tools\\registry.py",
+      "imports_count": 6
+    },
+    "backend.utils.backpressure": {
+      "path": "backend\\utils\\backpressure.py",
+      "imports_count": 8
+    },
+    "backend.utils.logging": {
+      "path": "backend\\utils\\logging.py",
+      "imports_count": 5
+    },
+    "backend.utils.log_bootstrap": {
+      "path": "backend\\utils\\log_bootstrap.py",
+      "imports_count": 3
+    },
+    "backend.utils.log_telemetry": {
+      "path": "backend\\utils\\log_telemetry.py",
+      "imports_count": 2
+    },
+    "backend.utils.message_bus": {
+      "path": "backend\\utils\\message_bus.py",
+      "imports_count": 7
+    },
+    "backend.utils.message_bus_v2": {
+      "path": "backend\\utils\\message_bus_v2.py",
+      "imports_count": 10
+    },
+    "backend.utils.quorum": {
+      "path": "backend\\utils\\quorum.py",
+      "imports_count": 6
+    },
+    "backend.utils.sunflower": {
+      "path": "backend\\utils\\sunflower.py",
+      "imports_count": 2
+    },
+    "backend.utils.sunflower_registry": {
+      "path": "backend\\utils\\sunflower_registry.py",
+      "imports_count": 8
+    },
+    "backend.utils.trace_logger": {
+      "path": "backend\\utils\\trace_logger.py",
+      "imports_count": 0
+    },
+    "backend.utils.tracing": {
+      "path": "backend\\utils\\tracing.py",
+      "imports_count": 6
+    },
+    "backend.tools.executors.browser_automation_selenium": {
+      "path": "backend\\tools\\executors\\browser_automation_selenium.py",
+      "imports_count": 6
+    },
+    "backend.tools.executors.desktop_automation_pyautogui": {
+      "path": "backend\\tools\\executors\\desktop_automation_pyautogui.py",
+      "imports_count": 4
+    },
+    "backend.tools.executors.ui_consult_playwright": {
+      "path": "backend\\tools\\executors\\ui_consult_playwright.py",
+      "imports_count": 8
+    },
+    "backend.tools.executors.web_scrape_bs4": {
+      "path": "backend\\tools\\executors\\web_scrape_bs4.py",
+      "imports_count": 5
+    },
+    "backend.core.brain.store": {
+      "path": "backend\\core\\brain\\store.py",
+      "imports_count": 9
+    }
+  },
+  "frontend_files": {
+    "frontend\\templates\\agents.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/agents/${agent.id}/assign_task`, {\n                                method: ",
+        "/api/v1/agents/${agent.id}/chat`, {\n                                method: ",
+        "/api/v1/agents/?limit=100",
+        "/api/v1/ai/capabilities",
+        "/api/v1/system/metrics"
+      ]
+    },
+    "frontend\\templates\\agents_list.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/agents/${agentId}`, {target: ",
+        "/api/v1/agents/deploy"
+      ]
+    },
+    "frontend\\templates\\analytics.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/analytics/summary",
+        "/api/v1/system/metrics",
+        "/api/v1/system/stats",
+        "/api/v1/system/stats\n                        const response = await fetch(",
+        "/api/v1/system/summary"
+      ]
+    },
+    "frontend\\templates\\cmp_voting.html": {
+      "type": "template",
+      "api_calls": []
+    },
+    "frontend\\templates\\conference_room.html": {
+      "type": "template",
+      "api_calls": []
+    },
+    "frontend\\templates\\council_dashboard.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/council/${this.selectedDepartment}/debate`, {\n                            method: ",
+        "/api/v1/council/${this.selectedDepartment}/synthesis`, {\n                            method: ",
+        "/api/v1/council/${this.selectedDepartment}`, {\n                            headers: {\n                                "
+      ]
+    },
+    "frontend\\templates\\council_debate.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/daena/chat"
+      ]
+    },
+    "frontend\\templates\\council_debate_panel.html": {
+      "type": "template",
+      "api_calls": []
+    },
+    "frontend\\templates\\council_panel.html": {
+      "type": "template",
+      "api_calls": []
+    },
+    "frontend\\templates\\council_rounds_panel.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/council/rounds/history?limit=10"
+      ]
+    },
+    "frontend\\templates\\council_synthesis.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/council/approve",
+        "/api/v1/council/export",
+        "/api/v1/council/share",
+        "/api/v1/daena/chat"
+      ]
+    },
+    "frontend\\templates\\council_synthesis_panel.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/council/approve-synthesis",
+        "/api/v1/council/override-synthesis",
+        "/api/v1/council/pin-synthesis",
+        "/api/v1/council/request-revision"
+      ]
+    },
+    "frontend\\templates\\daena_command_center.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/council/status",
+        "/api/v1/registry/summary",
+        "/api/v1/system/summary?tenant_id=${tenantId}`);\n                        \n                        if (summaryResponse.ok) {\n                            const summaryData = await summaryResponse.json();\n                            if (summaryData.success && summaryData.system) {\n                                // Update stats from database (source of truth)\n                                this.stats.totalAgents = summaryData.system.total_agents || 0;\n                                this.stats.activeAgents = summaryData.system.active_agents || 0;\n                                this.stats.totalProjects = summaryData.system.total_projects || 0;\n                                \n                                // Update CAS hit rate from summary\n                                if (summaryData.cas) {\n                                    this.stats.casHitRate = summaryData.cas.hit_rate || 0;\n                                }\n                                \n                                // Update departments list from database\n                                if (summaryData.departments) {\n                                    this.departments = summaryData.departments.map(dept => ({\n                                        id: dept.id,\n                                        name: dept.name,\n                                        agent_count: dept.agent_count,\n                                        active_agents: dept.active_agents || dept.agent_count\n                                    }));\n                                }\n                                \n                                return; // Success, exit early\n                            }\n                        }\n                        \n                        // Fallback to /api/v1/system/stats if summary fails\n                        const statsResponse = await fetch(`/api/v1/system/stats?tenant_id=${tenantId}`);\n                        if (statsResponse.ok) {\n                            const statsData = await statsResponse.json();\n                            if (statsData.success && statsData.system) {\n                                this.stats.totalAgents = statsData.system.total_agents || 0;\n                                this.stats.activeAgents = statsData.system.active_agents || 0;\n                                this.stats.totalProjects = statsData.system.total_projects || 0;\n                                \n                                if (statsData.departments) {\n                                    this.departments = statsData.departments.map(dept => ({\n                                        id: dept.id,\n                                        name: dept.name,\n                                        agent_count: dept.agent_count\n                                    }));\n                                }\n                            }\n                        }\n                        \n                        // Load CAS hit rate separately if not in summary\n                        if (!this.stats.casHitRate) {\n                            try {\n                                const casResponse = await fetch(`/api/v1/monitoring/memory/cas?tenant_id=${tenantId}`);\n                                if (casResponse.ok) {\n                                    const casData = await casResponse.json();\n                                    this.stats.casHitRate = casData.metrics?.hit_rate || 0;\n                                }\n                            } catch (e) {\n                                console.debug("
+      ]
+    },
+    "frontend\\templates\\daena_office.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/ai/capabilities",
+        "/api/v1/chat",
+        "/api/v1/chat-history/sessions",
+        "/api/v1/chat-history/sessions/${session.id}`, {\n                                method: ",
+        "/api/v1/chat-history/sessions/${sessionId}`);\n                        if (response.ok) {\n                            const session = await response.json();\n                            this.activeSessionId = sessionId;\n                            this.currentMessages = session.messages || [];\n                            this.scrollToBottom();\n                        }\n                    } catch (error) {\n                        console.error(",
+        "/api/v1/chat-history/sessions/${this.activeSessionId}/messages`, {\n                            method: ",
+        "/api/v1/chat-history/sessions/${this.editingSession.id}`, {\n                            method: ",
+        "/api/v1/deep-search/perform",
+        "/api/v1/system/stats",
+        "/api/v1/voice/activate",
+        "/api/v1/voice/deactivate",
+        "/api/v1/voice/interrupt",
+        "/api/v1/voice/restore-computer-voice",
+        "/api/v1/voice/talk-mode"
+      ]
+    },
+    "frontend\\templates\\dashboard.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/ai/capabilities",
+        "/api/v1/automation/process/${processId}/cancel`, { method: ",
+        "/api/v1/automation/process/start",
+        "/api/v1/automation/processes?limit=50",
+        "/api/v1/brain/commit/${proposalId}`, {\n                method: ",
+        "/api/v1/brain/queue",
+        "/api/v1/brain/status",
+        "/api/v1/daena/chat",
+        "/api/v1/departments/?limit=100",
+        "/api/v1/dna/default/health",
+        "/api/v1/events/stream",
+        "/api/v1/explorer/build_prompt",
+        "/api/v1/explorer/merge",
+        "/api/v1/explorer/parse_response",
+        "/api/v1/human-relay/ingest",
+        "/api/v1/human-relay/prompt",
+        "/api/v1/human-relay/synthesize",
+        "/api/v1/registry/summary",
+        "/api/v1/structure/verify",
+        "/api/v1/system/metrics",
+        "/api/v1/tools/execute",
+        "/api/v1/tools/execute)\n                // ------------------------------------------------------------------\n                toolsPanel: {\n                    open: false,\n                    tools: [],\n                    selectedTool: ",
+        "/api/v1/tools/execute) -->\n        <div x-show=",
+        "/api/v1/tools/execute`)</div>\n                        </div>\n                    </div>\n                    <div class=",
+        "/api/v1/tools/status",
+        "/api/v1/voice/daena-voice",
+        "/api/v1/voice/tts"
+      ]
+    },
+    "frontend\\templates\\departments.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/departments"
+      ]
+    },
+    "frontend\\templates\\department_customer.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/agents/?limit=100"
+      ]
+    },
+    "frontend\\templates\\department_engineering.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/departments/engineering/agents",
+        "/api/v1/departments/engineering/chat",
+        "/api/v1/departments/engineering/chat-history",
+        "/api/v1/departments/engineering/projects"
+      ]
+    },
+    "frontend\\templates\\department_finance.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/agents/?limit=100"
+      ]
+    },
+    "frontend\\templates\\department_hr.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/agents/?limit=100"
+      ]
+    },
+    "frontend\\templates\\department_legal.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/agents/?limit=100"
+      ]
+    },
+    "frontend\\templates\\department_marketing.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/agents/?limit=100"
+      ]
+    },
+    "frontend\\templates\\department_product.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/departments/product/agents",
+        "/api/v1/departments/product/chat",
+        "/api/v1/departments/product/chat-history",
+        "/api/v1/departments/product/products"
+      ]
+    },
+    "frontend\\templates\\department_sales.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/agents/?limit=100"
+      ]
+    },
+    "frontend\\templates\\enhanced_dashboard.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/monitoring/memory",
+        "/api/v1/monitoring/metrics",
+        "/api/v1/system/stats",
+        "/api/v1/system/stats if summary fails\n                        const statsResponse = await fetch(",
+        "/api/v1/system/summary"
+      ]
+    },
+    "frontend\\templates\\files.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/files",
+        "/api/v1/files/${file.id}`, {\n                                method: ",
+        "/api/v1/files/download/${file.id}`, ",
+        "/api/v1/files/folder",
+        "/api/v1/files/upload"
+      ]
+    },
+    "frontend\\templates\\founder_panel.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/ai/capabilities",
+        "/api/v1/founder-panel/daena/control",
+        "/api/v1/founder-panel/daena/instructions",
+        "/api/v1/founder-panel/decision/execute",
+        "/api/v1/founder-panel/financial/override",
+        "/api/v1/founder-panel/override/execute",
+        "/api/v1/founder-panel/system/emergency/freeze-blockchain",
+        "/api/v1/founder-panel/system/emergency/lockdown",
+        "/api/v1/founder-panel/system/emergency/override-all",
+        "/api/v1/founder-panel/system/emergency/stop-all",
+        "/api/v1/founder-panel/system/lock"
+      ]
+    },
+    "frontend\\templates\\honey_tracker.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/honey-knowledge/honey-tracker/department/${department}`);\n                        const data = await response.json();\n                        \n                        this.selectedDepartmentDetails = `\n                            <div class=",
+        "/api/v1/honey-knowledge/honey-tracker/visualization"
+      ]
+    },
+    "frontend\\templates\\layout.html": {
+      "type": "template",
+      "api_calls": []
+    },
+    "frontend\\templates\\login.html": {
+      "type": "template",
+      "api_calls": []
+    },
+    "frontend\\templates\\strategic_assembly_dashboard.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/strategic-assembly/sessions/1/founder-decision",
+        "/api/v1/strategic-assembly/sessions/create",
+        "/api/v1/strategic-assembly/synthesis/history"
+      ]
+    },
+    "frontend\\templates\\strategic_meetings.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/daena/chat",
+        "/api/v1/meetings/export",
+        "/api/v1/meetings/schedule",
+        "/api/v1/meetings/share"
+      ]
+    },
+    "frontend\\templates\\strategic_room.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/strategic-room/conflicts-analysis",
+        "/api/v1/strategic-room/department/${department}/synthesis`, {\n                            headers: { ",
+        "/api/v1/strategic-room/founder-override",
+        "/api/v1/strategic-room/generate-cross-department-analysis",
+        "/api/v1/strategic-room/synthesis-summary"
+      ]
+    },
+    "frontend\\templates\\task_timeline.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/daena/chat"
+      ]
+    },
+    "frontend\\templates\\ui_departments.html": {
+      "type": "template",
+      "api_calls": []
+    },
+    "frontend\\templates\\voice_panel.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/voice/input",
+        "/api/v1/voice/play-daena-voice?text="
+      ]
+    },
+    "frontend\\templates\\partials\\daena_chatbot.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/chat"
+      ]
+    },
+    "frontend\\templates\\partials\\navbar.html": {
+      "type": "template",
+      "api_calls": [
+        "/api/v1/daena/voice"
+      ]
+    },
+    "frontend\\static\\main.js": {
+      "type": "javascript",
+      "api_calls": [
+        "/api/v1/agents/",
+        "/api/v1/daena/chat",
+        "/api/v1/daena/status",
+        "/api/v1/departments/",
+        "/api/v1/files/upload",
+        "/api/v1/projects/"
+      ]
+    },
+    "frontend\\static\\js\\council-health-monitor.js": {
+      "type": "javascript",
+      "api_calls": [
+        "/api/v1/events/stream",
+        "/api/v1/health/council",
+        "/api/v1/health/council endpoint and displays warnings if structure diverges from 8\u00d76\n */\n\nclass CouncilHealthMonitor {\n    constructor() {\n        this.healthEndpoint = "
+      ]
+    },
+    "frontend\\static\\js\\external-integrations.js": {
+      "type": "javascript",
+      "api_calls": [
+        "/api/v1/integrations/",
+        "/api/v1/integrations/${integrationId}/test`, {\n                method: ",
+        "/api/v1/integrations/${platformId}`, {\n                method: "
+      ]
+    },
+    "frontend\\static\\js\\glowing-effect.js": {
+      "type": "javascript",
+      "api_calls": []
+    },
+    "frontend\\static\\js\\human-hiring.js": {
+      "type": "javascript",
+      "api_calls": [
+        "/api/v1/hiring/candidates/",
+        "/api/v1/hiring/interviews/",
+        "/api/v1/hiring/positions/"
+      ]
+    },
+    "frontend\\static\\js\\live-state-badge.js": {
+      "type": "javascript",
+      "api_calls": []
+    },
+    "frontend\\static\\js\\main.js": {
+      "type": "javascript",
+      "api_calls": []
+    },
+    "frontend\\static\\js\\metatron-viz.js": {
+      "type": "javascript",
+      "api_calls": [
+        "/api/v1/agents/?include_adjacency=true",
+        "/api/v1/analytics/communication-patterns",
+        "/api/v1/departments/?include_agents=true"
+      ]
+    },
+    "frontend\\static\\js\\project-workflow.js": {
+      "type": "javascript",
+      "api_calls": [
+        "/api/v1/analytics/communication-patterns?project_id=${project.id}`);\n            const data = await response.json();\n            \n            container.innerHTML = `\n                <div class=",
+        "/api/v1/projects/"
+      ]
+    },
+    "frontend\\static\\js\\realtime-dashboard.js": {
+      "type": "javascript",
+      "api_calls": [
+        "/api/v1/system/stats"
+      ]
+    },
+    "frontend\\static\\js\\realtime-sync.js": {
+      "type": "javascript",
+      "api_calls": [
+        "/api/v1/council/status",
+        "/api/v1/events/stream",
+        "/api/v1/health/council",
+        "/api/v1/registry/summary"
+      ]
+    },
+    "frontend\\static\\js\\sec-loop-panel.js": {
+      "type": "javascript",
+      "api_calls": []
+    },
+    "frontend\\static\\js\\xss_sanitize.js": {
+      "type": "javascript",
+      "api_calls": []
+    }
+  }
+}

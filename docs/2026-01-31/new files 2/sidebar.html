@@ -1,0 +1,153 @@
+<!-- sidebar.html — Daena VP Sidebar Navigation -->
+<!-- Include this partial inside any Jinja2 base template via {% include 'partials/sidebar.html' %} -->
+
+<nav class="sidebar" style="
+  width:220px;flex-shrink:0;
+  background:#111722;
+  border-right:1px solid #1e2a3a;
+  display:flex;flex-direction:column;
+  overflow-y:auto;
+  font-family:'Inter','Segoe UI',system-ui,sans-serif;
+  font-size:13px;
+  color:#c8d6e5;
+">
+
+  <!-- Logo -->
+  <div style="padding:20px 18px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #1e2a3a">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <circle cx="14" cy="14" r="13" stroke="#e8b84b" stroke-width="1.5"/>
+      <circle cx="14" cy="14" r="7" fill="#e8b84b" opacity=".3"/>
+      <circle cx="14" cy="14" r="3" fill="#e8b84b"/>
+      <line x1="14" y1="1" x2="14" y2="6" stroke="#e8b84b" stroke-width="1.5"/>
+      <line x1="14" y1="22" x2="14" y2="27" stroke="#e8b84b" stroke-width="1.5"/>
+      <line x1="1" y1="14" x2="6" y2="14" stroke="#e8b84b" stroke-width="1.5"/>
+      <line x1="22" y1="14" x2="27" y2="14" stroke="#e8b84b" stroke-width="1.5"/>
+    </svg>
+    <div>
+      <div style="font-family:'SF Mono','Fira Code',monospace;font-size:16px;font-weight:600;color:#e8b84b;letter-spacing:2px;text-transform:uppercase">Daena</div>
+      <div style="font-size:10px;color:#6b7f95;letter-spacing:1px;text-transform:uppercase;margin-top:1px">VP Dashboard</div>
+    </div>
+  </div>
+
+  <!-- Primary Navigation -->
+  <div style="font-size:9px;font-weight:600;color:#6b7f95;text-transform:uppercase;letter-spacing:1.5px;padding:18px 18px 6px">Navigation</div>
+
+  <!-- Daena Office (Chat) -->
+  <a href="/ui/daena-office"
+     id="sidebar-office"
+     style="
+       display:flex;align-items:center;gap:10px;padding:9px 18px;
+       color:#6b7f95;cursor:pointer;transition:.18s;text-decoration:none;
+       border-left:3px solid transparent;white-space:nowrap;
+     "
+     onmouseover="this.style.background='#161d2a';this.style.color='#c8d6e5'"
+     onmouseout="this.style.background='';this.style.color='#6b7f95'"
+  >
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M2 3h12v8a2 2 0 01-2 2H4a2 2 0 01-2-2V3z"/>
+      <path d="M5 7l2 2 4-4"/>
+    </svg>
+    <span>Daena Office</span>
+  </a>
+
+  <!-- Control Plane (UNIFIED — all panels) -->
+  <a href="/ui/control-plane"
+     id="sidebar-cp"
+     style="
+       display:flex;align-items:center;gap:10px;padding:9px 18px;
+       color:#e8b84b;cursor:pointer;transition:.18s;text-decoration:none;
+       border-left:3px solid #e8b84b;background:#161d2a;white-space:nowrap;
+     "
+  >
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="1" y="2" width="14" height="12" rx="2"/>
+      <path d="M1 6h14"/>
+      <circle cx="4" cy="4" r=".8" fill="currentColor" stroke="none"/>
+      <circle cx="6.5" cy="4" r=".8" fill="currentColor" stroke="none"/>
+    </svg>
+    <span>Control Plane</span>
+  </a>
+
+  <!-- Quick-Jump Section (jumps to specific Control Plane tabs) -->
+  <div style="font-size:9px;font-weight:600;color:#6b7f95;text-transform:uppercase;letter-spacing:1.5px;padding:18px 18px 6px">Quick Access</div>
+
+  <!-- Brain -->
+  <a href="/ui/control-plane#brain"
+     onclick="if(window.location.pathname==='/ui/control-plane'){if(window.switchTab)window.switchTab('brain');return false}"
+     style="
+       display:flex;align-items:center;gap:10px;padding:7px 18px 7px 32px;
+       color:#6b7f95;cursor:pointer;transition:.18s;text-decoration:none;
+       font-size:12px;white-space:nowrap;
+     "
+     onmouseover="this.style.color='#c8d6e5'"
+     onmouseout="this.style.color='#6b7f95'"
+  >
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6">
+      <path d="M8 2C5.2 2 3 4.2 3 7c0 1.5.7 2.8 1.8 3.6V13h6.4v-2.4C12.3 9.8 13 8.5 13 7c0-2.8-2.2-5-5-5z"/>
+      <path d="M5.5 13h5"/>
+    </svg>
+    <span>🧠 Brain</span>
+  </a>
+
+  <!-- DeFi / Web3 -->
+  <a href="/ui/control-plane#defi"
+     onclick="if(window.location.pathname==='/ui/control-plane'){if(window.switchTab)window.switchTab('defi');return false}"
+     style="
+       display:flex;align-items:center;gap:10px;padding:7px 18px 7px 32px;
+       color:#6b7f95;cursor:pointer;transition:.18s;text-decoration:none;
+       font-size:12px;white-space:nowrap;
+     "
+     onmouseover="this.style.color='#c8d6e5'"
+     onmouseout="this.style.color='#6b7f95'"
+  >
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6">
+      <path d="M8 1l6 3.5v7L8 15 2 11.5v-7z"/>
+      <path d="M8 5v6M5.5 6.5l2.5 2 2.5-2"/>
+    </svg>
+    <span>🔗 DeFi / Web3</span>
+  </a>
+
+  <!-- Governance -->
+  <a href="/ui/control-plane#governance"
+     onclick="if(window.location.pathname==='/ui/control-plane'){if(window.switchTab)window.switchTab('governance');return false}"
+     style="
+       display:flex;align-items:center;gap:10px;padding:7px 18px 7px 32px;
+       color:#6b7f95;cursor:pointer;transition:.18s;text-decoration:none;
+       font-size:12px;white-space:nowrap;
+     "
+     onmouseover="this.style.color='#c8d6e5'"
+     onmouseout="this.style.color='#6b7f95'"
+  >
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6">
+      <path d="M8 1L1 5v2h14V5z"/>
+      <path d="M3 7v5M8 7v5M13 7v5M1 12h14"/>
+    </svg>
+    <span>⚖️ Governance</span>
+  </a>
+
+  <!-- Shadow (Founder only) -->
+  <a href="/ui/control-plane#shadow"
+     onclick="if(window.location.pathname==='/ui/control-plane'){if(window.switchTab)window.switchTab('shadow');return false}"
+     style="
+       display:flex;align-items:center;gap:10px;padding:7px 18px 7px 32px;
+       color:#6b7f95;cursor:pointer;transition:.18s;text-decoration:none;
+       font-size:12px;white-space:nowrap;
+     "
+     onmouseover="this.style.color='#c8d6e5'"
+     onmouseout="this.style.color='#6b7f95'"
+  >
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6">
+      <path d="M2 13l4-8 3 4 3-6 2 10"/>
+    </svg>
+    <span>👁 Shadow</span>
+  </a>
+
+  <!-- Bottom: Founder identity -->
+  <div style="margin-top:auto;padding:14px 18px;border-top:1px solid #1e2a3a;display:flex;align-items:center;gap:10px">
+    <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#e8b84b,#f0a84b);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#0a0e14">F</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:12px;font-weight:600;color:#eef2f7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Founder</div>
+      <div style="font-size:10px;color:#6b7f95">Root Access · AGI Control</div>
+    </div>
+  </div>
+</nav>

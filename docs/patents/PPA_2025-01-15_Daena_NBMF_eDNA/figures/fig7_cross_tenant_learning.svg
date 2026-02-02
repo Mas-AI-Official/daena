@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="550" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; }
+      .label { font-family: Arial, sans-serif; font-size: 11px; }
+      .ref-num { font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; }
+      .box { fill: #e8f4f8; stroke: #2c5f7d; stroke-width: 2; }
+      .tenant-box { fill: #d4e6f1; stroke: #1a4d6e; stroke-width: 2; }
+      .abstract-box { fill: #d1f2eb; stroke: #0e6655; stroke-width: 2; }
+      .security-box { fill: #ffe6e6; stroke: #dc3545; stroke-width: 2; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .secure-arrow { stroke: #28a745; stroke-width: 2; fill: none; marker-end: url(#arrowhead-green); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+    <marker id="arrowhead-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#28a745" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" class="title">FIG.7 Cross-Tenant Learning via Abstract Artifacts</text>
+  
+  <!-- Tenant A -->
+  <rect x="50" y="60" width="300" height="180" class="tenant-box" rx="5"/>
+  <text x="200" y="85" text-anchor="middle" class="label" font-weight="bold" font-size="14px">Tenant A</text>
+  
+  <!-- Raw Data (Protected) -->
+  <rect x="80" y="100" width="240" height="50" class="security-box" rx="3"/>
+  <text x="200" y="120" text-anchor="middle" class="label" font-weight="bold">Raw Data (Protected)</text>
+  <text x="200" y="135" text-anchor="middle" class="label" font-size="10px">PII, sensitive info, tenant-specific</text>
+  <text x="200" y="148" text-anchor="middle" class="label" font-size="9px">❌ Never leaves tenant boundary</text>
+  
+  <!-- Abstract Generator -->
+  <rect x="80" y="170" width="240" height="60" class="abstract-box" rx="3"/>
+  <text x="200" y="190" text-anchor="middle" class="ref-num">1301</text>
+  <text x="200" y="205" text-anchor="middle" class="label" font-weight="bold">Abstract Generator</text>
+  <text x="200" y="220" text-anchor="middle" class="label" font-size="10px">Removes raw data, preserves patterns</text>
+  
+  <!-- Tenant B -->
+  <rect x="450" y="60" width="300" height="180" class="tenant-box" rx="5"/>
+  <text x="600" y="85" text-anchor="middle" class="label" font-weight="bold" font-size="14px">Tenant B</text>
+  
+  <!-- Raw Data (Protected) -->
+  <rect x="480" y="100" width="240" height="50" class="security-box" rx="3"/>
+  <text x="600" y="120" text-anchor="middle" class="label" font-weight="bold">Raw Data (Protected)</text>
+  <text x="600" y="135" text-anchor="middle" class="label" font-size="10px">PII, sensitive info, tenant-specific</text>
+  <text x="600" y="148" text-anchor="middle" class="label" font-size="9px">❌ Never leaves tenant boundary</text>
+  
+  <!-- Abstract Generator -->
+  <rect x="480" y="170" width="240" height="60" class="abstract-box" rx="3"/>
+  <text x="600" y="190" text-anchor="middle" class="ref-num">1301</text>
+  <text x="600" y="205" text-anchor="middle" class="label" font-weight="bold">Abstract Generator</text>
+  <text x="600" y="220" text-anchor="middle" class="label" font-size="10px">Removes raw data, preserves patterns</text>
+  
+  <!-- Sanitization Layer -->
+  <rect x="200" y="260" width="400" height="60" class="abstract-box" rx="3"/>
+  <text x="400" y="280" text-anchor="middle" class="ref-num">1302</text>
+  <text x="400" y="295" text-anchor="middle" class="label" font-weight="bold">Sanitization Layer</text>
+  <text x="400" y="310" text-anchor="middle" class="label" font-size="10px">Remove tenant IDs, PII, sensitive data | Preserve semantic patterns</text>
+  
+  <!-- Flow Arrows -->
+  <line x1="200" y1="230" x2="200" y2="260" class="arrow"/>
+  <line x1="600" y1="230" x2="600" y2="260" class="arrow"/>
+  
+  <!-- Abstract Artifact Store -->
+  <rect x="200" y="340" width="400" height="80" class="abstract-box" rx="3"/>
+  <text x="400" y="365" text-anchor="middle" class="ref-num">1303</text>
+  <text x="400" y="380" text-anchor="middle" class="label" font-weight="bold">Abstract Artifact Store</text>
+  <text x="400" y="395" text-anchor="middle" class="label" font-size="10px">• NBMF bytecode (abstracted)</text>
+  <text x="400" y="410" text-anchor="middle" class="label" font-size="10px">• Semantic patterns</text>
+  <text x="400" y="425" text-anchor="middle" class="label" font-size="10px">• Structural information</text>
+  
+  <!-- Pattern Extractor -->
+  <rect x="150" y="450" width="200" height="60" class="box" rx="3"/>
+  <text x="250" y="470" text-anchor="middle" class="ref-num">1304</text>
+  <text x="250" y="485" text-anchor="middle" class="label" font-weight="bold">Pattern Extractor</text>
+  <text x="250" y="500" text-anchor="middle" class="label" font-size="10px">Reusable patterns</text>
+  
+  <!-- Cross-Tenant Sharing -->
+  <rect x="450" y="450" width="200" height="60" class="abstract-box" rx="3"/>
+  <text x="550" y="470" text-anchor="middle" class="ref-num">1305</text>
+  <text x="550" y="485" text-anchor="middle" class="label" font-weight="bold">Cross-Tenant Sharing</text>
+  <text x="550" y="500" text-anchor="middle" class="label" font-size="10px">Safe knowledge sharing</text>
+  
+  <!-- Flow Arrows -->
+  <line x1="400" y1="420" x2="250" y2="450" class="secure-arrow"/>
+  <line x1="400" y1="420" x2="550" y2="450" class="secure-arrow"/>
+  
+  <!-- Security Guarantee -->
+  <rect x="50" y="530" width="700" height="20" class="security-box" rx="3"/>
+  <text x="400" y="545" text-anchor="middle" class="ref-num">1306</text>
+  <text x="400" y="545" text-anchor="middle" class="label" font-weight="bold">Security Guarantee: No Raw Data Leakage | Only Abstracted Artifacts Shared | Tenant Isolation Maintained</text>
+</svg>
+
+
+
+
+
+
+
+
+
+

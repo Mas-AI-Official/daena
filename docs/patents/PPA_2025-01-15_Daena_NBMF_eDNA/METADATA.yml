@@ -1,0 +1,111 @@
+---
+title: "Neural-Backed Memory Fabric and Enterprise-DNA Governance System"
+inventor: "Masoud Masoori"
+assignee: "Mas-AI Technology Inc."
+priority_date_intended: "2025-01-15"
+filing_type: "Provisional Patent Application (PPA)"
+status: "Draft – For Provisional Filing"
+keywords:
+  - "Neural-Backed Memory Fabric"
+  - "NBMF"
+  - "Enterprise-DNA"
+  - "eDNA"
+  - "Multi-Agent AI Systems"
+  - "Memory Storage"
+  - "Hierarchical Memory"
+  - "Trust Pipeline"
+  - "Merkle Lineage"
+  - "Hardware Abstraction"
+  - "Cross-Tenant Learning"
+  - "Content-Addressable Storage"
+  - "SimHash Deduplication"
+  - "Governance"
+  - "Cryptographic Audit Trail"
+
+figures:
+  - number: 1
+    filename: "figures/fig1_system_overview.svg"
+    title: "System Overview"
+    description: "High-level architecture showing NBMF three-tier memory and eDNA governance layer"
+  - number: 2
+    filename: "figures/fig2_tier_pipeline.svg"
+    title: "Tiered Promotion/Eviction Pipeline"
+    description: "Flow diagram of automatic memory promotion and eviction"
+  - number: 3
+    filename: "figures/fig3_merkle_lineage.svg"
+    title: "Merkle-Notarized Lineage"
+    description: "Cryptographic audit trail structure with Merkle roots"
+  - number: 4
+    filename: "figures/fig4_genome_epigenome.svg"
+    title: "Genome/Epigenome Policy Flow"
+    description: "How Genome and Epigenome combine for effective capabilities"
+  - number: 5
+    filename: "figures/fig5_immune_flow.svg"
+    title: "Immune Detection → Quarantine → Rollback"
+    description: "Threat detection and response workflow"
+  - number: 6
+    filename: "figures/fig6_hardware_abstraction.svg"
+    title: "Hardware Abstraction (CPU/GPU/TPU)"
+    description: "DeviceManager routing tensor operations to optimal devices"
+  - number: 7
+    filename: "figures/fig7_cross_tenant_learning.svg"
+    title: "Cross-Tenant Learning via Abstract Artifacts"
+    description: "Safe knowledge sharing without raw data leakage"
+
+deliverables:
+  - filename: "ABSTRACT.md"
+    description: "Abstract (≤150 words)"
+  - filename: "SPECIFICATION.md"
+    description: "Full technical specification"
+  - filename: "CLAIMS_DRAFT.md"
+    description: "Draft claims (independent and dependent)"
+  - filename: "FIGURE_LIST.md"
+    description: "List of all figures with descriptions"
+  - filename: "MICRO_SPEC_ONEPAGER.md"
+    description: "One-page specification summary"
+  - filename: "FILING_CHECKLIST_USPTO_MICRO.md"
+    description: "USPTO filing checklist for micro entity"
+  - filename: "README.md"
+    description: "Instructions for exporting and filing"
+  - filename: "SANITIZATION_LOG.md"
+    description: "Log of sanitized secrets"
+  - filename: "METADATA.yml"
+    description: "This metadata file"
+  - filename: "benchmarks/methodology.md"
+    description: "Benchmark methodology"
+  - filename: "benchmarks/environment.md"
+    description: "Benchmark environment details"
+  - filename: "benchmarks/results_2025-01-15.csv"
+    description: "Benchmark results in CSV format"
+  - filename: "benchmarks/summary.md"
+    description: "Benchmark results summary"
+
+checksums:
+  # SHA256 checksums will be computed after all files are created
+  # Use: Get-FileHash -Algorithm SHA256 <filename> (PowerShell)
+  # Or: sha256sum <filename> (Linux/Mac)
+  note: "Run checksum computation after final file creation"
+
+package_info:
+  created_date: "2025-01-15"
+  last_modified: "2025-01-15"
+  version: "1.0"
+  total_files: 15
+  total_figures: 7
+
+notes:
+  - "All dates set to 2025-01-15 for consistency"
+  - "Figures are in SVG format for vector scalability"
+  - "Benchmark results are illustrative and dated 2025-01-15"
+  - "Claims are optional in provisional but included for completeness"
+  - "Micro entity status should be verified before filing"
+
+
+
+
+
+
+
+
+
+

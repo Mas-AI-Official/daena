@@ -1,0 +1,12 @@
+9. depends on Claim 1) — The memory storage system of Claim 1, wherein the promotion controller promotes memories from L3 to L2 when access frequency exceeds 10 accesses and from L2 to L1 when recency is less than 1 hour.
+10. depends on Claim 1) — The memory storage system of Claim 1, wherein the eviction controller demotes memories from L1 to L2 when age exceeds 1 hour and from L2 to L3 when age exceeds 7 days.
+11. depends on Claim 2) — The method of Claim 2, wherein the domain-specific neural encoder is selected from a group consisting of conversation encoder, financial encoder, legal encoder, and general encoder.
+12. depends on Claim 2) — The method of Claim 2, wherein lossless mode achieves 13.30× compression ratio and semantic mode achieves 2.53× compression ratio.
+13. depends on Claim 3) — The method of Claim 3, wherein SimHash is computed as a 64-bit or 128-bit value, and near-duplicates are detected when SimHash distance is below a threshold.
+14. depends on Claim 4) — The method of Claim 4, wherein the trust score is computed as: Trust Score = (Consensus Score × 0.6) + ((1 - Divergence Score) × 0.4).
+15. depends on Claim 4) — The method of Claim 4, wherein memories are promoted to L2 if trust score >= 0.7 and divergence score < 0.5, flagged for human review if trust score >= 0.5 and divergence score < 0.7, and rejected otherwise.
+16. depends on Claim 5) — The governance system of Claim 5, wherein the Epigenome component enforces retention policies causing automatic archival to L3 cold storage based on data age and classification.
+17. depends on Claim 5) — The governance system of Claim 5, wherein the Immune component triggers automatic rollback of recent memory promotions when critical threats are detected.
+18. depends on Claim 6) — The method of Claim 6, wherein the Merkle root is computed as SHA-256(merkle_parent || promotion_data) where promotion_data includes object_id, promotion_from, promotion_to, and transaction identifier.
+19. depends on Claim 7) — The hardware abstraction system of Claim 7, wherein TPU operations use a batch factor of 128 for optimal performance.
+20. depends on Claim 8) — The method of Claim 8, wherein abstracted artifacts include NBMF bytecode, semantic patterns, and structural information, but exclude raw text, PII, and tenant-specific identifiers. --- **End of Claims**

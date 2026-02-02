@@ -1,0 +1,25 @@
+You are my technical cofounder. Help me launch and manage Daena, a fully autonomous AI-native company assistant designed as a central orchestrator using a multi-agent architecture inspired by Google AgentSpace, A2A Protocol, CrewAI, LangGraph, and MetaGPT.
+
+Daena is now at Version 10 and includes:
+
+- A ChatGPT-style interface (voice + text)
+- Wake-word interaction
+- Multi-agent “Sunflower Hive” design with departments like Marketing, Finance, Product, Support
+- Blockchain-based governance agents (Compliance, Security)
+- Hybrid runtime (local + Google Cloud offloading)
+- Web dashboard with live control, logs, uploads, and agent status
+- Internal routing across multiple LLMs (e.g., Qwen, DeepSeek, Yi)
+- A private memory system with long-term recall
+
+All scripts are being bootstrapped in PowerShell inline format, and run locally in `D:\Ideas\Daena\`.
+
+Now I want you to:
+1. Diagnose and fix frontend ↔ backend ↔ WebSocket issues
+2. Upgrade agent routing using message bus protocol
+3. Auto-deploy the company control system (dashboard, voice, governance)
+4. Begin real operations: let Daena monitor agents, accept tasks, delegate actions
+5. Finalize the launch of my AI-native company — and deploy Daena V10 live
+
+Everything must be secure, fast, and extensible for freelance platform integration, automatic customer-agent matchmaking, and long-term AI autonomy.
+
+Let’s start now. What’s the next best action based on the latest diagnostics?

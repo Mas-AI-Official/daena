@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; }
+      .label { font-family: Arial, sans-serif; font-size: 11px; }
+      .ref-num { font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; }
+      .box { fill: #e8f4f8; stroke: #2c5f7d; stroke-width: 2; }
+      .genome-box { fill: #d4e6f1; stroke: #1a4d6e; stroke-width: 2; }
+      .epigenome-box { fill: #f0e6d4; stroke: #8b6f3d; stroke-width: 2; }
+      .effective-box { fill: #d1f2eb; stroke: #0e6655; stroke-width: 2; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" class="title">FIG.4 Genome/Epigenome Policy Flow</text>
+  
+  <!-- Genome Section -->
+  <rect x="50" y="60" width="300" height="240" class="genome-box" rx="5"/>
+  <text x="200" y="85" text-anchor="middle" class="label" font-weight="bold" font-size="14px">Genome</text>
+  <text x="200" y="105" text-anchor="middle" class="label" font-size="10px">Capability Schema &amp; Versioned Behaviors</text>
+  
+  <!-- Genome Store -->
+  <rect x="80" y="120" width="240" height="60" class="box" rx="3"/>
+  <text x="200" y="140" text-anchor="middle" class="ref-num">801</text>
+  <text x="200" y="155" text-anchor="middle" class="label" font-weight="bold">Genome Store</text>
+  <text x="200" y="170" text-anchor="middle" class="label" font-size="10px">Per agent/department</text>
+  
+  <!-- Agent Capability Definition -->
+  <rect x="80" y="200" width="240" height="80" class="box" rx="3"/>
+  <text x="200" y="220" text-anchor="middle" class="ref-num">802</text>
+  <text x="200" y="235" text-anchor="middle" class="label" font-weight="bold">Agent Capability Definition</text>
+  <text x="100" y="250" class="label" font-size="9px">• agent_id, department, role</text>
+  <text x="100" y="263" class="label" font-size="9px">• capabilities: skill, tool, memory_adapter</text>
+  <text x="100" y="276" class="label" font-size="9px">• allowed_actions, version</text>
+  
+  <!-- Epigenome Section -->
+  <rect x="450" y="60" width="300" height="240" class="epigenome-box" rx="5"/>
+  <text x="600" y="85" text-anchor="middle" class="label" font-weight="bold" font-size="14px">Epigenome</text>
+  <text x="600" y="105" text-anchor="middle" class="label" font-size="10px">Tenant Policies &amp; Constraints</text>
+  
+  <!-- Epigenome Store -->
+  <rect x="480" y="120" width="240" height="60" class="box" rx="3"/>
+  <text x="600" y="140" text-anchor="middle" class="ref-num">901</text>
+  <text x="600" y="155" text-anchor="middle" class="label" font-weight="bold">Epigenome Store</text>
+  <text x="600" y="170" text-anchor="middle" class="label" font-size="10px">Per tenant</text>
+  
+  <!-- Policy Components -->
+  <rect x="480" y="200" width="110" height="80" class="box" rx="3"/>
+  <text x="535" y="220" text-anchor="middle" class="ref-num">902</text>
+  <text x="535" y="235" text-anchor="middle" class="label" font-weight="bold">ABAC Rules</text>
+  <text x="490" y="250" class="label" font-size="9px">• Role-based</text>
+  <text x="490" y="263" class="label" font-size="9px">• Tenant isolation</text>
+  <text x="490" y="276" class="label" font-size="9px">• Class rules</text>
+  
+  <rect x="610" y="200" width="110" height="80" class="box" rx="3"/>
+  <text x="665" y="220" text-anchor="middle" class="ref-num">903</text>
+  <text x="665" y="235" text-anchor="middle" class="label" font-weight="bold">Retention</text>
+  <text x="620" y="250" class="label" font-size="9px">• Default: 7y</text>
+  <text x="620" y="263" class="label" font-size="9px">• Legal: ∞</text>
+  <text x="620" y="276" class="label" font-size="9px">• Per-class</text>
+  
+  <!-- Additional Policy Components -->
+  <rect x="80" y="320" width="110" height="60" class="box" rx="3"/>
+  <text x="135" y="340" text-anchor="middle" class="ref-num">904</text>
+  <text x="135" y="355" text-anchor="middle" class="label" font-weight="bold">Jurisdictions</text>
+  <text x="135" y="370" text-anchor="middle" class="label" font-size="9px">GDPR, HIPAA</text>
+  
+  <rect x="210" y="320" width="110" height="60" class="box" rx="3"/>
+  <text x="265" y="340" text-anchor="middle" class="ref-num">905</text>
+  <text x="265" y="355" text-anchor="middle" class="label" font-weight="bold">SLO/SLA</text>
+  <text x="265" y="370" text-anchor="middle" class="label" font-size="9px">200ms, 99.9%</text>
+  
+  <rect x="480" y="320" width="110" height="60" class="box" rx="3"/>
+  <text x="535" y="340" text-anchor="middle" class="ref-num">906</text>
+  <text x="535" y="355" text-anchor="middle" class="label" font-weight="bold">Feature Flags</text>
+  <text x="535" y="370" text-anchor="middle" class="label" font-size="9px">cross-tenant, etc.</text>
+  
+  <!-- Combination Arrow -->
+  <line x1="350" y1="180" x2="450" y2="180" class="arrow"/>
+  <text x="400" y="170" text-anchor="middle" class="label" font-size="10px">Combines</text>
+  
+  <!-- Effective Capabilities -->
+  <rect x="250" y="400" width="300" height="120" class="effective-box" rx="5"/>
+  <text x="400" y="425" text-anchor="middle" class="label" font-weight="bold" font-size="14px">Effective Capabilities</text>
+  <text x="400" y="445" text-anchor="middle" class="label" font-size="10px">Genome + Epigenome Constraints</text>
+  
+  <rect x="270" y="460" width="260" height="50" class="box" rx="3"/>
+  <text x="400" y="480" text-anchor="middle" class="label" font-weight="bold">Result</text>
+  <text x="400" y="495" text-anchor="middle" class="label" font-size="10px">• Feature flags applied</text>
+  <text x="400" y="510" text-anchor="middle" class="label" font-size="10px">• ABAC rules enforced</text>
+  
+  <!-- Flow Arrows -->
+  <line x1="200" y1="300" x2="400" y2="460" class="arrow"/>
+  <line x1="600" y1="300" x2="400" y2="460" class="arrow"/>
+  
+  <!-- NBMF Integration -->
+  <rect x="50" y="540" width="700" height="50" fill="white" stroke="#ccc" stroke-width="1" rx="3"/>
+  <text x="400" y="560" text-anchor="middle" class="label" font-weight="bold">NBMF Integration</text>
+  <text x="150" y="580" class="label" font-size="10px">Retention → L3 timing</text>
+  <text x="400" y="580" class="label" font-size="10px">|</text>
+  <text x="400" y="580" class="label" font-size="10px">Jurisdictions → Encryption</text>
+  <text x="650" y="580" class="label" font-size="10px">ABAC → Access control</text>
+</svg>
+
+
+
+
+
+
+
+
+
+

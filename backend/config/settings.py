@@ -213,6 +213,10 @@ class Settings(BaseSettings):
 
     # Global HTTP rate limiting (middleware): enable in production to reduce abuse
     rate_limit_enabled: bool = Field(default=False, validation_alias="RATE_LIMIT_ENABLED")
+    # CSRF protection for state-changing requests (POST/PUT/PATCH/DELETE): set CSRF_ENABLED=1 in production
+    csrf_enabled: bool = Field(default=False, validation_alias="CSRF_ENABLED")
+    # WebSocket auth: when True, /ws/events requires token query param or daena_execution_token cookie
+    ws_auth_enabled: bool = Field(default=False, validation_alias="WS_AUTH_ENABLED")
 
     @model_validator(mode="after")
     def inject_daenabot_hands_fallback(self):
@@ -224,7 +228,7 @@ class Settings(BaseSettings):
         object.__setattr__(self, "daenabot_hands_token", token)
         return self
 
-    @field_validator("rate_limit_enabled", "security_lockdown_mode", mode="before")
+    @field_validator("rate_limit_enabled", "security_lockdown_mode", "csrf_enabled", "ws_auth_enabled", mode="before")
     @classmethod
     def parse_bool_env(cls, v):
         """Parse bool from env (1/true/yes -> True, 0/false/no -> False)."""

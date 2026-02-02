@@ -1,0 +1,9 @@
+D:\Ideas\Daena\venv_main_py310\Scripts\Activate.ps1
+
+D:\Ideas\Daena\venv_audio_py310\Scripts\Activate.ps1
+
+
+npm cache clean --force && cd dashboard-react && npm install && npm run dev
+cd dashboard-react/
+npm install
+npm run dev

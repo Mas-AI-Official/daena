@@ -11,13 +11,71 @@
     .source-item a {
         max-width: 12rem;
     }
+
+    /* Custom Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 3px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
+
+    /* Animations */
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(5px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .animate-fade-in {
+        animation: fadeIn 0.3s ease-out forwards;
+    }
+
+    /* Sidebar Resize Handle */
+    #sidebar-resize-handle {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        cursor: col-resize;
+        width: 8px !important;
+        /* Wider hit area */
+        right: -4px !important;
+        /* Centered on border */
+        z-index: 50;
+        background: rgba(255, 255, 255, 0);
+        /* Invisible by default */
+        transition: background 0.2s;
+    }
+
+    #sidebar-resize-handle:hover,
+    #sidebar-resize-handle:active {
+        background: rgba(255, 215, 0, 0.4) !important;
+        /* Gold highlight on hover */
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="flex h-[calc(100vh-7rem)] gap-6">
     <!-- Chat Sessions Sidebar -->
-    <div class="w-80 flex-shrink-0 flex flex-col glass-panel rounded-xl overflow-hidden">
+    <div id="sidebar-panel" class="flex-shrink-0 flex flex-col glass-panel rounded-xl overflow-hidden relative"
+        style="width: 15rem; min-width: 12rem; max-width: 40rem;">
         <!-- Header -->
         <div class="p-4 border-b border-white/10 flex items-center justify-between bg-black/20">
             <h3 class="font-medium text-white">Sessions</h3>
@@ -72,7 +130,7 @@
 
         <!-- New Chat Button -->
         <div class="p-2 border-b border-white/10">
-            <button onclick="startNewChat()" id="new-chat-btn"
+            <button onclick="createNewSession()" id="new-chat-btn"
                 class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-daena-gold hover:bg-yellow-500 text-black font-bold rounded-lg transition-colors">
                 <i class="fas fa-plus"></i> New Chat
             </button>
@@ -94,6 +152,9 @@
                 <i class="fas fa-trash-restore mr-1"></i> Restore
             </button>
         </div>
+
+        <!-- Resize Handle -->
+        <div id="sidebar-resize-handle"></div>
     </div>
 
     <!-- Chat Area -->
@@ -177,7 +238,8 @@
                 </div>
             </div>
             <!-- Scroll to latest: shown when user has scrolled up -->
-            <button type="button" id="chat-scroll-to-bottom-btn" onclick="scrollChatToBottom()" title="Go to latest message"
+            <button type="button" id="chat-scroll-to-bottom-btn" onclick="scrollChatToBottom()"
+                title="Go to latest message"
                 class="absolute bottom-4 right-6 z-10 flex items-center gap-2 px-3 py-2 rounded-full bg-daena-gold/90 hover:bg-daena-gold text-black text-sm font-medium shadow-lg transition-opacity"
                 style="opacity: 0; pointer-events: none;">
                 <i class="fas fa-chevron-down"></i>
@@ -408,9 +470,9 @@
     let allSessions = [];
     let currentCategory = 'all';
     let sendMode = null;  // 'search' | 'deep_search' – R1-style search then answer
-    let streamAbortController = null;  // abort streaming when user clicks Stop
+    let streamAbortController = null;  // only Stop button aborts; leaving chat/tab does not — stream continues in background
 
-    // Only scroll chat to bottom if user is already near bottom (so they can read upper messages while streaming)
+    // ChatGPT-style scroll: auto-scroll to last character only when user is at bottom; if user scrolls up, stop auto-scroll and show "Latest" button
     function chatShouldAutoScroll(container) {
         if (!container) return false;
         const threshold = 80;
@@ -425,6 +487,27 @@
     function stopStreaming() {
         if (streamAbortController) {
             streamAbortController.abort();
+        }
+
+        // Also tell backend to cancel generation
+        if (currentSessionId) {
+            fetch('/api/v1/daena/chat/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: currentSessionId })
+            }).catch(e => console.error("Error stopping chat:", e));
+        }
+    }
+
+    function setStreamingBeforeUnload(streaming) {
+        if (streaming) {
+            window._daenaStreamingBeforeUnload = function () { return true; };
+            window.addEventListener('beforeunload', window._daenaStreamingBeforeUnload);
+        } else {
+            if (window._daenaStreamingBeforeUnload) {
+                window.removeEventListener('beforeunload', window._daenaStreamingBeforeUnload);
+                window._daenaStreamingBeforeUnload = null;
+            }
         }
     }
 
@@ -589,6 +672,7 @@
                 if (data.session_id === currentSessionId) {
                     const container = document.getElementById('chat-messages');
                     if (container && data.sender === 'assistant') {
+                        const shouldScroll = chatShouldAutoScroll(container);
                         container.insertAdjacentHTML('beforeend', `
                             <div class="flex gap-4">
                                 <div class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">D</div>
@@ -599,7 +683,10 @@
                                 </div>
                             </div>
                         `);
-                        chatScrollToBottomIfSticky(container);
+                        if (shouldScroll) {
+                            container.scrollTop = container.scrollHeight;
+                            updateScrollToBottomButton();
+                        }
                     }
                 }
                 loadSessions();
@@ -629,13 +716,19 @@
             dot.className = 'w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse';
             text.textContent = 'Brain Active';
             text.className = 'text-xs text-green-400 flex items-center gap-1';
-            sendBtn.disabled = false;
-            input.disabled = false;
-            input.placeholder = 'Ask Daena anything...';
+
+            // Only enable controls if not currently streaming
+            if (!streamAbortController) {
+                sendBtn.disabled = false;
+                input.disabled = false;
+                input.placeholder = 'Ask Daena anything...';
+            }
         } else {
             dot.className = 'w-1.5 h-1.5 rounded-full bg-red-500';
             text.textContent = 'Brain Offline';
             text.className = 'text-xs text-red-400 flex items-center gap-1';
+
+            // Always disable if offline, even if streaming (stream will likely fail anyway)
             sendBtn.disabled = true;
             input.disabled = true;
             input.placeholder = 'Brain is offline - please start Ollama';
@@ -1224,7 +1317,7 @@
                 <div class="flex-1">
                     <div class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
                         <p id="${responseId}-pipeline" class="text-xs text-gray-500 mb-1 hidden"></p>
-                        <p id="${responseId}-text" class="whitespace-pre-wrap leading-relaxed"><i class="fas fa-circle-notch fa-spin"></i></p>
+                        <div id="${responseId}-text" class="whitespace-pre-wrap leading-relaxed"><i class="fas fa-circle-notch fa-spin"></i></div>
                         <div id="${responseId}-sources" class="mt-2 pt-2 border-t border-white/10 hidden"></div>
                         <div id="${responseId}-actions" class="mt-2 flex gap-2 flex-wrap"></div>
                     </div>
@@ -1232,13 +1325,21 @@
             </div>
         `);
         chatScrollToBottomIfSticky(container);
+        updateScrollToBottomButton();
 
         streamAbortController = new AbortController();
         setStreamingUI(true);
+        setStreamingBeforeUnload(true);
 
         try {
             // Trigger Think → Plan → Execute pipeline (every message runs the pipeline)
             try {
+                const pipelineEl = document.getElementById(responseId + '-pipeline');
+                if (pipelineEl) {
+                    pipelineEl.textContent = 'Think → Plan → Act → Report • Initializing...';
+                    pipelineEl.classList.remove('hidden');
+                }
+
                 const pipelineRes = await fetch('/api/v1/pipeline/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1246,11 +1347,9 @@
                 });
                 if (pipelineRes.ok) {
                     const pipelineData = await pipelineRes.json();
-                    const pipelineEl = document.getElementById(responseId + '-pipeline');
                     if (pipelineEl && pipelineData.pipeline_id) {
                         const status = pipelineData.governance_status || 'autopilot';
-                        pipelineEl.textContent = 'Think → Plan → Execute • ' + (status === 'pending' ? '⏳ Pending approval (Control Plane → Governance)' : status === 'blocked' ? '⚠️ Blocked' : '✓ ' + status);
-                        pipelineEl.classList.remove('hidden');
+                        pipelineEl.textContent = 'Think → Plan → Act → Report • ' + (status === 'pending' ? '⏳ Pending approval' : status === 'blocked' ? '⚠️ Blocked' : '✓ ' + status);
                     }
                 }
             } catch (_) { /* pipeline optional */ }
@@ -1283,7 +1382,6 @@
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
-                // Keep the last line in buffer as it might be incomplete
                 buffer = lines.pop();
 
                 for (const line of lines) {
@@ -1299,14 +1397,69 @@
                                 }
                             } else if (data.type === 'status' && data.content) {
                                 if (firstToken) { textEl.innerHTML = ''; firstToken = false; }
-                                textEl.textContent = data.content;
-                                chatScrollToBottomIfSticky(container);
+
+                                // R1-style Thinking UI
+                                let thoughtsEl = document.getElementById(`${responseId}-thoughts`);
+                                if (!thoughtsEl) {
+                                    // Create thoughts container if it doesn't exist
+                                    const thoughtsContainer = document.createElement('div');
+                                    thoughtsContainer.innerHTML = `
+                                        <details id="${responseId}-thoughts" class="mb-4 border-l-2 border-daena-gold/30 pl-4 bg-white/5 rounded-r-lg" open>
+                                            <summary class="text-xs text-daena-gold cursor-pointer select-none hover:text-yellow-400 py-2 pr-2 list-none flex items-center gap-2 outline-none">
+                                               <i class="fas fa-brain animate-pulse"></i>
+                                               <span class="font-medium">Thinking Process</span>
+                                               <span class="text-gray-500 text-[10px] ml-auto font-mono" id="${responseId}-timer">0.0s</span>
+                                               <i class="fas fa-chevron-down text-[10px] opacity-50 ml-2 transition-transform duration-200"></i>
+                                            </summary>
+                                            <div class="text-xs text-gray-400 space-y-1 font-mono pb-2 pr-2 thought-content border-t border-white/5 pt-2 max-h-60 overflow-y-auto custom-scrollbar"></div>
+                                        </details>
+                                        <div id="${responseId}-final-answer" class="whitespace-pre-wrap leading-relaxed animate-fade-in"></div>
+                                    `;
+
+                                    // Replace content (previously loading spinner)
+                                    if (textEl.querySelector('.fa-circle-notch')) {
+                                        textEl.innerHTML = '';
+                                        textEl.appendChild(thoughtsContainer);
+                                    } else {
+                                        textEl.appendChild(thoughtsContainer);
+                                    }
+
+                                    thoughtsEl = document.getElementById(`${responseId}-thoughts`);
+
+                                    // Start timer
+                                    const timerEl = document.getElementById(`${responseId}-timer`);
+                                    if (timerEl) {
+                                        let startTime = Date.now();
+                                        thoughtsEl.dataset.interval = setInterval(() => {
+                                            timerEl.textContent = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+                                        }, 100);
+                                        thoughtsEl.dataset.startTime = startTime;
+                                    }
+                                }
+
+                                // Append status line to thoughts
+                                const contentDiv = thoughtsEl.querySelector('.thought-content');
+                                if (contentDiv) {
+                                    // Remove active class from previous lines
+                                    const prevActive = contentDiv.querySelectorAll('.active-thought');
+                                    prevActive.forEach(el => el.classList.remove('active-thought', 'text-daena-gold'));
+
+                                    const line = document.createElement('div');
+                                    line.className = "flex gap-2 active-thought text-daena-gold transition-colors duration-500";
+                                    line.innerHTML = `<span class="opacity-50 select-none">&gt;</span> <span class="animate-pulse">${data.content}</span>`;
+                                    contentDiv.appendChild(line);
+                                    contentDiv.scrollTop = contentDiv.scrollHeight;
+                                }
+
+                                updateScrollToBottomButton();
+
                             } else if (data.type === 'sources' && data.sources && data.sources.length) {
                                 const sourcesEl = document.getElementById(`${responseId}-sources`);
+                                // ... (same sources logic)
                                 if (sourcesEl) {
                                     const showOn = localStorage.getItem('daena_office_show_sources') === 'on';
                                     sourcesEl.className = `mt-2 pt-2 border-t border-white/10 ${showOn ? 'block' : 'hidden'}`;
-                                    sourcesEl.id = `${responseId}-sources-inner`; // renaming to ensure unique access
+                                    sourcesEl.id = `${responseId}-sources-inner`;
 
                                     const items = data.sources.map((s, i) => `
                                         <a href="${s.url}" target="_blank" class="source-pill mb-1 mr-1" title="${s.snippet || s.title}">
@@ -1330,16 +1483,60 @@
                                     sourcesEl.classList.remove('hidden');
                                     if (!showOn) sourcesEl.classList.add('sources-hidden');
                                 }
+
                             } else if (data.type === 'token' && data.content) {
                                 if (firstToken) {
-                                    textEl.innerHTML = '';
+                                    // If we haven't rendered anything yet (no thoughts), verify container is empty
+                                    if (!document.getElementById(`${responseId}-thoughts`)) {
+                                        textEl.innerHTML = '';
+                                    }
                                     firstToken = false;
                                 }
-                                fullText += data.content;
-                                textEl.textContent = fullText;
-                                chatScrollToBottomIfSticky(container);
+
+                                let finalEl = document.getElementById(`${responseId}-final-answer`);
+
+                                // Handling transition from thoughts to answer
+                                if (document.getElementById(`${responseId}-thoughts`)) {
+                                    const thoughtsEl = document.getElementById(`${responseId}-thoughts`);
+                                    // Stop timer
+                                    if (thoughtsEl.dataset.interval) {
+                                        clearInterval(thoughtsEl.dataset.interval);
+                                        thoughtsEl.dataset.interval = null;
+
+                                        // Update summary to show total time
+                                        const timerEl = document.getElementById(`${responseId}-timer`);
+                                        const duration = ((Date.now() - parseInt(thoughtsEl.dataset.startTime)) / 1000).toFixed(1);
+                                        timerEl.textContent = `Thought for ${duration}s`;
+
+                                        // Collapse by default? Use user preference?
+                                        // User logic: "if i want to see i cna follow her thoughts" - keeping open might be distracting if long.
+                                        // R1 behavior: shows "Thought for Xs", collapsed.
+                                        // I'll leave it expanded for now as the user asked to "follow her thoughts", but I'll make the header look finished.
+                                        thoughtsEl.querySelector('.fa-brain').classList.remove('animate-pulse');
+                                    }
+                                } else {
+                                    // Standard mode (no thoughts triggered)
+                                    // Ensure textEl is treated as the final container
+                                    finalEl = textEl;
+                                }
+
+                                if (finalEl) {
+                                    const shouldScroll = chatShouldAutoScroll(container);
+                                    fullText += data.content;
+                                    finalEl.textContent = fullText;
+                                    if (shouldScroll) {
+                                        container.scrollTop = container.scrollHeight;
+                                    }
+                                }
+                                updateScrollToBottomButton();
+
                             } else if (data.type === 'done') {
                                 loadSessions();
+                                const thoughtsEl = document.getElementById(`${responseId}-thoughts`);
+                                if (thoughtsEl && thoughtsEl.dataset.interval) {
+                                    clearInterval(thoughtsEl.dataset.interval);
+                                    thoughtsEl.querySelector('.fa-brain').classList.remove('animate-pulse');
+                                }
                                 if (voiceEnabled && fullText && fullText.trim()) {
                                     fetch('/api/v1/voice/speak', {
                                         method: 'POST',
@@ -1361,6 +1558,7 @@
             if (firstToken) {
                 textEl.innerHTML = '<i class="fas fa-exclamation-triangle text-yellow-500"></i> No response received';
             }
+
         } catch (e) {
             if (e.name === 'AbortError') {
                 const textEl = document.getElementById(responseId + '-text');
@@ -1380,6 +1578,54 @@
         } finally {
             streamAbortController = null;
             setStreamingUI(false);
+            setStreamingBeforeUnload(false);
+        }
+    });
+
+    function startNewChat() {
+        if (typeof createNewSession === 'function') {
+            createNewSession();
+        } else {
+            // If checking availability, sometimes createNewSession is defined later.
+            // But here it seems defined. 
+            console.error("createNewSession not found");
+        }
+    }
+
+    // Sidebar Resizing Logic
+    document.addEventListener('DOMContentLoaded', () => {
+        const sidebar = document.getElementById('sidebar-panel');
+        const resizeHandle = document.getElementById('sidebar-resize-handle');
+
+        if (sidebar && resizeHandle) {
+            let isResizing = false;
+
+            resizeHandle.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                document.body.style.cursor = 'col-resize';
+                e.preventDefault(); // Prevent text selection
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+
+                // Calculate new width
+                // Sidebar is flex-shrink-0, constrained by min/max width in style
+                let newWidth = e.clientX - sidebar.getBoundingClientRect().left;
+
+                // Constraints (matches inline styles)
+                if (newWidth < 200) newWidth = 200; // ~12rem
+                if (newWidth > 640) newWidth = 640; // ~40rem
+
+                sidebar.style.width = newWidth + 'px';
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    document.body.style.cursor = 'default';
+                }
+            });
         }
     });
 

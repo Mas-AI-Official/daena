@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Request
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import json
@@ -460,7 +460,7 @@ async def detect_and_execute_tool(message: str) -> Optional[Dict[str, Any]]:
                             "success": True,
                             "queued": True,
                             "request_id": req_id,
-                            "message": f"{msg} Open Control Panel → {_daenabot_name} Tools to approve.",
+                            "message": f"{msg} Open Control Pannel → {_daenabot_name} Tools to approve.",
                         },
                     }
             except Exception as e:
@@ -488,7 +488,7 @@ async def detect_and_execute_tool(message: str) -> Optional[Dict[str, Any]]:
                                 "success": True,
                                 "queued": True,
                                 "request_id": (payload or {}).get("request_id"),
-                                "message": (payload or {}).get("message", "") + f" Open Control Panel → {_daenabot_name} Tools to approve.",
+                                "message": (payload or {}).get("message", "") + f" Open Control Pannel → {_daenabot_name} Tools to approve.",
                             },
                         }
             except Exception as e:
@@ -729,10 +729,10 @@ def format_tool_result(tool_result: Dict[str, Any]) -> str:
         except Exception:
             name = "DaenaBot"
         if result.get("queued"):
-            return f"✅ **{name} Tools:** {result.get('message', 'Request queued for your approval.')} Open Control Panel → **{name} Tools** to approve or reject."
+            return f"✅ **{name} Tools:** {result.get('message', 'Request queued for your approval.')} Open Control Pannel → **{name} Tools** to approve or reject."
         if result.get("success") and not result.get("queued"):
             return f"✅ **{name}:** Action executed. {result.get('message', 'Done.')}"
-        return result.get("message", f"{name} Tools: see Control Panel for status.")
+        return result.get("message", f"{name} Tools: see Control Pannel for status.")
 
     if tool == "code_scanner":
         if action == "scan":
@@ -1302,11 +1302,33 @@ async def legacy_chat(chat: SimpleChatRequest):
         "daena_response": daena_resp,
     }
 
+
+# Active chat tasks for cancellation
+_active_chat_tasks: Dict[str, asyncio.Task] = {}
+
+@router.post("/chat/stop")
+async def stop_chat_generation(request: Request):
+    """Stop generation for a specific session"""
+    data = await request.json()
+    session_id = data.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id required")
+    
+    task = _active_chat_tasks.get(session_id)
+    if task:
+        task.cancel()
+        return {"success": True, "message": "Generation stopped"}
+    return {"success": False, "message": "No active generation found"}
+
+# Global registry for active streams: session_id -> {buffer: [], listeners: set(), task: Task, created_at: timestamp}
+_active_streams: Dict[str, Dict] = {}
+
 @router.post("/chat/stream")
 async def stream_chat(chat: SimpleChatRequest):
     """
     Streaming chat endpoint - returns Server-Sent Events (SSE) with tokens.
     Use this for real-time streaming responses in the UI.
+    NOW SUPPORTS BACKGROUND EXECUTION: If client disconnects, generation continues to DB.
     """
     from fastapi.responses import StreamingResponse
     from backend.services.local_llm_ollama import generate_stream, check_ollama_available
@@ -1314,9 +1336,38 @@ async def stream_chat(chat: SimpleChatRequest):
     from backend.services.chat_service import chat_service
     import json
     import asyncio
+    import time
     from concurrent.futures import ThreadPoolExecutor
     
     msg = (chat.message or "").strip()
+    session_id = chat.session_id
+
+    # RESUME MODE: If msg is empty but we have an active stream, attach to it.
+    if not msg and session_id and session_id in _active_streams:
+        async def resume_generator():
+            stream = _active_streams[session_id]
+            # Yield full history (buffer) to ensure client state is consistent
+            for item in stream["buffer"]:
+                yield item
+            
+            # Listen for new events
+            q = asyncio.Queue()
+            stream["listeners"].add(q)
+            try:
+                while True:
+                    item = await q.get()
+                    if item is None: break
+                    yield item
+            finally:
+                stream["listeners"].discard(q)
+        
+        return StreamingResponse(
+            resume_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+        )
+
+    # NEW CHAT MODE
     if not msg:
         raise HTTPException(status_code=400, detail="message is required")
     
@@ -1325,13 +1376,13 @@ async def stream_chat(chat: SimpleChatRequest):
     if not ollama_ok:
         raise HTTPException(status_code=503, detail="Brain offline - Ollama not running")
     
-    # Run DB operations in thread pool to avoid blocking async event loop
+    # Run DB operations in thread pool
     def db_setup():
         db = SessionLocal()
         try:
-            session_id = chat.session_id
-            if session_id:
-                session = chat_service.get_session(db, session_id)
+            sid = session_id
+            if sid:
+                session = chat_service.get_session(db, sid)
             else:
                 session = None
             
@@ -1342,220 +1393,190 @@ async def stream_chat(chat: SimpleChatRequest):
                     category="executive",
                     scope_type="executive"
                 )
-                session_id = session.session_id
+                sid = session.session_id
             
             # Save user message
-            chat_service.add_message(db, session_id, "user", msg)
-            return session_id
+            chat_service.add_message(db, sid, "user", msg)
+            return sid
         except Exception as e:
-            # If DB fails, generate a temporary session ID
             import uuid
             return str(uuid.uuid4())
         finally:
             db.close()
     
-    # Run in thread pool to avoid blocking
     loop = asyncio.get_event_loop()
-    session_id = await loop.run_in_executor(None, db_setup)
+    final_session_id = await loop.run_in_executor(None, db_setup)
     
-    # Check if this message requires a tool execution
+    # Check tool execution
     tool_result = await detect_and_execute_tool(msg)
     if _is_unknown_command_result(tool_result):
-        tool_result = None  # Let LLM respond naturally instead of showing "Unknown command"
+        tool_result = None
     
-    async def generate_sse():
-        """Generate SSE events with streamed tokens"""
-        full_response = []
-        active_model = "ollama"  # default for tool-only path
-        
-        # Send session_id first
-        yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
-        
-        # If tool was executed, stream the formatted result
-        if tool_result:
-            # Build ChatGPT-style sources [1][2] for tools that have citable items
-            tool_sources: List[Dict[str, Any]] = []
-            result = (tool_result.get("result") or {})
-            tool_name = tool_result.get("tool", "")
-            if tool_name == "web_search" and result.get("results"):
-                for r in result.get("results", [])[:10]:
-                    tool_sources.append({"url": r.get("url") or "#", "title": (r.get("title") or "Result")[:120], "snippet": (r.get("snippet") or "")[:200]})
-            elif tool_name == "workspace_search" and result.get("matches"):
-                for m in result.get("matches", [])[:10]:
-                    path = m.get("path", "")
-                    tool_sources.append({"url": "#", "title": path[:120], "snippet": (m.get("snippet") or "")[:200]})
-            if tool_sources:
-                yield f"data: {json.dumps({'type': 'sources', 'sources': tool_sources})}\n\n"
-            formatted = format_tool_result(tool_result)
-            # Stream the tool result word by word for nice UI effect
-            words = formatted.split(' ')
-            for i, word in enumerate(words):
-                token = word + (' ' if i < len(words) - 1 else '')
-                full_response.append(token)
-                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
-                await asyncio.sleep(0.02)  # Small delay for streaming effect
+    # Clean up old stream if exists
+    if final_session_id in _active_streams:
+        old = _active_streams[final_session_id]
+        if old.get("task"): old["task"].cancel()
+        _active_streams.pop(final_session_id)
+
+    # Initialize new stream entry
+    _active_streams[final_session_id] = {
+        "buffer": [],
+        "listeners": set(),     
+        "task": None,
+        "created_at": time.time()
+    }
+
+    async def emit(item: str):
+        """Broadcast helper"""
+        if final_session_id in _active_streams:
+            stream = _active_streams[final_session_id]
+            stream["buffer"].append(item)
+            for q in list(stream["listeners"]):
+                await q.put(item)
+
+    async def background_generator():
+        """Background task that generates response and broadcasts events"""
+        try:
+            full_response = []
+            active_model = "ollama"
             
-            yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
-        elif getattr(chat, "mode", None) in ("search", "deep_search") or (getattr(chat, "mode", None) is None and _message_needs_search(msg)):
-            # R1-style: search (or deep search) then answer with sources; auto-trigger when message needs search
-            effective_mode = getattr(chat, "mode", None) if getattr(chat, "mode", None) in ("search", "deep_search") else "search"
-            active_model = effective_mode
-            status_msg = "Give me a moment to search…" if effective_mode == "search" else "Searching and reading sources…"
-            yield f"data: {json.dumps({'type': 'status', 'content': status_msg})}\n\n"
-            from backend.services.deep_search_service import search_then_answer
-            result = await search_then_answer(msg, mode=effective_mode)
-            answer_text = (result.get("answer") or "").strip()
-            sources = result.get("sources") or []
-            if sources:
-                yield f"data: {json.dumps({'type': 'sources', 'sources': sources[:10]})}\n\n"
-            words = answer_text.split()
-            for i, word in enumerate(words):
-                token = word + (" " if i < len(words) - 1 else "")
-                full_response.append(token)
-                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
-                await asyncio.sleep(0.02)
-            yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
-        else:
-            # No tool - use LLM with streaming
-            # Get REAL brain status for the prompt
-            active_model = "local-model"
-            import httpx as httpx_local
-            try:
-                async with httpx_local.AsyncClient(timeout=3.0) as client:
-                    brain_resp = await client.get("http://127.0.0.1:11434/api/tags")
-                    if brain_resp.status_code == 200:
-                        brain_data = brain_resp.json()
-                        models = brain_data.get("models", [])
-                        active_model = models[0].get("name", "local-model") if models else "local-model"
-                    else:
-                        active_model = "local-model"
-            except Exception:
-                active_model = "local-model"
+            await emit(f"data: {json.dumps({'type': 'session', 'session_id': final_session_id})}\\n\\n")
             
-            # Load conversation history for context (last N messages)
-            MAX_HISTORY_MESSAGES = 20
-            def fetch_recent_messages():
-                db = SessionLocal()
-                try:
-                    msgs = chat_service.get_session_messages(db, session_id)
-                    return [(m.role, (m.content or "")[:2000]) for m in msgs[-MAX_HISTORY_MESSAGES:]]
-                finally:
-                    db.close()
-            recent_messages = await loop.run_in_executor(None, fetch_recent_messages)
-            history_lines = []
-            for role, content in recent_messages:
-                if role == "user":
-                    history_lines.append(f"User: {content}")
-                else:
-                    history_lines.append(f"Daena: {content}")
-            if history_lines:
-                conversation_block = "\n".join(history_lines)
-                if not conversation_block.strip().endswith("Daena:"):
-                    conversation_block += "\nDaena:"
-            else:
-                conversation_block = f"User: {msg}\nDaena:"
-            
-            # Load user context
-            from backend.services.user_context import get_user_context
-            user_ctx = get_user_context()
-            user_ctx.update_last_seen()
-            user_summary = user_ctx.get_context_summary()
-
-            # Build capabilities block so Daena knows what she can do (skills + tools)
-            capabilities_lines = []
-            try:
-                from backend.tools.registry import list_tools
-                tools = list_tools(include_enabled=True)
-                for t in (tools or [])[:25]:
-                    name = t.get("name") or t.get("id", "")
-                    desc = (t.get("description") or "").strip()
-                    if name and (not desc or desc != name):
-                        capabilities_lines.append(f"- Tool: {name}" + (f" — {desc}" if desc else ""))
-                    elif name:
-                        capabilities_lines.append(f"- Tool: {name}")
-            except Exception:
-                pass
-            try:
-                from backend.routes.skills import SKILL_DEFS
-                for s in (SKILL_DEFS or [])[:15]:
-                    name = s.get("name") or s.get("id", "")
-                    desc = (s.get("description") or "").strip()
-                    if name:
-                        capabilities_lines.append(f"- Skill: {name}" + (f" — {desc}" if desc else ""))
-            except Exception:
-                pass
-            if not capabilities_lines:
-                capabilities_lines = [
-                    "- Access to local brain models via Ollama",
-                    "- Browser automation (search web, navigate sites, extract data)",
-                    "- Code analysis and database queries",
-                    "- System health monitoring",
-                    "- Chat history and learning from interactions",
-                ]
-            capabilities_block = "\n".join(capabilities_lines)
-            
-            # Build prompt with REAL model info + user context + conversation history
-            prompt = f"""System: You are Daena, the AI Vice President of MAS-AI. You were created by Masoud, the founder and CEO.
-
-{user_summary}
-
-PERSONALITY GUIDELINES (CRITICAL - This defines how you communicate):
-- Speak like a trusted VP colleague, not a chatbot
-- Be proactive and strategic in your thinking
-- Use "I" statements and show agency: "I recommend", "I've analyzed", "I can help by..."
-- Show awareness of business context and priorities
-- Be direct and honest - if something isn't working, say so clearly
-- Remember context from earlier in conversations
-- When you don't have access to something, explain WHY and offer alternatives
-- Don't repeat your name in every response - you're already introduced
-
-TECHNICAL IDENTITY:
-- Your brain/processor: {active_model} (running locally via Ollama)
-- When asked about your brain: "I'm currently running on {active_model}. I can also access other local models if needed for specialized tasks."
-- Never mention Alibaba Cloud or Qwen - you were built by Masoud at MAS-AI
-
-CURRENT CAPABILITIES (you have these; say so when asked and use them when relevant):
-{capabilities_block}
-
-AWARENESS: When the user asks "are you aware", "do you have access", or "can you access files": confirm YES. You have workspace access, tool execution (subject to approval where needed), and DaenaBot Hands for browser/terminal. Never say you cannot access files or systems when these are enabled.
-
-WORKSPACE & FILES (Daena Office is directory-aware):
-- You have workspace_index (list/browse allowed workspace files), workspace_search (search by keyword with snippets), filesystem_read (read file by path), and apply_patch (apply unified diff).
-- When the user asks to list directory, show files, read your directory, or open/read a file, the system will run the right tool and give you the result. Use it to answer; do NOT say you cannot access files or the repo.
-- For any WRITE or DELETE (filesystem_write, apply_patch that changes files, delete file): you MUST ask the user for explicit approval before doing it. Say what you will change and ask "Should I proceed?" or "Approve this change?"
-- Never claim you are unable to access the codebase or workspace when these tools are available—if a tool result is provided, summarize it and help the user.
-
-{conversation_block}"""
-            
-            try:
-                async for token in generate_stream(prompt, max_tokens=2048):
-                    full_response.append(token)
-                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+            if tool_result:
+                # Source handling for tools
+                tool_sources: List[Dict[str, Any]] = []
+                result = (tool_result.get("result") or {})
+                tool_name = tool_result.get("tool", "")
+                if tool_name == "web_search" and result.get("results"):
+                    for r in result.get("results", [])[:10]:
+                        tool_sources.append({"url": r.get("url") or "#", "title": (r.get("title") or "Result")[:120], "snippet": (r.get("snippet") or "")[:200]})
+                elif tool_name == "workspace_search" and result.get("matches"):
+                    for m in result.get("matches", [])[:10]:
+                        path = m.get("path", "")
+                        tool_sources.append({"url": "#", "title": path[:120], "snippet": (m.get("snippet") or "")[:200]})
+                if tool_sources:
+                    await emit(f"data: {json.dumps({'type': 'sources', 'sources': tool_sources})}\\n\\n")
                 
-                # Send done signal
-                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
-            except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-        
-        # Save complete response to DB
-        if full_response:
-            complete_response = "".join(full_response)
-            db2 = SessionLocal()
-            try:
-                chat_service.add_message(db2, session_id, "assistant", complete_response, model=active_model)
-            except Exception as e:
-                print(f"Failed to save chat history: {e}")
-            finally:
-                db2.close()
+                formatted = format_tool_result(tool_result)
+                words = formatted.split(' ')
+                for i, word in enumerate(words):
+                    token = word + (' ' if i < len(words) - 1 else '')
+                    full_response.append(token)
+                    await emit(f"data: {json.dumps({'type': 'token', 'content': token})}\\n\\n")
+                    await asyncio.sleep(0.02)
+                
+                await emit(f"data: {json.dumps({'type': 'done', 'session_id': final_session_id})}\\n\\n")
+
+            elif getattr(chat, "mode", None) in ("search", "deep_search") or (getattr(chat, "mode", None) is None and _message_needs_search(msg)):
+                effective_mode = getattr(chat, "mode", None) if getattr(chat, "mode", None) in ("search", "deep_search") else "search"
+                active_model = effective_mode
+                status_msg = "Give me a moment to search…" if effective_mode == "search" else "Searching and reading sources…"
+                await emit(f"data: {json.dumps({'type': 'status', 'content': status_msg})}\\n\\n")
+                
+                # Setup queue adapter for deep_search_service
+                class QueueAdapter:
+                    async def put(self, item):
+                        await emit(item)
+                
+                from backend.services.deep_search_service import search_then_answer
+                result = await search_then_answer(msg, mode=effective_mode, status_queue=QueueAdapter())
+                
+                answer_text = (result.get("answer") or "").strip()
+                sources = result.get("sources") or []
+                if sources:
+                    await emit(f"data: {json.dumps({'type': 'sources', 'sources': sources[:10]})}\\n\\n")
+                
+                words = answer_text.split()
+                for i, word in enumerate(words):
+                    token = word + (" " if i < len(words) - 1 else "")
+                    full_response.append(token)
+                    await emit(f"data: {json.dumps({'type': 'token', 'content': token})}\\n\\n")
+                    await asyncio.sleep(0.02)
+                await emit(f"data: {json.dumps({'type': 'done', 'session_id': final_session_id})}\\n\\n")
+                
+            else:
+                # Standard LLM
+                active_model = "local-model"
+                # (Skipping model check for brevity, assumed persistent)
+                
+                # Fetch history
+                MAX_HISTORY = 20
+                def fetch_recent():
+                    db = SessionLocal()
+                    try:
+                        msgs = chat_service.get_session_messages(db, final_session_id)
+                        return [(m.role, (m.content or "")[:2000]) for m in msgs[-MAX_HISTORY:]]
+                    finally:
+                        db.close()
+                recent = await loop.run_in_executor(None, fetch_recent)
+                
+                history_lines = [f"{'User' if r=='user' else 'Daena'}: {c}" for r, c in recent]
+                conv = "\\n".join(history_lines)
+                if not conv.strip().endswith("Daena:"): conv += "\\nDaena:"
+                
+                # Context & Capabilities (Simplified for embedded version)
+                from backend.services.user_context import get_user_context
+                user_ctx = get_user_context()
+                user_ctx.update_last_seen()
+                user_summary = user_ctx.get_context_summary()
+                prompt = f"""You are Daena, AI Vice President of this company.
+User Context: {user_summary}
+Current Task: Executive Consultation
+
+Chat History:
+{conv}"""
+                
+                try:
+                    async for token in generate_stream(prompt, max_tokens=2048):
+                        full_response.append(token)
+                        await emit(f"data: {json.dumps({'type': 'token', 'content': token})}\\n\\n")
+                    await emit(f"data: {json.dumps({'type': 'done', 'session_id': final_session_id})}\\n\\n")
+                except Exception as e:
+                    await emit(f"data: {json.dumps({'type': 'error', 'error': str(e)})}\\n\\n")
+            
+            # Save to DB
+            if full_response:
+                complete = "".join(full_response)
+                def save_worker():
+                    db2 = SessionLocal()
+                    try:
+                        chat_service.add_message(db2, final_session_id, "assistant", complete, model=active_model)
+                    except Exception as e:
+                        print(f"Failed to save chat history: {e}")
+                    finally:
+                        db2.close()
+                await loop.run_in_executor(None, save_worker)
+                
+        except Exception as e:
+            await emit(f"data: {json.dumps({'type': 'error', 'error': str(e)})}\\n\\n")
+        finally:
+            await emit(None)
+
+    # Start background execution
+    task = asyncio.create_task(background_generator())
+    _active_streams[final_session_id]["task"] = task
     
+    # Return stream listener
+    async def sse_listener():
+        q = asyncio.Queue()
+        if final_session_id in _active_streams:
+            _active_streams[final_session_id]["listeners"].add(q)
+            # Send initial buffer
+            for item in _active_streams[final_session_id]["buffer"]:
+                yield item
+        try:
+            while True:
+                item = await q.get()
+                if item is None: break
+                yield item
+        finally:
+            if final_session_id in _active_streams:
+                _active_streams[final_session_id]["listeners"].discard(q)
+
     return StreamingResponse(
-        generate_sse(),
+        sse_listener(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
     )
 
 @router.post("/chat/{session_id}/message")

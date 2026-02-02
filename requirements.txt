@@ -4,7 +4,7 @@ fastapi>=0.115.0  # Required for Starlette 0.50+ compatibility
 uvicorn[standard]>=0.30.0  # Updated for compatibility
 pydantic==2.4.2
 python-multipart==0.0.6
-jinja2==3.1.2
+jinja2>=3.1.6,<4  # CVE-2024-22195, CVE-2025-27516
 pydantic-settings==2.1.0
 
 # Database & Storage
@@ -14,8 +14,8 @@ redis==5.0.1
 aiofiles==23.2.1
 
 # HTTP & API (httpx required for providers Discord/Telegram + deep search, brain, etc.)
-requests==2.31.0
-httpx==0.25.2
+requests>=2.31.0,<2.33
+httpx>=0.28.1,<1.0.0
 websockets==12.0
 
 # Operator / Automation (scrape)
@@ -43,8 +43,8 @@ click==8.1.7
 psutil==5.9.6
 pyyaml==6.0.1  # Required for SEC-Loop config.yaml parsing
 
-# Security & Encryption
-cryptography==41.0.7  # Required for skill_capsules
+# Security & Encryption (cryptography>=43 fixes type confusion CVE; 42.0.8+ fixes DoS)
+cryptography>=43.0.2
 
 # Browser Automation & MCP (required for tool execution)
 playwright>=1.40.0

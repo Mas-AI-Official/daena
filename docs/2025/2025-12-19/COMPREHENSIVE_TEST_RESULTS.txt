@@ -1,0 +1,54 @@
+Comprehensive Test Suite Results
+============================================================
+
+Guardrails: PASS
+------------------------------------------------------------
+Truncation Check: PASS
+Duplicate Check: PASS
+
+Contract Tests: FAIL
+------------------------------------------------------------
+============================================================
+Contract Test: Backend <-> Frontend Sync
+============================================================
+
+Extracting backend routes...
+Found 605 backend routes
+Extracting frontend API calls...
+Found 0 frontend API calls
+Comparing routes...
+
+============================================================
+RESULTS
+============================================================
+Total backend routes: 605
+Total frontend calls: 0
+Matched routes: 0
+
+Traceback (most recent call last):
+  File "D:\Ideas\Daena_old_upgrade_20251213\scripts\contract_test.py", line 230, in <module>
+    exit(main())
+         ~~~~^^
+  File "D:\Ideas\Daena_old_upgrade_20251213\scripts\contract_test.py", line 195, in main
+    print(f"\u2139\ufe0f  {len(comparison['missing_in_frontend'])} backend routes not used by frontend:")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\encodings\cp1252.py", lin
+
+Phase Validation: PASS
+------------------------------------------------------------
+Phase B: PASS
+Phase C: PASS
+Phase D: PASS
+Phase E: PASS
+Phase F: PASS
+Phase G: PASS
+Phase H: PASS
+
+Results written to: D:\Ideas\Daena_old_upgrade_20251213\docs\2025-12-19\validation_results.json
+
+
+Smoke Tests: FAIL
+------------------------------------------------------------
+ERROR: httpx not installed. Run: pip install httpx
+
+

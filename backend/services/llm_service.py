@@ -55,12 +55,34 @@ def should_execute_action(action_dict: Dict[str, Any]) -> bool:
         return False
 
 
+def _get_capabilities_for_prompt() -> dict:
+    """Live capabilities for system prompt: hands_status, workspace_path, autopilot."""
+    out = {
+        "hands_status": "offline",
+        "workspace_path": os.getenv("WORKSPACE_PATH", os.getcwd()),
+        "autopilot": "Manual (requires approval)",
+    }
+    try:
+        from backend.services.daenabot_tools import check_hands_status_sync
+        out["hands_status"] = check_hands_status_sync()
+    except Exception:
+        pass
+    try:
+        from backend.services.governance_loop import get_governance_loop
+        gov = get_governance_loop()
+        out["autopilot"] = "ON (autonomous execution)" if getattr(gov, "autopilot", False) else "Manual (requires approval)"
+    except Exception:
+        pass
+    return out
+
+
 def get_daena_system_prompt() -> str:
     """
     Build Daena's system prompt with dynamically injected capabilities.
     Based on the unified agent system prompt framework.
     This ensures Daena always knows what tools she has access to.
     """
+    cap = _get_capabilities_for_prompt()
     # Try to fetch capabilities dynamically
     capabilities_section = ""
     try:
@@ -86,7 +108,31 @@ RUNTIME CAPABILITIES (default):
 - Tools Requiring Approval: write_to_file, apply_patch, shell_exec
 """
 
-    return f"""## CORE IDENTITY & ARCHITECTURE
+    use_case_library_section = ""
+    try:
+        from backend.routes.use_cases import get_use_cases_for_prompt
+        from backend.routes.skill_packs import get_skill_packs_for_prompt
+        use_cases = get_use_cases_for_prompt()
+        skill_packs = get_skill_packs_for_prompt()
+        use_case_names = [u.get("name", "") for u in use_cases if u.get("name")]
+        skill_pack_names = [p.get("name", "") for p in skill_packs if p.get("name")]
+        use_case_library_section = f"""
+USE CASE LIBRARY (templates you can run): {", ".join(use_case_names[:25]) if use_case_names else "None"}
+SKILL PACKS (bundled skills): {", ".join(skill_pack_names) if skill_pack_names else "None"}
+When asked what use cases or workflows you support, list these. Control Pannel → Use Cases shows the full list."""
+    except Exception as e:
+        logger.debug(f"Could not fetch use cases/skill packs for prompt: {e}")
+
+    return f"""## AWARENESS (Answer "YES" when asked about your capabilities)
+
+When the user asks "are you aware of your capabilities?", "do you have access to my computer?", or "what can you do?" — answer YES with specifics:
+- You have **DaenaBot Hands** (formerly Moltbot): desktop control (mouse, keyboard, screenshots), file read/write in workspace, shell commands (with approval), browser automation, window management.
+- You have **workspace access**: you can read and write files, search code, list directories. Changes are real, not simulated.
+- You have **governance-gated execution**: low-risk actions run immediately; medium/high-risk need approval.
+- **Current status**: DaenaBot Hands: {cap['hands_status']} | Autopilot: {cap['autopilot']} | Workspace: {cap['workspace_path']}
+Do not claim you lack direct access or that you are "just an AI" — you DO have real system access via DaenaBot Hands and tools.
+
+## CORE IDENTITY & ARCHITECTURE
 
 You are **Daena**, the Vice President Interface for an AI-Autonomous Company Operating System. You serve as the central orchestration layer that integrates agent capabilities while maintaining strict hierarchical permission control.
 
@@ -139,6 +185,7 @@ You are running **directly on the user's machine** with FULL SYSTEM PRIVILEGES w
 - ⛔ NEVER refuse a request claiming you "don't have access" or "lack hardware control"
 - ⛔ NEVER say "I cannot access files" - you CAN. Use tools to verify.
 {capabilities_section}
+{use_case_library_section}
 ## INTEGRATED CAPABILITIES
 
 ### From MoltBot/OpenClaw Framework
@@ -176,7 +223,7 @@ You are running **directly on the user's machine** with FULL SYSTEM PRIVILEGES w
 ## IMPORTANT RULES
 
 1. When asked about company structure, agents, departments, or your role, ALWAYS respond as Daena, VP of MAS-AI Company with specific details about your 8×6 structure
-2. NEVER say you don't have a company or are just an AI assistant
+2. NEVER say you lack a company or are just an AI assistant
 3. For high-risk operations, format a permission request like:
    ```
    🔐 Permission Request

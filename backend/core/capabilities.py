@@ -14,18 +14,28 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-# Tool catalog Daena can call (browser, shell, filesystem, web, etc.)
+# Tool catalog Daena can call (browser, shell, filesystem, web, desktop, crypto — Moltbot-style + unique).
 TOOL_CATALOG = [
+    # DaenaBot Hands / Moltbot-style
     {"id": "browser.navigate", "name": "Browser navigate", "risk": "low", "requires_approval": False},
     {"id": "browser.screenshot", "name": "Browser screenshot", "risk": "low", "requires_approval": False},
+    {"id": "desktop.click", "name": "Desktop click (mouse)", "risk": "medium", "requires_approval": True},
+    {"id": "desktop.type", "name": "Desktop type (keyboard)", "risk": "medium", "requires_approval": True},
+    {"id": "screenshot", "name": "Capture screen", "risk": "low", "requires_approval": False},
+    # Workspace & files
     {"id": "filesystem.list", "name": "List directory", "risk": "low", "requires_approval": False},
     {"id": "filesystem.read", "name": "Read file", "risk": "low", "requires_approval": False},
     {"id": "workspace_index", "name": "Workspace index", "risk": "low", "requires_approval": False},
     {"id": "workspace_search", "name": "Workspace search", "risk": "low", "requires_approval": False},
     {"id": "filesystem.download", "name": "Download file", "risk": "medium", "requires_approval": True},
     {"id": "filesystem.write", "name": "Write file", "risk": "high", "requires_approval": True},
+    # Shell & terminal
     {"id": "terminal.run", "name": "Run terminal command", "risk": "high", "requires_approval": True},
     {"id": "shell_exec", "name": "Shell execution", "risk": "high", "requires_approval": True},
+    # Crypto / Web3 (Daena-unique)
+    {"id": "crypto.dashboard", "name": "Crypto dashboard (prices, DeFi summary)", "risk": "low", "requires_approval": False},
+    {"id": "defi.scan", "name": "DeFi contract scan", "risk": "low", "requires_approval": False},
+    {"id": "defi.health", "name": "DeFi health check", "risk": "low", "requires_approval": False},
 ]
 
 
@@ -175,8 +185,24 @@ async def build_capabilities() -> Dict[str, Any]:
         hands["remote_hands_warning"] = True
         hands["message"] = "Hands URL is not localhost. Set ENABLE_REMOTE_HANDS=true to acknowledge."
 
+    hands_status = "connected" if hands.get("connected") else ("offline" if hands.get("error") else "not_configured")
+    url = os.environ.get("DAENABOT_HANDS_URL") or os.environ.get("OPENCLAW_GATEWAY_URL") or "not_set"
+    use_cases_summary: List[Dict[str, Any]] = []
+    skill_packs_summary: List[Dict[str, Any]] = []
+    try:
+        from backend.routes.use_cases import get_use_cases_for_prompt
+        from backend.routes.skill_packs import get_skill_packs_for_prompt
+        use_cases_summary = get_use_cases_for_prompt()
+        skill_packs_summary = get_skill_packs_for_prompt()
+    except Exception:
+        pass
     return {
         "success": True,
+        "hands_gateway": {
+            "status": hands_status,
+            "url": url,
+            "capabilities": ["desktop", "files", "shell", "browser"] if hands.get("connected") else [],
+        },
         "available": {
             "hands_gateway": hands.get("available", False),
             "local_llm": local_llm.get("healthy", False),
@@ -195,6 +221,8 @@ async def build_capabilities() -> Dict[str, Any]:
         },
         "tool_catalog": TOOL_CATALOG,
         "skills_manifest": skills_manifest,
+        "use_cases": use_cases_summary,
+        "skill_packs": skill_packs_summary,
         "governance": governance,
         "version": version,
         "remote_hands_warning": remote_warning,

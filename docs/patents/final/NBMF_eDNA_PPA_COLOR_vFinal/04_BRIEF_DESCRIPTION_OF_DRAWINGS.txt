@@ -1,0 +1,9 @@
+FIG. 1 illustrates the NBMF System Overview (L1/L2/L3, router, controllers, eDNA banner).
+FIG. 2 shows the promotion/eviction pipeline with thresholds and validation.
+FIG. 3 depicts the trust pipeline with L2Q quarantine, consensus, divergence, and scoring.
+FIG. 4 shows the neural bytecode encoding in lossless and semantic modes.
+FIG. 5 depicts Merkle-notarized lineage for promotions/evictions and proof paths.
+FIG. 6 illustrates the eDNA governance layer (Genome, Epigenome, Lineage, Immune) governing NBMF.
+FIG. 7 shows the Immune system workflow and its impact on NBMF tiers.
+FIG. 8 shows hardware abstraction: DeviceManager, router, and CPU/GPU/TPU paths.
+FIG. 9 shows cross-tenant learning using sanitized artifacts without raw data leakage.

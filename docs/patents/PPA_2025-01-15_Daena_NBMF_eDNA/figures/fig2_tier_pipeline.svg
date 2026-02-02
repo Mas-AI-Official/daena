@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; }
+      .label { font-family: Arial, sans-serif; font-size: 11px; }
+      .ref-num { font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; }
+      .tier-box { fill: #d4e6f1; stroke: #1a4d6e; stroke-width: 2; }
+      .control-box { fill: #e8f4f8; stroke: #2c5f7d; stroke-width: 2; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .promote-arrow { stroke: #28a745; stroke-width: 2; fill: none; marker-end: url(#arrowhead-green); }
+      .evict-arrow { stroke: #dc3545; stroke-width: 2; fill: none; marker-end: url(#arrowhead-red); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+    <marker id="arrowhead-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#28a745" />
+    </marker>
+    <marker id="arrowhead-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#dc3545" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" class="title">FIG.2 Tiered Promotion/Eviction Pipeline</text>
+  
+  <!-- L3 Cold Memory -->
+  <rect x="50" y="80" width="200" height="120" class="tier-box" rx="5"/>
+  <text x="150" y="105" text-anchor="middle" class="label" font-weight="bold">L3 Cold Memory</text>
+  <text x="150" y="125" text-anchor="middle" class="ref-num">301</text>
+  <text x="150" y="140" text-anchor="middle" class="label">Compressed Archives</text>
+  <text x="150" y="155" text-anchor="middle" class="label">On-demand decompression</text>
+  <text x="150" y="170" text-anchor="middle" class="label">Latency: &lt;500ms</text>
+  <text x="150" y="185" text-anchor="middle" class="label" font-size="9px">Age: 7+ days</text>
+  
+  <!-- L2 Warm Memory -->
+  <rect x="300" y="80" width="200" height="120" class="tier-box" rx="5"/>
+  <text x="400" y="105" text-anchor="middle" class="label" font-weight="bold">L2 Warm Memory</text>
+  <text x="400" y="125" text-anchor="middle" class="ref-num">201</text>
+  <text x="400" y="140" text-anchor="middle" class="label">NBMF Encoded Records</text>
+  <text x="400" y="155" text-anchor="middle" class="label">AES-256 Encrypted</text>
+  <text x="400" y="170" text-anchor="middle" class="label">Latency: &lt;120ms</text>
+  <text x="400" y="185" text-anchor="middle" class="label" font-size="9px">Age: 1-7 days</text>
+  
+  <!-- L1 Hot Memory -->
+  <rect x="550" y="80" width="200" height="120" class="tier-box" rx="5"/>
+  <text x="650" y="105" text-anchor="middle" class="label" font-weight="bold">L1 Hot Memory</text>
+  <text x="650" y="125" text-anchor="middle" class="ref-num">101</text>
+  <text x="650" y="140" text-anchor="middle" class="label">Vector Embeddings</text>
+  <text x="650" y="155" text-anchor="middle" class="label">Similarity Search</text>
+  <text x="650" y="170" text-anchor="middle" class="label">Latency: &lt;25ms</text>
+  <text x="650" y="185" text-anchor="middle" class="label" font-size="9px">Age: &lt;1 hour</text>
+  
+  <!-- Promotion Arrows (Green) -->
+  <path d="M 250 140 L 300 140" class="promote-arrow"/>
+  <text x="275" y="130" text-anchor="middle" class="label" font-size="9px" fill="#28a745">Promote</text>
+  <text x="275" y="145" text-anchor="middle" class="label" font-size="9px" fill="#28a745">(access &gt;10)</text>
+  
+  <path d="M 500 140 L 550 140" class="promote-arrow"/>
+  <text x="525" y="130" text-anchor="middle" class="label" font-size="9px" fill="#28a745">Promote</text>
+  <text x="525" y="145" text-anchor="middle" class="label" font-size="9px" fill="#28a745">(recency &lt;1h)</text>
+  
+  <!-- Eviction Arrows (Red) -->
+  <path d="M 550 160 L 500 160" class="evict-arrow"/>
+  <text x="525" y="175" text-anchor="middle" class="label" font-size="9px" fill="#dc3545">Evict</text>
+  <text x="525" y="188" text-anchor="middle" class="label" font-size="9px" fill="#dc3545">(age &gt;1h)</text>
+  
+  <path d="M 300 160 L 250 160" class="evict-arrow"/>
+  <text x="275" y="175" text-anchor="middle" class="label" font-size="9px" fill="#dc3545">Evict</text>
+  <text x="275" y="188" text-anchor="middle" class="label" font-size="9px" fill="#dc3545">(age &gt;7d)</text>
+  
+  <!-- Control Components -->
+  <rect x="50" y="250" width="700" height="200" fill="white" stroke="#ccc" stroke-width="1" rx="5"/>
+  <text x="400" y="275" text-anchor="middle" class="label" font-weight="bold">Control Logic</text>
+  
+  <!-- Access Frequency Tracker -->
+  <rect x="80" y="290" width="140" height="60" class="control-box" rx="3"/>
+  <text x="150" y="310" text-anchor="middle" class="ref-num">601</text>
+  <text x="150" y="325" text-anchor="middle" class="label">Access Frequency</text>
+  <text x="150" y="340" text-anchor="middle" class="label">Tracker</text>
+  
+  <!-- Age Calculator -->
+  <rect x="250" y="290" width="140" height="60" class="control-box" rx="3"/>
+  <text x="320" y="310" text-anchor="middle" class="ref-num">602</text>
+  <text x="320" y="325" text-anchor="middle" class="label">Age Calculator</text>
+  <text x="320" y="340" text-anchor="middle" class="label">(time since access)</text>
+  
+  <!-- Trust Score Evaluator -->
+  <rect x="420" y="290" width="140" height="60" class="control-box" rx="3"/>
+  <text x="490" y="310" text-anchor="middle" class="ref-num">603</text>
+  <text x="490" y="325" text-anchor="middle" class="label">Trust Score</text>
+  <text x="490" y="340" text-anchor="middle" class="label">Evaluator</text>
+  
+  <!-- Promotion Controller -->
+  <rect x="200" y="380" width="150" height="50" class="control-box" rx="3"/>
+  <text x="275" y="400" text-anchor="middle" class="ref-num">604</text>
+  <text x="275" y="415" text-anchor="middle" class="label">Promotion Controller</text>
+  <text x="275" y="428" text-anchor="middle" class="label" font-size="9px">if access &gt; threshold</text>
+  
+  <!-- Eviction Controller -->
+  <rect x="450" y="380" width="150" height="50" class="control-box" rx="3"/>
+  <text x="525" y="400" text-anchor="middle" class="ref-num">605</text>
+  <text x="525" y="415" text-anchor="middle" class="label">Eviction Controller</text>
+  <text x="525" y="428" text-anchor="middle" class="label" font-size="9px">if age &gt; threshold</text>
+  
+  <!-- Control Flow Arrows -->
+  <line x1="150" y1="350" x2="200" y2="395" class="arrow"/>
+  <line x1="320" y1="350" x2="275" y2="395" class="arrow"/>
+  <line x1="320" y1="350" x2="450" y2="395" class="arrow"/>
+  <line x1="490" y1="350" x2="525" y2="395" class="arrow"/>
+</svg>
+
+
+
+
+
+
+
+
+
+

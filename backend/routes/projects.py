@@ -193,3 +193,38 @@ async def delete_project(project_id: str, db: Session = Depends(get_db)) -> Dict
     )
     
     return {"success": True, "message": "Project deleted"}
+
+@router.post("/{project_id}/pause")
+async def pause_project(project_id: str, db: Session = Depends(get_db)):
+    """Pause a project"""
+    return await _update_project_status(project_id, "paused", db)
+
+@router.post("/{project_id}/resume")
+async def resume_project(project_id: str, db: Session = Depends(get_db)):
+    """Resume a paused project"""
+    return await _update_project_status(project_id, "active", db)
+
+@router.post("/{project_id}/stop")
+async def stop_project(project_id: str, db: Session = Depends(get_db)):
+    """Stop/Cancel a project"""
+    return await _update_project_status(project_id, "stopped", db)
+
+async def _update_project_status(project_id: str, status: str, db: Session):
+    project = db.query(ProjectDB).filter(ProjectDB.project_id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project.status = status
+    project.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(project)
+    
+    # Emit WebSocket event
+    await websocket_manager.publish_event(
+        event_type="project.updated",
+        entity_type="project",
+        entity_id=project_id,
+        payload={"project": _project_db_to_domain(project)}
+    )
+    
+    return {"success": True, "project": _project_db_to_domain(project)}

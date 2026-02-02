@@ -1,0 +1,180 @@
+{
+  "canaries": {
+    "canary_00b0e4a27e45": {
+      "token_id": "canary_00b0e4a27e45",
+      "token_type": "api_key",
+      "token_value": "DAENA_API_52f9ea0483c791adc13c8774677426fc",
+      "description": "Auto-generated api_key canary",
+      "created_at": "2026-02-01T16:13:16.430481+00:00",
+      "triggered": false,
+      "trigger_count": 0,
+      "last_triggered": null
+    },
+    "canary_7779d353e939": {
+      "token_id": "canary_7779d353e939",
+      "token_type": "api_key",
+      "token_value": "AWS_SECRET_46e5a20ac2556d014de8ce55e1775802139de441",
+      "description": "Auto-generated api_key canary",
+      "created_at": "2026-02-01T16:13:16.430481+00:00",
+      "triggered": false,
+      "trigger_count": 0,
+      "last_triggered": null
+    },
+    "canary_169c3e64592e": {
+      "token_id": "canary_169c3e64592e",
+      "token_type": "api_key",
+      "token_value": "OPENAI_API_KEY_cce2d75c3a3845ca3d8a5b86b62a52bc6fb7b20cdf1a3c3d",
+      "description": "Auto-generated api_key canary",
+      "created_at": "2026-02-01T16:13:16.430481+00:00",
+      "triggered": false,
+      "trigger_count": 0,
+      "last_triggered": null
+    },
+    "canary_f023f930227c": {
+      "token_id": "canary_f023f930227c",
+      "token_type": "database_cred",
+      "token_value": "DB_PASSWORD_5dda55755743f36fe9dddace",
+      "description": "Auto-generated database_cred canary",
+      "created_at": "2026-02-01T16:13:16.430481+00:00",
+      "triggered": false,
+      "trigger_count": 0,
+      "last_triggered": null
+    },
+    "canary_2008c6a07dfe": {
+      "token_id": "canary_2008c6a07dfe",
+      "token_type": "ssh_key",
+      "token_value": "SSH_PRIVATE_74ccc3a246e5a6bc027b48afa060a8883d2a4097ce92cec44709dd5705699461",
+      "description": "Auto-generated ssh_key canary",
+      "created_at": "2026-02-01T16:13:16.430481+00:00",
+      "triggered": false,
+      "trigger_count": 0,
+      "last_triggered": null
+    },
+    "canary_b611282f22ff": {
+      "token_id": "canary_b611282f22ff",
+      "token_type": "bearer_token",
+      "token_value": "BEARER_035dd05ffcea162333609c76f0841f0fee255bfadd322a9bd97e4b9627a26d5a",
+      "description": "Auto-generated bearer_token canary",
+      "created_at": "2026-02-01T16:13:16.430481+00:00",
+      "triggered": false,
+      "trigger_count": 0,
+      "last_triggered": null
+    },
+    "canary_f191f13e3afd": {
+      "token_id": "canary_f191f13e3afd",
+      "token_type": "aws_key",
+      "token_value": "AKIA7AB2107DB3F91323",
+      "description": "Custom aws_key canary",
+      "created_at": "2026-02-01T16:13:21.617440+00:00",
+      "triggered": false,
+      "trigger_count": 0,
+      "last_triggered": null
+    }
+  },
+  "endpoints": {
+    "hp_admin_keys": {
+      "endpoint_id": "hp_admin_keys",
+      "path": "/api/v1/admin/keys",
+      "method": "GET",
+      "description": "Fake admin API keys endpoint",
+      "response_type": "fake_keys",
+      "enabled": true,
+      "hits": 3,
+      "last_hit": "2026-02-01T16:26:50.257852+00:00"
+    },
+    "hp_vault": {
+      "endpoint_id": "hp_vault",
+      "path": "/api/v1/internal/vault",
+      "method": "GET",
+      "description": "Fake database vault dump",
+      "response_type": "fake_data",
+      "enabled": true,
+      "hits": 0,
+      "last_hit": null
+    },
+    "hp_config": {
+      "endpoint_id": "hp_config",
+      "path": "/api/v1/config/secrets",
+      "method": "GET",
+      "description": "Fake config secrets",
+      "response_type": "fake_config",
+      "enabled": true,
+      "hits": 0,
+      "last_hit": null
+    },
+    "hp_backup": {
+      "endpoint_id": "hp_backup",
+      "path": "/api/v1/backup/download",
+      "method": "GET",
+      "description": "Fake backup download",
+      "response_type": "fake_data",
+      "enabled": true,
+      "hits": 0,
+      "last_hit": null
+    },
+    "hp_debug": {
+      "endpoint_id": "hp_debug",
+      "path": "/api/v1/debug/env",
+      "method": "GET",
+      "description": "Fake debug environment",
+      "response_type": "fake_config",
+      "enabled": true,
+      "hits": 0,
+      "last_hit": null
+    }
+  },
+  "hits": [
+    {
+      "hit_id": "hit_20260201T161321.6_ecc6f2aa",
+      "honeypot_id": "hp_admin_keys",
+      "source_ip": "127.0.0.1",
+      "user_agent": "python-requests/2.31.0",
+      "path": "/api/v1/shadow/admin/keys",
+      "method": "GET",
+      "headers": {
+        "host": "localhost:8000",
+        "user-agent": "python-requests/2.31.0",
+        "accept-encoding": "gzip, deflate",
+        "accept": "*/*",
+        "connection": "keep-alive"
+      },
+      "body": "",
+      "timestamp": "2026-02-01T16:13:21.615876+00:00"
+    },
+    {
+      "hit_id": "hit_20260201T162255.2_2061d28a",
+      "honeypot_id": "hp_admin_keys",
+      "source_ip": "127.0.0.1",
+      "user_agent": "python-requests/2.31.0",
+      "path": "/api/v1/shadow/admin/keys",
+      "method": "GET",
+      "headers": {
+        "host": "localhost:8000",
+        "user-agent": "python-requests/2.31.0",
+        "accept-encoding": "gzip, deflate",
+        "accept": "*/*",
+        "connection": "keep-alive"
+      },
+      "body": "",
+      "timestamp": "2026-02-01T16:22:55.278865+00:00"
+    },
+    {
+      "hit_id": "hit_20260201T162650.2_12391573",
+      "honeypot_id": "hp_admin_keys",
+      "source_ip": "127.0.0.1",
+      "user_agent": "python-requests/2.31.0",
+      "path": "/api/v1/shadow/admin/keys",
+      "method": "GET",
+      "headers": {
+        "host": "localhost:8000",
+        "user-agent": "python-requests/2.31.0",
+        "accept-encoding": "gzip, deflate",
+        "accept": "*/*",
+        "connection": "keep-alive"
+      },
+      "body": "",
+      "timestamp": "2026-02-01T16:26:50.257852+00:00"
+    }
+  ],
+  "last_updated": "2026-02-01T21:52:47.204574+00:00"
+}

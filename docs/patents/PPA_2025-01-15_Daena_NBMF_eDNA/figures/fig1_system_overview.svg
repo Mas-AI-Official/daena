@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; }
+      .label { font-family: Arial, sans-serif; font-size: 12px; }
+      .ref-num { font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; }
+      .box { fill: #e8f4f8; stroke: #2c5f7d; stroke-width: 2; }
+      .tier-box { fill: #d4e6f1; stroke: #1a4d6e; stroke-width: 2; }
+      .governance-box { fill: #f0e6d4; stroke: #8b6f3d; stroke-width: 2; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" class="title">FIG.1 System Overview</text>
+  
+  <!-- NBMF Three-Tier Memory System -->
+  <rect x="50" y="80" width="300" height="200" class="tier-box" rx="5"/>
+  <text x="200" y="105" text-anchor="middle" class="label" font-weight="bold">NBMF Memory System</text>
+  
+  <!-- L1 Hot Memory -->
+  <rect x="70" y="120" width="80" height="50" class="box" rx="3"/>
+  <text x="110" y="140" text-anchor="middle" class="ref-num">101</text>
+  <text x="110" y="155" text-anchor="middle" class="label">L1 Hot</text>
+  <text x="110" y="168" text-anchor="middle" class="label" font-size="10px">Vector DB</text>
+  
+  <!-- L2 Warm Memory -->
+  <rect x="170" y="120" width="80" height="50" class="box" rx="3"/>
+  <text x="210" y="140" text-anchor="middle" class="ref-num">201</text>
+  <text x="210" y="155" text-anchor="middle" class="label">L2 Warm</text>
+  <text x="210" y="168" text-anchor="middle" class="label" font-size="10px">NBMF Store</text>
+  
+  <!-- L3 Cold Memory -->
+  <rect x="270" y="120" width="80" height="50" class="box" rx="3"/>
+  <text x="310" y="140" text-anchor="middle" class="ref-num">301</text>
+  <text x="310" y="155" text-anchor="middle" class="label">L3 Cold</text>
+  <text x="310" y="168" text-anchor="middle" class="label" font-size="10px">Archive</text>
+  
+  <!-- Memory Router -->
+  <rect x="150" y="190" width="100" height="40" class="box" rx="3"/>
+  <text x="200" y="210" text-anchor="middle" class="ref-num">604</text>
+  <text x="200" y="225" text-anchor="middle" class="label">Memory Router</text>
+  
+  <!-- eDNA Governance Layer -->
+  <rect x="450" y="80" width="300" height="200" class="governance-box" rx="5"/>
+  <text x="600" y="105" text-anchor="middle" class="label" font-weight="bold">Enterprise-DNA Governance</text>
+  
+  <!-- Genome -->
+  <rect x="470" y="120" width="80" height="50" class="box" rx="3"/>
+  <text x="510" y="140" text-anchor="middle" class="ref-num">801</text>
+  <text x="510" y="155" text-anchor="middle" class="label">Genome</text>
+  <text x="510" y="168" text-anchor="middle" class="label" font-size="10px">Capabilities</text>
+  
+  <!-- Epigenome -->
+  <rect x="570" y="120" width="80" height="50" class="box" rx="3"/>
+  <text x="610" y="140" text-anchor="middle" class="ref-num">901</text>
+  <text x="610" y="155" text-anchor="middle" class="label">Epigenome</text>
+  <text x="610" y="168" text-anchor="middle" class="label" font-size="10px">Policies</text>
+  
+  <!-- Lineage -->
+  <rect x="470" y="190" width="80" height="50" class="box" rx="3"/>
+  <text x="510" y="210" text-anchor="middle" class="ref-num">1001</text>
+  <text x="510" y="225" text-anchor="middle" class="label">Lineage</text>
+  <text x="510" y="238" text-anchor="middle" class="label" font-size="10px">Merkle Chain</text>
+  
+  <!-- Immune -->
+  <rect x="570" y="190" width="80" height="50" class="box" rx="3"/>
+  <text x="610" y="210" text-anchor="middle" class="ref-num">1101</text>
+  <text x="610" y="225" text-anchor="middle" class="label">Immune</text>
+  <text x="610" y="238" text-anchor="middle" class="label" font-size="10px">Threat Detect</text>
+  
+  <!-- Integration Arrows -->
+  <line x1="350" y1="200" x2="450" y2="200" class="arrow"/>
+  <text x="400" y="195" text-anchor="middle" class="label" font-size="10px">Integration</text>
+  
+  <!-- Trust Pipeline -->
+  <rect x="50" y="320" width="700" height="60" class="box" rx="5"/>
+  <text x="400" y="345" text-anchor="middle" class="label" font-weight="bold">Trust Pipeline (L2Q)</text>
+  <rect x="100" y="355" width="100" height="20" class="box" rx="2"/>
+  <text x="150" y="368" text-anchor="middle" class="ref-num">701</text>
+  <text x="150" y="375" text-anchor="middle" class="label" font-size="10px">Quarantine</text>
+  <line x1="200" y1="365" x2="250" y2="365" class="arrow"/>
+  <rect x="250" y="355" width="100" height="20" class="box" rx="2"/>
+  <text x="300" y="368" text-anchor="middle" class="ref-num">702</text>
+  <text x="300" y="375" text-anchor="middle" class="label" font-size="10px">Consensus</text>
+  <line x1="350" y1="365" x2="400" y2="365" class="arrow"/>
+  <rect x="400" y="355" width="100" height="20" class="box" rx="2"/>
+  <text x="450" y="368" text-anchor="middle" class="ref-num">704</text>
+  <text x="450" y="375" text-anchor="middle" class="label" font-size="10px">Trust Score</text>
+  <line x1="500" y1="365" x2="550" y2="365" class="arrow"/>
+  <rect x="550" y="355" width="100" height="20" class="box" rx="2"/>
+  <text x="600" y="368" text-anchor="middle" class="ref-num">705</text>
+  <text x="600" y="375" text-anchor="middle" class="label" font-size="10px">Promote</text>
+  
+  <!-- Hardware Abstraction -->
+  <rect x="50" y="420" width="700" height="60" class="box" rx="5"/>
+  <text x="400" y="445" text-anchor="middle" class="label" font-weight="bold">Hardware Abstraction</text>
+  <rect x="100" y="455" width="120" height="20" class="box" rx="2"/>
+  <text x="160" y="468" text-anchor="middle" class="ref-num">1202</text>
+  <text x="160" y="475" text-anchor="middle" class="label" font-size="10px">CPU</text>
+  <rect x="250" y="455" width="120" height="20" class="box" rx="2"/>
+  <text x="310" y="468" text-anchor="middle" class="ref-num">1203</text>
+  <text x="310" y="475" text-anchor="middle" class="label" font-size="10px">GPU</text>
+  <rect x="400" y="455" width="120" height="20" class="box" rx="2"/>
+  <text x="460" y="468" text-anchor="middle" class="ref-num">1204</text>
+  <text x="460" y="475" text-anchor="middle" class="label" font-size="10px">TPU</text>
+  <rect x="550" y="440" width="150" height="40" class="box" rx="3"/>
+  <text x="625" y="458" text-anchor="middle" class="ref-num">1201</text>
+  <text x="625" y="472" text-anchor="middle" class="label">DeviceManager</text>
+  
+  <!-- Legend -->
+  <rect x="50" y="520" width="700" height="60" fill="white" stroke="#ccc" stroke-width="1" rx="3"/>
+  <text x="400" y="540" text-anchor="middle" class="label" font-weight="bold">Reference Numerals</text>
+  <text x="100" y="560" class="label" font-size="10px">101: L1 Vector DB | 201: L2 NBMF Store | 301: L3 Archive</text>
+  <text x="100" y="575" class="label" font-size="10px">801: Genome | 901: Epigenome | 1001: Lineage | 1101: Immune</text>
+</svg>
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Daena — Control Plane</title>
+<style>
+/* ─── RESET & VARIABLES ─── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e14;--surface:#111722;--card:#161d2a;--card-hover:#1c2538;
+  --border:#1e2a3a;--border-light:#2a3a4f;
+  --text:#c8d6e5;--text-dim:#6b7f95;--text-bright:#eef2f7;
+  --gold:#e8b84b;--gold-dim:#a07a2e;
+  --green:#3ecf8e;--green-dim:#2a8a5e;
+  --blue:#5b9bd5;--blue-dim:#3a6fa0;
+  --amber:#f0a84b;--amber-dim:#b07830;
+  --red:#e05565;--red-dim:#a03a45;
+  --purple:#9b7bea;--purple-dim:#6b4fb5;
+  --cyan:#4dd9e6;--cyan-dim:#2da0aa;
+  --font-mono:'SF Mono','Fira Code','Consolas',monospace;
+  --font-sans:'Inter','Segoe UI',system-ui,sans-serif;
+  --radius:6px;--radius-lg:10px;
+  --shadow:0 2px 12px rgba(0,0,0,.4);
+  --shadow-glow:0 0 20px rgba(93,156,213,.12);
+  --transition:.18s cubic-bezier(.4,0,.2,1);
+}
+html,body{height:100%;overflow:hidden;font-family:var(--font-sans);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+
+/* ─── LAYOUT: SIDEBAR + MAIN ─── */
+.shell{display:flex;height:100vh}
+
+/* SIDEBAR */
+.sidebar{
+  width:220px;flex-shrink:0;background:var(--surface);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;
+  overflow-y:auto;
+}
+.sidebar-logo{
+  padding:20px 18px 16px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid var(--border);
+}
+.sidebar-logo svg{width:28px;height:28px;flex-shrink:0}
+.sidebar-logo-text{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--gold);letter-spacing:2px;text-transform:uppercase}
+.sidebar-logo-sub{font-size:10px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;margin-top:1px}
+
+.sidebar-section-label{
+  font-size:9px;font-weight:600;color:var(--text-dim);
+  text-transform:uppercase;letter-spacing:1.5px;
+  padding:18px 18px 6px;
+}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:9px 18px;
+  color:var(--text-dim);cursor:pointer;transition:var(--transition);
+  text-decoration:none;font-size:13px;white-space:nowrap;
+  border-left:3px solid transparent;position:relative;
+}
+.nav-item:hover{background:var(--card);color:var(--text)}
+.nav-item.active{
+  background:var(--card);color:var(--gold);
+  border-left-color:var(--gold);
+}
+.nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:.6}
+.nav-item.active svg,.nav-item:hover svg{opacity:1}
+.nav-item .badge{
+  margin-left:auto;background:var(--red);color:#fff;
+  font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;
+}
+
+.sidebar-bottom{
+  margin-top:auto;padding:14px 18px;border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;
+}
+.avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--amber));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#0a0e14}
+.sidebar-bottom-info{flex:1;min-width:0}
+.sidebar-bottom-name{font-size:12px;font-weight:600;color:var(--text-bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar-bottom-role{font-size:10px;color:var(--text-dim)}
+
+/* MAIN CONTENT */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* TOP BAR */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 24px;background:var(--surface);border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.topbar-left{display:flex;align-items:center;gap:16px}
+.topbar-title{font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--text-bright);letter-spacing:.5px}
+.topbar-title span{color:var(--gold)}
+.ws-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim)}
+.ws-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green)}
+.ws-dot.off{background:var(--red);box-shadow:0 0 6px var(--red)}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.topbar-time{font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+
+/* AGI AUTOPILOT TOGGLE */
+.autopilot-wrap{display:flex;align-items:center;gap:8px}
+.autopilot-label{font-size:11px;color:var(--text-dim);font-weight:500}
+.toggle-switch{
+  width:40px;height:22px;border-radius:11px;
+  background:var(--border);position:relative;cursor:pointer;
+  transition:background .2s;border:1px solid var(--border-light);
+}
+.toggle-switch.on{background:var(--green);border-color:var(--green)}
+.toggle-switch::after{
+  content:'';position:absolute;top:2px;left:2px;
+  width:16px;height:16px;border-radius:50%;background:#fff;
+  transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3);
+}
+.toggle-switch.on::after{left:20px}
+.autopilot-mode{font-size:10px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:.5px}
+.autopilot-mode.manual{color:var(--amber)}
+
+/* TAB NAVIGATION */
+.tab-nav{
+  display:flex;gap:2px;padding:10px 24px 0;background:var(--surface);
+  flex-shrink:0;overflow-x:auto;border-bottom:1px solid var(--border);
+}
+.tab-btn{
+  display:flex;align-items:center;gap:6px;padding:8px 14px;
+  border:none;background:transparent;color:var(--text-dim);
+  cursor:pointer;font-size:12px;font-family:var(--font-sans);
+  border-radius:var(--radius) var(--radius) 0 0;
+  white-space:nowrap;transition:var(--transition);position:relative;
+  bottom:-1px;
+}
+.tab-btn:hover{background:var(--card);color:var(--text)}
+.tab-btn.active{background:var(--card);color:var(--text-bright);border-bottom:2px solid var(--gold)}
+.tab-btn svg{width:14px;height:14px;opacity:.5}
+.tab-btn.active svg{opacity:1;color:var(--gold)}
+.tab-btn .tab-badge{
+  font-size:9px;background:var(--red);color:#fff;
+  padding:1px 5px;border-radius:6px;font-weight:600;
+}
+
+/* CONTENT AREA */
+.content{flex:1;overflow-y:auto;padding:20px 24px;background:var(--bg)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ─── SHARED COMPONENTS ─── */
+
+/* Stats Row */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:14px 16px;
+  transition:var(--transition);position:relative;overflow:hidden;
+}
+.stat-card:hover{border-color:var(--border-light);box-shadow:var(--shadow)}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.stat-card.c-blue::before{background:var(--blue)}
+.stat-card.c-green::before{background:var(--green)}
+.stat-card.c-amber::before{background:var(--amber)}
+.stat-card.c-red::before{background:var(--red)}
+.stat-card.c-purple::before{background:var(--purple)}
+.stat-card.c-cyan::before{background:var(--cyan)}
+.stat-card.c-gold::before{background:var(--gold)}
+.stat-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;font-weight:500;margin-bottom:6px}
+.stat-value{font-family:var(--font-mono);font-size:22px;font-weight:700;color:var(--text-bright)}
+.stat-value.c-blue{color:var(--blue)}
+.stat-value.c-green{color:var(--green)}
+.stat-value.c-amber{color:var(--amber)}
+.stat-value.c-red{color:var(--red)}
+.stat-value.c-purple{color:var(--purple)}
+.stat-value.c-cyan{color:var(--cyan)}
+.stat-value.c-gold{color:var(--gold)}
+.stat-sub{font-size:10px;color:var(--text-dim);margin-top:3px}
+
+/* Section Header */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.section-title{font-size:13px;font-weight:600;color:var(--text-bright);display:flex;align-items:center;gap:8px}
+.section-title svg{width:15px;height:15px;color:var(--gold)}
+
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;padding:6px 12px;
+  border-radius:var(--radius);border:1px solid var(--border-light);
+  background:var(--card);color:var(--text);font-size:11px;font-weight:500;
+  cursor:pointer;transition:var(--transition);font-family:inherit;white-space:nowrap;
+}
+.btn:hover{background:var(--card-hover);border-color:var(--blue);color:var(--text-bright)}
+.btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn-primary:hover{background:var(--blue-dim);border-color:var(--blue-dim)}
+.btn-green{background:var(--green);border-color:var(--green);color:#0a0e14;font-weight:600}
+.btn-green:hover{background:var(--green-dim);border-color:var(--green-dim)}
+.btn-danger{background:transparent;border-color:var(--red);color:var(--red)}
+.btn-danger:hover{background:var(--red);color:#fff}
+.btn-gold{background:var(--gold);border-color:var(--gold);color:#0a0e14;font-weight:600}
+.btn-gold:hover{background:var(--gold-dim);border-color:var(--gold-dim)}
+.btn svg{width:12px;height:12px}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+.badge-active{background:rgba(62,207,142,.12);color:var(--green)}
+.badge-pending{background:rgba(240,168,75,.12);color:var(--amber)}
+.badge-approved{background:rgba(91,155,213,.12);color:var(--blue)}
+.badge-rejected{background:rgba(224,85,101,.12);color:var(--red)}
+.badge-sandbox{background:rgba(155,123,234,.12);color:var(--purple)}
+.badge-draft{background:rgba(45,160,170,.12);color:var(--cyan)}
+.badge-safe{background:rgba(62,207,142,.12);color:var(--green)}
+.badge-low{background:rgba(91,155,213,.12);color:var(--blue)}
+.badge-medium{background:rgba(240,168,75,.12);color:var(--amber)}
+.badge-high{background:rgba(224,85,101,.12);color:var(--red)}
+.badge-critical{background:rgba(224,85,101,.25);color:var(--red);font-weight:700}
+.badge-online{background:rgba(62,207,142,.12);color:var(--green)}
+.badge-idle{background:rgba(107,127,149,.15);color:var(--text-dim)}
+
+/* Table */
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{
+  text-align:left;padding:10px 14px;background:var(--card);
+  color:var(--text-dim);font-weight:500;font-size:10px;
+  text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(22,29,42,.5)}
+.td-mono{font-family:var(--font-mono);font-size:11px}
+
+/* Live Feed */
+.live-feed{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);
+  max-height:280px;overflow-y:auto;
+}
+.feed-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;border-bottom:1px solid var(--border);
+  font-size:11px;font-weight:600;color:var(--text-dim);
+}
+.feed-live{display:flex;align-items:center;gap:5px;color:var(--red);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px}
+.feed-live::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--red);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.feed-item{
+  display:flex;align-items:flex-start;gap:10px;padding:8px 14px;
+  border-bottom:1px solid var(--border);animation:feedIn .3s ease;
+  font-size:11px;
+}
+.feed-item:last-child{border-bottom:none}
+@keyframes feedIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.feed-time{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);flex-shrink:0;padding-top:1px;width:46px}
+.feed-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.feed-dot.blue{background:var(--blue)}
+.feed-dot.green{background:var(--green)}
+.feed-dot.amber{background:var(--amber)}
+.feed-dot.red{background:var(--red)}
+.feed-dot.purple{background:var(--purple)}
+.feed-text{flex:1;color:var(--text)}
+.feed-text strong{color:var(--text-bright)}
+.feed-empty{padding:24px;text-align:center;color:var(--text-dim);font-size:11px}
+
+/* Two-col layout */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.two-col.wide{grid-template-columns:2fr 1fr}
+
+/* Input / Form */
+.input{
+  width:100%;padding:8px 12px;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);color:var(--text-bright);font-size:12px;
+  font-family:inherit;transition:var(--transition);
+}
+.input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px rgba(91,155,213,.15)}
+.input::placeholder{color:var(--text-dim)}
+textarea.input{resize:vertical;min-height:80px;font-family:var(--font-mono);font-size:11px}
+select.input{appearance:none;cursor:pointer}
+
+/* Modal */
+.modal-overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
+  z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(2px);
+}
+.modal-overlay.open{display:flex}
+.modal{
+  background:var(--surface);border:1px solid var(--border-light);
+  border-radius:12px;width:480px;max-width:90vw;max-height:80vh;
+  overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5);
+}
+.modal-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:18px 22px;border-bottom:1px solid var(--border);
+}
+.modal-title{font-size:15px;font-weight:600;color:var(--text-bright)}
+.modal-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:18px;padding:2px 6px;border-radius:4px}
+.modal-close:hover{background:var(--card);color:var(--text)}
+.modal-body{padding:22px}
+.form-row{margin-bottom:14px}
+.form-label{display:block;font-size:11px;font-weight:500;color:var(--text-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+.form-row-inline{display:flex;gap:10px}
+.form-row-inline .form-row{flex:1}
+.modal-foot{
+  display:flex;align-items:center;justify-content:flex-end;gap:8px;
+  padding:14px 22px;border-top:1px solid var(--border);
+}
+
+/* Think-Plan-Act Pipeline indicator */
+.pipeline{display:flex;align-items:center;gap:4px;margin-bottom:16px}
+.pipeline-step{
+  display:flex;align-items:center;gap:6px;padding:5px 12px;
+  border-radius:14px;font-size:10px;font-weight:600;letter-spacing:.5px;
+  text-transform:uppercase;background:var(--card);border:1px solid var(--border);
+  color:var(--text-dim);transition:var(--transition);
+}
+.pipeline-step.active{background:rgba(91,155,213,.12);border-color:var(--blue);color:var(--blue)}
+.pipeline-step.done{background:rgba(62,207,142,.12);border-color:var(--green);color:var(--green)}
+.pipeline-arrow{color:var(--border);font-size:12px}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--border-light)}
+
+/* Filter row */
+.filter-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.filter-chip{
+  padding:4px 10px;border-radius:14px;font-size:11px;cursor:pointer;
+  background:var(--card);border:1px solid var(--border);color:var(--text-dim);
+  transition:var(--transition);
+}
+.filter-chip:hover,.filter-chip.active{border-color:var(--blue);color:var(--blue);background:rgba(91,155,213,.08)}
+
+/* Empty state */
+.empty-state{padding:40px;text-align:center;color:var(--text-dim);font-size:12px}
+.empty-state svg{width:32px;height:32px;opacity:.3;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto}
+
+/* Brain-specific: memory tiers */
+.tier-row{display:flex;gap:10px;margin-bottom:16px}
+.tier-card{
+  flex:1;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:12px 14px;
+}
+.tier-card.l1{border-top:2px solid var(--green)}
+.tier-card.l2{border-top:2px solid var(--blue)}
+.tier-card.l3{border-top:2px solid var(--purple)}
+.tier-name{font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.tier-val{font-family:var(--font-mono);font-size:18px;font-weight:600}
+.tier-card.l1 .tier-val{color:var(--green)}
+.tier-card.l2 .tier-val{color:var(--blue)}
+.tier-card.l3 .tier-val{color:var(--purple)}
+.tier-desc{font-size:10px;color:var(--text-dim);margin-top:3px}
+
+/* DeFi scan box */
+.scan-box{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:16px;margin-bottom:16px;
+}
+.scan-input-row{display:flex;gap:8px;align-items:flex-end}
+.scan-input-row .form-row{flex:1;margin-bottom:0}
+
+/* Responsive */
+@media(max-width:900px){.two-col,.two-col.wide{grid-template-columns:1fr}}
+@media(max-width:700px){.sidebar{width:60px}.sidebar-logo-text,.sidebar-logo-sub,.nav-item span,.sidebar-bottom-info{display:none}.nav-item{padding:10px 16px;justify-content:center}}
+</style>
+</head>
+<body>
+<div class="shell">
+<!-- ═══ SIDEBAR ═══ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <svg viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="13" stroke="#e8b84b" stroke-width="1.5"/><circle cx="14" cy="14" r="7" fill="#e8b84b" opacity=".3"/><circle cx="14" cy="14" r="3" fill="#e8b84b"/><line x1="14" y1="1" x2="14" y2="6" stroke="#e8b84b" stroke-width="1.5"/><line x1="14" y1="22" x2="14" y2="27" stroke="#e8b84b" stroke-width="1.5"/><line x1="1" y1="14" x2="6" y2="14" stroke="#e8b84b" stroke-width="1.5"/><line x1="22" y1="14" x2="27" y2="14" stroke="#e8b84b" stroke-width="1.5"/></svg>
+    <div><div class="sidebar-logo-text">Daena</div><div class="sidebar-logo-sub">VP Dashboard</div></div>
+  </div>
+
+  <div class="sidebar-section-label">Navigation</div>
+  <a href="/ui/daena-office" class="nav-item" id="nav-office">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h12v8a2 2 0 01-2 2H4a2 2 0 01-2-2V3z"/><path d="M5 7l2 2 4-4"/></svg>
+    <span>Daena Office</span>
+  </a>
+  <a href="/ui/control-plane" class="nav-item active" id="nav-cp">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="14" height="12" rx="2"/><path d="M1 6h14"/><circle cx="4" cy="4" r=".8" fill="currentColor" stroke="none"/><circle cx="6.5" cy="4" r=".8" fill="currentColor" stroke="none"/></svg>
+    <span>Control Plane</span>
+  </a>
+
+  <div class="sidebar-section-label">Quick Links</div>
+  <a href="#" class="nav-item" onclick="switchTab('brain');return false">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2C5.2 2 3 4.2 3 7c0 1.5.7 2.8 1.8 3.6V13h6.4v-2.4C12.3 9.8 13 8.5 13 7c0-2.8-2.2-5-5-5z"/><path d="M5.5 13h5"/></svg>
+    <span>Brain</span>
+  </a>
+  <a href="#" class="nav-item" onclick="switchTab('defi');return false">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1l6 3.5v7L8 15 2 11.5v-7z"/><path d="M8 5v6M5.5 6.5l2.5 2 2.5-2"/></svg>
+    <span>DeFi / Web3</span>
+  </a>
+  <a href="#" class="nav-item" onclick="switchTab('governance');return false">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1L1 5v2h14V5z"/><path d="M3 7v5M8 7v5M13 7v5M1 12h14"/></svg>
+    <span>Governance</span>
+  </a>
+
+  <div class="sidebar-bottom">
+    <div class="avatar">F</div>
+    <div class="sidebar-bottom-info">
+      <div class="sidebar-bottom-name">Founder</div>
+      <div class="sidebar-bottom-role">Root Access</div>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══ MAIN ═══ -->
+<div class="main">
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-title"><span>DAENA</span> · Control Plane</div>
+      <div class="ws-status"><div class="ws-dot" id="wsDot"></div><span id="wsLabel">Connecting…</span></div>
+    </div>
+    <div class="topbar-right">
+      <div class="autopilot-wrap">
+        <span class="autopilot-label">AGI Autopilot</span>
+        <div class="toggle-switch on" id="autopilotToggle" onclick="toggleAutopilot()"></div>
+        <span class="autopilot-mode" id="autopilotMode">On</span>
+      </div>
+      <div class="topbar-time" id="clock">--:--</div>
+    </div>
+  </div>
+
+  <!-- TAB BAR -->
+  <div class="tab-nav" id="tabNav">
+    <button class="tab-btn active" data-tab="brain">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2C5.2 2 3 4.2 3 7c0 1.5.7 2.8 1.8 3.6V13h6.4v-2.4C12.3 9.8 13 8.5 13 7c0-2.8-2.2-5-5-5z"/><path d="M5.5 13h5"/></svg>
+      Brain
+    </button>
+    <button class="tab-btn" data-tab="defi">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1l6 3.5v7L8 15 2 11.5v-7z"/><path d="M8 5v6M5.5 6.5l2.5 2 2.5-2"/></svg>
+      DeFi / Web3
+    </button>
+    <button class="tab-btn" data-tab="skills">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h10v10H3z"/><path d="M6 6l2 2 4-3"/></svg>
+      Skills
+    </button>
+    <button class="tab-btn" data-tab="packages">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 5l6-3 6 3v6l-6 3-6-3V5z"/><path d="M2 5l6 3m0 0v6m0-6l6-3"/></svg>
+      Packages
+    </button>
+    <button class="tab-btn" data-tab="governance">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1L1 5v2h14V5z"/><path d="M3 7v5M8 7v5M13 7v5M1 12h14"/></svg>
+      Governance
+    </button>
+    <button class="tab-btn" data-tab="council">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="6" r="2"/><circle cx="11" cy="6" r="2"/><path d="M2 13c0-2 1.3-3 3-3s3 1 3 3"/><path d="M8.5 13c.3-.9 1-1.7 2.5-1.7s2.5.9 2.5 1.7"/></svg>
+      Council
+    </button>
+    <button class="tab-btn" data-tab="trust">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z"/></svg>
+      Trust
+    </button>
+    <button class="tab-btn" data-tab="shadow">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13l4-8 3 4 3-6 2 10"/></svg>
+      Shadow
+    </button>
+    <button class="tab-btn" data-tab="treasury">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v8M6 5.5h3.5a1.5 1.5 0 010 3H6.5a1.5 1.5 0 000 3H10.5"/></svg>
+      Treasury
+    </button>
+    <button class="tab-btn" data-tab="agents">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="5" r="2"/><circle cx="11" cy="5" r="2"/><circle cx="8" cy="10" r="2"/><path d="M3 14c0-1 .9-2 2-2s2 1 2 2"/><path d="M6 14c0-1 .9-2 2-2s2 1 2 2"/><path d="M9 14c0-1 .9-2 2-2s2 1 2 2"/></svg>
+      Agents
+    </button>
+  </div>
+
+  <!-- CONTENT PANELS -->
+  <div class="content">
+
+    <!-- ═══ BRAIN ═══ -->
+    <div class="tab-panel active" id="panel-brain">
+      <div class="stats-row" id="brainStats">
+        <div class="stat-card c-green"><div class="stat-label">L1 Hot Cache</div><div class="stat-value c-green" id="brainL1">—</div><div class="stat-sub">Vector entries</div></div>
+        <div class="stat-card c-blue"><div class="stat-label">L2 Warm</div><div class="stat-value c-blue" id="brainL2">—</div><div class="stat-sub">NBMF encoded</div></div>
+        <div class="stat-card c-purple"><div class="stat-label">L3 Cold</div><div class="stat-value c-purple" id="brainL3">—</div><div class="stat-sub">Archived</div></div>
+        <div class="stat-card c-gold"><div class="stat-label">Research Queries</div><div class="stat-value c-gold" id="brainQueries">—</div><div class="stat-sub">Last 24h</div></div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <div class="section-header">
+            <div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2C5.2 2 3 4.2 3 7c0 1.5.7 2.8 1.8 3.6V13h6.4v-2.4C12.3 9.8 13 8.5 13 7c0-2.8-2.2-5-5-5z"/></svg> Memory Tiers</div>
+          </div>
+          <div class="tier-row">
+            <div class="tier-card l1"><div class="tier-name">L1 · HOT</div><div class="tier-val" id="tierL1Val">0</div><div class="tier-desc">Vector cache · p95 &lt;25ms</div></div>
+            <div class="tier-card l2"><div class="tier-name">L2 · WARM</div><div class="tier-val" id="tierL2Val">0</div><div class="tier-desc">NBMF · AES-256</div></div>
+            <div class="tier-card l3"><div class="tier-name">L3 · COLD</div><div class="tier-val" id="tierL3Val">0</div><div class="tier-desc">Summarized archives</div></div>
+          </div>
+
+          <div class="section-header">
+            <div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M3 14c0-2.2 2.2-4 5-4s5 1.8 5 4"/></svg> Research Sources</div>
+            <button class="btn btn-primary" onclick="openModal('research')">+ New Query</button>
+          </div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Source</th><th>Type</th><th>Status</th><th>Last Hit</th></tr></thead>
+            <tbody id="researchSources">
+              <tr><td colspan="4" class="empty-state">Loading…</td></tr>
+            </tbody></table>
+          </div>
+        </div>
+        <div>
+          <div class="section-header">
+            <div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 3h14v10H1z"/><path d="M1 3l7 5 7-5"/></svg> Brain Live Feed</div>
+          </div>
+          <div class="live-feed" id="brainFeed">
+            <div class="feed-header"><span>Activity</span><span class="feed-live">Live</span></div>
+            <div class="feed-empty">Waiting for events…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ DEFI / WEB3 ═══ -->
+    <div class="tab-panel" id="panel-defi">
+      <div class="stats-row">
+        <div class="stat-card c-blue"><div class="stat-label">Scans Run</div><div class="stat-value c-blue" id="defiScans">0</div><div class="stat-sub">Total lifetime</div></div>
+        <div class="stat-card c-amber"><div class="stat-label">Vulns Found</div><div class="stat-value c-amber" id="defiVulns">0</div><div class="stat-sub">All severity</div></div>
+        <div class="stat-card c-red"><div class="stat-label">Critical</div><div class="stat-value c-red" id="defiCritical">0</div><div class="stat-sub">Needs action</div></div>
+        <div class="stat-card c-green"><div class="stat-label">Contracts OK</div><div class="stat-value c-green" id="defiOK">0</div><div class="stat-sub">Clean contracts</div></div>
+      </div>
+
+      <div class="scan-box">
+        <div class="section-header"><div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><path d="M10 10l3 3"/></svg> Scan Contract</div></div>
+        <div class="scan-input-row">
+          <div class="form-row"><label class="form-label">Contract Path or Address</label><input class="input" id="defiInput" placeholder="e.g. contracts/DemoVault.sol or 0x…"/></div>
+          <button class="btn btn-gold" onclick="startDefiScan()">▶ Scan</button>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <div class="section-header"><div class="section-title">Scan Results</div><button class="btn" onclick="loadDefiResults()">↻ Refresh</button></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Contract</th><th>Status</th><th>Vulns</th><th>Time</th><th></th></tr></thead>
+            <tbody id="defiResults"><tr><td colspan="5" class="empty-state">No scans yet. Run a scan above.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="section-header"><div class="section-title">Scan Log</div></div>
+          <div class="live-feed" id="defiFeed">
+            <div class="feed-header"><span>Activity</span><span class="feed-live">Live</span></div>
+            <div class="feed-empty">Scan output appears here…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-header" style="margin-top:16px"><div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12v8H2z"/><path d="M5 7h6M5 9h4"/></svg> Available Tools</div></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Tool</th><th>Version</th><th>Status</th></tr></thead>
+        <tbody id="defiTools"><tr><td colspan="3" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ SKILLS ═══ -->
+    <div class="tab-panel" id="panel-skills">
+      <div class="stats-row">
+        <div class="stat-card c-blue"><div class="stat-label">Total Skills</div><div class="stat-value c-blue" id="skillTotal">—</div><div class="stat-sub">Registered</div></div>
+        <div class="stat-card c-green"><div class="stat-label">Active</div><div class="stat-value c-green" id="skillActive">—</div><div class="stat-sub">Running</div></div>
+        <div class="stat-card c-amber"><div class="stat-label">Pending</div><div class="stat-value c-amber" id="skillPending">—</div><div class="stat-sub">Awaiting review</div></div>
+        <div class="stat-card c-purple"><div class="stat-label">Self-Created</div><div class="stat-value c-purple" id="skillSelf">—</div><div class="stat-sub">By Daena</div></div>
+      </div>
+      <div class="section-header">
+        <div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h10v10H3z"/><path d="M6 6l2 2 4-3"/></svg> Skill Registry</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <div class="filter-row" style="margin:0">
+            <span class="filter-chip active" data-filter="all" onclick="filterSkills('all',this)">All</span>
+            <span class="filter-chip" data-filter="active" onclick="filterSkills('active',this)">Active</span>
+            <span class="filter-chip" data-filter="pending" onclick="filterSkills('pending',this)">Pending</span>
+          </div>
+          <button class="btn btn-primary" onclick="openModal('skill')">+ New Skill</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Name</th><th>Category</th><th>Status</th><th>Creator</th><th>Uses</th><th></th></tr></thead>
+        <tbody id="skillsTable"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ PACKAGES ═══ -->
+    <div class="tab-panel" id="panel-packages">
+      <div class="stats-row">
+        <div class="stat-card c-blue"><div class="stat-label">Total Requests</div><div class="stat-value c-blue" id="pkgTotal">—</div><div class="stat-sub">All time</div></div>
+        <div class="stat-card c-amber"><div class="stat-label">Pending Audit</div><div class="stat-value c-amber" id="pkgPending">—</div><div class="stat-sub">In pipeline</div></div>
+        <div class="stat-card c-green"><div class="stat-label">Approved</div><div class="stat-value c-green" id="pkgApproved">—</div><div class="stat-sub">Ready to install</div></div>
+        <div class="stat-card c-red"><div class="stat-label">Rejected</div><div class="stat-value c-red" id="pkgRejected">—</div><div class="stat-sub">Blocked</div></div>
+      </div>
+      <div class="section-header">
+        <div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 5l6-3 6 3v6l-6 3-6-3V5z"/><path d="M2 5l6 3m0 0v6m0-6l6-3"/></svg> Package Audit Queue</div>
+        <button class="btn btn-primary" onclick="openModal('package')">+ Request Install</button>
+      </div>
+      <div class="two-col wide">
+        <div class="table-wrap">
+          <table><thead><tr><th>Package</th><th>Version</th><th>Manager</th><th>Risk</th><th>Status</th><th></th></tr></thead>
+          <tbody id="pkgTable"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div>
+          <div class="section-header"><div class="section-title">Audit Feed</div></div>
+          <div class="live-feed" id="pkgFeed">
+            <div class="feed-header"><span>Events</span><span class="feed-live">Live</span></div>
+            <div class="feed-empty">Package audit events…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ GOVERNANCE ═══ -->
+    <div class="tab-panel" id="panel-governance">
+      <div class="stats-row">
+        <div class="stat-card c-green"><div class="stat-label">Auto-Approved</div><div class="stat-value c-green" id="govAuto">0</div><div class="stat-sub">Autopilot actions</div></div>
+        <div class="stat-card c-amber"><div class="stat-label">Pending Approval</div><div class="stat-value c-amber" id="govPending">0</div><div class="stat-sub">Awaiting Founder</div></div>
+        <div class="stat-card c-blue"><div class="stat-label">Actions Today</div><div class="stat-value c-blue" id="govToday">0</div><div class="stat-sub">Last 24h</div></div>
+        <div class="stat-card c-red"><div class="stat-label">Blocked</div><div class="stat-value c-red" id="govBlocked">0</div><div class="stat-sub">High/Critical risk</div></div>
+      </div>
+
+      <!-- Think-Plan-Act Pipeline Status -->
+      <div class="section-header"><div class="section-title">Active Pipeline</div></div>
+      <div class="pipeline" id="pipeline">
+        <div class="pipeline-step" id="pipe-think">🧠 Think</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step" id="pipe-plan">📋 Plan</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step" id="pipe-act">⚡ Act</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step" id="pipe-report">📊 Report</div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <div class="section-header"><div class="section-title">Pending Actions (Founder Approval Required)</div></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Action</th><th>Risk</th><th>Agent</th><th>Time</th><th></th></tr></thead>
+            <tbody id="govPendingTable"><tr><td colspan="5" class="empty-state">No pending actions</td></tr></tbody>
+            </table>
+          </div>
+          <div class="section-header" style="margin-top:16px"><div class="section-title">Execution Log</div></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Action</th><th>Risk</th><th>Outcome</th><th>Time</th></tr></thead>
+            <tbody id="govLogTable"><tr><td colspan="4" class="empty-state">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="section-header"><div class="section-title">Governance Feed</div></div>
+          <div class="live-feed" id="govFeed">
+            <div class="feed-header"><span>Events</span><span class="feed-live">Live</span></div>
+            <div class="feed-empty">Governance events…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ COUNCIL ═══ -->
+    <div class="tab-panel" id="panel-council">
+      <div class="stats-row">
+        <div class="stat-card c-blue"><div class="stat-label">Active Debates</div><div class="stat-value c-blue" id="councilActive">0</div><div class="stat-sub">In progress</div></div>
+        <div class="stat-card c-green"><div class="stat-label">Resolved</div><div class="stat-value c-green" id="councilResolved">0</div><div class="stat-sub">Completed</div></div>
+        <div class="stat-card c-amber"><div class="stat-label">Pending Vote</div><div class="stat-value c-amber" id="councilPending">0</div><div class="stat-sub">Awaiting decision</div></div>
+        <div class="stat-card c-purple"><div class="stat-label">Experts</div><div class="stat-value c-purple" id="councilExperts">0</div><div class="stat-sub">Active members</div></div>
+      </div>
+      <div class="two-col">
+        <div>
+          <div class="section-header"><div class="section-title">Active Debates</div></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Topic</th><th>Status</th><th>Experts</th><th>Started</th></tr></thead>
+            <tbody id="councilTable"><tr><td colspan="4" class="empty-state">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="section-header"><div class="section-title">Council Feed</div></div>
+          <div class="live-feed" id="councilFeed">
+            <div class="feed-header"><span>Debates</span><span class="feed-live">Live</span></div>
+            <div class="feed-empty">Council activity…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TRUST ═══ -->
+    <div class="tab-panel" id="panel-trust">
+      <div class="stats-row">
+        <div class="stat-card c-blue"><div class="stat-label">Verifications</div><div class="stat-value c-blue" id="trustVerified">0</div><div class="stat-sub">Content checks</div></div>
+        <div class="stat-card c-red"><div class="stat-label">Injections Blocked</div><div class="stat-value c-red" id="trustBlocked">0</div><div class="stat-sub">Prompt attacks</div></div>
+        <div class="stat-card c-green"><div class="stat-label">Trusted Sources</div><div class="stat-value c-green" id="trustSources">0</div><div class="stat-sub">Whitelisted</div></div>
+        <div class="stat-card c-amber"><div class="stat-label">Stripped</div><div class="stat-value c-amber" id="trustStripped">0</div><div class="stat-sub">Sanitized inputs</div></div>
+      </div>
+      <div class="two-col">
+        <div>
+          <div class="section-header">
+            <div class="section-title">Verify Content</div>
+            <button class="btn btn-primary" onclick="openModal('verify')">+ Verify</button>
+          </div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Source</th><th>Trust Score</th><th>Status</th><th>Last Check</th></tr></thead>
+            <tbody id="trustTable"><tr><td colspan="4" class="empty-state">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="section-header"><div class="section-title">Trust Feed</div></div>
+          <div class="live-feed" id="trustFeed">
+            <div class="feed-header"><span>Events</span><span class="feed-live">Live</span></div>
+            <div class="feed-empty">Trust events…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ SHADOW ═══ -->
+    <div class="tab-panel" id="panel-shadow">
+      <div class="stats-row">
+        <div class="stat-card c-purple"><div class="stat-label">Honeypots Active</div><div class="stat-value c-purple" id="shadowHoney">0</div><div class="stat-sub">Decoy routes</div></div>
+        <div class="stat-card c-cyan"><div class="stat-label">Canary Tokens</div><div class="stat-value c-cyan" id="shadowCanary">0</div><div class="stat-sub">Trip wires</div></div>
+        <div class="stat-card c-red"><div class="stat-label">Alerts 24h</div><div class="stat-value c-red" id="shadowAlerts">0</div><div class="stat-sub">Recent events</div></div>
+        <div class="stat-card c-blue"><div class="stat-label">TTPs Logged</div><div class="stat-value c-blue" id="shadowTTPs">0</div><div class="stat-sub">Attack patterns</div></div>
+      </div>
+      <div class="two-col">
+        <div>
+          <div class="section-header"><div class="section-title">Honeypot Routes</div></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Decoy Path</th><th>Type</th><th>Hits</th><th>Last Hit</th></tr></thead>
+            <tbody id="shadowTable"><tr><td colspan="4" class="empty-state">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="section-header"><div class="section-title">Threat Feed</div></div>
+          <div class="live-feed" id="shadowFeed">
+            <div class="feed-header"><span>Alerts</span><span class="feed-live">Live</span></div>
+            <div class="feed-empty">Shadow dept events…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TREASURY ═══ -->
+    <div class="tab-panel" id="panel-treasury">
+      <div class="stats-row">
+        <div class="stat-card c-gold"><div class="stat-label">$DAENA Balance</div><div class="stat-value c-gold" id="treasDaena">0</div><div class="stat-sub">Token supply</div></div>
+        <div class="stat-card c-purple"><div class="stat-label">NFTs Minted</div><div class="stat-value c-purple" id="treasNFT">0</div><div class="stat-sub">Agent licenses</div></div>
+        <div class="stat-card c-blue"><div class="stat-label">ETH Held</div><div class="stat-value c-blue" id="treasETH">0</div><div class="stat-sub">Treasury reserve</div></div>
+        <div class="stat-card c-green"><div class="stat-label">Monthly Spend</div><div class="stat-value c-green" id="treasSpend">$0</div><div class="stat-sub">Operations</div></div>
+      </div>
+      <div class="two-col">
+        <div>
+          <div class="section-header"><div class="section-title">Treasury Transactions</div></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Type</th><th>Amount</th><th>Approved By</th><th>Time</th></tr></thead>
+            <tbody id="treasTable"><tr><td colspan="4" class="empty-state">No transactions yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="section-header"><div class="section-title">Treasury Feed</div></div>
+          <div class="live-feed" id="treasFeed">
+            <div class="feed-header"><span>Events</span><span class="feed-live">Live</span></div>
+            <div class="feed-empty">Treasury events…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ AGENTS ═══ -->
+    <div class="tab-panel" id="panel-agents">
+      <div class="stats-row">
+        <div class="stat-card c-green"><div class="stat-label">Online</div><div class="stat-value c-green" id="agentOnline">0</div><div class="stat-sub">Active agents</div></div>
+        <div class="stat-card c-blue"><div class="stat-label">Actions Today</div><div class="stat-value c-blue" id="agentActions">0</div><div class="stat-sub">Executed</div></div>
+        <div class="stat-card c-amber"><div class="stat-label">Departments</div><div class="stat-value c-amber" id="agentDepts">8</div><div class="stat-sub">Sunflower structure</div></div>
+        <div class="stat-card c-purple"><div class="stat-label">Pending Tasks</div><div class="stat-value c-purple" id="agentPending">0</div><div class="stat-sub">Queued</div></div>
+      </div>
+      <div class="two-col wide">
+        <div>
+          <div class="section-header"><div class="section-title">Agent Registry</div></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Agent</th><th>Department</th><th>Status</th><th>Last Activity</th><th>Actions</th></tr></thead>
+            <tbody id="agentsTable"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="section-header"><div class="section-title">Agent Activity Feed</div></div>
+          <div class="live-feed" id="agentFeed">
+            <div class="feed-header"><span>Activity</span><span class="feed-live">Live</span></div>
+            <div class="feed-empty">Agent events…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /shell -->
+
+<!-- ═══ MODALS ═══ -->
+<div class="modal-overlay" id="modal-skill">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title">Create New Skill</span><button class="modal-close" onclick="closeModal('skill')">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-label">Skill Name</label><input class="input" id="newSkillName" placeholder="e.g. web_scraper"/></div>
+      <div class="form-row"><label class="form-label">Display Name</label><input class="input" id="newSkillDisplay" placeholder="Web Scraper"/></div>
+      <div class="form-row"><label class="form-label">Description</label><input class="input" id="newSkillDesc" placeholder="Scrapes web pages and extracts structured data"/></div>
+      <div class="form-row-inline">
+        <div class="form-row"><label class="form-label">Category</label><select class="input" id="newSkillCat"><option value="utility">Utility</option><option value="research">Research</option><option value="security">Security</option><option value="communication">Communication</option><option value="data">Data</option></select></div>
+        <div class="form-row"><label class="form-label">Creator</label><select class="input" id="newSkillCreator"><option value="founder">Founder</option><option value="daena">Daena</option><option value="agent">Agent</option></select></div>
+      </div>
+      <div class="form-row"><label class="form-label">Code Body</label><textarea class="input" id="newSkillCode" placeholder="def execute(input_data):\n    # skill implementation\n    pass"></textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal('skill')">Cancel</button><button class="btn btn-primary" onclick="createSkill()">Create Skill</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-package">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title">Request Package Install</span><button class="modal-close" onclick="closeModal('package')">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-label">Package Name</label><input class="input" id="newPkgName" placeholder="e.g. lodash"/></div>
+      <div class="form-row-inline">
+        <div class="form-row"><label class="form-label">Version</label><input class="input" id="newPkgVer" placeholder="4.17.21"/></div>
+        <div class="form-row"><label class="form-label">Manager</label><select class="input" id="newPkgMgr"><option value="npm">npm</option><option value="pip">pip</option><option value="yarn">yarn</option></select></div>
+      </div>
+      <div class="form-row"><label class="form-label">Requested By</label><input class="input" id="newPkgBy" placeholder="founder" value="founder"/></div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal('package')">Cancel</button><button class="btn btn-primary" onclick="requestPackage()">Request Install</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-research">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title">New Research Query</span><button class="modal-close" onclick="closeModal('research')">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-label">Query</label><textarea class="input" id="researchQuery" placeholder="What are the latest DeFi attack vectors in 2026?"></textarea></div>
+      <div class="form-row"><label class="form-label">Sources</label><select class="input" id="researchSrc"><option value="all">All Sources</option><option value="web">Web Only</option><option value="memory">Local Memory</option><option value="mcp">MCP Tools</option></select></div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal('research')">Cancel</button><button class="btn btn-primary" onclick="runResearch()">Run Research</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-verify">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title">Verify Content</span><button class="modal-close" onclick="closeModal('verify')">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-label">Content to Verify</label><textarea class="input" id="verifyContent" placeholder="Paste content to check for prompt injection or manipulation…"></textarea></div>
+      <div class="form-row"><label class="form-label">Source</label><input class="input" id="verifySource" placeholder="e.g. external_api_response"/></div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal('verify')">Cancel</button><button class="btn btn-primary" onclick="verifyContent()">Verify</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-approve">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title" id="approveTitle">Approve Action</span><button class="modal-close" onclick="closeModal('approve')">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-label">Action Details</label><div class="input" id="approveDetails" style="background:var(--card);min-height:60px;white-space:pre-wrap;font-family:var(--font-mono);font-size:11px">—</div></div>
+      <div class="form-row"><label class="form-label">Notes (optional)</label><input class="input" id="approveNotes" placeholder="Approval reason…"/></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal('approve')">Cancel</button>
+      <button class="btn btn-danger" onclick="rejectAction()">Reject</button>
+      <button class="btn btn-green" onclick="approveAction()">Approve</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ JAVASCRIPT ═══ -->
+<script>
+// ─── CONFIG ─────────────────────────────────────
+const API = {
+  skills:     '/api/v1/skills',
+  packages:   '/api/v1/packages',
+  governance: '/api/v1/governance',
+  memory:     '/api/v1/memory',
+  research:   '/api/v1/research',
+  defi:       '/api/v1/defi',
+  integrity:  '/api/v1/integrity',
+  shadow:     '/api/v1/shadow',
+  council:    '/api/v1/council',
+  capabilities:'/api/v1/capabilities',
+  chat:       '/api/v1/chat'
+};
+
+let ws = null;
+let autopilotState = true;
+let currentApproveId = null;
+let skillFilter = 'all';
+
+// ─── CLOCK ──────────────────────────────────────
+setInterval(()=>{
+  const n=new Date();
+  document.getElementById('clock').textContent=n.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+},1000);
+
+// ─── TAB SWITCHING ──────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>switchTab(btn.dataset.tab));
+});
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  const btn=document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+  const panel=document.getElementById('panel-'+tab);
+  if(btn)btn.classList.add('active');
+  if(panel)panel.classList.add('active');
+  loadTabData(tab);
+}
+
+// ─── WEBSOCKET ──────────────────────────────────
+function connectWS(){
+  try{
+    const proto=location.protocol==='https:'?'wss:':'ws:';
+    ws=new WebSocket(`${proto}//${location.host}/ws/events`);
+    ws.onopen=()=>{setWSStatus(true)};
+    ws.onclose=()=>{setWSStatus(false);setTimeout(connectWS,3000)};
+    ws.onerror=()=>{};
+    ws.onmessage=(e)=>{
+      try{handleWSEvent(JSON.parse(e.data))}catch(x){}
+    };
+  }catch(e){setTimeout(connectWS,3000)}
+}
+function setWSStatus(on){
+  document.getElementById('wsDot').className='ws-dot'+(on?'':' off');
+  document.getElementById('wsLabel').textContent=on?'Connected':'Reconnecting…';
+}
+function handleWSEvent(ev){
+  const type=ev.type||'';
+  const t=ev.timestamp?new Date(ev.timestamp):new Date();
+  const timeStr=t.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+
+  if(type.startsWith('agent')||type==='task_created'||type==='task_completed'){
+    addFeed('agentFeed',timeStr,'green',ev.message||`Agent event: ${type}`);
+  }
+  if(type.startsWith('council')||type==='debate'||type==='vote'){
+    addFeed('councilFeed',timeStr,'blue',ev.message||`Council: ${type}`);
+  }
+  if(type.startsWith('trust')||type==='integrity'||type==='injection_detected'){
+    addFeed('trustFeed',timeStr,type.includes('block')||type.includes('inject')?'red':'blue',ev.message||`Trust: ${type}`);
+  }
+  if(type.startsWith('shadow')||type==='threat'||type==='honeypot'||type==='canary'){
+    addFeed('shadowFeed',timeStr,'purple',ev.message||`Shadow: ${type}`);
+  }
+  if(type.startsWith('treasury')||type==='token'||type==='nft'){
+    addFeed('treasFeed',timeStr,'amber',ev.message||`Treasury: ${type}`);
+  }
+  if(type.startsWith('package')||type==='audit'){
+    addFeed('pkgFeed',timeStr,'blue',ev.message||`Package: ${type}`);
+  }
+  if(type.startsWith('skill')||type==='skill_update'){
+    addFeed('brainFeed',timeStr,'green',ev.message||`Skill: ${type}`);
+    loadSkills();
+  }
+  if(type.startsWith('governance')||type==='approval'||type==='autopilot'){
+    addFeed('govFeed',timeStr,'amber',ev.message||`Gov: ${type}`);
+    // Animate pipeline
+    if(ev.stage){animatePipeline(ev.stage)}
+  }
+  if(type.startsWith('brain')||type==='memory'||type==='research'||type==='llm'){
+    addFeed('brainFeed',timeStr,'blue',ev.message||`Brain: ${type}`);
+  }
+  if(type.startsWith('defi')||type==='scan'){
+    addFeed('defiFeed',timeStr,'amber',ev.message||`DeFi: ${type}`);
+  }
+}
+function addFeed(feedId,time,color,html){
+  const feed=document.getElementById(feedId);
+  if(!feed)return;
+  const empty=feed.querySelector('.feed-empty');
+  if(empty)empty.remove();
+  const item=document.createElement('div');
+  item.className='feed-item';
+  item.innerHTML=`<span class="feed-time">${time}</span><div class="feed-dot ${color}"></div><div class="feed-text">${html}</div>`;
+  const header=feed.querySelector('.feed-header');
+  if(header)header.after(item);
+  // Keep max 40 items
+  const items=feed.querySelectorAll('.feed-item');
+  if(items.length>40)items[items.length-1].remove();
+}
+
+// ─── AUTOPILOT TOGGLE ───────────────────────────
+function toggleAutopilot(){
+  autopilotState=!autopilotState;
+  document.getElementById('autopilotToggle').className='toggle-switch'+(autopilotState?' on':'');
+  document.getElementById('autopilotMode').className='autopilot-mode'+(autopilotState?'':' manual');
+  document.getElementById('autopilotMode').textContent=autopilotState?'On':'Manual';
+  fetch(API.governance+'/toggle-autopilot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:autopilotState})}).catch(()=>{});
+  addFeed('govFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),'amber',`<strong>Autopilot</strong> switched to <strong>${autopilotState?'ON':'Manual'}</strong>`);
+}
+
+// ─── PIPELINE ANIMATION ─────────────────────────
+function animatePipeline(stage){
+  const map={think:'pipe-think',plan:'pipe-plan',act:'pipe-act',report:'pipe-report'};
+  const order=['think','plan','act','report'];
+  const idx=order.indexOf(stage);
+  order.forEach((s,i)=>{
+    const el=document.getElementById(map[s]);
+    if(!el)return;
+    el.className='pipeline-step'+(i<idx?' done':(i===idx?' active':''));
+  });
+}
+
+// ─── MODAL HELPERS ──────────────────────────────
+function openModal(id){document.getElementById('modal-'+id).classList.add('open')}
+function closeModal(id){document.getElementById('modal-'+id).classList.remove('open')}
+document.querySelectorAll('.modal-overlay').forEach(o=>{o.addEventListener('click',(e)=>{if(e.target===o)o.classList.remove('open')})});
+
+// ─── API HELPER ─────────────────────────────────
+async function api(url,opts={}){
+  try{
+    const r=await fetch(url,{headers:{'Content-Type':'application/json'},...opts});
+    if(!r.ok)return null;
+    return await r.json();
+  }catch(e){return null}
+}
+
+// ─── LOAD TAB DATA ──────────────────────────────
+function loadTabData(tab){
+  switch(tab){
+    case 'brain':   loadBrain();break;
+    case 'defi':    loadDefi();break;
+    case 'skills':  loadSkills();break;
+    case 'packages':loadPackages();break;
+    case 'governance':loadGovernance();break;
+    case 'council': loadCouncil();break;
+    case 'trust':   loadTrust();break;
+    case 'shadow':  loadShadow();break;
+    case 'treasury':loadTreasury();break;
+    case 'agents':  loadAgents();break;
+  }
+}
+
+// ─── BRAIN ──────────────────────────────────────
+async function loadBrain(){
+  const mem=await api(API.memory+'/stats');
+  if(mem){
+    const l1=mem.l1||0,l2=mem.l2||0,l3=mem.l3||0;
+    document.getElementById('brainL1').textContent=l1;
+    document.getElementById('brainL2').textContent=l2;
+    document.getElementById('brainL3').textContent=l3;
+    document.getElementById('tierL1Val').textContent=l1;
+    document.getElementById('tierL2Val').textContent=l2;
+    document.getElementById('tierL3Val').textContent=l3;
+  }
+  const res=await api(API.research+'/history');
+  if(res&&res.length){
+    document.getElementById('brainQueries').textContent=res.filter(r=>{const d=new Date(r.created_at||0);return(Date.now()-d)<86400000}).length;
+  }
+  const sources=await api(API.research+'/sources');
+  if(sources){
+    document.getElementById('researchSources').innerHTML=sources.map(s=>`<tr>
+      <td class="td-mono">${s.name||''}</td>
+      <td>${s.type||''}</td>
+      <td><span class="badge badge-active">Active</span></td>
+      <td class="td-mono">${timeAgo(s.last_used)}</td>
+    </tr>`).join('')||'<tr><td colspan="4" class="empty-state">No sources</td></tr>';
+  }
+}
+
+// ─── DEFI ───────────────────────────────────────
+async function loadDefi(){
+  const tools=await api(API.defi+'/tools');
+  if(tools){
+    document.getElementById('defiTools').innerHTML=tools.map(t=>`<tr>
+      <td class="td-mono">${t.name}</td>
+      <td class="td-mono">${t.version||'—'}</td>
+      <td><span class="badge ${t.installed?'badge-active':'badge-pending'}">${t.installed?'Installed':'Not Found'}</span></td>
+    </tr>`).join('')||'<tr><td colspan="3" class="empty-state">No tools</td></tr>';
+  }
+}
+async function startDefiScan(){
+  const val=document.getElementById('defiInput').value.trim();
+  if(!val)return;
+  addFeed('defiFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),'amber',`<strong>Scanning</strong> ${val}…`);
+  const r=await api(API.defi+'/scan',{method:'POST',body:JSON.stringify({contract_path:val})});
+  if(r){
+    addFeed('defiFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),'green',`<strong>Scan started</strong> ID: ${r.scan_id||'—'}`);
+    loadDefiResults();
+  }
+}
+async function loadDefiResults(){
+  const results=await api(API.defi+'/results');
+  if(results&&results.length){
+    document.getElementById('defiScans').textContent=results.length;
+    const vulns=results.reduce((a,r)=>a+(r.vulnerabilities||0),0);
+    document.getElementById('defiVulns').textContent=vulns;
+    document.getElementById('defiCritical').textContent=results.reduce((a,r)=>a+(r.critical||0),0);
+    document.getElementById('defiOK').textContent=results.filter(r=>!(r.vulnerabilities)).length;
+    document.getElementById('defiResults').innerHTML=results.map(r=>`<tr>
+      <td class="td-mono">${r.contract||'—'}</td>
+      <td><span class="badge ${r.status==='complete'?'badge-active':'badge-pending'}">${r.status||'—'}</span></td>
+      <td>${r.vulnerabilities||0}</td>
+      <td class="td-mono">${timeAgo(r.created_at)}</td>
+      <td><button class="btn" onclick="viewDefiReport('${r.scan_id}')">Report</button></td>
+    </tr>`).join('');
+  }
+}
+function viewDefiReport(id){
+  api(API.defi+'/report/'+id).then(r=>{if(r){document.getElementById('approveTitle').textContent='DeFi Scan Report';document.getElementById('approveDetails').textContent=JSON.stringify(r,null,2);document.getElementById('approveNotes').value='';openModal('approve')}});
+}
+
+// ─── SKILLS ─────────────────────────────────────
+async function loadSkills(){
+  const stats=await api(API.skills+'/stats');
+  if(stats){
+    document.getElementById('skillTotal').textContent=stats.total||0;
+    document.getElementById('skillActive').textContent=stats.active||0;
+    document.getElementById('skillPending').textContent=stats.pending||0;
+    document.getElementById('skillSelf').textContent=stats.self_created||0;
+  }
+  const skills=await api(API.skills);
+  if(skills){
+    const filtered=skillFilter==='all'?skills:skills.filter(s=>s.status===skillFilter);
+    document.getElementById('skillsTable').innerHTML=filtered.map(s=>`<tr>
+      <td><strong>${s.display_name||s.name}</strong><div style="font-size:10px;color:var(--text-dim)">${s.name}</div></td>
+      <td>${s.category||'—'}</td>
+      <td><span class="badge badge-${s.status}">${s.status}</span></td>
+      <td class="td-mono">${s.creator||'—'}</td>
+      <td>${s.usage_count||0}</td>
+      <td>${s.status==='pending_review'?`<button class="btn btn-green" style="padding:3px 8px;font-size:10px" onclick="approveSkill('${s.id}')">✓</button> <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="rejectSkill('${s.id}')">✗</button>`:''}
+          <button class="btn" style="padding:3px 8px;font-size:10px" onclick="testSkill('${s.id}')">Test</button></td>
+    </tr>`).join('')||'<tr><td colspan="6" class="empty-state">No skills found</td></tr>';
+  }
+}
+function filterSkills(f,el){
+  skillFilter=f;
+  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+  if(el)el.classList.add('active');
+  loadSkills();
+}
+async function createSkill(){
+  const payload={name:document.getElementById('newSkillName').value,display_name:document.getElementById('newSkillDisplay').value,description:document.getElementById('newSkillDesc').value,category:document.getElementById('newSkillCat').value,creator:document.getElementById('newSkillCreator').value,code_body:document.getElementById('newSkillCode').value};
+  if(!payload.name)return;
+  await api(API.skills+'/create',{method:'POST',body:JSON.stringify(payload)});
+  closeModal('skill');loadSkills();
+}
+async function approveSkill(id){await api(API.skills+'/'+id+'/approve',{method:'POST',body:JSON.stringify({approved_by:'founder'})});loadSkills()}
+async function rejectSkill(id){await api(API.skills+'/'+id+'/reject',{method:'POST',body:JSON.stringify({reason:'Founder review'})});loadSkills()}
+async function testSkill(id){
+  addFeed('brainFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),'purple',`<strong>Testing</strong> skill ${id}…`);
+  await api(API.skills+'/'+id+'/test',{method:'POST',body:JSON.stringify({test_input:{}})});
+}
+
+// ─── PACKAGES ───────────────────────────────────
+async function loadPackages(){
+  const stats=await api(API.packages+'/stats');
+  if(stats){
+    document.getElementById('pkgTotal').textContent=stats.total||0;
+    document.getElementById('pkgPending').textContent=stats.pending||0;
+    document.getElementById('pkgApproved').textContent=stats.approved||0;
+    document.getElementById('pkgRejected').textContent=stats.rejected||0;
+  }
+  const records=await api(API.packages+'/records');
+  if(records){
+    document.getElementById('pkgTable').innerHTML=records.map(p=>`<tr>
+      <td class="td-mono"><strong>${p.package_name}</strong></td>
+      <td class="td-mono">${p.version||'—'}</td>
+      <td>${p.manager||'—'}</td>
+      <td><span class="badge badge-${(p.risk_level||'').toLowerCase()}">${p.risk_level||'—'}</span></td>
+      <td><span class="badge badge-${(p.status||'').toLowerCase()}">${p.status||'—'}</span></td>
+      <td>${p.status==='pending_approval'?`<button class="btn btn-green" style="padding:3px 8px;font-size:10px" onclick="approvePkg('${p.id}')">✓</button> <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="rejectPkg('${p.id}')">✗</button>`:p.status==='approved'?`<button class="btn btn-gold" style="padding:3px 8px;font-size:10px" onclick="installPkg('${p.id}')">Install</button>`:''}
+          ${p.status==='pending_audit'?`<button class="btn btn-primary" style="padding:3px 8px;font-size:10px" onclick="auditPkg('${p.id}')">Audit</button>`:''}</td>
+    </tr>`).join('')||'<tr><td colspan="6" class="empty-state">No packages</td></tr>';
+  }
+}
+async function requestPackage(){
+  const payload={package_name:document.getElementById('newPkgName').value,version:document.getElementById('newPkgVer').value,manager:document.getElementById('newPkgMgr').value,requested_by:document.getElementById('newPkgBy').value};
+  if(!payload.package_name)return;
+  await api(API.packages+'/request-install',{method:'POST',body:JSON.stringify(payload)});
+  closeModal('package');loadPackages();
+}
+async function auditPkg(id){await api(API.packages+'/audit/'+id,{method:'POST'});loadPackages()}
+async function approvePkg(id){await api(API.packages+'/approve/'+id,{method:'POST',body:JSON.stringify({approved_by:'founder'})});loadPackages()}
+async function rejectPkg(id){await api(API.packages+'/reject/'+id,{method:'POST',body:JSON.stringify({reason:'Founder review'})});loadPackages()}
+async function installPkg(id){await api(API.packages+'/install/'+id,{method:'POST'});loadPackages()}
+
+// ─── GOVERNANCE ─────────────────────────────────
+async function loadGovernance(){
+  const stats=await api(API.governance+'/stats');
+  if(stats){
+    document.getElementById('govAuto').textContent=stats.auto_approved||0;
+    document.getElementById('govPending').textContent=stats.pending||0;
+    document.getElementById('govToday').textContent=stats.today||0;
+    document.getElementById('govBlocked').textContent=stats.blocked||0;
+  }
+  const pending=await api(API.governance+'/pending');
+  if(pending&&pending.length){
+    document.getElementById('govPendingTable').innerHTML=pending.map(a=>`<tr>
+      <td><strong>${a.action||'—'}</strong><div style="font-size:10px;color:var(--text-dim)">${a.description||''}</div></td>
+      <td><span class="badge badge-${(a.risk||'').toLowerCase()}">${a.risk||'—'}</span></td>
+      <td class="td-mono">${a.agent||'—'}</td>
+      <td class="td-mono">${timeAgo(a.created_at)}</td>
+      <td><button class="btn btn-green" style="padding:3px 8px;font-size:10px" onclick="openApproveModal('${a.id}','${a.action||''}','${JSON.stringify(a).replace(/'/g,"\\'").replace(/"/g,'\\"')}')">Approve</button>
+          <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="openRejectModal('${a.id}')">Reject</button></td>
+    </tr>`).join('');
+  } else {
+    document.getElementById('govPendingTable').innerHTML='<tr><td colspan="5" class="empty-state">No pending actions — Autopilot handling everything</td></tr>';
+  }
+  const log=await api(API.governance+'/log');
+  if(log&&log.length){
+    document.getElementById('govLogTable').innerHTML=log.slice(0,20).map(a=>`<tr>
+      <td><strong>${a.action||'—'}</strong></td>
+      <td><span class="badge badge-${(a.risk||'').toLowerCase()}">${a.risk||'—'}</span></td>
+      <td><span class="badge ${a.outcome==='approved'?'badge-active':'badge-rejected'}">${a.outcome||'—'}</span></td>
+      <td class="td-mono">${timeAgo(a.completed_at||a.created_at)}</td>
+    </tr>`).join('');
+  } else {
+    document.getElementById('govLogTable').innerHTML='<tr><td colspan="4" class="empty-state">No log entries yet</td></tr>';
+  }
+}
+function openApproveModal(id,action,details){
+  currentApproveId=id;
+  document.getElementById('approveTitle').textContent='Approve: '+action;
+  try{document.getElementById('approveDetails').textContent=JSON.stringify(JSON.parse(details),null,2)}catch(e){document.getElementById('approveDetails').textContent=details}
+  document.getElementById('approveNotes').value='';
+  openModal('approve');
+}
+function openRejectModal(id){currentApproveId=id;document.getElementById('approveTitle').textContent='Reject Action';document.getElementById('approveDetails').textContent='Are you sure you want to reject this action?';document.getElementById('approveNotes').value='';openModal('approve')}
+async function approveAction(){
+  if(!currentApproveId)return;
+  await api(API.governance+'/approve/'+currentApproveId,{method:'POST',body:JSON.stringify({approved_by:'founder',notes:document.getElementById('approveNotes').value})});
+  closeModal('approve');loadGovernance();
+}
+async function rejectAction(){
+  if(!currentApproveId)return;
+  await api(API.governance+'/reject/'+currentApproveId,{method:'POST',body:JSON.stringify({rejected_by:'founder',reason:document.getElementById('approveNotes').value||'Founder rejected'})});
+  closeModal('approve');loadGovernance();
+}
+
+// ─── COUNCIL ────────────────────────────────────
+async function loadCouncil(){
+  const debates=await api(API.council+'/debates');
+  if(debates&&debates.length){
+    document.getElementById('councilActive').textContent=debates.filter(d=>d.status==='active').length;
+    document.getElementById('councilResolved').textContent=debates.filter(d=>d.status==='resolved').length;
+    document.getElementById('councilPending').textContent=debates.filter(d=>d.status==='pending_vote').length;
+    document.getElementById('councilExperts').textContent=[...new Set(debates.flatMap(d=>d.experts||[]))].length;
+    document.getElementById('councilTable').innerHTML=debates.map(d=>`<tr>
+      <td><strong>${d.topic||'—'}</strong></td>
+      <td><span class="badge badge-${d.status==='active'?'active':'pending'}">${d.status||'—'}</span></td>
+      <td>${(d.experts||[]).length}</td>
+      <td class="td-mono">${timeAgo(d.created_at)}</td>
+    </tr>`).join('');
+  } else {
+    document.getElementById('councilTable').innerHTML='<tr><td colspan="4" class="empty-state">No active debates</td></tr>';
+  }
+}
+
+// ─── TRUST ──────────────────────────────────────
+async function loadTrust(){
+  const stats=await api(API.integrity+'/stats');
+  if(stats){
+    document.getElementById('trustVerified').textContent=stats.verifications||0;
+    document.getElementById('trustBlocked').textContent=stats.injections_blocked||0;
+    document.getElementById('trustSources').textContent=stats.trusted_sources||0;
+    document.getElementById('trustStripped').textContent=stats.stripped||0;
+  }
+  const sources=await api(API.integrity+'/sources');
+  if(sources&&sources.length){
+    document.getElementById('trustTable').innerHTML=sources.map(s=>`<tr>
+      <td class="td-mono">${s.name||'—'}</td>
+      <td>${s.trust_score!=null?Math.round(s.trust_score*100)+'%':'—'}</td>
+      <td><span class="badge badge-${s.trusted?'active':'pending'}">${s.trusted?'Trusted':'Unverified'}</span></td>
+      <td class="td-mono">${timeAgo(s.last_checked)}</td>
+    </tr>`).join('');
+  } else {
+    document.getElementById('trustTable').innerHTML='<tr><td colspan="4" class="empty-state">No sources tracked</td></tr>';
+  }
+}
+async function verifyContent(){
+  const content=document.getElementById('verifyContent').value;
+  const source=document.getElementById('verifySource').value;
+  if(!content)return;
+  const r=await api(API.integrity+'/verify',{method:'POST',body:JSON.stringify({content,source})});
+  closeModal('verify');
+  if(r){addFeed('trustFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),r.safe?'green':'red',`<strong>Verify result:</strong> ${r.safe?'Safe ✓':'BLOCKED ✗'} — ${r.reason||''}`)}
+}
+
+// ─── SHADOW ─────────────────────────────────────
+async function loadShadow(){
+  const stats=await api(API.shadow+'/stats');
+  if(stats){
+    document.getElementById('shadowHoney').textContent=stats.honeypots||0;
+    document.getElementById('shadowCanary').textContent=stats.canaries||0;
+    document.getElementById('shadowAlerts').textContent=stats.alerts_24h||0;
+    document.getElementById('shadowTTPs').textContent=stats.ttps||0;
+  }
+  const honeypots=await api(API.shadow+'/honeypots');
+  if(honeypots&&honeypots.length){
+    document.getElementById('shadowTable').innerHTML=honeypots.map(h=>`<tr>
+      <td class="td-mono">${h.path||'—'}</td>
+      <td>${h.type||'—'}</td>
+      <td>${h.hits||0}</td>
+      <td class="td-mono">${timeAgo(h.last_hit)}</td>
+    </tr>`).join('');
+  } else {
+    document.getElementById('shadowTable').innerHTML='<tr><td colspan="4" class="empty-state">No honeypots configured</td></tr>';
+  }
+}
+
+// ─── TREASURY ───────────────────────────────────
+async function loadTreasury(){
+  // Treasury data (will come from blockchain routes when deployed)
+  document.getElementById('treasDaena').textContent='1,000,000';
+  document.getElementById('treasNFT').textContent='48';
+  document.getElementById('treasETH').textContent='0.0';
+  document.getElementById('treasSpend').textContent='$0';
+  document.getElementById('treasTable').innerHTML='<tr><td colspan="4" class="empty-state">Blockchain not yet deployed — Treasury stats pending</td></tr>';
+}
+
+// ─── AGENTS ─────────────────────────────────────
+async function loadAgents(){
+  // Simulated agent registry (will wire to real agent service)
+  const depts=['Research','Security','DeFi','Communication','Data','Operations','Innovation','Strategy'];
+  const agents=depts.flatMap(d=>[
+    {name:`${d} Lead`,dept:d,status:'online',last:'Just now',actions:Math.floor(Math.random()*20)},
+    {name:`${d} Analyst`,dept:d,status:Math.random()>.3?'online':'idle',last:timeAgo(Date.now()-Math.random()*3600000),actions:Math.floor(Math.random()*10)}
+  ]);
+  document.getElementById('agentOnline').textContent=agents.filter(a=>a.status==='online').length;
+  document.getElementById('agentActions').textContent=agents.reduce((s,a)=>s+a.actions,0);
+  document.getElementById('agentDepts').textContent=depts.length;
+  document.getElementById('agentPending').textContent=Math.floor(Math.random()*5);
+  document.getElementById('agentsTable').innerHTML=agents.map(a=>`<tr>
+    <td><strong>${a.name}</strong></td>
+    <td>${a.dept}</td>
+    <td><span class="badge badge-${a.status}">${a.status}</span></td>
+    <td class="td-mono">${a.last}</td>
+    <td>${a.actions}</td>
+  </tr>`).join('');
+}
+
+// ─── RESEARCH ───────────────────────────────────
+async function runResearch(){
+  const query=document.getElementById('researchQuery').value;
+  const sources=document.getElementById('researchSrc').value;
+  if(!query)return;
+  addFeed('brainFeed',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),'blue',`<strong>Research:</strong> "${query.slice(0,60)}…"`);
+  await api(API.research+'/query',{method:'POST',body:JSON.stringify({query,sources})});
+  closeModal('research');
+}
+
+// ─── UTIL ───────────────────────────────────────
+function timeAgo(ts){
+  if(!ts)return '—';
+  const d=typeof ts==='number'?ts:new Date(ts).getTime();
+  const diff=Date.now()-d;
+  if(diff<60000)return 'Just now';
+  if(diff<3600000)return Math.floor(diff/60000)+'m ago';
+  if(diff<86400000)return Math.floor(diff/3600000)+'h ago';
+  return Math.floor(diff/86400000)+'d ago';
+}
+
+// ─── INIT ───────────────────────────────────────
+connectWS();
+loadBrain();
+// Refresh active tab every 30s
+setInterval(()=>{
+  const active=document.querySelector('.tab-btn.active');
+  if(active)loadTabData(active.dataset.tab);
+},30000);
+</script>
+</body>
+</html>

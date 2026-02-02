@@ -900,6 +900,18 @@ try:
 except ImportError as e:
     logger.warning("⚠️ Global rate limiting middleware not available: %s", e)
 
+# CSRF protection (state-changing requests): set CSRF_ENABLED=1 in production
+try:
+    if getattr(settings, "csrf_enabled", False):
+        from backend.middleware.csrf_middleware import CSRFMiddleware
+        _csrf_secret = getattr(settings, "secret_key", None) or getattr(settings, "api_key", None) or "daena_csrf_secret_key_change_in_production"
+        app.add_middleware(CSRFMiddleware, secret_key=_csrf_secret)
+        logger.info("✅ CSRF middleware added (CSRF_ENABLED=1)")
+    else:
+        logger.info("ℹ️ CSRF disabled (set CSRF_ENABLED=1 to enable)")
+except ImportError as e:
+    logger.warning("⚠️ CSRF middleware not available: %s", e)
+
 # Add tenant-specific rate limiting middleware
 # try:
 #     from middleware.tenant_rate_limit import tenant_rate_limit_middleware
@@ -1369,6 +1381,18 @@ try:
     except Exception as e:
         logger.warning(f"⚠️ Skills API not available: {e}")
     try:
+        from backend.routes.use_cases import router as use_cases_router
+        app.include_router(use_cases_router)
+        logger.info("✅ Use Case Library API registered at /api/v1/use-cases")
+    except Exception as e:
+        logger.warning(f"⚠️ Use Case Library not available: {e}")
+    try:
+        from backend.routes.skill_packs import router as skill_packs_router
+        app.include_router(skill_packs_router)
+        logger.info("✅ Skill Packs API registered at /api/v1/skill-packs")
+    except Exception as e:
+        logger.warning(f"⚠️ Skill Packs not available: {e}")
+    try:
         from backend.routes.execution_layer import router as execution_layer_router
         app.include_router(execution_layer_router)
         logger.info("✅ Execution Layer API registered at /api/v1/execution (explicit)")
@@ -1701,6 +1725,11 @@ safe_import_router("council_rounds")  # Council rounds history and details
 # safe_import_router("auth")  # NO-AUTH baseline (auth routes disabled)
 safe_import_router("slo")  # SLO monitoring endpoints
 safe_import_router("registry")  # Registry summary endpoint (8×6 structure)
+safe_import_router("memory")  # NBMF memory API for Control Pannel
+safe_import_router("packages")  # Skill packages / marketplace for Control Pannel
+safe_import_router("research")  # Deep research API for Control Pannel
+safe_import_router("integrity")  # Data integrity shield for Control Pannel
+safe_import_router("shadow")  # Shadow / honeypot API (founder-only)
 
 # New Augmented System Routes
 safe_import_router("audit")
@@ -4182,7 +4211,7 @@ async def serve_brain_settings(request: Request):
 @app.get("/ui/app-setup", response_class=HTMLResponse)
 async def serve_app_setup(request: Request):
     if not request.query_params.get("embed"):
-        return RedirectResponse(url="/ui/control-panel#app-setup", status_code=302)
+        return RedirectResponse(url="/ui/control-pannel#app-setup", status_code=302)
     return templates.TemplateResponse("app_setup.html", {"request": request})
 
 @app.get("/ui/mcp-hub", response_class=HTMLResponse)
@@ -4274,6 +4303,66 @@ try:
 except Exception as e:
     logger.error(f"Failed to register connections router: {e}")
 
+# Register Skills router
+try:
+    from backend.routes import skills
+    app.include_router(skills.router)
+    logger.info("✅ Skills router registered")
+except Exception as e:
+    logger.error(f"Failed to register skills router: {e}")
+
+# Register DaenaBot Tools router
+try:
+    from backend.routes import daena_bot_tools
+    app.include_router(daena_bot_tools.router)
+    logger.info("✅ DaenaBot Tools router registered")
+except Exception as e:
+    logger.error(f"Failed to register daena_bot_tools router: {e}")
+
+# Register System Capabilities (alias for Control Pannel compatibility)
+try:
+    from fastapi import APIRouter
+    system_router = APIRouter(prefix="/api/v1/system", tags=["system"])
+    
+    @system_router.get("/capabilities")
+    async def get_system_capabilities():
+        return await get_ai_capabilities()
+        
+    app.include_router(system_router)
+    logger.info("✅ System capabilities alias registered")
+except Exception as e:
+    logger.error(f"Failed to register system router: {e}")
+
+# Register Skills router
+try:
+    from backend.routes import skills
+    app.include_router(skills.router)
+    logger.info("✅ Skills router registered")
+except Exception as e:
+    logger.error(f"Failed to register skills router: {e}")
+
+# Register DaenaBot Tools router
+try:
+    from backend.routes import daena_bot_tools
+    app.include_router(daena_bot_tools.router)
+    logger.info("✅ DaenaBot Tools router registered")
+except Exception as e:
+    logger.error(f"Failed to register daena_bot_tools router: {e}")
+
+# Register System Capabilities (alias for Control Pannel compatibility)
+try:
+    from fastapi import APIRouter
+    system_router = APIRouter(prefix="/api/v1/system", tags=["system"])
+    
+    @system_router.get("/capabilities")
+    async def get_system_capabilities():
+        return await get_ai_capabilities()
+        
+    app.include_router(system_router)
+    logger.info("✅ System capabilities alias registered")
+except Exception as e:
+    logger.error(f"Failed to register system router: {e}")
+
 # Register webhooks router
 try:
     from backend.routes import webhooks
@@ -4360,7 +4449,7 @@ async def serve_brain_settings(request: Request):
 @app.get("/ui/app-setup", response_class=HTMLResponse)
 async def serve_app_setup(request: Request):
     if not request.query_params.get("embed"):
-        return RedirectResponse(url="/ui/control-panel#app-setup", status_code=302)
+        return RedirectResponse(url="/ui/control-pannel#app-setup", status_code=302)
     return templates.TemplateResponse("app_setup.html", {"request": request})
 
 @app.get("/ui/mcp-hub", response_class=HTMLResponse)

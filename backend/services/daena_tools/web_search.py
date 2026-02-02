@@ -186,15 +186,9 @@ async def search_duckduckgo(query: str, num_results: int = 8) -> Optional[Dict[s
     return None
 
 
-async def web_search(query: str, num_results: int = 8) -> Dict[str, Any]:
+async def web_search(query: str, num_results: int = 8, status_callback=None) -> Dict[str, Any]:
     """
     Main search function with provider fallback chain.
-    
-    Priority:
-    1. Brave (if API key)
-    2. Serper (if API key)
-    3. Tavily (if API key)
-    4. DuckDuckGo HTML scrape (always)
     """
     if not query or not query.strip():
         return {"success": False, "error": "Empty query", "query": query}
@@ -211,10 +205,23 @@ async def web_search(query: str, num_results: int = 8) -> Dict[str, Any]:
     
     for name, func in providers:
         try:
+            if status_callback:
+                if name == "duckduckgo":
+                    await status_callback(f"Trying web scrape (fallback)...")
+                else: 
+                     await status_callback(f"Searching with {name.title()}...")
+            
             result = await func(query, num_results)
             if result and result.get("success") and result.get("results"):
                 logger.info(f"Search succeeded with provider: {name}")
+                if status_callback:
+                    await status_callback(f"Found {len(result.get('results', []))} results via {name}.")
                 return result
+        except Exception as e:
+            logger.debug(f"Provider {name} failed: {e}")
+            if status_callback:
+                 await status_callback(f"{name.title()} search failed: {str(e)[:50]}...")
+            continue
         except Exception as e:
             logger.debug(f"Provider {name} failed: {e}")
             continue
