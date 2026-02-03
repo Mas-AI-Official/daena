@@ -56,13 +56,13 @@ class RoutingDecision:
 MODEL_CONFIG = {
     ModelTier.LOCAL_REASONING: {
         "provider": "ollama",
-        "models": ["deepseek-r1:8b", "deepseek-r1:14b", "qwq:latest"],
+        "models": ["kimi-k2.5:cloud", "qwen3-vl:235b-instruct-cloud"],
         "best_for": [TaskType.REASONING, TaskType.ANALYSIS, TaskType.TOOL_SELECTION],
         "priority": 1,
     },
     ModelTier.LOCAL_CHAT: {
         "provider": "ollama", 
-        "models": ["qwen2.5:7b-instruct", "llama3.2:latest", "mistral:latest"],
+        "models": ["kimi-k2.5:cloud", "qwen3-vl:235b-instruct-cloud"],
         "best_for": [TaskType.CHAT, TaskType.CODE],
         "priority": 2,
     },

@@ -99,22 +99,13 @@ async def chat(
     # Choose model
     mdl = model
     if not mdl:
+        # User preference: Try DEFAULT_LOCAL_MODEL (Kimi/Cloud) first!
+        # Even if not in local 'tags', cloud proxy might accept it.
         mdl = DEFAULT_LOCAL_MODEL
-        # Prefer trained model if it exists
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(f"{base.rstrip('/')}/api/tags")
-                if response.status_code == 200:
-                    data = response.json()
-                    available_models = [m.get("name") for m in data.get("models", []) if isinstance(m, dict)]
-                    # Match trained model (allow partial match for tag variations like :latest)
-                    for available in available_models:
-                        if available and (available == TRAINED_MODEL or available.startswith(f"{TRAINED_MODEL}:")):
-                            mdl = available
-                            logger.debug(f"✅ Using trained Daena brain: {mdl}")
-                            break
-        except Exception:
-            pass
+        
+        # Note: We skip the preamble availability check to allow "blind" cloud calls.
+        # If it fails with 404, the standard exception handler below will catch it 
+        # and try FALLBACK_MODEL.
 
     request_data = {
         "model": mdl,
@@ -190,26 +181,8 @@ async def generate_stream(
     # Choose model
     mdl = model
     if not mdl:
-        mdl = DEFAULT_LOCAL_MODEL  # Default to 7B for speed
-        # Check available models
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(f"{base.rstrip('/')}/api/tags")
-                if response.status_code == 200:
-                    data = response.json()
-                    available_models = [m.get("name") for m in data.get("models", []) if isinstance(m, dict)]
-                    # Match trained model (allow partial match for tag variations like :latest)
-                    for available in available_models:
-                        if available and (available == TRAINED_MODEL or available.startswith(f"{TRAINED_MODEL}:")):
-                            # Check if it's the large 14B model - skip it for speed
-                            if "14b" in available.lower() or available.startswith("daena-brain"):
-                                logger.debug(f"Skipping large model {available} for streaming (GPU limited)")
-                                continue
-                            mdl = available
-                            logger.debug(f"✅ Using model for streaming: {mdl}")
-                            break
-        except Exception:
-            pass
+        # Trust DEFAULT_LOCAL_MODEL (Kimi/Cloud) blindly for speed
+        mdl = DEFAULT_LOCAL_MODEL
 
     # Parse system prompt if present
     messages = []
