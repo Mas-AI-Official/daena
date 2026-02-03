@@ -1370,6 +1370,65 @@
       padding: 12px
     }
   }
+
+  /* Quintessence Expert Grid */
+  .expert-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .expert-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 12px;
+    text-align: center;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+
+  .expert-card:hover {
+    border-color: var(--purple);
+    background: rgba(147, 112, 219, 0.1);
+    transform: translateY(-2px);
+  }
+
+  .expert-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+  }
+
+  .expert-name {
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .expert-title {
+    font-size: 9px;
+    color: var(--text-dim);
+  }
+
+  .precedent-item {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+
+  .precedent-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .deliberation-step {
+    padding: 8px 0;
+    font-size: 12px;
+    border-left: 2px solid var(--purple);
+    padding-left: 12px;
+    margin-bottom: 12px;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -1411,6 +1470,13 @@
         <path d="M3 7v5M8 7v5M13 7v5M1 12h14" />
       </svg>
       Governance
+    </button>
+    <button class="tab-btn" data-tab="quintessence">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M8 2L2 14h12L8 2z" />
+        <path d="M8 6v4M8 12h.01" />
+      </svg>
+      The Quintessence
     </button>
     <button class="tab-btn" data-tab="execution">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -1798,183 +1864,247 @@
       </div>
       <div id="pipeline-details"
         style="font-size:11px;color:var(--text-dim);margin:-10px 0 16px 8px;min-height:16px;font-style:italic"></div>
-
-      <div class="two-col">
-        <div>
-          <div class="section-header">
-            <div class="section-title">Pending Actions (Founder Approval Required)</div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Action</th>
-                  <th>Risk</th>
-                  <th>Agent</th>
-                  <th>Time</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="govPendingTable">
-                <tr>
-                  <td colspan="5" class="empty-state">No pending actions</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="section-header" style="margin-top:16px">
-            <div class="section-title">Execution Log</div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Action</th>
-                  <th>Risk</th>
-                  <th>Outcome</th>
-                  <th>Time</th>
-                </tr>
-              </thead>
-              <tbody id="govLogTable">
-                <tr>
-                  <td colspan="4" class="empty-state">Loading…</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div>
-          <div class="section-header">
-            <div class="section-title">Governance Feed</div>
-          </div>
-          <div class="live-feed" id="govFeed">
-            <div class="feed-header"><span>Events</span><span class="feed-live">Live</span></div>
-            <div class="feed-empty">Governance events…</div>
-          </div>
-        </div>
-      </div>
     </div>
 
-    <!-- ═══ EXECUTION ═══ -->
-    <div class="tab-panel" id="panel-execution" data-tab="execution">
+    <!-- ═══ THE QUINTESSENCE ═══ -->
+    <div class="tab-panel" id="panel-quintessence" data-tab="quintessence">
       <div class="section-header">
-        <div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M2 4h12v8H2z" />
-          </svg> Execution Layer</div>
-        <span class="text-dim" style="font-size:11px" id="executionCapSummary">—</span>
+        <div class="section-title">Tier 2: The Quintessence</div>
+        <div class="badge badge-purple">Supreme Deliberation</div>
       </div>
-      <p class="text-dim" style="font-size:12px;margin-bottom:12px">Tools and run history. Daena runs approved tools;
-        agents submit requests for approval.</p>
-      <!-- Execution token: auth-status + optional paste token for session -->
-      <div class="scan-box" id="executionAuthBox" style="margin-bottom:16px">
-        <div class="section-header" style="margin-bottom:8px">
-          <div class="section-title">Execution auth</div><span class="badge badge-active"
-            id="executionAuthBadge">—</span>
-        </div>
-        <p class="text-dim" style="font-size:11px;margin-bottom:8px" id="executionAuthMessage">Loading…</p>
-        <div id="executionTokenRow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
-          <input type="password" class="input" id="executionTokenInput" placeholder="Paste EXECUTION_TOKEN (from .env)"
-            style="max-width:280px;font-family:var(--font-mono);font-size:12px" autocomplete="off" />
-          <button class="btn btn-primary" onclick="saveExecutionToken()">Save for session</button>
-          <button class="btn" onclick="clearExecutionToken()">Clear</button>
-        </div>
-        <p class="text-dim" style="font-size:10px;margin-top:6px">Token is stored in sessionStorage only; use same value
-          as backend <code>EXECUTION_TOKEN</code>. For local dev, set <code>ALLOW_INSECURE_EXECUTION_LOCAL=1</code> to
-          skip token from 127.0.0.1.</p>
-      </div>
-      <div class="two-col">
+
+      <div class="two-col wide">
         <div>
-          <div class="section-header">
-            <div class="section-title">Execution Log</div><a href="#" onclick="loadExecution();return false" class="btn"
-              style="font-size:11px">Refresh</a>
+          <!-- Supreme Deliberation Form -->
+          <div class="card" style="margin-bottom:16px; padding: 16px; background: var(--bg-card);">
+            <div class="card-title" style="margin-bottom: 12px; font-weight: 600;">Initiate Deliberation</div>
+            <div class="form-row">
+              <label style="display:block; font-size: 11px; margin-bottom: 4px; color: var(--text-dim);">Strategic
+                Problem</label>
+              <textarea id="quintProblem" class="input"
+                placeholder="Enter a high-stakes problem requiring Supreme Council review..."
+                style="height:100px; width: 100%; box-sizing: border-box;"></textarea>
+            </div>
+            <div class="form-row">
+              <label style="display:block; font-size: 11px; margin-bottom: 4px; color: var(--text-dim);">Domain</label>
+              <select id="quintDomain" class="input" style="width: 100%;">
+                <option value="strategic">Strategic Positioning</option>
+                <option value="technical">Technical Architecture</option>
+                <option value="risk">Risk & Security</option>
+                <option value="org">Organizational Alignment</option>
+                <option value="empirical">Empirical Validation</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="invokeQuintessence()" id="quintBtn"
+              style="width:100%; margin-top: 12px;">Invoke Supreme Council</button>
           </div>
-          <div class="table-wrap" style="max-height:320px;overflow:auto">
-            <table>
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Tool</th>
-                  <th>Result</th>
-                </tr>
-              </thead>
-              <tbody id="executionLogTable">
-                <tr>
-                  <td colspan="3" class="empty-state">Loading…</td>
-                </tr>
-              </tbody>
-            </table>
+
+          <!-- Experts Grid -->
+          <div class="expert-grid" id="expertGrid">
+            <!-- Loaded via JS -->
           </div>
         </div>
+
         <div>
-          <div class="section-header">
-            <div class="section-title">Capability Handshake</div>
+          <!-- Deliberation Results / Live Trace -->
+          <div class="live-feed" id="quintResults" style="min-height:400px; background: var(--card);">
+            <div class="feed-header"><span>Deliberation Trace</span><span class="feed-live" id="quintStatus">Idle</span>
+            </div>
+            <div class="feed-content" id="quintFeedContent" style="padding: 12px; overflow-y: auto; max-height: 500px;">
+              <div class="feed-empty" id="quintEmpty">Results will appear here. No deliberation in progress.</div>
+            </div>
           </div>
-          <div class="scan-box">
-            <p class="text-dim" style="font-size:11px;margin-bottom:8px">On load, Control Pannel calls
-              <code>/api/v1/execution/logs</code> and <code>/api/v1/integrations/mcp-servers</code>. Daena is informed
-              of available tools and MCP servers (subject to approval).
-            </p>
-            <p id="capabilitySummary" class="text-dim" style="font-size:11px">—</p>
+
+          <!-- Precedents Library -->
+          <div class="card" style="margin-top:16px; padding: 16px; background: var(--bg-card);">
+            <div class="section-header" style="justify-content: space-between;">
+              <div class="section-title">Precedent Library</div>
+              <input type="text" id="precedentSearch" class="input" placeholder="Search precedents..."
+                style="width:150px; font-size:12px;" onkeyup="searchPrecedents()">
+            </div>
+            <div id="precedentList" style="max-height:300px; overflow-y:auto; font-size:12px;">
+              <div style="padding: 20px; text-align: center; color: var(--text-dim);">Search for past decisions...</div>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ═══ DAENABOT TOOLS (OpenClaw / Hands) ═══ -->
-    <div class="tab-panel" id="panel-daenabot-tools" data-tab="daenabot-tools">
-      <div class="stats-row">
-        <div class="stat-card c-blue">
-          <div class="stat-label">Gateway</div>
-          <div class="stat-value c-blue" id="toolsGatewayStatus">—</div>
-          <div class="stat-sub" id="toolsGatewaySub">Connection</div>
+    <div class="two-col">
+      <div>
+        <div class="section-header">
+          <div class="section-title">Pending Actions (Founder Approval Required)</div>
         </div>
-        <div class="stat-card c-amber">
-          <div class="stat-label">Pending</div>
-          <div class="stat-value c-amber" id="toolsPendingCount">0</div>
-          <div class="stat-sub">Awaiting approval</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Risk</th>
+                <th>Agent</th>
+                <th>Time</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="govPendingTable">
+              <tr>
+                <td colspan="5" class="empty-state">No pending actions</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div class="stat-card c-green">
-          <div class="stat-label">Display name</div>
-          <div class="stat-value c-green" id="toolsDisplayName" style="font-size:12px">—</div>
+        <div class="section-header" style="margin-top:16px">
+          <div class="section-title">Execution Log</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Risk</th>
+                <th>Outcome</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="govLogTable">
+              <tr>
+                <td colspan="4" class="empty-state">Loading…</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
+      <div>
+        <div class="section-header">
+          <div class="section-title">Governance Feed</div>
+        </div>
+        <div class="live-feed" id="govFeed">
+          <div class="feed-header"><span>Events</span><span class="feed-live">Live</span></div>
+          <div class="feed-empty">Governance events…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ EXECUTION ═══ -->
+  <div class="tab-panel" id="panel-execution" data-tab="execution">
+    <div class="section-header">
+      <div class="section-title"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M2 4h12v8H2z" />
+        </svg> Execution Layer</div>
+      <span class="text-dim" style="font-size:11px" id="executionCapSummary">—</span>
+    </div>
+    <p class="text-dim" style="font-size:12px;margin-bottom:12px">Tools and run history. Daena runs approved tools;
+      agents submit requests for approval.</p>
+    <!-- Execution token: auth-status + optional paste token for session -->
+    <div class="scan-box" id="executionAuthBox" style="margin-bottom:16px">
       <div class="section-header" style="margin-bottom:8px">
-        <div class="section-title">Hands connection</div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span id="pingHandsResult" class="text-dim" style="font-size:11px"></span>
-          <button type="button" class="btn btn-primary" id="pingHandsBtn" onclick="testHandsConnection()">Test Hands
-            Connection</button>
+        <div class="section-title">Execution auth</div><span class="badge badge-active" id="executionAuthBadge">—</span>
+      </div>
+      <p class="text-dim" style="font-size:11px;margin-bottom:8px" id="executionAuthMessage">Loading…</p>
+      <div id="executionTokenRow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
+        <input type="password" class="input" id="executionTokenInput" placeholder="Paste EXECUTION_TOKEN (from .env)"
+          style="max-width:280px;font-family:var(--font-mono);font-size:12px" autocomplete="off" />
+        <button class="btn btn-primary" onclick="saveExecutionToken()">Save for session</button>
+        <button class="btn" onclick="clearExecutionToken()">Clear</button>
+      </div>
+      <p class="text-dim" style="font-size:10px;margin-top:6px">Token is stored in sessionStorage only; use same value
+        as backend <code>EXECUTION_TOKEN</code>. For local dev, set <code>ALLOW_INSECURE_EXECUTION_LOCAL=1</code> to
+        skip token from 127.0.0.1.</p>
+    </div>
+    <div class="two-col">
+      <div>
+        <div class="section-header">
+          <div class="section-title">Execution Log</div><a href="#" onclick="loadExecution();return false" class="btn"
+            style="font-size:11px">Refresh</a>
+        </div>
+        <div class="table-wrap" style="max-height:320px;overflow:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Tool</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody id="executionLogTable">
+              <tr>
+                <td colspan="3" class="empty-state">Loading…</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
-      <div class="section-header">
-        <div class="section-title">Pending tool requests</div><a href="#" onclick="loadDaenaBotTools();return false"
-          class="btn" style="font-size:11px">Refresh</a>
+      <div>
+        <div class="section-header">
+          <div class="section-title">Capability Handshake</div>
+        </div>
+        <div class="scan-box">
+          <p class="text-dim" style="font-size:11px;margin-bottom:8px">On load, Control Pannel calls
+            <code>/api/v1/execution/logs</code> and <code>/api/v1/integrations/mcp-servers</code>. Daena is informed
+            of available tools and MCP servers (subject to approval).
+          </p>
+          <p id="capabilitySummary" class="text-dim" style="font-size:11px">—</p>
+        </div>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Requested by</th>
-              <th>Risk</th>
-              <th>Action</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="toolsQueueTable">
-            <tr>
-              <td colspan="5" class="empty-state">Loading…</td>
-          </tbody>
-        </table>
+    </div>
+  </div>
+
+  <!-- ═══ DAENABOT TOOLS (OpenClaw / Hands) ═══ -->
+  <div class="tab-panel" id="panel-daenabot-tools" data-tab="daenabot-tools">
+    <div class="stats-row">
+      <div class="stat-card c-blue">
+        <div class="stat-label">Gateway</div>
+        <div class="stat-value c-blue" id="toolsGatewayStatus">—</div>
+        <div class="stat-sub" id="toolsGatewaySub">Connection</div>
       </div>
-      <div class="section-header" style="margin-top:16px">
-        <div class="section-title">Hands Allowlist Configuration</div>
+      <div class="stat-card c-amber">
+        <div class="stat-label">Pending</div>
+        <div class="stat-value c-amber" id="toolsPendingCount">0</div>
+        <div class="stat-sub">Awaiting approval</div>
       </div>
-      <div class="scan-box">
-        <p class="text-dim" style="font-size:11px;margin-bottom:8px">Restrict file operations and shell commands to
-          specific paths/commands.</p>
-        <textarea class="input" id="handsAllowlist" style="height:120px; font-family:var(--font-mono); font-size:11px;"
-          placeholder='{
+      <div class="stat-card c-green">
+        <div class="stat-label">Display name</div>
+        <div class="stat-value c-green" id="toolsDisplayName" style="font-size:12px">—</div>
+      </div>
+    </div>
+    <div class="section-header" style="margin-bottom:8px">
+      <div class="section-title">Hands connection</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="pingHandsResult" class="text-dim" style="font-size:11px"></span>
+        <button type="button" class="btn btn-primary" id="pingHandsBtn" onclick="testHandsConnection()">Test Hands
+          Connection</button>
+      </div>
+    </div>
+    <div class="section-header">
+      <div class="section-title">Pending tool requests</div><a href="#" onclick="loadDaenaBotTools();return false"
+        class="btn" style="font-size:11px">Refresh</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Requested by</th>
+            <th>Risk</th>
+            <th>Action</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="toolsQueueTable">
+          <tr>
+            <td colspan="5" class="empty-state">Loading…</td>
+        </tbody>
+      </table>
+    </div>
+    <div class="section-header" style="margin-top:16px">
+      <div class="section-title">Hands Allowlist Configuration</div>
+    </div>
+    <div class="scan-box">
+      <p class="text-dim" style="font-size:11px;margin-bottom:8px">Restrict file operations and shell commands to
+        specific paths/commands.</p>
+      <textarea class="input" id="handsAllowlist" style="height:120px; font-family:var(--font-mono); font-size:11px;"
+        placeholder='{
   "files": {
     "read": ["D:/Ideas/Daena_old_upgrade_20251213/**"],
     "write": ["D:/Ideas/Daena_old_upgrade_20251213/tmp/**"]
@@ -1983,414 +2113,414 @@
     "allowed_commands": ["npm test", "git status"]
   }
 }'></textarea>
-        <div style="margin-top:8px; display:flex; justify-content:flex-end;">
-          <button class="btn btn-primary" onclick="saveHandsAllowlist()">Update Allowlist</button>
-        </div>
-      </div>
-
-      <div class="section-header" style="margin-top:16px">
-        <div class="section-title">Test Action Dispatcher</div>
-      </div>
-      <div
-        style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:16px;">
-        <button class="btn" style="height:40px" onclick="testAction('browser.screenshot', {})">📸 Screenshot</button>
-        <button class="btn" style="height:40px" onclick="testAction('filesystem.list', {path: './'})">📁 List
-          Files</button>
-        <button class="btn btn-danger" style="height:40px"
-          onclick="testAction('shell.run', {command: 'echo hollow world'})">🐚 Run Shell</button>
-      </div>
-
-      <div class="section-header" style="margin-top:16px">
-        <div class="section-title">Recent history</div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Requested by</th>
-              <th>Risk</th>
-              <th>Status</th>
-              <th>Result</th>
-            </tr>
-          </thead>
-          <tbody id="toolsHistoryTable">
-            <tr>
-              <td colspan="5" class="empty-state">Loading…</td>
-          </tbody>
-        </table>
+      <div style="margin-top:8px; display:flex; justify-content:flex-end;">
+        <button class="btn btn-primary" onclick="saveHandsAllowlist()">Update Allowlist</button>
       </div>
     </div>
 
-    <!-- ═══ INTEGRATIONS ═══ -->
-    <div class="tab-panel" id="panel-integrations" data-tab="integrations">
-      <div class="stats-row">
-        <div class="stat-card c-blue">
-          <div class="stat-label">Integrations</div>
-          <div class="stat-value c-blue" id="intTotal">—</div>
-        </div>
-        <div class="stat-card c-green">
-          <div class="stat-label">MCP Servers</div>
-          <div class="stat-value c-green" id="intMcp">—</div>
-        </div>
-      </div>
-      <div class="section-header">
-        <div class="section-title">Integration List</div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Status</th>
-              <th>Type</th>
-            </tr>
-          </thead>
-          <tbody id="integrationsTable">
-            <tr>
-              <td colspan="3" class="empty-state">Loading…</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="section-header" style="margin-top:16px">
-        <div class="section-title">MCP Servers</div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>URL</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="mcpServersTable">
-            <tr>
-              <td colspan="3" class="empty-state">Loading…</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <div class="section-header" style="margin-top:16px">
+      <div class="section-title">Test Action Dispatcher</div>
+    </div>
+    <div
+      style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:16px;">
+      <button class="btn" style="height:40px" onclick="testAction('browser.screenshot', {})">📸 Screenshot</button>
+      <button class="btn" style="height:40px" onclick="testAction('filesystem.list', {path: './'})">📁 List
+        Files</button>
+      <button class="btn btn-danger" style="height:40px"
+        onclick="testAction('shell.run', {command: 'echo hollow world'})">🐚 Run Shell</button>
     </div>
 
-    <!-- ═══ PROACTIVE ═══ -->
-    <div class="tab-panel" id="panel-proactive" data-tab="proactive">
-      <div class="section-header">
-        <div class="section-title">Proactive Rules &amp; Events</div>
+    <div class="section-header" style="margin-top:16px">
+      <div class="section-title">Recent history</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Requested by</th>
+            <th>Risk</th>
+            <th>Status</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody id="toolsHistoryTable">
+          <tr>
+            <td colspan="5" class="empty-state">Loading…</td>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══ INTEGRATIONS ═══ -->
+  <div class="tab-panel" id="panel-integrations" data-tab="integrations">
+    <div class="stats-row">
+      <div class="stat-card c-blue">
+        <div class="stat-label">Integrations</div>
+        <div class="stat-value c-blue" id="intTotal">—</div>
       </div>
-      <div class="two-col">
-        <div>
-          <div class="section-header">Rules</div>
-          <div id="proactiveRulesList" class="scan-box">Loading…</div>
-        </div>
-        <div>
-          <div class="section-header">Recent Events</div>
-          <div id="proactiveEventsList" class="scan-box" style="max-height:280px;overflow:auto">Loading…</div>
-        </div>
+      <div class="stat-card c-green">
+        <div class="stat-label">MCP Servers</div>
+        <div class="stat-value c-green" id="intMcp">—</div>
       </div>
     </div>
+    <div class="section-header">
+      <div class="section-title">Integration List</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Type</th>
+          </tr>
+        </thead>
+        <tbody id="integrationsTable">
+          <tr>
+            <td colspan="3" class="empty-state">Loading…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="section-header" style="margin-top:16px">
+      <div class="section-title">MCP Servers</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>URL</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="mcpServersTable">
+          <tr>
+            <td colspan="3" class="empty-state">Loading…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
-    <!-- ═══ COUNCIL ═══ -->
-    <div class="tab-panel" id="panel-council" data-tab="council">
-      <div class="stats-row">
-        <div class="stat-card c-blue">
-          <div class="stat-label">Active Debates</div>
-          <div class="stat-value c-blue" id="councilActive">0</div>
-          <div class="stat-sub">In progress</div>
-        </div>
-        <div class="stat-card c-green">
-          <div class="stat-label">Resolved</div>
-          <div class="stat-value c-green" id="councilResolved">0</div>
-          <div class="stat-sub">Completed</div>
-        </div>
-        <div class="stat-card c-amber">
-          <div class="stat-label">Pending Vote</div>
-          <div class="stat-value c-amber" id="councilPending">0</div>
-          <div class="stat-sub">Awaiting decision</div>
-        </div>
-        <div class="stat-card c-purple">
-          <div class="stat-label">Experts</div>
-          <div class="stat-value c-purple" id="councilExperts">0</div>
-          <div class="stat-sub">Active members</div>
-        </div>
+  <!-- ═══ PROACTIVE ═══ -->
+  <div class="tab-panel" id="panel-proactive" data-tab="proactive">
+    <div class="section-header">
+      <div class="section-title">Proactive Rules &amp; Events</div>
+    </div>
+    <div class="two-col">
+      <div>
+        <div class="section-header">Rules</div>
+        <div id="proactiveRulesList" class="scan-box">Loading…</div>
       </div>
-      <div class="two-col">
-        <div>
-          <div class="section-header">
-            <div class="section-title">Active Debates</div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Topic</th>
-                  <th>Status</th>
-                  <th>Experts</th>
-                  <th>Started</th>
-                </tr>
-              </thead>
-              <tbody id="councilTable">
-                <tr>
-                  <td colspan="4" class="empty-state">Loading…</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div>
-          <div class="section-header">
-            <div class="section-title">Council Feed</div>
-          </div>
-          <div class="live-feed" id="councilFeed">
-            <div class="feed-header"><span>Debates</span><span class="feed-live">Live</span></div>
-            <div class="feed-empty">Council activity…</div>
-          </div>
-        </div>
+      <div>
+        <div class="section-header">Recent Events</div>
+        <div id="proactiveEventsList" class="scan-box" style="max-height:280px;overflow:auto">Loading…</div>
       </div>
     </div>
+  </div>
 
-    <!-- ═══ TRUST ═══ -->
-    <div class="tab-panel" id="panel-trust" data-tab="trust">
-      <div class="stats-row">
-        <div class="stat-card c-blue">
-          <div class="stat-label">Verifications</div>
-          <div class="stat-value c-blue" id="trustVerified">0</div>
-          <div class="stat-sub">Content checks</div>
+  <!-- ═══ COUNCIL ═══ -->
+  <div class="tab-panel" id="panel-council" data-tab="council">
+    <div class="stats-row">
+      <div class="stat-card c-blue">
+        <div class="stat-label">Active Debates</div>
+        <div class="stat-value c-blue" id="councilActive">0</div>
+        <div class="stat-sub">In progress</div>
+      </div>
+      <div class="stat-card c-green">
+        <div class="stat-label">Resolved</div>
+        <div class="stat-value c-green" id="councilResolved">0</div>
+        <div class="stat-sub">Completed</div>
+      </div>
+      <div class="stat-card c-amber">
+        <div class="stat-label">Pending Vote</div>
+        <div class="stat-value c-amber" id="councilPending">0</div>
+        <div class="stat-sub">Awaiting decision</div>
+      </div>
+      <div class="stat-card c-purple">
+        <div class="stat-label">Experts</div>
+        <div class="stat-value c-purple" id="councilExperts">0</div>
+        <div class="stat-sub">Active members</div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div>
+        <div class="section-header">
+          <div class="section-title">Active Debates</div>
         </div>
-        <div class="stat-card c-red">
-          <div class="stat-label">Injections Blocked</div>
-          <div class="stat-value c-red" id="trustBlocked">0</div>
-          <div class="stat-sub">Prompt attacks</div>
-        </div>
-        <div class="stat-card c-green">
-          <div class="stat-label">Trusted Sources</div>
-          <div class="stat-value c-green" id="trustSources">0</div>
-          <div class="stat-sub">Whitelisted</div>
-        </div>
-        <div class="stat-card c-amber">
-          <div class="stat-label">Stripped</div>
-          <div class="stat-value c-amber" id="trustStripped">0</div>
-          <div class="stat-sub">Sanitized inputs</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Topic</th>
+                <th>Status</th>
+                <th>Experts</th>
+                <th>Started</th>
+              </tr>
+            </thead>
+            <tbody id="councilTable">
+              <tr>
+                <td colspan="4" class="empty-state">Loading…</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
-      <div class="two-col">
-        <div>
-          <div class="section-header">
-            <div class="section-title">Verify Content</div>
-            <button class="btn btn-primary" onclick="openModal('verify')">+ Verify</button>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Source</th>
-                  <th>Trust Score</th>
-                  <th>Status</th>
-                  <th>Last Check</th>
-                </tr>
-              </thead>
-              <tbody id="trustTable">
-                <tr>
-                  <td colspan="4" class="empty-state">Loading…</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      <div>
+        <div class="section-header">
+          <div class="section-title">Council Feed</div>
         </div>
-        <div>
-          <div class="section-header">
-            <div class="section-title">Trust Feed</div>
-          </div>
-          <div class="live-feed" id="trustFeed">
-            <div class="feed-header"><span>Events</span><span class="feed-live">Live</span></div>
-            <div class="feed-empty">Trust events…</div>
-          </div>
+        <div class="live-feed" id="councilFeed">
+          <div class="feed-header"><span>Debates</span><span class="feed-live">Live</span></div>
+          <div class="feed-empty">Council activity…</div>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- ═══ SHADOW ═══ -->
-    <div class="tab-panel" id="panel-shadow" data-tab="shadow">
-      <div class="stats-row">
-        <div class="stat-card c-purple">
-          <div class="stat-label">Honeypots Active</div>
-          <div class="stat-value c-purple" id="shadowHoney">0</div>
-          <div class="stat-sub">Decoy routes</div>
+  <!-- ═══ TRUST ═══ -->
+  <div class="tab-panel" id="panel-trust" data-tab="trust">
+    <div class="stats-row">
+      <div class="stat-card c-blue">
+        <div class="stat-label">Verifications</div>
+        <div class="stat-value c-blue" id="trustVerified">0</div>
+        <div class="stat-sub">Content checks</div>
+      </div>
+      <div class="stat-card c-red">
+        <div class="stat-label">Injections Blocked</div>
+        <div class="stat-value c-red" id="trustBlocked">0</div>
+        <div class="stat-sub">Prompt attacks</div>
+      </div>
+      <div class="stat-card c-green">
+        <div class="stat-label">Trusted Sources</div>
+        <div class="stat-value c-green" id="trustSources">0</div>
+        <div class="stat-sub">Whitelisted</div>
+      </div>
+      <div class="stat-card c-amber">
+        <div class="stat-label">Stripped</div>
+        <div class="stat-value c-amber" id="trustStripped">0</div>
+        <div class="stat-sub">Sanitized inputs</div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div>
+        <div class="section-header">
+          <div class="section-title">Verify Content</div>
+          <button class="btn btn-primary" onclick="openModal('verify')">+ Verify</button>
         </div>
-        <div class="stat-card c-cyan">
-          <div class="stat-label">Canary Tokens</div>
-          <div class="stat-value c-cyan" id="shadowCanary">0</div>
-          <div class="stat-sub">Trip wires</div>
-        </div>
-        <div class="stat-card c-red">
-          <div class="stat-label">Alerts 24h</div>
-          <div class="stat-value c-red" id="shadowAlerts">0</div>
-          <div class="stat-sub">Recent events</div>
-        </div>
-        <div class="stat-card c-blue">
-          <div class="stat-label">TTPs Logged</div>
-          <div class="stat-value c-blue" id="shadowTTPs">0</div>
-          <div class="stat-sub">Attack patterns</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Trust Score</th>
+                <th>Status</th>
+                <th>Last Check</th>
+              </tr>
+            </thead>
+            <tbody id="trustTable">
+              <tr>
+                <td colspan="4" class="empty-state">Loading…</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
-      <div class="two-col">
-        <div>
-          <div class="section-header">
-            <div class="section-title">Honeypot Routes</div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Decoy Path</th>
-                  <th>Type</th>
-                  <th>Hits</th>
-                  <th>Last Hit</th>
-                </tr>
-              </thead>
-              <tbody id="shadowTable">
-                <tr>
-                  <td colspan="4" class="empty-state">Loading…</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      <div>
+        <div class="section-header">
+          <div class="section-title">Trust Feed</div>
         </div>
-        <div>
-          <div class="section-header">
-            <div class="section-title">Threat Feed</div>
-          </div>
-          <div class="live-feed" id="shadowFeed">
-            <div class="feed-header"><span>Alerts</span><span class="feed-live">Live</span></div>
-            <div class="feed-empty">Shadow dept events…</div>
-          </div>
+        <div class="live-feed" id="trustFeed">
+          <div class="feed-header"><span>Events</span><span class="feed-live">Live</span></div>
+          <div class="feed-empty">Trust events…</div>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- ═══ TREASURY ═══ -->
-    <div class="tab-panel" id="panel-treasury" data-tab="treasury">
-      <div class="stats-row">
-        <div class="stat-card c-gold">
-          <div class="stat-label">$DAENA Balance</div>
-          <div class="stat-value c-gold" id="treasDaena">0</div>
-          <div class="stat-sub">Token supply</div>
+  <!-- ═══ SHADOW ═══ -->
+  <div class="tab-panel" id="panel-shadow" data-tab="shadow">
+    <div class="stats-row">
+      <div class="stat-card c-purple">
+        <div class="stat-label">Honeypots Active</div>
+        <div class="stat-value c-purple" id="shadowHoney">0</div>
+        <div class="stat-sub">Decoy routes</div>
+      </div>
+      <div class="stat-card c-cyan">
+        <div class="stat-label">Canary Tokens</div>
+        <div class="stat-value c-cyan" id="shadowCanary">0</div>
+        <div class="stat-sub">Trip wires</div>
+      </div>
+      <div class="stat-card c-red">
+        <div class="stat-label">Alerts 24h</div>
+        <div class="stat-value c-red" id="shadowAlerts">0</div>
+        <div class="stat-sub">Recent events</div>
+      </div>
+      <div class="stat-card c-blue">
+        <div class="stat-label">TTPs Logged</div>
+        <div class="stat-value c-blue" id="shadowTTPs">0</div>
+        <div class="stat-sub">Attack patterns</div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div>
+        <div class="section-header">
+          <div class="section-title">Honeypot Routes</div>
         </div>
-        <div class="stat-card c-purple">
-          <div class="stat-label">NFTs Minted</div>
-          <div class="stat-value c-purple" id="treasNFT">0</div>
-          <div class="stat-sub">Agent licenses</div>
-        </div>
-        <div class="stat-card c-blue">
-          <div class="stat-label">ETH Held</div>
-          <div class="stat-value c-blue" id="treasETH">0</div>
-          <div class="stat-sub">Treasury reserve</div>
-        </div>
-        <div class="stat-card c-green">
-          <div class="stat-label">Monthly Spend</div>
-          <div class="stat-value c-green" id="treasSpend">$0</div>
-          <div class="stat-sub">Operations</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Decoy Path</th>
+                <th>Type</th>
+                <th>Hits</th>
+                <th>Last Hit</th>
+              </tr>
+            </thead>
+            <tbody id="shadowTable">
+              <tr>
+                <td colspan="4" class="empty-state">Loading…</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
-      <div class="two-col">
-        <div>
-          <div class="section-header">
-            <div class="section-title">Treasury Transactions</div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Amount</th>
-                  <th>Approved By</th>
-                  <th>Time</th>
-                </tr>
-              </thead>
-              <tbody id="treasTable">
-                <tr>
-                  <td colspan="4" class="empty-state">No transactions yet</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      <div>
+        <div class="section-header">
+          <div class="section-title">Threat Feed</div>
         </div>
-        <div>
-          <div class="section-header">
-            <div class="section-title">Treasury Feed</div>
-          </div>
-          <div class="live-feed" id="treasFeed">
-            <div class="feed-header"><span>Events</span><span class="feed-live">Live</span></div>
-            <div class="feed-empty">Treasury events…</div>
-          </div>
+        <div class="live-feed" id="shadowFeed">
+          <div class="feed-header"><span>Alerts</span><span class="feed-live">Live</span></div>
+          <div class="feed-empty">Shadow dept events…</div>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- ═══ AGENTS (operator scope: who can run skills — Founder, Daena, Agents; sidebar "Agents" is the full Agents app) ═══ -->
-    <div class="tab-panel" id="panel-agents" data-tab="agents">
-      <p class="text-dim" style="font-size:11px;margin:0 0 8px 0">Operator scope: who can run skills (Founder, Daena,
-        Agents). This tab shows agent registry and activity from /api/v1/agents.</p>
-      <div class="stats-row">
-        <div class="stat-card c-green">
-          <div class="stat-label">Online</div>
-          <div class="stat-value c-green" id="agentOnline">0</div>
-          <div class="stat-sub">Active agents</div>
+  <!-- ═══ TREASURY ═══ -->
+  <div class="tab-panel" id="panel-treasury" data-tab="treasury">
+    <div class="stats-row">
+      <div class="stat-card c-gold">
+        <div class="stat-label">$DAENA Balance</div>
+        <div class="stat-value c-gold" id="treasDaena">0</div>
+        <div class="stat-sub">Token supply</div>
+      </div>
+      <div class="stat-card c-purple">
+        <div class="stat-label">NFTs Minted</div>
+        <div class="stat-value c-purple" id="treasNFT">0</div>
+        <div class="stat-sub">Agent licenses</div>
+      </div>
+      <div class="stat-card c-blue">
+        <div class="stat-label">ETH Held</div>
+        <div class="stat-value c-blue" id="treasETH">0</div>
+        <div class="stat-sub">Treasury reserve</div>
+      </div>
+      <div class="stat-card c-green">
+        <div class="stat-label">Monthly Spend</div>
+        <div class="stat-value c-green" id="treasSpend">$0</div>
+        <div class="stat-sub">Operations</div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div>
+        <div class="section-header">
+          <div class="section-title">Treasury Transactions</div>
         </div>
-        <div class="stat-card c-blue">
-          <div class="stat-label">Actions Today</div>
-          <div class="stat-value c-blue" id="agentActions">0</div>
-          <div class="stat-sub">Executed</div>
-        </div>
-        <div class="stat-card c-amber">
-          <div class="stat-label">Departments</div>
-          <div class="stat-value c-amber" id="agentDepts">8</div>
-          <div class="stat-sub">Sunflower structure</div>
-        </div>
-        <div class="stat-card c-purple">
-          <div class="stat-label">Pending Tasks</div>
-          <div class="stat-value c-purple" id="agentPending">0</div>
-          <div class="stat-sub">Queued</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Approved By</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="treasTable">
+              <tr>
+                <td colspan="4" class="empty-state">No transactions yet</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
-      <div class="two-col wide">
-        <div>
-          <div class="section-header">
-            <div class="section-title">Agent Registry</div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Agent</th>
-                  <th>Department</th>
-                  <th>Status</th>
-                  <th>Last Activity</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="agentsTable">
-                <tr>
-                  <td colspan="5" class="empty-state">Loading…</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      <div>
+        <div class="section-header">
+          <div class="section-title">Treasury Feed</div>
         </div>
-        <div>
-          <div class="section-header">
-            <div class="section-title">Agent Activity Feed</div>
-          </div>
-          <div class="live-feed" id="agentFeed">
-            <div class="feed-header"><span>Activity</span><span class="feed-live">Live</span></div>
-            <div class="feed-empty">Agent events…</div>
-          </div>
+        <div class="live-feed" id="treasFeed">
+          <div class="feed-header"><span>Events</span><span class="feed-live">Live</span></div>
+          <div class="feed-empty">Treasury events…</div>
         </div>
       </div>
     </div>
+  </div>
 
-  </div><!-- /content -->
+  <!-- ═══ AGENTS (operator scope: who can run skills — Founder, Daena, Agents; sidebar "Agents" is the full Agents app) ═══ -->
+  <div class="tab-panel" id="panel-agents" data-tab="agents">
+    <p class="text-dim" style="font-size:11px;margin:0 0 8px 0">Operator scope: who can run skills (Founder, Daena,
+      Agents). This tab shows agent registry and activity from /api/v1/agents.</p>
+    <div class="stats-row">
+      <div class="stat-card c-green">
+        <div class="stat-label">Online</div>
+        <div class="stat-value c-green" id="agentOnline">0</div>
+        <div class="stat-sub">Active agents</div>
+      </div>
+      <div class="stat-card c-blue">
+        <div class="stat-label">Actions Today</div>
+        <div class="stat-value c-blue" id="agentActions">0</div>
+        <div class="stat-sub">Executed</div>
+      </div>
+      <div class="stat-card c-amber">
+        <div class="stat-label">Departments</div>
+        <div class="stat-value c-amber" id="agentDepts">8</div>
+        <div class="stat-sub">Sunflower structure</div>
+      </div>
+      <div class="stat-card c-purple">
+        <div class="stat-label">Pending Tasks</div>
+        <div class="stat-value c-purple" id="agentPending">0</div>
+        <div class="stat-sub">Queued</div>
+      </div>
+    </div>
+    <div class="two-col wide">
+      <div>
+        <div class="section-header">
+          <div class="section-title">Agent Registry</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Department</th>
+                <th>Status</th>
+                <th>Last Activity</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="agentsTable">
+              <tr>
+                <td colspan="5" class="empty-state">Loading…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <div class="section-header">
+          <div class="section-title">Agent Activity Feed</div>
+        </div>
+        <div class="live-feed" id="agentFeed">
+          <div class="feed-header"><span>Activity</span><span class="feed-live">Live</span></div>
+          <div class="feed-empty">Agent events…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /content -->
 </div><!-- /main -->
 </div><!-- /shell -->
 
@@ -2648,6 +2778,7 @@
     agents: '/api/v1/agents',
     system: '/api/v1/system',
     capabilities: '/api/v1/capabilities',
+    quintessence: '/api/v1/quintessence',
     chat: '/api/v1/daena/chat/stream'
   };
 
@@ -2935,7 +3066,7 @@
       toggleEl.setAttribute('aria-pressed', 'true');
     }
     const labelEl = document.getElementById('newSkillEnabledLabel');
-    if (labelEl) labelEl.textContent = 'On (skill can be used after creation)';
+    if (labelEl) label.textContent = 'On (skill can be used after creation)';
     openModal('skill');
   }
   document.querySelectorAll('.modal-overlay').forEach(o => { o.addEventListener('click', (e) => { if (e.target === o) o.classList.remove('open') }) });
@@ -3022,6 +3153,7 @@
       case 'shadow': loadShadow(); break;
       case 'treasury': loadTreasury(); break;
       case 'agents': loadAgents(); break;
+      case 'quintessence': loadExperts(); searchPrecedents(); break;
     }
   }
 
@@ -3737,6 +3869,32 @@
     }
   }
 
+  async function testAction(type, params) {
+    if (window.showToast) window.showToast('Dispatching...', 'info');
+    try {
+      const r = await apiRequest(API.tools + '/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action_type: type, parameters: params, requested_by: 'founder' })
+      });
+      if (r && r.status) {
+        if (r.status === 'approved_and_executed') {
+          const success = r.result && r.result.success;
+          window.showToast(success ? 'Executed: Success' : 'Executed: Failed (' + (r.result.error || '') + ')', success ? 'success' : 'error');
+        } else if (r.status === 'queued_for_approval') {
+          window.showToast('Queued for approval', 'warning');
+        } else {
+          window.showToast('Status: ' + r.status + (r.message ? ' (' + r.message + ')' : ''), 'info');
+        }
+        loadDaenaBotTools();
+      } else {
+        window.showToast('Dispatch failed', 'error');
+      }
+    } catch (e) {
+      window.showToast('Error: ' + (e.message || e), 'error');
+    }
+  }
+
   // ─── INTEGRATIONS (sync: GET /, GET /mcp-servers) ───
   async function loadIntegrations() {
     const list = await apiRequest(API.integrations);
@@ -3913,10 +4071,138 @@
     closeModal('research');
   }
 
+  // ─── THE QUINTESSENCE ──────────────────────────────────────────────────────────────────────────
+  async function loadExperts() {
+    try {
+      const res = await fetch(apiBase() + API.quintessence + '/experts');
+      const data = await res.json();
+      const grid = document.getElementById('expertGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      Object.entries(data.experts).forEach(([id, exp]) => {
+        const card = document.createElement('div');
+        card.className = 'expert-card';
+        card.onclick = () => alert(`${exp.name}: ${exp.thinking_style}`);
+        card.innerHTML = `
+          <div class="expert-icon">${exp.icon}</div>
+          <div class="expert-name">${exp.name}</div>
+          <div class="expert-title">${exp.title}</div>
+        `;
+        grid.appendChild(card);
+      });
+    } catch (e) {
+      console.error("Quintessence experts error:", e);
+    }
+  }
+
+  async function invokeQuintessence() {
+    const problem = document.getElementById('quintProblem').value;
+    const domain = document.getElementById('quintDomain').value;
+    const status = document.getElementById('quintStatus');
+    const feed = document.getElementById('quintFeedContent');
+    const empty = document.getElementById('quintEmpty');
+    const btn = document.getElementById('quintBtn');
+
+    if (!problem) return alert("Please enter a strategic problem.");
+
+    btn.disabled = true;
+    btn.textContent = "Deliberating...";
+    status.textContent = "Processing";
+    status.classList.add('live');
+    if (empty) empty.style.display = 'none';
+
+    // Simulated progress logging since we don't have streaming for this yet
+    const addTrace = (text, type = 'info') => {
+      const div = document.createElement('div');
+      div.className = 'deliberation-step';
+      div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${text}`;
+      feed.appendChild(div);
+      feed.scrollTop = feed.scrollHeight;
+    };
+
+    try {
+      addTrace("Initializing Supreme Council (Tier 2)...");
+      addTrace("Establishing consensus baseline (Tier 1)...");
+
+      const res = await fetch(apiBase() + API.quintessence + '/deliberate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ problem, domain })
+      });
+
+      const data = await res.json();
+
+      addTrace("Experts consulted. Synthesizing supreme decision...");
+
+      const resDiv = document.createElement('div');
+      resDiv.style.background = 'rgba(147, 112, 219, 0.1)';
+      resDiv.style.border = '1px solid var(--purple)';
+      resDiv.style.borderRadius = '8px';
+      resDiv.style.padding = '12px';
+      resDiv.style.marginTop = '12px';
+      resDiv.innerHTML = `
+        <div style="font-weight:600; color: var(--purple); margin-bottom: 8px;">SUPREME DECISION</div>
+        <div style="font-size: 13px; white-space: pre-wrap;">${data.decision}</div>
+        <div style="margin-top: 10px; font-size: 10px; color: var(--text-dim);">Precedent ID: ${data.precedent_id}</div>
+      `;
+      feed.appendChild(resDiv);
+      feed.scrollTop = feed.scrollHeight;
+
+      searchPrecedents(); // Refresh list
+    } catch (e) {
+      addTrace("Error during deliberation: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Invoke Supreme Council";
+      status.textContent = "Idle";
+      status.classList.remove('live');
+    }
+  }
+
+  async function searchPrecedents() {
+    const q = document.getElementById('precedentSearch').value;
+    const list = document.getElementById('precedentList');
+    if (!list) return;
+
+    try {
+      const res = await fetch(apiBase() + API.quintessence + '/precedents/search?q=' + encodeURIComponent(q || ''));
+      const data = await res.json();
+
+      if (data.precedents.length === 0) {
+        list.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-dim);">No precedents found.</div>';
+        return;
+      }
+
+      list.innerHTML = '';
+      data.precedents.forEach(p => {
+        const item = document.createElement('div');
+        item.className = 'precedent-item';
+        item.innerHTML = `
+          <div style="font-weight:600; font-size: 11px;">${p.problem_summary.substring(0, 50)}...</div>
+          <div style="font-size: 9px; color: var(--text-dim); margin-top: 2px;">Domain: ${p.domain} | ${p.pattern_type || 'General'}</div>
+        `;
+        item.onclick = () => {
+          document.getElementById('quintProblem').value = p.problem_summary;
+          document.getElementById('quintDomain').value = p.domain;
+          alert("Precedent Loaded. You can re-deliberate or review logic.");
+        };
+        list.appendChild(item);
+      });
+    } catch (e) {
+      console.error("Precedent search error:", e);
+    }
+  }
+
   // ─── UTIL ───────────────────────────────────────
   function timeAgo(ts) {
     if (!ts) return '—';
-    const d = typeof ts === 'number' ? ts : new Date(ts).getTime();
+    let d = typeof ts === 'number' ? ts : new Date(ts).getTime();
+    // Fix for python time.time() (seconds) vs js (ms). 
+    // If timestamp is small (e.g. < 100000000000, roughly year 5138), assume seconds.
+    if (typeof ts === 'number' && ts < 100000000000) {
+      d = ts * 1000;
+    }
     const diff = Date.now() - d;
     if (diff < 60000) return 'Just now';
     if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';

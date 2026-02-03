@@ -648,7 +648,7 @@
         }
     }
 
-    function createCouncil() {
+    async function createCouncil() {
         const name = document.getElementById('council-name').value;
         const desc = document.getElementById('council-desc').value;
         const icon = document.getElementById('council-icon').value;
@@ -661,28 +661,31 @@
             return;
         }
 
-        const newId = name.toLowerCase().replace(/\s+/g, '_');
+        try {
+            const response = await fetch('/api/v1/council/create?name=' + encodeURIComponent(name) +
+                '&description=' + encodeURIComponent(desc) +
+                '&icon=' + encodeURIComponent(icon) +
+                '&color=' + encodeURIComponent(color), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
 
-        // Add to local data
-        councilsData.push({
-            id: newId,
-            name: name,
-            description: desc,
-            icon: icon,
-            status: 'active',
-            experts: [
-                { id: `${newId}_1`, name: 'Expert 1', role: 'Role 1', inspiration: 'Inspiration 1', avatar: 'fa-user', status: 'active' },
-                { id: `${newId}_2`, name: 'Expert 2', role: 'Role 2', inspiration: 'Inspiration 2', avatar: 'fa-user', status: 'active' },
-                { id: `${newId}_3`, name: 'Expert 3', role: 'Role 3', inspiration: 'Inspiration 3', avatar: 'fa-user', status: 'active' },
-                { id: `${newId}_4`, name: 'Expert 4', role: 'Role 4', inspiration: 'Inspiration 4', avatar: 'fa-user', status: 'active' },
-                { id: `${newId}_5`, name: 'Expert 5', role: 'Role 5', inspiration: 'Inspiration 5', avatar: 'fa-user', status: 'active' }
-            ]
-        });
+            const data = await response.json();
 
-        councilColors[newId] = color;
-
-        renderCouncils(councilsData);
-        closeCouncilModal();
+            if (data.success) {
+                if (window.showToast) window.showToast('Council created successfully', 'success');
+                // Reload list to get the new council with correct ID and experts
+                loadCouncils();
+                closeCouncilModal();
+            } else {
+                if (window.showToast) window.showToast('Error: ' + (data.detail || 'Failed to create'), 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            if (window.showToast) window.showToast('Error creating council: ' + e.message, 'error');
+        }
     }
 
     async function toggleCouncil(councilId, enabled) {

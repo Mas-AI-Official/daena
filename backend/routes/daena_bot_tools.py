@@ -177,3 +177,32 @@ async def get_tools_history(limit: int = 50):
     """Recent tool requests (all statuses)."""
     requests = list_history(limit=limit)
     return {"history": requests, "display_name": get_daena_bot_display_name()}
+
+
+class SubmitActionBody(BaseModel):
+    action_type: str
+    parameters: Dict[str, Any] = {}
+    requested_by: str = "founder"
+
+
+@router.post("/submit")
+async def submit_tool_request(body: SubmitActionBody):
+    """
+    Submit a tool request (e.g. from Control Pannel 'Test Action').
+    Goes through broker: might be executed immediately (low risk) or queued (approval).
+    """
+    action = {"action_type": body.action_type, "parameters": body.parameters}
+    
+    # Use async broker request
+    try:
+        status, result = await tool_broker.async_broker_request(
+            action=action,
+            requested_by=body.requested_by
+        )
+        return {
+            "status": status,
+            "result": result,
+            "message": result.get("message") if result else None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
