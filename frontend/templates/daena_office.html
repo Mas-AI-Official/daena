@@ -73,6 +73,42 @@
         background: rgba(255, 215, 0, 0.4) !important;
         /* Gold highlight on hover */
     }
+
+    /* Swimmer Effect for Thinking */
+    @keyframes swimmer {
+        0% {
+            background-position: -200% 0;
+        }
+
+        100% {
+            background-position: 200% 0;
+        }
+    }
+
+    .swimmer {
+        background: linear-gradient(90deg,
+                rgba(255, 215, 0, 0.1) 25%,
+                rgba(255, 215, 0, 0.4) 50%,
+                rgba(255, 215, 0, 0.1) 75%);
+        background-size: 200% 100%;
+        animation: swimmer 2s infinite linear;
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        display: inline-block;
+    }
+
+    /* R1 Thinking Style */
+    .thinking-node {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.5rem;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px border-white/5;
+        border-radius: 6px;
+        font-size: 0.7rem;
+    }
 </style>
 {% endblock %}
 
@@ -1309,6 +1345,11 @@
 
     async function loadSession(sessionId) {
         currentSessionId = sessionId;
+
+        // Update streaming UI state for this session
+        const isStreaming = (window._activeStreams && window._activeStreams.has(sessionId));
+        setStreamingUI(isStreaming);
+
         try {
             const data = await window.api.getChatHistory(sessionId);
             if (data.success) {
@@ -1411,7 +1452,11 @@
         scrollChatToBottom(true);
         updateScrollToBottomButton();
 
-        streamAbortController = new AbortController();
+        const controller = new AbortController();
+        streamAbortController = controller;
+        window._activeStreams = window._activeStreams || new Map();
+        window._activeStreams.set(currentSessionId || 'default', controller);
+
         setStreamingUI(true);
         setStreamingBeforeUnload(true);
 
@@ -1457,6 +1502,8 @@
             const decoder = new TextDecoder();
             const textEl = document.getElementById(`${responseId}-text`);
             let fullText = '';
+            let thoughtTokens = '';
+            let isThinkingTokens = false;
             let firstToken = true;
             let buffer = '';
 
@@ -1488,13 +1535,16 @@
                                     // Create thoughts container if it doesn't exist
                                     const thoughtsContainer = document.createElement('div');
                                     thoughtsContainer.innerHTML = `
-                                        <details id="${responseId}-thoughts" class="mb-2 border-l border-white/10 pl-3 hover:border-daena-gold/30 transition-colors">
-                                            <summary class="text-[10px] text-gray-500 cursor-pointer select-none hover:text-daena-gold py-1 pr-2 list-none flex items-center gap-2 outline-none group">
-                                               <span class="font-medium uppercase tracking-wider italic thoughts-status">Thinking...</span>
-                                               <span class="text-gray-500 text-[10px] ml-auto font-mono" id="${responseId}-timer">0.0s</span>
-                                               <i class="fas fa-chevron-right text-[8px] opacity-30 group-open:rotate-90 transition-transform"></i>
+                                        <details id="${responseId}-thoughts" class="mb-2 border-l border-white/5 pl-3 transition-all duration-300">
+                                            <summary class="text-[10px] text-gray-500 cursor-pointer select-none py-1 pr-2 list-none flex items-center gap-2 outline-none group">
+                                               <div class="thinking-node">
+                                                  <i class="fas fa-brain thoughts-icon text-daena-gold/50"></i>
+                                                  <span class="font-medium uppercase tracking-wider swimmer thoughts-status">Thinking...</span>
+                                                  <span class="text-gray-500 text-[10px] ml-auto font-mono" id="${responseId}-timer">0.0s</span>
+                                               </div>
+                                               <i class="fas fa-chevron-right text-[8px] opacity-20 group-open:rotate-90 transition-transform"></i>
                                             </summary>
-                                            <div class="text-[11px] text-gray-500 space-y-1 font-mono pb-2 pr-2 thought-content border-t border-white/5 pt-2 max-h-40 overflow-y-auto custom-scrollbar"></div>
+                                            <div class="text-[11px] text-gray-400/80 space-y-1 font-mono pb-2 pr-2 thought-content border-t border-white/5 pt-2 max-h-40 overflow-y-auto custom-scrollbar"></div>
                                         </details>
                                         <div id="${responseId}-final-answer" class="whitespace-pre-wrap leading-relaxed animate-fade-in"></div>
                                     `;
@@ -1528,8 +1578,8 @@
                                     prevActive.forEach(el => el.classList.remove('active-thought', 'text-daena-gold'));
 
                                     const line = document.createElement('div');
-                                    line.className = "flex gap-2 active-thought text-daena-gold transition-colors duration-500";
-                                    line.innerHTML = `<span class="opacity-50 select-none">&gt;</span> <span class="animate-pulse">${data.content}</span>`;
+                                    line.className = "flex gap-2 active-thought text-daena-gold/60 transition-colors duration-500";
+                                    line.innerHTML = `<span class="opacity-30 select-none">&gt;</span> <span class="">${data.content}</span>`;
                                     contentDiv.appendChild(line);
                                     contentDiv.scrollTop = contentDiv.scrollHeight;
                                 }
@@ -1568,6 +1618,22 @@
                                 }
 
                             } else if (data.type === 'token' && data.content) {
+                                let content = data.content;
+                                if (content.includes('<think>')) {
+                                    isThinkingTokens = true;
+                                    content = content.replace('<think>', '');
+                                }
+                                if (isThinkingTokens) {
+                                    thoughtTokens += content;
+                                    if (thoughtTokens.includes('</think>')) {
+                                        const parts = thoughtTokens.split('</think>');
+                                        thoughtTokens = parts[0];
+                                        content = parts[1] || '';
+                                        isThinkingTokens = false;
+                                    } else {
+                                        content = '';
+                                    }
+                                }
                                 if (firstToken) {
                                     if (!document.getElementById(`${responseId}-thoughts`)) {
                                         textEl.innerHTML = '';
@@ -1579,7 +1645,14 @@
                                 let finalEl = document.getElementById(`${responseId}-final-answer`);
 
                                 if (thoughtsEl) {
-                                    if (thoughtsEl.dataset.interval) {
+                                    if (isThinkingTokens || thoughtTokens) {
+                                        const cDiv = thoughtsEl.querySelector('.thought-content');
+                                        if (cDiv) {
+                                            cDiv.textContent = thoughtTokens;
+                                            cDiv.scrollTop = cDiv.scrollHeight;
+                                        }
+                                    }
+                                    if (!isThinkingTokens && thoughtsEl.dataset.interval) {
                                         clearInterval(thoughtsEl.dataset.interval);
                                         thoughtsEl.dataset.interval = null;
 
@@ -1589,21 +1662,22 @@
 
                                         if (statusEl) {
                                             statusEl.textContent = `Thought for ${duration}s`;
-                                            statusEl.classList.remove('italic');
+                                            statusEl.classList.remove('italic', 'swimmer');
+                                            statusEl.classList.add('text-gray-500/50');
                                         }
                                         if (timerEl) timerEl.classList.add('hidden');
                                         const brainIcon = thoughtsEl.querySelector('.thoughts-icon');
                                         if (brainIcon) brainIcon.classList.remove('animate-pulse');
 
                                         // Collapse it automatically when answer starts? OpenAI does this.
-                                        // thoughtsEl.open = false; 
+                                        thoughtsEl.open = false;
                                     }
                                 } else {
                                     finalEl = textEl;
                                 }
 
-                                if (finalEl) {
-                                    fullText += data.content;
+                                if (finalEl && content) {
+                                    fullText += content;
                                     finalEl.innerHTML = formatMessage(fullText);
                                     scrollChatToBottom();
                                 }
@@ -1654,6 +1728,7 @@
                 window.showToast?.('Failed to send message: ' + e.message, 'error');
             }
         } finally {
+            if (window._activeStreams) window._activeStreams.delete(currentSessionId || 'default');
             streamAbortController = null;
             setStreamingUI(false);
             setStreamingBeforeUnload(false);
