@@ -98,16 +98,10 @@
         display: inline-block;
     }
 
-    /* R1 Thinking Style */
-    .thinking-node {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.25rem 0.5rem;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px border-white/5;
-        border-radius: 6px;
-        font-size: 0.7rem;
+    /* Minimal Thinking Style */
+    .thinking-wrapper {
+        margin-bottom: 0.5rem;
+        transition: all 0.3s ease;
     }
 </style>
 {% endblock %}
@@ -1534,19 +1528,18 @@
                                 if (!thoughtsEl) {
                                     // Create thoughts container if it doesn't exist
                                     const thoughtsContainer = document.createElement('div');
+                                    thoughtsContainer.className = "thinking-wrapper";
                                     thoughtsContainer.innerHTML = `
-                                        <details id="${responseId}-thoughts" class="mb-2 border-l border-white/5 pl-3 transition-all duration-300">
-                                            <summary class="text-[10px] text-gray-500 cursor-pointer select-none py-1 pr-2 list-none flex items-center gap-2 outline-none group">
-                                               <div class="thinking-node">
-                                                  <i class="fas fa-brain thoughts-icon text-daena-gold/50"></i>
-                                                  <span class="font-medium uppercase tracking-wider swimmer thoughts-status">Thinking...</span>
-                                                  <span class="text-gray-500 text-[10px] ml-auto font-mono" id="${responseId}-timer">0.0s</span>
-                                               </div>
-                                               <i class="fas fa-chevron-right text-[8px] opacity-20 group-open:rotate-90 transition-transform"></i>
+                                        <details id="${responseId}-thoughts" class="transition-all duration-300">
+                                            <summary class="text-[10px] text-gray-500/60 cursor-pointer select-none py-1 list-none flex items-center gap-2 outline-none group hover:text-daena-gold transition-colors">
+                                               <i class="fas fa-brain thoughts-icon text-daena-gold/30"></i>
+                                               <span class="font-medium uppercase tracking-wider swimmer thoughts-status">Thinking</span>
+                                               <span class="text-gray-500/40 text-[10px] font-mono ml-auto" id="${responseId}-timer">0.0s</span>
+                                               <i class="fas fa-chevron-right text-[8px] opacity-10 group-open:rotate-90 transition-transform"></i>
                                             </summary>
-                                            <div class="text-[11px] text-gray-400/80 space-y-1 font-mono pb-2 pr-2 thought-content border-t border-white/5 pt-2 max-h-40 overflow-y-auto custom-scrollbar"></div>
+                                            <div class="text-[11px] text-gray-500/50 space-y-1 font-mono pb-2 thought-content pt-1 max-h-40 overflow-y-auto custom-scrollbar"></div>
                                         </details>
-                                        <div id="${responseId}-final-answer" class="whitespace-pre-wrap leading-relaxed animate-fade-in"></div>
+                                        <div id="${responseId}-final-answer" class="whitespace-pre-wrap leading-relaxed animate-fade-in mt-1"></div>
                                     `;
 
                                     // Replace content (previously loading spinner)
@@ -1662,8 +1655,8 @@
 
                                         if (statusEl) {
                                             statusEl.textContent = `Thought for ${duration}s`;
-                                            statusEl.classList.remove('italic', 'swimmer');
-                                            statusEl.classList.add('text-gray-500/50');
+                                            statusEl.classList.remove('swimmer');
+                                            statusEl.classList.add('text-gray-500/40');
                                         }
                                         if (timerEl) timerEl.classList.add('hidden');
                                         const brainIcon = thoughtsEl.querySelector('.thoughts-icon');
@@ -1728,10 +1721,15 @@
                 window.showToast?.('Failed to send message: ' + e.message, 'error');
             }
         } finally {
-            if (window._activeStreams) window._activeStreams.delete(currentSessionId || 'default');
+            const sid = currentSessionId || 'default';
+            if (window._activeStreams) window._activeStreams.delete(sid);
             streamAbortController = null;
-            setStreamingUI(false);
-            setStreamingBeforeUnload(false);
+
+            // Only toggle UI off if we are still on the same session that just finished
+            if (currentSessionId === sid || (sid === 'default' && !currentSessionId)) {
+                setStreamingUI(false);
+                setStreamingBeforeUnload(false);
+            }
         }
     });
 
