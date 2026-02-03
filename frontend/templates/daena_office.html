@@ -595,9 +595,16 @@
         const sendBtn = document.getElementById('send-btn');
         const stopBtn = document.getElementById('stop-stream-btn');
         const input = document.getElementById('message-input');
-        if (sendBtn) sendBtn.classList.toggle('hidden', streaming);
+
+        // Always show send button, never hide it
+        if (sendBtn) sendBtn.classList.remove('hidden');
+
+        // Show stop button only when streaming (it will appear next to send)
         if (stopBtn) stopBtn.classList.toggle('hidden', !streaming);
-        if (input) input.disabled = streaming;
+
+        // Never disable input
+        if (input) input.disabled = false;
+        if (input && streaming) input.focus(); // Keep focus for typing
     }
 
     function setSendMode(mode) {
@@ -1440,7 +1447,6 @@
                 const contentDiv = thoughtsEl.querySelector('.thought-content');
                 if (contentDiv) contentDiv.textContent = ctx.thoughtTokens;
                 if (!ctx.isThinkingTokens) {
-                    thoughtsEl.open = false;
                     const statusEl = thoughtsEl.querySelector('.thoughts-status');
                     if (statusEl) statusEl.textContent = `Thought complete`;
                 }
@@ -1464,15 +1470,15 @@
         const thoughtsContainer = document.createElement('div');
         thoughtsContainer.className = "thinking-wrapper";
         thoughtsContainer.innerHTML = `
-            <details id="${responseId}-thoughts" class="transition-all duration-300" ${shouldOpen ? 'open' : ''}>
-                <summary class="text-[10px] text-gray-500/60 cursor-pointer select-none py-1 list-none flex items-center gap-2 outline-none group hover:text-daena-gold transition-colors">
+            <div id="${responseId}-thoughts" class="transition-all duration-300">
+                <div class="text-[10px] text-gray-500/60 select-none py-1 flex items-center gap-2">
                    <i class="fas fa-brain thoughts-icon text-daena-gold/30"></i>
                    <span class="font-medium uppercase tracking-wider swimmer thoughts-status">Thinking</span>
                    <span class="text-gray-500/40 text-[10px] font-mono ml-auto" id="${responseId}-timer">0.0s</span>
-                   <i class="fas fa-chevron-right text-[8px] opacity-10 group-open:rotate-90 transition-transform"></i>
-                </summary>
-                <div class="text-[11px] text-gray-500/50 space-y-1 font-mono pb-2 thought-content pt-1 max-h-40 overflow-y-auto custom-scrollbar"></div>
-            </details>
+                </div>
+                <!-- Hidden content container for logic compatibility -->
+                <div class="thought-content hidden"></div>
+            </div>
             <div id="${responseId}-final-answer" class="whitespace-pre-wrap leading-relaxed animate-fade-in mt-1"></div>
         `;
 
@@ -1583,7 +1589,6 @@
                                 if (!ctx.isThinkingTokens && thoughtsEl && thoughtsEl.dataset.interval !== 'done') {
                                     if (thoughtsEl.dataset.interval) clearInterval(thoughtsEl.dataset.interval);
                                     thoughtsEl.dataset.interval = 'done';
-                                    thoughtsEl.open = false;
                                     const statusEl = thoughtsEl.querySelector('.thoughts-status');
                                     if (statusEl) { statusEl.textContent = `Thought complete`; statusEl.classList.remove('swimmer'); }
                                 }
@@ -1713,6 +1718,20 @@
         const content = input.value.trim();
 
         if (!content) return;
+
+        // Auto-interrupt previous stream if active
+        if (streamAbortController) {
+            streamAbortController.abort();
+            streamAbortController = null;
+            // Also notify backend to stop previous generation to free up resources
+            if (currentSessionId) {
+                fetch('/api/v1/daena/chat/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: currentSessionId })
+                }).catch(() => { });
+            }
+        }
 
         // Optimistic UI - show user message with edit button
         const msgId = 'msg-' + Date.now();

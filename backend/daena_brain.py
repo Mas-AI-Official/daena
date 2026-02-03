@@ -55,7 +55,11 @@ class DaenaBrain:
             from backend.services.llm_service import LLMService
             llm = LLMService()
         
-        text = await llm.generate_response(prompt, max_tokens=800)
+        text = await llm.generate_response(
+            prompt, 
+            max_tokens=800,
+            context={"skip_gate": True}
+        )
 
         self.conversation_history.append({"role": "assistant", "content": text, "ts": datetime.utcnow().isoformat()})
         if len(self.conversation_history) > self.context_window:

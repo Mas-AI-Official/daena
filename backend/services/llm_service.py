@@ -371,7 +371,9 @@ class LLMService:
             from backend.services.deterministic_gate import get_deterministic_gate
             from backend.config.settings import settings
             
-            if getattr(settings, 'daena_deterministic_gate_enabled', True):
+            skip_gate = context.get("skip_gate", False) if context else False
+            
+            if not skip_gate and getattr(settings, 'daena_deterministic_gate_enabled', True):
                 deterministic_gate = get_deterministic_gate()
                 handled, result = deterministic_gate.try_handle(prompt, context)
                 if handled:

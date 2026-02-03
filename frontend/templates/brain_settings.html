@@ -37,15 +37,18 @@
         border: 1px solid rgba(255, 255, 255, 0.12);
         min-width: 200px;
     }
+
     .routing-mode-wrap:focus-within {
         border-color: var(--daena-gold);
         box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.2);
     }
+
     .routing-mode-wrap label {
         font-size: 13px;
         color: #9CA3AF;
         white-space: nowrap;
     }
+
     .routing-mode-select {
         flex: 1;
         padding: 6px 28px 6px 10px;
@@ -61,10 +64,12 @@
         background-repeat: no-repeat;
         background-position: right 10px center;
     }
+
     .routing-mode-select option {
         background: #1a1a1a;
         color: white;
     }
+
     .routing-mode-select:focus {
         outline: none;
     }
@@ -349,7 +354,8 @@
     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
         <div class="routing-mode-wrap">
             <label for="routing-mode">Routing Mode:</label>
-            <select id="routing-mode" class="routing-mode-select" onchange="setRoutingMode(this.value)" aria-label="Routing mode">
+            <select id="routing-mode" class="routing-mode-select" onchange="setRoutingMode(this.value)"
+                aria-label="Routing mode">
                 <option value="local_only">Local Only (Offline)</option>
                 <option value="hybrid">Hybrid (Smart)</option>
                 <option value="api_only">API Only (Cloud)</option>
@@ -372,12 +378,21 @@
     <div class="section-body">
         <div class="flex items-center gap-3 flex-wrap">
             <label class="text-[13px] text-gray-400">Path:</label>
-            <input type="text" id="offline-path-input" class="api-key-input flex-1 min-w-[200px] max-w-xl" placeholder="e.g. D:\Ideas\MODELS_ROOT" title="Change offline root for LLMs; saves to backend. Edit and Save or press Enter." autocomplete="off" />
-            <button type="button" id="offline-save-btn" class="scan-btn" style="padding: 6px 12px; font-size: 12px;">Save</button>
-            <button type="button" id="offline-open-folder-btn" class="scan-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(65, 105, 225, 0.3);" title="Open this folder in Explorer/Finder"><i class="fas fa-folder-open"></i> Open folder</button>
-            <button type="button" id="offline-copy-btn" class="scan-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.1);" title="Copy path"><i class="fas fa-copy"></i> Copy</button>
+            <input type="text" id="offline-path-input" class="api-key-input flex-1 min-w-[200px] max-w-xl"
+                placeholder="e.g. D:\Ideas\MODELS_ROOT"
+                title="Change offline root for LLMs; saves to backend. Edit and Save or press Enter."
+                autocomplete="off" />
+            <button type="button" id="offline-save-btn" class="scan-btn"
+                style="padding: 6px 12px; font-size: 12px;">Save</button>
+            <button type="button" id="offline-open-folder-btn" class="scan-btn"
+                style="padding: 6px 12px; font-size: 12px; background: rgba(65, 105, 225, 0.3);"
+                title="Open this folder in Explorer/Finder"><i class="fas fa-folder-open"></i> Open folder</button>
+            <button type="button" id="offline-copy-btn" class="scan-btn"
+                style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.1);" title="Copy path"><i
+                    class="fas fa-copy"></i> Copy</button>
         </div>
-        <p class="text-[11px] text-gray-500 mt-2">Change the path and Save (or blur/Enter) to update the backend in real time. Local (Ollama) models are under this path/ollama. Use "Open folder" to browse and copy a path.</p>
+        <p class="text-[11px] text-gray-500 mt-2">Change the path and Save (or blur/Enter) to update the backend in real
+            time. Local (Ollama) models are under this path/ollama. Use "Open folder" to browse and copy a path.</p>
     </div>
 </div>
 
@@ -409,11 +424,7 @@
         <div class="section-title">Local Models (Ollama)</div>
     </div>
     <div class="section-body">
-        <div class="ollama-search-bar">
-            <input type="text" id="ollama-search-input" placeholder="Search & pull: e.g. llama3.2, deepseek-r1:8b, library/qwen2.5" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();pullBySearch();}"/>
-            <button type="button" class="btn-pull" id="ollama-pull-btn" onclick="pullBySearch()">
-                <i class="fas fa-download"></i> Pull from Ollama
-            </button>
+        <div class="ollama-search-bar" style="justify-content: flex-end;">
             <button type="button" class="btn-refresh" onclick="scanModels()">
                 <i class="fas fa-sync-alt"></i> Refresh
             </button>
@@ -448,7 +459,8 @@
         <div class="section-title">Cloud LLM APIs</div>
     </div>
     <div class="section-body">
-        <p class="text-[12px] text-gray-500 mb-3">Add API keys below; they sync to the backend stack. Toggle each provider on/off after saving a key.</p>
+        <p class="text-[12px] text-gray-500 mb-3">Add API keys below; they sync to the backend stack. Toggle each
+            provider on/off after saving a key.</p>
         <div id="cloud-apis">
             <!-- Loaded via JS -->
         </div>
@@ -650,7 +662,7 @@
 
         try {
             // Run scan in background — don't block model list if scan fails (e.g. model_registry missing)
-            fetch('/api/v1/brain/scan', { method: 'POST' }).catch(() => {});
+            fetch('/api/v1/brain/scan', { method: 'POST' }).catch(() => { });
 
             // Load models, status, usage from backend (Brain Status API)
             const [modelsResponse, statusResponse, usageResponse] = await Promise.all([
@@ -716,7 +728,7 @@
                             tokens: usageStats[(m && m.name) ? m.name : m]?.tokens || 0
                         }));
                     }
-                } catch (_) {}
+                } catch (_) { }
             }
 
             // Load active models, routing mode, offline path (always when statusData exists)
@@ -888,23 +900,7 @@
         await doPull(name);
     }
 
-    async function pullBySearch() {
-        const input = document.getElementById('ollama-search-input');
-        const name = (input && input.value) ? input.value.trim() : '';
-        if (!name) {
-            if (window.showToast) window.showToast('Enter a model name (e.g. llama3.2, deepseek-r1:8b)', 'error');
-            return;
-        }
-        const btn = document.getElementById('ollama-pull-btn');
-        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Pulling…'; }
-        try {
-            await doPull(name);
-            if (input) input.value = '';
-            setTimeout(scanModels, 3000);
-        } finally {
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-download"></i> Pull from Ollama'; }
-        }
-    }
+
 
     async function doPull(modelName) {
         try {
@@ -1006,7 +1002,7 @@
         if (path) {
             navigator.clipboard.writeText(path).then(() => {
                 if (window.showToast) window.showToast('Path copied to clipboard', 'success');
-            }).catch(() => {});
+            }).catch(() => { });
         }
     });
     async function saveOfflinePath() {
@@ -1038,7 +1034,7 @@
                 const cb = document.getElementById('autopilot-toggle');
                 if (cb) cb.checked = !!d.enabled;
             }
-        } catch (_) {}
+        } catch (_) { }
     }
     async function setAutopilot(enabled) {
         try {
@@ -1071,7 +1067,7 @@
             }));
             renderLocalModels();
             renderUsageStats();
-        } catch (_) {}
+        } catch (_) { }
     }
 
     function startUsageRefresh() {

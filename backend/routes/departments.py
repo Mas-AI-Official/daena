@@ -657,11 +657,26 @@ Reply:"""
                     continue  # Skip spokesperson in consultation
                 try:
                     consult_prompt = f"As {agent.get('name', '')}, {agent.get('role', 'agent')}, one short sentence on: {user_message}"
-                    note = await llm_service.generate_response(consult_prompt, max_tokens=80, temperature=0.6)
+                    # Log prompt for debugging "brain sync" issues
+                    logger.debug(f"Consulting agent {agent.get('name')} with prompt: {consult_prompt}")
+                    
+                    note = await llm_service.generate_response(
+                        consult_prompt, 
+                        max_tokens=80, 
+                        temperature=0.6,
+                        context={"skip_gate": True}
+                    )
+                    
+                    # Sanitize: if note is numeric (e.g. "-2.0"), discard it as an error/score artifact
+                    clean_note = note.strip()
+                    if clean_note.replace('.','',1).replace('-','',1).isdigit():
+                        logger.warning(f"Discarding invalid numeric note from {agent.get('name')}: {clean_note}")
+                        continue
+                        
                     agent_notes.append({
                         "agent": agent.get("name", ""),
                         "role": agent.get("role", ""),
-                        "note": note
+                        "note": clean_note
                     })
                 except Exception as e:
                     logger.warning(f"Failed to get note from {agent.get('name', '')}: {e}")
@@ -696,7 +711,8 @@ Give a concise, human reply that uses the team input above. Do not sign with "[Y
             response_text = await llm_service.generate_response(
                 synthesis_prompt,
                 max_tokens=300 if is_simple_greeting else 500,
-                temperature=0.6
+                temperature=0.6,
+                context={"skip_gate": True}
             )
             # Strip any accidental formal prefixes (humanize: no memo style)
             formal_prefixes = ("Subject: Re:", "Subject:", "Dear Team", "Dear team", "Hi Team,", "Hello,", "Hi,", "Re:")
@@ -717,6 +733,11 @@ Give a concise, human reply that uses the team input above. Do not sign with "[Y
             # For simple greetings, cap length to keep it human and short
             if is_simple_greeting and len(response_text) > 280:
                 response_text = response_text[:277].rsplit(".", 1)[0] + "." if "." in response_text[:277] else response_text[:277]
+            
+            # Sanitize final response
+            if response_text.strip().replace('.','',1).replace('-','',1).isdigit():
+                logger.warning(f"Spokesperson response was numeric error code: {response_text}. Using fallback.")
+                response_text = f"I'm here! {spokesperson.get('name', 'I')} received your message: '{user_message}'. How can we help?"
         else:
             # Deterministic offline response
             response_text = f"Thank you for your message. I'm {spokesperson.get('name', 'Department Representative')} from {dept_data.get('name', '')}. I'm currently operating in offline mode (brain connection unavailable). Your message has been received and will be processed when the brain is online. In the meantime, how can I assist with department operations?"
