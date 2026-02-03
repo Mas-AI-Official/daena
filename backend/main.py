@@ -63,6 +63,20 @@ if LLM_AVAILABLE or VOICE_AVAILABLE:
 # Import chat history
 from backend.models.chat_history import chat_history_manager
 
+# Import DaenaBot Automation Services
+try:
+    from backend.services.daenabot_automation import DaenaBotAutomation, set_daenabot_automation
+    from backend.services.edna_learning import EDNALearningEngine, set_edna_learning
+    from backend.services.agent_onboarding import AgentOnboardingService, set_onboarding_service
+    from backend.services.nbmf_memory import nbmf_memory
+    from backend.services.governance_loop import get_governance_loop
+    from backend.utils.sunflower_registry import sunflower_registry
+    DAENABOT_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"⚠️ DaenaBot Automation services validation failed: {e}")
+    DAENABOT_AVAILABLE = False
+
+
 # Chat message model
 class ChatMessage(BaseModel):
     message: str
@@ -3498,17 +3512,43 @@ async def _run_startup():
                 if ollama_ok:
                     print(f"✅ Local Ollama available at {OLLAMA_BASE_URL} (model: {DEFAULT_LOCAL_MODEL})")
                 else:
-                    print(f"⚠️ Local Ollama not reachable at {OLLAMA_BASE_URL}")
-                    print("   To enable local LLM: Start Ollama and run 'ollama pull qwen2.5:7b-instruct'")
+                    print(f"⚠️ Local Ollama check failed (will use fallback)")
             except Exception as e:
-                logger.debug(f"Ollama health check skipped: {e}")
-                print(f"⚠️ Ollama health check skipped: {e}")
+                print(f"⚠️ LLM initialization warning: {e}")
         else:
             print("⚠️ LLM service not available - using fallback responses")
     except Exception as e:
         logger.error(f"LLM initialization failed: {e}")
         print(f"⚠️ LLM initialization failed: {e}")
         print("   Backend will continue with fallback responses")
+    
+    # Initialize DaenaBot Automation Layer
+    if DAENABOT_AVAILABLE:
+        try:
+            print("🤖 Initializing DaenaBot Automation Layer...")
+            
+            # 1. Get Core Dependencies
+            governance = get_governance_loop()
+            
+            # 2. Initialize E-DNA Learning Engine
+            edna = EDNALearningEngine(nbmf_memory)
+            set_edna_learning(edna)
+            print("   ✅ E-DNA Learning Engine active")
+            
+            # 3. Initialize DaenaBot Automation
+            automation = DaenaBotAutomation(governance_loop=governance, memory_service=nbmf_memory, edna_engine=edna)
+            set_daenabot_automation(automation)
+            print("   ✅ DaenaBot Automation active (Internal Replacement for Moltbot)")
+            
+            # 4. Initialize Agent Onboarding Service
+            onboarding = AgentOnboardingService(memory_service=nbmf_memory, sunflower_registry=sunflower_registry)
+            set_onboarding_service(onboarding)
+            print("   ✅ Agent Onboarding Service active")
+            
+        except Exception as e:
+            print(f"❌ DaenaBot Automation startup failed: {e}")
+            import traceback
+            traceback.print_exc()
     
     # Initialize voice cloning service (non-fatal)
     try:
@@ -4333,35 +4373,29 @@ try:
 except Exception as e:
     logger.error(f"Failed to register system router: {e}")
 
-# Register Skills router
+# Register System Summary router
 try:
-    from backend.routes import skills
-    app.include_router(skills.router)
-    logger.info("✅ Skills router registered")
+    from backend.routes import system_summary
+    app.include_router(system_summary.router, prefix="/api/v1/system-summary")
+    logger.info("✅ System Summary router registered")
 except Exception as e:
-    logger.error(f"Failed to register skills router: {e}")
+    logger.error(f"Failed to register system_summary router: {e}")
 
-# Register DaenaBot Tools router
+# Register Health router
 try:
-    from backend.routes import daena_bot_tools
-    app.include_router(daena_bot_tools.router)
-    logger.info("✅ DaenaBot Tools router registered")
+    from backend.routes import health
+    app.include_router(health.router)
+    logger.info("✅ Health router registered")
 except Exception as e:
-    logger.error(f"Failed to register daena_bot_tools router: {e}")
+    logger.error(f"Failed to register health router: {e}")
 
-# Register System Capabilities (alias for Control Pannel compatibility)
-try:
-    from fastapi import APIRouter
-    system_router = APIRouter(prefix="/api/v1/system", tags=["system"])
-    
-    @system_router.get("/capabilities")
-    async def get_system_capabilities():
-        return await get_ai_capabilities()
-        
-    app.include_router(system_router)
-    logger.info("✅ System capabilities alias registered")
-except Exception as e:
-    logger.error(f"Failed to register system router: {e}")
+# Initialize DaenaBot Automation on startup if available
+if DAENABOT_AVAILABLE:
+    logger.info("✅ DaenaBot Automation is available")
+
+
+# Duplicate routers removed to prevent FastAPI startup errors
+# (Skills, DaenaBot Tools, System Capabilities were registered twice)
 
 # Register webhooks router
 try:

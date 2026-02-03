@@ -515,16 +515,143 @@
 
 {% block scripts %}
 <script>
+    // Map simplified types to Tool IDs
+    const DB_TOOL_MAP = {
+        'cloud': 'gcloud',
+        'ide': 'cursor_ide',
+        'folder': 'local_folder',
+        'drive': 'external_drive'
+    };
+
     // Load connections on page load
     async function loadConnections() {
         try {
             const response = await fetch('/api/v1/connections/list');
             const data = await response.json();
-            console.log('Loaded connections:', data);
-            // TODO: Render connections dynamically
+
+            if (data.connections) {
+                renderConnections(data.connections);
+            }
         } catch (e) {
             console.error('Failed to load connections:', e);
+            if (window.showToast) window.showToast('Failed to load connections', 'error');
         }
+    }
+
+    function renderConnections(connections) {
+        // Clear grids (except "Add" cards, but simpler to rebuild)
+        // For simplicity, we'll clear and rebuild specific sections if we can identify them, 
+        // OR we can empty the grids and just append cards.
+
+        // Let's assume we want to KEEP the "Add" cards.
+        // We will clear non-add-card elements from grids.
+
+        const sections = {
+            'Cloud Services': document.querySelectorAll('.category-section')[0].querySelector('.connections-grid'),
+            'IDE & Dev Tools': document.querySelectorAll('.category-section')[1].querySelector('.connections-grid'),
+            'Local Folders & Drives': document.querySelectorAll('.category-section')[2].querySelector('.connections-grid')
+        };
+
+        // Clear existing dynamic cards (keep static Add cards if possible, or re-add them)
+        // To be safe, let's clear all and rebuild including add buttons.
+
+        // Define Add Buttons HTML
+        const addBtns = {
+            'Cloud Services': `
+            <div class="connection-card add-card" onclick="showAddModal('cloud')">
+                <i class="fas fa-plus-circle"></i>
+                <span>Add Cloud Service</span>
+            </div>`,
+            'IDE & Dev Tools': `
+            <div class="connection-card add-card" onclick="showAddModal('ide')">
+                <i class="fas fa-plus-circle"></i>
+                <span>Add IDE</span>
+            </div>`,
+            'Local Folders & Drives': `
+            <div class="connection-card add-card" onclick="showAddModal('folder')">
+                <i class="fas fa-plus-circle"></i>
+                <span>Add Folder</span>
+            </div>`
+        };
+
+        // Reset InnerHTML
+        for (const [key, grid] of Object.entries(sections)) {
+            if (grid) grid.innerHTML = '';
+        }
+
+        // Categorize connections
+        const categorized = {
+            'Cloud Services': [],
+            'IDE & Dev Tools': [],
+            'Local Folders & Drives': []
+        };
+
+        connections.forEach(conn => {
+            if (['gcloud', 'aws', 'azure', 'google_drive'].includes(conn.tool_id)) {
+                categorized['Cloud Services'].push(conn);
+            } else if (['cursor_ide', 'vscode', 'github', 'gitlab'].includes(conn.tool_id)) {
+                categorized['IDE & Dev Tools'].push(conn);
+            } else {
+                categorized['Local Folders & Drives'].push(conn);
+            }
+        });
+
+        // Render
+        for (const [category, items] of Object.entries(categorized)) {
+            const grid = sections[category];
+            if (!grid) continue;
+
+            items.forEach(conn => {
+                const card = createConnectionCard(conn);
+                grid.innerHTML += card;
+            });
+
+            // Append Add Button
+            grid.innerHTML += addBtns[category];
+        }
+    }
+
+    function createConnectionCard(conn) {
+        const isConnected = conn.status === 'connected';
+        const statusClass = isConnected ? 'connected' : 'disconnected';
+        const statusText = isConnected ? 'Connected' : 'Disconnected';
+        const iconInfo = getIconForTool(conn.tool_id);
+
+        return `
+        <div class="connection-card">
+            <div class="connection-header">
+                <div class="connection-logo" style="background: ${iconInfo.bg}; color: ${iconInfo.color};">
+                    <i class="${iconInfo.icon}"></i>
+                </div>
+                <div>
+                    <div class="connection-name">${conn.tool_name || conn.tool_id}</div>
+                    <div class="connection-type">${conn.tool_id}</div>
+                </div>
+            </div>
+            <div class="connection-status">
+                <div class="status-dot ${statusClass}"></div>
+                <span class="status-text ${statusClass}">${statusText}</span>
+            </div>
+            <div class="connection-path">${conn.path || 'ID: ' + conn.id}</div>
+            <div class="connection-actions">
+                ${isConnected
+                ? `<button class="action-btn disconnect" onclick="disconnect(${conn.id}, '${conn.tool_name}')">Disconnect</button>`
+                : `<button class="action-btn connect" onclick="reconnect(${conn.id})">Connect</button>`
+            }
+            </div>
+        </div>`;
+    }
+
+    function getIconForTool(toolId) {
+        const map = {
+            'gcloud': { icon: 'fab fa-google', bg: '#4285F4', color: 'white' },
+            'aws': { icon: 'fab fa-aws', bg: '#FF9900', color: 'white' },
+            'cursor_ide': { icon: 'fas fa-terminal', bg: '#00D9FF', color: 'black' },
+            'vscode': { icon: 'fab fa-microsoft', bg: '#007ACC', color: 'white' },
+            'local_folder': { icon: 'fas fa-folder', bg: '#FFA500', color: 'black' },
+            'external_drive': { icon: 'fas fa-hdd', bg: '#808080', color: 'white' }
+        };
+        return map[toolId] || { icon: 'fas fa-plug', bg: '#555', color: 'white' };
     }
 
     function showAddModal(type) {
@@ -539,7 +666,7 @@
     }
 
     async function addConnection() {
-        const type = document.getElementById('conn-type').value;
+        const typeSelect = document.getElementById('conn-type').value;
         const name = document.getElementById('conn-name').value;
         const path = document.getElementById('conn-path').value;
 
@@ -548,16 +675,19 @@
             return;
         }
 
+        // Map selection to backend Tool ID
+        const toolId = DB_TOOL_MAP[typeSelect] || 'local_folder';
+
         try {
             const response = await fetch('/api/v1/connections/connect', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    tool_id: `${type}_${name.toLowerCase().replace(/\s+/g, '_')}`,
-                    credentials: { path, name, type }
+                    tool_id: toolId,
+                    credentials: { path: path, name: name } // For folders/IDEs, we mostly just need path
                 })
             });
-            
+
             const data = await response.json();
             if (data.success) {
                 if (window.showToast) window.showToast(`Connected to ${name}`, 'success');
@@ -572,56 +702,26 @@
         }
     }
 
-    async function connect(service) {
-        if (window.showToast) window.showToast(`Connecting to ${service}...`, 'info');
-        
+    async function disconnect(id, name) {
+        if (!confirm(`Disconnect from ${name}?`)) return;
+
         try {
-            const response = await fetch('/api/v1/connections/connect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    tool_id: service,
-                    credentials: {}
-                })
+            const response = await fetch(`/api/v1/connections/${id}`, {
+                method: 'DELETE'
             });
-            
+
             const data = await response.json();
             if (data.success) {
-                if (window.showToast) window.showToast(`Connected to ${service}`, 'success');
-                location.reload();
+                if (window.showToast) window.showToast(`Disconnected from ${name}`, 'warning');
+                loadConnections();
+            } else {
+                if (window.showToast) window.showToast(data.detail || 'Failed to disconnect', 'error');
             }
         } catch (e) {
-            if (window.showToast) window.showToast(`Failed to connect to ${service}`, 'error');
+            if (window.showToast) window.showToast(`Failed to disconnect`, 'error');
         }
     }
 
-    async function disconnect(service) {
-        if (!confirm(`Disconnect from ${service}?`)) return;
-        
-        try {
-            // First get connection ID
-            const listResponse = await fetch('/api/v1/connections/list');
-            const listData = await listResponse.json();
-            const connection = listData.connections?.find(c => c.tool_id === service);
-            
-            if (connection) {
-                const response = await fetch(`/api/v1/connections/${connection.id}`, {
-                    method: 'DELETE'
-                });
-                
-                const data = await response.json();
-                if (data.success) {
-                    if (window.showToast) window.showToast(`Disconnected from ${service}`, 'warning');
-                    location.reload();
-                }
-            } else {
-                if (window.showToast) window.showToast(`${service} not found in connections`, 'error');
-            }
-        } catch (e) {
-            if (window.showToast) window.showToast(`Failed to disconnect from ${service}`, 'error');
-        }
-    }
-    
     // Initialize
     document.addEventListener('DOMContentLoaded', loadConnections);
 </script>

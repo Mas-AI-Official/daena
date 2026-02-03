@@ -2,7 +2,7 @@
 Comprehensive system summary endpoint - Single source of truth for all system stats.
 This aggregates data from database, sunflower registry, NBMF memory, and analytics.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Dict, Any, List
 from datetime import datetime
 import logging
@@ -29,7 +29,7 @@ def get_db_session():
 
 
 @router.get("/summary")
-async def get_system_summary(_: bool = Depends(verify_monitoring_auth)):
+async def get_system_summary(request: Request, _: bool = Depends(verify_monitoring_auth)):
     """
     Comprehensive system summary - single source of truth.
     Returns all system stats aggregated from database, registry, and memory.
@@ -185,6 +185,8 @@ async def get_system_summary(_: bool = Depends(verify_monitoring_auth)):
         db.close()
         
         return {
+            "status": "ok",
+            "endpoint_count": len(request.app.routes),
             "success": True,
             "timestamp": datetime.now().isoformat(),
             "system": {

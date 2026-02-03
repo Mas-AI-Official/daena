@@ -417,82 +417,63 @@ async def detect_and_execute_tool(message: str) -> Optional[Dict[str, Any]]:
             except Exception as e:
                 return {"tool": "mcp_client", "error": str(e)}
     
-    # DaenaBot Hands (OpenClaw gateway): route browser/terminal/screenshot through tool broker for approval queue
-    try:
-        from backend.config.branding import get_daena_bot_display_name
-        _daenabot_name = get_daena_bot_display_name()
-    except Exception:
-        _daenabot_name = "DaenaBot"
+    # DaenaBot Internal Browser Automation
     for pattern in TOOL_PATTERNS["browser"]:
         if matches_pattern(message, pattern):
             try:
-                from backend.services.tool_broker import async_broker_request
-                action: Dict[str, Any] = {}
+                from backend.services.daenabot_automation import get_daenabot_automation
+                automation = get_daenabot_automation()
+                if not automation:
+                    return {"tool": "daenabot_browser", "error": "Automation service not initialized"}
+                
+                # Extract URL
+                url = "https://google.com"
                 msg_stripped = message.strip()
+                for prefix in ["go to ", "navigate to ", "open ", "browse to ", "to "]:
+                    if prefix in msg_lower:
+                        idx = msg_lower.find(prefix)
+                        potential_url = msg_stripped[idx + len(prefix):].strip().strip('"\'').split()[0]
+                        if potential_url and ("." in potential_url or "http" in potential_url):
+                             url = potential_url if potential_url.startswith("http") else "https://" + potential_url
+                             break
+                
                 if "screenshot" in msg_lower:
-                    action = {"action_type": "browser.screenshot"}
-                elif any(p in msg_lower for p in ["go to ", "navigate to ", "open http", "browse to ", "open browser"]):
-                    for prefix in ["go to ", "navigate to ", "open ", "browse to ", "to "]:
-                        if prefix in msg_lower:
-                            idx = msg_lower.find(prefix)
-                            url = msg_stripped[idx + len(prefix):].strip().strip('"\'').split()[0] if idx >= 0 else ""
-                            if url and (url.startswith("http") or "." in url):
-                                if not url.startswith("http"):
-                                    url = "https://" + url
-                                action = {"action_type": "browser.navigate", "url": url[:500]}
-                                break
-                    if not action:
-                        action = {"action_type": "browser.navigate", "url": "https://example.com"}
-                else:
-                    action = {"action_type": "browser.navigate", "url": "https://example.com", "raw_message": msg_stripped[:200]}
-                status, payload = await async_broker_request(action, requested_by="daena")
-                if status == "blocked":
-                    return {"tool": "daenabot_hands", "action": "blocked", "error": payload.get("error", "Blocked")}
-                if status == "approved_and_executed":
-                    return {"tool": "daenabot_hands", "action": action.get("action_type", "execute"), "result": payload}
-                if status == "queued_for_approval":
-                    req_id = (payload or {}).get("request_id")
-                    msg = (payload or {}).get("message", "Queued for approval.")
+                    res = await automation.take_screenshot()
                     return {
-                        "tool": "daenabot_hands",
-                        "action": "queued",
-                        "result": {
-                            "success": True,
-                            "queued": True,
-                            "request_id": req_id,
-                            "message": f"{msg} Open Control Pannel → {_daenabot_name} Tools to approve.",
-                        },
+                        "tool": "daenabot_browser", "action": "screenshot",
+                        "result": {"success": res.status == "success", "data": res.data, "error": res.error, "governance": res.governance_status}
                     }
+                
+                res = await automation.navigate_browser(url, actions=[])
+                return {
+                     "tool": "daenabot_browser", "action": "navigate",
+                     "result": {"success": res.status == "success", "data": res.data, "error": res.error, "governance": res.governance_status}
+                }
+
             except Exception as e:
-                return {"tool": "daenabot_hands", "error": str(e)}
+                return {"tool": "daenabot_browser", "error": str(e)}
             break
-    # Terminal/run command → DaenaBot Hands (governed); avoid matching "run diagnostics" etc.
+    # Internal Shell Command
     for pattern in ["run command ", "run terminal ", "execute command ", "run the command "]:
         if pattern in msg_lower and len(message) > len(pattern) + 2:
             try:
-                from backend.services.tool_broker import async_broker_request
+                from backend.services.daenabot_automation import get_daenabot_automation
+                automation = get_daenabot_automation()
+                if not automation:
+                    return {"tool": "daenabot_shell", "error": "Automation service not initialized"}
+                    
                 idx = msg_lower.find(pattern)
                 cmd = message[idx + len(pattern):].strip().strip('"\'').split("\n")[0][:1000]
+                
                 if cmd:
-                    action = {"action_type": "terminal.run", "command": cmd}
-                    status, payload = await async_broker_request(action, requested_by="daena")
-                    if status == "blocked":
-                        return {"tool": "daenabot_hands", "action": "blocked", "error": payload.get("error", "Blocked")}
-                    if status == "approved_and_executed":
-                        return {"tool": "daenabot_hands", "action": "terminal.run", "result": payload}
-                    if status == "queued_for_approval":
-                        return {
-                            "tool": "daenabot_hands",
-                            "action": "queued",
-                            "result": {
-                                "success": True,
-                                "queued": True,
-                                "request_id": (payload or {}).get("request_id"),
-                                "message": (payload or {}).get("message", "") + f" Open Control Pannel → {_daenabot_name} Tools to approve.",
-                            },
-                        }
+                    res = await automation.run_command(cmd)
+                    return {
+                        "tool": "daenabot_shell",
+                        "action": "run_command",
+                        "result": {"success": res.status == "success", "data": res.data, "error": res.error, "governance": res.governance_status}
+                    }
             except Exception as e:
-                return {"tool": "daenabot_hands", "error": str(e)}
+                return {"tool": "daenabot_shell", "error": str(e)}
 
     # Check for web search patterns (uses regex for flexibility)
     for pattern in TOOL_PATTERNS["web_search"]:
@@ -630,40 +611,40 @@ async def detect_and_execute_tool(message: str) -> Optional[Dict[str, Any]]:
             except Exception as e:
                 return {"tool": "action_execute", "error": str(e)}
     
-    # Desktop automation (Moltbot-like): click at x y, type on desktop <text>
+    # Desktop automation (Internal DaenaBot)
     for pattern in TOOL_PATTERNS["desktop"]:
         if pattern in msg_lower:
             try:
-                from backend.services.cmp_service import run_cmp_tool_action
-                trace_id = str(uuid.uuid4()).replace("-", "")[:32]
-                args = {}
-                # Parse "click at 100 200" or "click at 100, 200" or "desktop click 100 200"
+                from backend.services.daenabot_automation import get_daenabot_automation
+                automation = get_daenabot_automation()
+                if not automation:
+                    return {"tool": "desktop_automation", "error": "Automation service not initialized"}
+                
+                # Parse "click at 100 200"
                 click_match = re.search(r"(?:click\s+at|desktop\s+click|mouse\s+click)\s+(\d+)\s*[,]?\s*(\d+)", msg_lower, re.IGNORECASE)
                 if click_match:
-                    args = {"action": "click", "x": int(click_match.group(1)), "y": int(click_match.group(2))}
-                else:
-                    # Parse "type on desktop hello" or "desktop type hello"
-                    type_match = re.search(r"(?:type\s+on\s+desktop|desktop\s+type)\s+(.+)", msg_lower, re.IGNORECASE)
+                    x, y = int(click_match.group(1)), int(click_match.group(2))
+                    res = await automation.click_at(x, y)
+                    return {
+                        "tool": "desktop_automation", 
+                        "action": "click",
+                        "result": {"success": res.status == "success", "data": res.data, "error": res.error, "governance": res.governance_status}
+                    }
+                
+                # Parse "type X"
+                elif "type" in msg_lower:
+                    type_match = re.search(r"(?:type\s+on\s+desktop|desktop\s+type|type)\s+(.+)", msg_lower, re.IGNORECASE)
                     if type_match:
-                        args = {"action": "type", "text": type_match.group(1).strip()}
-                    else:
-                        type_simple = re.search(r"\btype\s+(.+)$", msg_lower)
-                        if type_simple and "desktop" in msg_lower:
-                            args = {"action": "type", "text": type_simple.group(1).strip()}
-                if not args:
-                    continue
-                tool_out = await run_cmp_tool_action(
-                    tool_name="desktop_automation_pyautogui",
-                    args=args,
-                    department=None,
-                    agent_id=None,
-                    reason="daena.chat.desktop",
-                    trace_id=trace_id,
-                )
-                if tool_out.get("status") == "ok":
-                    res = tool_out.get("result") or {}
-                    return {"tool": "desktop_automation", "action": args.get("action", ""), "result": {"success": True, **res}}
-                return {"tool": "desktop_automation", "action": args.get("action", ""), "result": {"success": False, "error": tool_out.get("error", "Desktop automation failed")}}
+                        text = type_match.group(1).strip()
+                        if text:
+                            res = await automation.type_text(text)
+                            return {
+                                "tool": "desktop_automation", 
+                                "action": "type",
+                                "result": {"success": res.status == "success", "data": res.data, "error": res.error, "governance": res.governance_status}
+                            }
+                
+                return {"tool": "desktop_automation", "error": "Could not parse desktop command"}
             except Exception as e:
                 return {"tool": "desktop_automation", "error": str(e)}
     
@@ -1346,18 +1327,10 @@ async def stream_chat(chat: SimpleChatRequest):
     if not msg and session_id and session_id in _active_streams:
         async def resume_generator():
             stream = _active_streams[session_id]
-            # Update last activity
-            stream["last_activity"] = time.time()
-            
             # Yield full history (buffer) to ensure client state is consistent
             for item in stream["buffer"]:
-                if item is not None:
-                    yield item
+                yield item
             
-            # If everything is already in the buffer and task is done, we're finished replaying
-            if stream.get("finished"):
-                return
-
             # Listen for new events
             q = asyncio.Queue()
             stream["listeners"].add(q)
@@ -1367,8 +1340,7 @@ async def stream_chat(chat: SimpleChatRequest):
                     if item is None: break
                     yield item
             finally:
-                if session_id in _active_streams:
-                    _active_streams[session_id]["listeners"].discard(q)
+                stream["listeners"].discard(q)
         
         return StreamingResponse(
             resume_generator(),
@@ -1432,9 +1404,7 @@ async def stream_chat(chat: SimpleChatRequest):
         "buffer": [],
         "listeners": set(),     
         "task": None,
-        "created_at": time.time(),
-        "last_activity": time.time(),
-        "finished": False
+        "created_at": time.time()
     }
 
     async def emit(item: str):
@@ -1442,7 +1412,6 @@ async def stream_chat(chat: SimpleChatRequest):
         if final_session_id in _active_streams:
             stream = _active_streams[final_session_id]
             stream["buffer"].append(item)
-            stream["last_activity"] = time.time()
             for q in list(stream["listeners"]):
                 await q.put(item)
 
@@ -1562,8 +1531,6 @@ Chat History:
         except Exception as e:
             await emit(f"data: {json.dumps({'type': 'error', 'error': str(e)})}\\n\\n")
         finally:
-            if final_session_id in _active_streams:
-                _active_streams[final_session_id]["finished"] = True
             await emit(None)
 
     # Start background execution
