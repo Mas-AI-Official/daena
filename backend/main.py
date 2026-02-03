@@ -4297,6 +4297,16 @@ async def serve_qa_guardian_ui(request: Request):
     return templates.TemplateResponse("qa_guardian_dashboard.html", {"request": request})
 
 @app.get("/ui/office/{department_id}", response_class=HTMLResponse)
+@app.get("/ui/councils", response_class=HTMLResponse)
+async def serve_councils(request: Request):
+    """Serve the main Councils dashboard"""
+    return templates.TemplateResponse("councils.html", {"request": request})
+
+@app.get("/ui/council-debate/{session_id}", response_class=HTMLResponse)
+async def serve_council_debate(request: Request, session_id: str):
+    """Serve the Debate interface"""
+    return templates.TemplateResponse("council_debate.html", {"request": request, "session_id": session_id})
+
 async def serve_department_office(request: Request, department_id: str):
     # Department data for template
     DEPT_DATA = {
@@ -4436,6 +4446,14 @@ try:
 except Exception as e:
     logger.error(f"Failed to register some core routers: {e}")
 
+# Register Quintessence router
+try:
+    from backend.routes import quintessence
+    app.include_router(quintessence.router)
+    logger.info("✅ Quintessence router registered")
+except Exception as e:
+    logger.error(f"Failed to register quintessence router: {e}")
+
 # Register webhooks router
 try:
     from backend.routes import webhooks
@@ -4467,6 +4485,14 @@ try:
     logger.info("✅ God Mode router registered")
 except Exception as e:
     logger.error(f"Failed to register god_mode router: {e}")
+
+# Register Founder Panel router
+try:
+    from backend.routes import founder_panel
+    app.include_router(founder_panel.router)
+    logger.info("✅ Founder Panel router registered")
+except Exception as e:
+    logger.error(f"Failed to register founder_panel router: {e}")
 
 # Unique UI Routes not defined above
 @app.get("/ui/daena-office", response_class=HTMLResponse)
