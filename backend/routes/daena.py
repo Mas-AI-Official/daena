@@ -1323,32 +1323,19 @@ async def stream_chat(chat: SimpleChatRequest):
     msg = (chat.message or "").strip()
     session_id = chat.session_id
 
-    # RESUME MODE: If msg is empty but we have an active stream, attach to it.
-    if not msg and session_id and session_id in _active_streams:
-        async def resume_generator():
-            stream = _active_streams[session_id]
-            # Yield full history (buffer) to ensure client state is consistent
-            for item in stream["buffer"]:
-                yield item
-            
-            # Listen for new events
-            q = asyncio.Queue()
-            stream["listeners"].add(q)
-            try:
-                while True:
-                    item = await q.get()
-                    if item is None: break
-                    yield item
-            finally:
-                stream["listeners"].discard(q)
-        
-        return StreamingResponse(
-            resume_generator(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
-        )
+    # RE-ATTACHMENT / RESUME MODE
+    if not msg and session_id:
+        if session_id in _active_streams:
+            logger.info(f"Re-attaching listener to active stream for session {session_id}")
+            return StreamingResponse(
+                sse_listener_factory(session_id),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+            )
+        else:
+            # If session is in DB but not active stream, it's already finished
+            raise HTTPException(status_code=404, detail="Active stream not found for this session")
 
-    # NEW CHAT MODE
     if not msg:
         raise HTTPException(status_code=400, detail="message is required")
     
@@ -1393,10 +1380,15 @@ async def stream_chat(chat: SimpleChatRequest):
     if _is_unknown_command_result(tool_result):
         tool_result = None
     
-    # Clean up old stream if exists
+    # Clean up old stream ONLY IF it's not actually running (finished or errored)
+    # If it's running, we might want to interupt it or let it continue.
+    # User said "autostops when you leave page" - we want it NOT to stop.
+    # But if user sends a NEW message in SAME session, we should probably stop the old one.
     if final_session_id in _active_streams:
         old = _active_streams[final_session_id]
-        if old.get("task"): old["task"].cancel()
+        if old.get("task") and not old["task"].done():
+             # New message in same session: Cancel previous generation
+             old["task"].cancel()
         _active_streams.pop(final_session_id)
 
     # Initialize new stream entry
@@ -1575,12 +1567,23 @@ Chat History:
     _active_streams[final_session_id]["task"] = task
     
     # Return stream listener
+    return StreamingResponse(
+        sse_listener_factory(final_session_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+    )
+
+
+def sse_listener_factory(session_id: str):
+    """Factory for SSE listener to allow re-attachment"""
     async def sse_listener():
         q = asyncio.Queue()
-        if final_session_id in _active_streams:
-            _active_streams[final_session_id]["listeners"].add(q)
-            # Send initial buffer
-            for item in _active_streams[final_session_id]["buffer"]:
+        if session_id in _active_streams:
+            stream = _active_streams[session_id]
+            stream["listeners"].add(q)
+            # Send initial buffer part so client catches up
+            # (Note: a huge buffer might be slow, but it's simple persistence)
+            for item in stream["buffer"]:
                 yield item
         try:
             while True:
@@ -1588,14 +1591,81 @@ Chat History:
                 if item is None: break
                 yield item
         finally:
-            if final_session_id in _active_streams:
-                _active_streams[final_session_id]["listeners"].discard(q)
-
-    return StreamingResponse(
-        sse_listener(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
-    )
+            if session_id in _active_streams:
+                _active_streams[session_id]["listeners"].discard(q)
+    return sse_listener
+@router.websocket("/ws/chat")
+async def websocket_chat(websocket: WebSocket, session_id: Optional[str] = None):
+    """
+    WebSocket endpoint for persistent chat. 
+    Keeps connection alive even if page reloads.
+    """
+    await websocket.accept()
+    
+    from backend.services.chat_service import chat_service
+    from backend.database import SessionLocal
+    from backend.services.local_llm_ollama import generate_stream
+    from backend.services.action_dispatcher import get_action_dispatcher
+    
+    db = SessionLocal()
+    try:
+        # 1. Identify or create session
+        if not session_id:
+            session = chat_service.create_session(db, title="WebSocket Chat", category="executive", scope_type="executive")
+            session_id = session.session_id
+        else:
+            session = chat_service.get_session(db, session_id)
+            if not session:
+                session = chat_service.create_session(db, title="WebSocket Chat", category="executive", scope_type="executive")
+                session_id = session.session_id
+        
+        # 2. Add to active connections
+        active_connections[session_id] = websocket
+        
+        # 3. Send session_id to client
+        await websocket.send_json({"type": "session", "session_id": session_id})
+        
+        # 4. Listen for messages
+        while True:
+            data = await websocket.receive_json()
+            user_msg = data.get("message", "").strip()
+            if not user_msg: continue
+            
+            # Save user message
+            chat_service.add_message(db, session_id, "user", user_msg)
+            
+            # Start generating response
+            full_response = []
+            async for token in generate_stream(user_msg):
+                full_response.append(token)
+                await websocket.send_json({"type": "token", "content": token})
+            
+            # Post-generation: check for actions
+            complete_text = "".join(full_response)
+            dispatcher = get_action_dispatcher()
+            action_result = await dispatcher.detect_and_execute(complete_text, user_msg)
+            
+            if action_result.get("actions_executed", 0) > 0:
+                # Tell client what we did
+                exec_msg = f"\n\n✅ Executed {action_result['actions_executed']} actions."
+                await websocket.send_json({"type": "token", "content": exec_msg})
+                full_response.append(exec_msg)
+            
+            # Save assistant response
+            chat_service.add_message(db, session_id, "assistant", "".join(full_response))
+            await websocket.send_json({"type": "done", "session_id": session_id})
+            
+    except WebSocketDisconnect:
+        if session_id in active_connections:
+            del active_connections[session_id]
+        logger.info(f"WebSocket disconnected for session {session_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        try:
+            await websocket.send_json({"type": "error", "error": str(e)})
+        except: pass
+    finally:
+        db.close()
 
 @router.post("/chat/{session_id}/message")
 async def send_message_to_daena(session_id: str, message_data: Dict[str, Any]):

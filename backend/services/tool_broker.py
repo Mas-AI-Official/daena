@@ -60,8 +60,19 @@ def _automation_mode() -> str:
 
 
 def get_risk_level(action: Dict[str, Any]) -> str:
-    """Return risk level for action (action_type or tool_name)."""
+    """Return risk level for action. Checks SkillRegistry first, then hardcoded list."""
     action_type = (action.get("action_type") or action.get("tool_name") or action.get("type") or "").strip().lower()
+    
+    # Check Skill Registry
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        reg = get_skill_registry()
+        skill = reg.get_skill_by_name(action_type)
+        if skill:
+            return skill.get("risk_level", MEDIUM)
+    except Exception:
+        pass
+        
     return ACTION_RISK.get(action_type, MEDIUM)
 
 
@@ -134,6 +145,12 @@ async def async_broker_request(
 
     risk = get_risk_level(action)
     mode = _automation_mode()
+
+    # Hands Allowlist Check
+    if action.get("source") == "hands":
+        allowed, reason = _check_hands_allowlist(action)
+        if not allowed:
+            return ("blocked", {"error": f"Hands Allowlist Block: {reason}"})
 
     if mode == "off":
         return ("blocked", {"error": "Tool automation is off. Set DAENA_TOOL_AUTOMATION=low_only or on."})
@@ -227,3 +244,46 @@ async def execute_approved_request(req_id: str) -> Dict[str, Any]:
         except Exception:
             pass
         return {"success": False, "error": str(e)}
+def _check_hands_allowlist(action: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """Check action against hands_allowlist in SystemConfig."""
+    action_type = action.get("action_type", "").lower()
+    params = action.get("parameters", {})
+    
+    from backend.database import SessionLocal, SystemConfig
+    db = SessionLocal()
+    try:
+        config_rec = db.query(SystemConfig).filter(SystemConfig.key == "hands_allowlist").first()
+        if not config_rec or not config_rec.value_json:
+            return True, None # Default allow if not configured? 
+                             # Or strict: return False, "Allowlist not configured"
+                             
+        config = config_rec.value_json
+        
+        # Filesystem checks
+        if "filesystem" in action_type:
+            path = params.get("path", "")
+            if not path: return True, None
+            
+            mode = "write" if "write" in action_type else "read"
+            allowed_paths = config.get("files", {}).get(mode, [])
+            
+            # Simple prefix check for now (can be improved with glob)
+            any_match = False
+            for p in allowed_paths:
+                if p.endswith("**"):
+                    if path.startswith(p[:-2]): any_match = True
+                elif path == p: any_match = True
+                
+            if not any_match:
+                return False, f"Path {path} not in {mode} allowlist"
+                
+        # Shell checks
+        if "shell" in action_type or "terminal" in action_type:
+            cmd = params.get("command", "")
+            allowed_cmds = config.get("shell", {}).get("allowed_commands", [])
+            if not any(c in cmd for c in allowed_cmds):
+                return False, f"Command not in shell allowlist"
+                
+        return True, None
+    finally:
+        db.close()

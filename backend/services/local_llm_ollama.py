@@ -124,7 +124,19 @@ async def chat(
 
         msg = data.get("message") if isinstance(data, dict) else None
         if isinstance(msg, dict) and "content" in msg:
-            return str(msg["content"])
+            content = str(msg["content"])
+            
+            # Record usage for cost tracking
+            try:
+                from backend.services.cost_tracker import get_cost_tracker
+                tracker = get_cost_tracker()
+                # Simple token approximation (4 chars per token)
+                prompt_text = "".join([m.get("content", "") for m in messages])
+                tracker.record_usage(mdl, len(prompt_text)//4, len(content)//4)
+            except:
+                pass
+                
+            return content
         logger.error(f"Unexpected Ollama response format: {data}")
         return "Error: Unexpected response format from local LLM"
 
@@ -146,13 +158,18 @@ async def chat(
 
 async def generate(
     prompt: str,
+    system_prompt: Optional[str] = None,
     model: Optional[str] = None,
     temperature: float = 0.7,
     max_tokens: Optional[int] = None,
 ) -> str:
     """Generate text from a prompt (wrapper around chat)."""
-    # Parse system prompt if present
     messages = []
+    
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+        
+    # Legacy check for System: prefix
     if prompt.startswith("System:"):
         # Split system prompt and user message
         parts = prompt.split("\n\n", 1)
@@ -171,6 +188,7 @@ async def generate(
 
 async def generate_stream(
     prompt: str,
+    system_prompt: Optional[str] = None,
     model: Optional[str] = None,
     temperature: float = 0.7,
     max_tokens: Optional[int] = None,
@@ -184,8 +202,11 @@ async def generate_stream(
         # Trust DEFAULT_LOCAL_MODEL (Kimi/Cloud) blindly for speed
         mdl = DEFAULT_LOCAL_MODEL
 
-    # Parse system prompt if present
     messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+
+    # Legacy check for System: prefix
     if prompt.startswith("System:"):
         # Split system prompt and user message
         parts = prompt.split("\n\n", 1)

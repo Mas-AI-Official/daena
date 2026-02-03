@@ -133,13 +133,16 @@ class DaenaBotAutomation:
             "agent": "daena"
         })
         
+        print(f"[AUTOMATION] Attempting {assessment['type']} target={assessment.get('target','')}")
         if assessment["decision"] != "approve":
+            print(f"[GOVERNANCE] Decision: {assessment['decision']} - BLOCKED")
             self.stats["actions_blocked"] += 1
             return AutomationResult(
                 "blocked", "click",
                 {"x": x, "y": y},
                 governance_status=assessment["decision"]
             )
+        print(f"[GOVERNANCE] Decision: {assessment['decision']} - PROCEEDING")
         
         try:
             # Execute
@@ -155,11 +158,11 @@ class DaenaBotAutomation:
             )
             
             # Store in memory
-            await self._log_action("desktop_click", result)
-            
+            print(f"[RESULT] click: {result.status}")
             return result
             
         except Exception as e:
+            print(f"[RESULT] click: error - {str(e)}")
             self.stats["actions_error"] += 1
             return AutomationResult(
                 "error", "click",
@@ -192,13 +195,16 @@ class DaenaBotAutomation:
             "agent": "daena"
         })
         
+        print(f"[AUTOMATION] Attempting {assessment['type']} length={assessment.get('length',0)}")
         if assessment["decision"] != "approve":
+            print(f"[GOVERNANCE] Decision: {assessment['decision']} - BLOCKED")
             self.stats["actions_blocked"] += 1
             return AutomationResult(
                 "blocked", "type",
                 {"length": len(text)},
                 governance_status=assessment["decision"]
             )
+        print(f"[GOVERNANCE] Decision: {assessment['decision']} - PROCEEDING")
         
         try:
             pyautogui.write(text, interval=interval)
@@ -211,11 +217,11 @@ class DaenaBotAutomation:
                 {"length": len(text), "interval": interval}
             )
             
-            await self._log_action("type_text", result)
-            
+            print(f"[RESULT] type: {result.status}")
             return result
             
         except Exception as e:
+            print(f"[RESULT] type: error - {str(e)}")
             self.stats["actions_error"] += 1
             return AutomationResult("error", "type", {"length": len(text)}, error=str(e))
     
@@ -251,11 +257,11 @@ class DaenaBotAutomation:
                 {"path": str(save_path), "size": img.size}
             )
             
-            await self._log_action("screenshot", result)
-            
+            print(f"[RESULT] screenshot: {result.status}")
             return result
             
         except Exception as e:
+            print(f"[RESULT] screenshot: error - {str(e)}")
             self.stats["actions_error"] += 1
             return AutomationResult("error", "screenshot", {}, error=str(e))
     
@@ -367,13 +373,16 @@ class DaenaBotAutomation:
             "agent": "daena"
         })
         
+        print(f"[AUTOMATION] Attempting {assessment['type']} path={assessment.get('path','')}")
         if assessment["decision"] != "approve":
+            print(f"[GOVERNANCE] Decision: {assessment['decision']} - BLOCKED")
             self.stats["actions_blocked"] += 1
             return AutomationResult(
                 "blocked", "write_file",
                 {"path": path, "size": len(content)},
                 governance_status=assessment["decision"]
             )
+        print(f"[GOVERNANCE] Decision: {assessment['decision']} - PROCEEDING")
         
         try:
             # Create parent directories
@@ -472,13 +481,16 @@ class DaenaBotAutomation:
             "agent": "daena"
         })
         
+        print(f"[AUTOMATION] Attempting {assessment['type']} command={assessment.get('command','')}")
         if assessment["decision"] != "approve":
+            print(f"[GOVERNANCE] Decision: {assessment['decision']} - BLOCKED")
             self.stats["actions_blocked"] += 1
             return AutomationResult(
                 "blocked", "shell",
                 {"command": command},
                 governance_status=assessment["decision"]
             )
+        print(f"[GOVERNANCE] Decision: {assessment['decision']} - PROCEEDING")
         
         try:
             # Execute
@@ -559,13 +571,16 @@ class DaenaBotAutomation:
             "agent": "daena"
         })
         
+        print(f"[AUTOMATION] Attempting {assessment['type']} url={assessment.get('url','')}")
         if assessment["decision"] != "approve":
+            print(f"[GOVERNANCE] Decision: {assessment['decision']} - BLOCKED")
             self.stats["actions_blocked"] += 1
             return AutomationResult(
                 "blocked", "browser",
                 {"url": url},
                 governance_status=assessment["decision"]
             )
+        print(f"[GOVERNANCE] Decision: {assessment['decision']} - PROCEEDING")
         
         try:
             async with async_playwright() as p:

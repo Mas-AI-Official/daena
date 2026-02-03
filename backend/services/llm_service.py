@@ -277,6 +277,10 @@ class LLMService:
 
         # Cloud providers are opt-in. Default: local-first / no external calls.
         enable_cloud = bool(getattr(settings, "enable_cloud_llm", False))
+        if os.getenv("ENABLE_CLOUD_LLM", "").lower() in ("true", "1", "on"):
+            enable_cloud = True
+        
+        logger.info(f"Setting up AI providers (cloud_enabled={enable_cloud})")
         
         # Azure OpenAI
         if enable_cloud and OPENAI_AVAILABLE and hasattr(settings, 'azure_openai_api_key') and settings.azure_openai_api_key:
@@ -635,6 +639,7 @@ class LLMService:
             if await check_ollama_available():
                 logger.debug("Using local Ollama provider for streaming (priority 1)")
                 chunk_count = 0
+                full_content = []
                 async for chunk in generate_stream(
                     final_prompt,
                     model=model,
@@ -643,7 +648,19 @@ class LLMService:
                 ):
                     if chunk:
                         chunk_count += 1
+                        full_content.append(chunk)
                         yield chunk
+                
+                # Record usage for cost tracking
+                try:
+                    from backend.services.cost_tracker import get_cost_tracker
+                    tracker = get_cost_tracker()
+                    input_tokens = len(final_prompt) // 4
+                    output_tokens = len("".join(full_content)) // 4
+                    tracker.record_usage(model or "ollama", input_tokens, output_tokens)
+                except:
+                    pass
+                    
                 logger.info(f"✅ Streamed {chunk_count} chunks from Ollama")
                 return
         except Exception as e:

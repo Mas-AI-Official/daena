@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Float
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Float, text
 try:
     from sqlalchemy.dialects.sqlite import JSON
 except ImportError:
@@ -659,6 +659,45 @@ class QAAuditLog(Base):
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+# NEW: Skill model (replaces in-memory skill_registry)
+class Skill(Base):
+    __tablename__ = "skills"
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    display_name = Column(String)
+    description = Column(Text)
+    category = Column(String)
+    creator = Column(String)
+    creator_agent_id = Column(String)
+    status = Column(String, default="active")
+    input_schema = Column(JSON, default={})
+    output_schema = Column(JSON, default={})
+    code_body = Column(Text)
+    risk_level = Column(String, default="low")
+    approval_policy = Column(String, default="auto") # auto | needs_approval | always
+    allowed_operators = Column(JSON, default=["founder", "daena"]) # ["founder", "daena", "agent"]
+    allowed_departments = Column(JSON, default=[])
+    allowed_agents = Column(JSON, default=[])
+    enabled = Column(Boolean, default=True)
+    archived = Column(Boolean, default=False)
+    usage_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+# NEW: Skill Audit Log
+class SkillAuditLog(Base):
+    __tablename__ = "skill_audit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    skill_id = Column(String, index=True)
+    action = Column(String) # create, update, delete, enable, disable
+    changed_by = Column(String)
+    before_json = Column(JSON, nullable=True)
+    after_json = Column(JSON, nullable=True)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    ip_address = Column(String, nullable=True)
+    session_id = Column(String, nullable=True)
+
 # ENHANCE: Department - add hidden field
 # Note: We'll need to add this via migration, but for now we'll use status field
 # Department.status can be "active", "hidden", "disabled"
@@ -678,6 +717,24 @@ def get_db():
 # Create all tables
 def create_tables():
     Base.metadata.create_all(bind=engine)
+    
+    # Simple migration: attempt to add new columns to existing tables if missing
+    # This is a basic way to handle updates without a full migration system like Alembic
+    try:
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        
+        # Check 'skills' table columns
+        if 'skills' in inspector.get_table_names():
+            columns = [c['name'] for c in inspector.get_columns('skills')]
+            with engine.connect() as conn:
+                if 'allowed_operators' not in columns:
+                    conn.execute(text("ALTER TABLE skills ADD COLUMN allowed_operators JSON"))
+                if 'approval_policy' not in columns:
+                    conn.execute(text("ALTER TABLE skills ADD COLUMN approval_policy VARCHAR DEFAULT 'auto'"))
+                # Commit is automatic in autocommit=True engines or handled by context
+    except Exception as e:
+        print(f"Migration warning: {e}")
 
 # Initialize default data
 def initialize_default_data():

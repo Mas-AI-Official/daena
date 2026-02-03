@@ -56,13 +56,28 @@ class Settings(BaseSettings):
             if v_lower in ('false', '0', 'no', 'off', 'warn'):
                 return False
         return bool(v)
+
+    @field_validator('cors_origins', 'automation_allowed_domains', 'shell_allowlist', mode='before')
+    @classmethod
+    def parse_comma_separated_list(cls, v):
+        """Parse comma-separated strings from env into lists"""
+        if isinstance(v, str):
+            # If it looks like a JSON list, it might be parsed by Pydantic's default logic,
+            # but if it's just raw comma-separated, we split it.
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except:
+                    pass
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
     
     # Server Configuration
     host: str = Field(default="0.0.0.0", validation_alias="BACKEND_HOST")
     port: int = Field(default=8000, validation_alias="BACKEND_PORT")
     backend_base_url: str = Field(default="http://localhost:8000", validation_alias="BACKEND_BASE_URL")
     frontend_origin: str = Field(default="http://localhost:8000", validation_alias="FRONTEND_ORIGIN")
-    cors_origins: List[str] = Field(
+    cors_origins: List[str] | str = Field(
         default_factory=lambda: ["http://localhost:3000", "http://localhost:8000", "http://127.0.0.1:3000", "http://127.0.0.1:8000"],
         validation_alias="CORS_ORIGINS"
     )
@@ -149,7 +164,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     enable_execution_layer: bool = Field(default=True, validation_alias="ENABLE_EXECUTION_LAYER")
     automation_safe_mode: bool = Field(default=True, validation_alias="AUTOMATION_SAFE_MODE")
-    automation_allowed_domains: List[str] = Field(
+    automation_allowed_domains: List[str] | str = Field(
         default_factory=lambda: ["localhost", "127.0.0.1", "example.com", "httpbin.org"],
         validation_alias="AUTOMATION_ALLOWED_DOMAINS",
     )
@@ -173,7 +188,7 @@ class Settings(BaseSettings):
     # Daena Windows Node (Moltbot-style hands): URL and token from env only
     windows_node_url: Optional[str] = Field(None, validation_alias="WINDOWS_NODE_URL")  # default http://127.0.0.1:18888
     # Shell allowlist: only these commands (or prefixes) allowed for shell_exec
-    shell_allowlist: List[str] = Field(
+    shell_allowlist: List[str] | str = Field(
         default_factory=lambda: ["git ", "python -m ", "pip list", "pip show", "pip --version"],
         validation_alias="SHELL_ALLOWLIST",
     )

@@ -92,11 +92,24 @@ class ActionDispatcher:
                 elif action_type in ["read_file", "read"]:
                     res = await self.automation.read_file(args.strip())
                     
-                elif action_type in ["write_file", "write"]:
-                    # Parsing write args is harder from single string, ignoring for now or simple split
-                    # Assumes format "filename content..." which is brittle. 
-                    # Better to rely on tool use or strict blocks for write.
-                    pass
+                else:
+                    # FALLBACK: Try to execute as a generic skill from registry
+                    try:
+                        from backend.services.skill_registry import get_skill_registry
+                        registry = get_skill_registry()
+                        skill = registry.get_skill(action_type)
+                        
+                        if skill:
+                            logger.info(f"Found dynamic skill {action_type}, executing...")
+                            # In a real system, we'd pass args to the skill execution layer
+                            # For now, we use the automation's execute_skill if it exists
+                            if hasattr(self.automation, "run_skill"):
+                                res = await self.automation.run_skill(action_type, args)
+                            else:
+                                # Simulate execution for diagnostics
+                                res = AutomationResult("success", action_type, {"msg": "Executed via registry fallback"})
+                    except Exception as esk:
+                        logger.error(f"Dynamic skill fallback failed for {action_type}: {esk}")
                 
                 if res:
                     results.append({

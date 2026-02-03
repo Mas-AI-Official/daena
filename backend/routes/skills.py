@@ -114,6 +114,51 @@ async def list_skills(
     return {"success": True, "skills": skills}
 
 
+@router.post("/test-execution")
+async def test_skill_execution(
+    skill_id: str,
+    x_execution_token: Optional[str] = Header(None, alias="X-Execution-Token")
+):
+    """Diagnose skill execution failures"""
+    _verify_execution_token(x_execution_token)
+    
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        skill = registry.get_skill(skill_id)
+        
+        if not skill:
+            return {"success": False, "error": f"Skill {skill_id} not found in registry"}
+            
+        # Check enabled state
+        enabled = skill.get("enabled", False)
+        status = skill.get("status")
+        
+        # Check governance
+        from backend.services.governance_loop import get_governance_loop
+        gov = get_governance_loop()
+        assessment = gov.assess({
+            "type": "skill_execute",
+            "skill_id": skill_id,
+            "risk": skill.get("risk_level", "medium")
+        })
+        
+        return {
+            "success": True,
+            "skill_id": skill_id,
+            "registry_info": {
+                "enabled": enabled,
+                "status": status,
+                "risk_level": skill.get("risk_level"),
+                "approval_policy": skill.get("approval_policy")
+            },
+            "governance_assessment": assessment,
+            "can_execute": enabled and assessment["decision"] == "approve"
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/debug")
 async def debug_skills():
     """Debug endpoint to check skill registry state"""

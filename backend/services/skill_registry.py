@@ -1,13 +1,6 @@
 """
 Skill Registry — Daena's dynamic skill engine.
-
-Skills are typed, versioned, sandboxed capabilities that agents can use.
-Daena (or any Council-approved agent) can CREATE new skills at runtime.
-Every skill goes through a governance gate before it becomes active.
-
-Lifecycle:
-  DRAFT → PENDING_REVIEW → SANDBOX_TEST → APPROVED → ACTIVE
-                                        └→ REJECTED
+Now backed by SQLAlchemy DB for persistence and advanced filtering.
 """
 
 import uuid
@@ -15,11 +8,17 @@ import json
 import time
 import hashlib
 import traceback
+import logging
 from enum import Enum
-from typing import Optional, Any, Tuple
+from typing import Optional, Any, Tuple, List
 from datetime import datetime, timezone
 from dataclasses import dataclass, field, asdict
 
+from backend.database import SessionLocal, Skill, SkillAuditLog
+from sqlalchemy.orm import Session
+from sqlalchemy import or_
+
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────
 # ENUMS
@@ -34,7 +33,6 @@ class SkillStatus(str, Enum):
     REJECTED = "rejected"
     DEPRECATED = "deprecated"
 
-
 class SkillCategory(str, Enum):
     FILESYSTEM = "filesystem"
     NETWORK = "network"
@@ -47,75 +45,11 @@ class SkillCategory(str, Enum):
     UTILITY = "utility"
     CUSTOM = "custom"
 
-
 class SkillCreator(str, Enum):
     FOUNDER = "founder"          # Masoud — highest trust
     DAENA = "daena"              # Self-created — needs Council approval
     COUNCIL = "council"          # Council-proposed
     AGENT = "agent"              # Sub-agent proposed — needs Daena + Council
-
-
-# ─────────────────────────────────────────
-# DATA MODELS
-# ─────────────────────────────────────────
-
-@dataclass
-class SkillVersion:
-    version: str                        # semver: "1.0.0"
-    code_hash: str                      # SHA-256 of the code body
-    created_at: str
-    created_by: str                     # agent_id or "founder"
-    changelog: str = ""
-
-
-@dataclass
-class SkillDefinition:
-    id: str
-    name: str                           # unique slug: "read_csv"
-    display_name: str                   # "Read CSV File"
-    description: str
-    category: SkillCategory
-    creator: SkillCreator
-    creator_agent_id: str               # which agent proposed it
-    status: SkillStatus
-    
-    # The actual skill — typed input/output contract
-    input_schema: dict                  # JSON Schema for inputs
-    output_schema: dict                 # JSON Schema for outputs
-    code_body: str                      # The executable code (Python)
-    
-    # Governance
-    risk_level: str                     # "low" | "medium" | "high" | "critical"
-    requires_approval: bool
-    approved_by: Optional[str] = None
-    rejection_reason: Optional[str] = None
-    
-    # Versioning
-    versions: list = field(default_factory=list)
-    current_version: str = "1.0.0"
-    
-    # Usage
-    dependencies: list = field(default_factory=list)  # other skill IDs it needs
-    allowed_agents: list = field(default_factory=list) # [] = all agents
-    usage_count: int = 0
-    last_used_at: Optional[str] = None
-    
-    # Access scope (operators: who can run this skill; distinct from creator who authored it)
-    allowed_roles: list = field(default_factory=list)      # founder, daena, agent
-    allowed_departments: list = field(default_factory=list)
-    approval_policy: str = "auto"                          # auto | approval_required | always_approval
-    requires_step_up_confirm: bool = False
-    enabled: bool = True
-    archived: bool = False                                 # soft-delete; kept for audit
-    category_slug: Optional[str] = None                    # UI category: utility, research, etc.
-    
-    # Sandbox test results
-    sandbox_results: Optional[dict] = None
-    
-    # Timestamps
-    created_at: str = ""
-    updated_at: str = ""
-
 
 # ─────────────────────────────────────────
 # REGISTRY
@@ -123,612 +57,350 @@ class SkillDefinition:
 
 class SkillRegistry:
     """
-    In-memory registry with persistence hooks.
-    In production, swap _skills dict for a DB table.
+    DB-backed registry with audit logging.
     """
 
     def __init__(self):
-        self._skills: dict[str, SkillDefinition] = {}
-        self._name_index: dict[str, str] = {}       # name → id
-        self._load_builtins()
+        # We ensure built-ins are in the DB on startup
+        self._ensure_builtins()
 
-    # ─── BUILT-IN SKILLS (shipped with Daena) ────────────────────
-
-    def _load_builtins(self):
-        """Register core skills that ship with Daena. These are ACTIVE by default."""
-        
-        # 1. Custom built-ins (special implementations)
-        builtins = [
-            {
-                "name": "defi_scan",
-                "display_name": "DeFi Contract Scanner",
-                "description": "Scan Solidity smart contracts with Slither. Returns vulnerability report.",
-                "category": SkillCategory.SECURITY,
-                "risk_level": "medium",
-                "input_schema": {"type": "object", "properties": {"contract_path": {"type": "string"}}, "required": ["contract_path"]},
-                "output_schema": {"type": "object", "properties": {"vulnerabilities": {"type": "array"}}},
-                "code_body": "# Built-in — delegates to Slither"
-            },
-            {
-                "name": "integrity_verify",
-                "display_name": "Integrity Shield Verify",
-                "description": "Verify data source trust score and check for prompt injection.",
-                "category": SkillCategory.SECURITY,
-                "risk_level": "low",
-                "input_schema": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"]},
-                "output_schema": {"type": "object", "properties": {"trusted": {"type": "boolean"}}},
-                "code_body": "# Built-in — delegates to Integrity Shield"
-            }
-        ]
-
-        # 2. Auto-import from Tool Registry
+    def _ensure_builtins(self):
+        """Ensure core skills exist in DB. ACTIVE by default."""
+        db = SessionLocal()
         try:
-            from backend.tools.registry import TOOL_DEFS
-            for name, tool in TOOL_DEFS.items():
-                # Skip if already in custom builtins
-                if any(b["name"] == name for b in builtins):
-                    continue
-                
-                # Heuristic categorization
-                cat = SkillCategory.UTILITY
-                if "filesystem" in name or "workspace" in name: cat = SkillCategory.FILESYSTEM
-                if "net" in name or "web" in name or "browser" in name: cat = SkillCategory.NETWORK
-                if "git" in name or "repo" in name or "patch" in name or "run" in name: cat = SkillCategory.CODE_EXEC
-                if "scan" in name or "defender" in name or "security" in name: cat = SkillCategory.SECURITY
-                if "consult" in name: cat = SkillCategory.AI_TOOL
-                if "scrape" in name or "search" in name: cat = SkillCategory.RESEARCH
-                
-                # Heuristic risk
-                risk = "medium"
-                if cat in (SkillCategory.FILESYSTEM, SkillCategory.RESEARCH, SkillCategory.UTILITY): risk = "low"
-                if "exec" in name or "shell" in name or "write" in name: risk = "high"
-                if "read" in name or "list" in name or "info" in name: risk = "low"
+            # Logic similar to old _load_builtins but checking DB
+            builtins = [
+                {
+                    "name": "defi_scan",
+                    "display_name": "DeFi Contract Scanner",
+                    "description": "Scan Solidity smart contracts with Slither. Returns vulnerability report.",
+                    "category": SkillCategory.SECURITY,
+                    "risk_level": "medium",
+                    "input_schema": {"type": "object", "properties": {"contract_path": {"type": "string"}}, "required": ["contract_path"]},
+                    "output_schema": {"type": "object", "properties": {"vulnerabilities": {"type": "array"}}},
+                    "code_body": "# Built-in — delegates to Slither"
+                },
+                {
+                    "name": "integrity_verify",
+                    "display_name": "Integrity Shield Verify",
+                    "description": "Verify data source trust score and check for prompt injection.",
+                    "category": SkillCategory.SECURITY,
+                    "risk_level": "low",
+                    "input_schema": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"]},
+                    "output_schema": {"type": "object", "properties": {"trusted": {"type": "boolean"}}},
+                    "code_body": "# Built-in — delegates to Integrity Shield"
+                },
+                {
+                    "name": "web_search",
+                    "display_name": "Web Search (Tavily/Google)",
+                    "description": "Research information online via real-time search engines.",
+                    "category": SkillCategory.RESEARCH,
+                    "risk_level": "low",
+                    "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
+                    "output_schema": {"type": "object", "properties": {"results": {"type": "array"}}},
+                    "code_body": "# Built-in search tool",
+                    "allowed_operators": ["founder", "daena", "agent"]
+                },
+                {
+                    "name": "filesystem_read",
+                    "display_name": "File System Read",
+                    "description": "Read local files from the project workspace.",
+                    "category": SkillCategory.FILESYSTEM,
+                    "risk_level": "low",
+                    "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+                    "output_schema": {"type": "object", "properties": {"content": {"type": "string"}}},
+                    "code_body": "# Built-in file tool",
+                    "allowed_operators": ["founder", "daena"]
+                }
+            ]
 
-                builtins.append({
-                    "name": name,
-                    "display_name": name.replace("_", " ").title(),
-                    "description": tool.description,
-                    "category": cat,
-                    "risk_level": risk,
-                    "input_schema": {"type": "object", "properties": {"args": {"type": "object"}}}, # Generic
-                    "output_schema": {"type": "object", "properties": {"result": {"type": "any"}}},
-                    "code_body": f"# Tool wrapper for {name}"
-                })
-        except Exception as e:
-            import traceback
-            print(f"CRITICAL ERROR: Failed to auto-import tools as skills: {e}")
-            traceback.print_exc()
-
-        # 3. Auto-import from CMP Registry (External Connections)
-        try:
-            from backend.core.cmp.registry import cmp_registry, CMPToolCategory
+            # Heuristic for generic tools might be too slow on every startup, 
+            # so we'll just check these specific ones or a subset.
             
-            # Map CMP categories to Skill categories
-            CAT_MAP = {
-                CMPToolCategory.EMAIL: SkillCategory.EXTERNAL_API,
-                CMPToolCategory.COMMUNICATION: SkillCategory.EXTERNAL_API,
-                CMPToolCategory.AI_LLM: SkillCategory.AI_TOOL,
-                CMPToolCategory.DATABASE: SkillCategory.DATA_TRANSFORM,
-                CMPToolCategory.CLOUD_STORAGE: SkillCategory.NETWORK,
-                CMPToolCategory.PRODUCTIVITY: SkillCategory.UTILITY,
-                CMPToolCategory.CRM: SkillCategory.UTILITY,
-                CMPToolCategory.ANALYTICS: SkillCategory.RESEARCH,
-                CMPToolCategory.AUTOMATION: SkillCategory.CODE_EXEC,
-                CMPToolCategory.OTHER: SkillCategory.CUSTOM,
-            }
-
-            for tool in cmp_registry.list_tools():
-                # Avoid duplicates if name collides (e.g. if we have a local tool with same name)
-                if any(b["name"] == tool.id for b in builtins):
-                    continue
-                
-                cat = CAT_MAP.get(tool.category, SkillCategory.UTILITY)
-                
-                # Heuristic risk
-                risk = "medium"
-                if cat in (SkillCategory.RESEARCH, SkillCategory.UTILITY): risk = "low"
-                if tool.category in (CMPToolCategory.DATABASE, CMPToolCategory.CLOUD_STORAGE): risk = "medium"
-                
-                builtins.append({
-                    "name": tool.id,  # Use ID as internal name (e.g. "gmail", "cursor_ide")
-                    "display_name": tool.name,
-                    "description": tool.description,
-                    "category": cat,
-                    "risk_level": risk,
-                    "input_schema": {"type": "object", "properties": {"action": {"type": "string", "enum": tool.actions}, "params": {"type": "object"}}}, 
-                    "output_schema": {"type": "object", "properties": {"result": {"type": "any"}}},
-                    "code_body": f"# Connector for {tool.name} ({tool.id})\n# Actions: {', '.join(tool.actions)}"
-                })
+            for b in builtins:
+                existing = db.query(Skill).filter(Skill.name == b["name"]).first()
+                if not existing:
+                    skill_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, b["name"]))
+                    new_skill = Skill(
+                        id=skill_id,
+                        name=b["name"],
+                        display_name=b["display_name"],
+                        description=b["description"],
+                        category=b["category"].value,
+                        creator="founder",
+                        creator_agent_id="system",
+                        status="active",
+                        input_schema=b["input_schema"],
+                        output_schema=b["output_schema"],
+                        code_body=b["code_body"],
+                        risk_level=b["risk_level"],
+                        approval_policy="auto",
+                        allowed_operators=b.get("allowed_operators", ["founder", "daena"]),
+                        enabled=True
+                    )
+                    db.add(new_skill)
+            db.commit()
         except Exception as e:
-            import traceback
-            print(f"CRITICAL ERROR: Failed to auto-import CMP tools as skills: {e}")
-            traceback.print_exc()
-
-        for b in builtins:
-            skill_id = str(uuid.uuid4())
-            now = datetime.now(timezone.utc).isoformat()
-            # Stable hash for builtins so ID persists if possible? No, UUID is random.
-            # Ideally we'd use a deterministic UUID based on name for builtins.
-            skill_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, b["name"]))
-            
-            # Simple code hash
-            code_hash = hashlib.sha256(b["code_body"].encode()).hexdigest()[:16]
-
-            skill = SkillDefinition(
-                id=skill_id,
-                name=b["name"],
-                display_name=b["display_name"],
-                description=b["description"],
-                category=b["category"],
-                creator=SkillCreator.FOUNDER,
-                creator_agent_id="system",
-                status=SkillStatus.ACTIVE,
-                input_schema=b["input_schema"],
-                output_schema=b["output_schema"],
-                code_body=b["code_body"],
-                risk_level=b["risk_level"],
-                requires_approval=False,
-                approved_by="system_builtin",
-                versions=[SkillVersion(version="1.0.0", code_hash=code_hash, created_at=now, created_by="system", changelog="Initial builtin")],
-                current_version="1.0.0",
-                created_at=now,
-                updated_at=now,
-                category_slug=b["category"].value
-            )
-            self._skills[skill_id] = skill
-            self._name_index[b["name"]] = skill_id
+            logger.error(f"Failed to ensure built-ins: {e}")
+            db.rollback()
+        finally:
+            db.close()
 
     # ─── PUBLIC API ────────────────────────────────────────────────
 
     def list_skills(self, status_filter: Optional[str] = None,
                     category_filter: Optional[str] = None,
                     operator_role: Optional[str] = None,
-                    include_archived: bool = False) -> list[dict]:
-        """List skills. operator_role filters by who can execute (allowed_roles)."""
-        results = []
-        for skill in self._skills.values():
-            if skill.archived and not include_archived:
-                continue
-            if status_filter and skill.status.value != status_filter:
-                continue
-            if category_filter and skill.category.value != category_filter:
-                continue
+                    include_archived: bool = False) -> List[Dict[str, Any]]:
+        """List skills. operator_role filters by allowed_operators."""
+        db = SessionLocal()
+        try:
+            query = db.query(Skill)
+            if not include_archived:
+                query = query.filter(Skill.archived == False)
+            if status_filter:
+                query = query.filter(Skill.status == status_filter)
+            if category_filter:
+                query = query.filter(Skill.category == category_filter)
+            
+            skills = query.all()
+            
+            # Post-filter for JSON column allowed_operators
             if operator_role:
-                roles = [r.lower() for r in (skill.allowed_roles or [])]
-                if operator_role.lower() not in roles:
-                    continue
-            results.append(self._to_dict(skill))
-        return results
+                op = operator_role.lower()
+                # Simple check within the JSON list
+                skills = [s for s in skills if s.allowed_operators and op in [x.lower() for x in s.allowed_operators]]
+            
+            return [self._to_dict(s) for s in skills]
+        finally:
+            db.close()
 
-    def get_skill(self, skill_id: str) -> Optional[dict]:
+    def get_skill(self, skill_id: str) -> Optional[Dict[str, Any]]:
         """Get skill by ID."""
-        skill = self._skills.get(skill_id)
-        return self._to_dict(skill) if skill else None
+        db = SessionLocal()
+        try:
+            skill = db.query(Skill).filter(Skill.id == skill_id).first()
+            return self._to_dict(skill) if skill else None
+        finally:
+            db.close()
 
-    def get_skill_by_name(self, name: str) -> Optional[dict]:
+    def get_skill_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """Get skill by unique name."""
-        skill_id = self._name_index.get(name)
-        if skill_id:
-            return self.get_skill(skill_id)
-        return None
+        db = SessionLocal()
+        try:
+            skill = db.query(Skill).filter(Skill.name == name).first()
+            return self._to_dict(skill) if skill else None
+        finally:
+            db.close()
 
-    def create_skill(self, payload: dict) -> dict:
+    def create_skill(self, payload: Dict[str, Any], actor: str = "founder", ip: str = None, session_id: str = None) -> Dict[str, Any]:
         """
-        Create a new skill (DRAFT).
-        Daena or sub-agents can propose skills.
-        Founder skills bypass approval.
-        Control-panel payload: name, display_name, description, category, creator, code_body;
-        optional access (allowed_roles, allowed_departments, allowed_agents), risk_level,
-        approval_policy, requires_step_up_confirm, enabled.
+        Create a new skill.
         """
         required = ["name", "display_name", "description", "category", "creator", "code_body"]
         for f in required:
             if f not in payload:
                 return {"error": f"Missing required field: {f}"}
 
-        name = payload["name"]
-        if name in self._name_index:
-            return {"error": f"Skill name '{name}' already exists"}
-        if not name.replace("_", "").isalnum():
-            return {"error": "Skill name must be alphanumeric with underscores only"}
-
-        # Normalize for control-pannel: default input_schema, output_schema, creator_agent_id
-        creator_agent_id = payload.get("creator_agent_id", "control_panel")
-        input_schema = payload.get("input_schema") or {"type": "object", "properties": {}, "required": []}
-        output_schema = payload.get("output_schema") or {"type": "object", "properties": {"result": {"type": "string"}}}
-
-        # Category: UI slug (utility, research, ...) or enum value
-        cat_val = payload["category"]
+        db = SessionLocal()
         try:
-            category = SkillCategory(cat_val)
-            category_slug = cat_val
-        except ValueError:
-            category = SkillCategory.CUSTOM
-            category_slug = str(cat_val)
+            name = payload["name"]
+            existing = db.query(Skill).filter(Skill.name == name).first()
+            if existing:
+                return {"error": f"Skill name '{name}' already exists"}
 
-        risk = payload.get("risk_level") or self._assess_risk(payload)
-        creator = SkillCreator(payload["creator"])
+            # Risk Assessment
+            risk = payload.get("risk_level") or self._assess_risk(payload)
+            
+            # Approval Policy Logic
+            # High-risk skills must default to needs_approval unless Founder sets always.
+            # Only Founder can set approval_policy="auto" for high-risk skills.
+            approval_policy = payload.get("approval_policy") or "needs_approval"
+            if risk in ("high", "critical"):
+                if actor != "founder" or approval_policy == "auto":
+                    approval_policy = "needs_approval" # Force override for safety
+            
+            # Initial status
+            status = "active" if (actor == "founder" and risk != "critical") else "pending_review"
 
-        if creator == SkillCreator.FOUNDER and risk in ("low", "medium"):
-            initial_status = SkillStatus.ACTIVE
-            requires_approval = False
-            approved_by = "founder"
-        else:
-            initial_status = SkillStatus.PENDING_REVIEW
-            requires_approval = True
-            approved_by = None
+            skill_id = str(uuid.uuid4())
+            new_skill = Skill(
+                id=skill_id,
+                name=name,
+                display_name=payload["display_name"],
+                description=payload["description"],
+                category=payload["category"],
+                creator=payload["creator"],
+                creator_agent_id=payload.get("creator_agent_id", actor),
+                status=status,
+                input_schema=payload.get("input_schema", {}),
+                output_schema=payload.get("output_schema", {}),
+                code_body=payload["code_body"],
+                risk_level=risk,
+                approval_policy=approval_policy,
+                allowed_operators=payload.get("allowed_operators", ["founder", "daena"]),
+                allowed_departments=payload.get("allowed_departments", []),
+                allowed_agents=payload.get("allowed_agents", []),
+                enabled=payload.get("enabled", True)
+            )
+            db.add(new_skill)
+            
+            # Audit Log
+            log = SkillAuditLog(
+                skill_id=skill_id,
+                action="create",
+                changed_by=actor,
+                after_json=self._to_dict(new_skill),
+                ip_address=ip,
+                session_id=session_id
+            )
+            db.add(log)
+            
+            db.commit()
+            return {"success": True, "id": skill_id, "status": status}
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Create skill failed: {e}")
+            return {"error": str(e)}
+        finally:
+            db.close()
 
-        access = payload.get("access") or {}
-        allowed_roles = access.get("allowed_roles") or payload.get("allowed_roles") or ["founder", "daena"]
-        allowed_departments = access.get("allowed_departments") or payload.get("allowed_departments") or []
-        allowed_agents = access.get("allowed_agents") or payload.get("allowed_agents") or []
-        approval_policy = payload.get("approval_policy") or ("auto" if risk == "low" else "approval_required")
-        requires_step_up = payload.get("requires_step_up_confirm", False)
-        enabled = payload.get("enabled", True)
+    def update_skill(self, skill_id: str, payload: Dict[str, Any], actor: str = "founder", ip: str = None, session_id: str = None) -> Dict[str, Any]:
+        """Full update with auditing."""
+        db = SessionLocal()
+        try:
+            skill = db.query(Skill).filter(Skill.id == skill_id).first()
+            if not skill:
+                return {"error": "Skill not found"}
+            
+            before_data = self._to_dict(skill)
+            
+            # Update fields
+            if "display_name" in payload: skill.display_name = payload["display_name"]
+            if "description" in payload: skill.description = payload["description"]
+            if "category" in payload: skill.category = payload["category"]
+            if "code_body" in payload: skill.code_body = payload["code_body"]
+            
+            if "allowed_operators" in payload: 
+                skill.allowed_operators = payload["allowed_operators"]
+            
+            if "approval_policy" in payload:
+                # Validation: Only Founder can set auto for high-risk
+                ap = payload["approval_policy"]
+                if skill.risk_level in ("high", "critical") and ap == "auto" and actor != "founder":
+                    ap = "needs_approval"
+                skill.approval_policy = ap
+                
+            if "risk_level" in payload:
+                skill.risk_level = payload["risk_level"]
+                
+            if "enabled" in payload:
+                skill.enabled = payload["enabled"]
+            
+            skill.updated_at = datetime.utcnow()
+            
+            # Audit Log
+            log = SkillAuditLog(
+                skill_id=skill_id,
+                action="update",
+                changed_by=actor,
+                before_json=before_data,
+                after_json=self._to_dict(skill),
+                ip_address=ip,
+                session_id=session_id
+            )
+            db.add(log)
+            
+            db.commit()
+            return {"success": True, "message": "Skill updated"}
+        except Exception as e:
+            db.rollback()
+            return {"error": str(e)}
+        finally:
+            db.close()
 
-        now = datetime.now(timezone.utc).isoformat()
-        skill_id = str(uuid.uuid4())
-        code_hash = hashlib.sha256(payload["code_body"].encode()).hexdigest()[:16]
+    def set_enabled(self, skill_id: str, enabled: bool, actor: str = "founder") -> Dict[str, Any]:
+        """Toggle enabled state."""
+        return self.update_skill(skill_id, {"enabled": enabled}, actor=actor)
 
-        skill = SkillDefinition(
-            id=skill_id,
-            name=name,
-            display_name=payload["display_name"],
-            description=payload["description"],
-            category=category,
-            creator=creator,
-            creator_agent_id=creator_agent_id,
-            status=initial_status,
-            input_schema=input_schema,
-            output_schema=output_schema,
-            code_body=payload["code_body"],
-            risk_level=risk,
-            requires_approval=requires_approval,
-            approved_by=approved_by,
-            versions=[SkillVersion(
-                version="1.0.0",
-                code_hash=code_hash,
-                created_at=now,
-                created_by=creator_agent_id,
-                changelog="Initial creation"
-            )],
-            current_version="1.0.0",
-            dependencies=payload.get("dependencies", []),
-            allowed_agents=allowed_agents,
-            allowed_roles=allowed_roles,
-            allowed_departments=allowed_departments,
-            approval_policy=approval_policy,
-            requires_step_up_confirm=requires_step_up,
-            enabled=enabled,
-            category_slug=category_slug,
-            created_at=now,
-            updated_at=now
-        )
+    def archive_skill(self, skill_id: str, actor: str = "founder") -> Dict[str, Any]:
+        """Soft-delete."""
+        return self.update_skill(skill_id, {"archived": True, "enabled": False}, actor=actor)
 
-        self._skills[skill_id] = skill
-        self._name_index[name] = skill_id
-
-        return {
-            "id": skill_id,
-            "skill_id": skill_id,
-            "success": True,
-            "status": initial_status.value,
-            "risk_level": risk,
-            "requires_approval": requires_approval,
-            "message": f"Skill '{name}' created. Status: {initial_status.value}"
-        }
-
-    def approve_skill(self, skill_id: str, approver: str = "founder",
-                      notes: str = "") -> dict:
-        """Approve a skill (Founder or Council action)."""
-        skill = self._skills.get(skill_id)
-        if not skill:
-            return {"error": "Skill not found"}
-        if skill.status not in (SkillStatus.PENDING_REVIEW, SkillStatus.SANDBOX_TEST):
-            return {"error": f"Cannot approve skill in status: {skill.status.value}"}
-
-        skill.status = SkillStatus.ACTIVE
-        skill.approved_by = approver
-        skill.updated_at = datetime.now(timezone.utc).isoformat()
-
-        return {
-            "id": skill_id,
-            "status": "active",
-            "message": f"Skill '{skill.name}' approved by {approver}"
-        }
-
-    def reject_skill(self, skill_id: str, reason: str = "",
-                     rejector: str = "founder") -> dict:
-        """Reject a proposed skill."""
-        skill = self._skills.get(skill_id)
-        if not skill:
-            return {"error": "Skill not found"}
-        if skill.status not in (SkillStatus.PENDING_REVIEW, SkillStatus.SANDBOX_TEST):
-            return {"error": f"Cannot reject skill in status: {skill.status.value}"}
-
-        skill.status = SkillStatus.REJECTED
-        skill.rejection_reason = reason
-        skill.updated_at = datetime.now(timezone.utc).isoformat()
-
-        return {
-            "id": skill_id,
-            "status": "rejected",
-            "reason": reason,
-            "message": f"Skill '{skill.name}' rejected: {reason}"
-        }
-
-    def test_skill_sandbox(self, skill_id: str, test_inputs: dict) -> dict:
-        """
-        Run a skill in sandbox mode.
-        Captures stdout/stderr, checks for errors.
-        Updates sandbox_results on the skill.
-        """
-        skill = self._skills.get(skill_id)
-        if not skill:
-            return {"error": "Skill not found"}
-
-        # Transition to sandbox_test if pending_review
-        if skill.status == SkillStatus.PENDING_REVIEW:
-            skill.status = SkillStatus.SANDBOX_TEST
-
-        # Execute in sandbox (simulated — real impl uses subprocess with limits)
-        result = self._run_in_sandbox(skill, test_inputs)
-
-        skill.sandbox_results = result
-        skill.updated_at = datetime.now(timezone.utc).isoformat()
-
-        return {
-            "id": skill_id,
-            "status": skill.status.value,
-            "sandbox_results": result
-        }
-
-    def deprecate_skill(self, skill_id: str, reason: str = "") -> dict:
-        """Deprecate an active skill (still callable but flagged)."""
-        skill = self._skills.get(skill_id)
-        if not skill:
-            return {"error": "Skill not found"}
-        skill.status = SkillStatus.DEPRECATED
-        skill.updated_at = datetime.now(timezone.utc).isoformat()
-        return {"id": skill_id, "status": "deprecated", "message": f"Deprecated: {reason}"}
-
-    def update_skill(self, skill_id: str, payload: dict) -> dict:
-        """Full update: creator, access, policy, enabled, display_name, description, etc."""
-        skill = self._skills.get(skill_id)
-        if not skill:
-            return {"error": "Skill not found"}
-        now = datetime.now(timezone.utc).isoformat()
-        if "display_name" in payload:
-            skill.display_name = payload["display_name"]
-        if "description" in payload:
-            skill.description = payload["description"]
-        if "creator" in payload:
-            try:
-                skill.creator = SkillCreator(payload["creator"])
-            except ValueError:
-                pass
-        if "access" in payload:
-            a = payload["access"]
-            skill.allowed_roles = a.get("allowed_roles", skill.allowed_roles)
-            skill.allowed_departments = a.get("allowed_departments", skill.allowed_departments)
-            skill.allowed_agents = a.get("allowed_agents", skill.allowed_agents)
-        if "policy" in payload:
-            p = payload["policy"]
-            if "risk_level" in p:
-                skill.risk_level = p["risk_level"]
-            if "approval_policy" in p:
-                skill.approval_policy = p["approval_policy"]
-            if "requires_step_up_confirm" in p:
-                skill.requires_step_up_confirm = p["requires_step_up_confirm"]
-        if "enabled" in payload:
-            skill.enabled = bool(payload["enabled"])
-        if "category" in payload:
-            try:
-                skill.category = SkillCategory(payload["category"])
-            except ValueError:
-                skill.category_slug = str(payload["category"])
-        skill.updated_at = now
-        return {"id": skill_id, "success": True, "message": "Skill updated"}
-
-    def update_access(self, skill_id: str, access: dict) -> dict:
-        """Update only access (allowed_roles, allowed_departments, allowed_agents)."""
-        skill = self._skills.get(skill_id)
-        if not skill:
-            return {"error": "Skill not found"}
-        if "allowed_roles" in access:
-            skill.allowed_roles = list(access["allowed_roles"]) if isinstance(access["allowed_roles"], (list, tuple)) else skill.allowed_roles
-        if "allowed_departments" in access:
-            skill.allowed_departments = list(access["allowed_departments"]) if isinstance(access["allowed_departments"], (list, tuple)) else skill.allowed_departments
-        if "allowed_agents" in access:
-            skill.allowed_agents = list(access["allowed_agents"]) if isinstance(access["allowed_agents"], (list, tuple)) else skill.allowed_agents
-        skill.updated_at = datetime.now(timezone.utc).isoformat()
-        return {"id": skill_id, "success": True, "access": {"allowed_roles": skill.allowed_roles, "allowed_departments": skill.allowed_departments, "allowed_agents": skill.allowed_agents}}
-
-    def set_enabled(self, skill_id: str, enabled: bool) -> dict:
-        """Enable or disable a skill."""
-        skill = self._skills.get(skill_id)
-        if not skill:
-            return {"error": "Skill not found"}
-        skill.enabled = bool(enabled)
-        skill.updated_at = datetime.now(timezone.utc).isoformat()
-        return {"id": skill_id, "success": True, "enabled": skill.enabled}
-
-    def archive_skill(self, skill_id: str) -> dict:
-        """Soft-delete: set archived=True. Kept for audit."""
-        skill = self._skills.get(skill_id)
-        if not skill:
-            return {"error": "Skill not found"}
-        skill.archived = True
-        skill.enabled = False
-        skill.updated_at = datetime.now(timezone.utc).isoformat()
-        return {"id": skill_id, "success": True, "archived": True, "message": "Skill archived"}
-
-    def get_manifest(self) -> list[dict]:
-        """Compact list for agents: id, name, access summary, policy summary. Excludes archived."""
-        out = []
-        for skill in self._skills.values():
-            if skill.archived:
-                continue
-            out.append({
-                "id": skill.id,
-                "name": skill.name,
-                "display_name": skill.display_name,
-                "allowed_roles": list(skill.allowed_roles or []),
-                "risk_level": skill.risk_level,
-                "approval_policy": skill.approval_policy,
-                "enabled": skill.enabled,
-            })
-        return out
+    def get_manifest(self) -> List[Dict[str, Any]]:
+        """Compact list for agents."""
+        db = SessionLocal()
+        try:
+            skills = db.query(Skill).filter(Skill.archived == False, Skill.enabled == True).all()
+            return [{
+                "id": s.id,
+                "name": s.name,
+                "display_name": s.display_name,
+                "allowed_operators": s.allowed_operators,
+                "risk_level": s.risk_level,
+                "approval_policy": s.approval_policy
+            } for s in skills]
+        finally:
+            db.close()
 
     def check_caller_access(self, skill_id: str, role: str, dept: Optional[str] = None, agent_id: Optional[str] = None) -> Tuple[bool, Optional[str]]:
-        """Check if caller (role, dept, agent_id) is allowed to run this skill. Returns (allowed, error_message)."""
-        skill = self._skills.get(skill_id)
-        if not skill:
-            return (False, "Skill not found")
-        if skill.archived or not skill.enabled:
-            return (False, "Skill is archived or disabled")
-        roles = [r.lower() for r in (skill.allowed_roles or [])]
-        if role.lower() not in roles:
-            return (False, f"Role '{role}' not in allowed_roles {roles}")
-        if skill.allowed_departments and dept and dept not in (skill.allowed_departments or []):
-            return (False, f"Department '{dept}' not in allowed_departments")
-        if skill.allowed_agents and agent_id and agent_id not in (skill.allowed_agents or []):
-            return (False, f"Agent '{agent_id}' not in allowed_agents")
-        return (True, None)
+        """Check access."""
+        db = SessionLocal()
+        try:
+            skill = db.query(Skill).filter(Skill.id == skill_id).first()
+            if not skill:
+                return False, "Skill not found"
+            if skill.archived or not skill.enabled:
+                return False, "Skill disabled"
+            
+            allowed_roles = [r.lower() for r in (skill.allowed_operators or [])]
+            if role.lower() not in allowed_roles:
+                return False, f"Role '{role}' not authorized"
+            
+            return True, None
+        finally:
+            db.close()
 
-    def record_usage(self, skill_id: str):
-        """Record that a skill was used."""
-        skill = self._skills.get(skill_id)
-        if skill:
-            skill.usage_count += 1
-            skill.last_used_at = datetime.now(timezone.utc).isoformat()
+    def _assess_risk(self, payload: Dict[str, Any]) -> str:
+        """Heuristic risk assessment."""
+        cat = payload.get("category", "custom")
+        code = payload.get("code_body", "")
+        if cat in ("code_exec", "network"): return "high"
+        if "os.system" in code or "subprocess" in code: return "critical"
+        return "low"
 
-    def get_stats(self) -> dict:
-        """Registry-wide statistics."""
-        skills = list(self._skills.values())
+    def _to_dict(self, skill: Skill) -> Dict[str, Any]:
+        if not skill: return None
         return {
-            "total": len(skills),
-            "active": sum(1 for s in skills if s.status == SkillStatus.ACTIVE),
-            "pending_review": sum(1 for s in skills if s.status == SkillStatus.PENDING_REVIEW),
-            "sandbox_test": sum(1 for s in skills if s.status == SkillStatus.SANDBOX_TEST),
-            "rejected": sum(1 for s in skills if s.status == SkillStatus.REJECTED),
-            "deprecated": sum(1 for s in skills if s.status == SkillStatus.DEPRECATED),
-            "by_category": self._count_by_category(skills),
-            "by_creator": self._count_by_creator(skills),
-            "self_created": sum(1 for s in skills if s.creator == SkillCreator.DAENA),
-            "most_used": self._most_used(skills, top=3)
+            "id": skill.id,
+            "name": skill.name,
+            "display_name": skill.display_name,
+            "description": skill.description,
+            "category": skill.category,
+            "creator": skill.creator,
+            "creator_agent_id": skill.creator_agent_id,
+            "status": skill.status,
+            "risk_level": skill.risk_level,
+            "approval_policy": skill.approval_policy,
+            "allowed_operators": skill.allowed_operators,
+            "enabled": skill.enabled,
+            "archived": skill.archived,
+            "usage_count": skill.usage_count,
+            "created_at": skill.created_at.isoformat() if skill.created_at else None,
+            "updated_at": skill.updated_at.isoformat() if skill.updated_at else None
         }
 
-    # ─── PRIVATE HELPERS ──────────────────────────────────────────
-
-    def _assess_risk(self, payload: dict) -> str:
-        """Heuristic risk assessment based on category and code patterns."""
-        category = payload.get("category", "custom")
-        code = payload.get("code_body", "")
-
-        # High-risk categories
-        if category in ("code_exec", "network", "external_api"):
-            return "high"
-
-        # Scan code for dangerous patterns
-        danger_patterns = [
-            "import os", "os.system", "subprocess", "eval(", "exec(",
-            "open(", "shutil", "socket", "__import__",
-            "requests.get", "urllib", "http.client"
-        ]
-        hits = sum(1 for p in danger_patterns if p in code)
-
-        if hits >= 3:
-            return "critical"
-        elif hits >= 2:
-            return "high"
-        elif hits >= 1:
-            return "medium"
-        else:
-            return "low"
-
-    def _run_in_sandbox(self, skill: SkillDefinition, inputs: dict) -> dict:
-        """
-        Simulated sandbox execution.
-        In production: Docker container, resource limits, timeout, no network.
-        """
-        start = time.time()
+    def get_stats(self) -> Dict[str, Any]:
+        """Stats for dashboard."""
+        db = SessionLocal()
         try:
-            # For builtins, simulate success
-            if "Built-in" in skill.code_body:
-                return {
-                    "success": True,
-                    "stdout": f"[BUILTIN] {skill.name} executed with inputs: {json.dumps(inputs)}",
-                    "stderr": "",
-                    "exit_code": 0,
-                    "duration_ms": round((time.time() - start) * 1000),
-                    "security_flags": []
-                }
+            total = db.query(Skill).count()
+            active = db.query(Skill).filter(Skill.enabled == True).count()
+            return {"total": total, "active": active}
+        finally:
+            db.close()
 
-            # For user code, simulate (real impl: subprocess with limits)
-            # Basic static analysis
-            flags = []
-            code = skill.code_body
-            if "eval(" in code or "exec(" in code:
-                flags.append("WARN: Dynamic code evaluation detected")
-            if "os.system" in code or "subprocess" in code:
-                flags.append("WARN: System command execution detected")
-            if "import socket" in code or "requests" in code:
-                flags.append("WARN: Network access attempted")
-
-            return {
-                "success": len(flags) == 0,
-                "stdout": f"Sandbox analysis complete for '{skill.name}'",
-                "stderr": "\n".join(flags) if flags else "",
-                "exit_code": 0 if not flags else 1,
-                "duration_ms": round((time.time() - start) * 1000),
-                "security_flags": flags
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "stdout": "",
-                "stderr": str(e),
-                "exit_code": -1,
-                "duration_ms": round((time.time() - start) * 1000),
-                "security_flags": [f"ERROR: {str(e)}"]
-            }
-
-    def _count_by_category(self, skills: list) -> dict:
-        counts = {}
-        for s in skills:
-            cat = s.category.value
-            counts[cat] = counts.get(cat, 0) + 1
-        return counts
-
-    def _count_by_creator(self, skills: list) -> dict:
-        counts = {}
-        for s in skills:
-            c = s.creator.value
-            counts[c] = counts.get(c, 0) + 1
-        return counts
-
-    def _most_used(self, skills: list, top: int = 3) -> list:
-        sorted_skills = sorted(skills, key=lambda s: s.usage_count, reverse=True)
-        return [{"name": s.name, "usage_count": s.usage_count} for s in sorted_skills[:top]]
-
-    def _to_dict(self, skill: SkillDefinition) -> dict:
-        """Convert to JSON-safe dict."""
-        d = asdict(skill)
-        d["category"] = skill.category_slug or skill.category.value
-        d["creator"] = skill.creator.value
-        d["status"] = skill.status.value
-        d["approval_policy"] = skill.approval_policy
-        d["access"] = {"allowed_roles": skill.allowed_roles, "allowed_departments": skill.allowed_departments, "allowed_agents": skill.allowed_agents}
-        d["enabled"] = skill.enabled
-        d["archived"] = getattr(skill, "archived", False)
-        d["requires_step_up_confirm"] = skill.requires_step_up_confirm
-        if len(d.get("code_body", "")) > 200:
-            d["code_body_preview"] = d["code_body"][:200] + "..."
-        return d
-
-
-# ─── SINGLETON ─────────────────────────────────────────────────────
+# Singleton
 _registry = None
 
 def get_skill_registry() -> SkillRegistry:

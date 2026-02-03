@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+import os
 import json
 import uuid
 
@@ -150,8 +151,16 @@ class GovernanceLoop:
     - Full audit trail
     """
     
-    def __init__(self, autopilot: bool = True, founder_id: str = "founder"):
-        self.autopilot = autopilot
+    def __init__(self, autopilot: Optional[bool] = None, founder_id: str = "founder"):
+        # Prioritize env var, then arg, then default True
+        env_autopilot = os.getenv("AGI_AUTOPILOT_DEFAULT", "").lower()
+        if env_autopilot in ("true", "1", "on"):
+            self.autopilot = True
+        elif env_autopilot in ("false", "0", "off"):
+            self.autopilot = False
+        else:
+            self.autopilot = autopilot if autopilot is not None else True
+            
         self.founder_id = founder_id
         
         # Storage
@@ -346,6 +355,37 @@ class GovernanceLoop:
     
     def _consult_council(self, request: ActionRequest) -> Dict[str, Any]:
         """Consult the council on a medium-risk decision."""
+        # Check if we should use autonomous council
+        if self.autopilot:
+            try:
+                from backend.services.council_autonomous import get_autonomous_council
+                council = get_autonomous_council()
+                
+                # Run async consultation in sync wrapper
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we are already in an event loop (likely), we might need a future
+                    # But GovernanceLoop is often called from sync contexts.
+                    # For safety, let's try to detect if we need to use a thread or future.
+                    return asyncio.run_coroutine_threadsafe(
+                        council.consult({
+                            "action_type": request.action_type.value,
+                            "description": request.description,
+                            "parameters": request.parameters
+                        }),
+                        loop
+                    ).result()
+                else:
+                    return asyncio.run(council.consult({
+                        "action_type": request.action_type.value,
+                        "description": request.description,
+                        "parameters": request.parameters
+                    }))
+            except Exception as e:
+                logger.error(f"Autonomous council failed, falling back to legacy: {e}")
+
+        # Legacy/Fallback implementation
         try:
             from backend.services.mcp.mcp_server import get_mcp_server
             import asyncio
@@ -477,11 +517,40 @@ class GovernanceLoop:
         Returns { risk, autopilot, decision } for use by chat.py and other callers.
         """
         risk = (action.get("risk") or "low").lower()
-        if risk in ("high", "critical"):
-            return {"risk": risk, "autopilot": False, "decision": "blocked"}
-        if self.autopilot:
-            return {"risk": risk, "autopilot": True, "decision": "approve"}
-        return {"risk": risk, "autopilot": False, "decision": "pending"}
+        
+        # 1. Critical risk is always blocked for manual review
+        if risk == "critical":
+            decision = "blocked"
+        
+        # 2. High risk is blocked unless and until founder approval (or if autopilot is OFF)
+        elif risk == "high":
+            decision = "approve" if self.autopilot else "pending"
+            # Actually, user said: Only block if risk=critical OR (risk=high AND autopilot=False)
+            # This means risk=high AND autopilot=True should be "approve"
+        
+        # 3. Low/Medium risk check autopilot
+        elif self.autopilot:
+            decision = "approve"
+        else:
+            decision = "pending"
+
+        # Refined as per user's specific request:
+        # - risk=critical -> "blocked"
+        # - autopilot=True AND risk in (low, medium, high) -> "approve"
+        # - autopilot=False -> "pending"
+        
+        if risk == "critical":
+            decision = "blocked"
+        elif self.autopilot:
+            # risk is low, medium or high
+            decision = "approve"
+        else:
+            decision = "pending"
+
+        logger.info(f"Governance assess: autopilot={self.autopilot}, risk={risk}, decision={decision}")
+        print(f"Governance assess: autopilot={self.autopilot}, risk={risk}, decision={decision}")
+        
+        return {"risk": risk, "autopilot": self.autopilot, "decision": decision}
     
     def get_stats(self) -> Dict[str, Any]:
         """Get governance statistics."""
@@ -516,7 +585,7 @@ class GovernanceLoop:
 _governance: Optional[GovernanceLoop] = None
 
 
-def get_governance_loop(autopilot: bool = True) -> GovernanceLoop:
+def get_governance_loop(autopilot: Optional[bool] = None) -> GovernanceLoop:
     """Get the global governance loop instance."""
     global _governance
     if _governance is None:
