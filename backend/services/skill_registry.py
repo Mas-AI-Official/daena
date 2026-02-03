@@ -65,10 +65,10 @@ class SkillRegistry:
         self._ensure_builtins()
 
     def _ensure_builtins(self):
-        """Ensure core skills exist in DB. ACTIVE by default."""
+        """Ensure core skills and registered tools exist in DB. ACTIVE by default."""
         db = SessionLocal()
         try:
-            # Logic similar to old _load_builtins but checking DB
+            # 1. Manual Built-ins
             builtins = [
                 {
                     "name": "defi_scan",
@@ -96,7 +96,7 @@ class SkillRegistry:
                     "description": "Research information online via real-time search engines.",
                     "category": SkillCategory.RESEARCH,
                     "risk_level": "low",
-                    "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
+                    "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
                     "output_schema": {"type": "object", "properties": {"results": {"type": "array"}}},
                     "code_body": "# Built-in search tool",
                     "allowed_operators": ["founder", "daena", "agent"]
@@ -107,16 +107,96 @@ class SkillRegistry:
                     "description": "Read local files from the project workspace.",
                     "category": SkillCategory.FILESYSTEM,
                     "risk_level": "low",
-                    "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+                    "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
                     "output_schema": {"type": "object", "properties": {"content": {"type": "string"}}},
                     "code_body": "# Built-in file tool",
                     "allowed_operators": ["founder", "daena"]
+                },
+                {
+                    "name": "file_write",
+                    "display_name": "Write File",
+                    "description": "Write content to a file in the workspace.",
+                    "category": SkillCategory.FILESYSTEM,
+                    "risk_level": "medium",
+                    "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]},
+                    "output_schema": {"type": "object", "properties": {"path": {"type": "string"}, "size": {"type": "integer"}}},
+                    "code_body": "# Delegates to DaenaBotAutomation.write_file",
+                    "allowed_operators": ["founder", "daena"]
+                },
+                {
+                    "name": "browser_navigate",
+                    "display_name": "Browser Navigate",
+                    "description": "Navigate to a URL using the persistent browser session.",
+                    "category": SkillCategory.UTILITY,
+                    "risk_level": "medium",
+                    "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
+                    "output_schema": {"type": "object", "properties": {"success": {"type": "boolean"}, "title": {"type": "string"}}},
+                    "code_body": "# Delegates to DaenaBotAutomation.navigate_browser",
+                    "allowed_operators": ["founder", "daena"]
+                },
+                {
+                    "name": "browser_screenshot",
+                    "display_name": "Take Screenshot",
+                    "description": "Take a screenshot of the current screen/browser.",
+                    "category": SkillCategory.UTILITY,
+                    "risk_level": "low",
+                    "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}},
+                    "output_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+                    "code_body": "# Delegates to DaenaBotAutomation.take_screenshot",
+                    "allowed_operators": ["founder", "daena"]
+                },
+                {
+                    "name": "quintessence_deliberate",
+                    "display_name": "Quintessence Deliberation",
+                    "description": "Invoke the Supreme Council for strategic decision making.",
+                    "category": SkillCategory.AI_TOOL,
+                    "risk_level": "medium",
+                    "input_schema": {"type": "object", "properties": {"problem": {"type": "string"}, "domain": {"type": "string"}}, "required": ["problem"]},
+                    "output_schema": {"type": "object", "properties": {"decision": {"type": "string"}, "precedent_id": {"type": "string"}}},
+                    "code_body": "# Delegates to QuintessenceCouncil.deliberate_supreme",
+                    "allowed_operators": ["founder", "daena"]
+                },
+                {
+                    "name": "mcp_ask",
+                    "display_name": "Ask MCP Agent",
+                    "description": "Ask an external MCP agent (like Antigravity/Gemini) a question.",
+                    "category": SkillCategory.AI_TOOL,
+                    "risk_level": "low",
+                    "input_schema": {"type": "object", "properties": {"server": {"type": "string"}, "question": {"type": "string"}}, "required": ["question"]},
+                    "output_schema": {"type": "object", "properties": {"response": {"type": "string"}}},
+                    "code_body": "# Delegates to MCP Client",
+                    "allowed_operators": ["founder", "daena", "agent"]
                 }
             ]
 
-            # Heuristic for generic tools might be too slow on every startup, 
-            # so we'll just check these specific ones or a subset.
-            
+            # 2. Import from backend.tools.registry (The "Missing 60 Skills")
+            try:
+                for tool_key, tool_def in TOOL_DEFS.items():
+                    # Map tool category loosely based on name
+                    cat = SkillCategory.UTILITY
+                    risk = "low"
+                    if "file" in tool_key or "workspace" in tool_key: cat = SkillCategory.FILESYSTEM
+                    if "net" in tool_key or "scrape" in tool_key: cat = SkillCategory.NETWORK
+                    if "shell" in tool_key or "exec" in tool_key:
+                        cat = SkillCategory.CODE_EXEC
+                        risk = "high"
+                    if "git" in tool_key: cat = SkillCategory.UTILITY
+
+                    builtins.append({
+                        "name": tool_def.name,
+                        "display_name": tool_def.name.replace("_", " ").title(),
+                        "description": tool_def.description,
+                        "category": cat,
+                        "risk_level": risk,
+                        "input_schema": {"type": "object", "description": "Dynamic args"}, # Placeholder
+                        "output_schema": {},
+                        "code_body": f"# Imported from backend.tools.registry specified as {tool_key}",
+                        "allowed_operators": ["founder", "daena"]
+                    })
+            except ImportError:
+                logger.warning("Could not import TOOL_DEFS from backend.tools.registry")
+
+            # 3. Sync to DB
             for b in builtins:
                 existing = db.query(Skill).filter(Skill.name == b["name"]).first()
                 if not existing:
@@ -126,12 +206,12 @@ class SkillRegistry:
                         name=b["name"],
                         display_name=b["display_name"],
                         description=b["description"],
-                        category=b["category"].value,
-                        creator="founder",
+                        category=b["category"].value if hasattr(b["category"], "value") else b["category"],
+                        creator="system",
                         creator_agent_id="system",
                         status="active",
-                        input_schema=b["input_schema"],
-                        output_schema=b["output_schema"],
+                        input_schema=b.get("input_schema", {}),
+                        output_schema=b.get("output_schema", {}),
                         code_body=b["code_body"],
                         risk_level=b["risk_level"],
                         approval_policy="auto",
