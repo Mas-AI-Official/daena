@@ -1346,10 +1346,18 @@ async def stream_chat(chat: SimpleChatRequest):
     if not msg and session_id and session_id in _active_streams:
         async def resume_generator():
             stream = _active_streams[session_id]
+            # Update last activity
+            stream["last_activity"] = time.time()
+            
             # Yield full history (buffer) to ensure client state is consistent
             for item in stream["buffer"]:
-                yield item
+                if item is not None:
+                    yield item
             
+            # If everything is already in the buffer and task is done, we're finished replaying
+            if stream.get("finished"):
+                return
+
             # Listen for new events
             q = asyncio.Queue()
             stream["listeners"].add(q)
@@ -1359,7 +1367,8 @@ async def stream_chat(chat: SimpleChatRequest):
                     if item is None: break
                     yield item
             finally:
-                stream["listeners"].discard(q)
+                if session_id in _active_streams:
+                    _active_streams[session_id]["listeners"].discard(q)
         
         return StreamingResponse(
             resume_generator(),
@@ -1423,7 +1432,9 @@ async def stream_chat(chat: SimpleChatRequest):
         "buffer": [],
         "listeners": set(),     
         "task": None,
-        "created_at": time.time()
+        "created_at": time.time(),
+        "last_activity": time.time(),
+        "finished": False
     }
 
     async def emit(item: str):
@@ -1431,6 +1442,7 @@ async def stream_chat(chat: SimpleChatRequest):
         if final_session_id in _active_streams:
             stream = _active_streams[final_session_id]
             stream["buffer"].append(item)
+            stream["last_activity"] = time.time()
             for q in list(stream["listeners"]):
                 await q.put(item)
 
@@ -1550,6 +1562,8 @@ Chat History:
         except Exception as e:
             await emit(f"data: {json.dumps({'type': 'error', 'error': str(e)})}\\n\\n")
         finally:
+            if final_session_id in _active_streams:
+                _active_streams[final_session_id]["finished"] = True
             await emit(None)
 
     # Start background execution

@@ -577,18 +577,7 @@
         }
     }
 
-    function stopStreaming() {
-        if (streamAbortController) {
-            streamAbortController.abort();
-        }
-        if (currentSessionId) {
-            fetch('/api/v1/daena/chat/stop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: currentSessionId })
-            }).catch(e => console.error("Error stopping chat:", e));
-        }
-    }
+    // Unified stopStreaming implementation at the end of the script
 
     function setStreamingBeforeUnload(streaming) {
         if (streaming) {
@@ -1374,10 +1363,20 @@
     }
 
     async function resumeStreaming(sessionId, responseId) {
-        if (!sessionId || window._streamContexts.has(sessionId)) return;
-        console.log(`Resuming stream for ${sessionId}...`);
+        if (!sessionId) return;
+        if (window._streamContexts.has(sessionId)) {
+            const existing = window._streamContexts.get(sessionId);
+            if (!existing.pending) return;
+        }
 
-        // Ensure UI container exists for the assistant response if not in history
+        console.log(`[Streaming] Resuming session ${sessionId}...`);
+        window._streamContexts.set(sessionId, { pending: true });
+
+        const controller = new AbortController();
+        // If we're looking at this session right now, sync the global controller
+        if (sessionId === currentSessionId) streamAbortController = controller;
+
+        // Ensure UI container exists
         let container = document.getElementById('chat-messages');
         if (!document.getElementById(responseId) && container) {
             const placeholder = `
@@ -1398,14 +1397,19 @@
             const response = await fetch('/api/v1/daena/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: '', session_id: sessionId })
+                body: JSON.stringify({ message: '', session_id: sessionId }),
+                signal: controller.signal
             });
             if (response.ok) {
                 handleChatStream(sessionId, responseId, response);
+            } else {
+                window._streamContexts.delete(sessionId);
             }
         } catch (e) {
-            console.error("Failed to resume stream:", e);
-            localStorage.removeItem(`daena_streaming_${sessionId}`);
+            if (e.name !== 'AbortError') {
+                console.error("Failed to resume stream:", e);
+                window._streamContexts.delete(sessionId);
+            }
         }
     }
 
@@ -1439,7 +1443,7 @@
         }
     }
 
-    function ensureThoughtsUI(responseId) {
+    function ensureThoughtsUI(responseId, shouldOpen = true) {
         let thoughtsEl = document.getElementById(`${responseId}-thoughts`);
         if (thoughtsEl) return thoughtsEl;
 
@@ -1449,7 +1453,7 @@
         const thoughtsContainer = document.createElement('div');
         thoughtsContainer.className = "thinking-wrapper";
         thoughtsContainer.innerHTML = `
-            <details id="${responseId}-thoughts" class="transition-all duration-300" open>
+            <details id="${responseId}-thoughts" class="transition-all duration-300" ${shouldOpen ? 'open' : ''}>
                 <summary class="text-[10px] text-gray-500/60 cursor-pointer select-none py-1 list-none flex items-center gap-2 outline-none group hover:text-daena-gold transition-colors">
                    <i class="fas fa-brain thoughts-icon text-daena-gold/30"></i>
                    <span class="font-medium uppercase tracking-wider swimmer thoughts-status">Thinking</span>
@@ -1473,19 +1477,26 @@
         const decoder = new TextDecoder();
 
         // Initialize or get the stream context
-        let ctx = window._streamContexts.get(sessionId) || {
-            sessionId, responseId,
-            fullText: '', thoughtTokens: '',
-            isThinkingTokens: false, firstToken: true,
-            buffer: '', sources: [],
-            isResumed: true // Flag to clear container on first data
-        };
-        window._streamContexts.set(sessionId, ctx);
+        let ctx = window._streamContexts.get(sessionId);
+        if (!ctx || ctx.pending) {
+            ctx = {
+                sessionId, responseId,
+                fullText: '', thoughtTokens: '',
+                isThinkingTokens: false, firstToken: true,
+                buffer: '', sources: [],
+                isResumed: true
+            };
+            window._streamContexts.set(sessionId, ctx);
+        }
 
         // Ensure UI state is updated immediately
         if (currentSessionId === sessionId) {
             setStreamingUI(true);
             setStreamingBeforeUnload(true);
+
+            // Clear spinner if we already have some text or if we are resuming
+            const textEl = document.getElementById(`${responseId}-text`);
+            if (textEl && (ctx.fullText || ctx.isResumed)) textEl.innerHTML = '';
         }
 
         localStorage.setItem(`daena_streaming_${sessionId}`, 'true');
@@ -1523,13 +1534,7 @@
                             if (ctx.firstToken) {
                                 if (isCurrent) {
                                     const textEl = document.getElementById(`${responseId}-text`);
-                                    if (textEl) {
-                                        // If resumed, clear the "loading" spinner before re-playing buffer
-                                        if (ctx.isResumed) textEl.innerHTML = '';
-                                        if (!document.getElementById(`${responseId}-thoughts`)) {
-                                            // Ensure we don't clear it later if it's already empty
-                                        }
-                                    }
+                                    if (textEl) textEl.innerHTML = '';
                                 }
                                 ctx.firstToken = false;
                                 ctx.isResumed = false;
@@ -1538,7 +1543,9 @@
                             if (isCurrent) {
                                 let thoughtsEl = document.getElementById(`${responseId}-thoughts`);
                                 if (ctx.thoughtTokens || ctx.isThinkingTokens) {
-                                    thoughtsEl = ensureThoughtsUI(responseId);
+                                    // Don't auto-open if it's a resume (replay) to avoid jarring UI
+                                    const openMode = !ctx.isResumed;
+                                    thoughtsEl = ensureThoughtsUI(responseId, openMode);
                                     if (thoughtsEl) {
                                         const cDiv = thoughtsEl.querySelector('.thought-content');
                                         if (cDiv) { cDiv.textContent = ctx.thoughtTokens; cDiv.scrollTop = cDiv.scrollHeight; }
@@ -1610,22 +1617,24 @@
 
     // Global stop function
     window.stopStreaming = function () {
+        console.log("[Streaming] Manual stop requested...");
         if (streamAbortController) {
             streamAbortController.abort();
             streamAbortController = null;
         }
 
-        // Stop current session specifically if it's persistent
-        if (currentSessionId && localStorage.getItem(`daena_streaming_${currentSessionId}`)) {
+        // Signal backend to stop specifically for this session
+        if (currentSessionId) {
             fetch('/api/v1/daena/chat/stop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: currentSessionId })
-            }).catch(e => console.error("Failed to signal stop to backend", e));
-        }
+            }).catch(e => { });
 
-        // Cleanup local state
-        if (currentSessionId) doneStreaming(currentSessionId);
+            // Cleanup UI and storage
+            doneStreaming(currentSessionId);
+            window.showToast?.('Streaming stopped', 'info');
+        }
 
         setStreamingUI(false);
     };
