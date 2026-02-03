@@ -1343,9 +1343,9 @@
     async function loadSession(sessionId) {
         currentSessionId = sessionId;
 
-        // Check if we already have an active stream context in memory
+        // Check if we already have an active stream context in memory or localStorage
         const activeContext = window._streamContexts.get(sessionId);
-        const isStreaming = !!activeContext || (window._activeStreams && window._activeStreams.has(sessionId));
+        const isStreaming = !!activeContext || !!localStorage.getItem(`daena_streaming_${sessionId}`);
         setStreamingUI(isStreaming);
 
         try {
@@ -1374,7 +1374,7 @@
     }
 
     async function resumeStreaming(sessionId, responseId) {
-        if (!sessionId) return;
+        if (!sessionId || window._streamContexts.has(sessionId)) return;
         console.log(`Resuming stream for ${sessionId}...`);
 
         // Ensure UI container exists for the assistant response if not in history
@@ -1477,9 +1477,17 @@
             sessionId, responseId,
             fullText: '', thoughtTokens: '',
             isThinkingTokens: false, firstToken: true,
-            buffer: '', sources: []
+            buffer: '', sources: [],
+            isResumed: true // Flag to clear container on first data
         };
         window._streamContexts.set(sessionId, ctx);
+
+        // Ensure UI state is updated immediately
+        if (currentSessionId === sessionId) {
+            setStreamingUI(true);
+            setStreamingBeforeUnload(true);
+        }
+
         localStorage.setItem(`daena_streaming_${sessionId}`, 'true');
         localStorage.setItem(`daena_streaming_id_${sessionId}`, responseId);
 
@@ -1515,9 +1523,16 @@
                             if (ctx.firstToken) {
                                 if (isCurrent) {
                                     const textEl = document.getElementById(`${responseId}-text`);
-                                    if (textEl && !document.getElementById(`${responseId}-thoughts`)) textEl.innerHTML = '';
+                                    if (textEl) {
+                                        // If resumed, clear the "loading" spinner before re-playing buffer
+                                        if (ctx.isResumed) textEl.innerHTML = '';
+                                        if (!document.getElementById(`${responseId}-thoughts`)) {
+                                            // Ensure we don't clear it later if it's already empty
+                                        }
+                                    }
                                 }
                                 ctx.firstToken = false;
+                                ctx.isResumed = false;
                             }
 
                             if (isCurrent) {
@@ -1589,10 +1604,31 @@
         if (currentSessionId === sessionId) {
             setStreamingUI(false);
             setStreamingBeforeUnload(false);
-            loadSessions();
+            if (typeof loadSessions === 'function') loadSessions();
         }
     }
 
+    // Global stop function
+    window.stopStreaming = function () {
+        if (streamAbortController) {
+            streamAbortController.abort();
+            streamAbortController = null;
+        }
+
+        // Stop current session specifically if it's persistent
+        if (currentSessionId && localStorage.getItem(`daena_streaming_${currentSessionId}`)) {
+            fetch('/api/v1/daena/chat/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: currentSessionId })
+            }).catch(e => console.error("Failed to signal stop to backend", e));
+        }
+
+        // Cleanup local state
+        if (currentSessionId) doneStreaming(currentSessionId);
+
+        setStreamingUI(false);
+    };
 
     function updateCategoryBadge(category) {
         const badge = document.getElementById('current-category-badge');
@@ -1776,12 +1812,12 @@
                 if (key.startsWith('daena_streaming_') && !key.includes('_id_')) {
                     const sid = key.replace('daena_streaming_', '');
                     const rid = localStorage.getItem(`daena_streaming_id_${sid}`);
-                    if (!window._streamContexts.has(sid)) {
+                    if (!window._streamContexts || !window._streamContexts.has(sid)) {
                         resumeStreaming(sid, rid);
                     }
                 }
             }
-        }, 1000);
+        }, 200);
     });
 
     function showCategoryModal() {
