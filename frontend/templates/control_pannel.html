@@ -1472,56 +1472,88 @@
         <p class="text-dim" style="font-size:11px;margin:0 12px 0 0">Creator = who authored. Operators = who can run.
         </p>
       </div>
-      <!-- Row 1 (primary): Operator tabs — who can run -->
-      <div class="skill-registry-row-primary" style="margin-bottom:12px">
-        <span class="text-dim" style="font-size:11px;margin-right:8px">Operators (who can run):</span>
-        <div class="operator-tabs" role="group" aria-label="Filter by operator">
-          <button type="button" class="operator-tab active" data-operator="" id="skillOpAll"
-            onclick="setOperatorTab('',this)">All</button>
-          <button type="button" class="operator-tab" data-operator="founder"
-            onclick="setOperatorTab('founder',this)">Founder</button>
-          <button type="button" class="operator-tab" data-operator="daena"
-            onclick="setOperatorTab('daena',this)">Daena</button>
-          <button type="button" class="operator-tab" data-operator="agent"
-            onclick="setOperatorTab('agent',this)">Agents</button>
+      <!-- New Unified Filter UI -->
+      <div class="skill-registry-filters" style="margin-bottom:16px; display:flex; flex-direction:column; gap:12px;">
+        <!-- Operators Row (Primary) -->
+        <div style="display:flex; align-items:center; gap:12px; padding: 4px 0;">
+          <span class="text-dim"
+            style="font-size:11px; text-transform:uppercase; letter-spacing:1px; width:120px;">Operators</span>
+          <div class="operator-tabs" role="group">
+            <button type="button" class="operator-tab active" data-operator=""
+              onclick="setOperatorTab('',this)">All</button>
+            <button type="button" class="operator-tab" data-operator="founder"
+              onclick="setOperatorTab('founder',this)">Founder</button>
+            <button type="button" class="operator-tab" data-operator="daena"
+              onclick="setOperatorTab('daena',this)">Daena</button>
+            <button type="button" class="operator-tab" data-operator="agent"
+              onclick="setOperatorTab('agent',this)">Agents</button>
+          </div>
         </div>
-      </div>
-      <!-- Row 2 (secondary): Category (compact), Risk, Approval, Enabled, Search -->
-      <div class="skill-registry-row-secondary"
-        style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-bottom:12px">
-        <span class="text-dim" style="font-size:10px">Category</span>
-        <select class="input" style="font-size:11px;max-width:120px;padding:4px 8px" id="skillCategorySelect"
-          onchange="filterSkillsByCategory(this.value,this)">
-          <option value="">All Categories</option>
-          <option value="utility">Utility</option>
-          <option value="filesystem">Filesystem</option>
-          <option value="network">Network</option>
-          <option value="code_exec">Code & Git</option>
-          <option value="research">Research</option>
-          <option value="security">Security</option>
-          <option value="ai_tool">AI & Models</option>
-          <option value="data_transform">Data</option>
-          <option value="custom">Custom</option>
-        </select>
-        <span class="text-dim" style="font-size:10px;margin-left:4px">Risk</span>
-        <span class="filter-chip active" data-risk="" onclick="filterSkillsByRisk('',this)">All</span>
-        <span class="filter-chip" data-risk="low" onclick="filterSkillsByRisk('low',this)">Low</span>
-        <span class="filter-chip" data-risk="medium" onclick="filterSkillsByRisk('medium',this)">Med</span>
-        <span class="filter-chip" data-risk="high" onclick="filterSkillsByRisk('high',this)">High</span>
-        <span class="text-dim" style="font-size:10px">Approval</span>
-        <span class="filter-chip active" data-approval="" onclick="filterSkillsByApproval('',this)">All</span>
-        <span class="filter-chip" data-approval="auto" onclick="filterSkillsByApproval('auto',this)">Auto</span>
-        <span class="filter-chip" data-approval="approval_required"
-          onclick="filterSkillsByApproval('approval_required',this)">Needs approval</span>
-        <span class="filter-chip" data-approval="always_approval"
-          onclick="filterSkillsByApproval('always_approval',this)">Always</span>
-        <span class="text-dim" style="font-size:10px">Enabled</span>
-        <span class="filter-chip active" data-status="" onclick="filterSkillsByStatus('',this)">All</span>
-        <span class="filter-chip" data-status="active" onclick="filterSkillsByStatus('active',this)">Yes</span>
-        <span class="filter-chip" data-status="disabled" onclick="filterSkillsByStatus('disabled',this)">No</span>
-        <input type="text" class="input" id="skillSearch" placeholder="Search" style="max-width:140px;font-size:11px"
-          oninput="debouncedSkillSearch()" />
-        <button class="btn btn-primary" onclick="openSkillCreateModal()">+ New Skill</button>
+
+        <!-- Category Row -->
+        <div style="display:flex; align-items:center; gap:12px; padding: 4px 0;">
+          <span class="text-dim"
+            style="font-size:11px; text-transform:uppercase; letter-spacing:1px; width:120px;">Category</span>
+          <div id="categoryChips" style="display:flex; flex-wrap:wrap; gap:6px;">
+            <span class="filter-chip active" data-category="" onclick="filterSkillsByCategory('',this)">All</span>
+            <span class="filter-chip" data-category="utility"
+              onclick="filterSkillsByCategory('utility',this)">Utility</span>
+            <span class="filter-chip" data-category="filesystem"
+              onclick="filterSkillsByCategory('filesystem',this)">Filesystem</span>
+            <span class="filter-chip" data-category="code_exec"
+              onclick="filterSkillsByCategory('code_exec',this)">Code</span>
+            <span class="filter-chip" data-category="security"
+              onclick="filterSkillsByCategory('security',this)">Security</span>
+            <span class="filter-chip" data-category="research"
+              onclick="filterSkillsByCategory('research',this)">Research</span>
+            <span class="filter-chip" data-category="ai_tool" onclick="filterSkillsByCategory('ai_tool',this)">AI</span>
+            <span class="filter-chip" data-category="network"
+              onclick="filterSkillsByCategory('network',this)">Network</span>
+            <span class="filter-chip" data-category="custom"
+              onclick="filterSkillsByCategory('custom',this)">Custom</span>
+          </div>
+        </div>
+
+        <!-- Risk & Approval Row -->
+        <div style="display:flex; align-items:center; gap:12px; padding: 4px 0; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:8px; margin-right:16px;">
+            <span class="text-dim"
+              style="font-size:11px; text-transform:uppercase; letter-spacing:1px; width:120px;">Risk Level</span>
+            <span class="filter-chip active" data-risk="" onclick="filterSkillsByRisk('',this)">All</span>
+            <span class="filter-chip" data-risk="low" onclick="filterSkillsByRisk('low',this)">Low</span>
+            <span class="filter-chip" data-risk="medium" onclick="filterSkillsByRisk('medium',this)">Med</span>
+            <span class="filter-chip" data-risk="high" onclick="filterSkillsByRisk('high',this)">High</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="text-dim" style="font-size:11px; text-transform:uppercase; letter-spacing:1px;">Approval</span>
+            <span class="filter-chip active" data-approval="" onclick="filterSkillsByApproval('',this)">All</span>
+            <span class="filter-chip" data-approval="auto" onclick="filterSkillsByApproval('auto',this)">Auto</span>
+            <span class="filter-chip" data-approval="approval_required"
+              onclick="filterSkillsByApproval('approval_required',this)">Required</span>
+            <span class="filter-chip" data-approval="always_approval"
+              onclick="filterSkillsByApproval('always_approval',this)">Always</span>
+          </div>
+        </div>
+
+        <!-- Status & Search Row -->
+        <div
+          style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding: 4px 0; flex-wrap:wrap; border-top:1px solid var(--border); padding-top:12px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="text-dim"
+              style="font-size:11px; text-transform:uppercase; letter-spacing:1px; width:120px;">Status</span>
+            <span class="filter-chip active" data-status="" onclick="filterSkillsByStatus('',this)">All</span>
+            <span class="filter-chip" data-status="active" onclick="filterSkillsByStatus('active',this)">Enabled</span>
+            <span class="filter-chip" data-status="disabled"
+              onclick="filterSkillsByStatus('disabled',this)">Disabled</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex-grow:1; max-width:400px;">
+            <input type="text" class="input" id="skillSearch" placeholder="Search skills by name or description..."
+              style="font-size:12px;flex-grow:1" oninput="debouncedSkillSearch()" />
+            <button class="btn btn-primary" onclick="openSkillCreateModal()">+ New Skill</button>
+            <button class="btn" onclick="resetAllSkillFilters()" title="Reset all filters"><i
+                class="fas fa-undo"></i></button>
+          </div>
+        </div>
       </div>
       <!-- Bulk actions bar (shown when rows selected) -->
       <div id="skillBulkBar" class="skill-bulk-bar"
@@ -2993,20 +3025,36 @@
       if (selfEl) selfEl.textContent = (stats && stats.self_created != null) ? stats.self_created : '—';
 
       const url = operatorRoleFilter ? (API.skills + '?operator_role=' + encodeURIComponent(operatorRoleFilter)) : API.skills;
-      const res = await skillsFetchWithTimeout(url, 10000);
-      const skills = (res && res.skills && Array.isArray(res.skills)) ? res.skills : (Array.isArray(res) ? res : []);
-      if (res === null) {
+      const res = await skillsFetchWithTimeout(url, 12000);
+      const remoteSkills = (res && res.skills && Array.isArray(res.skills)) ? res.skills : (Array.isArray(res) ? res : []);
+
+      if (res === null && !remoteSkills.length) {
         setTable('<tr><td colspan="9" class="empty-state">Could not load skills — backend unavailable or timeout. <button type="button" class="btn" style="margin-left:8px" onclick="loadSkills()">Retry</button></td></tr>');
-        updateSkillBulkBar();
         return;
       }
-      let list = skills;
-      if (skillFilter !== 'all') list = list.filter(s => (s.enabled ? 'active' : 'disabled') === skillFilter);
-      if (skillCategoryFilter) list = list.filter(s => (s.category || '').toLowerCase() === skillCategoryFilter);
-      if (skillRiskFilter) list = list.filter(s => (s.risk || '').toLowerCase() === skillRiskFilter);
-      if (skillApprovalFilter) list = list.filter(s => (s.approval_policy || 'auto') === skillApprovalFilter);
-      if (skillStatusFilter) list = list.filter(s => (s.enabled ? 'active' : 'disabled') === skillStatusFilter);
-      if (skillSearchQuery) { const q = skillSearchQuery.toLowerCase(); list = list.filter(s => ((s.name || '') + (s.description || '')).toLowerCase().includes(q)); }
+
+      let list = remoteSkills;
+      // Multi-filter logic
+      if (skillFilter && skillFilter !== 'all') {
+        list = list.filter(s => (s.enabled ? 'active' : 'disabled') === skillFilter);
+      }
+      if (skillCategoryFilter) {
+        list = list.filter(s => (s.category || '').toLowerCase() === skillCategoryFilter.toLowerCase());
+      }
+      if (skillRiskFilter) {
+        list = list.filter(s => (s.risk || '').toLowerCase() === skillRiskFilter.toLowerCase());
+      }
+      if (skillApprovalFilter) {
+        list = list.filter(s => (s.approval_policy || 'auto') === skillApprovalFilter);
+      }
+      if (skillStatusFilter) {
+        list = list.filter(s => (s.enabled ? 'active' : 'disabled') === skillStatusFilter);
+      }
+      if (skillSearchQuery) {
+        const q = skillSearchQuery.toLowerCase();
+        list = list.filter(s => ((s.name || '') + (s.description || '')).toLowerCase().includes(q));
+      }
+
       window._lastSkillsList = list;
       const operatorToggles = (s) => {
         const a = s.access || {};
@@ -3051,7 +3099,7 @@
           ${canEdit ? `<button class="btn btn-danger" style="padding:3px 8px;font-size:10px;margin-left:2px" onclick="archiveSkill('${idEsc}')" title="Archive (soft-delete)">Archive</button>` : ''}
         </td>
       </tr>`;
-      }).join('') || '<tr><td colspan="9" class="empty-state">No skills found. <button type="button" class="btn" style="margin-left:8px" onclick="loadSkills()">Retry</button></td></tr>');
+      }).join('') || `<tr><td colspan="9" class="empty-state">No skills match the current filters. <button type="button" class="btn" style="margin-left:8px" onclick="resetAllSkillFilters()">Reset Filters</button></td></tr>`);
       updateSkillBulkBar();
     } catch (e) {
       setTable('<tr><td colspan="9" class="empty-state">Error loading skills: ' + (e.message || String(e)).replace(/</g, '&lt;') + ' <button type="button" class="btn" style="margin-left:8px" onclick="loadSkills()">Retry</button></td></tr>');
@@ -3245,7 +3293,20 @@
   function filterSkillsByAccess(v, el) { setOperatorTab(v, el); }
   function filterSkillsByCategory(v, el) {
     skillCategoryFilter = (v || '').toLowerCase();
-    const sel = document.getElementById('skillCategorySelect'); if (sel) sel.value = v || '';
+    document.querySelectorAll('.filter-chip[data-category]').forEach(c => c.classList.toggle('active', (c.getAttribute('data-category') || '') === (v || '')));
+    loadSkills();
+  }
+  function resetAllSkillFilters() {
+    skillFilter = 'all';
+    skillCategoryFilter = '';
+    skillRiskFilter = '';
+    skillApprovalFilter = '';
+    skillStatusFilter = '';
+    skillSearchQuery = '';
+    operatorRoleFilter = '';
+    document.getElementById('skillSearch').value = '';
+    document.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', !c.getAttribute('data-category') && !c.getAttribute('data-risk') && !c.getAttribute('data-approval') && !c.getAttribute('data-status') && !c.getAttribute('data-operator')));
+    document.querySelectorAll('.operator-tab').forEach(c => c.classList.toggle('active', !c.getAttribute('data-operator')));
     loadSkills();
   }
   function filterSkillsByStatus(v, el) {
