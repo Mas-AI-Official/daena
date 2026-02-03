@@ -1346,9 +1346,9 @@
                 renderSessions();
 
                 // If this session is supposed to be streaming but we don't have a local context, try to re-attach
-                if (!activeContext && localStorage.getItem(`daena_streaming_${sessionId}`)) {
-                    const responseId = localStorage.getItem(`daena_streaming_id_${sessionId}`);
-                    resumeStreaming(sessionId, responseId);
+                if (!activeContext && (localStorage.getItem(`daena_streaming_${sessionId}`) || localStorage.getItem('daena_streaming_new'))) {
+                    const rId = localStorage.getItem(`daena_streaming_id_${sessionId}`) || localStorage.getItem('daena_streaming_id_new');
+                    resumeStreaming(sessionId, rId);
                 } else if (activeContext) {
                     // Re-sync UI with the running context
                     syncStreamToUI(sessionId);
@@ -1363,24 +1363,26 @@
     }
 
     async function resumeStreaming(sessionId, responseId) {
-        if (!sessionId) return;
+        if (!sessionId || !responseId) return;
+
+        // Safety: Don't resume twice or if already active
         if (window._streamContexts.has(sessionId)) {
             const existing = window._streamContexts.get(sessionId);
-            if (!existing.pending) return;
+            if (!existing.pending && !existing.isResumed) return;
         }
 
         console.log(`[Streaming] Resuming session ${sessionId}...`);
-        window._streamContexts.set(sessionId, { pending: true });
+        window._streamContexts.set(sessionId, { pending: true, responseId });
 
         const controller = new AbortController();
-        // If we're looking at this session right now, sync the global controller
-        if (sessionId === currentSessionId) streamAbortController = controller;
+        if (sessionId === (currentSessionId || 'new')) streamAbortController = controller;
 
-        // Ensure UI container exists
-        let container = document.getElementById('chat-messages');
-        if (!document.getElementById(responseId) && container) {
+        // Use existing container if possible, otherwise placeholder
+        const existingResponse = document.getElementById(responseId);
+        if (!existingResponse) {
+            let container = document.getElementById('chat-messages');
             const placeholder = `
-                <div id="${responseId}" class="flex gap-4">
+                <div id="${responseId}" class="flex gap-4 assistant-placeholder">
                     <div class="w-8 h-8 rounded-full bg-daena-gold flex-shrink-0 flex items-center justify-center text-black font-bold mt-1">D</div>
                     <div class="flex-1">
                         <div class="bg-white/10 rounded-2xl rounded-tl-none px-5 py-3 text-gray-200 inline-block max-w-[80%]">
@@ -1389,8 +1391,10 @@
                         </div>
                     </div>
                 </div>`;
-            container.insertAdjacentHTML('beforeend', placeholder);
-            scrollChatToBottom(true);
+            if (container) {
+                container.insertAdjacentHTML('beforeend', placeholder);
+                scrollChatToBottom(true);
+            }
         }
 
         try {
@@ -1400,15 +1404,22 @@
                 body: JSON.stringify({ message: '', session_id: sessionId }),
                 signal: controller.signal
             });
+
             if (response.ok) {
                 handleChatStream(sessionId, responseId, response);
             } else {
-                window._streamContexts.delete(sessionId);
+                // If stream not found, cleanup
+                console.warn(`[Streaming] Stream for ${sessionId} not found on backend.`);
+                doneStreaming(sessionId);
+                const textEl = document.getElementById(`${responseId}-text`);
+                if (textEl && textEl.querySelector('.fa-spin')) {
+                    textEl.innerHTML = '<span class="text-gray-500 italic">[Stream ended]</span>';
+                }
             }
         } catch (e) {
             if (e.name !== 'AbortError') {
                 console.error("Failed to resume stream:", e);
-                window._streamContexts.delete(sessionId);
+                doneStreaming(sessionId);
             }
         }
     }
@@ -1519,7 +1530,25 @@
                         // Update UI ONLY if we are still looking at this session
                         const isCurrent = (currentSessionId === sessionId);
 
-                        if (data.type === 'token') {
+                        if (data.type === 'session' && data.session_id) {
+                            // Backend sent real session ID for a new chat
+                            if (!currentSessionId || sessionId === 'new' || sessionId === 'default') {
+                                const oldId = sessionId;
+                                currentSessionId = data.session_id;
+                                sessionId = data.session_id; // update local Loop var
+
+                                // Update registries
+                                window._streamContexts.set(currentSessionId, ctx);
+                                if (oldId !== currentSessionId) window._streamContexts.delete(oldId);
+
+                                localStorage.setItem(`daena_streaming_${currentSessionId}`, 'true');
+                                localStorage.setItem(`daena_streaming_id_${currentSessionId}`, responseId);
+                                localStorage.removeItem(`daena_streaming_${oldId}`);
+                                localStorage.removeItem(`daena_streaming_id_${oldId}`);
+
+                                loadSessions();
+                            }
+                        } else if (data.type === 'token') {
                             let content = data.content;
                             if (content.includes('<think>')) { ctx.isThinkingTokens = true; content = content.replace('<think>', ''); }
 
@@ -1821,12 +1850,13 @@
                 if (key.startsWith('daena_streaming_') && !key.includes('_id_')) {
                     const sid = key.replace('daena_streaming_', '');
                     const rid = localStorage.getItem(`daena_streaming_id_${sid}`);
-                    if (!window._streamContexts || !window._streamContexts.has(sid)) {
+                    // Only resume if not already in memory and not already resumed
+                    if (!window._streamContexts.has(sid)) {
                         resumeStreaming(sid, rid);
                     }
                 }
             }
-        }, 200);
+        }, 300);
     });
 
     function showCategoryModal() {

@@ -363,11 +363,18 @@
 
 {% block scripts %}
 <script>
-    // Safety check for hasExecutionToken
+    // Safety check for hasExecutionToken & executionHeaders
     if (typeof window.hasExecutionToken !== 'function') {
         window.hasExecutionToken = function () {
-            // Fallback: check localStorage or cookie directly if api-client.js didn't load
             try { return !!(localStorage.getItem('execution_token') || (document.cookie.match(/daena_execution_token=([^;]+)/) || [])[1]); } catch (e) { return false; }
+        };
+    }
+    if (typeof window.executionHeaders !== 'function') {
+        window.executionHeaders = function () {
+            try {
+                const token = localStorage.getItem('execution_token') || (document.cookie.match(/daena_execution_token=([^;]+)/) || [])[1];
+                return token ? { 'Authorization': 'Bearer ' + token, 'X-Execution-Token': token } : {};
+            } catch (e) { return {}; }
         };
     }
 
@@ -543,7 +550,7 @@
         if (!taskList) return;
         const esc = window.escapeHtml || (s => (s == null ? '' : String(s)));
         try {
-            if (hasExecutionToken()) {
+            if (window.hasExecutionToken && window.hasExecutionToken()) {
                 const r = await fetch('/api/v1/execution/tasks?limit=10', { headers: executionHeaders() });
                 if (r.ok) {
                     const data = await r.json();
@@ -596,7 +603,7 @@
         } catch (e) {
             console.error('Failed to load task progress:', e);
         }
-        taskList.innerHTML = hasExecutionToken() ? '<div class="task-item"><span class="task-label">No execution tasks yet</span></div>' : '<div class="task-item"><span class="task-label">No tasks (set Execution Token to show execution tasks)</span></div>';
+        taskList.innerHTML = (window.hasExecutionToken && window.hasExecutionToken()) ? '<div class="task-item"><span class="task-label">No execution tasks yet</span></div>' : '<div class="task-item"><span class="task-label">No tasks (set Execution Token to show execution tasks)</span></div>';
     }
 
     // Load operations summary

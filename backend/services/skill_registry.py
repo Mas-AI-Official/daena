@@ -199,6 +199,51 @@ class SkillRegistry:
             print(f"CRITICAL ERROR: Failed to auto-import tools as skills: {e}")
             traceback.print_exc()
 
+        # 3. Auto-import from CMP Registry (External Connections)
+        try:
+            from backend.core.cmp.registry import cmp_registry, CMPToolCategory
+            
+            # Map CMP categories to Skill categories
+            CAT_MAP = {
+                CMPToolCategory.EMAIL: SkillCategory.EXTERNAL_API,
+                CMPToolCategory.COMMUNICATION: SkillCategory.EXTERNAL_API,
+                CMPToolCategory.AI_LLM: SkillCategory.AI_TOOL,
+                CMPToolCategory.DATABASE: SkillCategory.DATA_TRANSFORM,
+                CMPToolCategory.CLOUD_STORAGE: SkillCategory.NETWORK,
+                CMPToolCategory.PRODUCTIVITY: SkillCategory.UTILITY,
+                CMPToolCategory.CRM: SkillCategory.UTILITY,
+                CMPToolCategory.ANALYTICS: SkillCategory.RESEARCH,
+                CMPToolCategory.AUTOMATION: SkillCategory.CODE_EXEC,
+                CMPToolCategory.OTHER: SkillCategory.CUSTOM,
+            }
+
+            for tool in cmp_registry.list_tools():
+                # Avoid duplicates if name collides (e.g. if we have a local tool with same name)
+                if any(b["name"] == tool.id for b in builtins):
+                    continue
+                
+                cat = CAT_MAP.get(tool.category, SkillCategory.UTILITY)
+                
+                # Heuristic risk
+                risk = "medium"
+                if cat in (SkillCategory.RESEARCH, SkillCategory.UTILITY): risk = "low"
+                if tool.category in (CMPToolCategory.DATABASE, CMPToolCategory.CLOUD_STORAGE): risk = "medium"
+                
+                builtins.append({
+                    "name": tool.id,  # Use ID as internal name (e.g. "gmail", "cursor_ide")
+                    "display_name": tool.name,
+                    "description": tool.description,
+                    "category": cat,
+                    "risk_level": risk,
+                    "input_schema": {"type": "object", "properties": {"action": {"type": "string", "enum": tool.actions}, "params": {"type": "object"}}}, 
+                    "output_schema": {"type": "object", "properties": {"result": {"type": "any"}}},
+                    "code_body": f"# Connector for {tool.name} ({tool.id})\n# Actions: {', '.join(tool.actions)}"
+                })
+        except Exception as e:
+            import traceback
+            print(f"CRITICAL ERROR: Failed to auto-import CMP tools as skills: {e}")
+            traceback.print_exc()
+
         for b in builtins:
             skill_id = str(uuid.uuid4())
             now = datetime.now(timezone.utc).isoformat()

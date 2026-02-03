@@ -433,6 +433,69 @@ class CMPToolRegistry:
                     CredentialField(name="service_account_json", label="Service Account JSON", type=CredentialFieldType.JSON)
                 ],
                 actions=["get_report", "get_realtime"]
+            ),
+            
+            # Local & Workspace Tools
+            CMPToolDefinition(
+                id="cursor_ide",
+                name="Cursor IDE",
+                category=CMPToolCategory.PRODUCTIVITY,
+                description="AI Code Editor",
+                icon="fas fa-terminal",
+                color="#00D9FF",
+                credentials=[
+                    CredentialField(name="path", label="Project Path", type=CredentialFieldType.STRING)
+                ],
+                actions=["open_file", "list_files"]
+            ),
+            CMPToolDefinition(
+                id="vscode",
+                name="VS Code",
+                category=CMPToolCategory.PRODUCTIVITY,
+                description="Visual Studio Code",
+                icon="fab fa-microsoft",
+                color="#007ACC",
+                credentials=[
+                    CredentialField(name="path", label="Project Path", type=CredentialFieldType.STRING)
+                ],
+                actions=["open_file", "list_files"]
+            ),
+            CMPToolDefinition(
+                id="local_folder",
+                name="Local Folder",
+                category=CMPToolCategory.CLOUD_STORAGE,
+                description="Local directory access",
+                icon="fas fa-folder-open",
+                color="#FFA500",
+                credentials=[
+                    CredentialField(name="path", label="Folder Path", type=CredentialFieldType.STRING)
+                ],
+                actions=["list_files", "read_file"]
+            ),
+            CMPToolDefinition(
+                id="external_drive",
+                name="External Drive",
+                category=CMPToolCategory.CLOUD_STORAGE,
+                description="External USB/HDD/SSD",
+                icon="fas fa-hdd",
+                color="#808080",
+                credentials=[
+                    CredentialField(name="drive_letter", label="Drive Letter (e.g. E:)", type=CredentialFieldType.STRING)
+                ],
+                actions=["mount", "unmount", "list_files"]
+            ),
+            CMPToolDefinition(
+                id="gcloud",
+                name="Google Cloud Platform",
+                category=CMPToolCategory.CLOUD_STORAGE,
+                description="Google Cloud Infrastructure",
+                icon="fab fa-google",
+                color="#4285F4",
+                credentials=[
+                    CredentialField(name="project_id", label="Project ID", type=CredentialFieldType.STRING),
+                    CredentialField(name="service_account_json", label="Service Account JSON", type=CredentialFieldType.JSON)
+                ],
+                actions=["list_instances", "storage_bucket"]
             )
         ]
         
