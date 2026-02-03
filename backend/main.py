@@ -832,6 +832,26 @@ smart_decision_maker = SmartDecisionMaker(agent_manager)
 async def lifespan(app: FastAPI):
     """Lifespan: startup and shutdown (replaces deprecated on_event)."""
     await _run_startup()
+
+    # Initialize DaenaBot Automation
+    try:
+        from backend.services.daenabot_automation import DaenaBotAutomation, set_daenabot_automation
+        from backend.services.governance_loop import get_governance_loop
+        from backend.services.nbmf_memory import nbmf_memory
+        
+        automation = DaenaBotAutomation(
+            governance_loop=get_governance_loop(),
+            memory_service=nbmf_memory
+        )
+        set_daenabot_automation(automation)
+        pass # Use pass instead of logger to avoid indent issues if logger not in scope, but logger is global.
+        # Check if logger is available in this scope or import it
+        import logging
+        logging.getLogger(__name__).info("✅ DaenaBot Automation initialized in lifespan")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"❌ Failed to initialize DaenaBot Automation: {e}")
+
     yield
     # Shutdown logic can be added here if needed
 
@@ -4389,13 +4409,32 @@ try:
 except Exception as e:
     logger.error(f"Failed to register health router: {e}")
 
-# Initialize DaenaBot Automation on startup if available
-if DAENABOT_AVAILABLE:
-    logger.info("✅ DaenaBot Automation is available")
-
-
-# Duplicate routers removed to prevent FastAPI startup errors
-# (Skills, DaenaBot Tools, System Capabilities were registered twice)
+# Register missing Core API Routers
+try:
+    from backend.routes import (
+        daena, tasks, agents, research, packages, defi, 
+        council, treasury, proactive, events, use_cases, shadow, governance, execution_layer
+    )
+    
+    # Critical Chat API
+    app.include_router(daena.router)
+    app.include_router(tasks.router)
+    app.include_router(agents.router)
+    app.include_router(events.router)
+    app.include_router(research.router)
+    app.include_router(packages.router)
+    app.include_router(defi.router)
+    app.include_router(council.router)
+    app.include_router(treasury.router)
+    app.include_router(proactive.router)
+    app.include_router(use_cases.router)
+    app.include_router(shadow.router)
+    app.include_router(governance.router)
+    app.include_router(execution_layer.router)
+    
+    logger.info("✅ Core API routers registered")
+except Exception as e:
+    logger.error(f"Failed to register some core routers: {e}")
 
 # Register webhooks router
 try:
@@ -4429,226 +4468,26 @@ try:
 except Exception as e:
     logger.error(f"Failed to register god_mode router: {e}")
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=False,
-        log_level=getattr(settings, 'log_level', 'info').lower()
-    )
-
-# ============================================================================
-# UI ROUTE HANDLERS
-# ============================================================================
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-
-templates = Jinja2Templates(directory="frontend/templates")
-
-@app.get("/ui/dashboard", response_class=HTMLResponse)
-async def serve_dashboard(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
-
-@app.get("/ui/councils", response_class=HTMLResponse)
-@app.get("/councils", response_class=HTMLResponse)
-async def serve_councils(request: Request):
-    return templates.TemplateResponse("councils.html", {"request": request})
-
-@app.get("/ui/projects", response_class=HTMLResponse)
-async def serve_projects(request: Request):
-    return templates.TemplateResponse("projects.html", {"request": request})
-
-@app.get("/ui/analytics", response_class=HTMLResponse)
-async def serve_analytics(request: Request):
-    return templates.TemplateResponse("analytics.html", {"request": request})
-
-@app.get("/ui/workspace", response_class=HTMLResponse)
-async def serve_workspace(request: Request):
-    return templates.TemplateResponse("workspace.html", {"request": request})
-
-@app.get("/ui/agents", response_class=HTMLResponse)
-async def serve_agents(request: Request):
-    return templates.TemplateResponse("agents.html", {"request": request})
-
-@app.get("/ui/agents/{agent_id}", response_class=HTMLResponse)
-async def serve_agent_detail(request: Request, agent_id: str):
-    return templates.TemplateResponse("agent_detail.html", {"request": request, "agent_id": agent_id})
-
-# Register Shadow router
-try:
-    from backend.routes import shadow
-    app.include_router(shadow.router)
-    logger.info("✅ Shadow router registered")
-except Exception as e:
-    logger.error(f"Failed to register shadow router: {e}")
-
-# Register Governance router
-try:
-    from backend.routes import governance
-    app.include_router(governance.router)
-    logger.info("✅ Governance router registered")
-except Exception as e:
-    logger.error(f"Failed to register governance router: {e}")
-
-# Register Execution router
-try:
-    from backend.routes import execution_layer
-    app.include_router(execution_layer.router)
-    logger.info("✅ Execution router registered")
-except Exception as e:
-    logger.error(f"Failed to register execution router: {e}")
-
-# ============================================================================
-# UI ROUTE HANDLERS
-# ============================================================================
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-
-templates = Jinja2Templates(directory="frontend/templates")
-
+# Unique UI Routes not defined above
 @app.get("/ui/daena-office", response_class=HTMLResponse)
 async def serve_daena_office(request: Request):
     return templates.TemplateResponse("daena_office.html", {"request": request})
 
 @app.get("/ui/brain-settings", response_class=HTMLResponse)
-async def serve_brain_settings(request: Request):
+async def serve_brain_settings_alt(request: Request):
+    # Already defined at 4267, but keeping this alias if needed
     return templates.TemplateResponse("brain_settings.html", {"request": request})
-
-@app.get("/ui/app-setup", response_class=HTMLResponse)
-async def serve_app_setup(request: Request):
-    if not request.query_params.get("embed"):
-        return RedirectResponse(url="/ui/control-pannel#app-setup", status_code=302)
-    return templates.TemplateResponse("app_setup.html", {"request": request})
-
-@app.get("/ui/mcp-hub", response_class=HTMLResponse)
-async def serve_mcp_hub(request: Request):
-    return templates.TemplateResponse("mcp_hub.html", {"request": request})
-
-@app.get("/ui/connections", response_class=HTMLResponse)
-async def serve_connections(request: Request):
-    return templates.TemplateResponse("connections.html", {"request": request})
-
-@app.get("/ui/founder-panel", response_class=HTMLResponse)
-async def serve_founder_panel(request: Request):
-    return templates.TemplateResponse("founder_panel.html", {"request": request})
-
-@app.get("/incident-room", response_class=HTMLResponse)
-async def serve_incident_room(request: Request):
-    """Serve Incident Room with Jinja2 so base.html sidebar and blocks render."""
-    return templates.TemplateResponse("incident_room.html", {"request": request})
-
-@app.get("/api/v1/qa/ui", response_class=HTMLResponse)
-async def serve_qa_guardian_ui(request: Request):
-    """Serve QA Guardian dashboard with Jinja2 so base.html sidebar and blocks render."""
-    return templates.TemplateResponse("qa_guardian_dashboard.html", {"request": request})
-
-@app.get("/ui/office/{department_id}", response_class=HTMLResponse)
-async def serve_department_office(request: Request, department_id: str):
-    # Department data for template
-    DEPT_DATA = {
-        "engineering": {"name": "Engineering", "color": "#4169E1", "icon": "fa-cog", "rep": "Atlas", "role": "Chief Engineer"},
-        "product": {"name": "Product", "color": "#9370DB", "icon": "fa-rocket", "rep": "Nova", "role": "Product Lead"},
-        "sales": {"name": "Sales", "color": "#FF8C00", "icon": "fa-dollar-sign", "rep": "Hunter", "role": "Sales Director"},
-        "marketing": {"name": "Marketing", "color": "#FF8C00", "icon": "fa-chart-bar", "rep": "Aura", "role": "CMO"},
-        "finance": {"name": "Finance", "color": "#00CED1", "icon": "fa-chart-line", "rep": "Vault", "role": "CFO"},
-        "hr": {"name": "Human Resources", "color": "#E91E7F", "icon": "fa-users", "rep": "Harmony", "role": "People Ops"},
-        "legal": {"name": "Legal", "color": "#9370DB", "icon": "fa-balance-scale", "rep": "Justus", "role": "General Counsel"},
-        "customer": {"name": "Customer Success", "color": "#32CD32", "icon": "fa-bullseye", "rep": "Echo", "role": "Success Lead"}
-    }
-    
-    dept = DEPT_DATA.get(department_id, {"name": department_id.title(), "color": "#888", "icon": "fa-building", "rep": "Rep", "role": "Representative"})
-    rep_initials = "".join([w[0].upper() for w in dept["rep"].split()[:2]])
-    
-    # Real-time agents from sunflower registry (6 per department)
-    agents = []
-    try:
-        from backend.utils.sunflower_registry import sunflower_registry
-        agents = sunflower_registry.get_department_agents(department_id)
-    except Exception:
-        pass
-    # Fallback: ensure 6 agents so UI matches 8×6 structure (rep + Advisor A/B, Scout I/E, Synth, Executor)
-    role_templates = [dept["rep"], "Advisor A", "Advisor B", "Scout Internal", "Scout External", "Synth", "Executor"]
-    while len(agents) < 6:
-        i = len(agents)
-        name = role_templates[i] if i < len(role_templates) else f"Agent {i+1}"
-        role = dept["role"] if i == 0 else (name if name != dept["rep"] else "Member")
-        agents.append({"id": f"fallback-{department_id}-{i}", "name": name, "role": role})
-    agent_count = len(agents)
-    
-    return templates.TemplateResponse("department_office.html", {
-        "request": request,
-        "dept_id": department_id,
-        "dept_name": dept["name"],
-        "dept_color": dept["color"],
-        "dept_icon": dept["icon"],
-        "rep_name": dept["rep"],
-        "rep_role": dept["role"],
-        "rep_initials": rep_initials,
-        "agents": agents,
-        "agent_count": agent_count
-    })
-
-@app.get("/ui/self-upgrade", response_class=HTMLResponse)
-
-async def serve_self_upgrade(request: Request):
-    return templates.TemplateResponse("self_upgrade.html", {"request": request})
-
-# Register voice router
-try:
-    from backend.routes import voice
-    app.include_router(voice.router)
-    logger.info("✅ Voice router registered")
-except Exception as e:
-    logger.error(f"Failed to register voice router: {e}")
-
-# Register connections router
-try:
-    from backend.routes import connections
-    app.include_router(connections.router)
-    logger.info("✅ Connections router registered")
-except Exception as e:
-    logger.error(f"Failed to register connections router: {e}")
-
-# Register webhooks router
-try:
-    from backend.routes import webhooks
-    app.include_router(webhooks.router)
-    logger.info("✅ Webhooks router registered")
-except Exception as e:
-    logger.error(f"Failed to register webhooks router: {e}")
-
-# Register mobile agent router
-try:
-    from backend.routes import mobile_agent
-    app.include_router(mobile_agent.router)
-    logger.info("✅ Mobile Agent router registered")
-except Exception as e:
-    logger.error(f"Failed to register mobile agent router: {e}")
-
-# ✅ Phase 2: Change Control V2 Router (Incremental Backup System)
-try:
-    from backend.routes.change_control_v2 import router as change_control_v2_router
-    app.include_router(change_control_v2_router)
-    logger.info("✅ Change Control V2 router registered (incremental backup)")
-except Exception as e:
-    logger.warning(f"⚠️ Could not register change_control_v2 router: {e}")
-
-# ✅ PHASE 1 COMPLETE: God Mode Router
-try:
-    from backend.routes import god_mode
-    app.include_router(god_mode.router)
-    logger.info("✅ God Mode router registered")
-except Exception as e:
-    logger.error(f"Failed to register god_mode router: {e}")
 
 if __name__ == "__main__":
     import uvicorn
+    # Use environment-based host/port if available
+    final_host = os.getenv("BACKEND_HOST", "127.0.0.1")
+    final_port = int(os.getenv("BACKEND_PORT", "8000"))
+    logger.info(f"Starting server on {final_host}:{final_port}")
     uvicorn.run(
-        "main:app",
-        host=settings.host,
-        port=settings.port,
+        "backend.main:app",
+        host=final_host,
+        port=final_port,
         reload=False,
-        log_level=getattr(settings, 'log_level', 'info').lower()
+        workers=1
     )

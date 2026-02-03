@@ -114,6 +114,30 @@ async def list_skills(
     return {"success": True, "skills": skills}
 
 
+@router.get("/debug")
+async def debug_skills():
+    """Debug endpoint to check skill registry state"""
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        stats = registry.get_stats()
+        
+        # Check tools dir
+        tools_dir = Path(__file__).parent.parent / "tools"
+        
+        return {
+            "success": True,
+            "stats": stats,
+            "tools_dir_exists": tools_dir.exists(),
+            "tools_dir_path": str(tools_dir),
+            "sample_skills": [s["name"] for s in registry.list_skills()[:10]],
+            "static_skills_count": len(SKILL_DEFS)
+        }
+    except Exception as e:
+        import traceback
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
 @router.post("")
 async def create_skill(body: CreateSkillBody) -> Dict[str, Any]:
     """Create a new skill via Control Pannel. Persists to skill_registry."""

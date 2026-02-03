@@ -364,19 +364,17 @@
 {% block scripts %}
 <script>
     // Safety check for hasExecutionToken & executionHeaders
-    if (typeof window.hasExecutionToken !== 'function') {
-        window.hasExecutionToken = function () {
-            try { return !!(localStorage.getItem('execution_token') || (document.cookie.match(/daena_execution_token=([^;]+)/) || [])[1]); } catch (e) { return false; }
-        };
-    }
-    if (typeof window.executionHeaders !== 'function') {
-        window.executionHeaders = function () {
-            try {
-                const token = localStorage.getItem('execution_token') || (document.cookie.match(/daena_execution_token=([^;]+)/) || [])[1];
-                return token ? { 'Authorization': 'Bearer ' + token, 'X-Execution-Token': token } : {};
-            } catch (e) { return {}; }
-        };
-    }
+    // Define clearly on window first to avoid ReferenceError
+    window.hasExecutionToken = window.hasExecutionToken || function () {
+        try { return !!(localStorage.getItem('execution_token') || (document.cookie.match(/daena_execution_token=([^;]+)/) || [])[1]); } catch (e) { return false; }
+    };
+
+    window.executionHeaders = window.executionHeaders || function () {
+        try {
+            const token = localStorage.getItem('execution_token') || (document.cookie.match(/daena_execution_token=([^;]+)/) || [])[1];
+            return token ? { 'Authorization': 'Bearer ' + token, 'X-Execution-Token': token } : {};
+        } catch (e) { return {}; }
+    };
 
     function openDepartment(dept) {
         window.location.href = `/ui/office/${dept}`;

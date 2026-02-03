@@ -1511,6 +1511,43 @@ Chat History:
                     async for token in generate_stream(prompt, max_tokens=2048):
                         full_response.append(token)
                         await emit(f"data: {json.dumps({'type': 'token', 'content': token})}\\n\\n")
+                    
+                    # Post-generation: Check for actions in the LLM response
+                    try:
+                        full_response_text = "".join(full_response)
+                        from backend.services.action_dispatcher import get_action_dispatcher
+                        dispatcher = get_action_dispatcher()
+                        
+                        # Run dispatcher
+                        action_result = await dispatcher.detect_and_execute(
+                            llm_response=full_response_text,
+                            user_message=msg
+                        )
+                        
+                        # If actions occurred, stream the output
+                        if action_result.get("actions_executed", 0) > 0:
+                            output_text = f"\n\n✅ Executed {action_result['actions_executed']} action(s):\n"
+                            for res in action_result.get("results", []):
+                                if res.get("status") == "success":
+                                    data_str = str(res.get('data', 'Done'))[:100]
+                                    output_text += f"- **{res['action']}**: {data_str}\n"
+                                else:
+                                    output_text += f"- **{res['action']}**: ❌ {res.get('error')}\n"
+                            
+                            # Append to history and stream
+                            full_response.append(output_text)
+                            
+                            # Stream the action output tokens
+                            chunk_size = 5
+                            for i in range(0, len(output_text), chunk_size):
+                                chunk = output_text[i:i+chunk_size]
+                                await emit(f"data: {json.dumps({'type': 'token', 'content': chunk})}\\n\\n")
+                                await asyncio.sleep(0.01)
+                                
+                    except Exception as e:
+                        print(f"Action dispatch error: {e}")
+                        # Don't break the stream, just log
+                    
                     await emit(f"data: {json.dumps({'type': 'done', 'session_id': final_session_id})}\\n\\n")
                 except Exception as e:
                     await emit(f"data: {json.dumps({'type': 'error', 'error': str(e)})}\\n\\n")
