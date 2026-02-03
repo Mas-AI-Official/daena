@@ -111,3 +111,54 @@ async def hands_status() -> Dict[str, Any]:
         "last_check": _last_check_ts,
         "message": message,
     }
+@router.post("/execute")
+async def execute_hands_action(payload: Dict[str, Any]):
+    """Execute a Hands action via the gateway, subject to governance."""
+    action_name = payload.get("action")
+    args = payload.get("args", {})
+    
+    if not action_name:
+        return {"success": False, "error": "Missing action name"}
+        
+    # Use ToolBroker for risk assessment and approval gating
+    from backend.services.tool_broker import async_broker_request
+    
+    # Map high-level action to ToolBroker action
+    broker_action = {
+        "action_type": action_name,
+        "parameters": args,
+        "source": "hands"
+    }
+    
+    status, result = await async_broker_request(broker_action, requested_by="founder")
+    
+    if status == "queued_for_approval":
+        return {
+            "success": False,
+            "status": "pending_approval",
+            "request_id": result.get("request_id"),
+            "message": result.get("message")
+        }
+    
+    if status == "blocked":
+        return {"success": False, "error": result.get("error")}
+        
+    return result
+
+@router.post("/allowlist")
+async def update_hands_allowlist(config: Dict[str, Any]):
+    """Update Hands allowlist configuration (stored in SystemConfig)."""
+    from backend.database import SessionLocal, SystemConfig
+    db = SessionLocal()
+    try:
+        # Save to DB
+        existing = db.query(SystemConfig).filter(SystemConfig.key == "hands_allowlist").first()
+        if existing:
+            existing.value_json = config
+        else:
+            new_conf = SystemConfig(key="hands_allowlist", value_json=config)
+            db.add(new_conf)
+        db.commit()
+        return {"success": True, "message": "Allowlist updated"}
+    finally:
+        db.close()

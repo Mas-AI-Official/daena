@@ -1195,6 +1195,57 @@
     background: rgba(91, 155, 213, .08)
   }
 
+  /* Operator Tabs */
+  .operator-tabs {
+    display: flex;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .operator-tab {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    transition: all 0.2s ease;
+  }
+
+  .operator-tab:hover {
+    color: var(--text);
+  }
+
+  .operator-tab.active {
+    background: var(--surface);
+    color: var(--blue);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Operator Chips (inside table) */
+  .operator-chip {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    transition: all 0.2s;
+  }
+
+  .operator-chip.on {
+    background: rgba(91, 155, 213, 0.1);
+    border-color: var(--blue);
+    color: var(--blue);
+  }
+
   /* Empty state */
   .empty-state {
     padding: 40px;
@@ -1916,6 +1967,39 @@
           </tbody>
         </table>
       </div>
+      <div class="section-header" style="margin-top:16px">
+        <div class="section-title">Hands Allowlist Configuration</div>
+      </div>
+      <div class="scan-box">
+        <p class="text-dim" style="font-size:11px;margin-bottom:8px">Restrict file operations and shell commands to
+          specific paths/commands.</p>
+        <textarea class="input" id="handsAllowlist" style="height:120px; font-family:var(--font-mono); font-size:11px;"
+          placeholder='{
+  "files": {
+    "read": ["D:/Ideas/Daena_old_upgrade_20251213/**"],
+    "write": ["D:/Ideas/Daena_old_upgrade_20251213/tmp/**"]
+  },
+  "shell": {
+    "allowed_commands": ["npm test", "git status"]
+  }
+}'></textarea>
+        <div style="margin-top:8px; display:flex; justify-content:flex-end;">
+          <button class="btn btn-primary" onclick="saveHandsAllowlist()">Update Allowlist</button>
+        </div>
+      </div>
+
+      <div class="section-header" style="margin-top:16px">
+        <div class="section-title">Test Action Dispatcher</div>
+      </div>
+      <div
+        style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:16px;">
+        <button class="btn" style="height:40px" onclick="testAction('browser.screenshot', {})">📸 Screenshot</button>
+        <button class="btn" style="height:40px" onclick="testAction('filesystem.list', {path: './'})">📁 List
+          Files</button>
+        <button class="btn btn-danger" style="height:40px"
+          onclick="testAction('shell.run', {command: 'echo hollow world'})">🐚 Run Shell</button>
+      </div>
+
       <div class="section-header" style="margin-top:16px">
         <div class="section-title">Recent history</div>
       </div>
@@ -2841,7 +2925,19 @@
   // ─── MODAL HELPERS ──────────────────────────────
   function openModal(id) { document.getElementById('modal-' + id).classList.add('open') }
   function closeModal(id) { document.getElementById('modal-' + id).classList.remove('open'); if (id === 'skill') { document.getElementById('editSkillId').value = ''; const btn = document.getElementById('skillModalSubmit'); if (btn) btn.textContent = 'Create Skill'; } }
-  function openSkillCreateModal() { document.getElementById('editSkillId').value = ''; document.getElementById('skillModalSubmit').textContent = 'Create Skill'; openModal('skill'); }
+  function openSkillCreateModal() {
+    document.getElementById('editSkillId').value = '';
+    document.getElementById('skillModalSubmit').textContent = 'Create Skill';
+    // Default enabled to ON for new skills
+    const toggleEl = document.getElementById('newSkillEnabledToggle');
+    if (toggleEl) {
+      toggleEl.classList.add('on');
+      toggleEl.setAttribute('aria-pressed', 'true');
+    }
+    const labelEl = document.getElementById('newSkillEnabledLabel');
+    if (labelEl) labelEl.textContent = 'On (skill can be used after creation)';
+    openModal('skill');
+  }
   document.querySelectorAll('.modal-overlay').forEach(o => { o.addEventListener('click', (e) => { if (e.target === o) o.classList.remove('open') }) });
 
   // ─── API HELPER (full URL = same origin so backend stays in sync) ───
@@ -3077,16 +3173,20 @@
         const idSafe = (s.id || '').toString().replace(/"/g, '&quot;').replace(/</g, '&lt;');
         const idEsc = (s.id || '').toString().replace(/'/g, "\\'");
         const name = (s.name || '').toString().replace(/</g, '&lt;');
-        const idShort = (s.id || '').toString().replace(/</g, '&lt;').slice(0, 24);
-        const risk = (s.risk || '—').toString().replace(/</g, '&lt;').toLowerCase();
+        const risk = (s.risk_level || s.risk || 'low').toLowerCase();
         const cat = (s.category || '—').toString().replace(/</g, '&lt;');
         const approval = approvalLabel(s.approval_policy);
         const uses = (s.usage_count != null) ? s.usage_count : 0;
-        const checked = skillSelectAllChecked || selectedSkillIds.has(s.id) ? ' checked' : '';
-        const canEdit = s.source === 'registry';
+        const checked = selectedSkillIds.has(s.id) ? ' checked' : '';
+        const canEdit = s.source === 'registry' || !s.source;
+
+        // Only show checkbox if in Founder tab
+        const showCheckbox = window._skillRegistryMode === 'founder';
+        const checkboxHtml = showCheckbox ? `<td><input type="checkbox" class="skill-row-cb" data-skill-id="${idSafe}" ${checked} onclick="toggleSkillSelection(this)"/></td>` : `<td></td>`;
+
         return `<tr>
-        <td><input type="checkbox" class="skill-row-cb" data-skill-id="${idSafe}" ${checked} onclick="toggleSkillSelection(this)" ${canEdit ? '' : 'disabled'}/></td>
-        <td><strong>${name}</strong><div style="font-size:10px;color:var(--text-dim)">${idShort}${(s.id && s.id.length > 24) ? '…' : ''}</div></td>
+        ${checkboxHtml}
+        <td><strong>${name}</strong><div style="font-size:10px;color:var(--text-dim)">${s.id || ''}</div></td>
         <td><span class="badge badge-pending" style="font-size:10px">${cat}</span></td>
         <td style="font-size:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">${operatorToggles(s)}</td>
         <td><span class="badge badge-${risk === 'high' ? 'pending' : risk === 'medium' ? 'pending' : 'active'}" style="font-size:10px">${approval}</span></td>
@@ -3095,14 +3195,43 @@
         <td>${uses}</td>
         <td style="white-space:nowrap">
           <button class="btn" style="padding:3px 8px;font-size:10px" onclick="toggleSkill('${idEsc}',${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button>
-          ${canEdit ? `<button class="btn" style="padding:3px 8px;font-size:10px;margin-left:2px" onclick="openEditSkillModal('${idEsc}')" title="Edit">Edit</button>` : ''}
-          ${canEdit ? `<button class="btn btn-danger" style="padding:3px 8px;font-size:10px;margin-left:2px" onclick="archiveSkill('${idEsc}')" title="Archive (soft-delete)">Archive</button>` : ''}
+          ${canEdit ? `<button class="btn" style="padding:3px 8px;font-size:10px;margin-left:2px" onclick="openEditSkillModal('${idEsc}')">Edit</button>` : ''}
+          ${canEdit ? `<button class="btn btn-danger" style="padding:3px 8px;font-size:10px;margin-left:2px" onclick="archiveSkill('${idEsc}')">Archive</button>` : ''}
         </td>
       </tr>`;
-      }).join('') || `<tr><td colspan="9" class="empty-state">No skills match the current filters. <button type="button" class="btn" style="margin-left:8px" onclick="resetAllSkillFilters()">Reset Filters</button></td></tr>`);
+      }).join('') || `<tr><td colspan="9" class="empty-state">No skills match.</td></tr>`);
       updateSkillBulkBar();
     } catch (e) {
-      setTable('<tr><td colspan="9" class="empty-state">Error loading skills: ' + (e.message || String(e)).replace(/</g, '&lt;') + ' <button type="button" class="btn" style="margin-left:8px" onclick="loadSkills()">Retry</button></td></tr>');
+      setTable('<tr><td colspan="9" class="empty-state">Error loading skills.</td></tr>');
+    }
+  }
+
+  // --- HANDS ACTIONS ---
+  async function saveHandsAllowlist() {
+    const val = document.getElementById('handsAllowlist').value;
+    try {
+      const config = JSON.parse(val);
+      await apiRequest(API.hands + '/allowlist', { method: 'POST', body: JSON.stringify(config) });
+      if (window.showToast) window.showToast('Allowlist updated', 'success');
+    } catch (e) {
+      if (window.showToast) window.showToast('Invalid JSON or update error', 'error');
+    }
+  }
+
+  async function testAction(name, args) {
+    if (window.showToast) window.showToast(`Dispatching ${name}...`, 'info');
+    try {
+      const res = await apiRequest(API.hands + '/execute', { method: 'POST', body: JSON.stringify({ action: name, args }) });
+      if (res && res.status === 'pending_approval') {
+        if (window.showToast) window.showToast('Action queued for approval', 'amber');
+        loadDaenaBotTools();
+      } else if (res && res.success) {
+        if (window.showToast) window.showToast('Action success', 'success');
+      } else {
+        if (window.showToast) window.showToast('Action failed: ' + (res.error || 'Unknown'), 'error');
+      }
+    } catch (e) {
+      if (window.showToast) window.showToast('Dispatch failed', 'error');
     }
   }
   // ─── USE CASES (GET /api/v1/use-cases) ───
@@ -3150,7 +3279,12 @@
   function updateSkillBulkBar() {
     const bar = document.getElementById('skillBulkBar');
     const countEl = document.getElementById('skillBulkCount');
-    if (bar && countEl) { const n = selectedSkillIds.size; countEl.textContent = n; bar.style.display = n ? 'flex' : 'none'; }
+    if (bar && countEl) {
+      const n = selectedSkillIds.size;
+      const isFounder = window._skillRegistryMode === 'founder';
+      countEl.textContent = n;
+      bar.style.display = (n && isFounder) ? 'flex' : 'none';
+    }
   }
   function clearSkillSelection() {
     selectedSkillIds.clear();
@@ -3288,6 +3422,17 @@
   function setOperatorTab(v, el) {
     operatorRoleFilter = v;
     document.querySelectorAll('.operator-tab[data-operator]').forEach(c => c.classList.toggle('active', (c.getAttribute('data-operator') || '') === v));
+
+    // Toggle Founder-only features
+    const isFounder = v === 'founder';
+    const bulkBar = document.getElementById('skillBulkBar');
+    if (bulkBar) {
+      // We only show selection column and bulk bar if in Founder mode
+      // Or we just allow selection but show actions only for founder
+      // Actually the prompt says: Bulk actions (Visible ONLY in Founder Tab)
+      window._skillRegistryMode = v;
+    }
+
     loadSkills();
   }
   function filterSkillsByAccess(v, el) { setOperatorTab(v, el); }
