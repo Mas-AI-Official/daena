@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Set
 from enum import Enum
 from collections import defaultdict
+from backend.security.credential_vault import CredentialVault
 
 try:
     import jwt
@@ -53,9 +54,10 @@ class JWTService:
     
     def __init__(self):
         # Get secret from environment (NO hardcoded defaults - must be set via env)
-        self.secret_key = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
+        # Get secret from Credential Vault or environment
+        self.secret_key = CredentialVault.get_secret("JWT_SECRET") or os.getenv("JWT_SECRET") or os.getenv("SECRET_KEY")
         if not self.secret_key:
-            raise ValueError("JWT_SECRET_KEY or SECRET_KEY environment variable must be set. No hardcoded defaults allowed.")
+            raise ValueError("JWT_SECRET must be set in CredentialVault or environment.")
         self.algorithm = "HS256"
         
         # Token expiration times
@@ -99,12 +101,12 @@ class JWTService:
         if not JWT_AVAILABLE:
             raise RuntimeError("PyJWT not installed. Cannot generate tokens.")
         
-        now = datetime.utcnow()
+        current_time = int(time.time())
         payload = {
             "sub": user_id,  # Subject (user ID)
             "role": role.value,
-            "iat": int(now.timestamp()),  # Issued at
-            "exp": int((now + self.access_token_expiry).timestamp()),  # Expiration
+            "iat": current_time - 1,  # Issued at (leeway)
+            "exp": current_time + int(self.access_token_expiry.total_seconds()),  # Expiration
             "type": "access"
         }
         
@@ -132,11 +134,11 @@ class JWTService:
         if not JWT_AVAILABLE:
             raise RuntimeError("PyJWT not installed. Cannot generate tokens.")
         
-        now = datetime.utcnow()
+        current_time = int(time.time())
         payload = {
             "sub": user_id,
-            "iat": int(now.timestamp()),
-            "exp": int((now + self.refresh_token_expiry).timestamp()),
+            "iat": current_time - 1,
+            "exp": current_time + int(self.refresh_token_expiry.total_seconds()),
             "type": "refresh"
         }
         
@@ -193,7 +195,7 @@ class JWTService:
             return None
         
         try:
-            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm], leeway=10)
             
             # Verify token type
             if payload.get("type") != token_type:

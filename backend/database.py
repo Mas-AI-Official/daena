@@ -486,6 +486,40 @@ class PendingApproval(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     resolved_at = Column(DateTime, nullable=True)
     resolved_by = Column(String, nullable=True)
+    founder_note = Column(Text, nullable=True)  # Added for Founder Policy Center
+    decision_at = Column(DateTime, nullable=True)  # Added for Founder Policy Center
+
+# ... (omitted sections)
+
+# Create all tables
+def create_tables():
+    Base.metadata.create_all(bind=engine)
+    
+    # Simple migration: attempt to add new columns to existing tables if missing
+    # This is a basic way to handle updates without a full migration system like Alembic
+    try:
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        
+        with engine.connect() as conn:
+            # Check 'skills' table columns
+            if 'skills' in inspector.get_table_names():
+                columns = [c['name'] for c in inspector.get_columns('skills')]
+                if 'allowed_operators' not in columns:
+                    conn.execute(text("ALTER TABLE skills ADD COLUMN allowed_operators JSON"))
+                if 'approval_policy' not in columns:
+                    conn.execute(text("ALTER TABLE skills ADD COLUMN approval_policy VARCHAR DEFAULT 'auto'"))
+
+            # Check 'pending_approvals' table columns
+            if 'pending_approvals' in inspector.get_table_names():
+                columns = [c['name'] for c in inspector.get_columns('pending_approvals')]
+                if 'founder_note' not in columns:
+                    conn.execute(text("ALTER TABLE pending_approvals ADD COLUMN founder_note TEXT"))
+                if 'decision_at' not in columns:
+                    conn.execute(text("ALTER TABLE pending_approvals ADD COLUMN decision_at DATETIME"))
+                    
+    except Exception as e:
+        print(f"Migration warning: {e}")
 
 # NOTE: ChatCategory is already defined above at line 377 - removed duplicate
 
@@ -698,12 +732,84 @@ class SkillAuditLog(Base):
     ip_address = Column(String, nullable=True)
     session_id = Column(String, nullable=True)
 
-# ENHANCE: Department - add hidden field
-# Note: We'll need to add this via migration, but for now we'll use status field
-# Department.status can be "active", "hidden", "disabled"
+# THE QUINTESSENCE: Precedent Storage
+class Precedent(Base):
+    __tablename__ = "precedents"
+    id = Column(String, primary_key=True, index=True)
+    problem_summary = Column(Text, nullable=False)
+    domain = Column(String, nullable=False)
+    
+    # Decision
+    quintessence_consulted = Column(JSON, default=[])  # List of experts
+    expert_conclusions = Column(JSON, default={})     # {expert: {conclusion, tokens}}
+    baseline_consensus = Column(Text)                 # LLM Router baseline
+    final_decision = Column(Text)
+    rationale = Column(Text)
+    confidence = Column(Float, default=0.0)
+    
+    # Pattern Information (for cross-domain)
+    pattern_type = Column(String)                     # e.g., "split_vs_unified"
+    abstract_principle = Column(Text)
+    
+    # Metadata
+    tags = Column(JSON, default=[])
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    # Learning & Feedback
+    applied_to_domains = Column(JSON, default=[])
+    success_rate = Column(Float, default=0.5)
+    feedback_json = Column(JSON, default={})
+    cross_domain_potential = Column(Float, default=0.5)
 
-# ENHANCE: Agent - add voice_id, last_seen, metadata_json
-# Note: Agent already has most fields, but we may need to add voice_id
+class QuintessencePattern(Base):
+    __tablename__ = "quintessence_patterns"
+    id = Column(String, primary_key=True, index=True)
+    pattern_type = Column(String, unique=True, index=True)
+    principle = Column(Text)
+    indicators = Column(JSON, default=[])
+    applicability = Column(JSON, default=[])
+    confidence = Column(Float, default=0.5)
+
+# FOUNDER POLICY CENTER
+class FounderPolicy(Base):
+    __tablename__ = "founder_policies"
+    id = Column(Integer, primary_key=True, index=True)
+    policy_id = Column(String, unique=True, index=True)
+    name = Column(String, nullable=False)
+    rule_type = Column(String)  # payment, credentials, filesystem, posting, external_accounts
+    enforcement = Column(String)  # block, require_approval, allow
+    scope = Column(String, default="global")  # global, tool:category, tool:name
+    immutable = Column(Boolean, default=False)  # Only Founder can modify
+    version = Column(Integer, default=1)
+    created_by = Column(String, default="founder")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class Secret(Base):
+    __tablename__ = "secrets"
+    id = Column(Integer, primary_key=True, index=True)
+    secret_id = Column(String, unique=True, index=True)
+    name = Column(String, unique=True, index=True)
+    secret_type = Column(String)  # password, token, api_key
+    value_encrypted = Column(String, nullable=False)  # Base64 encoded encrypted string
+    created_by = Column(String, default="founder")
+    last_used_at = Column(DateTime, nullable=True)
+    rotation_required = Column(Boolean, default=False)
+    is_disabled = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class Alert(Base):
+    __tablename__ = "alerts"
+    id = Column(Integer, primary_key=True, index=True)
+    alert_id = Column(String, unique=True, index=True)
+    severity = Column(String)  # info, warn, urgent
+    message = Column(Text)
+    source = Column(String)  # policy_engine, hands, council, router
+    linked_approval_id = Column(String, nullable=True)
+    is_read = Column(Boolean, default=False)
+    read_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 # Database session
 def get_db():

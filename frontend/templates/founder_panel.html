@@ -333,155 +333,60 @@
             </button>
         </div>
 
-        <!-- Approve Learning Section -->
-        <div class="control-section" style="grid-column: span 2;">
-            <div class="section-header">
-                <div class="section-icon" style="background: rgba(50, 205, 50, 0.2); color: #32CD32;">
-                    <i class="fas fa-graduation-cap"></i>
-                </div>
-                <div class="section-title">Approve Learning</div>
-                <div style="margin-left: auto; font-size: 12px; color: #9CA3AF;" id="pending-learning-count">Loading...
-                </div>
-            </div>
-
-            <div id="pending-learning-list" style="max-height: 300px; overflow-y: auto;">
-                <div class="control-item" style="justify-content: center;">
-                    <div class="control-desc">Loading pending learning items...</div>
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <button class="add-btn" style="flex: 1; margin: 0;" onclick="approveAllLearning()">
-                    <i class="fas fa-check-double"></i> Approve All
-                </button>
-                <button class="add-btn" style="flex: 1; margin: 0;" onclick="rejectAllLearning()">
-                    <i class="fas fa-times"></i> Reject All
-                </button>
-            </div>
-        </div>
-
-        <!-- Voice Settings Section -->
+        <!-- Founder Policies -->
         <div class="control-section">
             <div class="section-header">
-                <div class="section-icon" style="background: rgba(0, 191, 255, 0.2); color: #00BFFF;">
-                    <i class="fas fa-microphone"></i>
+                <div class="section-icon" style="background: rgba(255, 99, 71, 0.2); color: #FF6347;">
+                    <i class="fas fa-gavel"></i>
                 </div>
-                <div class="section-title">Voice Settings</div>
-                <div style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
-                    <div id="voice-status-indicator"
-                        style="width: 8px; height: 8px; border-radius: 50%; background: #9CA3AF;"></div>
-                    <span id="voice-status-text" style="font-size: 11px; color: #9CA3AF;">Checking...</span>
+                <div class="section-title">Founder Rules</div>
+            </div>
+            <div id="policies-list">
+                <div class="control-item" style="justify-content: center;">
+                    <div class="control-desc">Loading policies...</div>
                 </div>
             </div>
-
-            <div class="control-item">
-                <div>
-                    <div class="control-label">Volume</div>
-                    <div class="control-desc">Voice output volume</div>
-                </div>
-                <input type="range" id="voice-volume" min="0" max="100" value="80"
-                    onchange="updateVoiceSetting('volume', this.value)"
-                    style="width: 120px; accent-color: var(--daena-gold);">
-            </div>
-
-            <div class="control-item">
-                <div>
-                    <div class="control-label">Speed</div>
-                    <div class="control-desc">Speech rate</div>
-                </div>
-                <input type="range" id="voice-rate" min="80" max="200" value="120"
-                    onchange="updateVoiceSetting('rate', this.value)"
-                    style="width: 120px; accent-color: var(--daena-gold);">
-            </div>
-
-            <div class="control-item">
-                <div>
-                    <div class="control-label">Pitch</div>
-                    <div class="control-desc">Voice pitch</div>
-                </div>
-                <input type="range" id="voice-pitch" min="50" max="150" value="100"
-                    onchange="updateVoiceSetting('pitch', this.value)"
-                    style="width: 120px; accent-color: var(--daena-gold);">
-            </div>
-
-            <button class="add-btn" onclick="testVoice()">
-                <i class="fas fa-play"></i> Test Voice
+            <button class="add-btn" onclick="addPolicy()">
+                <i class="fas fa-plus"></i> Add Policy
             </button>
         </div>
 
-        <!-- God Mode Section -->
+        <!-- Secrets Vault -->
+        <div class="control-section">
+            <div class="section-header">
+                <div class="section-icon" style="background: rgba(138, 43, 226, 0.2); color: #8A2BE2;">
+                    <i class="fas fa-key"></i>
+                </div>
+                <div class="section-title">Secrets Vault</div>
+            </div>
+            <div id="secrets-list">
+                <div class="control-item" style="justify-content: center;">
+                    <div class="control-desc">Loading secrets...</div>
+                </div>
+            </div>
+            <button class="add-btn" onclick="addSecret()">
+                <i class="fas fa-plus"></i> Add Secret
+            </button>
+        </div>
+
+        <!-- Approval Inbox -->
         <div class="control-section" style="grid-column: span 2;">
             <div class="section-header">
-                <div class="section-icon" style="background: rgba(212, 175, 55, 0.2); color: var(--daena-gold);">
-                    <i class="fas fa-brain"></i>
+                <div class="section-icon" style="background: rgba(0, 191, 255, 0.2); color: #00BFFF;">
+                    <i class="fas fa-inbox"></i>
                 </div>
-                <div class="section-title">God Mode System</div>
+                <div class="section-title">Approval Inbox</div>
                 <div style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
-                    <div id="god-mode-status-indicator"
-                        style="width: 8px; height: 8px; border-radius: 50%; background: #9CA3AF;"></div>
-                    <span id="god-mode-status-text" style="font-size: 11px; color: #9CA3AF;">Checking...</span>
+                    <span id="approval-count" style="font-size: 11px; color: #9CA3AF;">0 Pending</span>
                 </div>
             </div>
-
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
-                <!-- NBMF Memory Tiers -->
-                <div
-                    style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 16px;">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-                        <i class="fas fa-database" style="color: #4169E1;"></i>
-                        <span style="font-size: 13px; font-weight: 600; color: white;">NBMF Memory</span>
-                    </div>
-                    <div id="nbmf-tiers-summary" style="font-size: 11px; color: #9CA3AF;">
-                        Loading...
-                    </div>
-                    <button class="add-btn" style="margin-top: 12px; padding: 8px;" onclick="viewMemoryTiers()">
-                        <i class="fas fa-eye"></i> View Tiers
-                    </button>
+            <div id="approvals-list" style="max-height: 300px; overflow-y: auto;">
+                <div class="control-item" style="justify-content: center;">
+                    <div class="control-desc">No pending approvals</div>
                 </div>
-
-                <!-- Change Control -->
-                <div
-                    style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 16px;">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-                        <i class="fas fa-shield-alt" style="color: #32CD32;"></i>
-                        <span style="font-size: 13px; font-weight: 600; color: white;">Change Control</span>
-                    </div>
-                    <div id="pending-changes-count"
-                        style="font-size: 20px; font-weight: 700; color: var(--daena-gold); margin: 12px 0;">
-                        -
-                    </div>
-                    <div style="font-size: 11px; color: #9CA3AF;">Pending Approvals</div>
-                    <button class="add-btn" style="margin-top: 12px; padding: 8px;" onclick="viewChangeControl()">
-                        <i class="fas fa-clipboard-check"></i> Review Queue
-                    </button>
-                </div>
-
-                <!-- Router Agent -->
-                <div
-                    style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 16px;">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-                        <i class="fas fa-route" style="color: #9370DB;"></i>
-                        <span style="font-size: 13px; font-weight: 600; color: white;">Router Agent</span>
-                    </div>
-                    <div id="router-models-count"
-                        style="font-size: 20px; font-weight: 700; color: var(--daena-gold); margin: 12px 0;">
-                        -
-                    </div>
-                    <div style="font-size: 11px; color: #9CA3AF;">Models Available</div>
-                    <button class="add-btn" style="margin-top: 12px; padding: 8px;" onclick="viewRouterStatus()">
-                        <i class="fas fa-info-circle"></i> View Models
-                    </button>
-                </div>
-            </div>
-
-            <div
-                style="margin-top: 16px; padding: 12px; background: rgba(212, 175, 55, 0.1); border: 1px solid rgba(212, 175, 55, 0.3); border-radius: 8px;">
-                <p style="margin: 0; color: var(--daena-gold); font-size: 12px;">
-                    <i class="fas fa-crown"></i> <strong>God Mode:</strong> NBMF Memory Tiers (T0-T4), Router Agent,
-                    Verifier Agent, DCP Profiles, and Change Control with Founder Override active.
-                </p>
             </div>
         </div>
+
 
         <!-- Emergency Controls -->
         <div class="control-section emergency-section">
@@ -1466,9 +1371,313 @@
         }
     }
 
-    // Add snapshots to page load
+    // --- Founder Policy Center Logic ---
+
+    // Load Hidden Departments (Fixed)
+    async function loadHiddenDepartments() {
+        const container = document.getElementById('hidden-departments-list');
+        if (!container) return;
+        try {
+            const res = await fetch('/api/v1/founder-panel/hidden-departments');
+            const depts = await res.json();
+
+            if (!depts || depts.length === 0) {
+                container.innerHTML = '<div class="control-item" style="justify-content: center;"><div class="control-desc">No hidden departments</div></div>';
+            } else {
+                container.innerHTML = depts.map(d => `
+                    <div class="control-item">
+                        <div>
+                            <div class="control-label">${d.name}</div>
+                            <div class="control-desc">${d.description || 'Hidden from public view'}</div>
+                        </div>
+                        <button onclick="revealDept('${d.id}')" class="reveal-btn" style="background: rgba(0, 200, 150, 0.2); color: #00C896; border: 1px solid #00C896;">
+                            <i class="fas fa-eye"></i> Reveal
+                        </button>
+                    </div>
+                `).join('');
+            }
+        } catch (e) {
+            console.error('Error loading hidden departments:', e);
+            container.innerHTML = '<div class="control-item" style="justify-content: center;"><div class="control-desc" style="color: #FF6464;">Error loading hidden departments</div></div>';
+        }
+    }
+
+    // Override submitNewDepartment to use correct endpoint
+    window.submitNewDepartment = async function (event) {
+        event.preventDefault();
+        const name = document.getElementById('dept-name').value.trim();
+        const description = document.getElementById('dept-description').value.trim();
+        try {
+            const response = await fetch('/api/v1/founder-panel/departments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description, status: 'active', is_hidden: false })
+            });
+            if (response.ok) {
+                closeModal('add-dept-modal');
+                await loadDepartments();
+                window.showToast?.('Department created successfully', 'success');
+            } else {
+                const error = await response.json();
+                window.showToast?.('Failed: ' + (error.detail || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            window.showToast?.('Failed to create department', 'error');
+        }
+    };
+
+    // Override submitNewHiddenDept to use correct endpoint
+    window.submitNewHiddenDept = async function (event) {
+        event.preventDefault();
+        const name = document.getElementById('hidden-dept-name').value.trim();
+        const description = document.getElementById('hidden-dept-description').value.trim();
+        try {
+            const response = await fetch('/api/v1/founder-panel/departments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description, status: 'hidden', is_hidden: true })
+            });
+            if (response.ok) {
+                closeModal('add-hidden-dept-modal');
+                await loadHiddenDepartments();
+                window.showToast?.('Hidden department created successfully', 'success');
+            } else {
+                const error = await response.json();
+                window.showToast?.('Failed: ' + (error.detail || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            window.showToast?.('Failed to create hidden department', 'error');
+        }
+    };
+
+    async function loadPolicies() {
+        const container = document.getElementById('policies-list');
+        if (!container) return;
+        try {
+            const res = await fetch('/api/v1/founder-panel/policies');
+            const policies = await res.json();
+            if (policies.length === 0) {
+                container.innerHTML = '<div class="control-item" style="justify-content: center;"><div class="control-desc">No policies defined</div></div>';
+            } else {
+                container.innerHTML = policies.map(p => `
+                    <div class="control-item">
+                        <div>
+                            <div class="control-label">${p.name} <span style="font-size: 10px; opacity: 0.7; border: 1px solid #777; padding: 1px 4px; border-radius: 4px;">${p.enforcement}</span></div>
+                            <div class="control-desc">${p.rule_type} • ${p.scope}</div>
+                        </div>
+                        <div style="font-size: 18px; color: ${p.immutable ? '#FF6347' : '#9CA3AF'};" title="${p.immutable ? 'Immutable' : 'Editable'}">
+                             ${p.immutable ? '<i class="fas fa-lock"></i>' : '<i class="fas fa-edit" style="cursor: pointer;"></i>'}
+                        </div>
+                    </div>
+                `).join('');
+            }
+        } catch (e) {
+            console.error(e);
+            container.innerHTML = '<div class="control-desc" style="color: #FF6464;">Error loading policies</div>';
+        }
+    }
+
+    async function addPolicy() {
+        const modalHtml = `
+            <div class="modal-overlay" id="add-policy-modal" style="display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+                <div class="modal-content" onclick="event.stopPropagation()" style="width: 90%; max-width: 500px; background: #0f1729; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;">
+                    <div class="modal-header" style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                        <h2 style="color: white; font-size: 20px; margin: 0;">Add Founder Policy</h2>
+                        <div class="modal-close" onclick="closeModal('add-policy-modal')" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;"><i class="fas fa-times"></i></div>
+                    </div>
+                    <div class="modal-body" style="padding: 24px;">
+                        <form onsubmit="submitNewPolicy(event)">
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Policy Name</label>
+                                <input type="text" id="policy-name" required style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;" placeholder="e.g., No Crypto Payments">
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Rule Type</label>
+                                <select id="policy-rule-type" style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;">
+                                    <option value="payment">Payment Control</option>
+                                    <option value="credentials">Credential Access</option>
+                                    <option value="filesystem">Filesystem Modification</option>
+                                    <option value="posting">Public Posting</option>
+                                    <option value="external_accounts">External Account Creation</option>
+                                </select>
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Enforcement</label>
+                                <select id="policy-enforcement" style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;">
+                                    <option value="block">Block (Strict)</option>
+                                    <option value="require_approval">Require Founder Approval</option>
+                                    <option value="allow">Allow (Log Only)</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                                <button type="button" onclick="closeModal('add-policy-modal')" style="padding: 12px 24px; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Cancel</button>
+                                <button type="submit" style="padding: 12px 24px; background: var(--daena-gold); color: black; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Create Policy</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    async function submitNewPolicy(event) {
+        event.preventDefault();
+        const name = document.getElementById('policy-name').value;
+        const rule_type = document.getElementById('policy-rule-type').value;
+        const enforcement = document.getElementById('policy-enforcement').value;
+        try {
+            await fetch('/api/v1/founder-panel/policies', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, rule_type, enforcement, scope: 'global' })
+            });
+            closeModal('add-policy-modal');
+            loadPolicies();
+            window.showToast?.('Policy created', 'success');
+        } catch (e) {
+            alert('Failed to create policy');
+        }
+    }
+
+    async function loadSecrets() {
+        const container = document.getElementById('secrets-list');
+        if (!container) return;
+        try {
+            const res = await fetch('/api/v1/founder-panel/secrets');
+            const secrets = await res.json();
+            if (secrets.length === 0) {
+                container.innerHTML = '<div class="control-item" style="justify-content: center;"><div class="control-desc">Vault is empty</div></div>';
+            } else {
+                container.innerHTML = secrets.map(s => `
+                    <div class="control-item">
+                        <div>
+                            <div class="control-label">${s.name}</div>
+                            <div class="control-desc">${s.secret_type} • Last used: ${s.last_used_at ? new Date(s.last_used_at).toLocaleDateString() : 'Never'}</div>
+                        </div>
+                        <button onclick="rotateSecret('${s.secret_id}')" class="reveal-btn" style="background: rgba(138, 43, 226, 0.2); color: #8A2BE2;">Rotate</button>
+                    </div>
+                `).join('');
+            }
+        } catch (e) {
+            container.innerHTML = '<div class="control-desc" style="color: #FF6464;">Error loading secrets</div>';
+        }
+    }
+
+    async function addSecret() {
+        const modalHtml = `
+            <div class="modal-overlay" id="add-secret-modal" style="display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+                <div class="modal-content" onclick="event.stopPropagation()" style="width: 90%; max-width: 500px; background: #0f1729; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;">
+                    <div class="modal-header" style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                        <h2 style="color: white; font-size: 20px; margin: 0;">Add Encrypted Secret</h2>
+                        <div class="modal-close" onclick="closeModal('add-secret-modal')" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;"><i class="fas fa-times"></i></div>
+                    </div>
+                    <div class="modal-body" style="padding: 24px;">
+                        <form onsubmit="submitNewSecret(event)">
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Key Name</label>
+                                <input type="text" id="secret-name" required style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;" placeholder="e.g., OPENAI_API_KEY">
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="color: #9CA3AF; font-size: 13px; display: block; margin-bottom: 8px;">Secret Value</label>
+                                <input type="password" id="secret-value" required style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; font-size: 15px;" placeholder="Value will be encrypted at rest">
+                            </div>
+                            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                                <button type="button" onclick="closeModal('add-secret-modal')" style="padding: 12px 24px; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Cancel</button>
+                                <button type="submit" style="padding: 12px 24px; background: var(--daena-gold); color: black; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Encrypt & Store</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    async function submitNewSecret(event) {
+        event.preventDefault();
+        const name = document.getElementById('secret-name').value;
+        const value = document.getElementById('secret-value').value;
+        try {
+            await fetch('/api/v1/founder-panel/secrets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, secret_type: 'token', value })
+            });
+            closeModal('add-secret-modal');
+            loadSecrets();
+            window.showToast?.('Secret encrypted and stored', 'success');
+        } catch (e) {
+            alert('Failed to store secret');
+        }
+    }
+
+    async function loadApprovals() {
+        const container = document.getElementById('approvals-list');
+        const countBadge = document.getElementById('approval-count');
+        if (!container) return;
+        try {
+            const res = await fetch('/api/v1/founder-panel/approvals');
+            const approvals = await res.json();
+            if (countBadge) countBadge.textContent = `${approvals.length} Pending`;
+
+            if (approvals.length === 0) {
+                container.innerHTML = '<div class="control-item" style="justify-content: center;"><div class="control-desc">No pending approvals</div></div>';
+            } else {
+                container.innerHTML = approvals.map(a => `
+                    <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; margin-bottom: 8px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
+                            <span style="font-weight: 600; color: white;">${a.tool_name || a.action}</span>
+                            <span style="font-size: 11px; color: ${a.impact_level === 'critical' ? '#FF6464' : '#FFA500'}">${a.impact_level?.toUpperCase()} RISK</span>
+                        </div>
+                        <div style="font-size: 12px; color: #ccc; margin-bottom: 8px; font-family: monospace;">
+                            ${JSON.stringify(a.args_json || {})}
+                        </div>
+                         <div style="display: flex; gap: 8px;">
+                            <button onclick="decideApproval('${a.id}', 'approve')" 
+                                style="flex: 1; padding: 6px; background: var(--daena-gold); color: black; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;">
+                                <i class="fas fa-check"></i> Approve
+                            </button>
+                            <button onclick="decideApproval('${a.id}', 'deny')" 
+                                style="flex: 1; padding: 6px; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                                <i class="fas fa-times"></i> Deny
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function decideApproval(id, action) {
+        if (!confirm(`Confirm ${action}?`)) return;
+        try {
+            await fetch(`/api/v1/founder-panel/approvals/${id}/decide`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action })
+            });
+            loadApprovals();
+            window.showToast?.(`Request ${action}d`, 'success');
+        } catch (e) {
+            alert('Operation failed');
+        }
+    }
+
+    // Initialize Founder Panel
     document.addEventListener('DOMContentLoaded', function () {
         loadSnapshots();
+        loadPolicies();
+        loadSecrets();
+        loadApprovals();
+        loadDepartments();
+        loadCouncils();
+        loadHiddenDepartments();
+        setInterval(loadApprovals, 10000); // Polling for approvals
     });
 </script>
 {% endblock %}

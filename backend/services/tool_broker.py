@@ -202,6 +202,29 @@ async def async_broker_request(action: Dict[str, Any], requested_by: str = "unkn
     # 3. Determine Risk
     risk = get_risk_level(action)
     
+    # 3.1 Security Check: Critical Risk Block
+    if os.getenv("GOVERNANCE_BLOCK_CRITICAL_RISK", "true").lower() == "true":
+        if risk == CRITICAL:
+             return ("blocked", {"message": "CRITICAL risk tasks are blocked by governance policy"})
+
+    # 3.2 Security Check: Execution Token
+    if os.getenv("EXECUTION_TOKEN_REQUIRED", "false").lower() == "true":
+        token = action.get("execution_token") 
+        # Note: If action comes from frontend, token might be in headers/metadata, 
+        # but here we assume it's passed in action dict or we need another way.
+        # For now, let's assume it's in action['execution_token']
+        
+        if not token:
+             # If auth is disabled, maybe we skip? No, EXECUTION_TOKEN_REQUIRED is explicit.
+             return ("blocked", {"message": "Execution token required"})
+             
+        # For HIGH risk, require founder approval token
+        if risk in [HIGH, CRITICAL]: # CRITICAL usually blocked above, but if allowed...
+             from backend.security.auth import require_founder_approval
+             if not require_founder_approval(token):
+                  return ("blocked", {"message": "Founder approval token required for HIGH risk task"})
+
+    
     # 4. Check Automation Policy
     mode = _automation_mode()
     requires_approval = True

@@ -1,11 +1,248 @@
-from fastapi import APIRouter, HTTPException, Form, Depends
-from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Form
 from pydantic import BaseModel
+from typing import List, Dict, Any, Optional
 from datetime import datetime
-import json
 import uuid
+import json
 
-router = APIRouter(prefix="/api/v1/founder-panel", tags=["Founder Panel"])
+router = APIRouter()
+from backend.database import get_db, FounderPolicy, Secret, PendingApproval, Alert, SystemConfig
+from sqlalchemy.orm import Session
+from cryptography.fernet import Fernet
+import os
+import base64
+
+# Simple encryption helper
+def get_cipher_suite():
+    key = os.getenv("DAENA_MASTER_KEY")
+    if not key:
+        # Fallback for dev/testing if not set - DO NOT USE IN PROD
+        key = Fernet.generate_key()
+        # In a real scenario, this would be a critical startup error
+    return Fernet(key)
+
+# Models for Request Bodies
+class PolicyCreate(BaseModel):
+    name: str
+    rule_type: str
+    enforcement: str
+    scope: str
+    immutable: bool = False
+
+class SecretCreate(BaseModel):
+    name: str
+    secret_type: str
+    value: str
+
+class ApprovalDecision(BaseModel):
+    action: str  # approve, deny
+    founder_note: Optional[str] = None
+
+# ─── FOUNDER POLICIES ──────────────────────────────────────────────
+
+@router.get("/policies")
+async def get_policies(db: Session = Depends(get_db)):
+    """Get all founder policies"""
+    return db.query(FounderPolicy).all()
+
+@router.post("/policies")
+async def create_policy(policy: PolicyCreate, db: Session = Depends(get_db)):
+    """Create a new founder policy"""
+    # Check duplicate
+    existing = db.query(FounderPolicy).filter(FounderPolicy.name == policy.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Policy name already exists")
+    
+    new_policy = FounderPolicy(
+        policy_id=f"pol_{uuid.uuid4().hex[:8]}",
+        name=policy.name,
+        rule_type=policy.rule_type,
+        enforcement=policy.enforcement,
+        scope=policy.scope,
+        immutable=policy.immutable
+    )
+    db.add(new_policy)
+    db.commit()
+    db.refresh(new_policy)
+    return new_policy
+
+@router.put("/policies/{policy_id}")
+async def update_policy(policy_id: str, updates: PolicyCreate, db: Session = Depends(get_db)):
+    """Update a policy (unless immutable)"""
+    policy = db.query(FounderPolicy).filter(FounderPolicy.policy_id == policy_id).first()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    
+    if policy.immutable:
+        raise HTTPException(status_code=403, detail="Cannot modify immutable policy")
+    
+    policy.name = updates.name
+    policy.rule_type = updates.rule_type
+    policy.enforcement = updates.enforcement
+    policy.scope = updates.scope
+    # immutable flag defines if valid to change, but usually we don't toggle immutable off efficiently without special auth
+    
+    db.commit()
+    return policy
+
+@router.delete("/policies/{policy_id}")
+async def delete_policy(policy_id: str, db: Session = Depends(get_db)):
+    policy = db.query(FounderPolicy).filter(FounderPolicy.policy_id == policy_id).first()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    
+    if policy.immutable:
+        raise HTTPException(status_code=403, detail="Cannot delete immutable policy")
+        
+    db.delete(policy)
+    db.commit()
+    return {"success": True}
+
+# ─── SECRETS VAULT ──────────────────────────────────────────────────
+
+@router.get("/secrets")
+async def get_secrets(db: Session = Depends(get_db)):
+    """Get secrets metadata (masked values)"""
+    secrets = db.query(Secret).filter(Secret.is_disabled == False).all()
+    results = []
+    for s in secrets:
+        results.append({
+            "secret_id": s.secret_id,
+            "name": s.name,
+            "secret_type": s.secret_type,
+            "last_used_at": s.last_used_at,
+            "created_at": s.created_at
+        })
+    return results
+
+@router.post("/secrets")
+async def create_secret(secret: SecretCreate, db: Session = Depends(get_db)):
+    """Create (encrypt) request"""
+    existing = db.query(Secret).filter(Secret.name == secret.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Secret name exists")
+        
+    cipher = get_cipher_suite()
+    encrypted_val = cipher.encrypt(secret.value.encode()).decode()
+    
+    new_secret = Secret(
+        secret_id=f"sec_{uuid.uuid4().hex[:8]}",
+        name=secret.name,
+        secret_type=secret.secret_type,
+        value_encrypted=encrypted_val
+    )
+    db.add(new_secret)
+    db.commit()
+    return {"message": "Secret stored securely"}
+
+@router.post("/secrets/{secret_id}/rotate")
+async def rotate_secret(secret_id: str, new_value: Dict[str, str], db: Session = Depends(get_db)):
+    s = db.query(Secret).filter(Secret.secret_id == secret_id).first()
+    if not s: raise HTTPException(404, "Secret not found")
+    
+    cipher = get_cipher_suite()
+    s.value_encrypted = cipher.encrypt(new_value["value"].encode()).decode()
+    s.updated_at = datetime.now()
+    s.rotation_required = False
+    db.commit()
+    return {"message": "Secret rotated"}
+
+# ─── APPROVALS INBOX ───────────────────────────────────────────────
+
+@router.get("/approvals")
+async def get_pending_approvals(db: Session = Depends(get_db)):
+    return db.query(PendingApproval).filter(PendingApproval.status == "pending").all()
+
+# ... (Keep existing imports and router setup)
+from backend.database import Department  # Ensure this is imported
+
+# ... (Keep existing policies, secrets, approvals logic)
+
+# --- Department Management ---
+class DepartmentCreate(BaseModel):
+    name: str
+    description: str = ""
+    status: str = "active"
+    is_hidden: bool = False
+    color: str = "#0066cc"
+
+@router.get("/departments")
+async def get_departments(hidden: bool = False, db: Session = Depends(get_db)):
+    """Get all departments, optionally filtered by hidden status"""
+    if hidden:
+        # Assuming 'status'="hidden" or similar convention for hidden departments
+        # The user seems to want a distinction. 
+        # Using status='hidden' as per frontend intent
+        return db.query(Department).filter(Department.status == "hidden").all()
+    else:
+        return db.query(Department).filter(Department.status != "hidden").all()
+
+@router.post("/departments")
+async def create_department(dept: DepartmentCreate, db: Session = Depends(get_db)):
+    """Create a new department (including hidden ones)"""
+    existing = db.query(Department).filter(Department.name == dept.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Department name already exists")
+    
+    new_dept = Department(
+        slug=dept.name.lower().replace(" ", "-"),
+        name=dept.name,
+        description=dept.description,
+        status=dept.status if not dept.is_hidden else "hidden",
+        color=dept.color
+    )
+    db.add(new_dept)
+    db.commit()
+    db.refresh(new_dept)
+    return new_dept
+
+@router.get("/hidden-departments")
+async def get_hidden_departments_alias(db: Session = Depends(get_db)):
+    """Alias for hidden departments"""
+    return db.query(Department).filter(Department.status == "hidden").all()
+
+@router.post("/hidden-departments/{dept_id}/reveal")
+async def reveal_hidden_department(dept_id: int, db: Session = Depends(get_db)):
+    """Reveal a hidden department"""
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(404, "Department not found")
+    
+    dept.status = "active"
+    db.commit()
+    return {"status": "revealed"}
+
+@router.post("/approvals/{approval_id}/decide")
+async def decide_approval(approval_id: str, decision: ApprovalDecision, db: Session = Depends(get_db)):
+    approval = None
+    # Try generic lookup (int ID or string UUID)
+    if approval_id.isdigit():
+        approval = db.query(PendingApproval).filter(PendingApproval.id == int(approval_id)).first()
+    
+    if not approval:
+         approval = db.query(PendingApproval).filter(PendingApproval.approval_id == approval_id).first()
+         
+    if not approval:
+        raise HTTPException(404, "Approval request not found")
+    
+    if approval.status != "pending":
+        raise HTTPException(400, f"Approval already {approval.status}")
+    
+    approval.status = "approved" if decision.action == "approve" else "rejected"
+    approval.founder_note = decision.founder_note
+    approval.resolved_at = datetime.now()
+    approval.resolved_by = "founder"
+    approval.decision_at = datetime.now()
+    
+    db.commit()
+    
+    return {"status": approval.status}
+
+# ─── ALERTS ────────────────────────────────────────────────────────
+
+@router.get("/alerts")
+async def get_alerts(db: Session = Depends(get_db)):
+    return db.query(Alert).order_by(Alert.created_at.desc()).limit(50).all()
 
 # Founder Panel Models
 class FounderOverride(BaseModel):

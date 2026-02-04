@@ -1,0 +1,40 @@
+{
+  "requests": [
+    {
+      "id": "90dbbd36-8f1e-4497-bc63-58e8e859cc1d",
+      "created_at": 1770144537.8133152,
+      "requested_by": "founder",
+      "risk_level": "medium",
+      "action_json": {
+        "action_type": "shell.run",
+        "parameters": {
+          "command": "echo hollow world"
+        }
+      },
+      "status": "failed",
+      "result_json": {
+        "correlation_id": "d3ea3f66-747e-4f71-b16a-cb23cde081ae",
+        "success": false,
+        "error": "Not connected to OpenClaw Gateway"
+      }
+    },
+    {
+      "id": "2be4fa1b-4d38-43d1-9072-b483495c7066",
+      "created_at": 1770144914.768635,
+      "requested_by": "founder",
+      "risk_level": "medium",
+      "action_json": {
+        "action_type": "shell.run",
+        "parameters": {
+          "command": "echo hollow world"
+        }
+      },
+      "status": "failed",
+      "result_json": {
+        "correlation_id": "cbe962e7-7604-4bee-aeb2-281cb3f7346c",
+        "success": false,
+        "error": "Not connected to OpenClaw Gateway"
+      }
+    }
+  ]
+}

@@ -26,8 +26,8 @@ chmod +x scripts/deploy_production.sh
 
 ## DaenaBot Hands (tool runtime)
 
-- **Install (Windows + Docker):** `.\scripts\setup_daenabot_hands.ps1` — clones OpenClaw, generates token, binds to 127.0.0.1 only, writes `DAENABOT_HANDS_URL` / `DAENABOT_HANDS_TOKEN` to `.env`.
-- **Status:** `GET /api/v1/hands/status` — configured, reachable, message (token never returned).
-- **Architecture:** [docs/ARCHITECTURE_DAENABOT_HANDS.md](docs/ARCHITECTURE_DAENABOT_HANDS.md) — 8 departments → ToolBroker → policy → Approvals Inbox → Hands → audit.
+- **Start Service:** `python scripts/start_daenabot_hands.py` (Run in a separate terminal)
+- **Status:** Logs to `logs/daenabot_hands.log`. Listens on port 18789.
+- **Architecture:** WebSocket server executing sandboxed commands from the backend.
 
 See [docs/README.md](docs/README.md) for prerequisites, env vars, and architecture.
