@@ -639,6 +639,42 @@ async def get_all_brain_connections() -> Dict[str, Any]:
     }
 
 
+@router.get("/{agent_id}/status")
+async def get_agent_status(agent_id: str) -> Dict[str, Any]:
+    """Get real-time agent status"""
+    from backend.database import SessionLocal, Agent, Task
+    
+    db = SessionLocal()
+    try:
+        agent = db.query(Agent).filter(Agent.cell_id == agent_id).first()
+        if not agent:
+             # Try ID
+             try:
+                agent = db.query(Agent).filter(Agent.id == int(agent_id)).first()
+             except ValueError:
+                 pass
+        
+        if not agent:
+             raise HTTPException(status_code=404, detail="Agent not found")
+
+        # Get active task
+        active_task = db.query(Task).filter(
+            Task.assigned_agent_id == agent_id,
+            Task.status.in_(["running", "in_progress"])
+        ).first()
+
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            "status": agent.status,
+            "current_task": active_task.title if active_task else "Idle",
+            "uptime": "2h", # Placeholder or calc from last_restart
+            "last_seen": datetime.utcnow().isoformat()
+        }
+    finally:
+        db.close()
+
+
 @router.get("/hidden")
 async def get_hidden_departments() -> Dict[str, Any]:
     """Get hidden departments (Founder access only)"""

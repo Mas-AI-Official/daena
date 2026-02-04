@@ -1465,6 +1465,13 @@
       </svg>
       Skills
     </button>
+    <button class="tab-btn" data-tab="daenabot">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v3.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5V12z" />
+        <path d="M1 4h14M1 9h14M5 1v14M11 1v14" />
+      </svg>
+      DaenaBot
+    </button>
     <button class="tab-btn" data-tab="use-cases">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M2 2h12v4H2V2z" />
@@ -1571,6 +1578,87 @@
 
   <!-- CONTENT PANELS (Brain & Web3 at /ui/brain-api and /ui/web3) -->
   <div class="content">
+
+    <!-- DAENABOT PANEL -->
+    <div class="tab-panel" data-tab="daenabot">
+      <div class="section-header">
+        <div class="section-title">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v3.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5V12z" />
+          </svg>
+          DaenaBot Automation
+        </div>
+      </div>
+
+      <!-- Hands Service Status -->
+      <div class="scan-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h4 style="margin:0; color:var(--text-bright);">Hands Service (Desktop Automation)</h4>
+            <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">Sandboxed execution environment</div>
+          </div>
+          <div>
+            <button class="btn btn-primary" id="pingHandsBtn" onclick="testHandsConnection()">Test Connection</button>
+          </div>
+        </div>
+        <div style="margin-top:12px; display:flex; gap:20px; font-size:12px;">
+          <div>Status: <span id="pingHandsResult" style="color:var(--text-dim); font-weight:600;">Unknown</span></div>
+        </div>
+      </div>
+
+      <!-- Tool Approval Queue -->
+      <div class="section-header" style="margin-top:24px;">
+        <div class="section-title">Approval Queue <span class="badge badge-pending" id="daenabot-tools-badge"
+            style="display:none; margin-left:8px;">0</span></div>
+        <button class="btn" onclick="loadDaenaBotTools()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
+            <path d="M8 2v12M2 8h12" />
+          </svg> Refresh</button>
+      </div>
+      <div
+        style="background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:0; overflow:hidden; margin-bottom:24px;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border); text-align:left; color:var(--text-dim);">
+              <th style="padding:10px;">Time</th>
+              <th style="padding:10px;">Requester</th>
+              <th style="padding:10px;">Risk</th>
+              <th style="padding:10px;">Action</th>
+              <th style="padding:10px;">Control</th>
+            </tr>
+          </thead>
+          <tbody id="toolsQueueTable">
+            <tr>
+              <td colspan="5" class="empty-state">Loading...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- History -->
+      <div class="section-header">
+        <div class="section-title">Execution History</div>
+      </div>
+      <div
+        style="background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:0; overflow:hidden;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border); text-align:left; color:var(--text-dim);">
+              <th style="padding:10px;">Time</th>
+              <th style="padding:10px;">Requester</th>
+              <th style="padding:10px;">Risk</th>
+              <th style="padding:10px;">Status</th>
+              <th style="padding:10px;">Result</th>
+            </tr>
+          </thead>
+          <tbody id="toolsHistoryTable">
+            <tr>
+              <td colspan="5" class="empty-state">Loading...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
 
     <!-- ═══ SKILLS ═══ -->
     <div class="tab-panel active" id="panel-skills" data-tab="skills">

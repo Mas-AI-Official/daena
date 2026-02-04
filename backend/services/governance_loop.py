@@ -135,20 +135,15 @@ SENSITIVE_PATHS = [
 ]
 
 
+# ... (existing imports, keep them)
+from backend.database import SessionLocal, FounderPolicy, PendingApproval as DBPendingApproval, ActionType as DBActionType
+# Note: PendingApproval is aliased to DBPendingApproval to avoid conflict if any local var, same for ActionType if enum conflicts (it does)
+
+# ... (keep existing definitions up to GovernanceLoop init)
+
 class GovernanceLoop:
     """
-    Central governance engine for all Daena agent actions.
-    
-    Mode Settings:
-    - autopilot = True: low-risk actions execute with reports
-    - autopilot = False: all actions require approval
-    
-    Features:
-    - Risk assessment per action type
-    - Path sensitivity escalation
-    - Council consultation for medium risk
-    - Founder approval for high/critical
-    - Full audit trail
+    Central governance engine, now integrated with Founder Policy Center (DB-backed).
     """
     
     def __init__(self, autopilot: Optional[bool] = None, founder_id: str = "founder"):
@@ -163,47 +158,52 @@ class GovernanceLoop:
             
         self.founder_id = founder_id
         
-        # Storage
-        self._pending_approvals: Dict[str, ActionRequest] = {}
+        # Load persistent state - DEPRECATED: We now use DB mostly, but keep legacy list for non-DB compatibility
         self._decision_log: List[GovernanceDecision] = []
         
-        # Load persistent state
-        self._storage_path = Path(__file__).parent.parent.parent / ".ledger" / "governance.json"
-        self._load_state()
+        # We don't need _pending_approvals dict anymore as we use DB, 
+        # but we keep it for backward compatibility with in-memory calls if needed.
+        self._pending_approvals: Dict[str, ActionRequest] = {}
+        
+        # self._load_state() # Legacy file load skipped in favor of DB
     
-    def _load_state(self):
-        """Load persistent governance state."""
-        if self._storage_path.exists():
-            try:
-                with open(self._storage_path, "r") as f:
-                    data = json.load(f)
-                    self._decision_log = [
-                        GovernanceDecision(**d) for d in data.get("decisions", [])[-1000:]
-                    ]
-            except Exception as e:
-                logger.error(f"Failed to load governance state: {e}")
-    
-    def _save_state(self):
-        """Save governance state."""
-        self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            data = {
-                "decisions": [d.__dict__ for d in self._decision_log[-1000:]],
-                "last_updated": datetime.now(timezone.utc).isoformat()
-            }
-            with open(self._storage_path, "w") as f:
-                json.dump(data, f, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to save governance state: {e}")
-    
+    # ... (keep _save_state or modify to no-op)
+
     def evaluate(self, request: ActionRequest) -> GovernanceDecision:
         """
-        Evaluate an action request and return governance decision.
-        
-        This is the main entry point for all agent actions.
+        Evaluate an action request with Founder Policy check.
         """
         decision_id = str(uuid.uuid4())
         
+        # 0. Check Founder Policies (DB)
+        db = SessionLocal()
+        try:
+            # Check for BLOCK policies
+            policies = db.query(FounderPolicy).filter(FounderPolicy.enforcement == "block").all()
+            for pol in policies:
+                if self._policy_matches(pol, request):
+                    return GovernanceDecision(
+                        decision_id=decision_id,
+                        action_type=request.action_type.value,
+                        risk_level="blocked_by_policy",
+                        outcome=DecisionOutcome.BLOCKED.value,
+                        reason=f"Blocked by Founder Policy: {pol.name}"
+                    )
+            
+            # Check for REQUIRE_APPROVAL policies
+            approval_policies = db.query(FounderPolicy).filter(FounderPolicy.enforcement == "require_approval").all()
+            for pol in approval_policies:
+                if self._policy_matches(pol, request):
+                    # Force high risk handling
+                    decision = self._handle_high_risk(decision_id, request)
+                    decision.reason = f"Flagged by Founder Policy: {pol.name}"
+                    return decision
+                    
+        except Exception as e:
+            logger.error(f"Policy check failed: {e}")
+        finally:
+            db.close()
+
         # Step 1: Assess base risk level
         base_risk = RISK_RULES.get(request.action_type, RiskLevel.HIGH)
         
@@ -222,16 +222,165 @@ class GovernanceLoop:
         else:  # CRITICAL
             decision = self._handle_critical(decision_id, request)
         
-        # Step 4: Log and track
+        # Step 4: Log (Legacy + Audit)
         decision.risk_level = risk.value
-        decision.action_type = request.action_type.value
         self._decision_log.append(decision)
-        self._save_state()
+        # self._save_state() 
         
-        # Step 5: Track in outcome system
+        # Step 5: Outcome Tracking
         self._track_outcome(request, decision)
         
         return decision
+
+    def _policy_matches(self, policy: FounderPolicy, request: ActionRequest) -> bool:
+        """Check if request matches policy scope."""
+        if policy.scope == "global":
+            # Match strictly by rule_type or broad category
+            # Simplification: if policy rule_type matches action category
+            # We map action types to policy rule types
+            if policy.rule_type == "payment" and request.action_type == ActionType.TREASURY_SPEND: return True
+            if policy.rule_type == "filesystem" and request.action_type in [ActionType.FILE_DELETE, ActionType.FILE_WRITE]: return True
+            if policy.rule_type == "credentials" and "api_key" in str(request.parameters): return True
+            return False
+            
+        # Specific tool scope "tool:click"
+        if policy.scope.startswith("tool:") and policy.scope.split(":")[1] == request.action_type.value:
+            return True
+            
+        return False
+
+    # ... (keep _check_elevations, _handle_safe, _handle_low_risk, _handle_medium_risk)
+
+    def _handle_high_risk(self, decision_id: str, request: ActionRequest) -> GovernanceDecision:
+        """Handle HIGH risk - save to DB for Founder Approval."""
+        
+        # Save to DB
+        db = SessionLocal()
+        try:
+            pending = DBPendingApproval(
+                approval_id=decision_id,
+                executor_id=request.agent_id,
+                executor_type="agent",
+                tool_name=request.action_type.value,
+                action=request.description[:50] + "...",
+                args_json=request.parameters,
+                impact_level="high",
+                status="pending",
+                created_at=datetime.utcnow()
+            )
+            db.add(pending)
+            db.commit()
+        except Exception as e:
+            logger.error(f"Failed to save pending approval: {e}")
+        finally:
+            db.close()
+            
+        return GovernanceDecision(
+            decision_id=decision_id,
+            action_type=request.action_type.value,
+            risk_level=RiskLevel.HIGH.value,
+            outcome=DecisionOutcome.PENDING_APPROVAL.value,
+            requires="founder_approval",
+            reason="High-risk action requires founder approval"
+        )
+    
+    def _handle_critical(self, decision_id: str, request: ActionRequest) -> GovernanceDecision:
+        """Handle CRITICAL risk - block and escalate to DB."""
+        
+        db = SessionLocal()
+        try:
+            pending = DBPendingApproval(
+                approval_id=decision_id,
+                executor_id=request.agent_id,
+                executor_type="agent", 
+                tool_name=request.action_type.value,
+                action=request.description[:50],
+                args_json=request.parameters,
+                impact_level="critical",
+                status="pending", # Even critical we might want to allow override, so pending
+                created_at=datetime.utcnow()
+            )
+            db.add(pending)
+            db.commit()
+        except Exception as e:
+            logger.error(f"Failed to save critical approval: {e}")
+        finally:
+            db.close()
+
+        return GovernanceDecision(
+            decision_id=decision_id,
+            action_type=request.action_type.value,
+            risk_level=RiskLevel.CRITICAL.value,
+            outcome=DecisionOutcome.ESCALATED.value,
+            escalated_to=self.founder_id,
+            requires="founder_approval",
+            reason="Critical-risk action blocked - requires explicit founder approval"
+        )
+
+    # ... (keep _consult_council, _get_domain, _track_outcome)
+
+    def approve(self, decision_id: str, approver_id: str, notes: str = "") -> bool:
+        """Founder approves via DB."""
+        db = SessionLocal()
+        try:
+            # Check DB first
+            approval = db.query(DBPendingApproval).filter(
+                (DBPendingApproval.approval_id == decision_id) | (DBPendingApproval.id == decision_id) # handle both ID types if mixed
+            ).first()
+            
+            if approval:
+                approval.status = "approved"
+                approval.resolved_by = approver_id
+                approval.resolved_at = datetime.utcnow()
+                approval.founder_note = notes
+                db.commit()
+                # Update in-memory log if present
+                for dec in self._decision_log:
+                    if dec.decision_id == decision_id:
+                        dec.outcome = DecisionOutcome.EXECUTE.value
+                        dec.executed = True
+                return True
+        finally:
+            db.close()
+        return False
+
+    def reject(self, decision_id: str, approver_id: str, reason: str = "") -> bool:
+        db = SessionLocal()
+        try:
+            approval = db.query(DBPendingApproval).filter(
+                (DBPendingApproval.approval_id == decision_id) | (DBPendingApproval.id == decision_id)
+            ).first()
+            if approval:
+                approval.status = "rejected"
+                approval.resolved_by = approver_id
+                approval.resolved_at = datetime.utcnow()
+                approval.founder_note = reason
+                db.commit()
+                for dec in self._decision_log:
+                    if dec.decision_id == decision_id:
+                        dec.outcome = DecisionOutcome.BLOCKED.value
+                return True
+        finally:
+            db.close()
+        return False
+        
+    def get_pending(self) -> List[Dict[str, Any]]:
+        """Get pending from DB."""
+        db = SessionLocal()
+        try:
+            pendings = db.query(DBPendingApproval).filter(DBPendingApproval.status == "pending").all()
+            return [{
+                "decision_id": p.approval_id,
+                "action_type": p.tool_name,
+                "agent_id": p.executor_id,
+                "description": p.action,
+                "risk_level": p.impact_level,
+                "requested_at": p.created_at.isoformat() if p.created_at else ""
+            } for p in pendings]
+        finally:
+            db.close()
+
+    # ... (keep assess, get_stats, singleton)
     
     def _check_elevations(self, request: ActionRequest, base_risk: RiskLevel) -> RiskLevel:
         """Check if risk should be elevated based on context."""

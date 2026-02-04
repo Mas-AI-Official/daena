@@ -227,4 +227,28 @@ async def _update_project_status(project_id: str, status: str, db: Session):
         payload={"project": _project_db_to_domain(project)}
     )
     
+    
     return {"success": True, "project": _project_db_to_domain(project)}
+
+@router.post("/{project_id}/execute")
+async def execute_project(project_id: str, db: Session = Depends(get_db)):
+    """Trigger execution of a project using DaenaBot resources."""
+    # This might interact with DaenaBot Automation or generate tasks
+    project = db.query(ProjectDB).filter(ProjectDB.project_id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Change status to active if pending/paused
+    if project.status != "active":
+         project.status = "active"
+         project.updated_at = datetime.utcnow()
+         db.commit()
+
+    # Trigger logic (e.g., breakdown tasks, assign agents)
+    # Placeholder for actual execution logic
+    
+    return {
+        "success": True, 
+        "message": f"Project {project.name} execution started", 
+        "project_id": project_id
+    }

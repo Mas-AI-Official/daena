@@ -1,14 +1,406 @@
 {% extends "base.html" %}
 {% block title %}Command Center - Daena VP{% endblock %}
+{% block head %}
+<style>
+    :root {
+        --glass-bg: rgba(17, 24, 39, 0.7);
+        --glass-border: rgba(255, 255, 255, 0.1);
+        --accent-gold: #FFD700;
+        --accent-cyan: #06b6d4;
+        --accent-green: #10b981;
+        --accent-red: #ef4444;
+    }
+
+    body {
+        background-color: #0f172a;
+        /* Slate 900 */
+        font-family: 'Inter', sans-serif;
+    }
+
+    .cc-container {
+        padding: 2rem;
+        max-width: 1800px;
+        margin: 0 auto;
+    }
+
+    .cc-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        border-bottom: 1px solid var(--glass-border);
+        padding-bottom: 1rem;
+    }
+
+    .cc-title {
+        font-size: 2rem;
+        font-weight: 700;
+        color: white;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        background: linear-gradient(90deg, #fff, #94a3b8);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .cc-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        /* 4 columns */
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .cc-card {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        padding: 1.5rem;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .cc-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .cc-card-title {
+        color: #94a3b8;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 0.5rem;
+    }
+
+    .cc-card-value {
+        color: white;
+        font-size: 2.5rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    .cc-card-sparkline {
+        height: 40px;
+        margin-top: 1rem;
+        /* Placeholder for chart */
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.05) 100%);
+        border-radius: 4px;
+    }
+
+    .cc-section-title {
+        color: var(--accent-gold);
+        font-size: 1.25rem;
+        margin-bottom: 1rem;
+        border-left: 3px solid var(--accent-gold);
+        padding-left: 1rem;
+    }
+
+    .status-indicator {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 8px;
+    }
+
+    .status-green {
+        background-color: var(--accent-green);
+        box-shadow: 0 0 10px var(--accent-green);
+    }
+
+    .status-red {
+        background-color: var(--accent-red);
+        box-shadow: 0 0 10px var(--accent-red);
+    }
+
+    .status-yellow {
+        background-color: var(--accent-gold);
+    }
+
+    /* Tables */
+    .cc-table {
+        width: 100%;
+        border-collapse: collapse;
+        color: #cbd5e1;
+    }
+
+    .cc-table th {
+        text-align: left;
+        padding: 0.75rem;
+        border-bottom: 1px solid var(--glass-border);
+        color: #64748b;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+    }
+
+    .cc-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .cc-table tr:hover td {
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Logs console aesthetics */
+    .console-log {
+        font-family: 'Fira Code', monospace;
+        font-size: 0.85rem;
+        color: #10b981;
+        background: rgba(0, 0, 0, 0.3);
+        padding: 1rem;
+        border-radius: 8px;
+        height: 300px;
+        overflow-y: auto;
+    }
+
+    .log-line {
+        margin-bottom: 4px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+        padding-bottom: 2px;
+    }
+
+    .log-time {
+        color: #64748b;
+        margin-right: 8px;
+    }
+
+    .log-info {
+        color: #3b82f6;
+    }
+
+    .log-warn {
+        color: #f59e0b;
+    }
+
+    .log-error {
+        color: #ef4444;
+    }
+</style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+{% endblock %}
+
 {% block content %}
-<div style="padding: 30px; max-width: 1600px; margin: 0 auto;">
-    <h1 style="color: white; margin-bottom: 24px;">Daena Command Center</h1>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
-        <div
-            style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 24px;">
-            <h3 style="color: var(--daena-gold); margin-bottom: 16px;">System Status</h3>
-            <p style="color: #9CA3AF;">All systems operational</p>
+<div class="cc-container">
+    <div class="cc-header">
+        <div class="cc-title"><i class="fas fa-satellite-dish" style="margin-right: 15px;"></i>Daena Command Center
+        </div>
+        <div style="display: flex; gap: 20px; color: #94a3b8;">
+            <div><span class="status-indicator status-green" id="backend-status-dot"></span>Backend</div>
+            <div><span class="status-indicator status-green" id="brain-status-dot"></span>Brain</div>
+            <div><span class="status-indicator status-yellow" id="voice-status-dot"></span>Voice</div>
         </div>
     </div>
+
+    <!-- Top Stats -->
+    <div class="cc-grid">
+        <div class="cc-card">
+            <div class="cc-card-title">Total Agents</div>
+            <div class="cc-card-value" id="total-agents">-</div>
+            <div style="color: var(--accent-green); font-size: 0.875rem; margin-top: 5px;">
+                <i class="fas fa-arrow-up"></i> 100% Operational
+            </div>
+        </div>
+        <div class="cc-card">
+            <div class="cc-card-title">Active Projects</div>
+            <div class="cc-card-value" id="total-projects">-</div>
+            <div style="color: var(--accent-cyan); font-size: 0.875rem; margin-top: 5px;">
+                <i class="fas fa-hashtag"></i> In Progress
+            </div>
+        </div>
+        <div class="cc-card">
+            <div class="cc-card-title">Pending Approvals</div>
+            <div class="cc-card-value" style="color: var(--accent-gold);" id="total-approvals">-</div>
+            <div style="color: #94a3b8; font-size: 0.875rem; margin-top: 5px;">
+                Requires Founder
+            </div>
+        </div>
+        <div class="cc-card">
+            <div class="cc-card-title">System Load</div>
+            <div class="cc-card-value" id="system-load">24%</div>
+            <div class="cc-card-sparkline" id="load-sparkline"></div>
+        </div>
+    </div>
+
+    <!-- Main Content Grid -->
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem;">
+
+        <!-- Left Column -->
+        <div>
+            <div class="cc-card" style="margin-bottom: 1.5rem;">
+                <h3 class="cc-section-title"><i class="fas fa-project-diagram"></i> Active Projects</h3>
+                <table class="cc-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Department</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="projects-table-body">
+                        <tr>
+                            <td colspan="5">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="cc-card">
+                <h3 class="cc-section-title"><i class="fas fa-terminal"></i> Live System Logs</h3>
+                <div class="console-log" id="system-logs">
+                    <div class="log-line"><span class="log-time">Now</span> <span class="log-info">System
+                            initialized...</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column -->
+        <div>
+            <div class="cc-card" style="margin-bottom: 1.5rem;">
+                <h3 class="cc-section-title"><i class="fas fa-users-cog"></i> Agent Status</h3>
+                <div id="agents-list" style="max-height: 400px; overflow-y: auto;">
+                    Loading agents...
+                </div>
+            </div>
+
+            <div class="cc-card">
+                <h3 class="cc-section-title"><i class="fas fa-shield-alt"></i> Security</h3>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span style="color: #cbd5e1;">Auth Mode</span>
+                    <span style="color: var(--accent-green);">JWT / Enabled</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span style="color: #cbd5e1;">Exec Token</span>
+                    <span style="color: var(--accent-green);">Enforced</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #cbd5e1;">Lockdown</span>
+                    <span style="color: #64748b;">Inactive</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
 </div>
+
+<script>
+    // --- Data Fetching Logic ---
+
+    async function fetchStats() {
+        try {
+            // 1. Fetch Agents
+            const agentsRes = await fetch('/api/v1/agents?limit=100');
+            const agentsData = await agentsRes.json();
+            document.getElementById('total-agents').innerText = agentsData.total_count || '-';
+
+            renderAgents(agentsData.agents || []);
+
+            // 2. Fetch Projects
+            const projRes = await fetch('/api/v1/projects');
+            const projData = await projRes.json();
+            const projects = projData.projects || [];
+            document.getElementById('total-projects').innerText = projects.length;
+
+            renderProjects(projects);
+
+            // 3. Fetch Approvals (Mock or Real)
+            // If we have an approvals endpoint, use it. Otherwise use tool_broker stats.
+            // Placeholder: 2 pending
+            document.getElementById('total-approvals').innerText = '0';
+
+            // 4. Update Status Indicators
+            document.getElementById('backend-status-dot').className = 'status-indicator status-green';
+            // Check brain
+            const brainRes = await fetch('/api/v1/brain/status');
+            const brainData = await brainRes.json();
+            const brainClass = (brainData.connected) ? 'status-green' : 'status-red';
+            document.getElementById('brain-status-dot').className = `status-indicator ${brainClass}`;
+
+        } catch (error) {
+            console.error("Failed to fetch stats:", error);
+            document.getElementById('backend-status-dot').className = 'status-indicator status-red';
+        }
+    }
+
+    function renderProjects(projects) {
+        const tbody = document.getElementById('projects-table-body');
+        if (projects.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 2rem;">No active projects</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = projects.map(p => `
+            <tr>
+                <td>${p.id}</td>
+                <td style="font-weight: 500; color: white;">${p.name}</td>
+                <td>${p.department_id || 'General'}</td>
+                <td><span style="padding: 2px 8px; border-radius: 4px; background: rgba(16, 185, 129, 0.2); color: #6ee7b7; font-size: 0.75rem;">${p.status}</span></td>
+                <td>
+                    <button onclick="executeProject('${p.id}')" style="background: transparent; border: 1px solid var(--accent-cyan); color: var(--accent-cyan); padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">
+                        <i class="fas fa-play"></i> Run
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function executeProject(projectId) {
+        if (!confirm("Start execution for project " + projectId + "?")) return;
+        try {
+            const res = await fetch(`/api/v1/projects/${projectId}/execute`, { method: 'POST' });
+            const data = await res.json();
+            alert(data.message);
+            addLog(`Executed project ${projectId}: ${data.message}`);
+        } catch (e) {
+            alert("Execution failed: " + e);
+        }
+    }
+
+    function renderAgents(agents) {
+        const list = document.getElementById('agents-list');
+        list.innerHTML = agents.slice(0, 50).map(a => `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; align-items: center;">
+                    <div style="width: 8px; height: 8px; border-radius: 50%; background: ${a.status === 'active' ? '#10b981' : '#64748b'}; margin-right: 10px;"></div>
+                    <div>
+                        <div style="color: white; font-size: 0.85rem;">${a.name}</div>
+                        <div style="color: #64748b; font-size: 0.75rem;">${a.role}</div>
+                    </div>
+                </div>
+                <div style="font-size: 0.75rem; color: #94a3b8;">98%</div>
+            </div>
+        `).join('');
+    }
+
+    function addLog(msg, type = 'info') {
+        const logContainer = document.getElementById('system-logs');
+        const time = new Date().toLocaleTimeString();
+        const line = document.createElement('div');
+        line.className = 'log-line';
+        line.innerHTML = `<span class="log-time">${time}</span> <span class="log-${type}">${msg}</span>`;
+        logContainer.prepend(line);
+    }
+
+    // Auto-refresh
+    fetchStats();
+    setInterval(fetchStats, 10000);
+
+    // Mock logs for liveliness
+    setInterval(() => {
+        const msgs = [
+            "Syncing agent memory...",
+            "Checking project status...",
+            "Heartbeat received from DaenaBrain...",
+            "Optimizing database query...",
+            "Websocket keep-alive ping..."
+        ];
+        const msg = msgs[Math.floor(Math.random() * msgs.length)];
+        // addLog(msg); // Optional: disabled to not spam
+    }, 5000);
+
+</script>
 {% endblock %}

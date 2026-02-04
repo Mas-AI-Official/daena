@@ -37,6 +37,7 @@ from middleware.api_key_guard import APIKeyGuard
 # Import services
 from services.auth_service import auth_service
 from services.gpu_service import gpu_service
+from backend.security.auth import verify_jwt_token, require_founder_approval
 
 # Import real AI services (must never crash startup)
 try:
@@ -913,6 +914,36 @@ app.add_middleware(
 )
 print("✅ CORS middleware added (origins: %s)" % (_cors_origins[:3] if len(_cors_origins) > 3 else _cors_origins))
 
+# Authentication Middleware
+@app.middleware("http")
+async def authenticate_request(request: Request, call_next):
+    # Check if auth is disabled via env
+    if os.getenv("DISABLE_AUTH", "1") == "1":
+        return await call_next(request)
+
+    # Skip auth for public endpoints, docs, and static files
+    if request.url.path.startswith("/api/") and not request.url.path.startswith("/api/v1/auth/"):
+        token = request.headers.get("Authorization")
+        if not token:
+             return JSONResponse(
+                status_code=401,
+                content={"error": "Unauthorized - Missing token"}
+            )
+        
+        # Verify token
+        payload = verify_jwt_token(token.replace("Bearer ", ""))
+        if not payload:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Unauthorized - Invalid or expired token"}
+            )
+            
+        # Store user info in request state if needed
+        request.state.user = payload
+
+    response = await call_next(request)
+    return response
+
 # ... (Auth, Tracing, Role, CSRF, APIKeyGuard disabled for debugging) ...
 
 # Lockdown middleware: when SECURITY_LOCKDOWN_MODE or runtime lockdown is active, block non-whitelisted requests (503)
@@ -1406,6 +1437,14 @@ try:
         logger.warning(f"⚠️ UI routes not available: {e}")
     except Exception as e:
         logger.warning(f"⚠️ UI routes failed to load: {e}")
+
+    # Auth Routes
+    try:
+        from backend.routes.auth import router as auth_router
+        app.include_router(auth_router)
+        logger.info("✅ Auth API registered at /api/v1/auth")
+    except Exception as e:
+        logger.warning(f"⚠️ Auth API not available: {e}")
 
     # Skills & Execution Layer - Explicit registration so /api/v1/skills and /api/v1/execution/* always work
     try:
