@@ -524,6 +524,35 @@ async def execute_tool(
         )
         return {"status": "error", "result": None, "error": "tool disabled", "audit_id": audit_id, "trace_id": trace_id, "dry_run": dry_run}
 
+    # Task E: Tool Governance (High Risk Approval)
+    try:
+        from backend.config.settings import settings
+        from backend.tools.policies import tool_governance
+        
+        # In DEV/DISABLE_AUTH mode, we assume Founder is operating locally
+        forced_role = "founder" if settings.disable_auth else "agent"
+        
+        # Check approval
+        tool_governance.check_approval(
+            tool_name=tool_name, 
+            args=args, 
+            user_role=forced_role, 
+            approval_token=None # TODO: Extract from context if available
+        )
+    except PolicyError as e:
+         audit_id = write_audit_event(
+            tool_name=tool_name,
+            args=args,
+            department=department,
+            agent_id=agent_id,
+            reason=reason,
+            status="policy_blocked",
+            trace_id=trace_id,
+            duration_ms=(time.time() - t0) * 1000.0,
+            error=str(e),
+        )
+         return {"status": "error", "result": None, "error": str(e), "audit_id": audit_id, "trace_id": trace_id, "dry_run": dry_run}
+
     rl_key = f"{department or 'unknown'}:{agent_id or 'unknown'}:{tool_name}"
     if not rate_limiter.allow(rl_key):
         audit_id = write_audit_event(

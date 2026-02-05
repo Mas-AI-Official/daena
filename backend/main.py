@@ -1396,6 +1396,46 @@ try:
     except ImportError as e:
         logger.warning(f"Analytics routes not available: {e}")
     
+    # Integrity Shield API (VP of Integrity)
+    try:
+        from backend.routes.integrity import router as integrity_router
+        app.include_router(integrity_router)
+        logger.info("✅ Integrity Shield API registered at /api/v1/integrity")
+    except ImportError as e:
+        logger.warning(f"⚠️ Integrity Shield API not available: {e}")
+
+    # MCP API (Model Context Protocol)
+    try:
+        from backend.routes.mcp_route import router as mcp_router
+        app.include_router(mcp_router)
+        logger.info("✅ MCP API registered at /api/v1/mcp")
+    except ImportError as e:
+        logger.warning(f"⚠️ MCP API not available: {e}")
+
+    # File System API
+    try:
+        from backend.routes.file_system import router as file_system_router
+        app.include_router(file_system_router)
+        logger.info("✅ File System API registered at /api/v1/files")
+    except ImportError as e:
+        logger.warning(f"⚠️ File System API not available: {e}")
+
+    # Vault API (Secure Secrets)
+    try:
+        from backend.routes.vault import router as vault_router
+        app.include_router(vault_router)
+        logger.info("✅ Vault API registered at /api/v1/vault")
+    except ImportError as e:
+        logger.warning(f"⚠️ Vault API not available: {e}")
+
+    # Terminal API (Dev Tools)
+    try:
+        from backend.routes.terminal import router as terminal_router
+        app.include_router(terminal_router)
+        logger.info("✅ Terminal API registered at /api/v1/terminal")
+    except ImportError as e:
+        logger.warning(f"⚠️ Terminal API not available: {e}")
+
     # Message queue persistence endpoints
     try:
         from backend.routes.message_queue import router as message_queue_router
@@ -1600,21 +1640,15 @@ try:
     except ImportError as e:
         logger.error(f"❌ Chat History API not available: {e}")
 
-    # Councils Router (CRITICAL FIX - was missing!)
+    # Councils Router (Consolidated)
     try:
         from backend.routes.councils import router as councils_router
-        app.include_router(councils_router)
+        app.include_router(councils_router, prefix="/api/v1/councils", tags=["councils"])
         logger.info("✅ Councils API registered at /api/v1/councils")
     except ImportError as e:
-        logger.error(f"❌ Councils API not available: {e}")
-
-    # Council Router (Phase 2 - Legacy)
-    try:
-        from backend.routes.council import router as council_router
-        app.include_router(council_router)
-        logger.info("✅ Council API registered at /api/v1/council")
-    except ImportError as e:
-        logger.error(f"❌ Council API not available: {e}")
+        logger.warning(f"⚠️ Councils API not available: {e}. Consolidation pending.")
+    except Exception as e:
+        logger.error(f"❌ Councils API failed to load: {e}")
 
     # Analytics Router (Phase 3)
     try:
@@ -1647,23 +1681,7 @@ try:
     except ImportError as e:
         logger.error(f"❌ Self-Upgrade API not available: {e}")
 
-    # Brain Status Router
-    try:
-        from backend.routes.brain_status import router as brain_status_router
-        app.include_router(brain_status_router)
-        logger.info("✅ Brain Status API registered at /api/v1/brain")
-    except ImportError as e:
-        logger.error(f"❌ Brain Status API not available: {e}")
-
-    # Voice Router
-    try:
-        from backend.routes.voice import router as voice_router
-        app.include_router(voice_router)
-        logger.info("✅ Voice API registered at /api/v1/voice")
-    except ImportError as e:
-        logger.error(f"❌ Voice API not available: {e}")
-
-    # System Management Router
+    # Core APIs are registered below in the consolidated block
     try:
         from backend.routes.system import router as system_router
         app.include_router(system_router)
@@ -1735,12 +1753,9 @@ safe_import_router("brain")
 safe_import_router("agents")
 safe_import_router("departments")
 safe_import_router("projects")
-safe_import_router("departments")
-safe_import_router("projects")
 safe_import_router("daena")
 safe_import_router("chat_history")
-safe_import_router("daena_decisions")
-safe_import_router("agent_builder_complete")
+safe_import_router("agent_builder") # Fixed from agent_builder_complete
 safe_import_router("cmp_voting")
 safe_import_router("strategic_meetings")
 safe_import_router("voice_agents")
@@ -1748,17 +1763,16 @@ safe_import_router("honey_knowledge")
 safe_import_router("founder_panel")
 safe_import_router("task_timeline")
 safe_import_router("consultation")
-# safe_import_router("monitoring")  # Explicitly registered above with /api/v1/monitoring prefix
 safe_import_router("data_sources")
 safe_import_router("ai_models")
-safe_import_router("model_registry")  # Phase D: Enhanced model registry
-safe_import_router("prompt_library")  # Phase E: Prompt engineering mastery
-safe_import_router("tool_playbooks")  # Phase F: Skills growth - Tool playbooks
-safe_import_router("llm_status")  # Phase B: LLM status endpoint
+safe_import_router("model_registry")
+safe_import_router("prompt_library")
+safe_import_router("tool_playbooks")
+safe_import_router("llm_status")
 safe_import_router("workflows")
 safe_import_router("security")
 safe_import_router("users")
-safe_import_router("council")
+# Council routers consolidated above
 safe_import_router("experience_pipeline")  # Experience-without-data pipeline
 safe_import_router("strategic_assembly")
 safe_import_router("strategic_room")
@@ -1792,17 +1806,15 @@ safe_import_router("demo")  # Demo router for AI Tinkerers
 # New Sunflower × Honeycomb routes
 safe_import_router("sunflower")
 safe_import_router("honeycomb")
-safe_import_router("health")  # Health endpoints including /api/v1/health/council
-safe_import_router("council_status")  # Council status and presence endpoints
-safe_import_router("council_rounds")  # Council rounds history and details
-# safe_import_router("auth")  # NO-AUTH baseline (auth routes disabled)
-safe_import_router("slo")  # SLO monitoring endpoints
-safe_import_router("registry")  # Registry summary endpoint (8×6 structure)
-safe_import_router("memory")  # NBMF memory API for Control Pannel
-safe_import_router("packages")  # Skill packages / marketplace for Control Pannel
-safe_import_router("research")  # Deep research API for Control Pannel
-safe_import_router("integrity")  # Data integrity shield for Control Pannel
-safe_import_router("shadow")  # Shadow / honeypot API (founder-only)
+safe_import_router("health")
+# Council related sub-routes consolidated in councils.py
+safe_import_router("slo")
+safe_import_router("registry")
+safe_import_router("memory")
+safe_import_router("packages")
+safe_import_router("research")
+safe_import_router("integrity")
+safe_import_router("shadow")
 
 # New Augmented System Routes
 safe_import_router("audit")
@@ -1849,6 +1861,14 @@ try:
     logger.info("✅ Change Requests API registered at /api/v1/change-requests")
 except ImportError as e:
     logger.warning(f"⚠️ Change Requests API not available: {e}")
+
+# Awareness & Social Intelligence APIs
+try:
+    from backend.routes.awareness import router as awareness_router
+    app.include_router(awareness_router)
+    logger.info("✅ Awareness API registered at /api/v1/awareness")
+except ImportError as e:
+    logger.warning(f"⚠️ Awareness API not available: {e}")
 
 # Pricing Lab (Add-On 5)
 try:
@@ -1924,6 +1944,24 @@ try:
     logger.info("✅ Treasury API registered at /api/v1/treasury")
 except ImportError as e:
     logger.warning(f"⚠️ Treasury API not available: {e}")
+
+# Policy API — /api/v1/policy (configuration for Founder Policy Center)
+try:
+    from backend.routes.policy import router as policy_router
+    app.include_router(policy_router)
+    logger.info("✅ Policy API registered at /api/v1/policy")
+except ImportError as e:
+    logger.warning(f"⚠️ Policy API not available: {e}")
+
+# Token & NFT APIs (Phase 7)
+try:
+    from backend.routes.token import router as token_router
+    app.include_router(token_router)
+    from backend.routes.nft import router as nft_router
+    app.include_router(nft_router)
+    logger.info("✅ Token & NFT APIs registered")
+except ImportError as e:
+    logger.warning(f"⚠️ Token/NFT APIs not available: {e}")
 
 # Test the events endpoint
 @app.get("/test-events")
@@ -4462,7 +4500,8 @@ except Exception as e:
 try:
     from backend.routes import (
         daena, tasks, agents, research, packages, defi, 
-        council, treasury, proactive, events, use_cases, shadow, governance, execution_layer
+        councils, treasury, proactive, events, use_cases, shadow, governance, execution_layer,
+        brain, model_registry, health, audit, voice, system, chat_history
     )
     
     # Critical Chat API
@@ -4473,7 +4512,21 @@ try:
     app.include_router(research.router)
     app.include_router(packages.router)
     app.include_router(defi.router)
-    app.include_router(council.router)
+    app.include_router(audit.router)
+    app.include_router(chat_history.router)
+    
+    # Consolidated Councils
+    app.include_router(councils.router)
+    
+    # Core Brain and Models
+    app.include_router(brain.router)
+    app.include_router(model_registry.router)
+    
+    # System and Voice
+    app.include_router(voice.router)
+    app.include_router(system.router)
+    
+    # Other Core Routes
     app.include_router(treasury.router)
     app.include_router(proactive.router)
     app.include_router(use_cases.router)

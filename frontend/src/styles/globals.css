@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+@theme {
+    /* --- COLOR PALETTE: MIDNIGHT (Backgrounds) --- */
+    --color-midnight-50: #f1f3f6;
+    --color-midnight-100: #e2e8f0;
+    --color-midnight-200: #0b0f17;
+    --color-midnight-300: #161b26;
+    --color-midnight-400: #1e293b;
+    --color-midnight-500: #334155;
+    --color-midnight-900: #020408;
+    --color-midnight-950: #010204;
+
+    /* --- COLOR PALETTE: STARLIGHT (Text) --- */
+    --color-starlight-100: #f8f9fa;
+    --color-starlight-200: #e2e8f0;
+    --color-starlight-300: #94a3b8;
+    --color-starlight-400: #64748b;
+
+    /* --- COLOR PALETTE: BRAND (Primary/Cosmos) --- */
+    --color-primary-50: #E6F0FF;
+    --color-primary-100: #CCE0FF;
+    --color-primary-200: #99C2FF;
+    --color-primary-300: #66A3FF;
+    --color-primary-400: #3385FF;
+    --color-primary-500: #0070F3;
+    --color-primary-600: #005ACC;
+    --color-primary-700: #0045A6;
+    --color-primary-800: #002F7A;
+    --color-primary-900: #001A4D;
+
+    --color-cosmos-100: var(--color-primary-100);
+    --color-cosmos-400: var(--color-primary-400);
+    --color-cosmos-500: var(--color-primary-500);
+    --color-cosmos-600: var(--color-primary-600);
+
+    /* --- STATUS (Psychology-Optimized) --- */
+    --color-status-success: #00D68F;
+    --color-status-warning: #FFB020;
+    --color-status-error: #FF4757;
+    --color-status-info: #0070F3;
+    /* Using Primary 500 for info */
+
+    /* --- ACCENT / PREMIUM --- */
+    --color-accent: #8B5CF6;
+    --color-premium: #8B5CF6;
+
+    /* --- FONTS --- */
+    --font-sans: "Inter", system-ui, sans-serif;
+    --font-display: "Outfit", sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+
+    /* --- RADIUS (Psychology-Optimized) --- */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 9999px;
+
+    /* --- SHADOWS --- */
+    --shadow-glow-primary: 0 0 20px rgba(0, 112, 243, 0.3);
+    --shadow-glow-success: 0 0 20px rgba(0, 214, 143, 0.3);
+    --shadow-glow-error: 0 0 20px rgba(255, 71, 87, 0.3);
+    --shadow-glow-sm: 0 0 5px rgba(0, 112, 243, 0.2);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --shadow-glow-md: 0 0 20px rgba(99, 102, 241, 0.5);
+}
+
+@layer base {
+    * {
+        @apply border-white/5;
+    }
+
+    body {
+        @apply bg-midnight-900 text-starlight-100 font-sans antialiased overflow-x-hidden selection:bg-cosmos-500 selection:text-white;
+        background-image:
+            radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 25%),
+            radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.08) 0%, transparent 25%);
+        background-attachment: fixed;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        @apply font-display tracking-tight font-medium;
+    }
+}
+
+@utility glass-panel {
+    @apply bg-midnight-200/60 backdrop-blur-xl border border-white/5 shadow-2xl;
+}
+
+@utility glass-card {
+    @apply bg-midnight-300/40 backdrop-blur-lg border border-white/5 rounded-2xl shadow-lg transition-all duration-300;
+}
+
+@utility glass-input {
+    @apply bg-midnight-900/50 border border-white/10 rounded-xl px-4 py-3 text-starlight-100 placeholder-starlight-300 focus:outline-none focus:ring-2 focus:ring-cosmos-500/50 focus:border-cosmos-500/50 transition-all;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    @apply bg-midnight-400 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    @apply bg-midnight-500;
+}
+
+/* Animations */
+@keyframes fade-in-up {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in-up {
+    animation: fade-in-up 0.5s ease-out forwards;
+}

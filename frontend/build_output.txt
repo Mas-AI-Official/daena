@@ -1,0 +1,5 @@
+
+> frontend@0.0.0 build
+> tsc -b && vite build
+
+src/components/layout/PageLayout.tsx(1,10): error TS1484: 'ReactNode' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.

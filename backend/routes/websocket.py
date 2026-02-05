@@ -1,10 +1,12 @@
 """
 WebSocket Routes for Real-Time Updates
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from datetime import datetime
+import asyncio
 import logging
 import json
 
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from backend.core.websocket_manager import websocket_manager, emit_chat_message
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,7 @@ async def websocket_events(websocket: WebSocket):
     - system.reset (system resets)
     """
     from backend.services.event_bus import event_bus
+    import asyncio
 
     if _websocket_auth_required() and not _validate_websocket_token(websocket):
         await websocket.close(code=4403)
@@ -57,6 +60,21 @@ async def websocket_events(websocket: WebSocket):
 
     await websocket.accept()
     await event_bus.connect(websocket)
+    
+    # Heartbeat task
+    async def heartbeat(ws):
+        try:
+            while True:
+                await asyncio.sleep(25)
+                # Check if open? Fastapi doesn't expose easy check without trying to send
+                try:
+                    await ws.send_json({"event_type": "ping", "timestamp": datetime.utcnow().isoformat()})
+                except Exception:
+                    break
+        except asyncio.CancelledError:
+            pass
+            
+    heartbeat_task = asyncio.create_task(heartbeat(websocket))
     
     try:
         while True:
@@ -70,13 +88,19 @@ async def websocket_events(websocket: WebSocket):
                         "event_type": "pong",
                         "timestamp": message.get("timestamp")
                     })
+                elif message.get("type") == "pong":
+                    # Client responded to our ping
+                    pass
             except json.JSONDecodeError:
                 logger.warning(f"Invalid JSON from WebSocket: {data}")
     except WebSocketDisconnect:
+        heartbeat_task.cancel()
         await event_bus.disconnect(websocket)
     except Exception as e:
+        heartbeat_task.cancel()
         logger.error(f"WebSocket error: {e}")
         await event_bus.disconnect(websocket)
+
 
 
 @router.websocket("/ws/chat/{session_id}")

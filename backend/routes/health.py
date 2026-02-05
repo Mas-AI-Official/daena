@@ -26,9 +26,21 @@ def get_db():
 
 @router.get("/")
 async def basic_health():
-    """Basic health check for load balancers."""
+    """Basic health check for load balancers - checks Ollama status."""
+    ollama_ok = False
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=1.0) as client:
+            response = await client.get("http://localhost:11434/api/tags")
+            ollama_ok = (response.status_code == 200)
+    except Exception:
+        ollama_ok = False
+
+    status = "healthy" if ollama_ok else "degraded"
+    
     return {
-        "status": "healthy",
+        "status": status,
+        "ollama_available": ollama_ok,
         "timestamp": datetime.now().isoformat(),
         "service": "daena-ai-vp"
     }

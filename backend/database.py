@@ -101,23 +101,37 @@ class Agent(Base):
     brain_model = relationship("BrainModel", back_populates="agents")
     department_ref = relationship("Department", back_populates="agents")
 
-# Enhanced Brain Model for multi-LLM training with R1/R2 support
+# PROMPT 2: MODEL REGISTRY & GOVERNANCE MODELS
+
+# Enhanced Brain Model (Model Registry)
 class BrainModel(Base):
     __tablename__ = "brain_models"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True)
-    model_type = Column(String)  # "r1", "r2", "deepseek_v3", "qwen", "yi", "hybrid", "openai_gpt4"
-    model_path = Column(String, nullable=True)  # Local path or cloud endpoint
-    provider = Column(String)  # "local", "azure", "huggingface", "anthropic", "openai"
-    api_key = Column(String, nullable=True)
-    config = Column(JSON)  # Model-specific configuration
-    status = Column(String, default="available")  # available, training, error, offline
-    performance_metrics = Column(JSON, default={})
-    last_used = Column(DateTime, nullable=True)
-    model_size = Column(String, nullable=True)  # "7B", "14B", "70B", etc.
-    context_length = Column(Integer, default=4096)
-    is_quantized = Column(Boolean, default=False)
-    quantization_type = Column(String, nullable=True)  # "int8", "int4", "gguf", etc.
+    model_id = Column(String, unique=True, index=True) # Logical ID (e.g., "azure-gpt4")
+    name = Column(String) # Display name
+    provider = Column(String) # "ollama", "azure_openai", "azure_ai_inference"
+    
+    # Endpoint details
+    endpoint_base = Column(String, nullable=True) # e.g. https://.../openai/deployments/dep/
+    deployment_name = Column(String, nullable=True) # for azure_openai
+    model_name = Column(String, nullable=True) # for azure_ai_inference or ollama name
+    api_version = Column(String, nullable=True) # 2024-05-01-preview
+    
+    # Capabilities (JSON lists)
+    capabilities = Column(JSON, default=[]) # ["chat", "reasoning", "vision"]
+    
+    # Governance & Cost
+    enabled = Column(Boolean, default=True)
+    routing_weight = Column(Integer, default=10)
+    max_tokens_default = Column(Integer, default=4096)
+    
+    cost_per_1k_input = Column(Float, default=0.0)
+    cost_per_1k_output = Column(Float, default=0.0)
+    
+    monthly_budget_usd = Column(Float, nullable=True)
+    daily_budget_usd = Column(Float, nullable=True)
+    requires_approval_above_usd = Column(Float, nullable=True) # If cost > X, require approval
+    
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
@@ -126,101 +140,74 @@ class BrainModel(Base):
     consensus_votes = relationship("ConsensusVote", back_populates="brain_model")
     model_checkpoints = relationship("ModelCheckpoint", back_populates="brain_model")
 
-# New: Adjacency table for honeycomb routing
-class CellAdjacency(Base):
-    __tablename__ = "cell_adjacency"
-    id = Column(Integer, primary_key=True, index=True)
-    cell_id = Column(String, index=True)
-    neighbor_id = Column(String, index=True)
-    distance = Column(Float)
-    relationship_type = Column(String, default="neighbor")  # neighbor, parent, child
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    
-    __table_args__ = (
-        # Ensure unique relationships
-        {'sqlite_autoincrement': True},
-    )
+import enum
 
-# New: Model Checkpoints for training progress
-class ModelCheckpoint(Base):
-    __tablename__ = "model_checkpoints"
-    id = Column(Integer, primary_key=True, index=True)
-    brain_model_id = Column(Integer, ForeignKey("brain_models.id"))
-    checkpoint_name = Column(String)
-    checkpoint_path = Column(String)
-    training_step = Column(Integer, default=0)
-    loss_value = Column(Float, nullable=True)
-    accuracy_score = Column(Float, nullable=True)
-    checkpoint_metadata = Column(JSON, default={})
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    
-    brain_model = relationship("BrainModel", back_populates="model_checkpoints")
+class ActionType(str, enum.Enum):
+    """Types of actions governed"""
+    FILE_READ = "file_read"
+    FILE_WRITE = "file_write"
+    FILE_DELETE = "file_delete"
+    PACKAGE_INSTALL = "package_install"
+    SKILL_CREATE = "skill_create"
+    SKILL_EXECUTE = "skill_execute"
+    EXTERNAL_API = "external_api"
+    RESEARCH_QUERY = "research_query"
+    DEFI_SCAN = "defi_scan"
+    TREASURY_SPEND = "treasury_spend"
+    MODEL_UPDATE = "model_update"
+    SYSTEM_CONFIG = "system_config"
+    NETWORK_REQUEST = "network_request"
+    DATABASE_WRITE = "database_write"
+    UNKNOWN = "unknown"
 
-# Enhanced Training Sessions for brain development
 class TrainingSession(Base):
     __tablename__ = "training_sessions"
     id = Column(Integer, primary_key=True, index=True)
     brain_model_id = Column(Integer, ForeignKey("brain_models.id"))
-    session_type = Column(String)  # "conversation", "decision", "strategy", "knowledge", "reasoning"
-    training_data = Column(JSON)
-    parameters = Column(JSON)  # Training parameters
-    status = Column(String, default="running")  # running, completed, failed, paused
+    status = Column(String)
     start_time = Column(DateTime, default=datetime.datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
-    metrics = Column(JSON, default={})  # Training metrics
-    loss_history = Column(JSON, default=[])
-    learning_rate = Column(Float, nullable=True)
-    batch_size = Column(Integer, nullable=True)
-    epochs_completed = Column(Integer, default=0)
-    total_epochs = Column(Integer, default=1)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    
+    metrics_json = Column(JSON, default={})
     brain_model = relationship("BrainModel", back_populates="training_sessions")
 
-# Enhanced Consensus System for multi-LLM decisions
 class ConsensusVote(Base):
     __tablename__ = "consensus_votes"
     id = Column(Integer, primary_key=True, index=True)
-    topic_id = Column(String, index=True)  # Unique topic identifier
     brain_model_id = Column(Integer, ForeignKey("brain_models.id"))
-    vote = Column(Text)  # The model's decision/vote
-    confidence = Column(Float, default=0.0)  # Confidence score
-    reasoning = Column(Text, nullable=True)  # Explanation for the vote
-    vote_weight = Column(Float, default=1.0)  # Weight for this model's vote
+    voter_id = Column(String)
+    vote = Column(String)
+    reason = Column(Text, nullable=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    
     brain_model = relationship("BrainModel", back_populates="consensus_votes")
 
-# New: Consensus Topics for organizing votes
-class ConsensusTopic(Base):
-    __tablename__ = "consensus_topics"
+class ModelCheckpoint(Base):
+    __tablename__ = "model_checkpoints"
     id = Column(Integer, primary_key=True, index=True)
-    topic_id = Column(String, unique=True, index=True)
-    title = Column(String)
-    description = Column(Text)
-    category = Column(String)  # "business", "technical", "strategy", "investment"
-    status = Column(String, default="active")  # active, resolved, archived
-    required_consensus = Column(Float, default=0.7)  # Minimum consensus threshold
-    deadline = Column(DateTime, nullable=True)
-    final_decision = Column(Text, nullable=True)
+    brain_model_id = Column(Integer, ForeignKey("brain_models.id"))
+    path = Column(String)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    resolved_at = Column(DateTime, nullable=True)
+    metrics_json = Column(JSON, default={})
+    brain_model = relationship("BrainModel", back_populates="model_checkpoints")
 
-# Enhanced Knowledge Base for training data
-class KnowledgeEntry(Base):
-    __tablename__ = "knowledge_entries"
+# NEW: Usage Ledger for Cost Tracking
+class UsageLedger(Base):
+    __tablename__ = "usage_ledger"
     id = Column(Integer, primary_key=True, index=True)
-    category = Column(String, index=True)  # "company", "market", "technology", "strategy", "investor"
-    title = Column(String)
-    content = Column(Text)
-    source = Column(String, nullable=True)
-    tags = Column(JSON, default=[])
-    importance_score = Column(Float, default=0.0)
-    embedding_vector = Column(Text, nullable=True)  # Vector representation for similarity search
-    last_accessed = Column(DateTime, nullable=True)
-    access_count = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    model_id = Column(String, index=True) # BrainModel.model_id
+    provider = Column(String)
+    
+    tokens_in = Column(Integer, default=0)
+    tokens_out = Column(Integer, default=0)
+    estimated_cost_usd = Column(Float, default=0.0)
+    
+    context_type = Column(String) # "chat", "council", "background"
+    context_id = Column(String, nullable=True) # session_id or task_id
+    
+    caller_agent_id = Column(String, nullable=True)
+
+# Duplicate FounderPolicy removed (see line 732)
 
 # New: Training Data Sources
 class TrainingDataSource(Base):
@@ -811,67 +798,7 @@ class Alert(Base):
     read_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-# Database session
-def get_db():
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# Create all tables
-def create_tables():
-    Base.metadata.create_all(bind=engine)
-    
-    # Simple migration: attempt to add new columns to existing tables if missing
-    # This is a basic way to handle updates without a full migration system like Alembic
-    try:
-        from sqlalchemy import inspect
-        inspector = inspect(engine)
-        
-        # Check 'skills' table columns
-        if 'skills' in inspector.get_table_names():
-            columns = [c['name'] for c in inspector.get_columns('skills')]
-            with engine.connect() as conn:
-                if 'allowed_operators' not in columns:
-                    conn.execute(text("ALTER TABLE skills ADD COLUMN allowed_operators JSON"))
-                if 'approval_policy' not in columns:
-                    conn.execute(text("ALTER TABLE skills ADD COLUMN approval_policy VARCHAR DEFAULT 'auto'"))
-                # Commit is automatic in autocommit=True engines or handled by context
-    except Exception as e:
-        print(f"Migration warning: {e}")
-
-# Initialize default data
-def initialize_default_data():
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    db = SessionLocal()
-    
-    try:
-        # Add default system configurations
-        default_configs = [
-            {"key": "default_brain_model", "value": "openai_gpt4", "type": "string", "description": "Default brain model for Daena"},
-            {"key": "consensus_threshold", "value": "0.7", "type": "float", "description": "Default consensus threshold for decisions"},
-            {"key": "max_training_epochs", "value": "10", "type": "int", "description": "Maximum training epochs for brain models"},
-            {"key": "enable_voice", "value": "true", "type": "bool", "description": "Enable voice interaction"},
-            {"key": "enable_cmp", "value": "true", "type": "bool", "description": "Enable CMP decision engine"},
-        ]
-        
-        for config in default_configs:
-            existing = db.query(SystemConfig).filter(SystemConfig.config_key == config["key"]).first()
-            if not existing:
-                db_config = SystemConfig(
-                    config_key=config["key"],
-                    config_value=config["value"],
-                    config_type=config["type"],
-                    description=config["description"]
-                )
-                db.add(db_config)
-        
-        db.commit()
-        
-    except Exception as e:
-        print(f"Error initializing default data: {e}")
-        db.rollback()
-    finally:
-        db.close() 
+# Database session - DUPLICATE REMOVED
+# Create all tables - DUPLICATE REMOVED
+# Initialize default data - DUPLICATE REMOVED
+ 

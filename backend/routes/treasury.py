@@ -29,20 +29,13 @@ def _get_treasury_config() -> Dict[str, Any]:
     return {}
 
 
+from backend.services.blockchain_service import blockchain_service
+
 @router.get("/status")
 async def get_treasury_status() -> Dict[str, Any]:
     """Get treasury stats for Control Plane Treasury tab."""
-    cfg = _get_treasury_config()
-    daena_balance = cfg.get("daena_balance", "0")
-    nft_minted = cfg.get("nft_minted", 0)
-    eth_held = cfg.get("eth_held", "0")
-    monthly_spend = cfg.get("monthly_spend", "$0")
-    transactions: List[Dict[str, Any]] = cfg.get("transactions") or []
+    status = blockchain_service.get_treasury_status()
     return {
         "success": True,
-        "daena_balance": daena_balance,
-        "nft_minted": nft_minted,
-        "eth_held": eth_held,
-        "monthly_spend": monthly_spend,
-        "transactions": transactions,
+        **status
     }

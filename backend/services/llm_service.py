@@ -466,6 +466,55 @@ class LLMService:
                 return f"I cannot process this request: {guard_result['reason']}. {guard_result.get('metadata', {}).get('suggested_action', '')}"
         except Exception as e:
             logger.debug(f"Cost guard check failed: {e}")
+
+        # NEW: Model Gateway Routing (Unified Registry)
+        # This supersedes rigid local/cloud logic if a registry model is active
+        try:
+            from backend.services.model_registry import model_registry
+            from backend.services.model_gateway import model_gateway
+            
+            # Get active model from DB/Registry
+            # We assume model_registry syncs with DB or we read DB directly
+            status = await model_registry.get_status()
+            active_model_id = status.active_model
+            
+            # If user explicitly requested a model, use that. Otherwise use active.
+            target_model = model or active_model_id
+            
+            if target_model:
+                # Try to run via Gateway
+                # Convert prompt to messages
+                messages = [{"role": "system", "content": get_daena_system_prompt()}, {"role": "user", "content": final_prompt}]
+                try:
+                    response = await model_gateway.chat_completion(
+                        messages=messages,
+                        model_id=target_model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        stream=False # Gateway supports stream, but strict return type here is str
+                    )
+                    
+                    # Gateway returns full response obj/dict. Extract content.
+                    content = ""
+                    if hasattr(response, 'choices'):
+                         content = response.choices[0].message.content
+                    elif isinstance(response, dict):
+                         content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    
+                    if content:
+                         return content
+                except ValueError:
+                    # Model not found in registry, fall through to legacy logic 
+                    # (e.g. if 'gpt-4' is passed but not in DB)
+                    pass
+                except Exception as e:
+                    logger.error(f"Gateway execution failed for {target_model}: {e}")
+                    # If gateway fails, we might fall back, or generic error?
+                    # Fallback to legacy
+                    pass
+        except Exception as e:
+            logger.debug(f"Gateway routing check failed: {e}")
+
         
         # PHASE B: Local-first priority - check Ollama FIRST, then cloud
         # This ensures local brain is always used when available

@@ -114,17 +114,25 @@ async def login(body: LoginRequest, request: Request) -> LoginResponse:
     )
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: Optional[str] = None
+
 @router.post("/refresh")
 async def refresh_token(
     request: Request,
-    refresh_token: str = Header(..., alias="X-Refresh-Token")
+    body: Optional[RefreshRequest] = None,
+    x_refresh_token: Optional[str] = Header(None, alias="X-Refresh-Token")
 ) -> LoginResponse:
     """
     Refresh access token using refresh token.
-    
-    Implements token rotation: old refresh token is revoked, new pair is issued.
+    Supports token rotation: old refresh token is revoked, new pair is issued.
     """
-    token_pair = jwt_service.refresh_access_token(refresh_token)
+    token = (body.refresh_token if body else None) or x_refresh_token
+    
+    if not token:
+        raise HTTPException(status_code=400, detail="Refresh token missing (use X-Refresh-Token header or body)")
+        
+    token_pair = jwt_service.refresh_access_token(token)
     
     if not token_pair:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
@@ -139,10 +147,17 @@ async def refresh_token(
         )
     
     # Extract user info from refresh token (before it was revoked)
-    # In production, store user info separately
-    payload = jwt_service.verify_token(refresh_token, token_type="refresh")
+    payload = jwt_service.verify_token(token, token_type="refresh")
     if not payload:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        # Fallback if verify fails after refresh_access_token (unlikely)
+        return LoginResponse(
+            access_token=token_pair["access_token"],
+            refresh_token=token_pair["refresh_token"],
+            token_type=token_pair["token_type"],
+            expires_in=token_pair["expires_in"],
+            user_id="unknown",
+            role="client"
+        )
     
     return LoginResponse(
         access_token=token_pair["access_token"],

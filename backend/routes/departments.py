@@ -213,6 +213,35 @@ async def get_department_agents(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load department agents: {str(e)}")
 
+@router.get("/{department_id}/tools")
+async def get_department_tools(department_id: str) -> Dict[str, Any]:
+    """Get all tools available to a specific department."""
+    try:
+        from backend.config.department_tools import get_tools_for_department
+        from backend.tools.registry import TOOL_DEFS
+        
+        tool_ids = get_tools_for_department(department_id)
+        tools = []
+        
+        for tid in tool_ids:
+            tdef = TOOL_DEFS.get(tid)
+            if tdef:
+                tools.append({
+                    "id": tid,
+                    "name": tdef.name,
+                    "description": tdef.description,
+                    "enabled": True # Default to True
+                })
+        
+        return {
+            "success": True,
+            "department_id": department_id,
+            "tools": tools,
+            "count": len(tools)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load department tools: {str(e)}")
+
 # Legacy HTML endpoints for backward compatibility
 @router.get("/html", response_class=HTMLResponse)
 async def get_departments_html(request: Request):

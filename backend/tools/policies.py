@@ -85,6 +85,61 @@ class RateLimiter:
 rate_limiter = RateLimiter(settings.automation_rate_limit_per_min)
 
 
+@dataclass
+class ToolGovernance:
+    """
+    Founder Policy Center Rules (Immutable).
+    Enforces manual approval for critical actions.
+    """
+    HIGH_RISK_TOOLS = {
+        "apply_patch", "shell_exec", "sandbox_worker_run", 
+        "browser_automation_selenium", "desktop_automation_pyautogui",
+        "filesystem_write", "windows_node_file_write_workspace"
+    }
+
+    RESTRICTED_KEYWORDS = [
+        "payment", "transfer", "stripe", "buy", "purchase", # Financial
+        "login", "signin", "auth", "password", "credential" # Auth
+    ]
+
+    @staticmethod
+    def is_high_risk(tool_name: str, args: Dict[str, Any]) -> bool:
+        """Return True if action is High Risk and requires Founder Approval."""
+        tool_name = tool_name.lower()
+        
+        # 1. Explicit High Risk Tools
+        if tool_name in ToolGovernance.HIGH_RISK_TOOLS:
+            return True
+        
+        # 2. Financial & Auth Actions (Heuristics)
+        # Check args values for restricted keywords
+        try:
+             args_str = str(args).lower()
+             if any(kw in args_str for kw in ToolGovernance.RESTRICTED_KEYWORDS):
+                 return True
+        except:
+             pass
+
+        return False
+
+    @staticmethod
+    def check_approval(tool_name: str, args: Dict[str, Any], user_role: str, approval_token: Optional[str]) -> None:
+        """Raise PolicyError if approval is missing for high-risk action."""
+        if not ToolGovernance.is_high_risk(tool_name, args):
+            return
+
+        # If Founder is fulfilling it personally, allow.
+        if user_role == "founder":
+            return 
+            
+        # Otherwise, check for specific approval token (mock logic or DB check)
+        # For now, we insist on FOUNDER role or explicit exemption.
+        if not approval_token:
+            raise PolicyError(f"CRITICAL: Action '{tool_name}' is High Risk and requires Founder Approval. Please request confirmation.")
+
+tool_governance = ToolGovernance()
+
+
 
 
 
