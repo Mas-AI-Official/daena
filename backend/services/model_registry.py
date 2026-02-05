@@ -146,11 +146,37 @@ class ModelRegistry:
     
     async def scan_models(self) -> List[ModelInfo]:
         """
-        Scan Ollama for available models.
-        This is the ONLY way to get the model list.
+        Scan Ollama & DB for available models.
+        Syncs Ollama state to BrainModels table.
         """
-        models = []
+        from backend.database import SessionLocal, BrainModel
         
+        models = []
+        db_models = []
+        
+        # 1. Get Configured Cloud/DB Models
+        db = SessionLocal()
+        try:
+            db_rows = db.query(BrainModel).filter(BrainModel.enabled == True).all()
+            for row in db_rows:
+                # Convert DB row to ModelInfo
+                tier = ModelTier.STABLE # Default for manually added
+                info = ModelInfo(
+                    name=row.model_id, # Use logical ID as name
+                    size=0, # Cloud models don't have file size
+                    family=row.provider,
+                    tier=tier,
+                    capabilities=row.capabilities or [],
+                    is_reasoning="reasoning" in (row.capabilities or []),
+                    is_coding="coding" in (row.capabilities or []),
+                )
+                models.append(info)
+        except Exception as e:
+            logger.error(f"DB Read Error: {e}")
+        finally:
+            db.close()
+
+        # 2. Scan Ollama (Local)
         try:
             import httpx
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -158,24 +184,41 @@ class ModelRegistry:
                 
                 if response.status_code == 200:
                     data = response.json()
+                    db = SessionLocal()
                     
                     for m in data.get("models", []):
                         name = m.get("name", "")
                         
-                        # Determine tier
-                        tier = ModelTier.STABLE if name in self._stable_models else ModelTier.EXPERIMENTAL
+                        # Sync to DB if missing
+                        try:
+                            exists = db.query(BrainModel).filter(BrainModel.model_id == name).first()
+                            if not exists:
+                                # Determine capabilities
+                                caps = ["chat"]
+                                if any(x in name.lower() for x in ["deepseek-r1", "reasoning"]): caps.append("reasoning")
+                                if "coder" in name.lower(): caps.append("coding")
+                                
+                                new_model = BrainModel(
+                                    model_id=name,
+                                    name=name,
+                                    provider="ollama",
+                                    model_name=name,
+                                    capabilities=caps,
+                                    enabled=True
+                                )
+                                db.add(new_model)
+                                db.commit()
+                        except:
+                            pass
                         
-                        # Detect capabilities
+                        # ... (existing classification logic) ...
+                        tier = ModelTier.STABLE if name in self._stable_models else ModelTier.EXPERIMENTAL
                         is_reasoning = any(x in name.lower() for x in ["deepseek-r1", "qwq", "reasoning"])
                         is_coding = any(x in name.lower() for x in ["coder", "code", "starcoder"])
                         
-                        capabilities = []
-                        if is_reasoning:
-                            capabilities.append("reasoning")
-                        if is_coding:
-                            capabilities.append("coding")
-                        if "instruct" in name.lower():
-                            capabilities.append("instruction")
+                        caps = []
+                        if is_reasoning: caps.append("reasoning")
+                        if is_coding: caps.append("coding")
                         
                         model_info = ModelInfo(
                             name=name,
@@ -184,80 +227,62 @@ class ModelRegistry:
                             parameter_size=m.get("details", {}).get("parameter_size", ""),
                             quantization=m.get("details", {}).get("quantization_level", ""),
                             tier=tier,
-                            capabilities=capabilities,
+                            capabilities=caps,
                             is_reasoning=is_reasoning,
                             is_coding=is_coding,
                         )
+                        # Avoid duplicates if DB already added it (checked by name/id collision?)
+                        # DB scan used model_id. Ollama uses name. If they match, we update/overwrite with fresh details.
+                        # For list display, we prefer live Ollama stats (size, quant) over DB placeholder.
+                        
+                        # Remove placeholder if present
+                        models = [x for x in models if x.name != name]
                         models.append(model_info)
                         
-                        # Track experimental models
                         if tier == ModelTier.EXPERIMENTAL:
                             self._experimental_models.add(name)
                     
                     self._status.connected = True
-                    self._status.models = models
-                    self._status.last_scan = datetime.utcnow()
-                    self._status.error = None
-                    
-                    # Set default active model if none set
-                    if not self._status.active_model and models:
-                        # Prefer stable reasoning model
-                        for m in models:
-                            if m.tier == ModelTier.STABLE and m.is_reasoning:
-                                self._status.active_model = m.name
-                                break
-                        # Fallback to any stable model
-                        if not self._status.active_model:
-                            for m in models:
-                                if m.tier == ModelTier.STABLE:
-                                    self._status.active_model = m.name
-                                    break
-                        # Fallback to first model
-                        if not self._status.active_model:
-                            self._status.active_model = models[0].name
-                    
-                    logger.info(f"✅ Scanned {len(models)} models, active: {self._status.active_model}")
+                    db.close()
                 else:
                     self._status.connected = False
-                    self._status.error = f"Ollama returned {response.status_code}"
-                    
         except Exception as e:
-            logger.error(f"Failed to scan models: {e}")
-            self._status.connected = False
-            self._status.error = str(e)
+            logger.error(f"Ollama Scan Error: {e}")
+            # Don't fail completely, keep DB models
         
+        self._status.models = models
+        self._status.last_scan = datetime.utcnow()
         return models
-    
-    async def get_status(self) -> BrainStatus:
-        """Get current brain status. Scans if never scanned."""
-        if not self._status.models:
-            await self.scan_models()
-        return self._status
-    
-    async def set_active_model(self, model_name: str) -> bool:
-        """Set the active model. Returns True if successful."""
-        # Verify model exists
-        model_names = [m.name for m in self._status.models]
-        
-        if model_name not in model_names:
-            # Try scanning first
-            await self.scan_models()
-            model_names = [m.name for m in self._status.models]
-            
-            if model_name not in model_names:
-                logger.warning(f"Model {model_name} not found in [{', '.join(model_names)}]")
-                return False
-        
-        self._status.active_model = model_name
-        
-        # Update last_used
-        for m in self._status.models:
-            if m.name == model_name:
-                m.last_used = datetime.utcnow()
-                break
-        
-        logger.info(f"✅ Active model set to: {model_name}")
-        return True
+
+    async def register_model(self, model_data: Dict[str, Any]) -> bool:
+        """Register a new cloud/API model"""
+        from backend.database import SessionLocal, BrainModel
+        db = SessionLocal()
+        try:
+             # Basic mapping
+             m = BrainModel(
+                 model_id=model_data["model_id"],
+                 name=model_data.get("name"),
+                 provider=model_data["provider"], # azure_openai, azure_ai_inference
+                 endpoint_base=model_data.get("endpoint_base"),
+                 deployment_name=model_data.get("deployment_name"),
+                 model_name=model_data.get("model_name"),
+                 api_version=model_data.get("api_version"),
+                 capabilities=model_data.get("capabilities", []),
+                 cost_per_1k_input=model_data.get("cost_per_1k_input", 0.0),
+                 cost_per_1k_output=model_data.get("cost_per_1k_output", 0.0),
+                 enabled=True
+             )
+             db.add(m)
+             db.commit()
+             await self.scan_models() # Refresh cache
+             return True
+        except Exception as e:
+             logger.error(f"Register failed: {e}")
+             return False
+        finally:
+             db.close()
+
     
     def set_routing_mode(self, mode: RoutingMode) -> bool:
         """Set the routing mode."""

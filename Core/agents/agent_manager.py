@@ -235,15 +235,26 @@ class AgentManager:
                 if project_root not in sys.path:
                     sys.path.insert(0, project_root)
                 from backend.utils.sunflower_registry import sunflower_registry
+                from backend.database import get_db
             except ImportError:
                 pass
             
-            if sunflower_registry and hasattr(sunflower_registry, 'agents'):
-                live_agent_count = len(sunflower_registry.agents)
-                if live_agent_count > 0:
-                    logger.info(f"Using live data: {live_agent_count} agents from database")
-                    self._agents_initialized = True
-                    return  # Don't create fallback agents
+            if sunflower_registry:
+                # If registry is empty, try to populate it
+                if not hasattr(sunflower_registry, 'agents') or len(sunflower_registry.agents) == 0:
+                    try:
+                        logger.info("Sunflower registry empty, attempting to populate from database...")
+                        db = next(get_db())
+                        sunflower_registry.populate_from_database(db)
+                    except Exception as e:
+                        logger.warning(f"Failed to populate sunflower registry in AgentManager: {e}")
+
+                if hasattr(sunflower_registry, 'agents'):
+                    live_agent_count = len(sunflower_registry.agents)
+                    if live_agent_count > 0:
+                        logger.info(f"Using live data: {live_agent_count} agents from database")
+                        self._agents_initialized = True
+                        return  # Don't create fallback agents
         except Exception as e:
             logger.debug(f"Could not access sunflower registry: {e}")
         

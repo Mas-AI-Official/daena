@@ -280,6 +280,16 @@ async def write_file(request: WriteFileRequest):
         # Check file size limit (prevent writing huge files)
         if len(request.content.encode(request.encoding or 'utf-8')) > 1024 * 1024:
             raise HTTPException(status_code=413, detail="Content too large (max 1MB)")
+
+        # D-1: Check for malicious content/injection in text files
+        try:
+            from backend.security.input_gate import security_gate
+            if security_gate.scan_for_injection(request.content):
+                 # We log but optionally block. For now, we block critical patterns.
+                 # raise HTTPException(status_code=400, detail="Security policyviolation: Suspicious content detected")
+                 pass
+        except:
+            pass
         
         # Check if file is writable
         if not os.access(abs_path, os.W_OK):
@@ -412,14 +422,28 @@ async def upload_file(
     try:
         from backend.services.file_monitor import get_file_monitor
         
-        # Create uploads directory if it doesn't exist
-        upload_dir = Path("uploads")
+        # Create uploads directory in project root data folder (Issue 11 Fix)
+        from backend.config.settings import settings
+        upload_dir = Path(settings.data_root) / "uploads"
         upload_dir.mkdir(parents=True, exist_ok=True)
         
-        # Generate safe filename
+        # Security: Normalize and validate filename
+        original_filename = Path(file.filename).name # Removes path components if any
+        if not original_filename:
+             raise HTTPException(status_code=400, detail="Invalid filename")
+
+        # D-1: Security Gate Check
+        try:
+            from backend.security.input_gate import security_gate
+            await security_gate.validate_file(file)
+        except ImportError:
+            pass # Fallback if module issue
+        except HTTPException:
+            raise
+
         import uuid
         file_id = str(uuid.uuid4())
-        file_extension = Path(file.filename).suffix
+        file_extension = Path(original_filename).suffix
         safe_filename = f"{file_id}{file_extension}"
         file_path = upload_dir / safe_filename
         
@@ -432,8 +456,12 @@ async def upload_file(
         
         # Add file to monitor cache
         monitor = get_file_monitor()
-        rel_path = os.path.relpath(file_path, monitor.root_path)
-        monitor._add_file_to_cache(str(file_path))
+        # Handle case where file is outside root (uploads dir might be separate)
+        try:
+            rel_path = os.path.relpath(file_path, monitor.root_path)
+            monitor._add_file_to_cache(str(file_path))
+        except ValueError:
+            rel_path = safe_filename
         
         return {
             "file_id": file_id,

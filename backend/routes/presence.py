@@ -117,14 +117,24 @@ async def check_heartbeats() -> Dict[str, Any]:
 
 
 @router.get("/all")
-async def get_all_presence() -> Dict[str, Any]:
-    """Get presence information for all cells."""
+async def get_all_presence(
+    active_only: bool = False
+) -> Dict[str, Any]:
+    """Get presence information for all cells. active_only=true filters out offline cells (Issue 8 Fix)."""
     all_presence = presence_service.get_all_presence()
+    
+    if active_only:
+        # State values: online, away, busy, offline (PresenceState enum)
+        all_presence = {
+            cell_id: data for cell_id, data in all_presence.items()
+            if data.get("state") != "offline"
+        }
     
     return {
         "success": True,
         "presence": all_presence,
-        "total_cells": len(all_presence)
+        "total_cells": len(all_presence),
+        "active_only": active_only
     }
 
 

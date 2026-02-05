@@ -165,8 +165,19 @@ if exist "%~dp0venv_daena_audio_py310\Scripts\python.exe" (
 )
 echo.
 
-REM ---- 6. Wait for Backend ----
-echo [6/6] Waiting for Backend to be ready...
+
+REM ---- 6. Start Frontend (React/Vite) ----
+echo [6/7] Starting Frontend (Dev Mode)...
+if exist "%ROOT%\frontend\package.json" (
+    start "DAENA - FRONTEND" cmd /k "cd frontend && npm run dev -- --port 5173"
+    echo   [+] Frontend dev server started
+) else (
+    echo   [WARN] Frontend directory not found or no package.json
+)
+echo.
+
+REM ---- 7. Wait for Backend ----
+echo [7/7] Waiting for Backend to be ready...
 set /a COUNT=0
 set "DETECTED_PORT="
 
@@ -205,41 +216,27 @@ echo ============================================================
 echo   DAENA STARTUP COMPLETE
 echo ============================================================
 echo.
-echo   Main URLs:
-echo   Backend:          http://127.0.0.1:!BACKEND_PORT!
-echo   Daena Office:     http://127.0.0.1:!BACKEND_PORT!/ui/daena-office
+echo   Frontend (React): http://localhost:5173
+echo   Backend API:      http://127.0.0.1:!BACKEND_PORT!
 echo   API Docs:         http://127.0.0.1:!BACKEND_PORT!/docs
 echo.
 echo   Sidebar (VP):
-echo   Dashboard:        http://127.0.0.1:!BACKEND_PORT!/ui/dashboard
-echo   Daena Office:     http://127.0.0.1:!BACKEND_PORT!/ui/daena-office
-echo   Projects:         http://127.0.0.1:!BACKEND_PORT!/ui/projects
-echo   Councils:         http://127.0.0.1:!BACKEND_PORT!/ui/councils
-echo   Workspace:        http://127.0.0.1:!BACKEND_PORT!/ui/workspace
-echo   Analytics:        http://127.0.0.1:!BACKEND_PORT!/ui/analytics
-echo   Agents:           http://127.0.0.1:!BACKEND_PORT!/ui/agents
-echo   Control Panel:    http://127.0.0.1:!BACKEND_PORT!/ui/control-panel
-echo   Brain ^& API:     http://127.0.0.1:!BACKEND_PORT!/ui/brain-settings
-echo   Web3 / DeFi:      http://127.0.0.1:!BACKEND_PORT!/ui/web3
-echo   Founder:         http://127.0.0.1:!BACKEND_PORT!/ui/founder-panel
-echo.
-echo   Other:
-echo   QA Guardian:      http://127.0.0.1:!BACKEND_PORT!/api/v1/qa/ui
-echo   Incident Room:    http://127.0.0.1:!BACKEND_PORT!/ui/incident-room
-echo   Wiring audit:     http://127.0.0.1:!BACKEND_PORT!/api/v1/ui/wiring-audit
-echo.
-echo   QA Guardian Status: %QA_GUARDIAN_ENABLED%
-echo   Check the "DAENA - BACKEND" window for server logs.
+echo   Dashboard:        http://localhost:5173/
+echo   Daena Office:     http://localhost:5173/
+echo   Projects:         http://localhost:5173/projects
+echo   Governance:       http://localhost:5173/governance
+echo   Brain & API:      http://localhost:5173/brain
 echo.
 echo ============================================================
 echo.
 
-REM Auto-launch Dashboard
-echo   [+] Launching Dashboard...
-start "" "http://127.0.0.1:!BACKEND_PORT!/ui/daena-office"
+REM Auto-launch Dashboard (Frontend)
+echo   [+] Launching Dashboard (Frontend)...
+start "" "http://localhost:5173"
 
 echo.
 echo Press any key to close this launcher window...
-echo (The backend will continue running in its own window)
+echo (The backend and frontend will continue running in their windows)
 pause >nul
+
 

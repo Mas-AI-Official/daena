@@ -35,8 +35,17 @@ class MCPClient:
             env = os.environ.copy()
             env.update(self.config.env)
             
+            cmd = self.config.command
+            if os.name == 'nt':
+                if cmd == 'npx':
+                    cmd = 'npx.cmd'
+                elif cmd == 'npm':
+                    cmd = 'npm.cmd'
+            else:
+                cmd = self.config.command
+            
             self.process = await asyncio.create_subprocess_exec(
-                self.config.command,
+                cmd,
                 *self.config.args,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,

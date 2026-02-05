@@ -1,45 +1,30 @@
 # Routes package initialization
-# This file is intentionally minimal to avoid import conflicts
+# Consolidated 2026-02-04
 
-# Export available route modules
 __all__ = [
     "agents",
     "departments", 
     "projects",
-    "daena_decisions",
-    "agent_builder_complete",
-    "agent_builder_platform",
+    "daena",
+    "agent_builder",
     "cmp_voting",
-    "strategic_meetings",
+    "councils",
     "honey_knowledge",
-    "voice_agents",
+    "voice_service",
     "founder_panel",
     "task_timeline",
     "consultation",
     "monitoring",
     "data_sources",
-    "ai_models",
     "workflows",
     "security",
     "users",
     "tasks",
     "notifications",
-                  "council",
-              "strategic_assembly"
+    "health",
+    "model_registry",
+    "brain"
 ]
 
-# NOTE: No actual imports here to prevent circular import issues
-# Individual routers are imported directly in main.py using safe_import_router()
-
-# Import routes safely to avoid circular dependencies
-try:
-    from .council import *
-except ImportError as e:
-    import logging
-    logging.warning(f"Could not import council routes: {e}")
-
-try:
-    from .strategic_assembly import *
-except ImportError as e:
-    import logging
-    logging.warning(f"Could not import strategic_assembly routes: {e}")
+# Note: Individual routers should be imported in main.py using safe_import_router
+# to handle potential missing dependencies gracefully.

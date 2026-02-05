@@ -7,7 +7,7 @@ import json
 import uuid
 from datetime import datetime
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1/agents/builder", tags=["Agent Builder"])
 
 # Pydantic Models
 class AgentTemplate(BaseModel):

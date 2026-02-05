@@ -4,6 +4,8 @@ Brain API endpoints - Shared brain with governance-gated writes.
 
 from __future__ import annotations
 
+import os
+
 from typing import Any, Dict, Optional
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
@@ -32,13 +34,11 @@ class CommitRequest(BaseModel):
     notes: Optional[str] = None
 
 
-def get_current_user_role() -> str:
-    """Get current user role (simplified for DISABLE_AUTH=1)"""
-    settings = get_settings()
-    if getattr(settings, "disable_auth", False):
-        return "daena_vp"  # Dev mode: always Daena VP
-    # In production, this would check JWT token
-    return "daena_vp"
+from backend.routes.auth import get_current_user
+
+def get_real_user_role(current_user: dict) -> str:
+    """Extract role from authenticated user payload"""
+    return current_user.get("role", "client")
 
 
 @router.get("/status")
@@ -288,13 +288,11 @@ async def ping_ollama() -> Dict[str, Any]:
 async def log_writeback_attempt(
     agent_id: str,
     attempt_type: str,
-    details: Optional[Dict[str, Any]] = None
+    details: Optional[Dict[str, Any]] = None,
+    current_user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
     Log an attempt by an agent to write directly to the brain (DENIED).
-    
-    This endpoint exists to prove governance enforcement - agents cannot write directly.
-    All writeback must go through the governance pipeline.
     """
     # Log the denied attempt
     brain_store._log_audit(
@@ -320,22 +318,23 @@ async def log_writeback_attempt(
 
 
 @router.post("/query")
-async def query_brain(request: QueryRequest) -> Dict[str, Any]:
+async def query_brain(
+    request: QueryRequest,
+    current_user: dict = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Query shared brain (read-only, available to all agents).
-    
-    This uses the canonical Daena brain to answer queries.
     """
     return brain_store.query(request.query, request.context)
 
 
 @router.post("/propose_experience")
-async def propose_experience(request: ProposeExperienceRequest) -> Dict[str, Any]:
+async def propose_experience(
+    request: ProposeExperienceRequest,
+    current_user: dict = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Propose experience to be added to shared brain (agents only).
-    
-    This creates a proposal that goes through governance pipeline.
-    Agents cannot write directly to brain.
     """
     return brain_store.propose_experience(
         experience=request.experience,
@@ -350,12 +349,11 @@ async def propose_knowledge(
     agent_id: str,
     content: str,
     evidence: Optional[Dict[str, Any]] = None,
-    department: Optional[str] = None
+    department: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
     Propose knowledge to be added to shared brain (agents only).
-    
-    Convenience endpoint for agents to propose knowledge with evidence.
     """
     return brain_store.propose_knowledge(
         agent_id=agent_id,
@@ -370,14 +368,13 @@ async def review_proposal(
     proposal_id: str,
     council_member: str,
     score: float,
-    comments: Optional[str] = None
+    comments: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
     Review and score a proposal (Council members only).
-    
-    Score should be 0.0 to 1.0 (higher = better).
     """
-    user_role = get_current_user_role()
+    user_role = get_real_user_role(current_user)
     if user_role not in ["council", "daena_vp", "founder"]:
         raise HTTPException(status_code=403, detail="Access denied. Only council members can review proposals.")
     
@@ -393,13 +390,14 @@ async def review_proposal(
 
 
 @router.get("/queue")
-async def get_governance_queue(state: Optional[str] = None) -> Dict[str, Any]:
+async def get_governance_queue(
+    state: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get governance queue (pending proposals).
-    
-    Available to Daena VP and council members.
     """
-    user_role = get_current_user_role()
+    user_role = get_real_user_role(current_user)
     if user_role not in ["daena_vp", "founder", "council"]:
         raise HTTPException(status_code=403, detail="Access denied. Governance queue requires VP/council access.")
     
@@ -419,14 +417,15 @@ async def get_governance_queue(state: Optional[str] = None) -> Dict[str, Any]:
 
 
 @router.post("/commit/{proposal_id}")
-async def commit_experience(proposal_id: str, request: CommitRequest) -> Dict[str, Any]:
+async def commit_experience(
+    proposal_id: str,
+    request: CommitRequest,
+    current_user: dict = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Commit proposal to shared brain (Daena VP / Founder only).
-    
-    This is the final step - merges approved experience into shared brain.
-    Alias for approve_and_commit.
     """
-    user_role = get_current_user_role()
+    user_role = get_real_user_role(current_user)
     if user_role not in ["daena_vp", "founder"]:
         raise HTTPException(status_code=403, detail="Access denied. Only Daena VP or Founder can commit experiences.")
     
@@ -438,13 +437,15 @@ async def commit_experience(proposal_id: str, request: CommitRequest) -> Dict[st
 
 
 @router.post("/approve_and_commit/{proposal_id}")
-async def approve_and_commit_proposal(proposal_id: str, request: CommitRequest) -> Dict[str, Any]:
+async def approve_and_commit_proposal(
+    proposal_id: str,
+    request: CommitRequest,
+    current_user: dict = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Approve and commit proposal to shared brain (Daena VP only).
-    
-    This is the final step - merges approved experience into shared brain/NBMF.
     """
-    user_role = get_current_user_role()
+    user_role = get_real_user_role(current_user)
     if user_role not in ["daena_vp", "founder"]:
         raise HTTPException(status_code=403, detail="Access denied. Only Daena VP or Founder can approve and commit.")
     
@@ -460,14 +461,13 @@ async def transition_proposal_state(
     proposal_id: str,
     new_state: str,
     actor: str,
-    notes: Optional[str] = None
+    notes: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
     Transition proposal to new state (Daena VP / Council only).
-    
-    Valid states: proposed, scouted, debated, synthesized, approved, forged, committed, rejected
     """
-    user_role = get_current_user_role()
+    user_role = get_real_user_role(current_user)
     if user_role not in ["daena_vp", "founder", "council"]:
         raise HTTPException(status_code=403, detail="Access denied. State transitions require VP/council access.")
     
@@ -482,4 +482,36 @@ async def transition_proposal_state(
         actor=actor,
         notes=notes
     )
+
+
+@router.post("/models/{model_id}/test")
+async def test_model(model_id: str, current_user: dict = Depends(get_current_user)):
+    """Test if model is working"""
+    try:
+        from backend.services.local_llm_ollama import check_ollama_available, OLLAMA_BASE_URL
+        import httpx
+        
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={
+                    "model": model_id,
+                    "prompt": "Hi",
+                    "stream": False
+                }
+            )
+            
+            if resp.status_code != 200:
+                return {"status": "error", "message": f"Ollama returned {resp.status_code}"}
+                
+            result = resp.json()
+        
+        return {
+            "status": "success",
+            "model_id": model_id,
+            "response_time_ms": int(result.get("total_duration", 0) / 1000000),
+            "tokens_generated": result.get("eval_count", 0)
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 

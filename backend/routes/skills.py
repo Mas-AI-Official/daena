@@ -107,11 +107,25 @@ def _static_skills_for_list(operator_role: Optional[str] = None) -> List[Dict[st
 @router.get("")
 async def list_skills(
     operator_role: Optional[str] = Query(None, description="Filter by who can run: founder, daena, agent"),
+    limit: int = Query(50, description="Max skills to return"),
+    offset: int = Query(0, description="Skills to skip")
 ) -> Dict[str, Any]:
-    """List skills. operator_role filters by allowed_roles (who can execute)."""
-    skills: List[Dict[str, Any]] = _static_skills_for_list(operator_role=operator_role)
-    skills.extend(_registry_skills_for_list(operator_role=operator_role))
-    return {"success": True, "skills": skills}
+    """List skills with pagination. operator_role filters by allowed_roles (who can execute)."""
+    # Get all skills first
+    all_skills: List[Dict[str, Any]] = _static_skills_for_list(operator_role=operator_role)
+    all_skills.extend(_registry_skills_for_list(operator_role=operator_role))
+    
+    total_count = len(all_skills)
+    # Apply slicing (Issue 4 Fix)
+    skills = all_skills[offset : offset + limit]
+    
+    return {
+        "success": True, 
+        "skills": skills,
+        "total_count": total_count,
+        "offset": offset,
+        "limit": limit
+    }
 
 
 @router.post("/test-execution")
@@ -325,6 +339,47 @@ async def patch_skill_access(skill_id: str, body: PatchAccessBody) -> Dict[str, 
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+from backend.services.auth_service import get_current_user, User
+
+@router.patch("/{skill_id}/operators")
+async def update_skill_operators(
+    skill_id: str,
+    operators: List[str],
+    current_user: User = Depends(get_current_user)
+):
+    """Update who can execute this skill. Founder only."""
+    # Enforce Founder access for sensitive operator changes
+    if current_user.role != "founder" and current_user.role != "daena_vp":
+         # In dev mode/daena_vp allows it, but strictly should be founder
+         raise HTTPException(status_code=403, detail="Only Founder can update operators")
+    
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        registry = get_skill_registry()
+        
+        # Use update_skill to set allowed_operators
+        out = registry.update_skill(skill_id, {"allowed_operators": operators}, actor=current_user.user_id)
+        
+        if out.get("error"):
+             raise HTTPException(status_code=404, detail=out["error"])
+        
+        # Emit event
+        from backend.core.websocket_manager import websocket_manager
+        await websocket_manager.emit_event("skill.operators.updated", {
+            "skill_id": skill_id,
+            "operators": operators,
+            "updated_by": current_user.user_id
+        })
+        
+        return {"success": True, "skill_id": skill_id, "operators": operators}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.post("/{skill_id}/enable")

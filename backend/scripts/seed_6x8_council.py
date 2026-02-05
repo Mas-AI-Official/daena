@@ -14,11 +14,13 @@ try:
 except Exception:
     pass
 
-# Add backend to path
+# Add project root to path (so we can import backend.database)
 backend_path = Path(__file__).parent.parent
-sys.path.append(str(backend_path))
+project_root = backend_path.parent
+sys.path.append(str(project_root))
 
-from database import engine, Base, Department, Agent, CellAdjacency
+from backend.database import engine, Base, Department, Agent, CellAdjacency
+
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
 from backend.utils.sunflower_registry import sunflower_registry

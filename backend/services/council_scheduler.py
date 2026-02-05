@@ -21,7 +21,17 @@ from backend.utils.message_bus_v2 import message_bus_v2, TopicMessage
 from backend.utils.tracing import get_tracing_service, trace_council_round
 
 # PHASE 3: Unified Memory Integration
-from backend.memory import memory
+# Use MemoryRouter from memory_service
+try:
+    from memory_service.router import MemoryRouter
+    memory = MemoryRouter()
+except ImportError:
+    # Fallback to mock or legacy
+    class MockMemory:
+        def write(self, *args, **kwargs):
+            return {"txid": "mock_txid"}
+    memory = MockMemory()
+
 from backend.database import SessionLocal, EventLog
 
 def log_event(action: str, ref: str, store: str, route: str, extra: Dict[str, Any]):
@@ -559,10 +569,10 @@ class CouncilScheduler:
             # PHASE 3: Write to Unified Memory
             # Mapping write_nbmf_only -> memory.write
             result = self.router.write(
-                key=item_id,
+                item_id=item_id,
                 cls="council_action",
                 payload=action_payload,
-                meta={
+                emotion_meta={
                     "department": department,
                     "topic": topic,
                     "phase": "commit",
@@ -772,10 +782,10 @@ class CouncilScheduler:
             
             # Store using Unified Memory
             result = self.router.write(
-                key=item_id,
+                item_id=item_id,
                 cls="council_decision",
                 payload=action_payload,
-                meta={
+                emotion_meta={
                     "source_uri": f"council://{department}/{item_id}",
                     "mode": "hybrid",
                     "tenant_id": tenant_id,

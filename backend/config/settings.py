@@ -122,12 +122,29 @@ class Settings(BaseSettings):
     default_local_model: str = Field(default="qwen2.5:7b-instruct", validation_alias="DEFAULT_LOCAL_MODEL")
 
     @model_validator(mode="after")
-    def set_ollama_models_path_from_root(self):
-        """Derive ollama_models_path and xtts_model_path from models_root when not set."""
+    def set_paths_and_env(self):
+        """Derive paths from models_root and export critical env vars for external libs."""
+        models_root_path = Path(self.models_root).resolve()
+        
+        # 1. Ollama
         if self.ollama_models_path is None or (isinstance(self.ollama_models_path, str) and self.ollama_models_path.strip() == ""):
-            object.__setattr__(self, "ollama_models_path", str(Path(self.models_root).resolve() / "ollama"))
+             object.__setattr__(self, "ollama_models_path", str(models_root_path / "ollama"))
+
+        # 2. XTTS
         if getattr(self, "xtts_model_path", None) is None or (isinstance(self.xtts_model_path, str) and self.xtts_model_path.strip() == ""):
-            object.__setattr__(self, "xtts_model_path", str(Path(self.models_root).resolve() / "xtts"))
+             object.__setattr__(self, "xtts_model_path", str(models_root_path / "xtts"))
+
+        # 3. HuggingFace / Transformers (Task B Check)
+        hf_home = models_root_path / "hf"
+        os.environ["HF_HOME"] = str(hf_home)
+        os.environ["TRANSFORMERS_CACHE"] = str(hf_home)
+        
+        # Ensure directories exist
+        try:
+             hf_home.mkdir(parents=True, exist_ok=True)
+        except Exception:
+             pass
+             
         return self
     
     # Prompt Intelligence Brain
