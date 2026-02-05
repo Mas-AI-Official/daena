@@ -86,18 +86,18 @@ export function ChatInterface({ scope = 'executive', scopeId = 'daena', title, c
     };
 
     return (
-        <div className={cn("flex flex-col h-full bg-midnight-200/50 rounded-2xl border border-white/5 relative overflow-hidden shadow-2xl backdrop-blur-sm", className)}>
+        <div className={cn("flex flex-col h-[calc(100vh-140px)] bg-midnight-200/50 rounded-2xl border border-white/5 relative overflow-hidden shadow-2xl backdrop-blur-sm", className)}>
             {/* Ambient Background */}
             <div className="absolute inset-0 pointer-events-none bg-gradient-to-tr from-primary-600/5 to-transparent opacity-50" />
 
             {/* Header */}
-            <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-md z-10">
+            <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-md z-10 shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary-600 to-primary-400 flex items-center justify-center shadow-glow-sm">
                         <Sparkles className="w-4 h-4 text-white" />
                     </div>
                     <div>
-                        <h3 className="font-display font-medium text-white text-sm">{title || "Daena Executive link"}</h3>
+                        <h3 className="font-display font-medium text-white text-sm">{title || "Daena Executive Link"}</h3>
                         <p className="text-[10px] text-starlight-300 font-mono tracking-wider uppercase">Secure Channel • Encrypted</p>
                     </div>
                 </div>
@@ -113,17 +113,20 @@ export function ChatInterface({ scope = 'executive', scopeId = 'daena', title, c
                 </div>
             </div>
 
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto relative z-0">
+            {/* Messages Area - Grow to fill space */}
+            <div className="flex-1 overflow-y-auto relative z-0 p-4 space-y-4">
                 <MessageList messages={messages} isTyping={isTyping} />
             </div>
 
-            {/* Neural Operations Timeline */}
-            <ToolTimeline />
+            {/* Neural Operations Timeline (Optional - can be collapsible) */}
+            {/* <ToolTimeline /> */}
 
-            {/* Input Area */}
-            <div className="p-4 bg-white/5 border-t border-white/5 relative z-10">
+            {/* Input Area - Fixed at bottom */}
+            <div className="p-4 bg-white/5 border-t border-white/5 relative z-10 shrink-0">
                 <ChatInput onSend={handleSend} disabled={!isConnected} />
+                <div className="flex justify-center mt-2">
+                    <p className="text-[10px] text-starlight-500 font-mono">Daena AI v2.5 • Authorized Access Only</p>
+                </div>
             </div>
         </div>
     );

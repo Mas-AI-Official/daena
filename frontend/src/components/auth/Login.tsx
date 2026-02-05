@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { Shield, Lock, ArrowRight, Loader2, Fingerprint, Zap } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
+import { useNavigate } from 'react-router-dom';
 
 export function Login() {
     const [username, setUsername] = useState('');
@@ -10,6 +11,14 @@ export function Login() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const login = useAuthStore(state => state.login);
+    const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            navigate('/');
+        }
+    }, [isAuthenticated, navigate]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

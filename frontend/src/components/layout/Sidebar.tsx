@@ -71,7 +71,7 @@ export function Sidebar() {
             </div>
 
             {/* Navigation */}
-            <nav className="p-4 space-y-2 mt-4">
+            <nav className="p-4 space-y-2 mt-4 max-h-[calc(100vh-140px)] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
                 {menuItems.map((item) => {
                     const isActive = location.pathname === item.path;
                     return (
@@ -79,7 +79,7 @@ export function Sidebar() {
                             key={item.path}
                             onClick={() => navigate(item.path)}
                             className={cn(
-                                "w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative overflow-hidden",
+                                "w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative overflow-hidden shrink-0",
                                 isActive
                                     ? "bg-primary-600/20 text-primary-400 shadow-glow-sm border border-primary-500/20"
                                     : "text-starlight-300 hover:bg-white/5 hover:text-starlight-100"
