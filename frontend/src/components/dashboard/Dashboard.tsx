@@ -137,28 +137,28 @@ export function Dashboard() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     <SystemBotCard
-                        name="ClawBot"
+                        name="Core Intelligence"
                         icon={Terminal}
-                        status="Ready"
-                        description="Software installation & vulnerability scanning"
+                        status="Active"
+                        description="Vulnerability scanning & self-healing protocols"
                         color="text-status-success"
-                        activity="Idle"
+                        activity="Monitoring"
                     />
                     <SystemBotCard
-                        name="MoltBot"
+                        name="Research Grid"
                         icon={Search}
                         status="Active"
-                        description="Multi-source research & talent testing"
+                        description="Multi-source intelligence gathering & synthesis"
                         color="text-primary-400"
-                        activity="Scanning Web..."
+                        activity="Knowledge Graph Update"
                     />
                     <SystemBotCard
-                        name="MiniMax"
+                        name="Resource Optimizer"
                         icon={TrendingUp}
                         status="Ready"
-                        description="Cost optimization & resource allocation"
+                        description="Dynamic token allocation & cost efficiency"
                         color="text-accent"
-                        activity="Idle"
+                        activity="Analyzing Usage"
                     />
                     <SystemBotCard
                         name="NBMF Matrix"

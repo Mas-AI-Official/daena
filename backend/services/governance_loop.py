@@ -5,7 +5,7 @@ This is the CENTRAL governance gate for ALL agent actions in Daena.
 Every action flows through here to assess risk, consult council if needed,
 and enforce founder approval for high-risk operations.
 
-Powers of ClawBot/MoltBot/MiniMax are constrained by this loop.
+Powers of DaenaBot/MoltBot/MiniMax are constrained by this loop.
 
 Key Features:
 - Autopilot mode for low-risk operations (report only)
