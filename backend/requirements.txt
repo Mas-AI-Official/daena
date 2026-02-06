@@ -8,7 +8,7 @@ passlib[bcrypt]==1.7.4
 
 # Database and ORM
 sqlalchemy==2.0.23
-alembic==1.12.1
+alembic==1.18.3
 
 # Environment and configuration
 python-dotenv==1.0.0
