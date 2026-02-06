@@ -11,7 +11,7 @@ librosa==0.10.1
 # TTS and voice synthesis - UPGRADED for Phase 5
 TTS==0.22.0  # Coqui TTS (includes XTTS-v2)
 torch==2.1.0
-torchaudio==2.1.0
+torchaudio==2.10.0
 
 # STT - UPGRADED for Phase 5
 faster-whisper==1.0.0  # 4x faster than OpenAI Whisper
