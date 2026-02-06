@@ -137,7 +137,7 @@ export function Dashboard() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     <SystemBotCard
-                        name="Core Intelligence"
+                        name="DaenaBot Core"
                         icon={Terminal}
                         status="Active"
                         description="Vulnerability scanning & self-healing protocols"

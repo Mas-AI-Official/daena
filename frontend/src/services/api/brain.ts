@@ -74,6 +74,16 @@ export const brainApi = {
     testModel: async (modelId: string) => {
         const response = await api.post(`/api/v1/models/evaluate?model_name=${encodeURIComponent(modelId)}`);
         return response.data;
+    },
+
+    setActiveModel: async (modelId: string) => {
+        const response = await api.post('/api/v1/models/active', { model_id: modelId });
+        return response.data;
+    },
+
+    toggleModel: async (modelId: string, enabled: boolean) => {
+        const response = await api.post('/api/v1/models/toggle', { model_id: modelId, enabled });
+        return response.data;
     }
 };
 

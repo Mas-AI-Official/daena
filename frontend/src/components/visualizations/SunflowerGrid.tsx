@@ -48,74 +48,105 @@ export function SunflowerGrid() {
         });
         resizeObserver.observe(canvas.parentElement!);
 
-        function draw() {
-            if (!canvas || !ctx) return;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Animation loop
+        let animationFrameId: number;
 
+        const render = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear
+
+            const time = Date.now() / 1000;
             const centerX = canvas.width / 2;
             const centerY = canvas.height / 2;
             const goldenAngle = 137.5 * (Math.PI / 180);
-            const scale = Math.min(canvas.width, canvas.height) / 20;
+            const scale = Math.min(canvas.width, canvas.height) / 22; // Slightly smaller scale
 
-            const newPositions: AgentPosition[] = [];
+            const agentList = agents.length > 0 ? agents : Array.from({ length: 48 }).map((_, i) => ({ id: `agent-${i}`, status: Math.random() > 0.8 ? 'active' : 'idle' }));
 
-            const agentList = agents.length > 0 ? agents : Array.from({ length: 48 }).map((_, i) => ({ id: `agent-${i}`, status: 'idle' }));
-
+            // First pass: Calculate positions
+            const tempPositions: AgentPosition[] = [];
             agentList.forEach((agent, i) => {
                 const r = scale * Math.sqrt(i + 1);
-                const theta = i * goldenAngle;
-
+                const theta = i * goldenAngle + (time * 0.05); // Slow rotation
                 const x = centerX + r * Math.cos(theta);
                 const y = centerY + r * Math.sin(theta);
+                tempPositions.push({ id: (agent as any).id, x, y, r: 6 });
+            });
+            positionsRef.current = tempPositions;
 
-                newPositions.push({ id: (agent as any).id, x, y, r: 8 });
+            // Second pass: Draw Connections (Neural web)
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(99, 102, 241, 0.08)'; // Indigo trace
+            ctx.lineWidth = 0.5;
 
-                // Draw link
-                ctx.beginPath();
-                ctx.moveTo(centerX, centerY);
-                ctx.lineTo(x, y);
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
-                ctx.lineWidth = 0.5;
-                ctx.stroke();
+            // connect to nearest neighbors (simple distance check for visual effect)
+            // In real sunflower, neighbors are i+1, i-1, i+8, i-8 roughly
+            for (let i = 0; i < tempPositions.length; i++) {
+                const p1 = tempPositions[i];
+                // Connect to center just a bit
+                if (i < 5) {
+                    ctx.moveTo(centerX, centerY);
+                    ctx.lineTo(p1.x, p1.y);
+                }
 
-                // Draw Hub
-                ctx.beginPath();
-                ctx.arc(x, y, 7, 0, 2 * Math.PI);
+                // Connect to nearby nodes
+                for (let j = i + 1; j < tempPositions.length; j++) {
+                    const p2 = tempPositions[j];
+                    const dx = p1.x - p2.x;
+                    const dy = p1.y - p2.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < scale * 4.5) { // Threshold for connection
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                    }
+                }
+            }
+            ctx.stroke();
 
+            // Third pass: Draw Nodes
+            tempPositions.forEach((pos, i) => {
+                const agent = agentList[i];
                 const status = (agent as any).status || 'idle';
-                if (status === 'active') {
-                    ctx.fillStyle = '#4F46E5';
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = 'rgba(79, 70, 229, 0.4)';
-                } else if (status === 'error') {
-                    ctx.fillStyle = '#EF4444';
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = 'rgba(239, 68, 68, 0.4)';
-                } else {
-                    ctx.fillStyle = '#0f172a'; // midnight-900
-                    ctx.shadowBlur = 0;
-                }
 
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-                ctx.lineWidth = 1;
-                ctx.stroke();
+                // Glow
+                const pulse = Math.sin(time * 2 + i) * 0.5 + 0.5; // Individual pulse phase
 
-                // Secondary ring for active
                 if (status === 'active') {
+                    // Core
                     ctx.beginPath();
-                    ctx.arc(x, y, 10, 0, 2 * Math.PI);
-                    ctx.strokeStyle = 'rgba(79, 70, 229, 0.2)';
-                    ctx.stroke();
-                }
+                    ctx.arc(pos.x, pos.y, 4, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#818CF8'; // Indigo-400
+                    ctx.fill();
 
-                ctx.shadowBlur = 0;
+                    // Glow spread
+                    const glowRadius = 8 + pulse * 6;
+                    const gradient = ctx.createRadialGradient(pos.x, pos.y, 2, pos.x, pos.y, glowRadius);
+                    gradient.addColorStop(0, 'rgba(129, 140, 248, 0.8)');
+                    gradient.addColorStop(1, 'rgba(129, 140, 248, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, glowRadius, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                } else if (status === 'error') {
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 4, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#EF4444';
+                    ctx.fill();
+                } else {
+                    // Idle nodes (Starlight dots)
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 2, 0, 2 * Math.PI);
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                    ctx.fill();
+                }
             });
 
-            positionsRef.current = newPositions;
-        }
+            animationFrameId = requestAnimationFrame(render);
+        };
 
-        draw();
+        render();
+
+        return () => cancelAnimationFrame(animationFrameId);
         return () => resizeObserver.disconnect();
     }, [agents]);
 

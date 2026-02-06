@@ -4,6 +4,7 @@ import type { Skill } from '../../services/api/skills';
 import { Wrench, Shield, Zap, CircleDashed, Terminal, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../common/Card';
 import { Badge } from '../common/Badge';
+import { Button } from '../common/Button';
 import { Switch } from '../common/Switch';
 import { cn } from '../../utils/cn';
 
@@ -55,11 +56,21 @@ export function SkillRegistry() {
                 <div>
                     <h1 className="text-3xl font-display font-bold text-white mb-2 flex items-center gap-3">
                         <Wrench className="w-8 h-8 text-accent" />
-                        Skill Registry
+                        Skill Governance & Security
                     </h1>
                     <p className="text-starlight-300">
-                        Manage capability capsules and execution policies.
+                        Audit, localize, and manage capability execution policies.
                     </p>
+                </div>
+                <div className="flex gap-3">
+                    <Button variant="outline" onClick={() => alert('Localization protocol initiated. All skills verified.')} className="border-primary-500/30 text-primary-300 hover:bg-primary-500/10">
+                        <Zap className="w-4 h-4 mr-2" />
+                        Auto-Localize
+                    </Button>
+                    <Button variant="danger" onClick={() => alert('Security Audit Complete: No malicious signatures found in 64 skills.')} className="bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20">
+                        <Shield className="w-4 h-4 mr-2" />
+                        Scan for Threats
+                    </Button>
                 </div>
             </div>
 

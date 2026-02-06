@@ -9,6 +9,8 @@ import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
 import { brainApi, type ModelInfo, type ModelRegistrationPayload } from '../../services/api/brain';
 
+import { Switch } from '../common/Switch';
+
 export function ModelRegistry() {
     const [models, setModels] = useState<ModelInfo[]>([]);
     const [usage, setUsage] = useState<any[]>([]);
@@ -56,6 +58,20 @@ export function ModelRegistry() {
         } catch (e) {
             alert('Registration Failed: ' + e);
         }
+    };
+
+    const chainActivate = async (id: string) => {
+        try {
+            await brainApi.setActiveModel(id);
+            refresh();
+        } catch (e) { console.error(e); }
+    };
+
+    const chainToggle = async (id: string, enabled: boolean) => {
+        try {
+            await brainApi.toggleModel(id, enabled);
+            refresh();
+        } catch (e) { console.error(e); }
     };
 
     const getCapabilitiesBadges = (caps: string[] = []) => {
@@ -217,9 +233,22 @@ export function ModelRegistry() {
                                             </div>
                                         </td>
                                         <td className="p-4 text-right">
-                                            <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Settings className="w-4 h-4" />
-                                            </Button>
+                                            <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {!isActive && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => chainActivate(m.name)}
+                                                        className="text-xs h-7 hover:bg-primary-500/20 hover:text-primary-300"
+                                                    >
+                                                        Activate
+                                                    </Button>
+                                                )}
+                                                <Switch
+                                                    checked={true} // For now assume enabled, or map from m.enabled if added
+                                                    onCheckedChange={(c) => chainToggle(m.name, c)}
+                                                />
+                                            </div>
                                         </td>
                                     </tr>
                                 );
