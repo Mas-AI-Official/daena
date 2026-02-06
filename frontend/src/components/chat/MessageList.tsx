@@ -1,5 +1,5 @@
-import { useRef, useEffect } from 'react';
-import { Bot, User, Sparkles } from 'lucide-react';
+import { useRef, useEffect, useState } from 'react';
+import { Bot, User, Sparkles, BrainCircuit, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -13,6 +13,48 @@ interface Message {
 interface MessageListProps {
     messages: Message[];
     isTyping?: boolean;
+}
+
+function extractThinking(content: string): { thinking: string | null, cleanContent: string } {
+    const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/);
+    if (thinkMatch) {
+        return {
+            thinking: thinkMatch[1].trim(),
+            cleanContent: content.replace(/<think>[\s\S]*?<\/think>/, '').trim()
+        };
+    }
+    return { thinking: null, cleanContent: content };
+}
+
+function ThinkingBlock({ content }: { content: string }) {
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+        <div className="mb-4 rounded-xl bg-midnight-950/50 border border-primary-900/30 overflow-hidden">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full flex items-center gap-2 p-3 text-xs text-primary-400/80 hover:bg-white/5 transition-colors font-mono uppercase tracking-wide"
+            >
+                <BrainCircuit className="w-3.5 h-3.5" />
+                <span>Thinking Process</span>
+                {isOpen ? <ChevronDown className="w-3 h-3 ml-auto" /> : <ChevronRight className="w-3 h-3 ml-auto" />}
+            </button>
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                    >
+                        <div className="p-3 pt-0 text-xs text-starlight-400/80 font-mono leading-relaxed border-t border-white/5 bg-midnight-950/30">
+                            {content}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
 }
 
 export function MessageList({ messages, isTyping }: MessageListProps) {
@@ -69,6 +111,9 @@ function MessageItem({ msg }: { msg: Message }) {
     const isUser = msg.sender === 'user';
     const isSystem = msg.sender === 'system';
 
+    // Extract thinking process if present
+    const { thinking, cleanContent } = !isUser ? extractThinking(msg.content) : { thinking: null, cleanContent: msg.content };
+
     if (isSystem) {
         return (
             <div className="flex justify-center my-6">
@@ -112,7 +157,10 @@ function MessageItem({ msg }: { msg: Message }) {
                         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-primary-400/30 to-transparent" />
                     )}
 
-                    <div className="text-sm leading-relaxed whitespace-pre-wrap relative z-10 text-shadow-sm">{msg.content}</div>
+                    {/* Thinking Block */}
+                    {thinking && <ThinkingBlock content={thinking} />}
+
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap relative z-10 text-shadow-sm">{cleanContent}</div>
                 </div>
 
                 <div className={cn(

@@ -603,61 +603,185 @@ class GovernanceLoop:
     def approve(self, decision_id: str, approver_id: str, notes: str = "") -> bool:
         """
         Founder approves a pending action.
-        
-        Returns True if action can now proceed.
+        Handles both DB-backed governance decisions and legacy/tool store requests.
         """
-        if decision_id not in self._pending_approvals:
-            logger.warning(f"No pending approval found: {decision_id}")
-            return False
-        
-        request = self._pending_approvals.pop(decision_id)
-        
-        # Find and update decision
-        for dec in self._decision_log:
-            if dec.decision_id == decision_id:
-                dec.outcome = DecisionOutcome.EXECUTE.value
-                dec.executed = True
-                dec.reason = f"Approved by {approver_id}: {notes}"
-        
-        self._save_state()
-        logger.info(f"Action {decision_id} approved by {approver_id}")
-        return True
+        # 1. Try Tool Request Store (Hands/OpenClaw)
+        try:
+            from backend.services.tool_request_store import get_request
+            from backend.services.hands_approval_queue import hands_approval_queue
+            
+            tool_req = get_request(decision_id)
+            if tool_req and tool_req.get("status") == "pending":
+                import asyncio
+                # Fire and forget / background task for execution to avoid blocking?
+                # For now, we await execution since frontend expects result, but this method is sync?
+                # This method is called by synchronous router usually.
+                # hands_approval_queue.approve_action is async.
+                
+                # Create a loop to run the async approval
+                loop = asyncio.new_event_loop()
+                try:
+                    loop.run_until_complete(hands_approval_queue.approve_action(decision_id))
+                finally:
+                    loop.close()
+                    
+                logger.info(f"Tool Request {decision_id} approved by {approver_id}")
+                return True
+        except Exception as e:
+            logger.warning(f"Tool store check failed for {decision_id}: {e}")
+
+        # 2. Try DB (Governance Actions)
+        db = SessionLocal()
+        try:
+            # Check DB first
+            approval = db.query(DBPendingApproval).filter(
+                (DBPendingApproval.approval_id == decision_id) | (DBPendingApproval.id == decision_id)
+            ).first()
+            
+            if approval:
+                approval.status = "approved"
+                approval.resolved_by = approver_id
+                approval.resolved_at = datetime.utcnow()
+                approval.founder_note = notes
+                db.commit()
+                # Update in-memory log if present
+                for dec in self._decision_log:
+                    if dec.decision_id == decision_id:
+                        dec.outcome = DecisionOutcome.EXECUTE.value
+                        dec.executed = True
+                        dec.reason = f"Approved by {approver_id}: {notes}"
+                return True
+            
+            # 3. Try In-Memory (Legacy)
+            if decision_id in self._pending_approvals:
+                request = self._pending_approvals.pop(decision_id)
+                for dec in self._decision_log:
+                    if dec.decision_id == decision_id:
+                        dec.outcome = DecisionOutcome.EXECUTE.value
+                        dec.executed = True
+                        dec.reason = f"Approved by {approver_id}: {notes}"
+                self._save_state()
+                return True
+                
+        finally:
+            db.close()
+        return False
     
     def reject(self, decision_id: str, approver_id: str, reason: str = "") -> bool:
         """
         Founder rejects a pending action.
         """
-        if decision_id not in self._pending_approvals:
-            return False
+        # 1. Try Tool Request Store
+        try:
+            from backend.services.tool_request_store import get_request, update_status
+            tool_req = get_request(decision_id)
+            if tool_req and tool_req.get("status") == "pending":
+                update_status(decision_id, "rejected", {"message": f"Rejected by {approver_id}: {reason}"})
+                logger.info(f"Tool Request {decision_id} rejected by {approver_id}")
+                return True
+        except Exception as e:
+            logger.warning(f"Tool store check failed for {decision_id}: {e}")
+
+        # 2. Try DB
+        db = SessionLocal()
+        try:
+            approval = db.query(DBPendingApproval).filter(
+                (DBPendingApproval.approval_id == decision_id) | (DBPendingApproval.id == decision_id)
+            ).first()
+            if approval:
+                approval.status = "rejected"
+                approval.resolved_by = approver_id
+                approval.resolved_at = datetime.utcnow()
+                approval.founder_note = reason
+                db.commit()
+                for dec in self._decision_log:
+                    if dec.decision_id == decision_id:
+                        dec.outcome = DecisionOutcome.BLOCKED.value
+                return True
+            
+            # 3. Try In-Memory
+            if decision_id in self._pending_approvals:
+                self._pending_approvals.pop(decision_id)
+                for dec in self._decision_log:
+                    if dec.decision_id == decision_id:
+                        dec.outcome = DecisionOutcome.BLOCKED.value
+                        dec.reason = f"Rejected by {approver_id}: {reason}"
+                self._save_state()
+                return True
+        finally:
+            db.close()
+        return False
         
-        self._pending_approvals.pop(decision_id)
-        
-        for dec in self._decision_log:
-            if dec.decision_id == decision_id:
-                dec.outcome = DecisionOutcome.BLOCKED.value
-                dec.reason = f"Rejected by {approver_id}: {reason}"
-        
-        self._save_state()
-        logger.info(f"Action {decision_id} rejected by {approver_id}")
-        return True
-    
     def get_pending(self) -> List[Dict[str, Any]]:
-        """Get all pending approval requests."""
+        """Get all pending approval requests (Unified: DB + ToolStore)."""
         result = []
+        
+        # 1. DB Pending Approvals
+        db = SessionLocal()
+        try:
+            pendings = db.query(DBPendingApproval).filter(DBPendingApproval.status == "pending").all()
+            for p in pendings:
+                result.append({
+                    "decision_id": p.approval_id,
+                    "action_type": p.tool_name,
+                    "agent_id": p.executor_id,
+                    "description": p.action,
+                    "risk_level": p.impact_level,
+                    "requires": "founder_approval",
+                    "requested_at": p.created_at.isoformat() if p.created_at else "",
+                    "source": "governance"
+                })
+        except Exception as e:
+            logger.error(f"Failed to fetch DB pending: {e}")
+        finally:
+            db.close()
+            
+        # 2. Tool Request Store Pending (Hands/OpenClaw)
+        try:
+            from backend.services.tool_request_store import list_pending
+            tool_requests = list_pending()
+            for req in tool_requests:
+                action = req.get("action_json", {})
+                desc = f"Execute {action.get('tool_name') or action.get('action_type')}: {str(action.get('parameters', ''))[:50]}"
+                result.append({
+                    "decision_id": req.get("id"),
+                    "action_type": req.get("risk_level", "high").upper() + "_TOOL",
+                    "agent_id": req.get("requested_by", "unknown"),
+                    "description": desc,
+                    "risk_level": req.get("risk_level", "high"),
+                    "requires": "founder_approval",
+                    "requested_at": datetime.fromtimestamp(req.get("created_at", 0)).isoformat(),
+                    "source": "tool_broker"
+                })
+        except Exception as e:
+            logger.error(f"Failed to fetch ToolStore pending: {e}")
+            
+        # 3. Legacy In-Memory (if any)
         for dec_id, request in self._pending_approvals.items():
-            # Find the decision
-            for dec in self._decision_log:
-                if dec.decision_id == dec_id:
-                    result.append({
-                        "decision_id": dec_id,
-                        "action_type": request.action_type.value,
-                        "agent_id": request.agent_id,
-                        "description": request.description,
-                        "risk_level": dec.risk_level,
-                        "requires": dec.requires,
-                        "requested_at": request.requested_at
-                    })
-                    break
+            # Avoid duplicates if they are somehow also in DB (unlikely given logic)
+            if not any(r["decision_id"] == dec_id for r in result):
+                # Find the decision details
+                risk = "high"
+                requires = "founder_approval"
+                for dec in self._decision_log:
+                    if dec.decision_id == dec_id:
+                        risk = dec.risk_level
+                        requires = dec.requires
+                        break
+                
+                result.append({
+                    "decision_id": dec_id,
+                    "action_type": request.action_type.value,
+                    "agent_id": request.agent_id,
+                    "description": request.description,
+                    "risk_level": risk,
+                    "requires": requires,
+                    "requested_at": request.requested_at,
+                    "source": "memory"
+                })
+
+        # Sort by date
+        result.sort(key=lambda x: x.get("requested_at", ""), reverse=True)
         return result
     
     def assess(self, action: Dict[str, Any]) -> Dict[str, Any]:
