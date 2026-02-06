@@ -9,7 +9,7 @@ pydantic-settings==2.1.0
 
 # Database & Storage
 sqlalchemy==2.0.23
-alembic==1.12.1
+alembic==1.18.3
 redis==5.0.1
 aiofiles==23.2.1
 
