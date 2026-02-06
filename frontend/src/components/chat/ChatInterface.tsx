@@ -23,8 +23,27 @@ export function ChatInterface({ scope = 'executive', scopeId = 'daena', title, c
     useEffect(() => {
         if (!sessionId) {
             setSessionId(uuidv4());
+        } else {
+            // Fetch history
+            api.get(`/daena/chat/history/${sessionId}`)
+                .then(res => {
+                    if (res.data.messages) {
+                        // Transform if needed, or assumestore handles it
+                        // Here we just update the store directly for simplicity
+                        // In a real app, use useChatStore's setMessages
+                        res.data.messages.forEach((msg: any) => {
+                            addMessage({
+                                id: msg.id || uuidv4(),
+                                sender: msg.role === 'user' ? 'user' : 'daena',
+                                content: msg.content,
+                                timestamp: msg.created_at
+                            });
+                        });
+                    }
+                })
+                .catch(err => console.log('No history or failed to fetch', err));
         }
-    }, [sessionId, setSessionId]);
+    }, [sessionId, setSessionId, addMessage]);
 
     const wsUrl = sessionId ? `/ws/chat/${sessionId}` : '';
     const { isConnected } = useWebSocket({
