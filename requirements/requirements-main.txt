@@ -46,7 +46,7 @@ soundfile==0.12.1
 
 # Blockchain Integration
 web3==6.11.1
-eth-account==0.8.0
+eth-account==0.13.7
 
 # Web and API
 requests==2.31.0
