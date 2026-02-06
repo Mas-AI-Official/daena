@@ -18,7 +18,7 @@ requests==2.31.0
 # Audio-specific dependencies
 pyaudio==0.2.11
 webrtcvad==2.0.10
-speechrecognition==3.10.0
+speechrecognition==3.14.5
 pyttsx3==2.90
 
 # Optional: Advanced TTS

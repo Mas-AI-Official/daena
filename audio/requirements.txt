@@ -3,7 +3,7 @@
 
 # Core audio processing
 pyaudio==0.2.11
-speechrecognition==3.10.0
+speechrecognition==3.14.5
 pyttsx3==2.90
 sounddevice==0.4.6
 librosa==0.10.1
