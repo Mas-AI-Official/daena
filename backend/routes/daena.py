@@ -13,6 +13,12 @@ try:
 except ImportError:
     chat_storage = None
 
+# Action Dispatcher
+try:
+    from backend.services.action_dispatcher import get_action_dispatcher
+except ImportError:
+    get_action_dispatcher = None
+
 try:
     from backend.config.settings import get_settings
 except ImportError:
@@ -110,6 +116,10 @@ TOOL_PATTERNS = {
     "desktop": [
         "desktop click", "click at", "click at ", "desktop type", "type on desktop",
         "move mouse to", "mouse click",
+    ],
+    "self_fix": [
+        "propose a fix", "suggest a fix", "fix the file", "apply change to", 
+        "modify file", "update code in", "rewrite file"
     ],
 }
 
@@ -648,6 +658,49 @@ async def detect_and_execute_tool(message: str) -> Optional[Dict[str, Any]]:
             except Exception as e:
                 return {"tool": "desktop_automation", "error": str(e)}
     
+    # Permissioned Self-Fix (Self-Healing)
+    for pattern in TOOL_PATTERNS["self_fix"]:
+        if pattern in msg_lower:
+            try:
+                from backend.services.self_healing import get_self_healing_service
+                healing = get_self_healing_service()
+                
+                # Simple parsing: "fix the file backend/main.py with rationale fix typo"
+                # This is a bit complex for simple parsing, but we can try to extract path
+                import re
+                path_match = re.search(r"(?:file|modify|update|update code in|fix the file|rewrite file)\s+(['\"]?)([\w\d\./\\]+)\1", message, re.IGNORECASE)
+                
+                if path_match:
+                    file_path = path_match.group(2)
+                    # For a real implementation, we'd need the proposed code.
+                    # As a tool, if it's just a command, maybe we can't do much without the content.
+                    # But if the user provides code in the message (e.g. after "with code"), we can extract it.
+                    content = ""
+                    rationale = f"Requested via chat: {message}"
+                    
+                    code_match = re.search(r"(?:with code|to|new content)[:\s]+(.+)", message, re.DOTALL | re.IGNORECASE)
+                    if code_match:
+                        content = code_match.group(1).strip()
+                    
+                    if not content:
+                        return {
+                            "tool": "self_fix",
+                            "action": "propose",
+                            "error": "Please provide the new code content (e.g., 'fix file X with code Y')"
+                        }
+                    
+                    proposal = await healing.propose_fix(file_path, content, rationale)
+                    return {
+                        "tool": "self_fix",
+                        "action": "propose",
+                        "result": proposal
+                    }
+                
+                return {"tool": "self_fix", "error": "Could not identify file path to fix"}
+            except Exception as e:
+                return {"tool": "self_fix", "error": str(e)}
+
+    # ... (rest of the code) ...
     return None
 
 
@@ -962,6 +1015,27 @@ def format_tool_result(tool_result: Dict[str, Any]) -> str:
         
         return response
     
+    elif tool == "self_fix":
+        status = result.get("status", "unknown")
+        proposal_id = result.get("proposal_id", "unknown")
+        decision_id = result.get("decision_id", "unknown")
+        file_path = result.get("file_path", "unknown")
+        rationale = result.get("rationale", "")
+        
+        if status == "PENDING_APPROVAL" or status == "pending":
+            return f"🛠️ **Self-Fix Proposed for:** `{file_path}`\n\n" \
+                   f"**Rationale:** {rationale}\n\n" \
+                   f"✅ **Proposal {proposal_id} submitted.** As this involves system code changes, I have queued it for your approval in the **Governance Center**.\n\n" \
+                   f"🔗 [Authorize Fix](/self-fix)"
+        elif status == "EXECUTE" or status == "approved":
+            return f"✅ **Self-Fix Applied to:** `{file_path}`\n\n" \
+                   f"The changes have been successfully committed to the system."
+        else:
+            return f"🛠️ **Self-Fix Status:** {status}\n\n" \
+                   f"Proposal ID: `{proposal_id}`\n" \
+                   f"Decision ID: `{decision_id}`\n" \
+                   f"File: `{file_path}`"
+    
     # Fallback
     return f"Tool executed successfully. Result: {json.dumps(result, indent=2, default=str)[:1000]}"
 
@@ -1163,6 +1237,41 @@ async def legacy_chat(chat: SimpleChatRequest):
                 session_id = session.session_id
     finally:
         db.close()
+        
+    # --- ACTION DISPATCHER (Pre-processing user intent) ---
+    try:
+        if get_action_dispatcher:
+            dispatcher = get_action_dispatcher()
+            # We use dispatch_from_text to check if the USER is commanding an action directly
+            # e.g. "take a screenshot"
+            action_result = await dispatcher.dispatch_from_text(msg, session_id=session_id)
+            
+            if action_result.get("actions_executed", 0) > 0:
+                # Actions executed! Return summary.
+                results = action_result.get("results", [])
+                summary = f"⚡ **Executed {len(results)} actions:**\n"
+                for r in results:
+                    status = "✅" if r.get("status") == "success" else "❌"
+                    summary += f"- {status} {r.get('action')}: {r.get('data') or r.get('error')}\n"
+                
+                # Mock DaenaResponse
+                daena_response = DaenaMessage(
+                    id=str(uuid.uuid4()),
+                    type="assistant",
+                    content=summary,
+                    timestamp=datetime.now()
+                )
+                
+                return {
+                    "success": True,
+                    "session_id": session_id,
+                    "response": summary,
+                    "daena_response": daena_response,
+                    "tool_used": "action_dispatcher",
+                    "tool_action": "multi_action"
+                }
+    except Exception as e:
+        logger.error(f"Action Dispatcher error in legacy_chat: {e}")
     
     # Check if this message requires a tool execution
     tool_result = await detect_and_execute_tool(msg)

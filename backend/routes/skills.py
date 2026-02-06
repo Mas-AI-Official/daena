@@ -173,6 +173,78 @@ async def test_skill_execution(
         return {"success": False, "error": str(e)}
 
 
+@router.post("/scan")
+async def scan_skills_for_threats() -> Dict[str, Any]:
+    """
+    Real security scan of all registered skills.
+    Checks code patterns and configuration integrity.
+    """
+    try:
+        from backend.services.skill_registry import get_skill_registry
+        from backend.database import SessionLocal, Skill
+        
+        registry = get_skill_registry() # Ensures built-ins are loaded
+        
+        db = SessionLocal()
+        try:
+            skills = db.query(Skill).all()
+            total_count = len(skills)
+            issues = []
+            
+            # Signatures to look for
+            risk_signatures = {
+                "critical": ["os.system", "subprocess.call", "eval(", "exec(", "shutil.rmtree", "socket.socket"],
+                "high": ["open(", "write(", ".unlink", ".remove", "requests.post", "urllib"],
+                "medium": ["print(", "logging."]
+            }
+
+            for s in skills:
+                code = s.code_body or ""
+                risk_level = s.risk_level
+                
+                # Scan code
+                found_sigs = []
+                detected_risk = "low"
+                
+                for risk, sigs in risk_signatures.items():
+                    for sig in sigs:
+                        if sig in code:
+                            found_sigs.append(sig)
+                            if risk == "critical": detected_risk = "critical"
+                            elif risk == "high" and detected_risk != "critical": detected_risk = "high"
+                            elif risk == "medium" and detected_risk == "low": detected_risk = "medium"
+
+                # Check for mismatch (e.g. marked low but has critical code)
+                if detected_risk == "critical" and risk_level not in ("critical", "high"):
+                     issues.append({
+                         "id": s.id,
+                         "name": s.name,
+                         "issue": f"Marked {risk_level} but contains critical signature: {found_sigs}",
+                         "severity": "critical"
+                     })
+                elif detected_risk == "high" and risk_level == "low":
+                    issues.append({
+                        "id": s.id,
+                        "name": s.name,
+                        "issue": f"Marked low but contains high struct: {found_sigs}",
+                        "severity": "high"
+                     })
+            
+            return {
+                "success": True,
+                "scanned_count": total_count,
+                "issues_found": len(issues),
+                "issues": issues,
+                "timestamp": time.time()
+            }
+        finally:
+            db.close()
+            
+    except Exception as e:
+        import traceback
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
 @router.get("/debug")
 async def debug_skills():
     """Debug endpoint to check skill registry state"""

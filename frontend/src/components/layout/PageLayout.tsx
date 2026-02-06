@@ -1,13 +1,16 @@
 
 import React from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
+import { Header } from './Header';
 import { useUIStore } from '../../store/uiStore';
 import { Menu } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 export function PageLayout() {
     const { sidebarOpen, toggleSidebar } = useUIStore();
+    const location = useLocation();
+    const isChat = location.pathname.startsWith('/chat');
 
     return (
         <div className="flex h-screen bg-[#0A0E1A] text-white overflow-hidden font-sans selection:bg-primary-500/30">
@@ -24,17 +27,18 @@ export function PageLayout() {
                     "max-md:ml-0"
                 )}
             >
-                {/* Mobile Header (Only visible on small screens) */}
-                <header className="md:hidden flex items-center h-16 px-6 border-b border-white/5 bg-[#0A0E1A]">
-                    <button onClick={toggleSidebar} className="text-starlight-300 mr-4">
-                        <Menu className="w-6 h-6" />
-                    </button>
-                    <span className="font-display font-bold text-lg">DAENA OS</span>
-                </header>
+                {/* Header */}
+                <Header />
 
                 {/* Scrollable Area */}
-                <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 md:p-8 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                    <div className="max-w-[1920px] mx-auto space-y-8 animate-fade-in pb-20">
+                <div className={cn(
+                    "flex-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent flex flex-col",
+                    isChat ? "overflow-hidden" : "overflow-y-auto p-6 md:p-8"
+                )}>
+                    <div className={cn(
+                        "w-full h-full flex flex-col animate-fade-in",
+                        !isChat && "space-y-8 pb-8"
+                    )}>
                         <Outlet />
                     </div>
                 </div>

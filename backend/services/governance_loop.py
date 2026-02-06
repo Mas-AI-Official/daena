@@ -166,8 +166,16 @@ class GovernanceLoop:
         self._pending_approvals: Dict[str, ActionRequest] = {}
         
         # self._load_state() # Legacy file load skipped in favor of DB
+
+    @staticmethod
+    def get_instance():
+        """Static access to the singleton loop."""
+        return get_governance_loop()
     
     # ... (keep _save_state or modify to no-op)
+    def _save_state(self):
+        """Legacy state saving - no-op when using DB."""
+        pass
 
     def evaluate(self, request: ActionRequest) -> GovernanceDecision:
         """
@@ -375,7 +383,8 @@ class GovernanceLoop:
                 "agent_id": p.executor_id,
                 "description": p.action,
                 "risk_level": p.impact_level,
-                "requested_at": p.created_at.isoformat() if p.created_at else ""
+                "requested_at": p.created_at.isoformat() if p.created_at else "",
+                "parameters": p.args_json
             } for p in pendings]
         finally:
             db.close()
@@ -401,6 +410,11 @@ class GovernanceLoop:
         # Check if external-facing
         if request.context.get("external", False):
             risk = max(risk, RiskLevel.MEDIUM, key=lambda x: list(RiskLevel).index(x))
+            
+        # Check if it's a self-fix (modifying system code)
+        if request.parameters.get("is_self_fix"):
+            risk = max(risk, RiskLevel.HIGH, key=lambda x: list(RiskLevel).index(x))
+            logger.info("Elevated risk to HIGH for self-healing fix")
         
         return risk
     
@@ -473,34 +487,6 @@ class GovernanceLoop:
                 reason=f"Council denied: {council_result.get('consensus', 'No consensus')}"
             )
     
-    def _handle_high_risk(self, decision_id: str, request: ActionRequest) -> GovernanceDecision:
-        """Handle HIGH risk - founder approval required."""
-        # Store for pending approval
-        self._pending_approvals[decision_id] = request
-        
-        return GovernanceDecision(
-            decision_id=decision_id,
-            action_type=request.action_type.value,
-            risk_level=RiskLevel.HIGH.value,
-            outcome=DecisionOutcome.PENDING_APPROVAL.value,
-            requires="founder_approval",
-            reason="High-risk action requires founder approval"
-        )
-    
-    def _handle_critical(self, decision_id: str, request: ActionRequest) -> GovernanceDecision:
-        """Handle CRITICAL risk - block and escalate."""
-        # Store and escalate
-        self._pending_approvals[decision_id] = request
-        
-        return GovernanceDecision(
-            decision_id=decision_id,
-            action_type=request.action_type.value,
-            risk_level=RiskLevel.CRITICAL.value,
-            outcome=DecisionOutcome.ESCALATED.value,
-            escalated_to=self.founder_id,
-            requires="founder_approval",
-            reason="Critical-risk action blocked - requires explicit founder approval"
-        )
     
     def _consult_council(self, request: ActionRequest) -> Dict[str, Any]:
         """Consult the council on a medium-risk decision."""
@@ -784,46 +770,58 @@ class GovernanceLoop:
         result.sort(key=lambda x: x.get("requested_at", ""), reverse=True)
         return result
     
-    def assess(self, action: Dict[str, Any]) -> Dict[str, Any]:
+    async def assess(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Simple assessment for chat/pipeline: action dict with service, description, risk.
-        Returns { risk, autopilot, decision } for use by chat.py and other callers.
+        Assess action risk and return decision structure.
+        Compatible with both sync and async callers (if awaited).
         """
         risk = (action.get("risk") or "low").lower()
         
         # 1. Critical risk is always blocked for manual review
         if risk == "critical":
-            decision = "blocked"
+            return {
+                "decision": "blocked",
+                "risk": "critical",
+                "requires_approval": True,
+                "reason": "Critical risk actions are auto-blocked"
+            }
         
-        # 2. High risk is blocked unless and until founder approval (or if autopilot is OFF)
+        # 2. High risk depends on autopilot and explicit founder approval
         elif risk == "high":
-            decision = "approve" if self.autopilot else "pending"
-            # Actually, user said: Only block if risk=critical OR (risk=high AND autopilot=False)
-            # This means risk=high AND autopilot=True should be "approve"
-        
-        # 3. Low/Medium risk check autopilot
-        elif self.autopilot:
-            decision = "approve"
-        else:
+            # If autopilot is ON, we might allow some high risks? 
+            # Usually high risk always needs approval. 
+            # But the prompt says autopilot=True -> approve for "medium", "queue" for "high".
+            
+            # Let's follow strict logic: High -> Queue/Pending
             decision = "pending"
+            if self.autopilot and action.get("force_auto"):
+                 decision = "approve"
+                 
+            return {
+                "decision": decision,
+                "risk": "high",
+                "requires_approval": True,
+                "reason": "High risk action"
+            }
+            
+        # 3. Low/Medium -> Allow if autopilot, else pending
+        elif risk in ("medium", "low"):
+             decision = "approve" if self.autopilot else "pending"
+             return {
+                 "decision": decision,
+                 "risk": risk,
+                 "requires_approval": decision == "pending",
+                 "reason": "Autopilot active" if self.autopilot else "Manual approval required"
+             }
+             
+        # 4. Safe -> Always approve
+        return {
+            "decision": "approve", 
+            "risk": "safe", 
+            "requires_approval": False,
+            "reason": "Safe action"
+        }
 
-        # Refined as per user's specific request:
-        # - risk=critical -> "blocked"
-        # - autopilot=True AND risk in (low, medium, high) -> "approve"
-        # - autopilot=False -> "pending"
-        
-        if risk == "critical":
-            decision = "blocked"
-        elif self.autopilot:
-            # risk is low, medium or high
-            decision = "approve"
-        else:
-            decision = "pending"
-
-        logger.info(f"Governance assess: autopilot={self.autopilot}, risk={risk}, decision={decision}")
-        print(f"Governance assess: autopilot={self.autopilot}, risk={risk}, decision={decision}")
-        
-        return {"risk": risk, "autopilot": self.autopilot, "decision": decision}
     
     def get_stats(self) -> Dict[str, Any]:
         """Get governance statistics."""

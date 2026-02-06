@@ -8,6 +8,8 @@ export interface ChangeRequest {
     description: string;
     diff: string;
     status: string;
+    timestamp: string;
+    score?: number;
 }
 
 export const selfFixApi = {

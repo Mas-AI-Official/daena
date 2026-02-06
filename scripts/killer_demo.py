@@ -82,6 +82,28 @@ def log_event(event_type: str, entity_type: str, entity_id: str, payload: Dict[s
         # Don't crash demo if logging fails
         pass
 
+    # Broadcast to Frontend via WebSocket API
+    try:
+        import urllib.request
+        import json
+        
+        ws_payload = {
+            "type": event_type,
+            "data": payload
+        }
+        
+        req = urllib.request.Request(
+            "http://localhost:8000/ws/broadcast",
+            data=json.dumps(ws_payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(req) as response:
+            pass
+    except Exception as ws_e:
+        # Silently fail if server not running or connection refused
+        pass
+
+
 
 def print_banner():
     """Print the Daena demo banner."""

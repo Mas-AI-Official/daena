@@ -36,5 +36,10 @@ export const departmentsApi = {
     getAgents: async (departmentId: string): Promise<{ agents: Agent[] }> => {
         const response = await api.get(`/departments/${departmentId}/agents`);
         return response.data;
+    },
+
+    create: async (data: { name: string, description: string, color: string, sunflower_index?: number, is_hidden?: boolean }) => {
+        const response = await api.post('/departments', data);
+        return response.data;
     }
 };

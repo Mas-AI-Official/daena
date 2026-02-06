@@ -7,12 +7,18 @@ import logging
 from backend.services.council_service import council_service
 from backend.services.auth_service import auth_service, User
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from backend.database import SessionLocal, Council as DBCouncil
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1/councils", tags=["councils"])
 security = HTTPBearer()
 logger = logging.getLogger(__name__)
 
 # Models
+class CouncilCreate(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    member_agent_ids: List[str] = []
+    is_active: bool = True
 class CouncilStatus(BaseModel):
     department: str
     status: str
@@ -36,17 +42,52 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 @router.get("/")
 async def list_councils():
     """List all available department councils"""
-    departments = ["engineering", "product", "marketing", "sales", "finance", "hr", "operations", "legal"]
-    results = []
-    for dept in departments:
-        name = council_service.get_department_display_name(dept)
-        results.append({
-            "id": dept,
-            "name": name,
-            "agent_count": 6,
-            "status": "ready"
-        })
-    return results
+    db = SessionLocal()
+    try:
+        db_councils = db.query(DBCouncil).all()
+        results = []
+        for c in db_councils:
+            results.append({
+                "id": c.council_id,
+                "name": c.name,
+                "agent_count": len(c.member_agent_ids or []),
+                "status": "ready" if c.is_active else "inactive"
+            })
+            
+        # Add defaults if none exist
+        if not results:
+            departments = ["engineering", "product", "marketing", "sales", "finance", "hr", "operations", "legal"]
+            for dept in departments:
+                name = council_service.get_department_display_name(dept)
+                results.append({
+                    "id": dept,
+                    "name": name,
+                    "agent_count": 6,
+                    "status": "ready"
+                })
+        return results
+    finally:
+        db.close()
+
+@router.post("/")
+async def create_council(council: CouncilCreate):
+    """Create a new council."""
+    db = SessionLocal()
+    try:
+        council_id = council.name.lower().replace(" ", "_")
+        new_council = DBCouncil(
+            council_id=council_id,
+            name=council.name,
+            description=council.description,
+            member_agent_ids=council.member_agent_ids,
+            is_active=council.is_active
+        )
+        db.add(new_council)
+        db.commit()
+        db.refresh(new_council)
+        return {"success": True, "council_id": new_council.council_id}
+    finally:
+        db.close()
 
 @router.get("/{department}")
 async def get_council_details(department: str):

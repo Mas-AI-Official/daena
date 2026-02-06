@@ -1571,7 +1571,9 @@ try:
     # Structure verification routes (independent of hiring)
     try:
         from backend.routes.structure import router as structure_router
+        from backend.routes import experts
         app.include_router(structure_router, tags=["structure"])
+        app.include_router(experts.router, tags=["experts"])
         logger.info("✅ Structure verification routes registered")
     except ImportError as e:
         logger.warning(f"Structure verification routes not available: {e}")
@@ -4499,9 +4501,10 @@ except Exception as e:
 # Register missing Core API Routers
 try:
     from backend.routes import (
-        daena, tasks, agents, research, packages, defi, 
-        councils, treasury, proactive, events, use_cases, shadow, governance, execution_layer,
-        brain, model_registry, health, audit, voice, system, chat_history
+        daena, chat, agents, connectors, tasks, file_explorer, voice, memory, tools, graph,
+        departments, councils, websocket, quintessence_api, shadow_api, founder, dashboard,
+        chat_history, experts, research, packages, defi, treasury, proactive, events,
+        use_cases, shadow, governance, execution_layer, brain, model_registry, system, audit
     )
     
     # Critical Chat API
@@ -4534,17 +4537,57 @@ try:
     app.include_router(governance.router)
     app.include_router(execution_layer.router)
     
+    # Register Strategy API
+    try:
+        from backend.routes import strategy_api
+        app.include_router(strategy_api.router, tags=["strategy"])
+        logger.info("✅ Strategy API registered")
+    except Exception as strategy_err:
+        logger.warning(f"Strategy API partially available: {strategy_err}")
+
+    # Register Change Requests (Self-Fix) API
+    try:
+        from backend.routes import change_requests
+        app.include_router(change_requests.router)
+        logger.info("✅ Change Requests router registered")
+    except Exception as e:
+        logger.warning(f"Change Requests router registration failed: {e}")
+
+    # Register Marketplace API
+    try:
+        from backend.routes import marketplace
+        app.include_router(marketplace.router, tags=["marketplace"])
+        logger.info("✅ Marketplace API registered")
+    except Exception as e:
+        logger.warning(f"Marketplace API partially available: {e}")
+
     logger.info("✅ Core API routers registered")
 except Exception as e:
     logger.error(f"Failed to register some core routers: {e}")
 
 # Register Quintessence router
 try:
-    from backend.routes import quintessence
-    app.include_router(quintessence.router)
+    from backend.routes import quintessence_api
+    app.include_router(quintessence_api.router)
     logger.info("✅ Quintessence router registered")
 except Exception as e:
     logger.error(f"Failed to register quintessence router: {e}")
+
+# Register Shadow router
+try:
+    from backend.routes import shadow_api
+    app.include_router(shadow_api.router)
+    logger.info("✅ Shadow router registered")
+except Exception as e:
+    logger.error(f"Failed to register shadow router: {e}")
+
+# Register Dashboard router
+try:
+    from backend.routes import dashboard
+    app.include_router(dashboard.router)
+    logger.info("✅ Dashboard router registered")
+except Exception as e:
+    logger.error(f"Failed to register dashboard router: {e}")
 
 # Register webhooks router
 try:
@@ -4580,11 +4623,11 @@ except Exception as e:
 
 # Register Founder Panel router
 try:
-    from backend.routes import founder_panel
-    app.include_router(founder_panel.router)
+    from backend.routes import founder
+    app.include_router(founder.router)
     logger.info("✅ Founder Panel router registered")
 except Exception as e:
-    logger.error(f"Failed to register founder_panel router: {e}")
+    logger.error(f"Failed to register founder router: {e}")
 
 # Unique UI Routes not defined above
 @app.get("/ui/daena-office", response_class=HTMLResponse)

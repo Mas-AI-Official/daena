@@ -19,12 +19,27 @@ export function SkillRegistry() {
 
     const fetchSkills = async () => {
         try {
-            const data = await skillsApi.list();
+            // @ts-ignore
+            const data = await skillsApi.list(undefined, 100);
             setSkills(data.skills);
         } catch (error) {
             console.error('Failed to fetch skills:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleScan = async () => {
+        try {
+            // @ts-ignore
+            const result = await skillsApi.scan();
+            if (result.success) {
+                alert(`Security Audit Complete:\n\nScanned: ${result.scanned_count} skills\nIssues Found: ${result.issues_found}\n\n${result.issues_found > 0 ? "Check logs for details." : "System integrity nominal."}`);
+            } else {
+                alert(`Scan failed: ${result.error}`);
+            }
+        } catch (e) {
+            alert("Scan failed to initiate.");
         }
     };
 
@@ -67,7 +82,7 @@ export function SkillRegistry() {
                         <Zap className="w-4 h-4 mr-2" />
                         Auto-Localize
                     </Button>
-                    <Button variant="danger" onClick={() => alert('Security Audit Complete: No malicious signatures found in 64 skills.')} className="bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20">
+                    <Button variant="danger" onClick={handleScan} className="bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20">
                         <Shield className="w-4 h-4 mr-2" />
                         Scan for Threats
                     </Button>

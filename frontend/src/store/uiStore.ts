@@ -10,8 +10,11 @@ interface Notification {
 
 interface UIState {
     sidebarOpen: boolean;
+    historySidebarOpen: boolean;
     toggleSidebar: () => void;
+    toggleHistorySidebar: () => void;
     setSidebarOpen: (open: boolean) => void;
+    setHistorySidebarOpen: (open: boolean) => void;
 
     notifications: Notification[];
     addNotification: (notification: Omit<Notification, 'id'>) => void;
@@ -22,8 +25,11 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set, get) => ({
     sidebarOpen: true,
+    historySidebarOpen: true,
     toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+    toggleHistorySidebar: () => set((state) => ({ historySidebarOpen: !state.historySidebarOpen })),
     setSidebarOpen: (open) => set({ sidebarOpen: open }),
+    setHistorySidebarOpen: (open) => set({ historySidebarOpen: open }),
 
     notifications: [],
     addNotification: (notification) => {

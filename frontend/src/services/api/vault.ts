@@ -21,7 +21,8 @@ export const vaultApi = {
     },
 
     storeSecret: async (name: string, value: string, category: string): Promise<Secret> => {
-        const response = await api.post('/vault/secrets', { name, value, category });
+        // The backend expects 'encrypted_value'
+        const response = await api.post('/vault/secrets', { name, encrypted_value: value, category });
         return response.data;
     },
 

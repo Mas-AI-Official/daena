@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 
 interface Message {
     id: string;
-    sender: 'user' | 'daena' | 'system' | 'agent' | 'assistant';
+    sender: 'user' | 'daena' | 'system' | 'agent' | 'assistant' | 'autopilot';
     content: string;
     timestamp: string;
     metadata?: any;

@@ -43,7 +43,7 @@ export function SunflowerGrid() {
             if (canvas.parentElement) {
                 canvas.width = canvas.parentElement.clientWidth;
                 canvas.height = canvas.parentElement.clientHeight;
-                draw();
+                // draw(); // Removed undefined function call
             }
         });
         resizeObserver.observe(canvas.parentElement!);

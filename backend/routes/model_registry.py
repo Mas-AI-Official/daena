@@ -55,6 +55,16 @@ async def set_routing_mode(request: SetRoutingModeRequest) -> Dict[str, Any]:
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid routing mode. Use: local_only, api_only, or hybrid.")
 
+class ToggleModelRequest(BaseModel):
+    model_id: str
+    enabled: bool
+
+@router.post("/toggle")
+async def toggle_model(request: ToggleModelRequest) -> Dict[str, Any]:
+    """Enable or disable a model in the registry (e.g. for rotation)."""
+    success = await model_registry.toggle_model_status(request.model_id, request.enabled)
+    return {"success": success, "model_id": request.model_id, "enabled": request.enabled}
+
 @router.post("/scan")
 async def scan_models() -> Dict[str, Any]:
     """Force a scan of available local models."""

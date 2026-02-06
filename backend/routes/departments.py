@@ -12,8 +12,70 @@ from fastapi import Body
 import logging
 
 logger = logging.getLogger(__name__)
+from backend.database import SessionLocal, Department as DBDepartment
+
+class DepartmentCreate(BaseModel):
+    name: str = Field(..., description="Department name")
+    description: str = Field("", description="Department description")
+    color: str = Field("#0066cc", description="Hex color")
+    sunflower_index: Optional[int] = Field(None, description="Position in sunflower (0-7)")
+    is_hidden: bool = Field(False, description="Whether department is hidden from general view")
 
 router = APIRouter(prefix="/api/v1/departments", tags=["departments"])
+
+@router.post("/")
+async def create_department(dept: DepartmentCreate) -> Dict[str, Any]:
+    """Create a new department."""
+    db = SessionLocal()
+    try:
+        # Check slug
+        slug = dept.name.lower().replace(" ", "_")
+        existing = db.query(DBDepartment).filter(DBDepartment.slug == slug).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Department with this name already exists")
+            
+        # Determine sunflower index if not provided
+        if dept.sunflower_index is None:
+            # Simple logic: find max and add 1, or find first gap
+            indices = [d.sunflower_index for d in db.query(DBDepartment).all()]
+            for i in range(8): # 8 departments max in basic sunflower
+                if i not in indices:
+                    dept.sunflower_index = i
+                    break
+            if dept.sunflower_index is None:
+                dept.sunflower_index = max(indices) + 1 if indices else 0
+                
+        new_dept = DBDepartment(
+            slug=slug,
+            name=dept.name,
+            description=dept.description,
+            color=dept.color,
+            sunflower_index=dept.sunflower_index,
+            cell_id=f"D{dept.sunflower_index}",
+            status="active" if not dept.is_hidden else "hidden"
+        )
+        
+        db.add(new_dept)
+        db.commit()
+        db.refresh(new_dept)
+        
+        # Refresh registry
+        try:
+            from backend.utils.sunflower_registry import sunflower_registry
+            sunflower_registry.populate_from_database(db)
+        except Exception as e:
+            logger.warning(f"Failed to refresh sunflower registry: {e}")
+            
+        return {
+            "success": True,
+            "department": {
+                "id": new_dept.slug,
+                "name": new_dept.name,
+                "sunflower_index": new_dept.sunflower_index
+            }
+        }
+    finally:
+        db.close()
 
 # Phase E: Group chat models
 class ChatMessageRequest(BaseModel):

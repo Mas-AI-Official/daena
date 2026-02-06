@@ -1,72 +1,68 @@
-# Daena AI VP System - Dependencies
-# Core Framework
-fastapi>=0.115.0  # Required for Starlette 0.50+ compatibility
-uvicorn[standard]>=0.30.0  # Updated for compatibility
-pydantic==2.4.2
-python-multipart==0.0.6
-jinja2>=3.1.6,<4  # CVE-2024-22195, CVE-2025-27516
-pydantic-settings==2.1.0
+# Daena AI VP System - Core Backend Dependencies
+# FastAPI and core web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.6
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+jinja2>=3.1.2
+email-validator>=2.1.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.1.2
 
 # Database & Storage
-sqlalchemy==2.0.23
-alembic==1.12.1
-redis==5.0.1
-aiofiles==23.2.1
+sqlalchemy>=2.0.23
+alembic>=1.12.1
+redis>=5.0.1
+aiofiles>=23.2.1
 
-# HTTP & API (httpx required for providers Discord/Telegram + deep search, brain, etc.)
-requests>=2.31.0,<2.33
-httpx>=0.28.1,<1.0.0
-websockets==12.0
+# HTTP & API
+requests>=2.31.0
+httpx>=0.28.1
+websockets>=12.0
+aiohttp>=3.9.0
 
-# Operator / Automation (scrape)
-beautifulsoup4==4.12.2
+# AI and LLM integration
+openai>=1.12.0
+google-generativeai>=0.3.2
+anthropic>=0.8.0
+langchain>=0.0.350
+langchain-openai>=0.0.2
+langchain-anthropic>=0.0.1
+langchain-google-genai>=0.0.6
 
-python-dotenv==1.0.0
-
-# Optional (lightweight) auth/jwt deps used by some routers; still compatible with DISABLE_AUTH=1
-PyJWT==2.10.1
-email-validator==2.1.1
-
-# Monitoring & Logging
-structlog==23.2.0
-prometheus-client==0.19.0
-
-# Testing (pytest-asyncio required for provider smoke tests)
-pytest==7.4.3
-pytest-cov==4.1.0
-pytest-asyncio==0.21.1
-
-# Utilities
-python-dateutil==2.8.2
-pytz==2023.3
-click==8.1.7
-psutil==5.9.6
-pyyaml==6.0.1  # Required for SEC-Loop config.yaml parsing
-
-# Security & Encryption (cryptography>=43 fixes type confusion CVE; 42.0.8+ fixes DoS)
-cryptography>=43.0.2
-
-# Browser Automation & MCP (required for tool execution)
+# Web scraping and data processing
+beautifulsoup4>=4.12.2
 playwright>=1.40.0
 selenium>=4.15.0
 pyautogui>=0.9.54
 mcp>=1.0.0
 
-# Audio / TTS (for voice and XTTS under MODELS_ROOT)
+# Security & Encryption
+cryptography>=43.0.2
+PyJWT>=2.10.1
+keyring>=24.3.0
+
+# Monitoring & Logging
+psutil>=5.9.6
+prometheus-client>=0.19.0
+structlog>=23.2.0
+
+# Utilities
+python-dotenv>=1.0.0
+python-dateutil>=2.8.2
+pytz>=2023.3
+click>=8.1.7
+pyyaml>=6.0.1
+pyobjc; sys_platform == 'darwin'
+
+# Testing
+pytest>=7.4.3
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.1
+
+# Voice/Audio (Core interface only)
+elevenlabs>=0.2.26
+google-cloud-texttospeech>=2.16.3
 soundfile>=0.12.1
-# Optional: TTS (Coqui) for XTTS - install in audio venv: pip install TTS
-
-# Device Management (CPU/GPU/TPU)
-# Optional: Install JAX for TPU support
-# jax==0.4.23
-# jaxlib==0.4.23
-# Note: JAX installation varies by platform, install separately if needed
-
-#
-# Optional dependency sets (not installed by default):
-# - OCR: pytesseract, Pillow
-# - Dev tools: black, flake8, mypy
-# - File watching: watchdog
-#
-# Provider (Moltbot-style): Discord/Telegram use httpx (above). No extra pip install.
-# Smoke test: pytest + pytest-asyncio (above). Run: scripts\run_provider_smoke_test.bat

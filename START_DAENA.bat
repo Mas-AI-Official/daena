@@ -1,9 +1,7 @@
 @echo off
 REM ============================================================
-REM DAENA AI VP - MASTER LAUNCHER
+REM DAENA AI VP - MASTER LAUNCHER v2.5
 REM ============================================================
-REM When double-clicked, re-launch in a window that stays open (cmd /k)
-
 if "%~1"=="" (
     title DAENA Launcher
     cmd /k "%~f0" keepopen
@@ -11,232 +9,94 @@ if "%~1"=="" (
 )
 
 setlocal EnableDelayedExpansion
-REM Go to script directory so all paths work
 cd /d "%~dp0"
 set "ROOT=%~dp0"
 if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 
 echo ============================================================
-echo   DAENA LAUNCHER
+echo   DAENA V2.5 - MODULAR AI OS
 echo   Date: %DATE% %TIME%
 echo ============================================================
-echo.
-echo [INFO] Root: %ROOT%
 echo.
 
 REM ---- Environment Configuration ----
 set "BACKEND_PORT=8000"
 set "AUDIO_PORT=5001"
-echo [INFO] Port: %BACKEND_PORT%
+set "FRONTEND_PORT=5173"
 set "DISABLE_AUTH=1"
 set "ENVIRONMENT=development"
-
-REM -- BUG FIXES & CONFIGURATION --
+set "MODELS_ROOT=D:\Ideas\MODELS_ROOT"
 set "PYTHONPATH=%ROOT%"
-if exist "%ROOT%\venv_daena_main_py310\Lib\site-packages\playwright" set "PLAYWRIGHT_BROWSERS_PATH=%ROOT%\venv_daena_main_py310\Lib\site-packages\playwright\driver\package\.local-browsers"
-set "OLLAMA_HOST=http://127.0.0.1:11434"
-set "DAENA_CREATOR=Masoud"
-set "DEFAULT_MODEL=deepseek-r1:8b"
-set "ENABLE_LOCAL_ROUTER=true"
 
-REM -- QA GUARDIAN CONFIGURATION (NEW) --
-set "QA_GUARDIAN_ENABLED=true"
-set "QA_GUARDIAN_AUTO_FIX=false"
-set "QA_GUARDIAN_KILL_SWITCH=false"
-set "QA_GUARDIAN_LOG_LEVEL=INFO"
-
-REM -- EXECUTION LAYER (Skills, Tasks, Approvals): set EXECUTION_TOKEN for API + dashboard --
-REM set "EXECUTION_TOKEN=your-secret-token"
-
-REM -- HANDS (OpenClaw Gateway): preferred DAENABOT_HANDS_*; legacy OPENCLAW_GATEWAY_* --
-REM set "DAENABOT_HANDS_URL=ws://127.0.0.1:18789/ws"
-REM set "DAENABOT_HANDS_TOKEN=your-token"
-REM set "DAENA_SKILL_IMPORT_PATH=%ROOT%\docs\2026-01-31\new files"
-
-REM -- MODELS_ROOT (shared brain: Ollama, XTTS, Whisper, reasoning models) --
-if not defined MODELS_ROOT set "MODELS_ROOT=D:\Ideas\MODELS_ROOT"
-set "OLLAMA_MODELS=%MODELS_ROOT%\ollama"
-set "TTS_HOME=%MODELS_ROOT%\xtts"
-
-REM -- HF CACHE under MODELS_ROOT --
-if not defined HF_HOME set "HF_HOME=%MODELS_ROOT%\hf"
-if not defined TRANSFORMERS_CACHE set "TRANSFORMERS_CACHE=%HF_HOME%\transformers"
 echo [INFO] MODELS_ROOT: %MODELS_ROOT%
-echo [INFO] HF Cache: %HF_HOME%
-
-REM -- VOICE CONFIGURATION (Set your API key below) --
-set "ELEVENLABS_API_KEY=your_elevenlabs_api_key_here"
-REM To get an API key, visit: https://elevenlabs.io/
-REM Leave as "your_elevenlabs_api_key_here" to disable voice cloning
-
-echo [INFO] Environment configured:
-echo        BACKEND_PORT=%BACKEND_PORT%
-echo        AUDIO_PORT=%AUDIO_PORT%
-echo        DISABLE_AUTH=%DISABLE_AUTH%
-echo        CREATOR=%DAENA_CREATOR%
-echo        MODEL=%DEFAULT_MODEL%
-echo        QA_GUARDIAN=%QA_GUARDIAN_ENABLED%
+echo [INFO] Ports: Backend:%BACKEND_PORT% Audio:%AUDIO_PORT% Frontend:%FRONTEND_PORT%
 echo.
 
-REM ---- 1. Create directories ----
-echo [1/6] Creating directories...
-if not exist "logs" mkdir "logs"
-if not exist "backups" mkdir "backups"
-echo   [+] Directories OK
-echo.
-
-REM ---- 2. Database Check ----
-echo [2/6] Checking Database...
-if exist "daena.db" (
-    echo   [+] Database found: daena.db
-    attrib -R "daena.db" 2>nul
-    if exist "daena.db-wal" del /F /Q "daena.db-wal" 2>nul
-    if exist "daena.db-shm" del /F /Q "daena.db-shm" 2>nul
+REM ---- 1. Environment Doctor ----
+echo [1/5] Running Environment Doctor...
+if exist "scripts\environment_doctor.py" (
+    venv_daena_main_py310\Scripts\python.exe scripts\environment_doctor.py
 ) else (
-    echo   [WARN] No database found - will be created on first run
+    echo   [WARN] Environment Doctor script not found.
 )
 echo.
 
-REM ---- 3. Check Python Environment (main or audio venv) ----
-echo [3/6] Checking Python Environment...
-set "VENV_BACKEND="
-if exist "%ROOT%\venv_daena_main_py310\Scripts\python.exe" (
-    set "VENV_BACKEND=%ROOT%\venv_daena_main_py310"
+REM ---- 2. Check Database ----
+echo [2/5] Checking Database...
+if not exist "daena.db" (
+    echo   [WARN] Database not found - creating...
+) else (
+    echo   [+] Database OK
 )
-if not defined VENV_BACKEND if exist "%ROOT%\venv_daena_audio_py310\Scripts\python.exe" (
-    set "VENV_BACKEND=%ROOT%\venv_daena_audio_py310"
-    echo   [INFO] Using venv_daena_audio_py310 for backend (venv_daena_main_py310 not found)
-)
-if not defined VENV_BACKEND (
-    echo   [ERROR] No Python venv found in: %ROOT%
-    echo   We look for: venv_daena_main_py310 OR venv_daena_audio_py310
-    echo   Create one: python -m venv venv_daena_main_py310
-    echo   Then: venv_daena_main_py310\Scripts\pip.exe install -r backend\requirements.txt
-    echo.
-    pause
-    exit /b 1
-)
-echo   [+] Python environment: %VENV_BACKEND%
 echo.
 
-REM ---- 4. Start Ollama (MODELS_ROOT + GPU) ----
-echo [4/6] Checking Ollama...
-tasklist /FI "IMAGENAME eq ollama.exe" 2>nul | findstr /I "ollama.exe" >nul
-if errorlevel 1 goto :START_OLLAMA
-echo   [+] Ollama is already running
-goto :OLLAMA_DONE
-:START_OLLAMA
-echo   [*] Starting Ollama - MODELS_ROOT=%MODELS_ROOT% - GPU-friendly
-if not defined OLLAMA_NUM_GPU set "OLLAMA_NUM_GPU=1"
-if not defined OLLAMA_GPU_OVERHEAD set "OLLAMA_GPU_OVERHEAD=10"
-start "DAENA - OLLAMA" cmd /c "set OLLAMA_MODELS=%OLLAMA_MODELS% && set OLLAMA_NUM_GPU=%OLLAMA_NUM_GPU% && set OLLAMA_GPU_OVERHEAD=%OLLAMA_GPU_OVERHEAD% && ollama serve"
-timeout /t 3 /nobreak >nul
-echo   [+] Ollama started - backend will use fallback port 11435 if needed
-:OLLAMA_DONE
-echo.
+REM ---- 3. Start Services ----
+echo [3/5] Launching Core Services...
 
-REM ---- 5. Start Backend ----
-echo [5/6] Starting Backend Service...
-echo   [*] Port: %BACKEND_PORT%
-echo   [*] QA Guardian: %QA_GUARDIAN_ENABLED%
-echo   [*] Command: python backend/start_server.py (port %BACKEND_PORT%, fallback 8001-8010 on WinError 10013)
-echo.
-
-REM Start backend in a new window that stays open (with QA Guardian env vars)
+REM 3a. Backend (FastAPI)
+echo   [*] Launching Backend...
 start "DAENA - BACKEND" cmd /k call "%~dp0_daena_backend_launcher.bat" %BACKEND_PORT%
 
-echo   [+] Backend window opened
-echo.
-
-REM ---- 5b. Start Audio Service (Voice/TTS/STT) ----
-echo [5b/6] Starting Audio Service (XTTS Voice Cloning)...
-echo   [*] Port: %AUDIO_PORT%
-echo   [*] Using voice sample: daena_voice.wav
-echo.
-
-REM Check if audio venv exists
-if exist "%~dp0venv_daena_audio_py310\Scripts\python.exe" (
+REM 3b. Audio Service (Coqui/ElevenLabs)
+echo   [*] Launching Audio Service...
+if exist "venv_daena_audio_py310\Scripts\python.exe" (
     start "DAENA - AUDIO" cmd /k call "%~dp0_daena_audio_launcher.bat" %AUDIO_PORT%
-    echo   [+] Audio service window opened
 ) else (
-    echo   [WARN] Audio venv not found - voice features disabled
-    echo   [WARN] To enable voice: python -m venv venv_daena_audio_py310
-    echo   [WARN] Then: venv_daena_audio_py310\Scripts\pip install -r requirements-audio.txt
+    echo     [SKIP] Audio venv not found.
 )
+
+REM 3c. Frontend (React/Vite)
+echo   [*] Launching Frontend...
+start "DAENA - FRONTEND" cmd /k "cd frontend && npm run dev -- --port %FRONTEND_PORT%"
 echo.
 
-
-REM ---- 6. Start Frontend (React/Vite) ----
-echo [6/7] Starting Frontend (Dev Mode)...
-if exist "%ROOT%\frontend\package.json" (
-    start "DAENA - FRONTEND" cmd /k "cd frontend && npm run dev -- --port 5173"
-    echo   [+] Frontend dev server started
-) else (
-    echo   [WARN] Frontend directory not found or no package.json
-)
-echo.
-
-REM ---- 7. Wait for Backend ----
-echo [7/7] Waiting for Backend to be ready...
+REM ---- 4. Wait for Neural Link ----
+echo [4/5] Establishing Neural Link...
 set /a COUNT=0
-set "DETECTED_PORT="
-
 :WAIT_LOOP
 set /a COUNT+=1
-echo   [*] Attempt %COUNT%/30...
-
-REM Try primary port first, then fallback ports 8001-8010 (in case WinError 10013 forced fallback)
-for %%P in (%BACKEND_PORT% 8001 8002 8003 8004 8005 8006 8007 8008 8009 8010) do (
-    if not defined DETECTED_PORT (
-        powershell -NoProfile -Command "try{$null=Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:%%P/health' -TimeoutSec 2;exit 0}catch{exit 1}" >nul 2>&1
-        if !errorlevel!==0 set "DETECTED_PORT=%%P"
-    )
-)
-if defined DETECTED_PORT (
-    set "BACKEND_PORT=!DETECTED_PORT!"
-    if not "!DETECTED_PORT!"=="8000" echo   [*] Backend responded on port !DETECTED_PORT! (fallback)
-    echo   [+] Backend is ready on port !BACKEND_PORT!
+powershell -NoProfile -Command "try{$null=Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:%BACKEND_PORT%/health' -TimeoutSec 1;exit 0}catch{exit 1}" >nul 2>&1
+if !errorlevel!==0 (
+    echo   [+] Backend Ready on port %BACKEND_PORT%
     goto :READY
 )
-
-if %COUNT% GEQ 30 (
-    echo.
-    echo   [WARN] Backend did not respond on 8000-8010 after 30 attempts.
-    echo   [WARN] Check the DAENA - BACKEND window for errors.
-    echo.
+if %COUNT% GEQ 20 (
+    echo   [WARN] Backend taking too long. Check the Backend window.
     goto :READY
 )
-
-timeout /t 2 /nobreak >nul
+timeout /t 1 /nobreak >nul
 goto :WAIT_LOOP
 
 :READY
 echo.
-echo ============================================================
-echo   DAENA STARTUP COMPLETE
-echo ============================================================
-echo.
-echo   Frontend (React): http://localhost:5173
-echo   Backend API:      http://127.0.0.1:!BACKEND_PORT!
-echo   API Docs:         http://127.0.0.1:!BACKEND_PORT!/docs
-echo.
-echo   Sidebar (VP):
-echo   Dashboard:        http://localhost:5173/
-echo   Daena Office:     http://localhost:5173/
-echo   Projects:         http://localhost:5173/projects
-echo   Governance:       http://localhost:5173/governance
-echo   Brain & API:      http://localhost:5173/brain
+
+REM ---- 5. Launch Dashboard ----
+echo [5/5] Launching DAENA OS Dashboard...
+start "" "http://localhost:%FRONTEND_PORT%"
+
 echo.
 echo ============================================================
+echo   STARTUP COMPLETE - DAENA OS IS LIVE
+echo ============================================================
 echo.
-
-REM Auto-launch Dashboard (Frontend)
-echo   [+] Launching Dashboard (Frontend)...
-start "" "http://localhost:5173"
-
-echo.
-echo Press any key to close this launcher window...
-echo (The backend and frontend will continue running in their windows)
-pause >nul
-
-
+pause

@@ -1,17 +1,24 @@
-# Audio/Voice/GenAI environment requirements
+# Daena Audio/Voice Service Requirements
 # Use with venv_daena_audio_py310 only!
+
+# Core async and communication
 google-genai>=1.19.0
 anyio>=4.8.0,<5.0.0
 httpx>=0.28.1,<1.0.0
 websockets>=13.0.0,<15.1.0
-# Voice cloning (ElevenLabs via aiohttp)
 aiohttp>=3.9.0,<4.0.0
-# Speech recognition
+
+# Speech and Voice
 SpeechRecognition>=3.10.0
-# Audio I/O (may require manual installation on Windows)
-# Note: pyaudio may require Visual C++ Build Tools
-# Alternative: pip install pipwin && pipwin install pyaudio
-# Or download wheel from: https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
-# Wake word detection (requires Picovoice access key)
 pvporcupine>=3.0.0
-# Add other audio/voice dependencies below as needed 
+elevenlabs>=0.2.26
+# Optional: Coqui TTS - install manually if needed
+# TTS>=0.22.0
+
+# Audio I/O
+# Note: pyaudio may require Visual C++ Build Tools
+# pip install pyaudio or pipwin install pyaudio
+sounddevice>=0.4.6
+pydub>=0.25.1
+librosa>=0.10.1
+numpy>=1.24.0

@@ -26,5 +26,10 @@ export const skillsApi = {
     toggle: async (skillId: string, enabled: boolean) => {
         const response = await api.post('/skills/toggle', { skill_id: skillId, enabled });
         return response.data;
+    },
+
+    scan: async () => {
+        const response = await api.post('/skills/scan');
+        return response.data;
     }
 };

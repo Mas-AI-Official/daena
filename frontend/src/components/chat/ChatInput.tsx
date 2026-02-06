@@ -100,13 +100,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
                 </Button>
             </div>
 
-            <div className="text-center mt-3">
-                <p className="text-[10px] text-starlight-300/60 font-medium flex items-center justify-center gap-2">
-                    <span className="w-1 h-1 rounded-full bg-primary-500" />
-                    Daena AI v2.5 • Authorized Access Only
-                    <span className="w-1 h-1 rounded-full bg-primary-500" />
-                </p>
-            </div>
+            {/* Footer removed to save space */}
         </div>
     );
 }

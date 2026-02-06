@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Activity,
     Brain,
@@ -7,16 +8,23 @@ import {
     Terminal,
     Search,
     TrendingUp,
-    Cpu
+    Cpu,
+    ShieldCheck,
+    Ghost,
+    Wallet,
+    Sparkles
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../common/Card';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
 import { useAgentStore } from '../../store/agentStore';
 import { SunflowerGrid } from '../visualizations/SunflowerGrid';
+import { NeuralNetwork3D } from '../visualizations/NeuralNetwork3D';
+import { ConnectorGrid } from '../visualizations/ConnectorGrid';
 import { cn } from '../../utils/cn';
 
 export function Dashboard() {
+    const navigate = useNavigate();
     const { agents, fetchAgents } = useAgentStore();
 
     // Initial fetch
@@ -83,20 +91,20 @@ export function Dashboard() {
 
             {/* Main Visualizations */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[400px]">
-                {/* Agent Hive Visualization */}
+                {/* Agent Hive Visualization - Replaced with Department Hive Image */}
                 <Card className="lg:col-span-2 relative overflow-hidden group">
                     <div className="absolute inset-0 bg-gradient-to-br from-primary-600/5 to-transparent pointer-events-none" />
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <Brain className="w-5 h-5 text-primary-400" />
-                            Global Agent Hive
+                            Global Department Hive
                         </CardTitle>
                     </CardHeader>
-                    <CardContent className="h-[320px] p-0 relative">
-                        <SunflowerGrid />
+                    <CardContent className="h-[320px] p-0 relative bg-black/40">
+                        <NeuralNetwork3D />
 
                         {/* Overlay Controls */}
-                        <div className="absolute bottom-4 right-4 flex gap-2">
+                        <div className="absolute bottom-4 right-4 flex gap-2 z-10">
                             <Button size="sm" variant="secondary" className="glass-card bg-midnight-200/50 backdrop-blur-md">
                                 Filter View
                             </Button>
@@ -130,53 +138,51 @@ export function Dashboard() {
             </div>
 
             {/* Neural Systems Grid */}
-            <div>
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-display text-white">Autonomous Neural Systems</h2>
-                    <Badge variant="outline" className="text-[10px] border-primary-500/30 text-primary-400">CORE_AUTOPILOT_ONLINE</Badge>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div className="lg:col-span-3">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-lg font-display text-white">Active Connectors (CMP)</h2>
+                        <Badge variant="outline" className="text-[10px] border-primary-500/30 text-primary-400">4 INTEGRATIONS ACTIVE</Badge>
+                    </div>
+                    <ConnectorGrid />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    <SystemBotCard
-                        name="DaenaBot Core"
-                        icon={Terminal}
-                        status="Active"
-                        description="Vulnerability scanning & self-healing protocols"
-                        color="text-status-success"
-                        activity="Monitoring"
-                    />
-                    <SystemBotCard
-                        name="Research Grid"
-                        icon={Search}
-                        status="Active"
-                        description="Multi-source intelligence gathering & synthesis"
-                        color="text-primary-400"
-                        activity="Knowledge Graph Update"
-                    />
-                    <SystemBotCard
-                        name="Resource Optimizer"
-                        icon={TrendingUp}
-                        status="Ready"
-                        description="Dynamic token allocation & cost efficiency"
-                        color="text-accent"
-                        activity="Analyzing Usage"
-                    />
-                    <SystemBotCard
-                        name="NBMF Matrix"
-                        icon={Cpu}
-                        status="Active"
-                        description="Neural Bytecode Memory Format L1-L3"
-                        color="text-status-info"
-                        activity="Indexing Hot Memory"
-                    />
+
+                <div className="lg:col-span-1">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-lg font-display text-white">System Nodes</h2>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4">
+                        <SystemBotCard
+                            name="THE QUINTESSENCE"
+                            icon={ShieldCheck}
+                            status="Active"
+                            description="Supreme Council"
+                            color="text-primary-400"
+                            activity="Deliberating"
+                            onClick={() => navigate('/quintessence')}
+                        />
+                        <SystemBotCard
+                            name="Founder Control"
+                            icon={Wallet}
+                            status="Active"
+                            description="Executive Override"
+                            color="text-accent"
+                            activity="Awaiting Input"
+                            onClick={() => navigate('/founder')}
+                        />
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
 
-function SystemBotCard({ name, icon: Icon, status, description, color, activity }: any) {
+function SystemBotCard({ name, icon: Icon, status, description, color, activity, onClick }: any) {
     return (
-        <Card className="group relative overflow-hidden border-white/5 bg-midnight-950/40 hover:border-primary-500/30 transition-colors">
+        <Card
+            className="group relative overflow-hidden border-white/5 bg-midnight-950/40 hover:border-primary-500/30 transition-colors cursor-pointer"
+            onClick={onClick}
+        >
             <CardContent className="p-5">
                 <div className="flex justify-between items-start mb-4">
                     <div className={cn("p-2 rounded-lg bg-white/5 transition-colors group-hover:bg-white/10", color)}>

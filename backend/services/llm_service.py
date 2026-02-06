@@ -524,6 +524,7 @@ class LLMService:
                 logger.debug("Using local Ollama provider (priority 1)")
                 return await generate(
                     final_prompt,
+                    system_prompt=get_daena_system_prompt(),
                     model=model,
                     temperature=temperature,
                     max_tokens=max_tokens,
@@ -691,6 +692,7 @@ class LLMService:
                 full_content = []
                 async for chunk in generate_stream(
                     final_prompt,
+                    system_prompt=get_daena_system_prompt(),
                     model=model,
                     temperature=temperature,
                     max_tokens=max_tokens,

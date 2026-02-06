@@ -16,7 +16,9 @@ import {
     Target,
     ShieldCheck,
     Wallet,
-    ShoppingBag
+    ShoppingBag,
+    Sparkles,
+    Activity
 } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
 import { cn } from '../../utils/cn';
@@ -27,22 +29,22 @@ export function Sidebar() {
     const { sidebarOpen, toggleSidebar } = useUIStore();
 
     const menuItems = [
-        { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+
+        { icon: LayoutDashboard, label: 'Control Room', path: '/' },
         { icon: MessageSquare, label: 'Daena Office', path: '/chat' },
         { icon: Users, label: 'Departments', path: '/departments' },
         { icon: Box, label: 'Skills', path: '/skills' },
         { icon: Shield, label: 'Governance', path: '/governance' },
-        { icon: ShieldCheck, label: 'Integrity Shield', path: '/integrity' },
         { icon: Cpu, label: 'Brain', path: '/brain' },
-        { icon: Layers, label: 'Memory Matrix', path: '/memory' },
-        { icon: Wallet, label: 'Treasury', path: '/treasury' },
-        { icon: Database, label: 'Vault', path: '/vault' },
-        { icon: Code, label: 'IDE Builder', path: '/ide' },
+        { icon: ShieldCheck, label: 'Quintessence', path: '/quintessence' },
+        { icon: Wallet, label: 'Founder Panel', path: '/founder' },
         { icon: Ghost, label: 'Shadow Dept', path: '/shadow' },
-        { icon: GitGraph, label: 'CMP Graph', path: '/cmp' },
+        { icon: Code, label: 'IDE Builder', path: '/ide' },
+        { icon: GitGraph, label: 'CMP', path: '/cmp' },
         { icon: Target, label: 'Strategy Gaps', path: '/strategy' },
         { icon: ShoppingBag, label: 'Marketplace', path: '/marketplace' },
-        { icon: Target, label: 'Outcome Ledger', path: '/outcomes' },
+        { icon: Activity, label: 'Outcome Ledger', path: '/outcomes' },
+        { icon: ShieldCheck, label: 'Self-Fixes', path: '/self-fix' },
     ];
 
     return (

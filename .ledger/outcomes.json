@@ -181,8 +181,206 @@
         "expert_count": 3,
         "confidence": 0.6666666666666666
       }
+    },
+    "2ce5962c-467b-44c8-bcc0-bcfafdd3f8d1": {
+      "outcome_id": "2ce5962c-467b-44c8-bcc0-bcfafdd3f8d1",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "defer",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:02:12.389405",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "medium",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me.txt: Testing self-healing loop"
+      }
+    },
+    "d2237617-afd0-4a41-9876-ec9587fb4076": {
+      "outcome_id": "d2237617-afd0-4a41-9876-ec9587fb4076",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "defer",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:02:23.372001",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "medium",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me.txt: Testing self-healing loop"
+      }
+    },
+    "8ed03a4a-8d7f-4fe1-b2d7-d5c814f71335": {
+      "outcome_id": "8ed03a4a-8d7f-4fe1-b2d7-d5c814f71335",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "pending_approval",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:03:28.021186",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "high",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me.txt: Testing self-healing loop"
+      }
+    },
+    "bbe5e27e-a48e-48fb-b3cd-614529dea282": {
+      "outcome_id": "bbe5e27e-a48e-48fb-b3cd-614529dea282",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "pending_approval",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:03:49.120672",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "high",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me.txt: Testing self-healing loop"
+      }
+    },
+    "123e05ab-8c75-47a7-9c58-c3f358c6970b": {
+      "outcome_id": "123e05ab-8c75-47a7-9c58-c3f358c6970b",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "pending_approval",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:06:22.086352",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "high",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me_detailed.txt: Detailed test rationale"
+      }
+    },
+    "4ddecd6e-7105-4c25-9090-5ca916a8d2b0": {
+      "outcome_id": "4ddecd6e-7105-4c25-9090-5ca916a8d2b0",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "pending_approval",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:08:38.622174",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "high",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me_detailed.txt: Detailed test rationale"
+      }
+    },
+    "544afa4d-e87f-4d21-a027-8e833c4d04d2": {
+      "outcome_id": "544afa4d-e87f-4d21-a027-8e833c4d04d2",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "pending_approval",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:09:00.570221",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "high",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me_detailed.txt: Detailed test rationale"
+      }
+    },
+    "dc055a8e-ac1a-48e1-a9de-634a8be25b89": {
+      "outcome_id": "dc055a8e-ac1a-48e1-a9de-634a8be25b89",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "pending_approval",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:09:50.626892",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "high",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me_detailed.txt: Detailed test rationale"
+      }
+    },
+    "f628e3d9-eb91-44cf-9a73-bcee2ea2c63d": {
+      "outcome_id": "f628e3d9-eb91-44cf-9a73-bcee2ea2c63d",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "pending_approval",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:10:11.307175",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "high",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me_detailed.txt: Detailed test rationale"
+      }
+    },
+    "0bfb78c4-6eff-4a5d-85c3-4151712d53ad": {
+      "outcome_id": "0bfb78c4-6eff-4a5d-85c3-4151712d53ad",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "pending_approval",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:11:10.559746",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "high",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me_detailed.txt: Detailed test rationale"
+      }
+    },
+    "b5ec9829-eb97-473b-8bcb-cebc94e98952": {
+      "outcome_id": "b5ec9829-eb97-473b-8bcb-cebc94e98952",
+      "decision_type": "governance",
+      "category": "file_write",
+      "recommendation": "pending_approval",
+      "agent_id": "daena",
+      "council_result": null,
+      "created_at": "2026-02-06T04:12:28.429271",
+      "outcome_status": "pending",
+      "outcome_recorded_at": null,
+      "outcome_notes": "",
+      "feedback_score": null,
+      "metadata": {
+        "risk_level": "high",
+        "agent_id": "daena_self_healing",
+        "description": "Self-Fix for test_fix_me_detailed.txt: Detailed test rationale"
+      }
     }
   },
   "expert_scores": {},
-  "last_updated": "2026-02-01T16:27:13.956134"
+  "last_updated": "2026-02-06T04:12:28.429271"
 }

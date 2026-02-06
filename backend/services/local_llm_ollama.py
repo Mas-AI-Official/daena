@@ -86,6 +86,65 @@ async def check_ollama_available() -> bool:
         return False
 
 
+# Cache for available models to avoid constant hitting /api/tags
+_available_models_cache = None
+_last_cache_time = 0
+
+async def get_available_models() -> List[str]:
+    """Get list of available Ollama models with simple caching (1 min)."""
+    global _available_models_cache, _last_cache_time
+    import time
+    
+    if _available_models_cache and (time.time() - _last_cache_time < 60):
+        return _available_models_cache
+        
+    try:
+        base = await get_ollama_base_url()
+        async with httpx.AsyncClient(timeout=3) as client:
+            response = await client.get(f"{base.rstrip('/')}/api/tags")
+            if response.status_code == 200:
+                data = response.json()
+                models = [m.get("name") for m in data.get("models", [])]
+                _available_models_cache = models
+                _last_cache_time = time.time()
+                return models
+    except Exception:
+        pass
+    
+    return _available_models_cache or []
+
+async def resolve_model(requested_model: Optional[str]) -> str:
+    """Resolve the best available model, falling back if necessary."""
+    available = await get_available_models()
+    
+    # 1. If no specific request, try Trained > Default > Fallback
+    if not requested_model:
+        if TRAINED_MODEL and TRAINED_MODEL in available:
+            return TRAINED_MODEL
+        if DEFAULT_LOCAL_MODEL and DEFAULT_LOCAL_MODEL in available:
+            return DEFAULT_LOCAL_MODEL
+        if FALLBACK_MODEL and FALLBACK_MODEL in available:
+            return FALLBACK_MODEL
+        if available:
+            return available[0] # Takes whatever is there (e.g. qwen2.5:7b)
+        return DEFAULT_LOCAL_MODEL # Hope for the best
+        
+    # 2. If requested model exists, use it
+    if requested_model in available:
+        return requested_model
+        
+    # 3. Check for tag mismatch (e.g. user asks "qwen2.5", we have "qwen2.5:latest")
+    for m in available:
+        if requested_model in m or m in requested_model:
+            return m
+            
+    # 4. Fallback if requested not found
+    logger.warning(f"Requested model {requested_model} not found. Available: {available}. Using fallback.")
+    if available:
+        return available[0]
+        
+    return requested_model # Try anyway, maybe the cache is stale
+
 async def chat(
     messages: List[Dict[str, str]],
     model: Optional[str] = None,
@@ -95,17 +154,10 @@ async def chat(
     """Send chat messages to Ollama and return response (uses primary or local brain fallback)."""
 
     base = await get_ollama_base_url()
-
-    # Choose model
-    mdl = model
-    if not mdl:
-        # User preference: Try DEFAULT_LOCAL_MODEL (Kimi/Cloud) first!
-        # Even if not in local 'tags', cloud proxy might accept it.
-        mdl = DEFAULT_LOCAL_MODEL
-        
-        # Note: We skip the preamble availability check to allow "blind" cloud calls.
-        # If it fails with 404, the standard exception handler below will catch it 
-        # and try FALLBACK_MODEL.
+    
+    # Resolve valid model
+    mdl = await resolve_model(model)
+    logger.debug(f"Chat using model: {mdl}")
 
     request_data = {
         "model": mdl,
@@ -119,18 +171,29 @@ async def chat(
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             response = await client.post(f"{base.rstrip('/')}/api/chat", json=request_data)
-            response.raise_for_status()
+            
+            # Handle 500/404 explicitly
+            if response.status_code != 200:
+                error_txt = response.text
+                logger.error(f"Ollama Error ({response.status_code}): {error_txt}")
+                
+                # If 500/404 and we haven't tried fallback yet
+                if response.status_code in [500, 404, 400] and mdl != FALLBACK_MODEL:
+                    logger.warning(f"Model {mdl} failed. retrying with {FALLBACK_MODEL}")
+                    return await chat(messages, model=FALLBACK_MODEL, temperature=temperature, max_tokens=max_tokens)
+                    
+                response.raise_for_status()
+                
             data = response.json()
 
         msg = data.get("message") if isinstance(data, dict) else None
         if isinstance(msg, dict) and "content" in msg:
             content = str(msg["content"])
             
-            # Record usage for cost tracking
+            # Record usage for cost tracking (optimistic)
             try:
                 from backend.services.cost_tracker import get_cost_tracker
                 tracker = get_cost_tracker()
-                # Simple token approximation (4 chars per token)
                 prompt_text = "".join([m.get("content", "") for m in messages])
                 tracker.record_usage(mdl, len(prompt_text)//4, len(content)//4)
             except:
@@ -142,48 +205,10 @@ async def chat(
 
     except httpx.TimeoutException:
         logger.error(f"Ollama request timed out after {TIMEOUT}s")
-        return "Error: Local LLM request timed out. Try a smaller model or increase timeout."
-    except httpx.HTTPStatusError as e:
-        if e.response is not None and e.response.status_code == 404:
-            if mdl != FALLBACK_MODEL:
-                logger.warning(f"Model {mdl} not found, trying fallback {FALLBACK_MODEL}")
-                return await chat(messages, model=FALLBACK_MODEL, temperature=temperature, max_tokens=max_tokens)
-            return f"Error: Model {mdl} not found. Please run: ollama pull {mdl}"
-        logger.error(f"Ollama HTTP error: {e}")
-        return f"Error: Local LLM request failed: {str(e)}"
+        return "Error: Local LLM request timed out. Try a smaller model."
     except Exception as e:
         logger.error(f"Ollama error: {e}", exc_info=True)
         return f"Error: Failed to communicate with local LLM: {str(e)}"
-
-
-async def generate(
-    prompt: str,
-    system_prompt: Optional[str] = None,
-    model: Optional[str] = None,
-    temperature: float = 0.7,
-    max_tokens: Optional[int] = None,
-) -> str:
-    """Generate text from a prompt (wrapper around chat)."""
-    messages = []
-    
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-        
-    # Legacy check for System: prefix
-    if prompt.startswith("System:"):
-        # Split system prompt and user message
-        parts = prompt.split("\n\n", 1)
-        if len(parts) == 2:
-            system_content = parts[0].replace("System:", "").strip()
-            user_content = parts[1].strip()
-            messages.append({"role": "system", "content": system_content})
-            messages.append({"role": "user", "content": user_content})
-        else:
-            messages.append({"role": "user", "content": prompt})
-    else:
-        messages.append({"role": "user", "content": prompt})
-
-    return await chat(messages, model=model, temperature=temperature, max_tokens=max_tokens)
 
 
 async def generate_stream(
@@ -196,19 +221,16 @@ async def generate_stream(
     """Generate streaming text from a prompt using Ollama."""
     base = await get_ollama_base_url()
 
-    # Choose model
-    mdl = model
-    if not mdl:
-        # Trust DEFAULT_LOCAL_MODEL (Kimi/Cloud) blindly for speed
-        mdl = DEFAULT_LOCAL_MODEL
+    # Resolve valid model
+    mdl = await resolve_model(model)
+    logger.debug(f"Stream generating using model: {mdl}")
 
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
 
-    # Legacy check for System: prefix
+    # Legacy check for System: prefix (keep for compatibility)
     if prompt.startswith("System:"):
-        # Split system prompt and user message
         parts = prompt.split("\n\n", 1)
         if len(parts) == 2:
             system_content = parts[0].replace("System:", "").strip()
@@ -216,7 +238,6 @@ async def generate_stream(
             messages.append({"role": "system", "content": system_content})
             messages.append({"role": "user", "content": user_content})
         else:
-            # Fallback if no double newline
             messages.append({"role": "user", "content": prompt})
     else:
         messages.append({"role": "user", "content": prompt})
@@ -224,7 +245,7 @@ async def generate_stream(
     request_data = {
         "model": mdl,
         "messages": messages,
-        "stream": True,  # Enable streaming
+        "stream": True,
         "options": {"temperature": temperature},
     }
     if max_tokens:
@@ -233,7 +254,18 @@ async def generate_stream(
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             async with client.stream("POST", f"{base.rstrip('/')}/api/chat", json=request_data) as response:
-                response.raise_for_status()
+                
+                # Handle initial connection errors
+                if response.status_code != 200:
+                    logger.error(f"Ollama Stream Error: {response.status_code}")
+                    if response.status_code in [404, 500] and mdl != FALLBACK_MODEL:
+                         async for chunk in generate_stream(prompt, system_prompt, model=FALLBACK_MODEL, temperature=temperature, max_tokens=max_tokens):
+                             yield chunk
+                         return
+                    else:
+                        yield f"Error: Ollama returned {response.status_code}"
+                        return
+
                 async for line in response.aiter_lines():
                     if line:
                         try:
@@ -245,29 +277,11 @@ async def generate_stream(
                                     content = msg.get("content", "")
                                     if content:
                                         yield content
-                                # Check if done
                                 if chunk_data.get("done", False):
                                     break
-                        except json.JSONDecodeError:
-                            continue
-                        except Exception as e:
-                            logger.debug(f"Error parsing Ollama stream chunk: {e}")
+                        except Exception:
                             continue
 
-    except httpx.TimeoutException:
-        logger.error(f"Ollama streaming request timed out after {TIMEOUT}s")
-        yield "Error: Local LLM request timed out. Try a smaller model or increase timeout."
-    except httpx.HTTPStatusError as e:
-        if e.response is not None and e.response.status_code == 404:
-            if mdl != FALLBACK_MODEL:
-                logger.warning(f"Model {mdl} not found, trying fallback {FALLBACK_MODEL}")
-                async for chunk in generate_stream(prompt, model=FALLBACK_MODEL, temperature=temperature, max_tokens=max_tokens):
-                    yield chunk
-                return
-            yield f"Error: Model {mdl} not found. Please run: ollama pull {mdl}"
-        else:
-            logger.error(f"Ollama HTTP error: {e}")
-            yield f"Error: Local LLM request failed: {str(e)}"
     except Exception as e:
         logger.error(f"Ollama streaming error: {e}", exc_info=True)
         yield f"Error: Failed to communicate with local LLM: {str(e)}"
