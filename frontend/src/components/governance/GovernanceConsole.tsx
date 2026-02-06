@@ -2,19 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { governanceApi, type AuditLog, type Proposal } from '../../services/api/governance';
 import { useUIStore } from '../../store/uiStore';
 import { ShieldCheck, History, Vote, AlertCircle, Check, X, CheckCircle } from 'lucide-react';
-import api from '../../services/api/client';
 import { Card, CardContent } from '../common/Card';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
+import { PolicyCenter } from './PolicyCenter';
 
 export const GovernanceConsole: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'approvals' | 'audit'>('approvals');
+    const [activeTab, setActiveTab] = useState<'approvals' | 'audit' | 'policy'>('approvals');
     const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
     const [pendingApprovals, setPendingApprovals] = useState<Proposal[]>([]);
     const [loading, setLoading] = useState(true);
     const { addNotification } = useUIStore();
 
     useEffect(() => {
+        if (activeTab === 'policy') {
+            setLoading(false);
+            return;
+        }
         fetchData();
         const interval = setInterval(fetchData, 15000); // Poll every 15s
         return () => clearInterval(interval);
@@ -24,10 +28,10 @@ export const GovernanceConsole: React.FC = () => {
         try {
             if (activeTab === 'approvals') {
                 const data = await governanceApi.getQueue();
-                setPendingApprovals(data.queue);
-            } else {
+                setPendingApprovals(data.queue || []);
+            } else if (activeTab === 'audit') {
                 const data = await governanceApi.getLogs(50);
-                setAuditLogs(data.logs);
+                setAuditLogs(data.logs || []);
             }
             setLoading(false);
         } catch (error) {
@@ -37,7 +41,12 @@ export const GovernanceConsole: React.FC = () => {
 
     const handleApproval = async (id: string, action: 'approve' | 'reject') => {
         try {
-            await api.post(`/brain/queue/${id}/review`, { action });
+            if (action === 'approve') {
+                await governanceApi.approveProposal(id);
+            } else {
+                await governanceApi.rejectProposal(id);
+            }
+
             addNotification({
                 title: action === 'approve' ? 'Approved' : 'Rejected',
                 message: `Proposal ${id} processed.`,
@@ -86,6 +95,15 @@ export const GovernanceConsole: React.FC = () => {
                     >
                         Audit Log
                     </button>
+                    <button
+                        onClick={() => setActiveTab('policy')}
+                        className={`px-4 py-2 rounded-lg text-sm transition-all font-medium ${activeTab === 'policy'
+                            ? 'bg-primary-600 text-white shadow-glow-sm'
+                            : 'text-starlight-400 hover:text-starlight-100 hover:bg-white/5'
+                            }`}
+                    >
+                        Policy Center
+                    </button>
                 </div>
             </header>
 
@@ -97,7 +115,9 @@ export const GovernanceConsole: React.FC = () => {
                     </div>
                 )}
 
-                {activeTab === 'approvals' ? (
+                {activeTab === 'policy' ? (
+                    <PolicyCenter />
+                ) : activeTab === 'approvals' ? (
                     <div className="space-y-4">
                         {pendingApprovals.length === 0 ? (
                             <div className="text-center py-20 text-starlight-400">

@@ -26,7 +26,18 @@ export const governanceApi = {
     },
 
     getQueue: async (): Promise<{ queue: Proposal[], count: number }> => {
-        const response = await api.get('/brain/queue');
+        const response = await api.get('/governance/pending');
+        // Retrieve "pending" array from response
+        return { queue: response.data.pending, count: response.data.count };
+    },
+
+    approveProposal: async (id: string, notes?: string) => {
+        const response = await api.post(`/governance/approve/${id}`, { notes });
+        return response.data;
+    },
+
+    rejectProposal: async (id: string, reason?: string) => {
+        const response = await api.post(`/governance/reject/${id}`, { notes: reason });
         return response.data;
     }
 };
