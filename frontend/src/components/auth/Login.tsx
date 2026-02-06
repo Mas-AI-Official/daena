@@ -4,6 +4,7 @@ import { Shield, Lock, ArrowRight, Loader2, Fingerprint, Zap } from 'lucide-reac
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { useNavigate } from 'react-router-dom';
+import api from '../../services/api/client';
 
 export function Login() {
     const [username, setUsername] = useState('');
@@ -26,21 +27,33 @@ export function Login() {
         setError('');
 
         try {
-            // Simulated login for now - in real app call api/auth/login
-            await new Promise(r => setTimeout(r, 1500));
-
+            // Check credentials locally or send to backend
+            // To get a REAL token, we MUST hit the backend.
             if ((username === 'founder' && password === 'daena2026') || (username === 'masoud' && password === 'Masoudtnt2@')) {
-                login('mock-jwt-token', {
-                    id: '1',
-                    username: username === 'masoud' ? 'Masoud' : 'Founder',
-                    role: 'founder',
-                    permissions: ['all']
+                // Call backend to get real token
+                const response = await api.post('/auth/login', {
+                    user_id: username,
+                    password: password
                 });
+
+                if (response.data && response.data.access_token) {
+                    login(response.data.access_token, {
+                        id: response.data.user_id,
+                        username: username === 'masoud' ? 'Masoud' : 'Founder',
+                        role: response.data.role,
+                        permissions: ['all']
+                    });
+                } else {
+                    // Fallback to mock if backend response is unexpected (shouldn't happen with updated backend)
+                    // But if backend is down, we can't really do much.
+                    setError('Login failed: Invalid server response');
+                }
             } else {
                 setError('Invalid authorization credentials.');
             }
         } catch (err) {
-            setError('Authentication service unavailable.');
+            console.error(err);
+            setError('Authentication service unavailable. Please ensure backend is running.');
         } finally {
             setLoading(false);
         }
