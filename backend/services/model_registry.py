@@ -294,6 +294,54 @@ class ModelRegistry:
         """Get the current active model name."""
         return self._status.active_model
     
+    async def set_active_model(self, model_id: str) -> bool:
+        """Set the active model for all operations"""
+        # Validate model exists in current list
+        if not any(m.name == model_id for m in self._status.models):
+            logger.warning(f"Attempted to set unknown model as active: {model_id}")
+            return False
+            
+        self._status.active_model = model_id
+        
+        # Persist to DB if needed (optional for now, runtime only)
+        # from backend.database import SessionLocal, SystemConfig
+        # ...
+        
+        logger.info(f"✅ Active model set to: {model_id}")
+        return True
+
+    async def toggle_model_status(self, model_id: str, enabled: bool) -> bool:
+        """Enable or disable a model (persisted to DB for cloud models)"""
+        from backend.database import SessionLocal, BrainModel
+        
+        # Update in memory
+        found = False
+        for m in self._status.models:
+            if m.name == model_id:
+                # m.enabled = enabled  # ModelInfo needs enabled field? 
+                # Currently ModelInfo doesn't have 'enabled', relies on presence in list.
+                # If disabled, we might remove from list or add enabled flag?
+                # For now let's assume we manage this via DB for cloud, 
+                # and maybe ignore for Ollama (always available if running).
+                found = True
+                break
+        
+        # Update in DB
+        db = SessionLocal()
+        try:
+            db_model = db.query(BrainModel).filter(BrainModel.model_id == model_id).first()
+            if db_model:
+                db_model.enabled = enabled
+                db.commit()
+                await self.scan_models() # Refresh
+                return True
+        except Exception as e:
+            logger.error(f"Failed to toggle model {model_id}: {e}")
+        finally:
+            db.close()
+            
+        return found
+    
     def get_routing_mode(self) -> RoutingMode:
         """Get the current routing mode."""
         return self._status.routing_mode
