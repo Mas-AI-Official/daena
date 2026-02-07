@@ -1,8 +1,10 @@
 /**
  * WebSocket Client - Real-time communication with backend
  */
-import { store } from '@/store';
 import { toast } from 'sonner';
+
+// Event callbacks for state management
+type EventCallback = (data: any) => void;
 
 class WebSocketClient {
   private ws: WebSocket | null = null;
@@ -12,8 +14,42 @@ class WebSocketClient {
   private messageQueue: any[] = [];
   private isConnecting = false;
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private eventCallbacks: Map<string, EventCallback[]> = new Map();
 
   constructor(private url: string) {}
+
+  // Subscribe to events
+  on(event: string, callback: EventCallback): void {
+    if (!this.eventCallbacks.has(event)) {
+      this.eventCallbacks.set(event, []);
+    }
+    this.eventCallbacks.get(event)?.push(callback);
+  }
+
+  // Unsubscribe from events
+  off(event: string, callback: EventCallback): void {
+    const callbacks = this.eventCallbacks.get(event);
+    if (callbacks) {
+      const index = callbacks.indexOf(callback);
+      if (index > -1) {
+        callbacks.splice(index, 1);
+      }
+    }
+  }
+
+  // Emit event to subscribers
+  private emit(event: string, data: any): void {
+    const callbacks = this.eventCallbacks.get(event);
+    if (callbacks) {
+      callbacks.forEach(callback => {
+        try {
+          callback(data);
+        } catch (err) {
+          console.error(`[WS] Error in event callback for ${event}:`, err);
+        }
+      });
+    }
+  }
 
   async connect(token: string): Promise<void> {
     if (this.isConnecting || this.ws?.readyState === WebSocket.OPEN) {
@@ -39,7 +75,8 @@ class WebSocketClient {
         // Process queued messages
         this.processQueue();
 
-        store.dispatch({ type: 'websocket/connected' });
+        // Emit connection event
+        this.emit('connected', {});
         toast.success('Real-time connection established');
       };
 
@@ -52,7 +89,7 @@ class WebSocketClient {
         console.log('[WS] Disconnected', event.code);
         this.isConnecting = false;
         this.stopHeartbeat();
-        store.dispatch({ type: 'websocket/disconnected' });
+        this.emit('disconnected', { code: event.code });
 
         if (!event.wasClean && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.scheduleReconnect(token);
@@ -62,77 +99,66 @@ class WebSocketClient {
       this.ws.onerror = (error) => {
         console.error('[WS] Error', error);
         this.isConnecting = false;
+        this.emit('error', error);
       };
 
     } catch (error) {
       console.error('[WS] Connection failed', error);
       this.isConnecting = false;
+      this.emit('error', error);
     }
   }
 
   private handleMessage(message: any): void {
     const { event, data } = message;
 
+    // Emit specific event
+    this.emit(event, data);
+
+    // Handle known events with toast notifications
     switch (event) {
       case 'connection.established':
-        console.log('[WS] Session established:', data.client_id);
+        console.log('[WS] Session established:', data?.client_id);
         break;
 
       case 'pong':
         // Heartbeat response
         break;
 
-      case 'chat.chunk':
-        store.dispatch({ type: 'chat/addChunk', payload: data.content });
-        break;
-
-      case 'actions.detected':
-        store.dispatch({ type: 'chat/actionsDetected', payload: data.actions });
-        break;
-
       case 'actions.completed':
-        store.dispatch({ type: 'chat/actionsCompleted', payload: data.results });
-        toast.success(`Executed ${data.results.length} action(s)`);
+        toast.success(`Executed ${data?.results?.length || 0} action(s)`);
         break;
 
       case 'skill.operators_updated':
-        store.dispatch({
-          type: 'skills/updateOperators',
-          payload: { skillId: data.skill_id, operators: data.operators }
-        });
+        toast.success('Skill operators updated');
         break;
 
       case 'model.enabled':
+        toast.success('Model enabled');
+        break;
+
       case 'model.disabled':
-        store.dispatch({
-          type: 'brain/updateModelStatus',
-          payload: { modelId: data.model_id, enabled: event === 'model.enabled' }
-        });
+        toast.info('Model disabled');
         break;
 
       case 'project.created':
+        toast.success('Project created');
+        break;
+
       case 'project.updated':
-        store.dispatch({ type: 'projects/invalidateCache' });
         toast.info('Project updated');
         break;
 
       case 'project.comment_added':
-        store.dispatch({
-          type: 'projects/addComment',
-          payload: { projectId: data.project_id, comment: data.comment }
-        });
+        toast.info('New comment added');
         break;
 
       case 'governance.approval_required':
-        store.dispatch({
-          type: 'governance/addApproval',
-          payload: data
-        });
         toast.warning('Action requires approval');
         break;
 
       default:
-        console.log('[WS] Unknown event:', event);
+        console.log('[WS] Event received:', event);
     }
   }
 
@@ -141,6 +167,7 @@ class WebSocketClient {
       this.ws.send(JSON.stringify(message));
     } else {
       this.messageQueue.push(message);
+      console.log('[WS] Message queued (connection not ready)');
     }
   }
 
@@ -172,6 +199,7 @@ class WebSocketClient {
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
 
     console.log(`[WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    toast.info(`Reconnecting... (attempt ${this.reconnectAttempts})`);
 
     setTimeout(() => {
       this.connect(token);
@@ -184,6 +212,10 @@ class WebSocketClient {
       this.ws.close(1000, 'Client disconnect');
       this.ws = null;
     }
+  }
+
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 
   // Helper methods for specific actions
@@ -218,4 +250,10 @@ export function initWebSocket(token: string): void {
 
 export function closeWebSocket(): void {
   getWebSocketClient().disconnect();
+}
+
+// Hook for components to use WebSocket events
+export function useWebSocketEvent(event: string, callback: EventCallback): void {
+  const ws = getWebSocketClient();
+  ws.on(event, callback);
 }

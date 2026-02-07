@@ -1,36 +1,79 @@
 /**
  * React hooks for real-time data synchronization
+ * Works with Zustand stores and WebSocket events
  */
 import { useEffect, useCallback, useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
 import { getWebSocketClient } from '@/services/websocket';
-import { toast } from 'sonner';
+import { useUIStore } from '@/store/uiStore';
 
 // ============================================================
 // Hook for real-time chat
 // ============================================================
 export function useRealtimeChat() {
-  const dispatch = useDispatch();
-  const messages = useSelector((state: any) => state.chat?.messages || []);
-  const isStreaming = useSelector((state: any) => state.chat?.isStreaming || false);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const addNotification = useUIStore((state) => state.addNotification);
+
+  useEffect(() => {
+    const ws = getWebSocketClient();
+
+    const handleChatChunk = (data: any) => {
+      setMessages(prev => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage && lastMessage.role === 'assistant') {
+          return [...prev.slice(0, -1), { ...lastMessage, content: lastMessage.content + data.content }];
+        }
+        return [...prev, { id: Date.now().toString(), role: 'assistant', content: data.content, timestamp: new Date().toISOString() }];
+      });
+    };
+
+    const handleActionsCompleted = (data: any) => {
+      setIsStreaming(false);
+    };
+
+    ws.on('chat.chunk', handleChatChunk);
+    ws.on('actions.completed', handleActionsCompleted);
+
+    return () => {
+      ws.off('chat.chunk', handleChatChunk);
+      ws.off('actions.completed', handleActionsCompleted);
+    };
+  }, []);
 
   const sendMessage = useCallback((message: string) => {
     const ws = getWebSocketClient();
+    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: message, timestamp: new Date().toISOString() }]);
+    setIsStreaming(true);
     ws.sendChatMessage(message);
-    dispatch({ type: 'chat/messageSent', payload: message });
-  }, [dispatch]);
+  }, []);
 
-  return { messages, isStreaming, sendMessage };
+  return { messages, isStreaming, sendMessage, setMessages };
 }
 
 // ============================================================
 // Hook for real-time skills
 // ============================================================
 export function useRealtimeSkills() {
-  const dispatch = useDispatch();
-  const skills = useSelector((state: any) => state.skills?.items || []);
+  const [skills, setSkills] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const addNotification = useUIStore((state) => state.addNotification);
+
+  useEffect(() => {
+    const ws = getWebSocketClient();
+
+    const handleOperatorsUpdated = (data: any) => {
+      setSkills(prev => prev.map(skill =>
+        skill.id === data.skill_id ? { ...skill, operators: data.operators } : skill
+      ));
+    };
+
+    ws.on('skill.operators_updated', handleOperatorsUpdated);
+
+    return () => {
+      ws.off('skill.operators_updated', handleOperatorsUpdated);
+    };
+  }, []);
 
   const toggleOperator = useCallback(async (skillId: string, operators: string[]) => {
     setLoading(true);
@@ -38,17 +81,17 @@ export function useRealtimeSkills() {
 
     try {
       // Optimistic update
-      dispatch({
-        type: 'skills/updateOperatorsOptimistic',
-        payload: { skillId, operators }
-      });
+      setSkills(prev => prev.map(skill =>
+        skill.id === skillId ? { ...skill, operators } : skill
+      ));
 
       // API call
+      const token = localStorage.getItem('token');
       const response = await fetch(`/api/v1/skills/${skillId}/operators`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(operators)
       });
@@ -57,40 +100,86 @@ export function useRealtimeSkills() {
         throw new Error(`Failed to update operators: ${response.statusText}`);
       }
 
-      toast.success('Skill operators updated');
+      addNotification({
+        type: 'success',
+        title: 'Success',
+        message: 'Skill operators updated'
+      });
     } catch (err: any) {
       setError(err.message);
-      toast.error('Failed to update operators');
-      // Revert optimistic update
-      dispatch({ type: 'skills/revertOptimisticUpdate', payload: { skillId } });
+      addNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Failed to update operators'
+      });
+      // Revert optimistic update would happen via WebSocket event
     } finally {
       setLoading(false);
     }
-  }, [dispatch]);
+  }, [addNotification]);
 
-  return { skills, toggleOperator, loading, error };
+  const fetchSkills = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/v1/skills', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setSkills(data.skills || []);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { skills, toggleOperator, fetchSkills, loading, error, setSkills };
 }
 
 // ============================================================
 // Hook for real-time brain/models
 // ============================================================
 export function useRealtimeModels() {
-  const dispatch = useDispatch();
-  const models = useSelector((state: any) => state.brain?.models || []);
+  const [models, setModels] = useState<any[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const addNotification = useUIStore((state) => state.addNotification);
+
+  useEffect(() => {
+    const ws = getWebSocketClient();
+
+    const handleModelEnabled = (data: any) => {
+      setModels(prev => prev.map(m =>
+        m.id === data.model_id ? { ...m, enabled: true } : m
+      ));
+    };
+
+    const handleModelDisabled = (data: any) => {
+      setModels(prev => prev.map(m =>
+        m.id === data.model_id ? { ...m, enabled: false } : m
+      ));
+    };
+
+    ws.on('model.enabled', handleModelEnabled);
+    ws.on('model.disabled', handleModelDisabled);
+
+    return () => {
+      ws.off('model.enabled', handleModelEnabled);
+      ws.off('model.disabled', handleModelDisabled);
+    };
+  }, []);
 
   const scanOllama = useCallback(async () => {
     setIsScanning(true);
     setError(null);
 
     try {
-      dispatch({ type: 'brain/setScanning', payload: true });
-
+      const token = localStorage.getItem('token');
       const response = await fetch('/api/v1/brain/models/scan', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (!response.ok) {
@@ -98,176 +187,180 @@ export function useRealtimeModels() {
       }
 
       const data = await response.json();
-      dispatch({ type: 'brain/modelsScanned', payload: data.models });
+      setModels(data.models || []);
 
-      toast.success(`Found ${data.count} models`);
+      addNotification({
+        type: 'success',
+        title: 'Scan Complete',
+        message: `Found ${data.count} models`
+      });
+
       return data;
     } catch (err: any) {
       setError(err.message);
-      toast.error('Scan failed');
+      addNotification({
+        type: 'error',
+        title: 'Scan Failed',
+        message: err.message
+      });
       throw err;
     } finally {
       setIsScanning(false);
-      dispatch({ type: 'brain/setScanning', payload: false });
     }
-  }, [dispatch]);
+  }, [addNotification]);
 
   const toggleModel = useCallback(async (modelId: string, enabled: boolean) => {
     try {
       // Optimistic update
-      dispatch({
-        type: 'brain/updateModelStatus',
-        payload: { modelId, enabled }
-      });
+      setModels(prev => prev.map(m =>
+        m.id === modelId ? { ...m, enabled } : m
+      ));
 
-      // API call
+      const token = localStorage.getItem('token');
       const endpoint = enabled ? 'enable' : 'disable';
       const response = await fetch(`/api/v1/brain/models/${modelId}/${endpoint}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (!response.ok) {
         throw new Error(`Toggle failed: ${response.statusText}`);
       }
-
-      toast.success(`${enabled ? 'Enabled' : 'Disabled'} model`);
     } catch (err: any) {
       setError(err.message);
-      toast.error('Failed to toggle model');
-      // Revert optimistic update
-      dispatch({
-        type: 'brain/updateModelStatus',
-        payload: { modelId, enabled: !enabled }
-      });
+      // Revert
+      setModels(prev => prev.map(m =>
+        m.id === modelId ? { ...m, enabled: !enabled } : m
+      ));
     }
-  }, [dispatch]);
+  }, []);
 
-  return { models, scanOllama, toggleModel, isScanning, error };
+  return { models, scanOllama, toggleModel, isScanning, error, setModels };
 }
 
 // ============================================================
 // Hook for real-time projects
 // ============================================================
 export function useRealtimeProjects(projectId?: string) {
-  const dispatch = useDispatch();
-  const project = useSelector((state: any) =>
-    projectId ? state.projects?.byId?.[projectId] : null
-  );
-  const projects = useSelector((state: any) => state.projects?.items || []);
+  const [project, setProject] = useState<any>(null);
+  const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const addNotification = useUIStore((state) => state.addNotification);
+
+  useEffect(() => {
+    const ws = getWebSocketClient();
+
+    const handleProjectCreated = (data: any) => {
+      setProjects(prev => [data.project, ...prev]);
+    };
+
+    const handleProjectUpdated = (data: any) => {
+      setProjects(prev => prev.map(p =>
+        p.id === data.project?.id ? data.project : p
+      ));
+      if (projectId && data.project?.id === projectId) {
+        setProject(data.project);
+      }
+    };
+
+    const handleCommentAdded = (data: any) => {
+      if (projectId === data.project_id) {
+        setProject(prev => ({
+          ...prev,
+          comments: [data.comment, ...(prev?.comments || [])]
+        }));
+      }
+    };
+
+    ws.on('project.created', handleProjectCreated);
+    ws.on('project.updated', handleProjectUpdated);
+    ws.on('project.comment_added', handleCommentAdded);
+
+    return () => {
+      ws.off('project.created', handleProjectCreated);
+      ws.off('project.updated', handleProjectUpdated);
+      ws.off('project.comment_added', handleCommentAdded);
+    };
+  }, [projectId]);
 
   const addComment = useCallback(async (text: string) => {
     if (!projectId) return;
 
     try {
-      // Optimistic update
-      const tempComment = {
-        id: `temp-${Date.now()}`,
-        text,
-        created_at: new Date().toISOString(),
-        pending: true
-      };
-
-      dispatch({
-        type: 'projects/addCommentOptimistic',
-        payload: { projectId, comment: tempComment }
-      });
-
-      // API call
-      const response = await fetch(`/api/v1/projects/${projectId}/comments`, {
+      const token = localStorage.getItem('token');
+      await fetch(`/api/v1/projects/${projectId}/comments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ text })
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to add comment: ${response.statusText}`);
-      }
-
     } catch (err: any) {
       setError(err.message);
-      toast.error('Failed to add comment');
-      // Revert optimistic update
-      dispatch({ type: 'projects/revertComment', payload: { projectId, tempId: `temp-${Date.now()}` } });
     }
-  }, [dispatch, projectId]);
+  }, [projectId]);
 
   const fetchProjects = useCallback(async () => {
     setLoading(true);
-    setError(null);
-
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch('/api/v1/projects', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch projects: ${response.statusText}`);
+      if (response.ok) {
+        const data = await response.json();
+        setProjects(data.projects || []);
       }
-
-      const data = await response.json();
-      dispatch({ type: 'projects/setProjects', payload: data.projects });
     } catch (err: any) {
       setError(err.message);
-      toast.error('Failed to load projects');
     } finally {
       setLoading(false);
     }
-  }, [dispatch]);
+  }, []);
 
   const createProject = useCallback(async (name: string, description: string = '') => {
     try {
-      const response = await fetch('/api/v1/projects', {
+      const token = localStorage.getItem('token');
+      await fetch('/api/v1/projects', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ name, description })
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to create project: ${response.statusText}`);
-      }
-
-      toast.success('Project created');
-      fetchProjects();
+      addNotification({
+        type: 'success',
+        title: 'Success',
+        message: 'Project created'
+      });
     } catch (err: any) {
       setError(err.message);
-      toast.error('Failed to create project');
     }
-  }, [fetchProjects]);
+  }, [addNotification]);
 
-  return { project, projects, addComment, fetchProjects, createProject, loading, error };
+  return { project, projects, addComment, fetchProjects, createProject, loading, error, setProject, setProjects };
 }
 
 // ============================================================
 // Hook for project list
 // ============================================================
 export function useProjectList() {
-  const dispatch = useDispatch();
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const addNotification = useUIStore((state) => state.addNotification);
 
   const fetchProjects = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch('/api/v1/projects', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (!response.ok) {
@@ -278,15 +371,19 @@ export function useProjectList() {
       setProjects(data.projects || []);
     } catch (err: any) {
       setError(err.message);
-      toast.error('Failed to load projects');
+      addNotification({
+        type: 'error',
+        title: 'Error',
+        message: err.message
+      });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [addNotification]);
 
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
 
-  return { projects, loading, error, refetch: fetchProjects };
+  return { projects, loading, error, refetch: fetchProjects, setProjects };
 }
