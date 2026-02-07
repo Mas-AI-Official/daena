@@ -183,3 +183,5 @@ huggingface/
 /daena doc/
 /daena doc/**
 /docs/**
+
+config/production.env
