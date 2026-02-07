@@ -175,3 +175,11 @@ local_brain/
 DaenaBrain/
 hf_cache/
 huggingface/
+
+.env.*
+
+# --- sensitive folders (purged) ---
+/docs/
+/daena doc/
+/daena doc/**
+/docs/**
