@@ -1,158 +1,221 @@
+/**
+ * WebSocket Client - Real-time communication with backend
+ */
+import { store } from '@/store';
+import { toast } from 'sonner';
 
-// Replaced socket.io-client with native WebSocket to match FastAPI backend
-import { useEventsStore } from '../store/eventsStore';
-import { useChatStore } from '../store/chatStore';
-import { useAgentStore } from '../store/agentStore';
+class WebSocketClient {
+  private ws: WebSocket | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private reconnectDelay = 1000;
+  private messageQueue: any[] = [];
+  private isConnecting = false;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
 
-const WS_URL = 'ws://localhost:8000/ws'; // Native WebSocket URL
+  constructor(private url: string) {}
 
-const audio = {
-    play: (sound: string) => console.log(`Playing sound: ${sound}`)
-};
+  async connect(token: string): Promise<void> {
+    if (this.isConnecting || this.ws?.readyState === WebSocket.OPEN) {
+      return;
+    }
 
-class WebSocketService {
-    private socket: WebSocket | null = null;
-    private reconnectAttempts = 0;
-    private maxReconnectAttempts = 10;
-    private reconnectDelay = 1000;
-    private listeners: Map<string, Function[]> = new Map();
-    private reconnectTimer: any = null;
+    this.isConnecting = true;
 
-    connect() {
-        if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
-            return;
+    try {
+      this.ws = new WebSocket(this.url);
+
+      this.ws.onopen = () => {
+        console.log('[WS] Connected');
+        this.isConnecting = false;
+        this.reconnectAttempts = 0;
+
+        // Authenticate
+        this.send({ event: 'auth', data: { token } });
+
+        // Start heartbeat
+        this.startHeartbeat();
+
+        // Process queued messages
+        this.processQueue();
+
+        store.dispatch({ type: 'websocket/connected' });
+        toast.success('Real-time connection established');
+      };
+
+      this.ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        this.handleMessage(message);
+      };
+
+      this.ws.onclose = (event) => {
+        console.log('[WS] Disconnected', event.code);
+        this.isConnecting = false;
+        this.stopHeartbeat();
+        store.dispatch({ type: 'websocket/disconnected' });
+
+        if (!event.wasClean && this.reconnectAttempts < this.maxReconnectAttempts) {
+          this.scheduleReconnect(token);
         }
+      };
 
-        const token = localStorage.getItem('daena_token');
-        // Native WS doesn't support auth headers easily, often use query param or first message
-        // For simplicity/security, we might pass it but backend needs to handle it.
-        // Or keep it simple for now. 
+      this.ws.onerror = (error) => {
+        console.error('[WS] Error', error);
+        this.isConnecting = false;
+      };
 
-        console.log(`Connecting to WebSocket: ${WS_URL}`);
-        this.socket = new WebSocket(WS_URL);
-
-        this.socket.onopen = () => {
-            console.log('✅ WebSocket connected');
-            this.reconnectAttempts = 0;
-            useEventsStore.getState().setConnected(true);
-
-            // Send auth if needed
-            if (token) {
-                this.send('auth', { token });
-            }
-        };
-
-        this.socket.onclose = (event) => {
-            console.log('❌ WebSocket disconnected:', event.reason);
-            useEventsStore.getState().setConnected(false);
-            this.handleReconnect();
-        };
-
-        this.socket.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            // On error, onclose usually follows
-        };
-
-        this.socket.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                this.handleMessage(data);
-            } catch (e) {
-                console.error('Failed to parse WS message:', event.data);
-            }
-        };
+    } catch (error) {
+      console.error('[WS] Connection failed', error);
+      this.isConnecting = false;
     }
+  }
 
-    private handleReconnect() {
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.reconnectAttempts++;
-            const delay = this.reconnectDelay * this.reconnectAttempts;
-            console.log(`Attempting reconnect in ${delay}ms...`);
-            this.reconnectTimer = setTimeout(() => this.connect(), delay);
-        } else {
-            console.error('Max reconnect attempts reached');
-        }
+  private handleMessage(message: any): void {
+    const { event, data } = message;
+
+    switch (event) {
+      case 'connection.established':
+        console.log('[WS] Session established:', data.client_id);
+        break;
+
+      case 'pong':
+        // Heartbeat response
+        break;
+
+      case 'chat.chunk':
+        store.dispatch({ type: 'chat/addChunk', payload: data.content });
+        break;
+
+      case 'actions.detected':
+        store.dispatch({ type: 'chat/actionsDetected', payload: data.actions });
+        break;
+
+      case 'actions.completed':
+        store.dispatch({ type: 'chat/actionsCompleted', payload: data.results });
+        toast.success(`Executed ${data.results.length} action(s)`);
+        break;
+
+      case 'skill.operators_updated':
+        store.dispatch({
+          type: 'skills/updateOperators',
+          payload: { skillId: data.skill_id, operators: data.operators }
+        });
+        break;
+
+      case 'model.enabled':
+      case 'model.disabled':
+        store.dispatch({
+          type: 'brain/updateModelStatus',
+          payload: { modelId: data.model_id, enabled: event === 'model.enabled' }
+        });
+        break;
+
+      case 'project.created':
+      case 'project.updated':
+        store.dispatch({ type: 'projects/invalidateCache' });
+        toast.info('Project updated');
+        break;
+
+      case 'project.comment_added':
+        store.dispatch({
+          type: 'projects/addComment',
+          payload: { projectId: data.project_id, comment: data.comment }
+        });
+        break;
+
+      case 'governance.approval_required':
+        store.dispatch({
+          type: 'governance/addApproval',
+          payload: data
+        });
+        toast.warning('Action requires approval');
+        break;
+
+      default:
+        console.log('[WS] Unknown event:', event);
     }
+  }
 
-    // Mimic socket.io message handling
-    private handleMessage(payload: any) {
-        // Expected format: { type: "event_name", data: ... }
-        if (payload.type) {
-            this.emit(payload.type, payload.data);
-
-            // Generic Event Logging
-            useEventsStore.getState().addEvent({
-                id: Math.random().toString(36).substr(2, 9),
-                type: payload.type,
-                payload: payload.data,
-                timestamp: new Date().toISOString()
-            });
-
-            // Specific Store Updates
-
-            // 1. Agent/Task Progress
-            if (payload.type === 'task.progress' || payload.type === 'agent.status.changed') {
-                // @ts-ignore
-                if (useAgentStore.getState().updateAgentStatus) {
-                    const agentId = payload.data.agent_id || payload.data.agent_name || 'unknown';
-                    const status = payload.data.status || 'running';
-                    // @ts-ignore
-                    useAgentStore.getState().updateAgentStatus(agentId, status);
-                }
-            }
-
-            // 2. Chat Messages
-            else if (payload.type === 'chat.message' || payload.type === 'chat.message.received') {
-                const msgData = payload.data;
-                useChatStore.getState().addMessage({
-                    id: Math.random().toString(36).substr(2, 9), // Generate ID if missing
-                    sender: (msgData.role === 'user') ? 'user' : 'agent', // Normalize sender
-                    content: msgData.message || msgData.content,
-                    timestamp: new Date().toISOString(),
-                    metadata: msgData
-                });
-            }
-
-            // 3. Approvals
-            else if (payload.type === 'approval.required') {
-                audio.play('approval');
-                // Could trigger a modal store here
-            }
-
-            // 4. Security Alerts (Shadow/Integrity)
-            else if (payload.type === 'security.alert' || payload.type === 'shadow.alert') {
-                console.warn("SECURITY ALERT:", payload.data);
-                // Could update a security store
-            }
-        }
-
+  send(message: any): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    } else {
+      this.messageQueue.push(message);
     }
+  }
 
-    on(event: string, callback: Function) {
-        if (!this.listeners.has(event)) {
-            this.listeners.set(event, []);
-        }
-        this.listeners.get(event)!.push(callback);
+  private processQueue(): void {
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue.shift();
+      this.send(message);
     }
+  }
 
-    // Internal emit to listeners
-    private emit(event: string, data: any) {
-        const callbacks = this.listeners.get(event) || [];
-        callbacks.forEach(cb => cb(data));
-    }
+  private startHeartbeat(): void {
+    this.heartbeatInterval = setInterval(() => {
+      this.send({
+        event: 'ping',
+        data: { timestamp: Date.now() }
+      });
+    }, 30000); // 30 seconds
+  }
 
-    // Send message to server
-    send(type: string, data: any) {
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({ type, data }));
-        }
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
     }
+  }
 
-    disconnect() {
-        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-        this.socket?.close();
-        this.socket = null;
+  private scheduleReconnect(token: string): void {
+    this.reconnectAttempts++;
+    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+
+    console.log(`[WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+
+    setTimeout(() => {
+      this.connect(token);
+    }, delay);
+  }
+
+  disconnect(): void {
+    this.stopHeartbeat();
+    if (this.ws) {
+      this.ws.close(1000, 'Client disconnect');
+      this.ws = null;
     }
+  }
+
+  // Helper methods for specific actions
+  sendChatMessage(message: string): void {
+    this.send({ event: 'chat.message', data: { message } });
+  }
+
+  subscribe(channel: string): void {
+    this.send({ event: 'subscribe', data: { channel } });
+  }
+
+  executeAction(action: any): void {
+    this.send({ event: 'action.execute', data: { action } });
+  }
 }
 
-export const wsService = new WebSocketService();
+// Singleton instance
+let wsClient: WebSocketClient | null = null;
+
+export function getWebSocketClient(): WebSocketClient {
+  if (!wsClient) {
+    wsClient = new WebSocketClient(
+      import.meta.env.VITE_WS_URL || 'ws://localhost:8000/api/v1/realtime/ws'
+    );
+  }
+  return wsClient;
+}
+
+export function initWebSocket(token: string): void {
+  getWebSocketClient().connect(token);
+}
+
+export function closeWebSocket(): void {
+  getWebSocketClient().disconnect();
+}

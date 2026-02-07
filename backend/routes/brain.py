@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import os
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from backend.core.brain.store import brain_store, GovernanceState
 from backend.config.settings import get_settings
+from backend.services.websocket_manager import get_websocket_manager
 
 router = APIRouter(prefix="/api/v1/brain", tags=["Brain"])
 
@@ -514,4 +515,112 @@ async def test_model(model_id: str, current_user: dict = Depends(get_current_use
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@router.get("/models/scan")
+async def scan_ollama_models(current_user: dict = Depends(get_current_user)):
+    """Scan Ollama for installed models"""
+    from backend.services.ollama_scanner import get_ollama_scanner
+    
+    scanner = get_ollama_scanner()
+    models = await scanner.scan_models()
+    
+    # Save to database if available
+    try:
+        from backend.database import SessionLocal, Model
+        
+        db = SessionLocal()
+        try:
+            for model in models:
+                # Check if model exists
+                existing = db.query(Model).filter(Model.id == model['id']).first()
+                if existing:
+                    existing.size_gb = model['size_gb']
+                    existing.status = model['status']
+                else:
+                    new_model = Model(
+                        id=model['id'],
+                        name=model['name'],
+                        size_gb=model['size_gb'],
+                        provider=model['provider'],
+                        enabled=False,
+                        status=model['status']
+                    )
+                    db.add(new_model)
+            
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[Brain] Database save warning: {e}")
+    
+    return {
+        "models": models,
+        "count": len(models),
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+@router.post("/models/{model_id}/enable")
+async def enable_model(model_id: str, current_user: dict = Depends(get_current_user)):
+    """Enable a model"""
+    try:
+        from backend.database import SessionLocal, Model
+        
+        db = SessionLocal()
+        try:
+            model = db.query(Model).filter(Model.id == model_id).first()
+            if not model:
+                raise HTTPException(404, "Model not found")
+            
+            model.enabled = True
+            db.commit()
+            
+            # Broadcast update
+            manager = get_websocket_manager()
+            await manager.broadcast_to_user(str(current_user.get('id')), {
+                'event': 'model.enabled',
+                'data': {'model_id': model_id}
+            })
+            
+            return {"status": "enabled", "model_id": model_id}
+        finally:
+            db.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.post("/models/{model_id}/disable")
+async def disable_model(model_id: str, current_user: dict = Depends(get_current_user)):
+    """Disable a model"""
+    try:
+        from backend.database import SessionLocal, Model
+        
+        db = SessionLocal()
+        try:
+            model = db.query(Model).filter(Model.id == model_id).first()
+            if not model:
+                raise HTTPException(404, "Model not found")
+            
+            model.enabled = False
+            db.commit()
+            
+            # Broadcast update
+            manager = get_websocket_manager()
+            await manager.broadcast_to_user(str(current_user.get('id')), {
+                'event': 'model.disabled',
+                'data': {'model_id': model_id}
+            })
+            
+            return {"status": "disabled", "model_id": model_id}
+        finally:
+            db.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
 

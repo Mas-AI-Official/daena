@@ -4639,6 +4639,24 @@ async def serve_brain_settings_alt(request: Request):
     # Already defined at 4267, but keeping this alias if needed
     return templates.TemplateResponse("brain_settings.html", {"request": request})
 
+
+# Register Real-time router (WebSocket/SSE)
+try:
+    from backend.routes.realtime import router as realtime_router
+    app.include_router(realtime_router, prefix="/api/v1")
+    logger.info("Real-time router registered (WebSocket/SSE)")
+except Exception as e:
+    logger.error(f"Failed to register realtime router: {e}")
+
+# Initialize WebSocket manager on startup
+@app.on_event("startup")
+async def startup_websocket_manager():
+    try:
+        from backend.services.websocket_manager import get_websocket_manager
+        get_websocket_manager()
+        logger.info("WebSocket manager initialized")
+    except Exception as e:
+        logger.warning(f"WebSocket manager initialization warning: {e}")
 if __name__ == "__main__":
     import uvicorn
     # Use environment-based host/port if available

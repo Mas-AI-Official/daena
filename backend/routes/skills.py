@@ -438,12 +438,12 @@ async def update_skill_operators(
         if out.get("error"):
              raise HTTPException(status_code=404, detail=out["error"])
         
-        # Emit event
-        from backend.core.websocket_manager import websocket_manager
-        await websocket_manager.emit_event("skill.operators.updated", {
-            "skill_id": skill_id,
-            "operators": operators,
-            "updated_by": current_user.user_id
+        # Emit event via WebSocket manager
+        from backend.services.websocket_manager import get_websocket_manager
+        manager = get_websocket_manager()
+        await manager.broadcast_to_user(str(current_user.id), {
+            "event": "skill.operators_updated",
+            "data": {"skill_id": skill_id, "operators": operators}
         })
         
         return {"success": True, "skill_id": skill_id, "operators": operators}

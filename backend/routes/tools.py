@@ -182,3 +182,182 @@ async def list_search_providers():
     ]
     active = next((p["name"] for p in providers if p["available"]), "duckduckgo")
     return {"providers": providers, "active_provider": active}
+
+
+# ============ TOOLS LIBRARY ENDPOINTS (CMP-style) ============
+
+# Tool catalog (100+ tools like n8n)
+TOOLS_CATALOG = [
+    {
+        "id": "n8n",
+        "name": "n8n",
+        "category": "automation",
+        "logo": "https://n8n.io/n8n-logo.png",
+        "description": "Workflow automation for technical teams",
+        "auth_type": "oauth2",
+        "popularity": 95
+    },
+    {
+        "id": "zapier",
+        "name": "Zapier",
+        "category": "automation",
+        "logo": "https://zapier.com/logo.png",
+        "description": "Automate workflows between 5000+ apps",
+        "auth_type": "oauth2",
+        "popularity": 98
+    },
+    {
+        "id": "github",
+        "name": "GitHub",
+        "category": "development",
+        "logo": "https://github.com/logo.png",
+        "description": "Code hosting and collaboration",
+        "auth_type": "oauth2",
+        "popularity": 99
+    },
+    {
+        "id": "notion",
+        "name": "Notion",
+        "category": "productivity",
+        "logo": "https://notion.so/logo.png",
+        "description": "All-in-one workspace",
+        "auth_type": "oauth2",
+        "popularity": 92
+    },
+    {
+        "id": "slack",
+        "name": "Slack",
+        "category": "communication",
+        "logo": "https://slack.com/logo.png",
+        "description": "Team communication platform",
+        "auth_type": "oauth2",
+        "popularity": 96
+    },
+    {
+        "id": "airtable",
+        "name": "Airtable",
+        "category": "database",
+        "logo": "https://airtable.com/logo.png",
+        "description": "Low-code database platform",
+        "auth_type": "oauth2",
+        "popularity": 88
+    },
+    {
+        "id": "stripe",
+        "name": "Stripe",
+        "category": "payments",
+        "logo": "https://stripe.com/logo.png",
+        "description": "Payment processing platform",
+        "auth_type": "api_key",
+        "popularity": 97
+    },
+    {
+        "id": "openai",
+        "name": "OpenAI",
+        "category": "ai",
+        "logo": "https://openai.com/logo.png",
+        "description": "AI models and APIs",
+        "auth_type": "api_key",
+        "popularity": 99
+    }
+]
+
+class ConnectToolRequest(BaseModel):
+    tool_id: str
+    credentials: Dict[str, Any]
+
+
+@router.get("/library")
+async def get_tools_library(
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get tools catalog with filtering"""
+    import os
+    import json
+    
+    tools = TOOLS_CATALOG.copy()
+    user_id = current_user.get('id') or current_user.get('sub')
+    
+    # Filter by category
+    if category and category != "all":
+        tools = [t for t in tools if t["category"] == category]
+    
+    # Filter by search
+    if search:
+        search_lower = search.lower()
+        tools = [
+            t for t in tools 
+            if search_lower in t["name"].lower() 
+            or search_lower in t["description"].lower()
+        ]
+    
+    # Get user's connected tools from storage
+    connected_ids = set()
+    try:
+        connections_file = os.path.join(os.getcwd(), "data", "tool_connections.json")
+        if os.path.exists(connections_file):
+            with open(connections_file, 'r') as f:
+                all_connections = json.load(f)
+                user_connections = all_connections.get(str(user_id), {})
+                connected_ids = set(user_connections.keys())
+    except Exception as e:
+        print(f"[Tools] Error loading connections: {e}")
+    
+    # Mark connected tools
+    for tool in tools:
+        tool["connected"] = tool["id"] in connected_ids
+    
+    categories = list(set(t["category"] for t in TOOLS_CATALOG))
+    
+    return {
+        "tools": tools,
+        "categories": categories,
+        "count": len(tools),
+        "connected_count": len(connected_ids)
+    }
+
+
+@router.post("/connect")
+async def connect_tool(
+    req: ConnectToolRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Connect a tool"""
+    import os
+    import json
+    from datetime import datetime
+    
+    tool = next((t for t in TOOLS_CATALOG if t["id"] == req.tool_id), None)
+    if not tool:
+        raise HTTPException(404, "Tool not found")
+    
+    user_id = str(current_user.get('id') or current_user.get('sub'))
+    
+    # Store connection (in production, encrypt credentials)
+    try:
+        connections_file = os.path.join(os.getcwd(), "data", "tool_connections.json")
+        os.makedirs(os.path.dirname(connections_file), exist_ok=True)
+        
+        all_connections = {}
+        if os.path.exists(connections_file):
+            with open(connections_file, 'r') as f:
+                all_connections = json.load(f)
+        
+        if user_id not in all_connections:
+            all_connections[user_id] = {}
+        
+        all_connections[user_id][req.tool_id] = {
+            "credentials_encrypted": "encrypted",  # TODO: actual encryption
+            "connected_at": datetime.now().isoformat(),
+            "status": "active"
+        }
+        
+        with open(connections_file, 'w') as f:
+            json.dump(all_connections, f, indent=2)
+        
+        return {"status": "connected", "tool_id": req.tool_id}
+        
+    except Exception as e:
+        raise HTTPException(500, f"Failed to save connection: {str(e)}")
