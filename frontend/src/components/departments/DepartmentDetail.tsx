@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { departmentsApi, type Department } from '../../services/api/departments';
+import { agentsApi } from '../../services/api/agents';
 import {
     Hexagon,
     Users,
@@ -9,12 +10,16 @@ import {
     Zap,
     Box,
     Activity,
+    Pause,
+    Play,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../common/Card';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
 import { ChatInterface } from '../chat/ChatInterface';
 import { useAgentStore } from '../../store/agentStore';
+import { useToast } from '../common/ToastProvider';
+import { LoadingButton } from '../common/LoadingButton';
 
 export function DepartmentDetail() {
     const { id } = useParams<{ id: string }>();
@@ -22,6 +27,8 @@ export function DepartmentDetail() {
     const [department, setDepartment] = useState<Department | null>(null);
     const [loading, setLoading] = useState(true);
     const { setSelectedAgent } = useAgentStore();
+    const toast = useToast();
+    const [pausingAgent, setPausingAgent] = useState<string | null>(null);
 
     useEffect(() => {
         if (!id) return;
@@ -31,12 +38,41 @@ export function DepartmentDetail() {
                 setDepartment(data.department);
             } catch (error) {
                 console.error('Failed to fetch department:', error);
+                toast.error('Failed to load department');
             } finally {
                 setLoading(false);
             }
         };
         fetchDept();
     }, [id]);
+
+    const handlePauseResume = async (agentId: string, currentStatus: string) => {
+        setPausingAgent(agentId);
+        try {
+            if (currentStatus === 'active' || currentStatus === 'idle') {
+                await agentsApi.pause(agentId);
+                toast.success('Agent paused');
+            } else {
+                await agentsApi.resume(agentId);
+                toast.success('Agent resumed');
+            }
+            // Refresh department data
+            if (id) {
+                const data = await departmentsApi.getById(id, true);
+                setDepartment(data.department);
+            }
+        } catch (error) {
+            toast.error('Failed to update agent status');
+        } finally {
+            setPausingAgent(null);
+        }
+    };
+
+    const handleAssignTask = async (agentId: string) => {
+        // For now, open the agent detail modal
+        setSelectedAgent(agentId);
+        toast.info('Opening agent details - assign task through chat');
+    };
 
     if (loading) {
         return (
@@ -163,15 +199,36 @@ export function DepartmentDetail() {
                                             </div>
                                         </div>
                                         <div className="flex flex-col items-end gap-1">
-                                            <div className="w-2 h-2 rounded-full bg-status-success shadow-glow-success" />
+                                            <div className={`w-2 h-2 rounded-full ${agent.status === 'paused' ? 'bg-status-warning' : 'bg-status-success'} shadow-glow-success`} />
                                             <span className="text-[9px] text-starlight-400 font-mono">#{agent.sunflower_index}</span>
                                         </div>
                                     </div>
 
                                     {/* Action Hover */}
                                     <div className="mt-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Button size="sm" variant="secondary" className="h-6 text-[10px] rounded-lg px-2">Assign Task</Button>
-                                        <Button size="sm" variant="ghost" className="h-6 text-[10px] rounded-lg px-2">View Logs</Button>
+                                        <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            className="h-6 text-[10px] rounded-lg px-2"
+                                            onClick={(e) => { e.stopPropagation(); handleAssignTask(agent.id); }}
+                                        >
+                                            Assign Task
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-6 text-[10px] rounded-lg px-2"
+                                            onClick={(e) => { e.stopPropagation(); handlePauseResume(agent.id, agent.status || 'active'); }}
+                                            disabled={pausingAgent === agent.id}
+                                        >
+                                            {pausingAgent === agent.id ? (
+                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                            ) : agent.status === 'paused' ? (
+                                                <><Play className="w-3 h-3 mr-1" /> Resume</>
+                                            ) : (
+                                                <><Pause className="w-3 h-3 mr-1" /> Pause</>
+                                            )}
+                                        </Button>
                                     </div>
                                 </div>
                             ))}

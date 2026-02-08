@@ -20,6 +20,7 @@ export interface Agent {
     cell_id: number;
     department_id?: string;
     department_name?: string;
+    status?: 'active' | 'idle' | 'paused' | 'error';
 }
 
 export const departmentsApi = {
