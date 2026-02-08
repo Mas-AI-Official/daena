@@ -11,109 +11,9 @@ import { cn } from '../../utils/cn';
 import { useUIStore } from '../../store/uiStore';
 import api from '../../services/api/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Sphere, MeshDistortMaterial, Float, PerspectiveCamera } from '@react-three/drei';
-import * as THREE from 'three';
 import { Menu, PanelLeft, PanelLeftClose } from 'lucide-react';
+import { NeuralOrb, MiniNeuralOrb } from './NeuralOrb';
 
-// function CoreSphere removed per user request
-
-// Neural Hero Background Component
-function NeuralHero({ active, mode }: { active: boolean, mode: 'daena' | 'autopilot' }) {
-    const isAutopilot = mode === 'autopilot';
-    const primaryColor = isAutopilot ? "bg-orange-500" : "bg-primary-500";
-    const borderColor = isAutopilot ? "border-orange-500" : "border-primary-500";
-    const textColor = isAutopilot ? "text-orange-500" : "text-primary-500";
-    const shadowColor = isAutopilot ? "shadow-orange-500/20" : "shadow-primary-500/20";
-
-    return (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden z-0">
-            <AnimatePresence>
-                {!active && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 1.1, filter: "blur(10px)" }}
-                        transition={{ duration: 0.8, ease: "easeInOut" }}
-                        className="flex flex-col items-center justify-center relative"
-                    >
-                        {/* Core Orb */}
-                        <div className="relative w-64 h-64 flex items-center justify-center">
-                            {/* Outer rotating ring */}
-                            <motion.div
-                                animate={{ rotate: 360 }}
-                                transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
-                                className={cn("absolute inset-0 rounded-full border border-dashed opacity-20", borderColor)}
-                            />
-
-                            {/* Inner rotating ring */}
-                            <motion.div
-                                animate={{ rotate: -360 }}
-                                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                                className={cn("absolute inset-8 rounded-full border opacity-30", borderColor)}
-                            />
-
-                            {/* Glow */}
-                            <div className={cn("absolute inset-0 rounded-full blur-[80px] opacity-20", primaryColor)} />
-
-                            {/* Center Sphere */}
-                            <div className={cn("w-32 h-32 rounded-full shadow-2xl backdrop-blur-sm border flex items-center justify-center relative overflow-hidden", borderColor, "bg-midnight-900/50")}>
-                                <div className={cn("absolute inset-0 opacity-10 animate-pulse", primaryColor)} />
-                                <div className={cn("w-2 h-2 rounded-full shadow-[0_0_20px_currentColor]", primaryColor, textColor)} />
-                            </div>
-                        </div>
-
-                        {/* Text */}
-                        <div className="mt-12 text-center space-y-2">
-                            <motion.h1
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 0.2 }}
-                                className="text-3xl font-display font-bold tracking-widest text-white"
-                            >
-                                {mode === 'autopilot' ? 'NEURAL AUTO' : 'NEURAL COMMAND'}
-                            </motion.h1>
-                            <motion.p
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 0.6 }}
-                                transition={{ delay: 0.4 }}
-                                className={cn("text-[10px] font-mono uppercase tracking-[0.5em]", textColor)}
-                            >
-                                Secure Interface Ready
-                            </motion.p>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Ambient Watermark when active */}
-            <motion.div
-                animate={{ opacity: active ? 0.05 : 0 }}
-                transition={{ duration: 1 }}
-                className={cn("absolute w-[800px] h-[800px] rounded-full blur-[150px]", primaryColor)}
-            />
-        </div>
-    );
-}
-
-function MiniOrb({ mode }: { mode: 'daena' | 'autopilot' }) {
-    const isAutopilot = mode === 'autopilot';
-    const primaryColor = isAutopilot ? "bg-orange-500" : "bg-primary-500";
-    const borderColor = isAutopilot ? "border-orange-500" : "border-primary-500";
-
-    return (
-        <div className="relative w-5 h-5 flex items-center justify-center">
-            <div className={cn("absolute inset-0 rounded-full opacity-20 animate-pulse", primaryColor)} />
-            <div className={cn("w-2.5 h-2.5 rounded-full shadow-[0_0_8px_currentColor]", primaryColor, isAutopilot ? "text-orange-500" : "text-primary-500")} />
-            {/* Rotating ring */}
-            <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                className={cn("absolute inset-0 rounded-full border border-dashed opacity-40 scale-125", borderColor)}
-            />
-        </div>
-    );
-}
 
 interface ChatInterfaceProps {
     scope?: 'executive' | 'department' | 'agent';
@@ -226,8 +126,8 @@ export function ChatInterface({ scope = 'executive', scopeId = 'daena', title, c
             {/* Main Chat Area - Updated for layout fix */}
             <div className="flex-1 flex flex-col bg-midnight-300/50 rounded-2xl border border-white/5 overflow-hidden backdrop-blur-sm relative h-full shadow-2xl">
 
-                {/* Background Hero */}
-                <NeuralHero active={messages.length > 0 || isTyping} mode={mode} />
+                {/* Background Neural Orb */}
+                <NeuralOrb active={messages.length > 0 || isTyping} mode={mode} />
 
                 {/* Status Bar */}
                 <div className="h-12 border-b border-white/5 px-6 flex items-center justify-between bg-midnight-400/30 z-10 relative">
@@ -238,9 +138,17 @@ export function ChatInterface({ scope = 'executive', scopeId = 'daena', title, c
                         >
                             {historySidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
                         </button>
-                        <div className="p-1 px-2 rounded-md bg-primary-500/10 border border-primary-500/20 flex items-center gap-2">
-                            <MiniOrb mode={mode} />
-                            <span className="text-[10px] font-bold text-primary-400 uppercase tracking-widest">
+                        <div className={cn(
+                            "p-1 px-3 rounded-md flex items-center gap-2 border",
+                            mode === 'autopilot'
+                                ? "bg-amber-500/10 border-amber-500/20"
+                                : "bg-cyan-500/10 border-cyan-500/20"
+                        )}>
+                            <MiniNeuralOrb mode={mode} />
+                            <span className={cn(
+                                "text-[10px] font-bold uppercase tracking-widest",
+                                mode === 'autopilot' ? "text-amber-400" : "text-cyan-400"
+                            )}>
                                 {title || (scope === 'executive' ? 'Executive Neural Link' : `${scopeId} Channel`)}
                             </span>
                         </div>
@@ -252,7 +160,7 @@ export function ChatInterface({ scope = 'executive', scopeId = 'daena', title, c
                             <div className="hidden md:flex flex-col items-end mr-2">
                                 <span className={cn(
                                     "text-[9px] uppercase tracking-widest font-bold",
-                                    mode === 'autopilot' ? "text-orange-400" : "text-primary-400"
+                                    mode === 'autopilot' ? "text-amber-400" : "text-cyan-400"
                                 )}>
                                     {mode === 'autopilot' ? 'NEURAL AUTO' : 'NEURAL COMMAND'}
                                 </span>
@@ -265,24 +173,31 @@ export function ChatInterface({ scope = 'executive', scopeId = 'daena', title, c
                                 <motion.div
                                     layout
                                     className={cn(
-                                        "absolute top-0.5 bottom-0.5 w-[50%] rounded-md shadow-sm",
-                                        mode === 'autopilot' ? "bg-orange-500/20 border border-orange-500/30 left-[50%] right-0.5" : "bg-primary-500/20 border border-primary-500/30 left-0.5 right-[50%]"
+                                        "absolute top-0.5 bottom-0.5 w-[50%] rounded-md shadow-sm transition-all",
+                                        mode === 'autopilot'
+                                            ? "bg-amber-500/20 border border-amber-500/30 left-[50%] right-0.5"
+                                            : "bg-cyan-500/20 border border-cyan-500/30 left-0.5 right-[50%]"
                                     )}
+                                    style={{
+                                        boxShadow: mode === 'autopilot'
+                                            ? '0 0 12px rgba(251,191,36,0.3)'
+                                            : '0 0 12px rgba(34,211,238,0.3)'
+                                    }}
                                 />
                                 <button
                                     onClick={() => setMode('daena')}
                                     className={cn(
                                         "relative z-10 px-3 py-1.5 rounded-md text-[9px] uppercase tracking-wider font-bold transition-colors w-20",
-                                        mode === 'daena' ? "text-primary-300" : "text-starlight-500 hover:text-starlight-300"
+                                        mode === 'daena' ? "text-cyan-300" : "text-starlight-500 hover:text-starlight-300"
                                     )}
                                 >
-                                    Exec
+                                    Command
                                 </button>
                                 <button
                                     onClick={() => setMode('autopilot')}
                                     className={cn(
                                         "relative z-10 px-3 py-1.5 rounded-md text-[9px] uppercase tracking-wider font-bold transition-colors w-20",
-                                        mode === 'autopilot' ? "text-orange-300" : "text-starlight-500 hover:text-starlight-300"
+                                        mode === 'autopilot' ? "text-amber-300" : "text-starlight-500 hover:text-starlight-300"
                                     )}
                                 >
                                     Auto
