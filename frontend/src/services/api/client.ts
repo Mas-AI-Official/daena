@@ -34,11 +34,27 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     (response) => response,
     (error) => {
+        // Extract error message from response
+        const message = error.response?.data?.detail
+            || error.response?.data?.message
+            || error.message
+            || 'An unexpected error occurred';
+
+        // Log the error
+        console.error('API Error:', message, error);
+
+        // Show toast notification (using custom event for decoupled notification)
+        // This will be picked up by the notification system
+        window.dispatchEvent(new CustomEvent('api-error', {
+            detail: { message, status: error.response?.status }
+        }));
+
         if (error.response?.status === 401 || error.response?.status === 403) {
             console.error('Authentication Error:', error.response.data);
             // Optionally redirect to login or clear token
             // useAuthStore.getState().logout();
         }
+
         return Promise.reject(error);
     }
 );

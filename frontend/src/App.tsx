@@ -25,6 +25,7 @@ import { wsService } from './services/websocket';
 import { AgentDetailModal } from './components/agents/AgentDetailModal';
 import { VoiceNavigator } from './components/layout/VoiceNavigator';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { ToastProvider } from './components/common/ToastProvider';
 
 // New Feature Imports
 import { QuintessencePanel } from './components/quintessence/QuintessencePanel';
@@ -40,42 +41,44 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
+      <ToastProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
 
-          <Route element={<ProtectedRoute />}>
-            <Route element={<><PageLayout /><AgentDetailModal /><VoiceNavigator /></>}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/chat" element={<ChatInterface />} />
-              <Route path="/departments" element={<DepartmentGrid />} />
-              <Route path="/departments/:id" element={<DepartmentDetail />} />
-              <Route path="/skills" element={<SkillRegistry />} />
-              <Route path="/governance" element={<GovernanceConsole />} />
-              <Route path="/brain" element={<BrainStatus />} />
-              <Route path="/vault" element={<SecureVault />} />
-              <Route path="/ide" element={<IDEContainer />} />
-              {/* <Route path="/shadow" element={<ShadowDashboard />} /> */}
-              <Route path="/cmp" element={<CMPDashboard />} />
-              <Route path="/memory" element={<MemoryExplorer />} />
-              <Route path="/outcomes" element={<OutcomeDashboard />} />
-              <Route path="/integrity" element={<IntegrityConsole />} />
-              <Route path="/treasury" element={<TreasuryDashboard />} />
-              <Route path="/strategy" element={<StrategyDashboard />} />
-              <Route path="/marketplace" element={<MarketplaceDashboard />} />
+            <Route element={<ProtectedRoute />}>
+              <Route element={<><PageLayout /><AgentDetailModal /><VoiceNavigator /></>}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/chat" element={<ChatInterface />} />
+                <Route path="/departments" element={<DepartmentGrid />} />
+                <Route path="/departments/:id" element={<DepartmentDetail />} />
+                <Route path="/skills" element={<SkillRegistry />} />
+                <Route path="/governance" element={<GovernanceConsole />} />
+                <Route path="/brain" element={<BrainStatus />} />
+                <Route path="/vault" element={<SecureVault />} />
+                <Route path="/ide" element={<IDEContainer />} />
+                {/* <Route path="/shadow" element={<ShadowDashboard />} /> */}
+                <Route path="/cmp" element={<CMPDashboard />} />
+                <Route path="/memory" element={<MemoryExplorer />} />
+                <Route path="/outcomes" element={<OutcomeDashboard />} />
+                <Route path="/integrity" element={<IntegrityConsole />} />
+                <Route path="/treasury" element={<TreasuryDashboard />} />
+                <Route path="/strategy" element={<StrategyDashboard />} />
+                <Route path="/marketplace" element={<MarketplaceDashboard />} />
 
-              {/* New Routes */}
-              <Route path="/quintessence" element={<QuintessencePanel />} />
-              <Route path="/shadow" element={<ObsidianDashboard />} />
-              <Route path="/founder" element={<FounderControlPanel />} />
+                {/* New Routes */}
+                <Route path="/quintessence" element={<QuintessencePanel />} />
+                <Route path="/shadow" element={<ObsidianDashboard />} />
+                <Route path="/founder" element={<FounderControlPanel />} />
 
-              <Route path="/self-fix" element={<SelfFixConsole />} />
+                <Route path="/self-fix" element={<SelfFixConsole />} />
+              </Route>
             </Route>
-          </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </ToastProvider>
     </ErrorBoundary>
   )
 }
