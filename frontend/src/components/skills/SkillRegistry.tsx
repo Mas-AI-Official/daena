@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react';
 import { skillsApi } from '../../services/api/skills';
 import type { Skill } from '../../services/api/skills';
-import { Wrench, Shield, Zap, CircleDashed, Terminal, Loader2 } from 'lucide-react';
+import { Wrench, Shield, Zap, CircleDashed, Terminal, Loader2, Play, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../common/Card';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
 import { Switch } from '../common/Switch';
 import { cn } from '../../utils/cn';
+import { LoadingButton } from '../common/LoadingButton';
+import { useToast } from '../common/ToastProvider';
 
 export function SkillRegistry() {
     const [skills, setSkills] = useState<Skill[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all');
+    const [scanning, setScanning] = useState(false);
+    const [testingSkill, setTestingSkill] = useState<string | null>(null);
+    const toast = useToast();
 
     useEffect(() => {
         fetchSkills();
@@ -24,22 +29,42 @@ export function SkillRegistry() {
             setSkills(data.skills);
         } catch (error) {
             console.error('Failed to fetch skills:', error);
+            toast.error('Failed to load skills');
         } finally {
             setLoading(false);
         }
     };
 
     const handleScan = async () => {
+        setScanning(true);
         try {
             // @ts-ignore
             const result = await skillsApi.scan();
             if (result.success) {
-                alert(`Security Audit Complete:\n\nScanned: ${result.scanned_count} skills\nIssues Found: ${result.issues_found}\n\n${result.issues_found > 0 ? "Check logs for details." : "System integrity nominal."}`);
+                toast.success(`Security Audit Complete: Scanned ${result.scanned_count} skills, ${result.issues_found} issues found`);
             } else {
-                alert(`Scan failed: ${result.error}`);
+                toast.error(`Scan failed: ${result.error}`);
             }
         } catch (e) {
-            alert("Scan failed to initiate.");
+            toast.error("Scan failed to initiate.");
+        } finally {
+            setScanning(false);
+        }
+    };
+
+    const handleTestSkill = async (skillId: string) => {
+        setTestingSkill(skillId);
+        try {
+            const result = await skillsApi.test(skillId);
+            if (result.success) {
+                toast.success(`Test passed for ${result.skill_id}`);
+            } else {
+                toast.error(`Test failed: ${result.error}`);
+            }
+        } catch (error: any) {
+            toast.error(`Test failed: ${error.message || 'Unknown error'}`);
+        } finally {
+            setTestingSkill(null);
         }
     };
 
@@ -47,9 +72,11 @@ export function SkillRegistry() {
         setSkills(prev => prev.map(s => s.id === skillId ? { ...s, enabled: !currentStatus } : s));
         try {
             await skillsApi.toggle(skillId, !currentStatus);
+            toast.success(`Skill ${!currentStatus ? 'enabled' : 'disabled'}`);
         } catch (error) {
             console.error('Failed to toggle skill:', error);
             setSkills(prev => prev.map(s => s.id === skillId ? { ...s, enabled: currentStatus } : s));
+            toast.error('Failed to toggle skill');
         }
     };
 
@@ -78,14 +105,20 @@ export function SkillRegistry() {
                     </p>
                 </div>
                 <div className="flex gap-3">
-                    <Button variant="outline" onClick={() => alert('Localization protocol initiated. All skills verified.')} className="border-primary-500/30 text-primary-300 hover:bg-primary-500/10">
+                    <Button variant="outline" onClick={() => toast.info('Localization protocol initiated. All skills verified.')} className="border-primary-500/30 text-primary-300 hover:bg-primary-500/10">
                         <Zap className="w-4 h-4 mr-2" />
                         Auto-Localize
                     </Button>
-                    <Button variant="danger" onClick={handleScan} className="bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20">
+                    <LoadingButton
+                        variant="danger"
+                        onClick={handleScan}
+                        isLoading={scanning}
+                        loadingText="Scanning..."
+                        className="bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20"
+                    >
                         <Shield className="w-4 h-4 mr-2" />
                         Scan for Threats
-                    </Button>
+                    </LoadingButton>
                 </div>
             </div>
 
@@ -109,14 +142,27 @@ export function SkillRegistry() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredSkills.map(skill => (
-                    <SkillCard key={skill.id} skill={skill} onToggle={() => handleToggle(skill.id, skill.enabled)} />
+                    <SkillCard
+                        key={skill.id}
+                        skill={skill}
+                        onToggle={() => handleToggle(skill.id, skill.enabled)}
+                        onTest={() => handleTestSkill(skill.id)}
+                        isTesting={testingSkill === skill.id}
+                    />
                 ))}
             </div>
         </div>
     );
 }
 
-function SkillCard({ skill, onToggle }: { skill: Skill; onToggle: () => void }) {
+interface SkillCardProps {
+    skill: Skill;
+    onToggle: () => void;
+    onTest: () => void;
+    isTesting: boolean;
+}
+
+function SkillCard({ skill, onToggle, onTest, isTesting }: SkillCardProps) {
     const getIcon = (cat: string) => {
         if (cat === 'security') return <Shield className="w-5 h-5 text-warning" />;
         if (cat === 'code_exec') return <Terminal className="w-5 h-5 text-success" />;
@@ -165,16 +211,38 @@ function SkillCard({ skill, onToggle }: { skill: Skill; onToggle: () => void }) 
                         </Badge>
                     </div>
 
-                    {/* Operator Hint */}
-                    <div className="flex -space-x-2" title={`Allowed: ${operators.join(', ')}`}>
-                        <div className="w-6 h-6 rounded-full bg-midnight-300 border border-white/10 flex items-center justify-center text-[10px] text-starlight-300 z-10">
-                            F
-                        </div>
-                        {operators.length > 1 && (
-                            <div className="w-6 h-6 rounded-full bg-midnight-300 border border-white/10 flex items-center justify-center text-[10px] text-starlight-300">
-                                +{operators.length - 1}
+                    {/* Actions */}
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={onTest}
+                            disabled={isTesting || !skill.enabled}
+                            className={cn(
+                                "p-1.5 rounded-lg transition-colors",
+                                isTesting
+                                    ? "bg-primary-500/20 text-primary-400"
+                                    : "hover:bg-white/5 text-starlight-400 hover:text-primary-400",
+                                !skill.enabled && "opacity-50 cursor-not-allowed"
+                            )}
+                            title="Test Skill"
+                        >
+                            {isTesting ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Play className="w-4 h-4" />
+                            )}
+                        </button>
+
+                        {/* Operator Hint */}
+                        <div className="flex -space-x-2" title={`Allowed: ${operators.join(', ')}`}>
+                            <div className="w-6 h-6 rounded-full bg-midnight-300 border border-white/10 flex items-center justify-center text-[10px] text-starlight-300 z-10">
+                                F
                             </div>
-                        )}
+                            {operators.length > 1 && (
+                                <div className="w-6 h-6 rounded-full bg-midnight-300 border border-white/10 flex items-center justify-center text-[10px] text-starlight-300">
+                                    +{operators.length - 1}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </CardContent>
