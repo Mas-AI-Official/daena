@@ -15,17 +15,20 @@ echo [INFO] Activating main Python environment...
 if exist "venv_daena_main_py310\Scripts\activate.bat" (
     call venv_daena_main_py310\Scripts\activate.bat
     echo [OK] Activated: venv_daena_main_py310
-) else if exist "venv_daena_audio_py310\Scripts\activate.bat" (
+    goto :env_activated
+)
+if exist "venv_daena_audio_py310\Scripts\activate.bat" (
     echo [WARNING] Main env not found, using audio env
     call venv_daena_audio_py310\Scripts\activate.bat
     echo [OK] Activated: venv_daena_audio_py310
-) else (
-    echo [ERROR] No virtual environment found!
-    echo [INFO] Expected: venv_daena_main_py310 or venv_daena_audio_py310
-    pause
-    exit /b 1
+    goto :env_activated
 )
+echo [ERROR] No virtual environment found!
+echo [INFO] Expected: venv_daena_main_py310 or venv_daena_audio_py310
+pause
+exit /b 1
 
+:env_activated
 python --version
 echo.
 
@@ -78,7 +81,7 @@ echo Environment: Main (venv_daena_main_py310)
 echo ==========================================
 echo.
 
-python -m backend.main
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 if errorlevel 1 (
     echo.
     echo [ERROR] Backend crashed!

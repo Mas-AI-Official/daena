@@ -35,5 +35,25 @@ export const agentsApi = {
     getTasks: async (id: string): Promise<any> => {
         const response = await api.get(`/agents/${id}/tasks`);
         return response.data;
+    },
+
+    pause: async (id: string): Promise<any> => {
+        const response = await api.post(`/agents/${id}/pause`, {});
+        return response.data;
+    },
+
+    resume: async (id: string): Promise<any> => {
+        const response = await api.post(`/agents/${id}/resume`, {});
+        return response.data;
+    },
+
+    assignTask: async (id: string, task: { title: string, description: string, priority: string }): Promise<any> => {
+        const response = await api.post(`/agents/${id}/tasks`, task);
+        return response.data;
+    },
+
+    getActivity: async (): Promise<any[]> => {
+        const response = await api.get('/agents/activity');
+        return response.data;
     }
 };

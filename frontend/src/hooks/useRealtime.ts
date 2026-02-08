@@ -266,7 +266,7 @@ export function useRealtimeProjects(projectId?: string) {
 
     const handleCommentAdded = (data: any) => {
       if (projectId === data.project_id) {
-        setProject(prev => ({
+        setProject((prev: any) => ({
           ...prev,
           comments: [data.comment, ...(prev?.comments || [])]
         }));
@@ -386,4 +386,187 @@ export function useProjectList() {
   }, [fetchProjects]);
 
   return { projects, loading, error, refetch: fetchProjects, setProjects };
+}
+
+// ============================================================
+// Hook for real-time CMP integrations
+// ============================================================
+export function useRealtimeIntegrations() {
+  const [instances, setInstances] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const addNotification = useUIStore((state) => state.addNotification);
+
+  useEffect(() => {
+    const ws = getWebSocketClient();
+
+    const handleIntegrationConnected = (data: any) => {
+      setInstances(prev => [...prev, data.instance]);
+      addNotification({
+        type: 'success',
+        title: 'Integration Connected',
+        message: `${data.instance?.name || 'Integration'} is now connected`
+      });
+    };
+
+    const handleIntegrationDisconnected = (data: any) => {
+      setInstances(prev => prev.filter(i => i.id !== data.instance_id));
+      addNotification({
+        type: 'info',
+        title: 'Integration Disconnected',
+        message: `Integration has been disconnected`
+      });
+    };
+
+    const handleIntegrationStatusChanged = (data: any) => {
+      setInstances(prev => prev.map(i =>
+        i.id === data.instance_id ? { ...i, status: data.status } : i
+      ));
+    };
+
+    const handleIntegrationError = (data: any) => {
+      setInstances(prev => prev.map(i =>
+        i.id === data.instance_id ? { ...i, status: 'error', last_error: data.error } : i
+      ));
+      addNotification({
+        type: 'error',
+        title: 'Integration Error',
+        message: data.error || 'An integration error occurred'
+      });
+    };
+
+    const handleIntegrationActionExecuted = (data: any) => {
+      addNotification({
+        type: 'success',
+        title: 'Action Executed',
+        message: `${data.action} completed on ${data.integration_name}`
+      });
+    };
+
+    ws.on('integration.connected', handleIntegrationConnected);
+    ws.on('integration.disconnected', handleIntegrationDisconnected);
+    ws.on('integration.status_changed', handleIntegrationStatusChanged);
+    ws.on('integration.error', handleIntegrationError);
+    ws.on('integration.action_executed', handleIntegrationActionExecuted);
+
+    return () => {
+      ws.off('integration.connected', handleIntegrationConnected);
+      ws.off('integration.disconnected', handleIntegrationDisconnected);
+      ws.off('integration.status_changed', handleIntegrationStatusChanged);
+      ws.off('integration.error', handleIntegrationError);
+      ws.off('integration.action_executed', handleIntegrationActionExecuted);
+    };
+  }, [addNotification]);
+
+  const fetchInstances = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/v1/integrations/instances', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setInstances(data.instances || []);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const connectIntegration = useCallback(async (catalogKey: string, name: string, credentials: any) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/v1/integrations/connect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ catalog_key: catalogKey, name, credentials })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Connection failed');
+      }
+
+      const data = await response.json();
+      // Instance will be added via WebSocket event
+      return data;
+    } catch (err: any) {
+      setError(err.message);
+      addNotification({
+        type: 'error',
+        title: 'Connection Failed',
+        message: err.message
+      });
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [addNotification]);
+
+  const disconnectIntegration = useCallback(async (instanceId: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`/api/v1/integrations/${instanceId}/disconnect`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      // Instance removal will happen via WebSocket event
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }, []);
+
+  const executeAction = useCallback(async (instanceId: string, action: string, params: any = {}) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/v1/integrations/${instanceId}/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ action, params })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Action failed');
+      }
+
+      return await response.json();
+    } catch (err: any) {
+      setError(err.message);
+      addNotification({
+        type: 'error',
+        title: 'Action Failed',
+        message: err.message
+      });
+      throw err;
+    }
+  }, [addNotification]);
+
+  return {
+    instances,
+    loading,
+    error,
+    fetchInstances,
+    connectIntegration,
+    disconnectIntegration,
+    executeAction,
+    setInstances
+  };
 }

@@ -75,8 +75,8 @@ export const ModelToggle: React.FC<ModelToggleProps> = ({
         <div className="text-sm text-gray-500">{modelId}</div>
       </div>
       <Switch
-        enabled={isEnabled}
-        onChange={handleToggle}
+        checked={isEnabled}
+        onCheckedChange={handleToggle}
         disabled={isLoading}
       />
     </div>

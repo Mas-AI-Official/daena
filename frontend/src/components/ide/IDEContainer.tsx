@@ -50,35 +50,55 @@ export function IDEContainer() {
     };
 
     // Transform backend directory structure to FileNode[]
+    // Handles both array format (new IDE endpoint) and object format (legacy endpoint)
     const transformStructure = (dirs: any, rootPath: string): FileNode[] => {
         const nodes: FileNode[] = [];
 
-        // Process directories
-        Object.keys(dirs).forEach(dirName => {
-            const dirData = dirs[dirName];
-            if (dirData.type === 'directory') {
-                nodes.push({
-                    id: `${rootPath}/${dirName}`,
-                    path: dirName, // Relative path from root
-                    name: dirName,
-                    type: 'directory',
-                    children: transformStructure(dirData.subdirs || {}, `${rootPath}/${dirName}`)
-                });
-            } else {
-                nodes.push({
-                    id: `${rootPath}/${dirName}`,
-                    path: dirName,
-                    name: dirName,
-                    type: 'file',
-                    extension: dirName.split('.').pop()
-                });
-            }
-        });
-
-        // Backend structure flattens files into the directory map with type='file' if they are at that level
-        // But the provided backend logic separates files into current dir? 
-        // Actually the backend logic was: current[parts[-1]] = {'type': 'file'} 
-        // So files are siblings of subdirs in the same dictionary.
+        // Handle array format from new IDE endpoint
+        if (Array.isArray(dirs)) {
+            dirs.forEach((item: any) => {
+                if (item.type === 'directory') {
+                    nodes.push({
+                        id: `${rootPath}/${item.path || item.name}`,
+                        path: item.path || item.name,
+                        name: item.name,
+                        type: 'directory',
+                        children: transformStructure(item.children || [], `${rootPath}/${item.path || item.name}`)
+                    });
+                } else {
+                    nodes.push({
+                        id: `${rootPath}/${item.path || item.name}`,
+                        path: item.path || item.name,
+                        name: item.name,
+                        type: 'file',
+                        extension: item.extension || item.name.split('.').pop()
+                    });
+                }
+            });
+        }
+        // Handle object format from legacy endpoint
+        else if (typeof dirs === 'object' && dirs !== null) {
+            Object.keys(dirs).forEach(dirName => {
+                const dirData = dirs[dirName];
+                if (dirData.type === 'directory') {
+                    nodes.push({
+                        id: `${rootPath}/${dirName}`,
+                        path: dirName,
+                        name: dirName,
+                        type: 'directory',
+                        children: transformStructure(dirData.subdirs || {}, `${rootPath}/${dirName}`)
+                    });
+                } else {
+                    nodes.push({
+                        id: `${rootPath}/${dirName}`,
+                        path: dirName,
+                        name: dirName,
+                        type: 'file',
+                        extension: dirName.split('.').pop()
+                    });
+                }
+            });
+        }
 
         return nodes.sort((a, b) => {
             if (a.type === b.type) return a.name.localeCompare(b.name);

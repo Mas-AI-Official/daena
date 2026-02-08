@@ -78,6 +78,10 @@ export const api = {
             const response = await client.delete(`/api/v1/chat/sessions/${sessionId}`);
             return response.data;
         },
+        renameSession: async (sessionId: string, title: string) => {
+            const response = await client.patch(`/api/v1/chat/sessions/${sessionId}`, { title });
+            return response.data;
+        },
         batchDeleteHistory: async (ids: string[]) => {
             const response = await client.delete('/api/v1/chat/history', { data: ids });
             return response.data;

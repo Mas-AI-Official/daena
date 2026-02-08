@@ -1,174 +1,212 @@
 @echo off
 setlocal EnableDelayedExpansion
-title Daena AI - Super-Sync Startup
+title Daena AI - Startup Controller
+color 0B
 
-echo =====================================================
-echo    DAENA AI - SUPER-SYNC STARTUP
-echo =====================================================
+echo.
+echo  =====================================================
+echo     DAENA AI - SUPER-SYNC STARTUP
+echo  =====================================================
 echo.
 
 REM Change to script directory
 cd /d "%~dp0"
 
+REM =====================================================
+REM PHASE 1: Validate Environment
+REM =====================================================
+echo [PHASE 1] Validating Environment...
+echo.
+
 REM Check directories
 if not exist "backend" (
     echo [ERROR] Backend directory not found!
-    pause
-    exit /b 1
+    goto :error_exit
 )
-
 if not exist "frontend" (
     echo [ERROR] Frontend directory not found!
-    pause
-    exit /b 1
+    goto :error_exit
 )
-
-echo [OK] Directories verified
-echo.
+echo   [OK] Directories verified
 
 REM Check Python
-echo [INFO] Checking Python installation...
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Python not found! Install Python 3.10+
-    pause
-    exit /b 1
+    echo   [ERROR] Python not found! Install Python 3.10+
+    goto :error_exit
 )
-echo [OK] Python found:
-python --version
-echo.
+for /f "delims=" %%v in ('python --version 2^>^&1') do echo   [OK] %%v
 
 REM Check Node.js
-echo [INFO] Checking Node.js installation...
 node --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Node.js not found! Install Node.js 18+
-    pause
-    exit /b 1
+    echo   [ERROR] Node.js not found! Install Node.js 18+
+    goto :error_exit
 )
-echo [OK] Node.js found:
-node --version
-echo.
+for /f "delims=" %%v in ('node --version') do echo   [OK] Node.js %%v
 
-REM Detect Python environment
-echo [INFO] Detecting Python environment...
+REM Detect Virtual Environment
+set "VENV_NAME="
 if exist "venv_daena_main_py310\Scripts\activate.bat" (
-    set VENV_NAME=venv_daena_main_py310
-    echo [OK] Main environment found: venv_daena_main_py310
+    set "VENV_NAME=venv_daena_main_py310"
+    echo   [OK] Python env: venv_daena_main_py310
 ) else if exist "venv_daena_audio_py310\Scripts\activate.bat" (
-    set VENV_NAME=venv_daena_audio_py310
-    echo [OK] Audio environment found (using as fallback): venv_daena_audio_py310
+    set "VENV_NAME=venv_daena_audio_py310"
+    echo   [OK] Python env: venv_daena_audio_py310 ^(fallback^)
 ) else (
-    echo [ERROR] No virtual environment found!
-    echo [INFO] Expected: venv_daena_main_py310 or venv_daena_audio_py310
-    pause
-    exit /b 1
+    echo   [ERROR] No virtual environment found!
+    goto :error_exit
 )
+
+echo.
+echo [PHASE 1] Complete!
 echo.
 
-REM Update Python dependencies
-echo [INFO] Updating Python dependencies...
-call %VENV_NAME%\Scripts\activate.bat
-python -m pip install --upgrade pip -q
-if exist "backend\requirements.txt" (
-    pip install -r backend\requirements.txt -q
-    if errorlevel 1 (
-        echo [WARNING] Some Python packages may need manual installation
-    )
-)
-call deactivate
-echo [OK] Python dependencies updated
+REM =====================================================
+REM PHASE 2: Prepare Dependencies
+REM =====================================================
+echo [PHASE 2] Checking Dependencies...
 echo.
 
-REM Update Node.js dependencies
-echo [INFO] Checking Node.js dependencies...
-cd frontend
-
-if not exist "node_modules" (
-    echo [INFO] Installing Node.js packages (first time)...
+REM Check frontend node_modules
+if not exist "frontend\node_modules" (
+    echo   [INFO] Installing frontend dependencies...
+    cd frontend
     call npm install
-    if errorlevel 1 (
-        echo [ERROR] npm install failed!
-        pause
-        exit /b 1
-    )
+    cd ..
 )
+echo   [OK] Frontend dependencies ready
 
-REM Ensure critical packages
-npm list sonner >nul 2>&1
-if errorlevel 1 (
-    echo [INFO] Installing sonner...
-    call npm install sonner --save
-)
+REM Create necessary folders
+if not exist "logs" mkdir logs
+if not exist "data" mkdir data
+if not exist "workspace" mkdir workspace
 
-if not exist ".env" (
-    echo [INFO] Creating .env file...
-    echo VITE_WS_URL=ws://localhost:8000/api/v1/realtime/ws > .env
-    echo VITE_API_URL=http://localhost:8000 >> .env
-)
+echo   [OK] Directories created
 
-cd ..
-echo [OK] Frontend ready
+echo.
+echo [PHASE 2] Complete!
 echo.
 
-REM Run database migration
-echo [INFO] Running database migration...
-call %VENV_NAME%\Scripts\activate.bat
-python backend\database\migrations\001_add_missing_tables.py >nul 2>&1
-if errorlevel 1 (
-    echo [WARNING] Migration may need manual run
-) else (
-    echo [OK] Migration complete
-)
-call deactivate
+REM =====================================================
+REM PHASE 3: Free Ports
+REM =====================================================
+echo [PHASE 3] Freeing Ports...
 echo.
 
-REM Free ports
-echo [INFO] Freeing ports...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000" ^| findstr "LISTENING"') do taskkill /F /PID %%a >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":5173" ^| findstr "LISTENING"') do taskkill /F /PID %%a >nul 2>&1
+REM Kill any process using port 8000
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000" ^| findstr "LISTENING" 2^>nul') do (
+    taskkill /F /PID %%a >nul 2>&1
+    echo   [INFO] Killed process on port 8000 ^(PID: %%a^)
+)
+
+REM Kill any process using port 5173
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":5173" ^| findstr "LISTENING" 2^>nul') do (
+    taskkill /F /PID %%a >nul 2>&1
+    echo   [INFO] Killed process on port 5173 ^(PID: %%a^)
+)
+
 timeout /t 2 /nobreak >nul
-echo [OK] Ports cleared
+echo   [OK] Ports cleared
+
+echo.
+echo [PHASE 3] Complete!
 echo.
 
-echo =====================================================
-echo    STARTING SERVICES
-echo =====================================================
-echo.
-echo Backend:  http://localhost:8000
-echo Frontend: http://localhost:5173/
+REM =====================================================
+REM PHASE 4: Launch Services
+REM =====================================================
+echo [PHASE 4] Launching Services...
 echo.
 
-REM Start Backend
-echo [1/2] Starting Backend (using %VENV_NAME%)...
-start "Daena Backend" cmd /k START_BACKEND.bat
+echo  =====================================================
+echo     STARTING SERVICES
+echo  =====================================================
+echo.
+echo   Backend:  http://localhost:8000
+echo   Frontend: http://localhost:5173
+echo   Docs:     http://localhost:8000/docs
+echo.
 
-REM Wait for backend
-echo [INFO] Waiting for backend (10s)...
-timeout /t 10 /nobreak >nul
+REM Start Backend in new window
+echo   [1/2] Starting Backend...
+start "Daena Backend" cmd /k "cd /d "%~dp0" && call %VENV_NAME%\Scripts\activate.bat && set PYTHONPATH=%~dp0 && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
+
+REM Wait for backend to initialize
+echo   [INFO] Waiting for backend to start ^(15s^)...
+timeout /t 15 /nobreak >nul
 
 REM Check backend health
-powershell -Command "try { Invoke-RestMethod -Uri 'http://localhost:8000/health' -TimeoutSec 5; exit 0 } catch { exit 1 }" >nul 2>&1
+curl -s http://localhost:8000/health >nul 2>&1
 if errorlevel 1 (
-    echo [WARNING] Backend may still be starting...
+    echo   [WARN] Backend may still be starting...
 ) else (
-    echo [OK] Backend is responding
+    echo   [OK] Backend is responding
 )
 
-REM Start Frontend
-echo [2/2] Starting Frontend...
-start "Daena Frontend" cmd /k START_FRONTEND.bat
+REM Start Frontend in new window
+echo   [2/2] Starting Frontend...
+start "Daena Frontend" cmd /k "cd /d "%~dp0%frontend" && npm run dev"
 
-timeout /t 3 /nobreak >nul
+timeout /t 5 /nobreak >nul
 
 echo.
-echo =====================================================
-echo    STARTUP COMPLETE!
-echo =====================================================
+echo [PHASE 4] Complete!
 echo.
-echo Backend:  http://localhost:8000
-echo Frontend: http://localhost:5173/
+
+REM =====================================================
+REM PHASE 5: Monitoring
+REM =====================================================
+echo  =====================================================
+echo     STARTUP COMPLETE!
+echo  =====================================================
 echo.
-echo Press any key to open browser...
-pause >nul
-start http://localhost:5173/
+echo   Backend:  http://localhost:8000
+echo   Frontend: http://localhost:5173
+echo   API Docs: http://localhost:8000/docs
+echo.
+echo   [INFO] Opening Dashboard in 5 seconds...
+timeout /t 5 /nobreak >nul
+start http://localhost:5173
+
+REM Keep window open for monitoring
+echo.
+echo  =====================================================
+echo     MONITORING MODE
+echo  =====================================================
+echo.
+echo   Services are running in separate windows.
+echo   This window will auto-check health every 60 seconds.
+echo   Press CTRL+C to stop monitoring.
+echo.
+
+:monitor_loop
+timeout /t 60 /nobreak >nul
+
+REM Health check
+curl -s http://localhost:8000/health >nul 2>&1
+if errorlevel 1 (
+    echo   [%time%] [WARN] Backend not responding
+) else (
+    echo   [%time%] [OK] Backend healthy
+)
+
+curl -s http://localhost:5173 >nul 2>&1
+if errorlevel 1 (
+    echo   [%time%] [WARN] Frontend not responding
+) else (
+    echo   [%time%] [OK] Frontend healthy
+)
+
+goto :monitor_loop
+
+:error_exit
+echo.
+echo  =====================================================
+echo     STARTUP FAILED
+echo  =====================================================
+echo.
+echo   Please fix the above errors and try again.
+echo.
+pause
+exit /b 1

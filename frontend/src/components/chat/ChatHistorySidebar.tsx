@@ -14,6 +14,7 @@ import {
     Calendar,
     Archive
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { useUIStore } from '../../store/uiStore';
 import { cn } from '../../utils/cn';
@@ -96,11 +97,13 @@ export function ChatHistorySidebar() {
     const handleRename = async (id: string) => {
         if (!editValue.trim()) return;
         try {
-            // await api.chat.renameSession(id, editValue);
+            await api.chat.renameSession(id, editValue);
             setSessions(prev => prev.map(s => s.id === id ? { ...s, title: editValue } : s));
             setEditingId(null);
-        } catch (e) {
+            toast.success('Session renamed');
+        } catch (e: any) {
             console.error("Rename failed", e);
+            toast.error(`Rename failed: ${e?.response?.data?.detail || e?.message || 'Unknown error'}`);
         }
     };
 
@@ -113,8 +116,10 @@ export function ChatHistorySidebar() {
                 next.delete(id);
                 return next;
             });
-        } catch (e) {
+            toast.success('Session deleted');
+        } catch (e: any) {
             console.error("Delete failed", e);
+            toast.error(`Delete failed: ${e?.response?.data?.detail || e?.message || 'Unknown error'}`);
         }
     };
 

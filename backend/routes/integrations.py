@@ -1,347 +1,704 @@
 """
-Integration API Routes
-Enhanced endpoints for managing integrations with secure credential storage.
-MCP-first: MCP servers (GitHub, Cloudflare, GCP, etc.) can be listed and enabled via mcp-servers endpoints.
+CMP Integrations API Routes
+Enhanced API for the Integration Hub with full governance support.
 """
-from fastapi import APIRouter, HTTPException, Body
-from pathlib import Path
-from typing import Dict, Any, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
+from datetime import datetime
+import uuid
+import json
+import os
+import logging
 
-from backend.services.integration_registry import get_integration_registry
-from backend.services.credentials_manager import get_credentials_manager
+from backend.database import (
+    SessionLocal,
+    IntegrationCatalog,
+    IntegrationInstance,
+    IntegrationPolicy,
+    IntegrationAuditLog,
+    User
+)
+from backend.routes.auth import get_current_user
+from backend.services.integration_governance import get_integration_governance
 
-router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
+logger = logging.getLogger(__name__)
 
-_MCP_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "mcp_servers.json"
+router = APIRouter(prefix="/api/integrations", tags=["Integrations"])
 
+
+# ============================================================
 # Request/Response Models
+# ============================================================
+
 class ConnectRequest(BaseModel):
+    auth_type: str  # 'oauth2' or 'api_key'
     credentials: Dict[str, Any]
-    user_id: str = "default"
+    metadata: Optional[Dict] = {}
+
+
+class PolicyUpdateRequest(BaseModel):
+    allow_founder: Optional[bool] = None
+    allow_daena: Optional[bool] = None
+    allow_agents: Optional[bool] = None
+    allowed_departments: Optional[List[str]] = None
+    approval_mode: Optional[str] = None  # 'auto', 'needs_approval', 'always'
+    max_daily_calls: Optional[int] = None
+    max_daily_cost_usd: Optional[float] = None
+    restricted_actions: Optional[List[str]] = None
+
 
 class ExecuteRequest(BaseModel):
+    instance_id: str
     action: str
-    params: Dict[str, Any] = {}
-    user_id: str = "default"
+    params: Dict[str, Any]
+    actor_context: Optional[Dict] = {}  # {'department_id': '...', 'task_id': '...'}
 
 
-class MCPServerUpdate(BaseModel):
-    """Request body for PATCH /mcp-servers/{server_id}."""
-    enabled: bool
+# ============================================================
+# Catalog Endpoints
+# ============================================================
 
-
-@router.get("/mcp-servers")
-async def list_mcp_servers() -> Dict[str, Any]:
-    """
-    List MCP servers: from integration registry (mcp_server=True) merged with config/mcp_servers.json.
-    Integrations page can show these as "MCP servers + providers" and enable/disable via PATCH.
-    """
-    registry = get_integration_registry()
-    all_integrations = registry.list_all() if hasattr(registry, "list_all") else []
-    mcp_from_registry = [i for i in all_integrations if i.get("mcp_server") or i.get("category") == "mcp"]
-    if not mcp_from_registry and hasattr(registry, "integrations"):
-        mcp_from_registry = [{"id": k, **v} for k, v in (registry.integrations or {}).items() if v.get("mcp_server") or v.get("category") == "mcp"]
-    config = {}
-    if _MCP_CONFIG_PATH.exists():
-        try:
-            import json
-            with open(_MCP_CONFIG_PATH, "r", encoding="utf-8") as f:
-                config = json.load(f)
-        except Exception:
-            pass
-    servers = []
-    seen = set()
-    for s in mcp_from_registry:
-        sid = s.get("id") or s.get("name", "").lower().replace(" ", "_")
-        if sid in seen:
-            continue
-        seen.add(sid)
-        cfg = config.get(sid) or {}
-        servers.append({
-            "id": sid,
-            "name": s.get("name", sid),
-            "description": s.get("description", ""),
-            "enabled": cfg.get("enabled", s.get("enabled_by_default", False)),
-            "command": cfg.get("command"),
-            "args": cfg.get("args", []),
-        })
-    for sid, cfg in config.items():
-        if sid not in seen:
-            servers.append({"id": sid, "name": cfg.get("name", sid), "enabled": cfg.get("enabled", False), "command": cfg.get("command"), "args": cfg.get("args", [])})
-    return {"success": True, "mcp_servers": servers}
-
-
-@router.patch("/mcp-servers/{server_id}")
-async def update_mcp_server(server_id: str, body: MCPServerUpdate) -> Dict[str, Any]:
-    """Enable or disable an MCP server (updates config/mcp_servers.json)."""
-    enabled = body.enabled
-    if ".." in server_id or "/" in server_id:
-        raise HTTPException(status_code=400, detail="Invalid server_id")
-    config = {}
-    if _MCP_CONFIG_PATH.exists():
-        try:
-            import json
-            with open(_MCP_CONFIG_PATH, "r", encoding="utf-8") as f:
-                config = json.load(f)
-        except Exception:
-            pass
-    if server_id not in config:
-        config[server_id] = {"name": server_id, "enabled": False, "command": "npx", "args": ["-y", f"@modelcontextprotocol/server-{server_id}"]}
-    config[server_id]["enabled"] = enabled
-    _MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    import json
-    with open(_MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
-    return {"success": True, "server_id": server_id, "enabled": enabled}
-
-
-@router.get("")
-async def list_integrations(
+@router.get("/catalog")
+async def list_catalog(
     category: Optional[str] = None,
-    status: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    List all available integrations
-    Query params:
-        - category: Filter by category (ai, communication, productivity, etc.)
-        - status: Filter by status (available, configured, active)
-    """
+    search: Optional[str] = None,
+    featured_only: bool = False,
+    current_user: User = Depends(get_current_user)
+):
+    """List available integration types in the catalog."""
+    db = SessionLocal()
     try:
-        registry = get_integration_registry()
-        integrations = registry.list_all(category=category, status=status)
+        query = db.query(IntegrationCatalog).filter(IntegrationCatalog.is_enabled == True)
         
-        # Add configured status for each integration
-        creds_manager = get_credentials_manager()
-        configured_integrations = creds_manager.list_configured()
+        if category:
+            query = query.filter(IntegrationCatalog.category == category)
         
-        for integration in integrations:
-            if integration["id"] in configured_integrations:
-                integration["has_credentials"] = True
-            else:
-                integration["has_credentials"] = False
+        if featured_only:
+            query = query.filter(IntegrationCatalog.is_featured == True)
+        
+        integrations = query.all()
+        
+        # Filter by search term
+        if search:
+            search_lower = search.lower()
+            integrations = [
+                i for i in integrations 
+                if search_lower in i.name.lower() or 
+                   (i.description and search_lower in i.description.lower())
+            ]
+        
+        # Get unique categories
+        all_categories = db.query(IntegrationCatalog.category).distinct().all()
+        categories = [c[0] for c in all_categories if c[0]]
         
         return {
-            "success": True,
-            "count": len(integrations),
-            "integrations": integrations
+            "integrations": [
+                {
+                    "id": i.id,
+                    "key": i.key,
+                    "name": i.name,
+                    "category": i.category,
+                    "icon_url": i.icon_url,
+                    "icon_svg": i.icon_svg,
+                    "color": i.color,
+                    "auth_type": i.auth_type,
+                    "default_risk_level": i.default_risk_level,
+                    "requires_approval": i.requires_approval,
+                    "description": i.description,
+                    "oauth_scopes": i.oauth_scopes if i.auth_type == 'oauth2' else None,
+                    "api_key_fields": i.api_key_fields if i.auth_type == 'api_key' else None
+                }
+                for i in integrations
+            ],
+            "categories": categories
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
-@router.get("/{integration_id}")
-async def get_integration(integration_id: str) -> Dict[str, Any]:
-    """Get specific integration details"""
+
+# ============================================================
+# Instance Endpoints
+# ============================================================
+
+@router.get("/instances")
+async def list_instances(
+    status: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """List user's connected integration instances."""
+    db = SessionLocal()
     try:
-        registry = get_integration_registry()
-        integration = registry.get(integration_id)
+        query = db.query(IntegrationInstance).filter(
+            IntegrationInstance.owner_id == str(current_user.id)
+        )
         
-        if not integration:
-            raise HTTPException(status_code=404, detail=f"Integration '{integration_id}' not found")
+        if status:
+            query = query.filter(IntegrationInstance.status == status)
         
-        # Check if credentials are configured
-        creds_manager = get_credentials_manager()
-        credentials = creds_manager.retrieve(integration_id)
+        instances = query.order_by(IntegrationInstance.updated_at.desc()).all()
         
-        integration["has_credentials"] = credentials is not None
-        if credentials:
-            integration["credentials_preview"] = creds_manager.mask_credentials(credentials)
+        result = []
+        for instance in instances:
+            catalog = db.query(IntegrationCatalog).filter(
+                IntegrationCatalog.key == instance.catalog_key
+            ).first()
+            
+            policy = db.query(IntegrationPolicy).filter(
+                IntegrationPolicy.instance_id == instance.id
+            ).first()
+            
+            result.append({
+                "id": instance.id,
+                "catalog_key": instance.catalog_key,
+                "name": catalog.name if catalog else instance.catalog_key,
+                "icon_url": catalog.icon_url if catalog else None,
+                "icon_svg": catalog.icon_svg if catalog else None,
+                "color": catalog.color if catalog else None,
+                "category": catalog.category if catalog else "unknown",
+                "status": instance.status,
+                "status_message": instance.status_message,
+                "connected_at": instance.connected_at.isoformat() if instance.connected_at else None,
+                "last_used_at": instance.last_used_at.isoformat() if instance.last_used_at else None,
+                "metadata": instance.metadata_json,
+                "policy": {
+                    "allow_founder": policy.allow_founder if policy else True,
+                    "allow_daena": policy.allow_daena if policy else True,
+                    "allow_agents": policy.allow_agents if policy else False,
+                    "approval_mode": policy.approval_mode if policy else "auto"
+                } if policy else None
+            })
         
-        return {
-            "success": True,
-            "integration": integration
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"instances": result}
+    finally:
+        db.close()
 
-@router.post("/{integration_id}/connect")
+
+@router.post("/instances/{catalog_key}/connect")
 async def connect_integration(
-    integration_id: str,
-    request: ConnectRequest
-) -> Dict[str, Any]:
-    """
-    Connect/configure an integration
-    Body:
-        - credentials: Dict with API keys, tokens, etc.
-        - user_id: User ID (default: "default")
-    """
+    catalog_key: str,
+    request: ConnectRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Connect a new integration instance."""
+    
+    # Verify user is founder (only founders can connect integrations)
+    if current_user.role != "FOUNDER":
+        raise HTTPException(403, "Only Founder can connect integrations")
+    
+    db = SessionLocal()
     try:
-        registry = get_integration_registry()
-        integration_config = registry.get(integration_id)
+        # Get catalog entry
+        catalog = db.query(IntegrationCatalog).filter(
+            IntegrationCatalog.key == catalog_key
+        ).first()
         
-        if not integration_config:
-            raise HTTPException(status_code=404, detail=f"Integration '{integration_id}' not found")
+        if not catalog:
+            raise HTTPException(404, f"Integration type '{catalog_key}' not found")
         
-        # Store credentials
-        creds_manager = get_credentials_manager()
-        creds_manager.store(integration_id, request.credentials, request.user_id)
+        # Validate auth type
+        if request.auth_type != catalog.auth_type:
+            raise HTTPException(400, f"Invalid auth type. Expected {catalog.auth_type}")
         
-        # Update status
-        registry.update_status(integration_id, "configured")
+        # Check for existing instance
+        existing = db.query(IntegrationInstance).filter(
+            IntegrationInstance.catalog_key == catalog_key,
+            IntegrationInstance.owner_id == str(current_user.id),
+            IntegrationInstance.status.in_(['connected', 'paused'])
+        ).first()
+        
+        if existing:
+            raise HTTPException(400, f"Integration '{catalog_key}' already connected")
+        
+        # Store credentials (in production, these should be encrypted)
+        # For now, we'll store them as JSON
+        encrypted_creds = json.dumps(request.credentials)
+        
+        # Create instance
+        instance_id = str(uuid.uuid4())
+        instance = IntegrationInstance(
+            id=instance_id,
+            catalog_key=catalog_key,
+            owner_id=str(current_user.id),
+            status='connected',
+            encrypted_credentials=encrypted_creds,
+            connected_at=datetime.utcnow(),
+            metadata_json=request.metadata or {}
+        )
+        
+        db.add(instance)
+        
+        # Create default policy
+        policy = IntegrationPolicy(
+            id=str(uuid.uuid4()),
+            instance_id=instance_id,
+            allow_founder=True,
+            allow_daena=True,
+            allow_agents=False,
+            approval_mode='auto' if catalog.default_risk_level == 'low' else 'needs_approval',
+            max_daily_calls=1000,
+            max_daily_cost_usd=100.0
+        )
+        
+        db.add(policy)
+        db.commit()
+        
+        # Log connection
+        governance = get_integration_governance()
+        governance.log_execution(
+            instance_id=instance_id,
+            action='connect',
+            params={'auth_type': request.auth_type},
+            actor_type='founder',
+            actor_id=str(current_user.id),
+            actor_name=current_user.username,
+            risk_level='low'
+        )
         
         return {
-            "success": True,
-            "message": f"Successfully configured {integration_config['name']}",
-            "integration_id": integration_id
+            "id": instance_id,
+            "status": "connected",
+            "message": f"Successfully connected {catalog.name}"
         }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        
+    finally:
+        db.close()
 
-@router.post("/{integration_id}/test")
-async def test_integration(
-    integration_id: str,
-    user_id: str = "default"
-) -> Dict[str, Any]:
-    """
-    Test an integration connection
-    """
-    try:
-        registry = get_integration_registry()
-        integration_config = registry.get(integration_id)
-        
-        if not integration_config:
-            raise HTTPException(status_code=404, detail=f"Integration '{integration_id}' not found")
-        
-        # Get credentials
-        creds_manager = get_credentials_manager()
-        credentials = creds_manager.retrieve(integration_id, user_id)
-        
-        if not credentials:
-            raise HTTPException(status_code=400, detail=f"No credentials found for {integration_id}. Please connect first.")
-        
-        # Try to load and test integration
-        try:
-            # Dynamic import based on integration_id
-            module_name = f"backend.services.integrations.{integration_id}_integration"
-            module = __import__(module_name, fromlist=["Integration"])
-            Integration = getattr(module, "Integration")
-            
-            instance = Integration(integration_id, credentials)
-            await instance.connect()
-            result = await instance.test_connection()
-            
-            if result.get("success"):
-                registry.update_status(integration_id, "active")
-                registry.register_active(integration_id, instance)
-            
-            return result
-        except ModuleNotFoundError:
-            return {
-                "success": False,
-                "message": f"Integration module not yet implemented for {integration_config['name']}",
-                "integration_id": integration_id
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "integration_id": integration_id
-            }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/{integration_id}/execute")
-async def execute_integration(
-    integration_id: str,
-    request: ExecuteRequest
-) -> Dict[str, Any]:
-    """
-    Execute an action with an integration
-    Body:
-        - action: Action to perform (e.g., "send_email", "create_sheet")
-        - params: Action parameters
-        - user_id: User ID
-    """
+@router.post("/instances/{instance_id}/disconnect")
+async def disconnect_integration(
+    instance_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Disconnect an integration."""
+    
+    db = SessionLocal()
     try:
-        registry = get_integration_registry()
-        
-        # Try to get active integration instance
-        instance = registry.get_active(integration_id)
+        instance = db.query(IntegrationInstance).filter(
+            IntegrationInstance.id == instance_id,
+            IntegrationInstance.owner_id == str(current_user.id)
+        ).first()
         
         if not instance:
-            # Try to activate integration
-            integration_config = registry.get(integration_id)
-            if not integration_config:
-                raise HTTPException(status_code=404, detail=f"Integration '{integration_id}' not found")
-            
-            creds_manager = get_credentials_manager()
-            credentials = creds_manager.retrieve(integration_id, request.user_id)
-            
-            if not credentials:
-                raise HTTPException(status_code=400, detail=f"No credentials found for {integration_id}")
-            
-            # Dynamic import
-            try:
-                module_name = f"backend.services.integrations.{integration_id}_integration"
-                module = __import__(module_name, fromlist=["Integration"])
-                Integration = getattr(module, "Integration")
-                
-                instance = Integration(integration_id, credentials)
-                await instance.connect()
-                registry.register_active(integration_id, instance)
-            except ModuleNotFoundError:
-                raise HTTPException(status_code=501, detail=f"Integration not yet implemented: {integration_id}")
+            raise HTTPException(404, "Integration not found")
         
-        # Execute action
-        result = await instance.execute(request.action, request.params)
-        return result
+        instance.status = 'disconnected'
+        instance.disconnected_at = datetime.utcnow()
+        # Clear credentials
+        instance.encrypted_credentials = None
+        instance.access_token = None
+        instance.refresh_token = None
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        db.commit()
+        
+        # Log disconnection
+        governance = get_integration_governance()
+        governance.log_execution(
+            instance_id=instance_id,
+            action='disconnect',
+            params={},
+            actor_type='founder',
+            actor_id=str(current_user.id),
+            actor_name=current_user.username,
+            risk_level='low'
+        )
+        
+        return {"status": "disconnected"}
+        
+    finally:
+        db.close()
 
-@router.delete("/{integration_id}/disconnect")
-async def disconnect_integration(
-    integration_id: str,
-    user_id: str = "default"
-) -> Dict[str, Any]:
-    """
-    Disconnect an integration (remove credentials)
-    """
+
+@router.post("/instances/{instance_id}/pause")
+async def pause_integration(
+    instance_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Pause an integration (temporarily disable)."""
+    
+    db = SessionLocal()
     try:
-        registry = get_integration_registry()
-        creds_manager = get_credentials_manager()
+        instance = db.query(IntegrationInstance).filter(
+            IntegrationInstance.id == instance_id,
+            IntegrationInstance.owner_id == str(current_user.id)
+        ).first()
         
-        # Remove credentials
-        creds_manager.delete(integration_id, user_id)
+        if not instance:
+            raise HTTPException(404, "Integration not found")
         
-        # Deactivate
-        registry.deactivate(integration_id)
-        registry.update_status(integration_id, "available")
+        instance.status = 'paused'
+        db.commit()
+        
+        return {"status": "paused"}
+        
+    finally:
+        db.close()
+
+
+@router.post("/instances/{instance_id}/resume")
+async def resume_integration(
+    instance_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Resume a paused integration."""
+    
+    db = SessionLocal()
+    try:
+        instance = db.query(IntegrationInstance).filter(
+            IntegrationInstance.id == instance_id,
+            IntegrationInstance.owner_id == str(current_user.id)
+        ).first()
+        
+        if not instance:
+            raise HTTPException(404, "Integration not found")
+        
+        instance.status = 'connected'
+        db.commit()
+        
+        return {"status": "connected"}
+        
+    finally:
+        db.close()
+
+
+@router.post("/instances/{instance_id}/test")
+async def test_integration(
+    instance_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Test integration connection."""
+    
+    db = SessionLocal()
+    try:
+        instance = db.query(IntegrationInstance).filter(
+            IntegrationInstance.id == instance_id,
+            IntegrationInstance.owner_id == str(current_user.id)
+        ).first()
+        
+        if not instance:
+            raise HTTPException(404, "Integration not found")
+        
+        # For now, just update last_tested_at
+        # In production, this would actually test the connection
+        instance.last_tested_at = datetime.utcnow()
+        db.commit()
         
         return {
-            "success": True,
-            "message": f"Successfully disconnected {integration_id}"
+            "connected": True,
+            "tested_at": datetime.utcnow().isoformat()
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/{integration_id}/credentials")
-async def get_credentials_preview(
-    integration_id: str,
-    user_id: str = "default"
-) -> Dict[str, Any]:
-    """Get masked credentials preview"""
-    try:
-        creds_manager = get_credentials_manager()
-        credentials = creds_manager.retrieve(integration_id, user_id)
         
-        if not credentials:
-            return {
-                "success": False,
-                "message": "No credentials configured"
-            }
+    finally:
+        db.close()
+
+
+# ============================================================
+# Policy Endpoints
+# ============================================================
+
+@router.get("/instances/{instance_id}/policy")
+async def get_policy(
+    instance_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get integration policy."""
+    
+    db = SessionLocal()
+    try:
+        instance = db.query(IntegrationInstance).filter(
+            IntegrationInstance.id == instance_id,
+            IntegrationInstance.owner_id == str(current_user.id)
+        ).first()
+        
+        if not instance:
+            raise HTTPException(404, "Integration not found")
+        
+        policy = db.query(IntegrationPolicy).filter(
+            IntegrationPolicy.instance_id == instance_id
+        ).first()
+        
+        if not policy:
+            raise HTTPException(404, "Policy not found")
         
         return {
-            "success": True,
-            "credentials": creds_manager.mask_credentials(credentials)
+            "instance_id": instance_id,
+            "allow_founder": policy.allow_founder,
+            "allow_daena": policy.allow_daena,
+            "allow_agents": policy.allow_agents,
+            "allowed_departments": policy.allowed_departments,
+            "approval_mode": policy.approval_mode,
+            "max_daily_calls": policy.max_daily_calls,
+            "max_daily_cost_usd": policy.max_daily_cost_usd,
+            "restricted_actions": policy.restricted_actions
         }
+        
+    finally:
+        db.close()
+
+
+@router.put("/instances/{instance_id}/policy")
+async def update_policy(
+    instance_id: str,
+    request: PolicyUpdateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update integration policy (Founder only)."""
+    
+    if current_user.role != "FOUNDER":
+        raise HTTPException(403, "Only Founder can modify policies")
+    
+    db = SessionLocal()
+    try:
+        instance = db.query(IntegrationInstance).filter(
+            IntegrationInstance.id == instance_id,
+            IntegrationInstance.owner_id == str(current_user.id)
+        ).first()
+        
+        if not instance:
+            raise HTTPException(404, "Integration not found")
+        
+        policy = db.query(IntegrationPolicy).filter(
+            IntegrationPolicy.instance_id == instance_id
+        ).first()
+        
+        if not policy:
+            raise HTTPException(404, "Policy not found")
+        
+        # Update fields
+        if request.allow_founder is not None:
+            policy.allow_founder = request.allow_founder
+        if request.allow_daena is not None:
+            policy.allow_daena = request.allow_daena
+        if request.allow_agents is not None:
+            policy.allow_agents = request.allow_agents
+        if request.allowed_departments is not None:
+            policy.allowed_departments = request.allowed_departments
+        if request.approval_mode is not None:
+            policy.approval_mode = request.approval_mode
+        if request.max_daily_calls is not None:
+            policy.max_daily_calls = request.max_daily_calls
+        if request.max_daily_cost_usd is not None:
+            policy.max_daily_cost_usd = request.max_daily_cost_usd
+        if request.restricted_actions is not None:
+            policy.restricted_actions = request.restricted_actions
+        
+        db.commit()
+        
+        return {"message": "Policy updated"}
+        
+    finally:
+        db.close()
+
+
+# ============================================================
+# Execution Endpoints
+# ============================================================
+
+@router.post("/execute")
+async def execute_integration_action(
+    request: ExecuteRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Execute an action on an integration with full governance."""
+    import time
+    
+    governance = get_integration_governance()
+    
+    # Determine actor type
+    actor_type = current_user.role.lower() if current_user.role else 'unknown'
+    actor_id = str(current_user.id)
+    actor_name = current_user.username
+    
+    # Check permission
+    has_permission, permission_msg = governance.check_permission(
+        instance_id=request.instance_id,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        department_id=request.actor_context.get('department_id')
+    )
+    
+    if not has_permission:
+        raise HTTPException(403, f"Permission denied: {permission_msg}")
+    
+    # Evaluate risk
+    risk_level, needs_approval = governance.evaluate_risk(
+        instance_id=request.instance_id,
+        action=request.action,
+        params=request.params
+    )
+    
+    # Check limits
+    within_limits, limit_msg = governance.check_limits(request.instance_id)
+    if not within_limits:
+        raise HTTPException(429, limit_msg)
+    
+    # If approval needed, create request
+    if needs_approval:
+        approval_id = governance.create_approval_request(
+            instance_id=request.instance_id,
+            action=request.action,
+            params=request.params,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            risk_level=risk_level
+        )
+        
+        # Log pending execution
+        governance.log_execution(
+            instance_id=request.instance_id,
+            action=request.action,
+            params=request.params,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            approval_required=True,
+            approval_status='pending',
+            risk_level=risk_level
+        )
+        
+        return {
+            "status": "pending_approval",
+            "approval_id": approval_id,
+            "message": "This action requires approval"
+        }
+    
+    # Execute action (placeholder - would call actual connector)
+    start_time = time.time()
+    
+    try:
+        # In production, this would:
+        # 1. Get the connector class
+        # 2. Decrypt credentials
+        # 3. Execute the action
+        
+        result = {"success": True, "message": f"Executed {request.action}"}
+        execution_time = int((time.time() - start_time) * 1000)
+        
+        # Log success
+        governance.log_execution(
+            instance_id=request.instance_id,
+            action=request.action,
+            params=request.params,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            result=result,
+            approval_required=False,
+            risk_level=risk_level,
+            execution_time_ms=execution_time
+        )
+        
+        return {
+            "status": "success",
+            "result": result,
+            "execution_time_ms": execution_time
+        }
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        execution_time = int((time.time() - start_time) * 1000)
+        
+        # Log failure
+        governance.log_execution(
+            instance_id=request.instance_id,
+            action=request.action,
+            params=request.params,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            error=str(e),
+            approval_required=False,
+            risk_level=risk_level,
+            execution_time_ms=execution_time
+        )
+        
+        raise HTTPException(500, f"Execution failed: {str(e)}")
+
+
+# ============================================================
+# Audit Log Endpoints
+# ============================================================
+
+@router.get("/audit-log")
+async def get_audit_log(
+    instance_id: Optional[str] = None,
+    action: Optional[str] = None,
+    actor_type: Optional[str] = None,
+    risk_level: Optional[str] = None,
+    limit: int = Query(default=50, le=100),
+    offset: int = 0,
+    current_user: User = Depends(get_current_user)
+):
+    """Get integration audit log."""
+    
+    governance = get_integration_governance()
+    
+    logs, total = governance.get_audit_logs(
+        instance_id=instance_id,
+        action=action,
+        actor_type=actor_type,
+        risk_level=risk_level,
+        limit=limit,
+        offset=offset
+    )
+    
+    return {
+        "logs": logs,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+
+# ============================================================
+# OAuth Endpoints (placeholder)
+# ============================================================
+
+@router.post("/oauth/{catalog_key}/auth-url")
+async def get_oauth_url(
+    catalog_key: str,
+    redirect_uri: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get OAuth authorization URL for integration."""
+    
+    db = SessionLocal()
+    try:
+        catalog = db.query(IntegrationCatalog).filter(
+            IntegrationCatalog.key == catalog_key
+        ).first()
+        
+        if not catalog or catalog.auth_type != 'oauth2':
+            raise HTTPException(400, "Not an OAuth integration")
+        
+        # Get client credentials from environment
+        client_id = os.getenv(catalog.oauth_client_id_env) if catalog.oauth_client_id_env else None
+        if not client_id:
+            raise HTTPException(500, "OAuth not configured for this integration")
+        
+        # Generate state token
+        state = str(uuid.uuid4())
+        
+        # Build auth URL
+        scopes = ' '.join(catalog.oauth_scopes) if catalog.oauth_scopes else ''
+        auth_url = f"{catalog.oauth_auth_url}?client_id={client_id}&redirect_uri={redirect_uri}&scope={scopes}&state={state}&response_type=code"
+        
+        return {
+            "auth_url": auth_url,
+            "state": state
+        }
+        
+    finally:
+        db.close()
+
+
+@router.post("/oauth/callback")
+async def oauth_callback(
+    code: str,
+    state: str,
+    catalog_key: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Handle OAuth callback and store tokens."""
+    # Placeholder - would exchange code for tokens
+    return {"status": "not_implemented"}

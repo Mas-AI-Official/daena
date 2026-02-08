@@ -27,9 +27,26 @@ export function Dashboard() {
     const navigate = useNavigate();
     const { agents, fetchAgents } = useAgentStore();
 
+    const [activity, setActivity] = React.useState<any[]>([]);
+
     // Initial fetch
     useEffect(() => {
         fetchAgents();
+
+        // Fetch activity
+        const loadActivity = async () => {
+            try {
+                const data = await import('../../services/api/agents').then(m => m.agentsApi.getActivity());
+                setActivity(data);
+            } catch (e) {
+                console.error("Failed to load activity", e);
+            }
+        };
+        loadActivity();
+
+        // Poll for activity every 5 seconds
+        const interval = setInterval(loadActivity, 5000);
+        return () => clearInterval(interval);
     }, [fetchAgents]);
 
     const activeAgents = agents.filter(a => a.status === 'active').length;
@@ -117,22 +134,41 @@ export function Dashboard() {
                     <CardHeader>
                         <CardTitle>Live Activity</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                        {[1, 2, 3, 4, 5].map((i) => (
-                            <div key={i} className="flex gap-3 items-start animate-fade-in-up" style={{ animationDelay: `${i * 100}ms` }}>
-                                <div className="w-8 h-8 rounded-lg bg-midnight-200 border border-white/5 flex items-center justify-center shrink-0">
-                                    <span className="text-xs font-mono text-starlight-300">A{i}</span>
+                    <CardContent className="space-y-4 max-h-[320px] overflow-y-auto pr-2 custom-scrollbar">
+                        {activity.length > 0 ? (
+                            activity.slice(0, 10).map((item, i) => (
+                                <div key={i} className="flex gap-3 items-start animate-fade-in-up" style={{ animationDelay: `${i * 100}ms` }}>
+                                    <div className="w-8 h-8 rounded-lg bg-midnight-200 border border-white/5 flex items-center justify-center shrink-0">
+                                        <span className="text-xs font-mono text-starlight-300">
+                                            {item.agent_name.slice(0, 2).toUpperCase()}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-starlight-100">
+                                            <span className="text-primary-400 font-medium">{item.agent_name}</span>
+                                            {item.status === 'working' ? (
+                                                <span className="text-starlight-300"> is working on </span>
+                                            ) : (
+                                                <span className="text-starlight-300"> is </span>
+                                            )}
+                                            {item.current_task ? (
+                                                <span className="text-white italic">"{item.current_task.description}"</span>
+                                            ) : (
+                                                <span className="text-starlight-400">{item.status}</span>
+                                            )}
+                                        </p>
+                                        <p className="text-xs text-starlight-300 mt-1 flex items-center gap-1">
+                                            {item.department} • {item.last_activity ? new Date(item.last_activity).toLocaleTimeString() : 'Just now'}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="text-sm text-starlight-100">
-                                        Agent <span className="text-primary-400">Advisor-{i}</span> analyzed Q3 Report
-                                    </p>
-                                    <p className="text-xs text-starlight-300 mt-1 flex items-center gap-1">
-                                        Research Dept • 2m ago
-                                    </p>
-                                </div>
+                            ))
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-40 text-starlight-400 text-sm">
+                                <Activity className="w-8 h-8 mb-2 opacity-20" />
+                                No recent activity
                             </div>
-                        ))}
+                        )}
                     </CardContent>
                 </Card>
             </div>

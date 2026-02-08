@@ -11,6 +11,9 @@ import { strategyApi } from './strategy';
 import { outcomesApi } from './outcomes';
 import { founderApi } from './founder';
 import { councilsApi } from './councils';
+import { ideApi } from './ide';
+import { cmpApi } from './cmp';
+import { fileSystemApi, terminalApi, codeExecutionApi } from './fileSystem';
 
 export const api = {
     agents: agentsApi,
@@ -25,5 +28,12 @@ export const api = {
     strategy: strategyApi,
     outcomes: outcomesApi,
     founder: founderApi,
-    councils: councilsApi
+    councils: councilsApi,
+    ide: ideApi,
+    cmp: cmpApi,
+    fileSystem: fileSystemApi,
+    terminal: terminalApi,
+    codeExecution: codeExecutionApi
 };
+
+

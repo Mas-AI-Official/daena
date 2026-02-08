@@ -10,7 +10,7 @@ Every stage is broadcast via event_bus so Control Plane can show
 the Think→Plan→Act pipeline in real time.
 """
 
-from fastapi import APIRouter, WebSocket
+from fastapi import APIRouter, WebSocket, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 import time

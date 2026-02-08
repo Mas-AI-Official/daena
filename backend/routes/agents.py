@@ -443,6 +443,86 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
         db.close()
 
 
+@router.post("/{agent_id}/pause")
+async def pause_agent(agent_id: str, db: Session = Depends(get_db)):
+    """Pause an active agent."""
+    from backend.database import Agent
+    
+    try:
+        agent = db.query(Agent).filter(Agent.cell_id == agent_id).first()
+        if not agent:
+            try:
+                agent = db.query(Agent).filter(Agent.id == int(agent_id)).first()
+            except ValueError:
+                pass
+            
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+            
+        agent.status = "paused"
+        agent.is_active = False
+        db.commit()
+        
+        # Emit event
+        try:
+            from backend.core.websocket_manager import websocket_manager
+            await websocket_manager.publish_event(
+                event_type="agent.paused",
+                entity_type="agent",
+                entity_id=agent.cell_id,
+                payload={"id": agent.cell_id, "status": "paused"},
+                created_by="system"
+            )
+        except Exception as e:
+            logger.warning(f"Event emit failed: {e}")
+        
+        return {"success": True, "message": "Agent paused", "status": agent.status}
+    except Exception as e:
+        logger.error(f"Error pausing agent: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to pause agent: {str(e)}")
+
+
+@router.post("/{agent_id}/resume")
+async def resume_agent(agent_id: str, db: Session = Depends(get_db)):
+    """Resume a paused agent."""
+    from backend.database import Agent
+    
+    try:
+        agent = db.query(Agent).filter(Agent.cell_id == agent_id).first()
+        if not agent:
+            try:
+                agent = db.query(Agent).filter(Agent.id == int(agent_id)).first()
+            except ValueError:
+                pass
+            
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+            
+        agent.status = "active"
+        agent.is_active = True
+        db.commit()
+        
+        # Emit event
+        try:
+            from backend.core.websocket_manager import websocket_manager
+            await websocket_manager.publish_event(
+                event_type="agent.resumed",
+                entity_type="agent",
+                entity_id=agent.cell_id,
+                payload={"id": agent.cell_id, "status": "active"},
+                created_by="system"
+            )
+        except Exception as e:
+            logger.warning(f"Event emit failed: {e}")
+        
+        return {"success": True, "message": "Agent resumed", "status": agent.status}
+    except Exception as e:
+        logger.error(f"Error resuming agent: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to resume agent: {str(e)}")
+
+
 @router.get("/department/{department_id}")
 async def get_agents_by_department(department_id: str) -> Dict[str, Any]:
     """Get all agents for a specific department"""

@@ -476,6 +476,44 @@ class PendingApproval(Base):
     founder_note = Column(Text, nullable=True)  # Added for Founder Policy Center
     decision_at = Column(DateTime, nullable=True)  # Added for Founder Policy Center
 
+# NEW: VaultSecret table (encrypted secrets storage)
+class VaultSecret(Base):
+    """Secure encrypted secrets storage with audit trail."""
+    __tablename__ = "vault_secrets"
+    id = Column(Integer, primary_key=True, index=True)
+    secret_id = Column(String, unique=True, index=True)  # Unique secret identifier
+    name = Column(String, nullable=False, index=True)  # Human-readable name
+    category = Column(String, default="general", index=True)  # api_key, password, token, certificate, etc.
+    
+    # Encryption fields - value is encrypted client-side, then server-side (double encryption)
+    encrypted_value = Column(Text, nullable=False)  # Fernet-encrypted value
+    encryption_version = Column(Integer, default=1)  # Encryption algorithm version for rotation
+    key_derivation_salt = Column(String, nullable=True)  # Salt for key derivation (if applicable)
+    
+    # Access control
+    owner_id = Column(String, nullable=False, index=True)  # User/tenant who owns this secret
+    owner_type = Column(String, default="user")  # user, tenant, system
+    allowed_accessors = Column(JSON, default=[])  # List of user/agent IDs allowed to read
+    
+    # Audit trail
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_by = Column(String, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    last_accessed_at = Column(DateTime, nullable=True)
+    last_accessed_by = Column(String, nullable=True)
+    access_count = Column(Integer, default=0)
+    
+    # Lifecycle
+    expires_at = Column(DateTime, nullable=True)  # Optional expiration
+    is_rotatable = Column(Boolean, default=True)  # Can be auto-rotated
+    rotation_schedule_days = Column(Integer, nullable=True)  # Auto-rotation interval
+    last_rotated_at = Column(DateTime, nullable=True)
+    
+    # Metadata
+    description = Column(Text, nullable=True)
+    tags = Column(JSON, default=[])  # Additional tags for filtering
+    metadata_json = Column(JSON, default={})  # Extra metadata
+
 # ... (omitted sections)
 
 # Create all tables
@@ -797,6 +835,156 @@ class Alert(Base):
     is_read = Column(Boolean, default=False)
     read_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+# ============================================================
+# CMP INTEGRATION HUB MODELS
+# ============================================================
+
+class IntegrationCatalog(Base):
+    """Catalog of available integration types (apps that can be connected)."""
+    __tablename__ = "integration_catalog"
+    
+    id = Column(String, primary_key=True, index=True)
+    key = Column(String, unique=True, nullable=False)  # 'github', 'slack', etc.
+    name = Column(String, nullable=False)  # Display name
+    category = Column(String, nullable=False)  # 'communication', 'development', 'productivity'
+    
+    # Visual
+    icon_url = Column(String, nullable=True)  # URL or local path
+    icon_svg = Column(Text, nullable=True)  # Inline SVG for offline
+    color = Column(String, nullable=True)  # Brand color hex
+    
+    # Authentication
+    auth_type = Column(String, nullable=False)  # 'oauth2', 'api_key', 'webhook'
+    
+    # OAuth2 fields (nullable for non-OAuth)
+    oauth_auth_url = Column(String, nullable=True)
+    oauth_token_url = Column(String, nullable=True)
+    oauth_scopes = Column(JSON, default=[])  # Available scopes
+    oauth_client_id_env = Column(String, nullable=True)  # Env var name for client ID
+    oauth_client_secret_env = Column(String, nullable=True)  # Env var name for secret
+    
+    # API Key fields
+    api_key_fields = Column(JSON, default=[])  # ['api_key', 'subdomain']
+    
+    # Security
+    default_risk_level = Column(String, default='medium')  # 'low', 'medium', 'high'
+    requires_approval = Column(Boolean, default=False)
+    allowed_actions = Column(JSON, default=[])  # List of permitted actions
+    
+    # Metadata
+    description = Column(Text, nullable=True)
+    documentation_url = Column(String, nullable=True)
+    is_enabled = Column(Boolean, default=True)
+    is_featured = Column(Boolean, default=False)  # Show in main grid
+    
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class IntegrationInstance(Base):
+    """A connected instance of an integration (the actual connection a user has)."""
+    __tablename__ = "integration_instances"
+    
+    id = Column(String, primary_key=True, index=True)
+    catalog_key = Column(String, ForeignKey("integration_catalog.key"), nullable=False)
+    
+    # Ownership
+    owner_id = Column(String, nullable=False)  # Usually Founder user ID
+    
+    # Status
+    status = Column(String, default='disconnected')  # 'connected', 'disconnected', 'paused', 'error'
+    status_message = Column(String, nullable=True)  # Error message or status details
+    
+    # Encrypted credentials (server-side encryption)
+    encrypted_credentials = Column(Text, nullable=True)  # AES-256 encrypted
+    encryption_iv = Column(String, nullable=True)  # Initialization vector
+    
+    # OAuth tokens (if applicable)
+    access_token = Column(Text, nullable=True)  # Encrypted
+    refresh_token = Column(Text, nullable=True)  # Encrypted
+    token_expires_at = Column(DateTime, nullable=True)
+    
+    # Connection metadata
+    connected_at = Column(DateTime, nullable=True)
+    disconnected_at = Column(DateTime, nullable=True)
+    last_tested_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+    
+    # Provider-specific metadata (workspace, org, etc.)
+    metadata_json = Column(JSON, default={})
+    
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class IntegrationPolicy(Base):
+    """Policy for an integration instance - controls who can use it and how."""
+    __tablename__ = "integration_policies"
+    
+    id = Column(String, primary_key=True, index=True)
+    instance_id = Column(String, ForeignKey("integration_instances.id"), nullable=False)
+    
+    # Who can use this integration
+    allow_founder = Column(Boolean, default=True)
+    allow_daena = Column(Boolean, default=True)
+    allow_agents = Column(Boolean, default=False)
+    allowed_departments = Column(JSON, default=[])  # List of department IDs
+    
+    # Approval settings
+    approval_mode = Column(String, default='auto')  # 'auto', 'needs_approval', 'always'
+    
+    # Limits
+    max_daily_calls = Column(Integer, default=1000)
+    max_daily_cost_usd = Column(Float, default=100.0)
+    
+    # Restricted actions (e.g., "delete_repo", "send_email")
+    restricted_actions = Column(JSON, default=[])
+    
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class IntegrationAuditLog(Base):
+    """Immutable audit log for all integration actions."""
+    __tablename__ = "integration_audit_logs"
+    
+    id = Column(String, primary_key=True, index=True)
+    
+    # Actor
+    actor_type = Column(String, nullable=False)  # 'founder', 'daena', 'agent', 'system'
+    actor_id = Column(String, nullable=False)
+    actor_name = Column(String, nullable=True)
+    
+    # Target
+    instance_id = Column(String, ForeignKey("integration_instances.id"), nullable=True)
+    catalog_key = Column(String, nullable=True)
+    
+    # Action
+    action = Column(String, nullable=False)  # 'connect', 'disconnect', 'pause', 'execute', 'test'
+    action_details = Column(JSON, default={})
+    
+    # Request/Result
+    request_summary = Column(Text, nullable=True)
+    result_summary = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    
+    # Governance
+    risk_level = Column(String, default='low')  # 'low', 'medium', 'high'
+    approval_required = Column(Boolean, default=False)
+    approval_status = Column(String, nullable=True)  # 'pending', 'approved', 'denied'
+    approval_id = Column(String, nullable=True)
+    
+    # Performance
+    execution_time_ms = Column(Integer, nullable=True)
+    
+    # Traceability  
+    trace_id = Column(String, nullable=True)  # For distributed tracing
+    session_id = Column(String, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
 
 # Database session - DUPLICATE REMOVED
 # Create all tables - DUPLICATE REMOVED

@@ -1420,6 +1420,14 @@ try:
     except ImportError as e:
         logger.warning(f"⚠️ File System API not available: {e}")
 
+    # IDE API (Code Intelligence, File Operations, Terminal)
+    try:
+        from backend.routes.ide import router as ide_router
+        app.include_router(ide_router)
+        logger.info("✅ IDE API registered at /api/v1/ide")
+    except ImportError as e:
+        logger.warning(f"⚠️ IDE API not available: {e}")
+
     # Vault API (Secure Secrets)
     try:
         from backend.routes.vault import router as vault_router
@@ -1452,6 +1460,14 @@ try:
     except ImportError as e:
         logger.warning(f"Integrations routes not available: {e}")
     
+    # CMP (Connected Media Protocol) API
+    try:
+        from backend.routes.cmp import router as cmp_router
+        app.include_router(cmp_router)
+        logger.info("✅ CMP API registered at /api/v1/cmp")
+    except ImportError as e:
+        logger.warning(f"⚠️ CMP API not available: {e}")
+    
     # Monitoring endpoints
     try:
         from backend.routes.monitoring import router as monitoring_router
@@ -1468,6 +1484,22 @@ try:
     except ImportError as e:
         logger.warning(f"⚠️ System summary routes not available: {e}")
     
+    # Agent Activity Routes (Load BEFORE agents to avoid {agent_id} capturing "activity")
+    try:
+        from backend.routes.agent_activity import router as agent_activity_router
+        app.include_router(agent_activity_router)  # Shares prefix /api/v1/agents
+        logger.info("✅ Agent Activity API registered")
+    except ImportError as e:
+        logger.warning(f"⚠️ Agent Activity API not available: {e}")
+
+    # Agent Management Routes
+    try:
+        from backend.routes.agents import router as agents_router
+        app.include_router(agents_router)
+        logger.info("✅ Agents API registered at /api/v1/agents")
+    except ImportError as e:
+        logger.warning(f"⚠️ Agents API not available: {e}")
+
     # UI routes (dashboard, agents, etc.) - Explicit registration to ensure it works
     try:
         from backend.routes.ui import router as ui_router

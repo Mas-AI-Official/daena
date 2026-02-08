@@ -13,10 +13,13 @@ class WebSocketClient {
   private reconnectDelay = 1000;
   private messageQueue: any[] = [];
   private isConnecting = false;
-  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private eventCallbacks: Map<string, EventCallback[]> = new Map();
+  private url: string;
 
-  constructor(private url: string) {}
+  constructor(url: string) {
+    this.url = url;
+  }
 
   // Subscribe to events
   on(event: string, callback: EventCallback): void {
@@ -257,3 +260,14 @@ export function useWebSocketEvent(event: string, callback: EventCallback): void 
   const ws = getWebSocketClient();
   ws.on(event, callback);
 }
+
+// Export wsService for backwards compatibility
+export const wsService = {
+  connect: (token?: string) => initWebSocket(token || ''),
+  disconnect: () => closeWebSocket(),
+  on: (event: string, callback: EventCallback) => getWebSocketClient().on(event, callback),
+  off: (event: string, callback: EventCallback) => getWebSocketClient().off(event, callback),
+  send: (event: string, data?: any) => getWebSocketClient().send({ event, data }),
+  isConnected: () => getWebSocketClient().isConnected(),
+};
+

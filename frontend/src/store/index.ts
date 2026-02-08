@@ -1,6 +1,8 @@
 // Central export point for all Zustand stores
-export * from './websocketSlice';
-export * from './chatSlice';
-export * from './skillsSlice';
-export * from './brainSlice';
-export * from './projectsSlice';
+export * from './agentStore';
+export * from './authStore';
+export * from './chatStore';
+export * from './cmpStore';
+export * from './eventsStore';
+export * from './skillsStore';
+export * from './uiStore';
