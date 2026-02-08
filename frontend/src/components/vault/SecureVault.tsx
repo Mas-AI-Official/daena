@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { vaultApi, type Secret } from '../../services/api/vault';
 import { useUIStore } from '../../store/uiStore';
-import { Lock, Eye, EyeOff, Plus, Trash2, Shield, Key } from 'lucide-react';
+import { Lock, Eye, EyeOff, Plus, Trash2, Shield, Key, Loader2 } from 'lucide-react';
+import { ConfirmationModal } from '../common/ConfirmationModal';
+import { useToast } from '../common/ToastProvider';
 
 export const SecureVault: React.FC = () => {
     const [secrets, setSecrets] = useState<Secret[]>([]);
@@ -9,6 +11,11 @@ export const SecureVault: React.FC = () => {
     const [revealedSecret, setRevealedSecret] = useState<{ id: string, value: string } | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
     const { addNotification } = useUIStore();
+    const toast = useToast();
+
+    // Deletion state
+    const [deletingSecret, setDeletingSecret] = useState<Secret | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // New secret form state
     const [newSecretName, setNewSecretName] = useState('');
@@ -25,7 +32,7 @@ export const SecureVault: React.FC = () => {
             const data = await vaultApi.listSecrets();
             setSecrets(data);
         } catch (error) {
-            addNotification({ title: 'Error', message: 'Failed to load secrets', type: 'error' });
+            toast.error('Failed to load secrets');
         } finally {
             setLoading(false);
         }
@@ -41,19 +48,23 @@ export const SecureVault: React.FC = () => {
             const data = await vaultApi.getSecret(id);
             setRevealedSecret(data);
         } catch (error) {
-            addNotification({ title: 'Access Denied', message: 'Could not decrypt secret', type: 'error' });
+            toast.error('Could not decrypt secret');
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this secret? This cannot be undone.')) return;
+    const handleDeleteConfirm = async () => {
+        if (!deletingSecret) return;
 
+        setIsDeleting(true);
         try {
-            await vaultApi.deleteSecret(id);
-            addNotification({ title: 'Success', message: 'Secret deleted', type: 'success' });
+            await vaultApi.deleteSecret(deletingSecret.id);
+            toast.success('Secret deleted');
             loadSecrets();
         } catch (error) {
-            addNotification({ title: 'Error', message: 'Failed to delete secret', type: 'error' });
+            toast.error('Failed to delete secret');
+        } finally {
+            setIsDeleting(false);
+            setDeletingSecret(null);
         }
     };
 
@@ -136,7 +147,7 @@ export const SecureVault: React.FC = () => {
                                     )}
                                 </button>
                                 <button
-                                    onClick={() => handleDelete(secret.id)}
+                                    onClick={() => setDeletingSecret(secret)}
                                     className="text-xs text-status-error/70 hover:text-status-error flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                                 >
                                     <Trash2 className="w-3 h-3" /> Delete
@@ -213,6 +224,18 @@ export const SecureVault: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* Delete Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={!!deletingSecret}
+                onClose={() => setDeletingSecret(null)}
+                onConfirm={handleDeleteConfirm}
+                title="Delete Secret"
+                message={`Are you sure you want to delete "${deletingSecret?.name}"? This action cannot be undone and the secret will be permanently removed from the vault.`}
+                confirmText="Delete"
+                isDanger
+                isLoading={isDeleting}
+            />
         </div>
     );
 };
