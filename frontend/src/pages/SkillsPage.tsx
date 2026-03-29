@@ -363,6 +363,9 @@ export function SkillsPage() {
       localStorage.setItem('daena:skill_permissions', JSON.stringify(next))
       return next
     })
+    // Sync to backend: map permission to governance tier
+    const tierMap: Record<PermissionLevel, number> = { ALWAYS_ALLOW: 0, ASK_EACH_TIME: 2, BLOCK: 4 }
+    api.patch(`/skills/${id}`, { governance_tier: tierMap[level] }).catch(() => {})
   }, [])
 
   // Active category matcher
@@ -444,17 +447,67 @@ export function SkillsPage() {
                   : `Skills in the ${categoryDef.label} category`}
               </p>
             </div>
-            <div className="relative group">
+            <div className="flex items-center gap-2">
+              {/* Batch permission controls */}
+              <select
+                onChange={(e) => {
+                  const level = e.target.value as PermissionLevel
+                  if (!level) return
+                  const updated = { ...permissions }
+                  filtered.forEach((s) => { updated[s.id] = level })
+                  setPermissions(updated)
+                  localStorage.setItem('daena:skill_permissions', JSON.stringify(updated))
+                  // Sync to backend
+                  filtered.forEach((s) => {
+                    api.patch(`/skills/${s.id}`, { governance_tier: level === 'ALWAYS_ALLOW' ? 0 : level === 'ASK_EACH_TIME' ? 2 : 4 }).catch(() => {})
+                  })
+                  toast.success(`Set ${filtered.length} skills to ${level === 'ALWAYS_ALLOW' ? 'Always Allow' : level === 'ASK_EACH_TIME' ? 'Needs Approval' : 'Blocked'}`)
+                  e.target.value = ''
+                }}
+                className="px-2 py-1.5 rounded-lg text-xs bg-white/5 border border-white/10 text-starlight-400 cursor-pointer"
+              >
+                <option value="">Batch: Set all visible...</option>
+                <option value="ALWAYS_ALLOW">Allow All</option>
+                <option value="ASK_EACH_TIME">Ask All</option>
+                <option value="BLOCK">Block All</option>
+              </select>
+
+              {/* Import Skill */}
               <button
-                disabled
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-starlight-500 bg-white/5 border border-white/10 cursor-not-allowed opacity-60"
+                onClick={() => {
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = '.json,.md'
+                  input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0]
+                    if (!file) return
+                    try {
+                      const text = await file.text()
+                      if (file.name.endsWith('.json')) {
+                        const data = JSON.parse(text)
+                        await api.post('/skills', {
+                          name: data.name || file.name.replace('.json', ''),
+                          description: data.description || 'Imported skill',
+                          category: data.category || 'custom',
+                          schema_def: data.schema || data,
+                          governance_tier: 2,
+                        })
+                        toast.success(`Imported skill: ${data.name || file.name}`)
+                        fetchSkills()
+                      } else {
+                        toast.info('Markdown skill import: file received. Manual registration needed.')
+                      }
+                    } catch (err) {
+                      toast.error('Failed to import skill. Check file format.')
+                    }
+                  }
+                  input.click()
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-primary-400 bg-primary-500/10 border border-primary-500/20 hover:bg-primary-500/20 cursor-pointer"
               >
                 <Upload size={12} />
                 Import Skill
               </button>
-              <div className="absolute top-full right-0 mt-1 px-2 py-1 rounded bg-midnight-100 text-[10px] text-starlight-300 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-white/10 shadow-lg z-50">
-                Coming soon -- skill import from file
-              </div>
             </div>
           </div>
 
