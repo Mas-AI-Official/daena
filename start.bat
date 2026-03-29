@@ -1,36 +1,50 @@
 @echo off
-echo === Daena Startup ===
+:: =============================================================
+:: Daena -- Quick Start (works from any location)
+:: =============================================================
+setlocal
 
-:: Kill all Python processes (old servers)
+set "ROOT=%~dp0"
+set "ROOT=%ROOT:~0,-1%"
+
+echo.
+echo  === Daena Startup ===
+echo.
+
+:: Kill old server processes
 taskkill /f /im python.exe >nul 2>&1
-timeout /t 3 /nobreak >nul
+timeout /t 2 /nobreak >nul
 
-:: Start backend on port 8005
-echo Starting backend on port 8005...
-cd /d D:\Ideas\Daena\backend
-start /b D:\Ideas\Daena\venv_daena\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8005
-timeout /t 6 /nobreak >nul
+:: Start backend
+echo  Starting backend...
+cd /d "%ROOT%\backend"
+if exist ".venv\Scripts\python.exe" (
+    start /b .venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+) else (
+    start /b python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+)
+timeout /t 5 /nobreak >nul
 
-:: Verify backend is up
-curl -s http://localhost:8005/api/v1/health >nul 2>&1
+:: Verify backend
+curl -s http://127.0.0.1:8000/api/v1/health >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Backend failed to start!
+    echo  [!] Backend failed to start. Run setup-daena.bat first.
     pause
     exit /b 1
 )
-echo Backend: OK
+echo  Backend:  http://127.0.0.1:8000  [OK]
 
-:: Start frontend proxying to 8005
-echo Starting frontend on port 5173...
-cd /d D:\Ideas\Daena\frontend
-set DAENA_BACKEND_PORT=8005
+:: Start frontend
+echo  Starting frontend...
+cd /d "%ROOT%\frontend"
 start /b npm run dev
-
 timeout /t 4 /nobreak >nul
+
 echo.
-echo === Daena Ready ===
-echo Backend:  http://localhost:8005
-echo Frontend: http://localhost:5173
-echo Login:    masoud.masoori@mas-ai.co
+echo  ============================================
+echo   DAENA IS RUNNING
+echo   Backend:  http://127.0.0.1:8000
+echo   Frontend: http://127.0.0.1:5173
+echo  ============================================
 echo.
 pause

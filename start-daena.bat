@@ -15,8 +15,9 @@ echo   DAENA — Starting Development Environment
 echo  ============================================
 echo.
 
-set "ROOT=D:\Ideas\Daena"
-set "VENV=%ROOT%\venv_daena"
+set "ROOT=%~dp0"
+set "ROOT=%ROOT:~0,-1%"
+set "VENV=%ROOT%\backend\.venv"
 set "BACKEND=%ROOT%\backend"
 set "FRONTEND=%ROOT%\frontend"
 set "PORT_FILE=%BACKEND%\.daena-port"
