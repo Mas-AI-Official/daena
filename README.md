@@ -7,9 +7,11 @@
   <br/>
 </p>
 
-<h1 align="center">D &thinsp; A &thinsp; E &thinsp; N &thinsp; A</h1>
+<h1 align="center">
+  <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=800&size=42&duration=3000&pause=1000&color=2DD4BF&center=true&vCenter=true&width=500&height=60&lines=D+A+E+N+A" alt="DAENA" />
+</h1>
 
-<h3 align="center">Your AI Vice President</h3>
+<h3 align="center">The First AI Vice President</h3>
 
 <p align="center">
   <sub>Governed Multi-Agent Orchestration Platform</sub><br/>
@@ -136,9 +138,7 @@ pay $29-99/mo for everything.**
 > **Same platform. Same features. Same 60 agents.** Free = bring your own LLMs. Pro = we provide them all.
 
 <details>
-<summary>
-<img src="https://img.shields.io/badge/>>-See_pricing_vs_competitors-0EA5E9?style=flat-square" /> (verified March 2026)
-</summary>
+<summary><strong>See pricing vs competitors</strong> (verified March 2026)</summary>
 <br/>
 
 | | Perplexity | ChatGPT Pro | Claude Max | Manus | **Daena Free** | **Daena Pro** |
@@ -177,9 +177,7 @@ Security > Session > Intent > Governance > Cost > Router > Memory > Build > Stre
 **Total pipeline overhead: under 25ms.** Governance is invisible for routine tasks, visible only when it matters.
 
 <details>
-<summary>
-<img src="https://img.shields.io/badge/>>-Architecture_diagram-0EA5E9?style=flat-square" />
-</summary>
+<summary><strong>Architecture diagram</strong></summary>
 <br/>
 
 ```mermaid
@@ -202,9 +200,7 @@ graph TB
 </details>
 
 <details>
-<summary>
-<img src="https://img.shields.io/badge/>>-All_features-0EA5E9?style=flat-square" />
-</summary>
+<summary><strong>All features</strong></summary>
 <br/>
 
 - **Multi-Runtime**: 9 providers. Set Primary Mind to choose which leads. Others become fallbacks.
@@ -241,9 +237,7 @@ graph TB
 | Ports | **Configurable via env** | Hardcoded | N/A |
 
 <details>
-<summary>
-<img src="https://img.shields.io/badge/>>-The_9_Hard_Laws-0EA5E9?style=flat-square" />
-</summary>
+<summary><strong>The 9 Hard Laws</strong></summary>
 <br/>
 
 1. No live trading without human activation
@@ -275,9 +269,7 @@ These are hardcoded. No user, admin, or founder can modify them.
 Enterprise (100 users, 50 msgs/day): **$14,052/year saved** vs direct GPT-4o.
 
 <details>
-<summary>
-<img src="https://img.shields.io/badge/>>-Detailed_benchmark-0EA5E9?style=flat-square" />
-</summary>
+<summary><strong>Detailed benchmark</strong></summary>
 <br/>
 
 | Query | Regular (GPT-4o) | Daena | Savings |
@@ -337,9 +329,7 @@ npm install -g @google/gemini-cli           # Uses your Google subscription
 **API keys are optional.** Daena works with Ollama alone.
 
 <details>
-<summary>
-<img src="https://img.shields.io/badge/>>-Phone_access-0EA5E9?style=flat-square" />
-</summary>
+<summary><strong>Phone access</strong></summary>
 <br/>
 
 Install [Chrome Remote Desktop](https://remotedesktop.google.com) on your computer. Open it from your phone's browser. Full Daena access: chat, upload, download, manage files, approve governance gates. No mobile app needed.
@@ -347,9 +337,7 @@ Install [Chrome Remote Desktop](https://remotedesktop.google.com) on your comput
 </details>
 
 <details>
-<summary>
-<img src="https://img.shields.io/badge/>>-API_keys_(optional)-0EA5E9?style=flat-square" />
-</summary>
+<summary><strong>API keys (optional)</strong></summary>
 <br/>
 
 | Provider | Key | Where |
@@ -387,7 +375,7 @@ Add in Settings or `backend/.env`. Zero required.
 </table>
 
 <details>
-<summary><img src="https://img.shields.io/badge/>>-API_Reference_(30+_endpoints)-0EA5E9?style=flat-square" /></summary>
+<summary><strong>API Reference (30+ endpoints)</strong></summary>
 <br/>
 
 | Group | Endpoints |
@@ -401,7 +389,7 @@ Add in Settings or `backend/.env`. Zero required.
 </details>
 
 <details>
-<summary><img src="https://img.shields.io/badge/>>-Roadmap-0EA5E9?style=flat-square" /></summary>
+<summary><strong>Roadmap</strong></summary>
 <br/>
 
 **Shipped**: 10-stage pipeline, 9 providers, Council + Quintessence, TLM, Health Monitor, 60 agents, NBMF memory, Audit trail, Voice, DaenaBot, Autopilot, Mobile API, 40+ connectors, Docker + GCP
@@ -411,7 +399,7 @@ Add in Settings or `backend/.env`. Zero required.
 </details>
 
 <details>
-<summary><img src="https://img.shields.io/badge/>>-Contributing-0EA5E9?style=flat-square" /></summary>
+<summary><strong>Contributing</strong></summary>
 <br/>
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). `cd backend && python -m pytest tests/ -v` (1424 tests). `cd frontend && npx tsc --noEmit` (0 errors).
@@ -419,7 +407,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). `cd backend && python -m pytest tests/ -
 </details>
 
 <details>
-<summary><img src="https://img.shields.io/badge/>>-License-0EA5E9?style=flat-square" /></summary>
+<summary><strong>License</strong></summary>
 <br/>
 
 **BSL 1.1** -- Free for internal, personal, educational use. Converts to **Apache 2.0** on March 27, 2030. Patents: NBMF, PhiLattice, TLM.
