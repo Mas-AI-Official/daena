@@ -1,0 +1,426 @@
+import { memo, useCallback, useState, useEffect, useRef } from 'react'
+import { Bell, Search, Brain, BrainCircuit, Zap, X, Menu, Heart, Mic, MicOff, AudioLines, AudioWaveform, Telescope } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useUiStore, persistUiPref } from '@/stores/uiStore'
+import { useAuthStore } from '@/stores/authStore'
+import { useChatStore } from '@/stores/chatStore'
+import { useModelRegistryStore } from '@/stores/modelRegistryStore'
+import { GovernanceSlider } from '@/components/common/GovernanceSlider'
+import { CommandPalette } from '@/components/common/CommandPalette'
+import { useVoice } from '@/providers/VoiceProvider'
+// RuntimeSwapper removed from header per Phase 2 design
+import type { ChatMode, RoutingMode, GovernanceSlider as GSlider } from '@/types/api'
+
+/** Fire a PATCH to sync a session-level field to the backend (fire-and-forget). */
+function syncSession(fields: Record<string, unknown>) {
+  const { activeSessionId, updateSession } = useChatStore.getState()
+  if (activeSessionId) {
+    updateSession(activeSessionId, fields)
+  }
+}
+
+export const Header = memo(function Header() {
+  const {
+    chatMode,
+    setChatMode,
+    routingMode,
+    setRoutingMode,
+    thinkingVisible,
+    toggleThinking,
+    deepResearch,
+    toggleDeepResearch,
+    governanceSlider,
+    setGovernanceSlider,
+    autopilotActive,
+    toggleAutopilot,
+    notifications,
+  } = useUiStore()
+  const { user, logout } = useAuthStore()
+  const registry = useModelRegistryStore((s) => s.registry)
+  const unreadCount = notifications.length
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const notifRef = useRef<HTMLDivElement>(null)
+  const removeNotification = useUiStore((s) => s.removeNotification)
+  const clearNotifications = useUiStore((s) => s.clearNotifications)
+
+  // Close notification panel on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false)
+      }
+    }
+    if (notifOpen) document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [notifOpen])
+
+  // Global Ctrl+K / Cmd+K shortcut
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    document.addEventListener('keydown', handleGlobalKey)
+    return () => document.removeEventListener('keydown', handleGlobalKey)
+  }, [])
+
+  // Wrapped toggle handlers that also sync to backend session
+  const handleChatMode = useCallback((mode: ChatMode) => {
+    setChatMode(mode)
+    syncSession({ mode })
+  }, [setChatMode])
+
+  const handleRoutingMode = useCallback((mode: RoutingMode) => {
+    setRoutingMode(mode)
+    syncSession({ routing_mode: mode })
+  }, [setRoutingMode])
+
+  const handleThinkToggle = useCallback(() => {
+    const newVal = !useUiStore.getState().thinkingVisible
+    toggleThinking()
+    syncSession({ think_mode: newVal })
+  }, [toggleThinking])
+
+  const handleAutopilotToggle = useCallback(() => {
+    const newVal = !useUiStore.getState().autopilotActive
+    toggleAutopilot()
+    syncSession({ autopilot: newVal })
+    persistUiPref('autopilot_active', newVal)
+  }, [toggleAutopilot])
+
+  const handleGovernanceSlider = useCallback((slider: GSlider) => {
+    setGovernanceSlider(slider)
+    syncSession({ governance_slider: slider })
+  }, [setGovernanceSlider])
+
+  return (
+    <header className="h-16 bg-midnight-200/95 border-b border-white/5 flex items-center justify-between px-2 sm:px-4 shrink-0 z-40"
+      style={{ backdropFilter: 'blur(8px)' }}
+    >
+      {/* Left: Simplified controls (4 items) */}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Mobile hamburger */}
+        <button
+          onClick={() => useUiStore.getState().toggleMobileSidebar()}
+          className="p-2 rounded-lg text-starlight-400 hover:text-starlight-100 hover:bg-white/5 transition-colors cursor-pointer sm:hidden"
+          aria-label="Toggle navigation menu"
+        >
+          <Menu size={20} />
+        </button>
+
+        {/* Execution Mode: CMD / EXE */}
+        <div className="flex items-center gap-1 bg-midnight-400/50 rounded-lg p-0.5">
+          <button
+            onClick={() => handleChatMode('CMD')}
+            className={`px-3 py-1.5 rounded-md text-xs font-mono font-medium transition-all cursor-pointer ${
+              chatMode === 'CMD'
+                ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30'
+                : 'text-starlight-400 hover:text-starlight-200'
+            }`}
+          >
+            CMD
+          </button>
+          <button
+            onClick={() => handleChatMode('EXE')}
+            className={`px-3 py-1.5 rounded-md text-xs font-mono font-medium transition-all cursor-pointer ${
+              chatMode === 'EXE'
+                ? 'bg-accent-amber/20 text-accent-amber border border-accent-amber/30'
+                : 'text-starlight-400 hover:text-starlight-200'
+            }`}
+          >
+            EXE
+          </button>
+        </div>
+
+        {/* Routing Mode: STA / COU / QE pills */}
+        <div className="hidden md:flex items-center gap-1 bg-midnight-400/50 rounded-lg p-0.5">
+          {(['STANDARD', 'COUNCIL', 'QUINTESSENCE'] as const).map((mode) => {
+            const modeTruth = registry?.routing_modes?.[mode]
+            const isAvailable = mode === 'STANDARD' || modeTruth?.truthful
+            const tooltip = !isAvailable
+              ? `${mode === 'COUNCIL' ? 'Council' : 'Quintessence'}: requires 2+ selectable models`
+              : mode === 'COUNCIL'
+                ? '3-model parallel synthesis'
+                : mode === 'QUINTESSENCE'
+                  ? 'Expert council with DCP-guided synthesis'
+                  : 'Single best model'
+            return (
+              <div key={mode} className="relative group">
+                <button
+                  onClick={() => isAvailable && handleRoutingMode(mode)}
+                  disabled={!isAvailable}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    !isAvailable
+                      ? 'text-starlight-600 cursor-not-allowed opacity-50'
+                      : routingMode === mode
+                        ? mode === 'QUINTESSENCE'
+                          ? 'bg-accent-purple/20 text-accent-purple border border-accent-purple/30'
+                          : mode === 'COUNCIL'
+                            ? 'bg-accent-amber/20 text-accent-amber border border-accent-amber/30'
+                            : 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
+                        : 'text-starlight-400 hover:text-starlight-200 cursor-pointer'
+                  }`}
+                >
+                  {mode === 'QUINTESSENCE' ? 'QE' : mode.slice(0, 3)}
+                </button>
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 rounded bg-midnight-100 text-[10px] text-starlight-300 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-white/10 shadow-lg z-50">
+                  {tooltip}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Think toggle */}
+        <button
+          onClick={handleThinkToggle}
+          className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+            thinkingVisible
+              ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
+              : 'text-starlight-400 hover:text-starlight-200 border border-transparent'
+          }`}
+        >
+          <BrainCircuit size={14} />
+          Think
+        </button>
+
+        {/* Deep Research toggle */}
+        <button
+          onClick={() => { toggleDeepResearch(); persistUiPref('deep_research', !deepResearch) }}
+          className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+            deepResearch
+              ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30'
+              : 'text-starlight-400 hover:text-starlight-200 border border-transparent'
+          }`}
+          title="Deep research: thorough multi-source analysis across all tiers"
+        >
+          <Telescope size={14} />
+          Deep Research
+        </button>
+
+        {/* Governance slider */}
+        <div className="hidden lg:block w-px h-6 bg-white/10" />
+        <div className="hidden lg:block">
+          <GovernanceSlider value={governanceSlider} onChange={handleGovernanceSlider} compact />
+        </div>
+      </div>
+
+      {/* Right: AGI toggle, Heartbeat, Search, notifications, user */}
+      <div className="flex items-center gap-3">
+        {/* AGI Autopilot Toggle */}
+        <button
+          onClick={handleAutopilotToggle}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+            autopilotActive
+              ? 'bg-status-success/20 text-status-success border border-status-success/30 shadow-[0_0_12px_rgba(34,197,94,0.15)]'
+              : 'text-starlight-500 hover:text-starlight-300 border border-white/10 hover:border-white/20'
+          }`}
+        >
+          <Zap size={14} className={autopilotActive ? 'animate-pulse' : ''} />
+          {autopilotActive ? 'AGI ACTIVE' : 'AGI OFF'}
+        </button>
+
+        {/* Voice / Conversational mode toggle */}
+        <VoiceToggle />
+
+        {/* Heartbeat indicator */}
+        <HeartbeatIndicator />
+
+        <div className="w-px h-6 bg-white/10" />
+
+        <button
+          aria-label="Search"
+          onClick={() => setPaletteOpen(true)}
+          className="p-2 rounded-lg text-starlight-400 hover:text-starlight-100 hover:bg-white/5 transition-colors cursor-pointer"
+        >
+          <Search size={18} />
+        </button>
+
+        <div className="relative" ref={notifRef}>
+          <button
+            aria-label="Notifications"
+            onClick={() => setNotifOpen(!notifOpen)}
+            className="relative p-2 rounded-lg text-starlight-400 hover:text-starlight-100 hover:bg-white/5 transition-colors cursor-pointer"
+          >
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-status-error rounded-full text-[10px] font-bold flex items-center justify-center text-white">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          <AnimatePresence>
+            {notifOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -4, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                transition={{ duration: 0.12 }}
+                className="absolute top-full right-0 mt-2 w-72 sm:w-80 z-50
+                           bg-midnight-400/95 backdrop-blur-md border border-white/10
+                           rounded-xl shadow-xl overflow-hidden"
+              >
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+                  <h3 className="text-xs font-display font-semibold text-starlight-200">
+                    Notifications
+                  </h3>
+                  {notifications.length > 0 && (
+                    <button
+                      onClick={clearNotifications}
+                      className="text-[10px] text-starlight-500 hover:text-starlight-200 cursor-pointer"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-[300px] overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-xs text-starlight-500">
+                      No notifications
+                    </div>
+                  ) : (
+                    notifications.map((n) => (
+                      <div
+                        key={n.id}
+                        className="flex items-start gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors border-b border-white/5 last:border-b-0"
+                      >
+                        <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${
+                          n.type === 'error' ? 'bg-status-error'
+                          : n.type === 'warning' ? 'bg-status-warning'
+                          : n.type === 'success' ? 'bg-status-success'
+                          : 'bg-primary-400'
+                        }`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-starlight-200">{n.title}</p>
+                          <p className="text-[11px] text-starlight-500 truncate">{n.message}</p>
+                        </div>
+                        <button
+                          onClick={() => removeNotification(n.id)}
+                          className="p-0.5 text-starlight-600 hover:text-starlight-300 cursor-pointer shrink-0"
+                          aria-label="Dismiss notification"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* User avatar */}
+        <div className="flex items-center gap-2 pl-2 border-l border-white/10">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-accent-purple flex items-center justify-center text-xs font-bold text-white">
+            {user?.display_name?.charAt(0)?.toUpperCase() || 'D'}
+          </div>
+          <div className="hidden lg:flex flex-col">
+            <span className="text-xs font-medium text-starlight-100 leading-tight">
+              {user?.display_name || 'User'}
+            </span>
+            <span className="text-[10px] text-starlight-400 leading-tight">
+              {user?.role || 'VIEWER'}
+            </span>
+          </div>
+          <button
+            onClick={logout}
+            className="text-[10px] text-starlight-400 hover:text-status-error transition-colors ml-1 cursor-pointer"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+      {/* Command palette (Ctrl+K) */}
+      <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
+    </header>
+  )
+})
+
+/** Voice toggle -- enables full voice conversation (listen + speak).
+ * ON: single SpeechRecognition + ElevenLabs/browser TTS.
+ * OFF: stops mic and TTS, clears floating indicator.
+ */
+function VoiceToggle() {
+  const { isActive, isListening, isSpeaking, toggle } = useVoice()
+
+  return (
+    <button
+      onClick={toggle}
+      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+        isActive
+          ? 'bg-accent-purple/20 text-accent-purple border border-accent-purple/30'
+          : 'text-starlight-400 hover:text-starlight-200 hover:bg-white/5'
+      }`}
+      title={
+        isActive
+          ? isSpeaking
+            ? 'Daena is speaking...'
+            : isListening
+              ? 'Listening... (click to stop)'
+              : 'Voice ON (click to stop)'
+          : 'Enable voice conversation'
+      }
+    >
+      {isActive
+        ? <AudioLines size={14} className="animate-pulse" />
+        : <AudioWaveform size={14} />}
+      <span className="hidden sm:inline">{isActive ? 'Voice' : ''}</span>
+    </button>
+  )
+}
+
+/** Heartbeat pulsing dot indicator -- shows daemon status in header. */
+function HeartbeatIndicator() {
+  const [status, setStatus] = useState<'running' | 'paused' | 'stopped'>('stopped')
+
+  useEffect(() => {
+    let mounted = true
+    const check = async () => {
+      try {
+        const token = useAuthStore.getState().token
+        if (!token) return
+        const res = await fetch('/api/v1/heartbeat/status', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok && mounted) {
+          const data = await res.json()
+          setStatus(data.data?.state || 'stopped')
+        }
+      } catch {
+        // Graceful degradation
+      }
+    }
+    check()
+    const interval = setInterval(check, 30000)
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
+  }, [])
+
+  if (status === 'stopped') return null
+
+  const isActive = status === 'running'
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-mono"
+      title={`Heartbeat: ${status}`}
+    >
+      <Heart
+        size={12}
+        className={isActive ? 'text-accent-red animate-pulse' : 'text-starlight-500'}
+        fill={isActive ? 'currentColor' : 'none'}
+      />
+      <span className={isActive ? 'text-starlight-300' : 'text-starlight-500'}>
+        {isActive ? 'LIVE' : 'PAUSED'}
+      </span>
+    </div>
+  )
+}
+
+export default Header

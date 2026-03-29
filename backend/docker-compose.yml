@@ -1,0 +1,90 @@
+# ============================================================
+# Daena Backend — Docker Compose (Development)
+# ============================================================
+# Usage:
+#   docker compose up -d         # Start all services
+#   docker compose logs -f app   # Follow app logs
+#   docker compose down          # Stop all
+# ============================================================
+
+services:
+  # --- PostgreSQL 16 + pgvector ---
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: daena-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: daena
+      POSTGRES_USER: daena
+      POSTGRES_PASSWORD: daena_dev_password
+    volumes:
+      - daena_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U daena"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Redis 7 (cache + Celery broker) ---
+  redis:
+    image: redis:7-alpine
+    container_name: daena-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - daena_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Daena API ---
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: daena-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://daena:daena_dev_password@db:5432/daena
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # --- Celery Worker ---
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: daena-celery-worker
+    restart: unless-stopped
+    command: ["celery", "-A", "app.tasks", "worker", "--loglevel=info"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://daena:daena_dev_password@db:5432/daena
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  daena_pgdata:
+  daena_redis:

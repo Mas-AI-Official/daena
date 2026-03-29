@@ -1,0 +1,157 @@
+# Claude Code (project-level settings are user-specific)
+.claude/
+CLAUDE.md
+
+# Daena-Mind vault (user data, generated reports, memory tiers)
+data/mind/
+
+# docs/ directory -- internal docs live in Doc/ (gitignored)
+# Only README.md, CHANGELOG.md, LICENSE.md, CONTRIBUTING.md at root
+# docs/assets/ is un-ignored so README images render on GitHub
+docs/*
+!docs/assets/
+
+# Internal prompts and session logs (dev-only)
+Doc/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv_daena/
+venv_daena_main_py310/
+venv_daena_audio_py310/
+.venv/
+venv*/
+
+# IDE
+.vscode/
+.idea/
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.serena/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Database (dev)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Runtime
+.daena-port
+*.log
+*.flag
+nul
+
+# Secrets and production configs
+.env
+.env.*
+!.env.example
+!.env.production.example
+.secrets/
+env-production.yaml
+*.key
+*.pem
+*.p12
+
+# Test output
+test_*.log
+test_*.txt
+*_output.log
+*_output.txt
+*_results.log
+*_results.txt
+p7_*.txt
+p7_*.flag
+test-results/
+.coverage
+
+# CLI state (user-specific)
+.daena-cli/
+
+# Batch output
+*.bat.log
+
+# Documentation (internal, not shipped)
+Doc/
+
+# Non-code documents (keep locally, not in repo)
+*.docx
+*.pptx
+*.zip
+patent/
+patents/
+*PATENT*
+*patent*
+
+# Secret generation scripts
+scripts/generate-secrets.py
+
+# Deployment URLs (may contain internal endpoints)
+DEPLOYED-URL.txt
+
+# Binary assets (screenshots go in docs/assets/)
+*.png
+*.jpg
+*.jpeg
+!docs/assets/*.png
+!docs/assets/*.jpg
+
+# PDF files
+*.pdf
+
+# Audio files
+*.mp3
+*.wav
+*.ogg
+
+# Pitch deck (internal, not shipped)
+pitch-deck/
+
+# Base64 encoded files
+*_b64.txt
+
+# Temp files
+backend/tmp_*
+DEPLOYED-URL.txt
+
+# Archive (internal, keep locally)
+.archive/
+
+# Agent harness (internal tooling)
+agent-harness/
+
+# User uploads
+backend/uploads/
+uploads/
+
+# Chrome/Playwright browser profile artifacts
+BrowserMetrics/
+CrashpadMetrics*
+DeferredBrowserMetrics/
+ShaderCache/
+segmentation_platform/
+component_crx_cache/
+"Last Version"
+"Local State"
+Variations
+Default/
+*.pma

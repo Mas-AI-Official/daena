@@ -1,0 +1,92 @@
+# ==============================================================
+# Daena Production Docker Compose
+# ==============================================================
+# Usage:
+#   docker compose up -d                 Start all services
+#   docker compose logs -f daena         Follow app logs
+#   docker compose down                  Stop all
+#   docker compose down -v               Stop + remove volumes
+# ==============================================================
+
+services:
+  # --- Daena Application (API + Frontend) ---
+  daena:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: daena-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql+asyncpg://daena:${POSTGRES_PASSWORD:-changeme}@postgres:5432/daena
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - daena-net
+    volumes:
+      - daena-mind:/app/vault:ro
+
+  # --- PostgreSQL 16 with pgvector ---
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: daena-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: daena
+      POSTGRES_USER: daena
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - daena-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U daena"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - daena-net
+
+  # --- Redis 7 (cache + Celery broker) ---
+  redis:
+    image: redis:7-alpine
+    container_name: daena-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - daena-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - daena-net
+
+volumes:
+  daena-pgdata:
+    driver: local
+  daena-redis:
+    driver: local
+  daena-mind:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DAENA_MIND_PATH:-./vault}
+
+networks:
+  daena-net:
+    driver: bridge

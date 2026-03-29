@@ -1,0 +1,347 @@
+"""Founder-only runtime diagnostics and routing policy management."""
+
+from __future__ import annotations
+
+from collections import Counter
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import CurrentUser, require_role
+from app.core.config import get_settings
+from app.core.constants import ChatMode, GovernanceSlider, RoutingMode
+from app.core.database import get_db
+from app.models.governance import RoutingPolicy
+from app.schemas.founder import RoutingPolicyUpdate, RoutingPreviewRequest
+from app.services.audit import AuditService
+from app.services.model_router import ModelRouter
+from app.services.query_understanding import QueryInput, QueryUnderstandingService
+
+router = APIRouter()
+
+
+async def get_audit_service(
+    db: AsyncSession = Depends(get_db),
+) -> AuditService:
+    """Create AuditService per request."""
+    return AuditService(db)
+
+
+def get_model_registry(request: Request):
+    """Get the process model registry from FastAPI app state."""
+    registry = getattr(request.app.state, "model_registry", None)
+    if registry is None:
+        raise HTTPException(status_code=503, detail="Model registry is not ready")
+    return registry
+
+
+def _serialize_candidate(candidate: Any) -> dict[str, Any]:
+    return {
+        "model_id": candidate.model_id,
+        "provider": candidate.provider.value,
+        "score": round(candidate.score, 4),
+        "context_window": candidate.context_window,
+        "cost_per_1m_input": candidate.cost_per_1m_input,
+        "cost_per_1m_output": candidate.cost_per_1m_output,
+        "tags": list(candidate.tags),
+        "diagnostics": dict(candidate.diagnostics),
+    }
+
+
+def _normalize_route_event(event: dict[str, Any]) -> dict[str, Any]:
+    params = event.get("action_params") or {}
+    requested_mode = (
+        params.get("requested_routing_mode")
+        or params.get("requested_mode")
+        or "STANDARD"
+    )
+    applied_mode = (
+        params.get("applied_routing_mode")
+        or params.get("applied_mode")
+        or "STANDARD"
+    )
+    model = params.get("model")
+    provider = params.get("provider")
+    routing_source = params.get("routing_source") or params.get("selection_source")
+    top_candidates = params.get("top_candidates")
+    if not isinstance(top_candidates, list):
+        top_candidates = []
+
+    return {
+        "id": event.get("id"),
+        "created_at": event.get("created_at"),
+        "result": event.get("result"),
+        "risk_level": event.get("risk_level"),
+        "governance_tier": event.get("governance_tier"),
+        "session_id": event.get("session_id"),
+        "intent": params.get("intent"),
+        "model": model,
+        "provider": provider,
+        "requested_mode": requested_mode,
+        "applied_mode": applied_mode,
+        "routing_source": routing_source,
+        "selection_reason": params.get("selection_reason"),
+        "mode_reason": params.get("mode_reason"),
+        "provider_strategy": params.get("provider_strategy"),
+        "providers_considered": params.get("providers_considered") or [],
+        "latency_ms": params.get("latency_ms"),
+        "user_message": params.get("user_message"),
+        "top_candidates": top_candidates,
+    }
+
+
+def _summarize_routes(routes: list[dict[str, Any]]) -> dict[str, Any]:
+    requested_modes = Counter()
+    applied_modes = Counter()
+    providers = Counter()
+    routing_sources = Counter()
+    intents = Counter()
+    fallback_count = 0
+    downgraded_count = 0
+
+    for route in routes:
+        requested = str(route.get("requested_mode") or "STANDARD")
+        applied = str(route.get("applied_mode") or "STANDARD")
+        provider = route.get("provider")
+        routing_source = route.get("routing_source")
+        intent = route.get("intent")
+
+        requested_modes[requested] += 1
+        applied_modes[applied] += 1
+        if provider:
+            providers[str(provider)] += 1
+        if routing_source:
+            routing_sources[str(routing_source)] += 1
+        if intent:
+            intents[str(intent)] += 1
+        if route.get("mode_reason"):
+            fallback_count += 1
+        if requested != applied:
+            downgraded_count += 1
+
+    total = len(routes)
+    return {
+        "total_routes": total,
+        "fallback_count": fallback_count,
+        "fallback_rate": round(fallback_count / total, 4) if total else 0.0,
+        "downgraded_mode_count": downgraded_count,
+        "by_requested_mode": dict(requested_modes),
+        "by_applied_mode": dict(applied_modes),
+        "by_provider": dict(providers),
+        "by_source": dict(routing_sources),
+        "by_intent": dict(intents),
+    }
+
+
+@router.get("/routing/telemetry")
+async def get_routing_telemetry(
+    request: Request,
+    limit: int = Query(12, ge=1, le=50),
+    _user: CurrentUser = Depends(require_role("FOUNDER")),
+    audit: AuditService = Depends(get_audit_service),
+) -> dict[str, Any]:
+    """Founder-only routing/runtime telemetry from live Repo B truth sources."""
+    settings = get_settings()
+    registry = get_model_registry(request)
+    registry_snapshot = await registry.snapshot(force_refresh=False)
+    audit_result = await audit.get_audit_trail(
+        tenant_id=_user.tenant_id,
+        page=1,
+        page_size=limit,
+        action_type="LLM_CALL",
+    )
+    recent_routes = [
+        _normalize_route_event(item)
+        for item in audit_result["data"]
+    ]
+
+    return {
+        "success": True,
+        "data": {
+            "runtime": settings.runtime_diagnostics(),
+            "registry": registry_snapshot,
+            "recent_routes": recent_routes,
+            "trace_summary": _summarize_routes(recent_routes),
+            "audit_pagination": audit_result["pagination"],
+        },
+    }
+
+
+@router.post("/routing/preview")
+async def preview_routing(
+    body: RoutingPreviewRequest,
+    request: Request,
+    _user: CurrentUser = Depends(require_role("FOUNDER")),
+) -> dict[str, Any]:
+    """Preview query understanding and routing without calling any LLM."""
+    registry = get_model_registry(request)
+    qu_service = QueryUnderstandingService()
+    qu_result = qu_service.analyze(
+        QueryInput(
+            raw_message=body.message,
+            user_id=str(_user.id),
+            tenant_id=str(_user.tenant_id),
+            execution_mode=ChatMode(body.chat_mode),
+            governance_slider=GovernanceSlider(body.governance_slider),
+        )
+    )
+
+    router_service = ModelRouter(registry)
+    requested_mode = RoutingMode(body.routing_mode) if body.routing_mode else None
+    preview_source = "think_mode" if body.think_mode else "standard_preview"
+    if body.think_mode:
+        decision = router_service.route(
+            qu_result,
+            requested_mode=RoutingMode.STANDARD,
+            preferred_tags=["reasoning", "analysis", "large"],
+            metadata={
+                "selection_source": preview_source,
+                "requested_session_mode": (
+                    requested_mode.value if requested_mode else qu_result.suggested_mode.value
+                ),
+                "mode_reason": (
+                    "Think mode previews the best installed reasoning-capable model "
+                    "without forcing a missing override."
+                ),
+            },
+        )
+    else:
+        decision = router_service.route(
+            qu_result,
+            requested_mode=requested_mode,
+            metadata={"selection_source": preview_source},
+        )
+
+    return {
+        "success": True,
+        "data": {
+            "preview_source": preview_source,
+            "query_understanding": {
+                "intent": qu_result.intent.value,
+                "confidence": qu_result.confidence,
+                "complexity_score": qu_result.complexity_score,
+                "complexity_label": qu_result.complexity_label.value,
+                "risk_level": qu_result.risk_level.value,
+                "governance_tier": qu_result.governance_tier,
+                "suggested_mode": qu_result.suggested_mode.value,
+                "suggested_providers": [p.value for p in qu_result.suggested_providers],
+                "ambiguity_signals": qu_result.ambiguity_signals,
+                "clarifying_question": qu_result.clarifying_question,
+                "processing_time_ms": qu_result.processing_time_ms,
+            },
+            "routing": {
+                "requested_mode": decision.metadata.get("requested_mode"),
+                "applied_mode": decision.mode.value,
+                "primary": _serialize_candidate(decision.primary),
+                "fallback_chain": [
+                    _serialize_candidate(candidate)
+                    for candidate in decision.fallback_chain
+                ],
+                "council_models": [
+                    _serialize_candidate(candidate)
+                    for candidate in decision.council_models
+                ],
+                "selection_reason": decision.metadata.get("selection_reason"),
+                "mode_reason": decision.metadata.get("mode_reason"),
+                "provider_strategy": decision.metadata.get("provider_strategy"),
+                "providers_considered": decision.metadata.get("providers_considered"),
+                "top_candidates": decision.metadata.get("top_candidates", []),
+                "routing_time_ms": decision.routing_time_ms,
+            },
+        },
+    }
+
+
+# ── Routing Policy ──
+
+
+_DEFAULT_POLICY: dict[str, Any] = {
+    "preferred_models": {},
+    "provider_priority": [],
+    "cost_ceiling": None,
+    "blocked_models": [],
+    "blocked_providers": [],
+    "default_model": None,
+    "enforce_local_only": False,
+}
+
+
+def _policy_to_dict(row: RoutingPolicy | None) -> dict[str, Any]:
+    """Serialize a RoutingPolicy row, filling defaults for absent keys."""
+    if row is None:
+        return {**_DEFAULT_POLICY}
+    merged = {**_DEFAULT_POLICY, **(row.policy or {})}
+    merged["id"] = str(row.id)
+    merged["updated_by"] = str(row.updated_by) if row.updated_by else None
+    merged["updated_at"] = (
+        row.updated_at.isoformat() if row.updated_at else None
+    )
+    return merged
+
+
+@router.get("/routing/policy")
+async def get_routing_policy(
+    _user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Get the current founder routing policy for this tenant."""
+    stmt = select(RoutingPolicy).where(
+        RoutingPolicy.tenant_id == _user.tenant_id,
+    )
+    result = await db.execute(stmt)
+    row = result.scalar_one_or_none()
+    return {"success": True, "data": _policy_to_dict(row)}
+
+
+@router.put("/routing/policy")
+async def update_routing_policy(
+    body: RoutingPolicyUpdate,
+    _user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Create or replace the founder routing policy for this tenant."""
+    stmt = select(RoutingPolicy).where(
+        RoutingPolicy.tenant_id == _user.tenant_id,
+    )
+    result = await db.execute(stmt)
+    row = result.scalar_one_or_none()
+
+    policy_data = body.model_dump(exclude_none=True)
+
+    if row is None:
+        row = RoutingPolicy(
+            tenant_id=_user.tenant_id,
+            updated_by=_user.id,
+            policy=policy_data,
+        )
+        db.add(row)
+    else:
+        # Merge: existing fields stay unless explicitly overwritten
+        merged = {**(row.policy or {}), **policy_data}
+        row.policy = merged
+        row.updated_by = _user.id
+
+    await db.commit()
+    await db.refresh(row)
+    return {"success": True, "data": _policy_to_dict(row)}
+
+
+@router.post("/routing/policy/reset")
+async def reset_routing_policy(
+    _user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Reset routing policy to system defaults (delete custom policy)."""
+    stmt = select(RoutingPolicy).where(
+        RoutingPolicy.tenant_id == _user.tenant_id,
+    )
+    result = await db.execute(stmt)
+    row = result.scalar_one_or_none()
+
+    if row is not None:
+        await db.delete(row)
+        await db.commit()
+
+    return {"success": True, "data": _DEFAULT_POLICY}

@@ -1,0 +1,484 @@
+@import "tailwindcss";
+
+/* ── Daena Design System ── Ported from legacy, Tailwind v4 @theme ── */
+
+@theme {
+  /* ── Midnight Palette (Backgrounds) ── */
+  --color-midnight-950: #010204;
+  --color-midnight-900: #020408;
+  --color-midnight-200: #0B0F17;
+  --color-midnight-300: #161B26;
+  --color-midnight-400: #1E293B;
+  --color-midnight-500: #334155;
+
+  /* ── Starlight Palette (Text) ── */
+  --color-starlight-100: #F8F9FA;
+  --color-starlight-200: #E2E8F0;
+  --color-starlight-300: #94A3B8;
+  --color-starlight-400: #64748B;
+  --color-starlight-500: #475569;
+  --color-starlight-600: #334155;
+
+  /* ── Primary (Cosmos Blue) ── */
+  --color-primary-400: #00A8FF;
+  --color-primary-500: #0070F3;
+  --color-primary-600: #005ACC;
+  --color-primary-700: #0045A6;
+
+  /* ── Status Colors ── */
+  --color-status-success: #00D68F;
+  --color-status-warning: #FFB020;
+  --color-status-error: #FF4757;
+  --color-status-info: #0070F3;
+
+  /* ── Accent Colors ── */
+  --color-accent-purple: #8B5CF6;
+  --color-accent-cyan: #06B6D4;
+  --color-accent-amber: #FCD34D;
+
+  /* ── Daena Brand (extracted from logo images) ── */
+  --color-daena-blue: #00d4ff;
+  --color-daena-blue-mid: #0088ff;
+  --color-daena-blue-light: #66e0ff;
+  --color-daena-blue-dark: #004488;
+  --color-daena-gold: #ffd700;
+  --color-daena-gold-mid: #ff9900;
+  --color-daena-gold-light: #ffe066;
+  --color-daena-gold-dark: #b8860b;
+
+  /* ── Typography ── */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Outfit', 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  /* ── Border Radius ── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+
+  /* ── Shadows ── */
+  --shadow-glow-primary: 0 0 20px rgba(0, 112, 243, 0.3);
+  --shadow-glow-success: 0 0 20px rgba(0, 214, 143, 0.3);
+  --shadow-glow-error: 0 0 20px rgba(255, 71, 87, 0.3);
+  --shadow-glow-sm: 0 0 10px rgba(0, 112, 243, 0.2);
+  --shadow-glow-blue: 0 0 24px rgba(0, 212, 255, 0.3);
+  --shadow-glow-gold: 0 0 24px rgba(255, 215, 0, 0.3);
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+
+  /* ── V2 Execution Status Colors ── */
+  --color-exec-running: #3B82F6;
+  --color-exec-complete: #10B981;
+  --color-exec-failed: #F87171;
+  --color-exec-pending: #FBBF24;
+  --color-exec-approval: #A78BFA;
+  --color-exec-cancelled: #6B7280;
+
+  /* ── V2 Runtime Health Indicators ── */
+  --color-runtime-online: #10B981;
+  --color-runtime-offline: #6B7280;
+  --color-runtime-limited: #FBBF24;
+  --color-runtime-error: #F87171;
+
+  /* ── V2 Governed Intelligence Accents ── */
+  --color-gov-gold: #D4A843;
+  --color-gov-teal: #2DD4BF;
+  --color-gov-coral: #F87171;
+
+  /* ── V2 Transition Speeds ── */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 400ms ease;
+
+  /* ── Animations ── */
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-pulse-glow: pulse-glow 3s infinite;
+  --animate-shimmer: shimmer 2s infinite;
+  --animate-fade-in-up: fadeInUp 0.5s ease-out;
+  --animate-scale-in: scaleIn 0.3s ease-out;
+  --animate-spin-slow: spin 12s linear infinite;
+  --animate-spin-reverse: spin 16s linear infinite reverse;
+}
+
+/* ── Keyframes ── */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 112, 243, 0.2); }
+  50% { box-shadow: 0 0 40px rgba(0, 112, 243, 0.4); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.5); }
+  50% { transform: scaleY(1.3); }
+}
+
+@keyframes pageEnter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Apply to Suspense-loaded pages for smooth transition */
+.page-enter {
+  animation: pageEnter 150ms ease-out;
+}
+
+/* ── Base Styles ── */
+
+html {
+  color-scheme: dark;
+  /* Prevent white flash on page load */
+  background-color: #020408;
+}
+
+/* Selection color matches accent */
+::selection {
+  background: rgba(0, 112, 243, 0.35);
+  color: #F8F9FA;
+}
+
+body {
+  @apply bg-midnight-900 text-starlight-100 font-sans antialiased;
+  background-image:
+    radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.08) 0%, transparent 25%);
+  background-attachment: fixed;
+}
+
+/* ── Glass Utilities ── */
+
+.glass-panel {
+  @apply bg-midnight-200/60 border border-white/8 shadow-2xl;
+  backdrop-filter: blur(24px);
+}
+
+.glass-card {
+  @apply bg-midnight-300/40 border border-white/8 rounded-2xl shadow-lg;
+  backdrop-filter: blur(16px);
+}
+
+.glass-input {
+  @apply bg-midnight-900/50 border border-white/10 rounded-xl px-4 py-3;
+}
+
+/* ── Scrollbar ── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Hide browser-native password reveal (Edge/Chrome) ── */
+
+input::-ms-reveal,
+input::-ms-clear,
+input::-webkit-credentials-auto-fill-button {
+  display: none !important;
+}
+
+/* ── Focus Visible: global keyboard-only focus ring ── */
+/* Shows ring only on keyboard navigation (Tab), not on mouse clicks */
+
+*:focus-visible {
+  outline: 2px solid rgba(0, 112, 243, 0.5);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* Suppress default outline since focus-visible handles it */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Chat textarea: use border glow instead of outline for rounded appearance */
+textarea.glass-input:focus,
+textarea.glass-input:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(0, 112, 243, 0.2);
+}
+
+/* ── Light Mode ── */
+/* Comprehensive overrides for the dark-first Daena palette when html.light is set */
+
+html.light {
+  color-scheme: light;
+  background-color: #F5F7FA;
+}
+
+html.light body {
+  background: #F5F7FA;
+  color: #1A202C;
+  background-image:
+    radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.04) 0%, transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.04) 0%, transparent 25%);
+}
+
+html.light ::selection {
+  background: rgba(0, 112, 243, 0.2);
+  color: #1A202C;
+}
+
+/* ── Glass utilities ── */
+html.light .glass-panel {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+html.light .glass-card {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+html.light .glass-input {
+  background: #FFFFFF;
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #1A202C;
+}
+
+html.light .glass-input:focus {
+  border-color: rgba(0, 112, 243, 0.4);
+}
+
+/* ── Text overrides ── */
+html.light .text-starlight-100 { color: #1A202C; }
+html.light .text-starlight-200 { color: #2D3748; }
+html.light .text-starlight-300 { color: #4A5568; }
+html.light .text-starlight-400 { color: #718096; }
+html.light .text-starlight-500 { color: #A0AEC0; }
+html.light .text-starlight-600 { color: #CBD5E0; }
+html.light .text-white { color: #FFFFFF; }
+html.light .placeholder\:text-starlight-500::placeholder { color: #A0AEC0; }
+
+/* ── Background overrides ── */
+html.light .bg-midnight-950 { background-color: #EDF2F7; }
+html.light .bg-midnight-900 { background-color: #F5F7FA; }
+html.light .bg-midnight-800 { background-color: #EDF2F7; }
+html.light .bg-midnight-700 { background-color: #E2E8F0; }
+html.light .bg-midnight-400 { background-color: #E2E8F0; }
+html.light .bg-midnight-300 { background-color: #EDF2F7; }
+html.light .bg-midnight-200 { background-color: #F7FAFC; }
+html.light .bg-midnight-100 { background-color: #FFFFFF; }
+
+/* Backgrounds with opacity (used in header, dropdowns, etc.) */
+html.light [class*="bg-midnight-200/"] { background-color: rgba(247, 250, 252, 0.95) !important; }
+html.light [class*="bg-midnight-300/"] { background-color: rgba(237, 242, 247, 0.8) !important; }
+html.light [class*="bg-midnight-400/"] { background-color: rgba(226, 232, 240, 0.6) !important; }
+html.light [class*="bg-midnight-900/"] { background-color: rgba(245, 247, 250, 0.9) !important; }
+
+/* ── Border overrides ── */
+html.light .border-white\/5,
+html.light .border-white\/10,
+html.light .border-white\/20 {
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+html.light [class*="border-white/"] {
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+/* ── Hover/interactive state overrides ── */
+html.light .hover\:bg-white\/5:hover,
+html.light .hover\:bg-white\/\[0\.03\]:hover {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+html.light .hover\:text-starlight-100:hover { color: #1A202C; }
+html.light .hover\:text-starlight-200:hover { color: #2D3748; }
+html.light .hover\:text-starlight-300:hover { color: #4A5568; }
+
+html.light .hover\:border-white\/20:hover {
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+/* White-on-dark utility overlays */
+html.light [class*="bg-white/5"] { background-color: rgba(0, 0, 0, 0.03); }
+html.light [class*="bg-white/10"] { background-color: rgba(0, 0, 0, 0.05); }
+html.light [class*="bg-white/\[0\.03\]"] { background-color: rgba(0, 0, 0, 0.02); }
+
+/* ── Header ── */
+html.light header {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-bottom-color: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* ── Sidebar ── */
+html.light nav,
+html.light aside {
+  background: rgba(248, 250, 252, 0.98) !important;
+  border-right-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* ── Dropdowns, popovers, modals ── */
+html.light [class*="backdrop-blur"] {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+/* Override specific dropdown/popover bg classes that use midnight colors */
+html.light .bg-midnight-400\/95 {
+  background-color: rgba(255, 255, 255, 0.96) !important;
+}
+
+/* ── Chat input area ── */
+html.light .border-t.border-white\/5 {
+  border-top-color: rgba(0, 0, 0, 0.06);
+}
+
+/* ── Status pills retain contrast ── */
+html.light .exec-status-running { background: rgba(59, 130, 246, 0.1); }
+html.light .exec-status-complete { background: rgba(16, 185, 129, 0.1); }
+html.light .exec-status-failed { background: rgba(248, 113, 113, 0.1); }
+html.light .exec-status-pending { background: rgba(251, 191, 36, 0.1); }
+html.light .exec-status-approval { background: rgba(167, 139, 250, 0.1); }
+
+/* ── Glow effects: soften in light mode ── */
+html.light .glow-primary { box-shadow: 0 0 12px rgba(0, 112, 243, 0.12); }
+html.light .glow-success { box-shadow: 0 0 12px rgba(0, 214, 143, 0.12); }
+html.light .glow-error { box-shadow: 0 0 12px rgba(255, 71, 87, 0.12); }
+html.light .glow-sm { box-shadow: 0 0 8px rgba(0, 112, 243, 0.08); }
+
+/* ── Gradient overlays ── */
+html.light .glass-gradient {
+  background: linear-gradient(145deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0.005) 100%);
+}
+
+/* ── Divide lines ── */
+html.light .divide-white\/5 > * + * {
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+/* ── Scrollbar ── */
+html.light ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.02); }
+html.light ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.12); }
+html.light ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.2); }
+
+/* ── Focus ring ── */
+html.light *:focus-visible {
+  outline-color: rgba(0, 112, 243, 0.35);
+}
+
+/* ── Select/option elements ── */
+html.light select,
+html.light option {
+  background: #FFFFFF;
+  color: #1A202C;
+}
+
+/* ── Table elements ── */
+html.light th { color: #4A5568; }
+html.light td { color: #2D3748; }
+html.light tr:hover { background-color: rgba(0, 0, 0, 0.02); }
+
+/* ── Shadows soften ── */
+html.light .shadow-xl { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); }
+html.light .shadow-lg { box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06); }
+html.light .shadow-2xl { box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); }
+
+.focus-ring {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 focus-visible:border-primary-500/50;
+}
+
+/* ── Press Feedback ── */
+/* Subtle scale-down on click for tactile interaction feel (like Linear/Slack) */
+
+.press-feedback {
+  @apply active:scale-[0.97] transition-transform duration-100;
+}
+
+/* ── Glass Gradient Overlay ── */
+
+.glass-gradient {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+}
+
+/* ── Glow Shadow Utilities ── */
+
+.glow-primary { box-shadow: var(--shadow-glow-primary); }
+.glow-success { box-shadow: var(--shadow-glow-success); }
+.glow-error { box-shadow: var(--shadow-glow-error); }
+.glow-sm { box-shadow: var(--shadow-glow-sm); }
+
+/* ── V2 Execution Panel ── */
+
+.exec-status-pill {
+  @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.exec-status-running {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--color-exec-running);
+}
+
+.exec-status-complete {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-exec-complete);
+}
+
+.exec-status-failed {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--color-exec-failed);
+}
+
+.exec-status-pending {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--color-exec-pending);
+}
+
+.exec-status-approval {
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--color-exec-approval);
+}
+
+/* ── V2 Runtime Indicator Dots ── */
+
+.runtime-dot {
+  @apply inline-block w-2 h-2 rounded-full;
+}
+
+.runtime-dot-online { background: var(--color-runtime-online); }
+.runtime-dot-offline { background: var(--color-runtime-offline); }
+.runtime-dot-limited { background: var(--color-runtime-limited); }
+.runtime-dot-error { background: var(--color-runtime-error); }
