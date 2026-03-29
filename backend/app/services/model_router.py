@@ -296,13 +296,36 @@ class ModelRouter:
         # Boost Primary Mind: if user has set a primary runtime and it's in
         # the candidate list, give it a significant score boost so it's selected
         # first (unless founder policy already forced a different model).
+        #
+        # primary_mind can be a runtime_id (e.g. "claude_code"), a model_id
+        # (e.g. "llama3.1:latest"), or a provider value (e.g. "OLLAMA").
+        # Runtime IDs map to providers so we boost ALL models from that
+        # provider, not just an exact model_id match.
         if primary_mind:
+            _RUNTIME_TO_PROVIDER: dict[str, ModelProvider] = {
+                "claude_code": ModelProvider.ANTHROPIC,
+                "codex": ModelProvider.OPENAI,
+                "gemini_cli": ModelProvider.GEMINI,
+                "grok_cli": ModelProvider.GROQ,
+                "ollama": ModelProvider.OLLAMA,
+            }
+            target_provider = _RUNTIME_TO_PROVIDER.get(primary_mind)
+            boosted = False
             for c in scored:
+                # Direct model_id or provider.value match
                 if c.model_id == primary_mind or c.provider.value == primary_mind:
-                    c.score += 0.5  # Large boost ensures primary mind wins ties
-                    route_metadata["primary_mind"] = primary_mind
-                    route_metadata["primary_mind_boosted"] = True
+                    c.score += 0.5
+                    boosted = True
                     break
+                # Runtime-to-provider match: boost best candidate from provider
+                if target_provider and c.provider == target_provider:
+                    c.score += 0.5
+                    boosted = True
+                    break
+
+            if boosted:
+                route_metadata["primary_mind"] = primary_mind
+                route_metadata["primary_mind_boosted"] = True
             else:
                 route_metadata["primary_mind"] = primary_mind
                 route_metadata["primary_mind_available"] = False

@@ -10,8 +10,11 @@ CLI reference: gemini "task" or gws (Google Workspace CLI)
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import shutil
+import subprocess
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 from app.core.logging import get_logger
@@ -22,6 +25,20 @@ from app.services.runtimes.base_adapter import (
 )
 
 logger = get_logger(__name__)
+
+
+def _run_cmd(
+    cmd: list[str],
+    *,
+    timeout: float = 10.0,
+) -> subprocess.CompletedProcess[str]:
+    """Run a command synchronously (called from thread pool for Windows compat)."""
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
 
 
 class GeminiCLIAdapter(BaseRuntimeAdapter):
@@ -123,58 +140,121 @@ class GeminiCLIAdapter(BaseRuntimeAdapter):
         }
 
     async def check_subscription(self):
-        """Check if user has active Google auth via `gcloud auth list`."""
+        """Check Gemini CLI authentication status.
+
+        Strategy (in order):
+        1. Try `gemini auth status` or `gemini auth print-access-token`
+        2. Check Gemini CLI config files at well-known paths
+        3. Fall back to UNKNOWN if CLI is not installed
+
+        Uses asyncio.to_thread for Windows SelectorEventLoop compatibility.
+        """
         from app.services.runtimes.subscription_auth import (
             AuthMethod,
             SubscriptionAuth,
             SubscriptionStatus,
         )
 
-        try:
-            # Try gemini auth first, fall back to gcloud auth
-            proc = await asyncio.create_subprocess_exec(
-                "gcloud", "auth", "list", "--format=value(account,status)",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
-            output = stdout.decode("utf-8", errors="replace")
-
-            if proc.returncode == 0 and output.strip():
-                # Parse active account
-                user_display = None
-                for line in output.splitlines():
-                    line = line.strip()
-                    if line and ("ACTIVE" in line.upper() or "@" in line):
-                        parts = line.split()
-                        for part in parts:
-                            if "@" in part:
-                                user_display = part.strip()
-                                break
-                        if user_display:
-                            break
-
-                if user_display:
-                    return SubscriptionAuth(
-                        method=AuthMethod.SUBSCRIPTION,
-                        status=SubscriptionStatus.AUTHENTICATED,
-                        user_display=user_display,
-                        plan_name="Google/Gemini",
-                        setup_command="gemini auth login",
-                        login_url="https://gemini.google.com",
-                    )
-
+        if not await self.check_installed():
             return SubscriptionAuth(
                 method=AuthMethod.SUBSCRIPTION,
                 status=SubscriptionStatus.NOT_AUTHENTICATED,
-                setup_command="gemini auth login",
-                login_url="https://gemini.google.com",
+                setup_command="npm install -g @anthropic-ai/gemini-cli && gemini auth login",
+                login_url="https://github.com/google-gemini/gemini-cli",
                 plan_name="Google/Gemini",
+                detail="Gemini CLI not installed",
             )
+
+        # Strategy 1: Try `gemini auth print-access-token` (prints token if auth'd)
+        try:
+            result = await asyncio.to_thread(
+                _run_cmd, ["gemini", "auth", "print-access-token"], timeout=10.0,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                # Has a valid token -- try to get the account email
+                user_display = "Google account"
+                try:
+                    status_result = await asyncio.to_thread(
+                        _run_cmd, ["gemini", "auth", "status"], timeout=10.0,
+                    )
+                    if status_result.returncode == 0:
+                        output = status_result.stdout
+                        # Try JSON parse first
+                        try:
+                            data = _json.loads(output.strip())
+                            user_display = (
+                                data.get("email")
+                                or data.get("account")
+                                or data.get("user")
+                                or user_display
+                            )
+                        except (_json.JSONDecodeError, ValueError):
+                            # Parse plain text for email
+                            for line in output.splitlines():
+                                if "@" in line:
+                                    for word in line.split():
+                                        if "@" in word:
+                                            user_display = word.strip()
+                                            break
+                                    break
+                except Exception:
+                    pass
+
+                return SubscriptionAuth(
+                    method=AuthMethod.SUBSCRIPTION,
+                    status=SubscriptionStatus.AUTHENTICATED,
+                    user_display=user_display,
+                    plan_name="Google/Gemini",
+                    setup_command="gemini auth login",
+                    login_url="https://gemini.google.com",
+                )
         except (TimeoutError, FileNotFoundError, OSError):
-            return SubscriptionAuth(
-                method=AuthMethod.SUBSCRIPTION,
-                status=SubscriptionStatus.UNKNOWN,
-                setup_command="gemini auth login",
-                detail="Could not check Google auth status",
-            )
+            pass
+
+        # Strategy 2: Check config files at well-known paths
+        try:
+            config_paths = [
+                Path.home() / ".gemini" / "settings.json",
+                Path.home() / ".config" / "gemini-cli" / "settings.json",
+                Path.home() / ".gemini" / "auth.json",
+                Path.home() / ".config" / "gemini" / "auth.json",
+            ]
+            for cfg_path in config_paths:
+                if cfg_path.exists():
+                    try:
+                        data = _json.loads(cfg_path.read_text(encoding="utf-8"))
+                        # Look for any auth token or credential indicator
+                        has_auth = bool(
+                            data.get("access_token")
+                            or data.get("refresh_token")
+                            or data.get("oauth")
+                            or data.get("credentials")
+                            or data.get("auth")
+                        )
+                        if has_auth:
+                            user_email = (
+                                data.get("email")
+                                or data.get("user_email")
+                                or data.get("account")
+                                or "Google account"
+                            )
+                            return SubscriptionAuth(
+                                method=AuthMethod.SUBSCRIPTION,
+                                status=SubscriptionStatus.AUTHENTICATED,
+                                user_display=user_email,
+                                plan_name="Google/Gemini",
+                                setup_command="gemini auth login",
+                                login_url="https://gemini.google.com",
+                            )
+                    except (_json.JSONDecodeError, OSError):
+                        continue
+        except Exception:
+            pass
+
+        return SubscriptionAuth(
+            method=AuthMethod.SUBSCRIPTION,
+            status=SubscriptionStatus.NOT_AUTHENTICATED,
+            setup_command="gemini auth login",
+            login_url="https://gemini.google.com",
+            plan_name="Google/Gemini",
+        )

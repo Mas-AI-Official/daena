@@ -1391,9 +1391,22 @@ class ChatOrchestrator:
                     token_count += 1
                     yield {"type": "chunk", "content": chunk.content}
         else:
-            # Standard streaming
+            # Standard streaming (with error-chunk detection)
+            _stream_error: str | None = None
             try:
                 async for chunk in llm.stream(request, decision):
+                    # LLMService yields error chunks (finish_reason="error")
+                    # when all providers in the fallback chain fail.
+                    # Do NOT collect these as content.
+                    if getattr(chunk, "finish_reason", None) == "error":
+                        _stream_error = chunk.content
+                        logger.warning(
+                            "orchestrator.llm_error_chunk",
+                            error=chunk.content,
+                            model=model_id,
+                        )
+                        break
+
                     collected_content += chunk.content
                     token_count += 1
                     event: dict = {"type": "chunk", "content": chunk.content}
@@ -1404,47 +1417,57 @@ class ChatOrchestrator:
                         provider_name = chunk.provider.value
                     yield event
             except Exception as exc:
+                _stream_error = str(exc)
                 logger.error(
                     "orchestrator.stream_failed",
-                    error=str(exc),
+                    error=_stream_error,
                     model=model_id,
                 )
-                # Try fallback to direct Ollama
-                if not collected_content:
-                    yield {"type": "thinking", "stage": "fallback_streaming"}
-                    try:
-                        async for chunk in self._fallback_stream(request):
-                            collected_content += chunk.content
-                            token_count += 1
-                            yield {"type": "chunk", "content": chunk.content}
-                        provider_name = "ollama"
-                        model_id = chunk.model_id if chunk else model_id
-                    except Exception as fallback_exc:
-                        # Demo mode: return mock response instead of error
-                        from app.services.demo_mode import is_demo_mode, mock_llm_response
-                        if is_demo_mode():
-                            mock_content = mock_llm_response(user_content)
-                            collected_content = mock_content
-                            provider_name = "demo"
-                            model_id = "demo-mock"
-                            yield {"type": "chunk", "content": mock_content}
-                        else:
-                            error_msg = ChatMessage(
-                                session_id=session_id,
-                                role="ASSISTANT",
-                                content=(
-                                    "I'm sorry, I couldn't generate a response. "
-                                    "Please check that your LLM providers are configured correctly."
-                                ),
-                            )
-                            self._db.add(error_msg)
-                            await self._db.flush()
-                            yield {
-                                "type": "error",
-                                "message": str(fallback_exc),
-                                "data": ChatService._message_to_dict(error_msg),
-                            }
-                            return
+
+            # If primary + fallback chain failed, try emergency Ollama
+            if _stream_error and not collected_content:
+                yield {
+                    "type": "thinking",
+                    "stage": "fallback_streaming",
+                    "reason": _stream_error,
+                }
+                try:
+                    async for chunk in self._fallback_stream(request):
+                        collected_content += chunk.content
+                        token_count += 1
+                        yield {"type": "chunk", "content": chunk.content}
+                    provider_name = "ollama"
+                    model_id = chunk.model_id if chunk else model_id
+                except Exception as fallback_exc:
+                    # Demo mode: return mock response instead of error
+                    from app.services.demo_mode import is_demo_mode, mock_llm_response
+                    if is_demo_mode():
+                        mock_content = mock_llm_response(user_content)
+                        collected_content = mock_content
+                        provider_name = "demo"
+                        model_id = "demo-mock"
+                        yield {"type": "chunk", "content": mock_content}
+                    else:
+                        # All models failed -- surface actionable error
+                        tried_models = [decision.primary.model_id] + [
+                            c.model_id for c in decision.fallback_chain
+                        ]
+                        error_detail = (
+                            f"All models failed (tried: {', '.join(tried_models)}, "
+                            f"then Ollama emergency fallback). "
+                            f"Last error: {fallback_exc}"
+                        )
+                        logger.error(
+                            "orchestrator.all_models_failed",
+                            tried=tried_models,
+                            final_error=str(fallback_exc),
+                        )
+                        yield {
+                            "type": "error",
+                            "message": error_detail,
+                            "can_retry": True,
+                        }
+                        return
 
         if not collected_content:
             yield {"type": "error", "message": "No content generated."}

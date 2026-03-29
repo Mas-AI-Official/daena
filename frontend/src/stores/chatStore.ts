@@ -638,7 +638,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
               const uiStore = await import('@/stores/uiStore')
               uiStore.useUiStore.getState().addPrompt(event as never)
             } else if (event.type === 'error') {
-              toast.error(event.message || 'Stream error')
+              const errorMsg = event.message || 'Stream error'
+              toast.error(errorMsg)
+              // Save content for retry if backend says retryable
+              if (event.can_retry) {
+                set({ lastFailedMessage: optimistic.content })
+              }
               cancelStream()
             }
           } catch {
