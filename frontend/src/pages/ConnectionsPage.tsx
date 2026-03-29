@@ -85,6 +85,54 @@ const CONNECTORS = [
   { id: 'intercom', name: 'Intercom', subtitle: 'Customer messaging platform', category: 'Communication', auth: 'token' as AuthMethod, tools: ['list_conversations', 'send_message', 'search_contacts'] },
 ]
 
+// ── Browse catalog (Claude Desktop-style marketplace) ──
+
+interface BrowseCatalogItem {
+  id: string
+  name: string
+  description: string
+  popularity?: string   // "Most popular", "#2 popular", etc.
+  connected?: boolean
+  category: string
+  authUrl?: string      // URL to open for OAuth or setup
+}
+
+const BROWSE_CONNECTORS_CATALOG: BrowseCatalogItem[] = [
+  { id: 'gmail', name: 'Gmail', description: 'Draft replies, summarize threads, & search your inbox', popularity: 'Most popular', category: 'Communication', authUrl: 'https://accounts.google.com/o/oauth2/v2/auth' },
+  { id: 'google-calendar', name: 'Google Calendar', description: 'Manage your schedule and coordinate meetings effortlessly', popularity: '#2 popular', category: 'Productivity', authUrl: 'https://accounts.google.com/o/oauth2/v2/auth' },
+  { id: 'google-drive', name: 'Google Drive', description: 'Access files, folders, and shared drives', popularity: '#3 popular', category: 'Productivity', authUrl: 'https://accounts.google.com/o/oauth2/v2/auth' },
+  { id: 'slack', name: 'Slack', description: 'Send messages, create canvases, and fetch Slack data', popularity: '#4 popular', category: 'Communication', authUrl: 'https://slack.com/oauth/v2/authorize' },
+  { id: 'notion', name: 'Notion', description: 'Connect your Notion workspace to search, update, and power workflows', popularity: '#5 popular', category: 'Productivity', authUrl: 'https://api.notion.com/v1/oauth/authorize' },
+  { id: 'canva', name: 'Canva', description: 'Search, create, autofill, and export Canva designs', popularity: '#6 popular', category: 'Design', authUrl: 'https://www.canva.com/api/authorize' },
+  { id: 'figma', name: 'Figma', description: 'Generate diagrams and better code from Figma context', popularity: '#7 popular', category: 'Design', authUrl: 'https://www.figma.com/oauth' },
+  { id: 'github', name: 'GitHub', description: 'Access repositories, issues, and pull requests', popularity: '#8 popular', category: 'Development', authUrl: 'https://github.com/login/oauth/authorize' },
+  { id: 'atlassian', name: 'Atlassian Rovo', description: 'Access Jira & Confluence from Daena', category: 'Development', authUrl: 'https://auth.atlassian.com/authorize' },
+  { id: 'hubspot', name: 'HubSpot', description: 'Chat with your CRM data to get personalized insights', category: 'Sales', authUrl: 'https://app.hubspot.com/oauth/authorize' },
+  { id: 'linear', name: 'Linear', description: 'Manage issues, projects & team workflows in Linear', category: 'Development', authUrl: 'https://linear.app/oauth/authorize' },
+  { id: 'monday', name: 'monday.com', description: 'Manage projects, boards, and workflows in monday.com', category: 'Productivity', authUrl: 'https://auth.monday.com/oauth2/authorize' },
+  { id: 'salesforce', name: 'Salesforce', description: 'Access CRM records, contacts, and opportunities', category: 'Sales', authUrl: 'https://login.salesforce.com/services/oauth2/authorize' },
+  { id: 'stripe', name: 'Stripe', description: 'View payments, subscriptions, and billing data', category: 'Finance', authUrl: 'https://dashboard.stripe.com/apikeys' },
+  { id: 'paypal', name: 'PayPal', description: 'Payments, invoicing, and transaction history', category: 'Finance', authUrl: 'https://developer.paypal.com/developer/applications' },
+  { id: 'intercom', name: 'Intercom', description: 'Customer messaging, conversations, and support', category: 'Communication', authUrl: 'https://app.intercom.com/developers' },
+  { id: 'hugging-face', name: 'Hugging Face', description: 'Models, datasets, and spaces for ML', category: 'Development', authUrl: 'https://huggingface.co/settings/tokens' },
+  { id: 'zapier', name: 'Zapier', description: 'Connect 5000+ apps and automate workflows', category: 'Automation', authUrl: 'https://zapier.com/developer' },
+  { id: 'airtable', name: 'Airtable', description: 'Manage databases, tables, and automations', category: 'Productivity', authUrl: 'https://airtable.com/create/tokens' },
+  { id: 'dropbox', name: 'Dropbox', description: 'Cloud storage, file sharing, and sync', category: 'Productivity', authUrl: 'https://www.dropbox.com/oauth2/authorize' },
+]
+
+const BROWSE_EXTENSIONS_CATALOG: BrowseCatalogItem[] = [
+  { id: 'filesystem', name: 'Filesystem', description: 'Read and write files on your computer', category: 'System', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem' },
+  { id: 'desktop-commander', name: 'Desktop Commander', description: 'Build, explore, and automate on your local machine', category: 'System', authUrl: 'https://github.com/wonderwhy-er/DesktopCommanderMCP' },
+  { id: 'windows-mcp', name: 'Windows MCP', description: 'MCP server for Windows OS interaction', category: 'System', authUrl: 'https://github.com/SimonB97/win-cli-mcp-server' },
+  { id: 'figma-mcp', name: 'Figma MCP', description: 'Generate diagrams and code from Figma designs', category: 'Design', authUrl: 'https://github.com/nicholasgriffintn/figma-mcp-server' },
+  { id: 'elevenlabs', name: 'ElevenLabs', description: 'Create and manage AI voice agents', category: 'AI', authUrl: 'https://elevenlabs.io/app/settings/api-keys' },
+  { id: 'pdf-tools', name: 'PDF Tools', description: 'Fill forms, analyze, extract text from PDFs', category: 'Documents', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/puppeteer' },
+  { id: 'brave-search', name: 'Brave Search', description: 'Web search via Brave API', category: 'Search', authUrl: 'https://api.search.brave.com/app/keys' },
+  { id: 'puppeteer', name: 'Puppeteer', description: 'Browser automation and web scraping', category: 'Browser', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/puppeteer' },
+  { id: 'postgres', name: 'PostgreSQL', description: 'Query and manage PostgreSQL databases', category: 'Data', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/postgres' },
+  { id: 'sqlite', name: 'SQLite', description: 'Query local SQLite databases', category: 'Data', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite' },
+]
+
 // ── Permission Select (Allow / Ask each time / Block) ──
 
 type Permission = 'ALLOW' | 'ASK_EACH_TIME' | 'BLOCK'
@@ -639,6 +687,8 @@ export function ConnectionsPage() {
   const [extLoading, setExtLoading] = useState(true)
   // Track which item is expanded (only one at a time per tab)
   const [expandedItem, setExpandedItem] = useState<string | null>(null)
+  // Browse modal (Claude Desktop-style connector/extension marketplace)
+  const [browseModal, setBrowseModal] = useState<'connectors' | 'extensions' | null>(null)
 
   const toggleExpand = (id: string) => setExpandedItem((prev) => prev === id ? null : id)
 
@@ -819,11 +869,10 @@ export function ConnectionsPage() {
                     <p className="text-xs text-starlight-400">Allow Daena to directly interact with apps, data, and tools on your computer</p>
                   </div>
                   <button
-                    onClick={() => window.open('https://github.com/modelcontextprotocol/servers', '_blank')}
+                    onClick={() => setBrowseModal('extensions')}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer"
                   >
                     <Plus size={12} /> Browse extensions
-                    <ExternalLink size={10} className="opacity-50" />
                   </button>
                 </div>
 
@@ -863,11 +912,10 @@ export function ConnectionsPage() {
                     <p className="text-xs text-starlight-400">Allow Daena to reference other apps and services for more context</p>
                   </div>
                   <button
-                    onClick={() => window.open('https://github.com/modelcontextprotocol/servers', '_blank')}
+                    onClick={() => setBrowseModal('connectors')}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer"
                   >
                     <Plus size={12} /> Browse connectors
-                    <ExternalLink size={10} className="opacity-50" />
                   </button>
                 </div>
 
@@ -900,6 +948,126 @@ export function ConnectionsPage() {
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* ── Browse Modal (Claude Desktop-style marketplace) ── */}
+      <AnimatePresence>
+        {browseModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+              onClick={() => setBrowseModal(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-x-4 top-[5%] bottom-[5%] md:inset-x-[15%] lg:inset-x-[20%] z-50 bg-midnight-300 rounded-2xl border border-white/10 shadow-2xl flex flex-col overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+                <div>
+                  <h2 className="text-xl font-display font-bold text-starlight-100">
+                    {browseModal === 'connectors' ? 'Connectors' : 'Extensions'}
+                  </h2>
+                  <p className="text-xs text-starlight-400 mt-0.5">
+                    {browseModal === 'connectors'
+                      ? 'Connect Daena to your apps, files, and services. One click to set up.'
+                      : 'Add MCP servers and tools to extend Daena\'s capabilities.'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setBrowseModal(null)}
+                  className="p-2 rounded-lg hover:bg-white/5 text-starlight-400 hover:text-starlight-200 cursor-pointer"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+
+              {/* Search + Filters */}
+              <div className="px-6 py-3 border-b border-white/5 flex items-center gap-3">
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-starlight-500" />
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    className="w-full pl-9 pr-3 py-2 rounded-lg bg-midnight-400 border border-white/5 text-sm text-starlight-200 placeholder:text-starlight-500 focus:outline-none focus:border-primary-500/40"
+                  />
+                </div>
+                <div className="flex gap-2 text-xs text-starlight-400">
+                  <span className="px-3 py-1.5 rounded-lg bg-white/5 cursor-pointer hover:bg-white/10">Sort</span>
+                  <span className="px-3 py-1.5 rounded-lg bg-white/5 cursor-pointer hover:bg-white/10">Categories</span>
+                </div>
+              </div>
+
+              {/* Grid */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {(browseModal === 'connectors' ? BROWSE_CONNECTORS_CATALOG : BROWSE_EXTENSIONS_CATALOG).map((item) => {
+                    const isConnected = browseModal === 'connectors'
+                      ? !!connectorInstances[item.id]
+                      : extensions.some(e => e.name.toLowerCase().includes(item.name.toLowerCase()) && e.enabled)
+                    const IconComp = browseModal === 'connectors'
+                      ? (CONNECTOR_ICONS[item.id] || (() => <Globe size={24} className="text-starlight-400" />))
+                      : (EXTENSION_ICONS[item.id] || (() => <Puzzle size={24} className="text-starlight-400" />))
+
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          if (isConnected) {
+                            setBrowseModal(null)
+                            setActiveTab(browseModal)
+                            setExpandedItem(item.id)
+                          } else if (item.authUrl) {
+                            window.open(item.authUrl, '_blank')
+                          }
+                        }}
+                        className="flex items-center gap-3 p-4 rounded-xl border border-white/5 bg-midnight-400/50 hover:bg-white/5 hover:border-white/10 transition-all text-left cursor-pointer group"
+                      >
+                        <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
+                          <IconComp size={22} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-starlight-100">{item.name}</span>
+                            {item.popularity && (
+                              <span className="text-[9px] text-starlight-500 bg-white/5 px-1.5 py-0.5 rounded">{item.popularity}</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-starlight-400 truncate mt-0.5">{item.description}</p>
+                        </div>
+                        <div className="shrink-0">
+                          {isConnected ? (
+                            <CheckCircle2 size={18} className="text-accent-green" />
+                          ) : (
+                            <Plus size={18} className="text-starlight-500 group-hover:text-primary-400 transition-colors" />
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3 border-t border-white/5 text-center">
+                <a
+                  href="https://github.com/modelcontextprotocol/servers"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-starlight-500 hover:text-primary-400 transition-colors inline-flex items-center gap-1"
+                >
+                  Browse all MCP servers on GitHub <ExternalLink size={10} />
+                </a>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
