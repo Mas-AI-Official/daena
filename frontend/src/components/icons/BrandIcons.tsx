@@ -6,23 +6,34 @@
 
 import { memo } from 'react'
 import {
+  Activity,
+  BookOpen,
+  Bot,
+  Brain,
+  Calendar,
+  Chrome,
   Cloud,
   Code,
+  CreditCard,
+  Database,
   FileText,
+  Folder,
+  GitBranch,
   Globe,
   HardDrive,
+  Heart,
+  Layout,
   Mail,
   MessageSquare,
+  Mic,
   Monitor,
   Palette,
   Search,
+  Server,
+  Shield,
   Terminal,
+  Users,
   Zap,
-  Calendar,
-  BookOpen,
-  CreditCard,
-  Folder,
-  Mic,
 } from 'lucide-react'
 
 // ── CDN-based brand icons ──
@@ -172,9 +183,204 @@ export const PDFToolsIcon = memo(({ size = 24, className }: BrandIconProps) => (
 ))
 PDFToolsIcon.displayName = 'PDFToolsIcon'
 
+// Additional extension/connector icons using Lucide
+export const BraveSearchIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="brave" color="FB542B" size={size} className={className} />
+))
+BraveSearchIcon.displayName = 'BraveSearchIcon'
+
+export const PuppeteerIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <Chrome size={size} className={className || 'text-green-400'} />
+))
+PuppeteerIcon.displayName = 'PuppeteerIcon'
+
+export const PlaywrightIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <Chrome size={size} className={className || 'text-emerald-400'} />
+))
+PlaywrightIcon.displayName = 'PlaywrightIcon'
+
+export const PostgresIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="postgresql" color="4169E1" size={size} className={className} />
+))
+PostgresIcon.displayName = 'PostgresIcon'
+
+export const SQLiteIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="sqlite" color="003B57" size={size} className={className} />
+))
+SQLiteIcon.displayName = 'SQLiteIcon'
+
+export const RedisIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="redis" color="FF4438" size={size} className={className} />
+))
+RedisIcon.displayName = 'RedisIcon'
+
+export const SentryIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="sentry" color="362D59" size={size} className={className} />
+))
+SentryIcon.displayName = 'SentryIcon'
+
+export const MemoryIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <Brain size={size} className={className || 'text-violet-400'} />
+))
+MemoryIcon.displayName = 'MemoryIcon'
+
+export const GitIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="git" color="F05032" size={size} className={className} />
+))
+GitIcon.displayName = 'GitIcon'
+
+// Connector icons that were missing
+export const MondayIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="monday" color="FF3D57" size={size} className={className} />
+))
+MondayIcon.displayName = 'MondayIcon'
+
+export const AsanaIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="asana" color="F06A6A" size={size} className={className} />
+))
+AsanaIcon.displayName = 'AsanaIcon'
+
+export const AirtableIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="airtable" color="18BFFF" size={size} className={className} />
+))
+AirtableIcon.displayName = 'AirtableIcon'
+
+export const DropboxIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="dropbox" color="0061FF" size={size} className={className} />
+))
+DropboxIcon.displayName = 'DropboxIcon'
+
+export const BoxIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="box" color="0061D5" size={size} className={className} />
+))
+BoxIcon.displayName = 'BoxIcon'
+
+export const WordPressIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="wordpress" color="21759B" size={size} className={className} />
+))
+WordPressIcon.displayName = 'WordPressIcon'
+
+export const ClickUpIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="clickup" color="7B68EE" size={size} className={className} />
+))
+ClickUpIcon.displayName = 'ClickUpIcon'
+
+export const BasecampIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="basecamp" color="1D2D35" size={size} className={className} />
+))
+BasecampIcon.displayName = 'BasecampIcon'
+
+export const SalesforceIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="salesforce" color="00A1E0" size={size} className={className} />
+))
+SalesforceIcon.displayName = 'SalesforceIcon'
+
+export const HubSpotIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="hubspot" color="FF7A59" size={size} className={className} />
+))
+HubSpotIcon.displayName = 'HubSpotIcon'
+
+export const CloudflareIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="cloudflare" color="F38020" size={size} className={className} />
+))
+CloudflareIcon.displayName = 'CloudflareIcon'
+
+export const VercelIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="vercel" color="ffffff" size={size} className={className} />
+))
+VercelIcon.displayName = 'VercelIcon'
+
+export const AmplitudeIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="amplitude" color="0060FF" size={size} className={className} />
+))
+AmplitudeIcon.displayName = 'AmplitudeIcon'
+
+export const SnowflakeIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="snowflake" color="29B5E8" size={size} className={className} />
+))
+SnowflakeIcon.displayName = 'SnowflakeIcon'
+
+export const ZapierIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="zapier" color="FF4F00" size={size} className={className} />
+))
+ZapierIcon.displayName = 'ZapierIcon'
+
+export const SquareIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="square" color="3E4348" size={size} className={className} />
+))
+SquareIcon.displayName = 'SquareIcon'
+
+export const MicrosoftTeamsIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CdnIcon name="microsoftteams" color="6264A7" size={size} className={className} />
+))
+MicrosoftTeamsIcon.displayName = 'MicrosoftTeamsIcon'
+
+export const ClayIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <Users size={size} className={className || 'text-indigo-400'} />
+))
+ClayIcon.displayName = 'ClayIcon'
+
+export const PlaidIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <CreditCard size={size} className={className || 'text-green-400'} />
+))
+PlaidIcon.displayName = 'PlaidIcon'
+
+export const GammaIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <Layout size={size} className={className || 'text-purple-400'} />
+))
+GammaIcon.displayName = 'GammaIcon'
+
+export const GranolaIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <BookOpen size={size} className={className || 'text-amber-400'} />
+))
+GranolaIcon.displayName = 'GranolaIcon'
+
+export const AppleHealthIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <Heart size={size} className={className || 'text-red-400'} />
+))
+AppleHealthIcon.displayName = 'AppleHealthIcon'
+
+export const PubMedIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <BookOpen size={size} className={className || 'text-blue-400'} />
+))
+PubMedIcon.displayName = 'PubMedIcon'
+
+export const HexIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <Activity size={size} className={className || 'text-pink-400'} />
+))
+HexIcon.displayName = 'HexIcon'
+
 // ── Icon Registry (lookup by name) ──
 
 export const CONNECTOR_ICONS: Record<string, React.ComponentType<BrandIconProps>> = {
+  // New connectors added for Browse modal
+  'monday': MondayIcon,
+  'monday.com': MondayIcon,
+  'asana': AsanaIcon,
+  'airtable': AirtableIcon,
+  'dropbox': DropboxIcon,
+  'box': BoxIcon,
+  'wordpress': WordPressIcon,
+  'wordpress.com': WordPressIcon,
+  'clickup': ClickUpIcon,
+  'basecamp': BasecampIcon,
+  'salesforce': SalesforceIcon,
+  'hubspot': HubSpotIcon,
+  'cloudflare': CloudflareIcon,
+  'vercel': VercelIcon,
+  'amplitude': AmplitudeIcon,
+  'snowflake': SnowflakeIcon,
+  'zapier': ZapierIcon,
+  'square': SquareIcon,
+  'microsoft-teams': MicrosoftTeamsIcon,
+  'clay': ClayIcon,
+  'plaid': PlaidIcon,
+  'gamma': GammaIcon,
+  'granola': GranolaIcon,
+  'apple-health': AppleHealthIcon,
+  'pubmed': PubMedIcon,
+  'hex': HexIcon,
+  'sentry': SentryIcon,
   'google-drive': GoogleDriveIcon,
   'github': GitHubIcon,
   'figma': FigmaIcon,
@@ -202,12 +408,24 @@ export const RUNTIME_ICONS: Record<string, React.ComponentType<BrandIconProps>> 
 export const EXTENSION_ICONS: Record<string, React.ComponentType<BrandIconProps>> = {
   'filesystem': FilesystemIcon,
   'figma': FigmaIcon,
+  'figma-mcp': FigmaIcon,
   'windows-mcp': WindowsMCPIcon,
   'elevenlabs': ElevenLabsIcon,
   'elevenlabs-agents-mcp-app': ElevenLabsIcon,
   'pdf-tools': PDFToolsIcon,
   'pdf-tools---fill-analyze-extract-view': PDFToolsIcon,
   'desktop-commander': DesktopCommanderIcon,
+  'brave-search': BraveSearchIcon,
+  'puppeteer': PuppeteerIcon,
+  'playwright': PlaywrightIcon,
+  'postgres': PostgresIcon,
+  'postgresql': PostgresIcon,
+  'sqlite': SQLiteIcon,
+  'redis': RedisIcon,
+  'sentry': SentryIcon,
+  'sentry-mcp': SentryIcon,
+  'memory': MemoryIcon,
+  'git': GitIcon,
 }
 
 /** Get the right icon for a connector/runtime/extension by name. */
