@@ -126,7 +126,7 @@ export const AnthropicIcon = memo(({ size = 24, className }: BrandIconProps) => 
 AnthropicIcon.displayName = 'AnthropicIcon'
 
 export const OpenAIIcon = memo(({ size = 24, className }: BrandIconProps) => (
-  <CdnIcon name="openai" color="412991" size={size} className={className} />
+  <CdnIcon name="openai" color="ffffff" size={size} className={className} />
 ))
 OpenAIIcon.displayName = 'OpenAIIcon'
 

@@ -247,13 +247,25 @@ function RuntimeRow({ runtime, isPrimary, expanded, onToggleExpand, onSetPrimary
           ) : isOnline && !isAuthenticated ? (
             <span className="text-xs text-accent-amber font-medium">Not authenticated</span>
           ) : isInstalled ? (
-            <span className="text-xs text-accent-amber">Offline</span>
+            <span className="text-xs text-accent-amber font-medium">Not authenticated</span>
           ) : (
             <button
-              onClick={() => toast.info(`Visit the ${runtime.display_name} website for setup instructions.`)}
-              className="px-3 py-1 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation()
+                const urls: Record<string, string> = {
+                  'claude_code': 'https://docs.anthropic.com/en/docs/claude-code',
+                  'codex': 'https://github.com/openai/codex',
+                  'gemini_cli': 'https://github.com/google-gemini/gemini-cli',
+                  'grok_cli': 'https://docs.x.ai/docs/grok-cli',
+                  'ollama': 'https://ollama.ai',
+                }
+                const url = urls[runtime.runtime_id] || runtime.subscription?.login_url
+                if (url) window.open(url, '_blank')
+                else toast.info(`Visit the ${runtime.display_name} website for setup instructions.`)
+              }}
+              className="px-3 py-1 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer flex items-center gap-1"
             >
-              Setup
+              Setup <ExternalLink size={10} className="opacity-50" />
             </button>
           )}
           {expanded ? <ChevronUp size={14} className="text-starlight-400" /> : <ChevronDown size={14} className="text-starlight-400" />}
@@ -806,8 +818,12 @@ export function ConnectionsPage() {
                     <h2 className="text-lg font-display font-bold text-starlight-100">Extensions</h2>
                     <p className="text-xs text-starlight-400">Allow Daena to directly interact with apps, data, and tools on your computer</p>
                   </div>
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer">
+                  <button
+                    onClick={() => window.open('https://github.com/modelcontextprotocol/servers', '_blank')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer"
+                  >
                     <Plus size={12} /> Browse extensions
+                    <ExternalLink size={10} className="opacity-50" />
                   </button>
                 </div>
 
@@ -846,8 +862,12 @@ export function ConnectionsPage() {
                     <h2 className="text-lg font-display font-bold text-starlight-100">Connectors</h2>
                     <p className="text-xs text-starlight-400">Allow Daena to reference other apps and services for more context</p>
                   </div>
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer">
+                  <button
+                    onClick={() => window.open('https://github.com/modelcontextprotocol/servers', '_blank')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer"
+                  >
                     <Plus size={12} /> Browse connectors
+                    <ExternalLink size={10} className="opacity-50" />
                   </button>
                 </div>
 
