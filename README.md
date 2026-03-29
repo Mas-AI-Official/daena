@@ -11,6 +11,10 @@
 </h1>
 
 <p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=transparent&text=%E2%80%9CIntelligence%20without%20governance%20is%20just%20a%20faster%20way%20to%20make%20mistakes.%E2%80%9D&fontSize=20&fontColor=D4A843&fontAlignY=50&animation=twinkling&height=45" alt="Intelligence without governance is just a faster way to make mistakes." />
+</p>
+
+<p align="center">
   <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=400&size=18&pause=2000&color=94A3B8&center=true&vCenter=true&width=600&height=30&lines=Your+AI+Vice+President;Governed+Multi-Agent+Orchestration;10+Departments.+60+Agents.+133+Skills;Install+Claude+Code%2C+Codex%2C+Gemini+CLI+on+Daena;Free+Forever.+Pro+includes+all+LLMs." alt="Typing" />
 </p>
 
