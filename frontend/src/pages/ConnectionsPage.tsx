@@ -98,39 +98,84 @@ interface BrowseCatalogItem {
 }
 
 const BROWSE_CONNECTORS_CATALOG: BrowseCatalogItem[] = [
-  { id: 'gmail', name: 'Gmail', description: 'Draft replies, summarize threads, & search your inbox', popularity: 'Most popular', category: 'Communication', authUrl: 'https://accounts.google.com/o/oauth2/v2/auth' },
-  { id: 'google-calendar', name: 'Google Calendar', description: 'Manage your schedule and coordinate meetings effortlessly', popularity: '#2 popular', category: 'Productivity', authUrl: 'https://accounts.google.com/o/oauth2/v2/auth' },
-  { id: 'google-drive', name: 'Google Drive', description: 'Access files, folders, and shared drives', popularity: '#3 popular', category: 'Productivity', authUrl: 'https://accounts.google.com/o/oauth2/v2/auth' },
-  { id: 'slack', name: 'Slack', description: 'Send messages, create canvases, and fetch Slack data', popularity: '#4 popular', category: 'Communication', authUrl: 'https://slack.com/oauth/v2/authorize' },
-  { id: 'notion', name: 'Notion', description: 'Connect your Notion workspace to search, update, and power workflows', popularity: '#5 popular', category: 'Productivity', authUrl: 'https://api.notion.com/v1/oauth/authorize' },
-  { id: 'canva', name: 'Canva', description: 'Search, create, autofill, and export Canva designs', popularity: '#6 popular', category: 'Design', authUrl: 'https://www.canva.com/api/authorize' },
-  { id: 'figma', name: 'Figma', description: 'Generate diagrams and better code from Figma context', popularity: '#7 popular', category: 'Design', authUrl: 'https://www.figma.com/oauth' },
-  { id: 'github', name: 'GitHub', description: 'Access repositories, issues, and pull requests', popularity: '#8 popular', category: 'Development', authUrl: 'https://github.com/login/oauth/authorize' },
-  { id: 'atlassian', name: 'Atlassian Rovo', description: 'Access Jira & Confluence from Daena', category: 'Development', authUrl: 'https://auth.atlassian.com/authorize' },
-  { id: 'hubspot', name: 'HubSpot', description: 'Chat with your CRM data to get personalized insights', category: 'Sales', authUrl: 'https://app.hubspot.com/oauth/authorize' },
-  { id: 'linear', name: 'Linear', description: 'Manage issues, projects & team workflows in Linear', category: 'Development', authUrl: 'https://linear.app/oauth/authorize' },
-  { id: 'monday', name: 'monday.com', description: 'Manage projects, boards, and workflows in monday.com', category: 'Productivity', authUrl: 'https://auth.monday.com/oauth2/authorize' },
-  { id: 'salesforce', name: 'Salesforce', description: 'Access CRM records, contacts, and opportunities', category: 'Sales', authUrl: 'https://login.salesforce.com/services/oauth2/authorize' },
-  { id: 'stripe', name: 'Stripe', description: 'View payments, subscriptions, and billing data', category: 'Finance', authUrl: 'https://dashboard.stripe.com/apikeys' },
-  { id: 'paypal', name: 'PayPal', description: 'Payments, invoicing, and transaction history', category: 'Finance', authUrl: 'https://developer.paypal.com/developer/applications' },
-  { id: 'intercom', name: 'Intercom', description: 'Customer messaging, conversations, and support', category: 'Communication', authUrl: 'https://app.intercom.com/developers' },
-  { id: 'hugging-face', name: 'Hugging Face', description: 'Models, datasets, and spaces for ML', category: 'Development', authUrl: 'https://huggingface.co/settings/tokens' },
-  { id: 'zapier', name: 'Zapier', description: 'Connect 5000+ apps and automate workflows', category: 'Automation', authUrl: 'https://zapier.com/developer' },
-  { id: 'airtable', name: 'Airtable', description: 'Manage databases, tables, and automations', category: 'Productivity', authUrl: 'https://airtable.com/create/tokens' },
-  { id: 'dropbox', name: 'Dropbox', description: 'Cloud storage, file sharing, and sync', category: 'Productivity', authUrl: 'https://www.dropbox.com/oauth2/authorize' },
+  // Communication
+  { id: 'gmail', name: 'Gmail', description: 'Draft replies, summarize threads, and search your inbox', popularity: 'Most popular', category: 'Communication', authUrl: 'https://mail.google.com' },
+  { id: 'slack', name: 'Slack', description: 'Send messages, create canvases, and fetch Slack data', popularity: '#4 popular', category: 'Communication', authUrl: 'https://slack.com' },
+  { id: 'intercom', name: 'Intercom', description: 'Customer messaging, conversations, and support', category: 'Communication', authUrl: 'https://www.intercom.com' },
+  { id: 'microsoft-teams', name: 'Microsoft Teams', description: 'Chat, meetings, and collaboration in Teams', category: 'Communication', authUrl: 'https://teams.microsoft.com' },
+  // Productivity
+  { id: 'google-calendar', name: 'Google Calendar', description: 'Manage your schedule and coordinate meetings', popularity: '#2 popular', category: 'Productivity', authUrl: 'https://calendar.google.com' },
+  { id: 'google-drive', name: 'Google Drive', description: 'Access files, folders, and shared drives', popularity: '#3 popular', category: 'Productivity', authUrl: 'https://drive.google.com' },
+  { id: 'notion', name: 'Notion', description: 'Connect your Notion workspace to search, update, and power workflows', popularity: '#5 popular', category: 'Productivity', authUrl: 'https://www.notion.so' },
+  { id: 'monday', name: 'monday.com', description: 'Manage projects, boards, and workflows', category: 'Productivity', authUrl: 'https://monday.com' },
+  { id: 'airtable', name: 'Airtable', description: 'Manage databases, tables, and automations', category: 'Productivity', authUrl: 'https://airtable.com' },
+  { id: 'dropbox', name: 'Dropbox', description: 'Cloud storage, file sharing, and sync', category: 'Productivity', authUrl: 'https://www.dropbox.com' },
+  { id: 'box', name: 'Box', description: 'Secure cloud content management and file sharing', category: 'Productivity', authUrl: 'https://www.box.com' },
+  { id: 'wordpress', name: 'WordPress.com', description: 'Manage posts, pages, and site content', category: 'Productivity', authUrl: 'https://wordpress.com' },
+  { id: 'clickup', name: 'ClickUp', description: 'Tasks, docs, goals, and project management', category: 'Productivity', authUrl: 'https://clickup.com' },
+  { id: 'basecamp', name: 'Basecamp', description: 'Project management, team communication, and scheduling', category: 'Productivity', authUrl: 'https://basecamp.com' },
+  // Project Management
+  { id: 'asana', name: 'Asana', description: 'Track projects, manage tasks, and coordinate team work', category: 'Project Management', authUrl: 'https://asana.com' },
+  { id: 'linear', name: 'Linear', description: 'Manage issues, projects, and team workflows', category: 'Project Management', authUrl: 'https://linear.app' },
+  { id: 'atlassian', name: 'Atlassian Rovo', description: 'Access Jira and Confluence from Daena', category: 'Project Management', authUrl: 'https://www.atlassian.com' },
+  // Design
+  { id: 'canva', name: 'Canva', description: 'Search, create, autofill, and export Canva designs', popularity: '#6 popular', category: 'Design', authUrl: 'https://www.canva.com' },
+  { id: 'figma', name: 'Figma', description: 'Generate diagrams and better code from Figma context', popularity: '#7 popular', category: 'Design', authUrl: 'https://www.figma.com' },
+  // Development
+  { id: 'github', name: 'GitHub', description: 'Repositories, issues, pull requests, and actions', popularity: '#8 popular', category: 'Development', authUrl: 'https://github.com' },
+  { id: 'sentry', name: 'Sentry', description: 'Error tracking, performance monitoring, and debugging', category: 'Development', authUrl: 'https://sentry.io' },
+  { id: 'cloudflare', name: 'Cloudflare', description: 'DNS, CDN, security, and Workers management', category: 'Development', authUrl: 'https://dash.cloudflare.com' },
+  { id: 'vercel', name: 'Vercel', description: 'Deploy and manage web applications', category: 'Development', authUrl: 'https://vercel.com' },
+  { id: 'hugging-face', name: 'Hugging Face', description: 'Models, datasets, and spaces for ML', category: 'Development', authUrl: 'https://huggingface.co' },
+  // Data & Analytics
+  { id: 'amplitude', name: 'Amplitude', description: 'Product analytics, user behavior, and insights', category: 'Analytics', authUrl: 'https://amplitude.com' },
+  { id: 'hex', name: 'Hex', description: 'Collaborative data notebooks and analytics', category: 'Analytics', authUrl: 'https://hex.tech' },
+  { id: 'snowflake', name: 'Snowflake', description: 'Cloud data warehouse queries and management', category: 'Analytics', authUrl: 'https://www.snowflake.com' },
+  // Sales & CRM
+  { id: 'hubspot', name: 'HubSpot', description: 'Chat with your CRM data to get personalized insights', category: 'Sales', authUrl: 'https://www.hubspot.com' },
+  { id: 'salesforce', name: 'Salesforce', description: 'Access CRM records, contacts, and opportunities', category: 'Sales', authUrl: 'https://www.salesforce.com' },
+  { id: 'clay', name: 'Clay', description: 'Enrich leads and automate outbound workflows', category: 'Sales', authUrl: 'https://www.clay.com' },
+  // Finance
+  { id: 'stripe', name: 'Stripe', description: 'View payments, subscriptions, and billing data', category: 'Finance', authUrl: 'https://dashboard.stripe.com' },
+  { id: 'paypal', name: 'PayPal', description: 'Payments, invoicing, and transaction history', category: 'Finance', authUrl: 'https://www.paypal.com' },
+  { id: 'square', name: 'Square', description: 'Payment processing, invoicing, and POS', category: 'Finance', authUrl: 'https://squareup.com' },
+  { id: 'plaid', name: 'Plaid', description: 'Connect to bank accounts and financial data', category: 'Finance', authUrl: 'https://plaid.com' },
+  // Automation
+  { id: 'zapier', name: 'Zapier', description: 'Connect 5000+ apps and automate workflows', category: 'Automation', authUrl: 'https://zapier.com' },
+  // Healthcare
+  { id: 'apple-health', name: 'Apple Health', description: 'Access health records and lab results', category: 'Healthcare', authUrl: 'https://www.apple.com/health/' },
+  { id: 'pubmed', name: 'PubMed', description: 'Search biomedical and life sciences literature', category: 'Healthcare', authUrl: 'https://pubmed.ncbi.nlm.nih.gov' },
+  // Knowledge
+  { id: 'gamma', name: 'Gamma', description: 'Create presentations, documents, and webpages with AI', category: 'Productivity', authUrl: 'https://gamma.app' },
+  { id: 'granola', name: 'Granola', description: 'AI meeting notes and conversation summaries', category: 'Productivity', authUrl: 'https://www.granola.ai' },
 ]
 
 const BROWSE_EXTENSIONS_CATALOG: BrowseCatalogItem[] = [
+  // System
   { id: 'filesystem', name: 'Filesystem', description: 'Read and write files on your computer', category: 'System', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem' },
   { id: 'desktop-commander', name: 'Desktop Commander', description: 'Build, explore, and automate on your local machine', category: 'System', authUrl: 'https://github.com/wonderwhy-er/DesktopCommanderMCP' },
   { id: 'windows-mcp', name: 'Windows MCP', description: 'MCP server for Windows OS interaction', category: 'System', authUrl: 'https://github.com/SimonB97/win-cli-mcp-server' },
+  // Design
   { id: 'figma-mcp', name: 'Figma MCP', description: 'Generate diagrams and code from Figma designs', category: 'Design', authUrl: 'https://github.com/nicholasgriffintn/figma-mcp-server' },
-  { id: 'elevenlabs', name: 'ElevenLabs', description: 'Create and manage AI voice agents', category: 'AI', authUrl: 'https://elevenlabs.io/app/settings/api-keys' },
-  { id: 'pdf-tools', name: 'PDF Tools', description: 'Fill forms, analyze, extract text from PDFs', category: 'Documents', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/puppeteer' },
-  { id: 'brave-search', name: 'Brave Search', description: 'Web search via Brave API', category: 'Search', authUrl: 'https://api.search.brave.com/app/keys' },
+  // AI & Voice
+  { id: 'elevenlabs', name: 'ElevenLabs', description: 'Create and manage AI voice agents', category: 'AI', authUrl: 'https://elevenlabs.io' },
+  // Documents
+  { id: 'pdf-tools', name: 'PDF Tools', description: 'Fill forms, analyze, and extract text from PDFs', category: 'Documents', authUrl: 'https://github.com/modelcontextprotocol/servers' },
+  // Search
+  { id: 'brave-search', name: 'Brave Search', description: 'Web search via Brave Search API', category: 'Search', authUrl: 'https://brave.com/search/api/' },
+  // Browser
   { id: 'puppeteer', name: 'Puppeteer', description: 'Browser automation and web scraping', category: 'Browser', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/puppeteer' },
+  { id: 'playwright', name: 'Playwright', description: 'Cross-browser testing and automation', category: 'Browser', authUrl: 'https://playwright.dev' },
+  // Data
   { id: 'postgres', name: 'PostgreSQL', description: 'Query and manage PostgreSQL databases', category: 'Data', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/postgres' },
   { id: 'sqlite', name: 'SQLite', description: 'Query local SQLite databases', category: 'Data', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite' },
+  { id: 'redis', name: 'Redis', description: 'In-memory data store and cache', category: 'Data', authUrl: 'https://github.com/modelcontextprotocol/servers' },
+  // Monitoring
+  { id: 'sentry-mcp', name: 'Sentry', description: 'Error tracking and performance monitoring', category: 'Monitoring', authUrl: 'https://sentry.io' },
+  // Memory
+  { id: 'memory', name: 'Memory', description: 'Persistent memory storage across conversations', category: 'AI', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/memory' },
+  // Git
+  { id: 'git', name: 'Git', description: 'Read, search, and analyze local Git repositories', category: 'Development', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/git' },
 ]
 
 // ── Permission Select (Allow / Ask each time / Block) ──
