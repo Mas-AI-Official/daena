@@ -304,7 +304,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!activeSessionId) return
 
     try {
-      // 1. Truncate DB messages from the edited one onwards (use api instance for auth)
+      // 1. Truncate DB messages from the edited one onwards
       const { api } = await import('@/lib/api')
       const truncRes = await api.delete(
         `/chat/sessions/${activeSessionId}/messages/truncate`,
@@ -315,14 +315,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return
       }
 
-      // 2. Truncate frontend state to before the edited message
+      // 2. Truncate frontend state: remove the edited message AND everything after it
       set((s) => {
         const idx = s.messages.findIndex((m) => m.id === messageId)
         return { messages: idx >= 0 ? s.messages.slice(0, idx) : s.messages }
       })
 
-      // 3. Send the edited content as a fresh message (re-generates response)
-      await sendMessageStream(newContent)
+      // 3. Re-send the edited content in the SAME session (no new session).
+      // Pass activeSessionId explicitly to prevent any race condition.
+      // sendMessageStream checks activeSessionId — it's still set, so
+      // it sends to the existing session, not creates a new one.
+      const uiState = await import('@/stores/uiStore')
+      const ui = uiState.useUiStore.getState()
+      await sendMessageStream(
+        newContent,
+        ui.selectedModel,
+        ui.governanceSlider,
+      )
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Edit failed')
     }
