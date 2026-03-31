@@ -145,6 +145,24 @@ class IntegrationRouter:
                 f"Reconnect in Daena Settings > Connections."
             )
 
+        # Auto-refresh OAuth tokens if expired
+        if credentials.get("refresh_token") and credentials.get("expires_at"):
+            try:
+                from app.services.integrations.oauth_service import ConnectorOAuthService
+                oauth_svc = ConnectorOAuthService(self.db)
+                refreshed = await oauth_svc.check_and_refresh(credentials)
+                if refreshed.get("access_token") != credentials.get("access_token"):
+                    # Token was refreshed -- persist new credentials
+                    instance.credentials = refreshed
+                    credentials = refreshed
+                    logger.info("integration.token_refreshed", provider=provider)
+            except Exception as refresh_exc:
+                logger.warning(
+                    "integration.token_refresh_failed",
+                    provider=provider,
+                    error=str(refresh_exc),
+                )
+
         # Instantiate client and execute
         client = client_class(credentials)
         try:
