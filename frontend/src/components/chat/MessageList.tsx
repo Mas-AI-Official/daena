@@ -32,6 +32,8 @@ interface MessageListProps {
   daenabotActivity?: DaenaBotActivity | null
   /** Pipeline stages for ThinkingProcess display */
   pipelineStages?: { label: string; detail?: string; status: 'done' | 'active' | 'pending' }[]
+  /** Active tool calls from the agentic loop */
+  toolCalls?: { tool: string; params: Record<string, unknown>; result?: Record<string, unknown>; success?: boolean; iteration: number; status: 'calling' | 'done' | 'error' }[]
   /** Called when user edits a message — triggers truncate + regenerate */
   onEditMessage?: (messageId: string, newContent: string) => void
   /** Called when user clicks Regenerate on the last assistant message */
@@ -49,6 +51,7 @@ export const MessageList = memo(function MessageList({
   modelUsed,
   daenabotActivity,
   pipelineStages,
+  toolCalls,
   onEditMessage,
   onRegenerateMessage,
   onQuickAction,
@@ -263,6 +266,63 @@ export const MessageList = memo(function MessageList({
               modelUsed={modelUsed || undefined}
               steps={pipelineStages}
             />
+          )}
+        </AnimatePresence>
+
+        {/* Tool calls from agentic loop */}
+        <AnimatePresence>
+          {isStreaming && toolCalls && toolCalls.length > 0 && (
+            <motion.div
+              className="px-4 py-2"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              <div className="ml-11 space-y-1.5">
+                {toolCalls.map((tc, i) => (
+                  <motion.div
+                    key={`${tc.tool}-${i}`}
+                    className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs border ${
+                      tc.status === 'calling'
+                        ? 'border-primary-500/30 bg-primary-500/5 text-primary-300'
+                        : tc.status === 'done'
+                        ? 'border-accent-teal/20 bg-accent-teal/5 text-accent-teal'
+                        : 'border-red-500/20 bg-red-500/5 text-red-400'
+                    }`}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                  >
+                    <span className="shrink-0 mt-0.5">
+                      {tc.status === 'calling' ? (
+                        <motion.span
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                          className="inline-block w-3 h-3 border-2 border-primary-400 border-t-transparent rounded-full"
+                        />
+                      ) : tc.status === 'done' ? (
+                        <span className="text-accent-teal">&#10003;</span>
+                      ) : (
+                        <span className="text-red-400">&#10007;</span>
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <span className="font-mono font-semibold">{tc.tool}</span>
+                      {tc.params && Object.keys(tc.params).length > 0 && (
+                        <span className="ml-1.5 text-starlight-500 truncate">
+                          {JSON.stringify(tc.params).slice(0, 60)}{JSON.stringify(tc.params).length > 60 ? '...' : ''}
+                        </span>
+                      )}
+                      {tc.result && tc.status === 'done' && (
+                        <div className="mt-0.5 text-starlight-400 truncate">
+                          Result: {JSON.stringify(tc.result).slice(0, 80)}{JSON.stringify(tc.result).length > 80 ? '...' : ''}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
           )}
         </AnimatePresence>
 

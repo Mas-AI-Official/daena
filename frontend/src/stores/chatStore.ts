@@ -39,6 +39,15 @@ interface PipelineStage {
   status: 'done' | 'active' | 'pending'
 }
 
+interface ToolCallEvent {
+  tool: string
+  params: Record<string, unknown>
+  result?: Record<string, unknown>
+  success?: boolean
+  iteration: number
+  status: 'calling' | 'done' | 'error'
+}
+
 interface StreamState {
   isStreaming: boolean
   thinkingContent: string
@@ -48,6 +57,7 @@ interface StreamState {
   runtimeActivity: RuntimeActivity | null
   runtimeOutput: string
   pipelineStages: PipelineStage[]
+  toolCalls: ToolCallEvent[]
 }
 
 interface StreamSessionInit {
@@ -142,6 +152,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     runtimeActivity: null,
     runtimeOutput: '',
     pipelineStages: [],
+    toolCalls: [],
   },
   error: null,
   lastFailedMessage: null,
@@ -586,6 +597,74 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     : s.activeSession,
                 }))
               }
+            } else if (event.type === 'tool_call') {
+              // Agentic loop: LLM is calling a tool
+              set((s) => ({
+                stream: {
+                  ...s.stream,
+                  toolCalls: [...s.stream.toolCalls, {
+                    tool: event.tool,
+                    params: event.params || {},
+                    iteration: event.iteration || 1,
+                    status: 'calling' as const,
+                  }],
+                },
+              }))
+              // Add pipeline stage for tool call
+              set((s) => {
+                const prev = s.stream.pipelineStages.map((p) =>
+                  p.status === 'active' ? { ...p, status: 'done' as const } : p,
+                )
+                return {
+                  stream: {
+                    ...s.stream,
+                    pipelineStages: [...prev, {
+                      label: `Tool: ${event.tool}`,
+                      detail: JSON.stringify(event.params || {}).slice(0, 80),
+                      status: 'active' as const,
+                    }],
+                  },
+                }
+              })
+            } else if (event.type === 'tool_result') {
+              // Agentic loop: tool returned a result
+              set((s) => ({
+                stream: {
+                  ...s.stream,
+                  toolCalls: s.stream.toolCalls.map((tc) =>
+                    tc.tool === event.tool && tc.status === 'calling'
+                      ? { ...tc, result: event.result, success: event.success, status: event.success ? 'done' as const : 'error' as const }
+                      : tc,
+                  ),
+                },
+              }))
+              // Mark pipeline stage as done
+              set((s) => ({
+                stream: {
+                  ...s.stream,
+                  pipelineStages: s.stream.pipelineStages.map((p) =>
+                    p.label === `Tool: ${event.tool}` && p.status === 'active'
+                      ? { ...p, status: 'done' as const }
+                      : p,
+                  ),
+                },
+              }))
+            } else if (event.type === 'tool_loop_complete') {
+              // Agentic loop finished
+              set((s) => {
+                const prev = s.stream.pipelineStages.map((p) =>
+                  p.status === 'active' ? { ...p, status: 'done' as const } : p,
+                )
+                return {
+                  stream: {
+                    ...s.stream,
+                    pipelineStages: [...prev, {
+                      label: `Tools complete (${event.total_calls} calls)`,
+                      status: 'done' as const,
+                    }],
+                  },
+                }
+              })
             } else if (event.type === 'daenabot_activity') {
               // DaenaBot agent activity indicator
               set((s) => ({
@@ -684,7 +763,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Streaming controls (driven by WebSocket or SSE events) ──
   startStream: () =>
     set({
-      stream: { isStreaming: true, thinkingContent: '', streamedContent: '', modelUsed: null, daenabotActivity: null, runtimeActivity: null, runtimeOutput: '', pipelineStages: [] },
+      stream: { isStreaming: true, thinkingContent: '', streamedContent: '', modelUsed: null, daenabotActivity: null, runtimeActivity: null, runtimeOutput: '', pipelineStages: [], toolCalls: [] },
     }),
 
   appendThinking: (chunk) =>
@@ -700,12 +779,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   finalizeStream: (msg) =>
     set((s) => ({
       messages: [...s.messages, msg],
-      stream: { isStreaming: false, thinkingContent: '', streamedContent: '', modelUsed: msg.model_used, daenabotActivity: null, runtimeActivity: null, runtimeOutput: '', pipelineStages: [] },
+      stream: { isStreaming: false, thinkingContent: '', streamedContent: '', modelUsed: msg.model_used, daenabotActivity: null, runtimeActivity: null, runtimeOutput: '', pipelineStages: [], toolCalls: [] },
     })),
 
   cancelStream: () =>
     set({
-      stream: { isStreaming: false, thinkingContent: '', streamedContent: '', modelUsed: null, daenabotActivity: null, runtimeActivity: null, runtimeOutput: '', pipelineStages: [] },
+      stream: { isStreaming: false, thinkingContent: '', streamedContent: '', modelUsed: null, daenabotActivity: null, runtimeActivity: null, runtimeOutput: '', pipelineStages: [], toolCalls: [] },
     }),
 }))
 

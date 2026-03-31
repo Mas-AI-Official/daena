@@ -25,6 +25,7 @@ from app.api.v1 import (
     governance,
     health,
     heartbeat,
+    integrations,
     mcp_server,
     memory,
     mobile,
@@ -66,6 +67,7 @@ router.include_router(projects.router, prefix="/projects", tags=["projects"])
 router.include_router(prompts.router, prefix="/prompts", tags=["prompts"])
 router.include_router(runtimes.router, prefix="/runtimes", tags=["runtimes"])
 router.include_router(heartbeat.router, prefix="/heartbeat", tags=["heartbeat"])
+router.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 router.include_router(self_improvement.router, prefix="/self-improvement", tags=["self-improvement"])
 router.include_router(waitlist.router, prefix="/waitlist", tags=["waitlist"])
 router.include_router(mobile.router)

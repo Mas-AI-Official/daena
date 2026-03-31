@@ -168,3 +168,54 @@ async def delete_task(
     """Delete a task."""
     await service.delete_task(task_id, user.tenant_id)
     return {"success": True}
+
+
+# ── Department Tasks in Execution View ──
+
+@router.get("/department-tasks")
+async def list_department_tasks_for_execution_view(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """List department tasks for the Execution View.
+
+    Returns both scheduled workflows and their recent results,
+    so the Execution View can show department activity alongside
+    regular tasks.
+    """
+    from sqlalchemy import select
+    from app.models.department_task import DepartmentTask
+
+    stmt = (
+        select(DepartmentTask)
+        .where(DepartmentTask.tenant_id == user.tenant_id)
+        .order_by(DepartmentTask.last_run_at.desc().nullslast())
+    )
+    result = await db.execute(stmt)
+    tasks = result.scalars().all()
+
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": str(t.id),
+                "type": "department_workflow",
+                "workflow_id": t.workflow_id,
+                "department": t.department,
+                "name": t.name,
+                "description": t.description,
+                "status": t.status,
+                "is_active": t.is_active,
+                "cron_expression": t.cron_expression,
+                "last_run_at": t.last_run_at.isoformat() if t.last_run_at else None,
+                "next_run_at": t.next_run_at.isoformat() if t.next_run_at else None,
+                "run_count": t.run_count,
+                "last_error": t.last_error,
+                "last_result_summary": (
+                    t.last_result.get("summary", "")[:200]
+                    if isinstance(t.last_result, dict) else None
+                ),
+            }
+            for t in tasks
+        ],
+    }

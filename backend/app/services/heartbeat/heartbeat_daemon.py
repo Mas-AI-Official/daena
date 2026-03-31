@@ -18,12 +18,14 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from app.core.logging import get_logger
 from app.services.heartbeat.heartbeat_checks import (
     ActionPriority,
     HeartbeatCheckResult,
+    check_department_workflows,
     check_file,
     check_git_status,
     check_runtime_health,
@@ -315,6 +317,8 @@ class HeartbeatDaemon:
             return await check_ollama_health()
         elif check_type == CheckType.DAILY_REPORT:
             return await generate_daily_report()
+        elif check_type == CheckType.DEPARTMENT_WORKFLOWS:
+            return await check_department_workflows()
         else:
             return HeartbeatCheckResult(
                 check_type=check_type.value,

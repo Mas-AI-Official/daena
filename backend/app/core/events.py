@@ -106,6 +106,24 @@ def get_runtime_registry():
     return registry
 
 
+_mcp_registry = None
+
+
+def get_mcp_registry():
+    """Get or create the singleton MCPRegistry.
+
+    Tools are discovered lazily when MCP connections are configured.
+    """
+    global _mcp_registry
+    if _mcp_registry is not None:
+        return _mcp_registry
+
+    from app.services.mcp_registry import MCPRegistry
+
+    _mcp_registry = MCPRegistry()
+    return _mcp_registry
+
+
 async def initialize_runtime_registry() -> dict[str, bool]:
     """Discover installed runtimes, check health, and probe subscriptions.
 

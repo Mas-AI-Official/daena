@@ -150,11 +150,109 @@ _BROWSER_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
     ),
 ]
 
-# Priority order: terminal > file > browser
-# Terminal patterns require an explicit "run/execute/exec" prefix, so they
-# won't swallow bare file commands like "ls /tmp".  But without going first,
-# "run ls -la" matches the file `ls` pattern via regex *search* (not match).
-_ALL_PATTERNS = _TERMINAL_PATTERNS + _FILE_PATTERNS + _BROWSER_PATTERNS
+# ── Integration patterns (Gmail, Calendar, Notion) ───────────
+
+_GMAIL_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
+    (
+        re.compile(
+            r"(?:search|find|look\s+for)\s+(?:my\s+)?(?:emails?|messages?|mail)\s+(?:about|from|with|regarding)\s+(.+)",
+            re.IGNORECASE,
+        ),
+        "gmail.search_emails",
+        lambda m: {"query": m.group(1).strip()},
+        "Search emails: {query}",
+    ),
+    (
+        re.compile(
+            r"(?:check|read|show)\s+(?:my\s+)?(?:unread\s+)?(?:emails?|inbox|mail)",
+            re.IGNORECASE,
+        ),
+        "gmail.search_emails",
+        lambda m: {"query": "is:unread", "max_results": 10},
+        "Check unread emails",
+    ),
+    (
+        re.compile(
+            r"(?:send|compose|write)\s+(?:an?\s+)?email\s+to\s+(\S+@\S+)\s+(?:about|subject|re)\s+(.+)",
+            re.IGNORECASE,
+        ),
+        "gmail.send_email",
+        lambda m: {"to": m.group(1).strip(), "subject": m.group(2).strip(), "body": ""},
+        "Send email to {to}: {subject}",
+    ),
+    (
+        re.compile(
+            r"(?:draft|prepare)\s+(?:an?\s+)?email\s+to\s+(\S+@\S+)\s+(?:about|subject|re)\s+(.+)",
+            re.IGNORECASE,
+        ),
+        "gmail.create_draft",
+        lambda m: {"to": m.group(1).strip(), "subject": m.group(2).strip(), "body": ""},
+        "Draft email to {to}: {subject}",
+    ),
+]
+
+_CALENDAR_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
+    (
+        re.compile(
+            r"(?:check|show|list|what'?s?\s+on)\s+(?:my\s+)?(?:calendar|schedule|events?|agenda)",
+            re.IGNORECASE,
+        ),
+        "calendar.list_events",
+        lambda m: {},
+        "List upcoming events",
+    ),
+    (
+        re.compile(
+            r"(?:schedule|create|add|book)\s+(?:a\s+)?(?:meeting|event|call)\s+(?:with\s+)?(.+?)(?:\s+(?:on|at|for)\s+(.+))?$",
+            re.IGNORECASE,
+        ),
+        "calendar.create_event",
+        lambda m: {"summary": m.group(1).strip(), "start": m.group(2) or "", "end": ""},
+        "Schedule: {summary}",
+    ),
+    (
+        re.compile(
+            r"(?:when\s+am\s+I|find)\s+(?:free|available)",
+            re.IGNORECASE,
+        ),
+        "calendar.find_free_time",
+        lambda m: {},
+        "Find free time slots",
+    ),
+]
+
+_NOTION_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
+    (
+        re.compile(
+            r"(?:search|find|look\s+up)\s+(?:in\s+)?notion\s+(?:for\s+)?(.+)",
+            re.IGNORECASE,
+        ),
+        "notion.search_pages",
+        lambda m: {"query": m.group(1).strip()},
+        "Search Notion: {query}",
+    ),
+    (
+        re.compile(
+            r"(?:create|add|new)\s+(?:a\s+)?(?:notion\s+)?(?:page|doc|document)\s+(?:called|titled|named)\s+(.+)",
+            re.IGNORECASE,
+        ),
+        "notion.create_page",
+        lambda m: {"title": m.group(1).strip(), "parent_id": "", "content": ""},
+        "Create Notion page: {title}",
+    ),
+]
+
+# Priority order: terminal > integration > file > browser
+# Integration patterns are checked before file patterns to avoid
+# "check my email" matching file "check" operations.
+_ALL_PATTERNS = (
+    _TERMINAL_PATTERNS
+    + _GMAIL_PATTERNS
+    + _CALENDAR_PATTERNS
+    + _NOTION_PATTERNS
+    + _FILE_PATTERNS
+    + _BROWSER_PATTERNS
+)
 
 
 class DaenaBotRouter:

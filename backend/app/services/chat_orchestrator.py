@@ -270,11 +270,39 @@ class ChatOrchestrator:
         elif chat_mode == ChatMode.EXE:
             system_prompt += (
                 "\n\nMODE: EXE (execution enabled). "
-                "You may execute actions using available tools "
-                "when the user's request requires it. "
-                "All tool use is governed -- high-risk actions "
-                "require approval."
+                "You can execute real actions using tools. "
+                "When you need to do something (read files, send emails, check calendar, "
+                "run commands, search the web), call the appropriate tool. "
+                "Do NOT guess -- use tools to get real data.\n"
             )
+            # Inject dynamic tool schema so LLM can autonomously call tools
+            try:
+                from app.services.tool_schema_builder import build_tool_schema, build_tool_prompt
+                # Get MCP registry for auto-discovered tools
+                _mcp_reg = None
+                try:
+                    from app.core.events import get_mcp_registry
+                    _mcp_reg = get_mcp_registry()
+                except Exception:
+                    pass  # MCP registry not available -- skip auto-discovered tools
+                _exe_tools = build_tool_schema(
+                    include_daenabot=True,
+                    include_integrations=True,
+                    include_system=True,
+                    include_workflows=True,
+                    include_mcp=True,
+                    include_desktop=True,
+                    mcp_registry=_mcp_reg,
+                )
+                system_prompt += "\n" + build_tool_prompt(_exe_tools)
+            except Exception:
+                # Fallback to static list if schema builder fails
+                system_prompt += (
+                    "\nTools: read_file, write_file, run_command, list_directory, "
+                    "gmail_search, gmail_send, gmail_draft, calendar_list_events, "
+                    "calendar_create_event, notion_search, notion_create_page, "
+                    "run_workflow\n"
+                )
 
         # Think mode instruction
         if think_mode:
@@ -549,7 +577,8 @@ class ChatOrchestrator:
                     council_models=_council,
                     metadata=override_metadata,
                 )
-                routing_source = "primary_mind"
+                # Distinguish explicit user override from auto-inferred primary mind
+                routing_source = "user_override" if preferred_model else "primary_mind"
 
         if decision is None and think_mode:
             decision = router.route(
@@ -1484,6 +1513,122 @@ class ChatOrchestrator:
         if not collected_content:
             yield {"type": "error", "message": "No content generated."}
             return
+
+        # ── Stage 8.5: Agentic Tool-Use Loop ─────────────────
+        # After LLM generates a response, check if it contains tool calls.
+        # If so, execute them, inject results, and let the LLM continue.
+        # This is what makes Daena an AGENT, not just a chat app.
+        if chat_mode == ChatMode.EXE and daenabot_result is None:
+            from app.services.tool_schema_builder import parse_tool_calls as _parse_tc
+            _tool_loop_iteration = 0
+            _max_tool_loops = 8
+
+            while _tool_loop_iteration < _max_tool_loops:
+                _pending_calls = _parse_tc(collected_content)
+                if not _pending_calls:
+                    break  # No tool calls -- final response
+
+                _tool_loop_iteration += 1
+                logger.info(
+                    "orchestrator.tool_use_loop",
+                    iteration=_tool_loop_iteration,
+                    tool_count=len(_pending_calls),
+                )
+
+                # Execute each tool call
+                _tool_results_text_parts: list[str] = []
+                for _tc in _pending_calls:
+                    _tc_name = _tc["tool"]
+                    _tc_params = _tc["params"]
+
+                    yield {
+                        "type": "daenabot_activity",
+                        "agent": "ToolUse",
+                        "operation": _tc_name,
+                        "status": "executing",
+                        "description": f"Calling {_tc_name}",
+                        "autonomous": True,
+                    }
+
+                    try:
+                        from app.services.tool_use_loop import ToolUseLoop as _TUL
+                        _tul = _TUL(
+                            self._db, user_id, tenant_id,
+                            agi_mode=(governance_slider == "YOLO"),
+                            session_id=session_id,
+                        )
+                        _tool_result = await _tul._execute_tool(_tc_name, _tc_params)
+
+                        yield {
+                            "type": "daenabot_activity",
+                            "agent": "ToolUse",
+                            "operation": _tc_name,
+                            "status": "completed" if _tool_result.get("success") else "failed",
+                            "description": f"{_tc_name} completed",
+                            "autonomous": True,
+                        }
+
+                        import json as _json_tl
+                        _tool_results_text_parts.append(
+                            f"Tool: {_tc_name}\n"
+                            f"Result: {_json_tl.dumps(_tool_result, indent=2, default=str)[:3000]}"
+                        )
+
+                    except Exception as _tc_exc:
+                        yield {
+                            "type": "daenabot_activity",
+                            "agent": "ToolUse",
+                            "operation": _tc_name,
+                            "status": "failed",
+                            "description": str(_tc_exc),
+                            "autonomous": True,
+                        }
+                        _tool_results_text_parts.append(
+                            f"Tool: {_tc_name}\nError: {_tc_exc}"
+                        )
+
+                # Strip tool_call blocks from collected content
+                import re as _re
+                _clean_content = _re.sub(
+                    r'```tool_call\s*\n?.*?\n?```', '', collected_content, flags=_re.DOTALL,
+                ).strip()
+
+                # Inject tool results and regenerate
+                if _clean_content:
+                    llm_messages.append(LLMMessage(role="assistant", content=_clean_content))
+
+                _results_combined = "\n---\n".join(_tool_results_text_parts)
+                llm_messages.append(LLMMessage(
+                    role="user",
+                    content=(
+                        f"[TOOL RESULTS]\n{_results_combined}\n\n"
+                        f"Continue based on these results. "
+                        f"If you need more tools, call them. "
+                        f"If you have enough information, give the final answer."
+                    ),
+                ))
+
+                # Regenerate with tool results as context
+                collected_content = ""
+                token_count = 0
+                yield {"type": "thinking", "stage": "tool_loop_continuing", "iteration": _tool_loop_iteration}
+
+                try:
+                    async for chunk in llm.stream(request, decision):
+                        if getattr(chunk, "finish_reason", None) == "error":
+                            break
+                        collected_content += chunk.content
+                        token_count += 1
+                        yield {"type": "chunk", "content": chunk.content}
+                except Exception as _tl_exc:
+                    logger.warning("orchestrator.tool_loop_stream_failed", error=str(_tl_exc))
+                    break
+
+            if _tool_loop_iteration > 0:
+                logger.info(
+                    "orchestrator.tool_use_loop_complete",
+                    iterations=_tool_loop_iteration,
+                )
 
         # ── Stage 9: Persist assistant message ────────────────
         latency_ms = int((time.perf_counter() - start_time) * 1000)

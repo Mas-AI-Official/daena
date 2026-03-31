@@ -205,6 +205,7 @@ export function ChatPage() {
           modelUsed={stream.modelUsed}
           daenabotActivity={stream.daenabotActivity}
           pipelineStages={stream.pipelineStages}
+          toolCalls={stream.toolCalls}
           onEditMessage={editAndRegenerate}
           onRegenerateMessage={regenerateLastResponse}
           onQuickAction={handleSend}

@@ -10,7 +10,7 @@ import api from '@/lib/api'
 
 export function SettingsGeneral() {
   const { user } = useAuthStore()
-  const { chatMode, setChatMode, routingMode, setRoutingMode, persistThinking, togglePersistThinking, darkMode, toggleDarkMode } = useUiStore()
+  const { chatMode, setChatMode, routingMode, setRoutingMode, persistThinking, togglePersistThinking, darkMode, toggleDarkMode, autopilotActive, toggleAutopilot } = useUiStore()
   const [displayName, setDisplayName] = useState(user?.display_name || '')
   const [saving, setSaving] = useState(false)
 
@@ -132,6 +132,21 @@ export function SettingsGeneral() {
               <p className="text-xs text-starlight-500">Keep the reasoning steps visible after response delivery (expandable)</p>
             </div>
             <Switch checked={persistThinking} onChange={() => { togglePersistThinking(); persistUiPref('persist_thinking', !persistThinking) }} label="" size="sm" />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-starlight-200">AGI Mode (Autopilot)</p>
+              <p className="text-xs text-starlight-500">
+                When ON, Daena auto-approves non-critical actions. Quintessence + Skills + Expert DCPs orchestrate autonomously.
+                Only Hard Law violations pause for approval.
+              </p>
+            </div>
+            <Switch
+              checked={autopilotActive}
+              onChange={() => { toggleAutopilot(); persistUiPref('autopilot_active', !autopilotActive) }}
+              label=""
+              size="sm"
+            />
           </div>
         </div>
       </Card>

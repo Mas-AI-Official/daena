@@ -41,6 +41,7 @@ class CheckType(Enum):
     FAILED_TASKS = "failed_tasks"  # Retry failed execution tasks
     DAILY_REPORT = "daily_report"  # Generate engineering status report
     OLLAMA_HEALTH = "ollama_health"  # Check Ollama model loading status
+    DEPARTMENT_WORKFLOWS = "department_workflows"  # Run scheduled department workflows
     CUSTOM = "custom"  # User-defined check
 
 
@@ -136,6 +137,11 @@ class HeartbeatConfig:
                 HeartbeatCheck(
                     check_type=CheckType.DAILY_REPORT,
                     description="Generate daily engineering status to Daena-Mind/reports/",
+                    enabled=True,
+                ),
+                HeartbeatCheck(
+                    check_type=CheckType.DEPARTMENT_WORKFLOWS,
+                    description="Run scheduled department workflows (briefings, reports, tasks)",
                     enabled=True,
                 ),
             ],

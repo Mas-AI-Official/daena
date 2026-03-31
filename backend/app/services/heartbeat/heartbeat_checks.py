@@ -654,3 +654,136 @@ async def generate_daily_report(
             summary=f"Report generation failed: {exc}",
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
+
+
+async def check_department_workflows() -> HeartbeatCheckResult:
+    """Run scheduled department workflows that are due.
+
+    Queries the DepartmentTask table for tasks whose next_run_at
+    has passed, executes them, and updates the schedule.
+    """
+    import time as _time
+    from datetime import timezone
+
+    from croniter import croniter
+
+    t0 = _time.perf_counter()
+
+    try:
+        from app.core.database import async_session_factory
+        from app.models.department_task import DepartmentTask
+        from app.services.department_workflows import (
+            DepartmentWorkflowEngine,
+            WORKFLOWS,
+        )
+
+        from sqlalchemy import select
+
+        async with async_session_factory() as db:
+            now = datetime.now(timezone.utc)
+
+            # Find due tasks
+            stmt = (
+                select(DepartmentTask)
+                .where(DepartmentTask.is_active.is_(True))
+                .where(DepartmentTask.status.in_(["SCHEDULED", "COMPLETED"]))
+                .where(
+                    (DepartmentTask.next_run_at <= now)
+                    | (DepartmentTask.next_run_at.is_(None))
+                )
+            )
+            result = await db.execute(stmt)
+            due_tasks = list(result.scalars().all())
+
+            if not due_tasks:
+                return HeartbeatCheckResult(
+                    check_type="department_workflows",
+                    status="ok",
+                    summary="No department workflows due",
+                    duration_ms=int((_time.perf_counter() - t0) * 1000),
+                )
+
+            executed = []
+            failed = []
+
+            for task in due_tasks:
+                if task.workflow_id not in WORKFLOWS:
+                    logger.warning(
+                        "heartbeat.unknown_workflow",
+                        workflow_id=task.workflow_id,
+                    )
+                    continue
+
+                try:
+                    task.status = "RUNNING"
+                    task.last_run_at = now
+                    await db.flush()
+
+                    engine = DepartmentWorkflowEngine(
+                        db, task.user_id, task.tenant_id,
+                    )
+                    wf_result = await engine.run(task.workflow_id)
+
+                    task.status = "COMPLETED" if wf_result.status == "completed" else "FAILED"
+                    task.last_result = wf_result.to_dict()
+                    task.last_error = wf_result.error
+                    task.run_count += 1
+
+                    # Calculate next run
+                    if task.cron_expression:
+                        cron = croniter(task.cron_expression, now)
+                        task.next_run_at = cron.get_next(datetime)
+                    else:
+                        task.is_active = False  # One-shot task
+
+                    if wf_result.status == "completed":
+                        executed.append(task.workflow_id)
+                    else:
+                        failed.append(f"{task.workflow_id}: {wf_result.error}")
+
+                except Exception as exc:
+                    task.status = "FAILED"
+                    task.last_error = str(exc)
+                    failed.append(f"{task.workflow_id}: {exc}")
+                    logger.error(
+                        "heartbeat.workflow_execution_failed",
+                        workflow_id=task.workflow_id,
+                        error=str(exc),
+                    )
+
+            await db.commit()
+
+        actions = []
+        if failed:
+            actions.append(SuggestedAction(
+                description=f"Department workflow failures: {', '.join(failed)}",
+                priority=ActionPriority.MEDIUM,
+            ))
+
+        summary = f"Ran {len(executed)} workflows"
+        if failed:
+            summary += f", {len(failed)} failed"
+
+        return HeartbeatCheckResult(
+            check_type="department_workflows",
+            status="ok" if not failed else "warning",
+            summary=summary,
+            details={"executed": executed, "failed": failed},
+            actions=actions,
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+
+    except ImportError as exc:
+        return HeartbeatCheckResult(
+            check_type="department_workflows",
+            status="warning",
+            summary=f"Dependencies not available: {exc}",
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+    except Exception as exc:
+        return HeartbeatCheckResult(
+            check_type="department_workflows",
+            status="error",
+            summary=f"Department workflow check failed: {exc}",
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )

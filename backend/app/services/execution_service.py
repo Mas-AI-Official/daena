@@ -459,6 +459,26 @@ class ExecutionService(BaseService):
             finally:
                 await agent.close()
 
+        elif agent_prefix in ("gmail", "calendar", "google-calendar", "notion"):
+            # External integration -- route through IntegrationRouter
+            from app.services.integrations.integration_router import IntegrationRouter
+
+            router = IntegrationRouter(self.db)
+            result = await router.execute(
+                provider=agent_prefix,
+                tool_name=operation,
+                params=params,
+                user_id=params.pop("_user_id", None) or params.get("user_id"),
+                tenant_id=params.pop("_tenant_id", None) or params.get("tenant_id"),
+            )
+            return {
+                "agent": f"integration.{agent_prefix}",
+                "success": True,
+                "operation": f"{agent_prefix}.{operation}",
+                "output": result,
+                "error": None,
+            }
+
         return {
             "agent": "unknown",
             "success": False,
@@ -495,5 +515,29 @@ class ExecutionService(BaseService):
         if agent_prefix == "browser":
             from app.services.daenabot.browser_agent import BrowserAgent
             return BrowserAgent.OPERATION_ACTION_MAP.get(operation, "EXECUTE")
+
+        # External integrations -- classify by operation risk
+        if agent_prefix in ("gmail", "calendar", "google-calendar", "notion"):
+            # Read operations are low-risk (Tier 0-1)
+            read_ops = {
+                "search_emails", "read_email", "list_events",
+                "find_free_time", "search_pages", "read_page",
+                "query_database",
+            }
+            # Write operations are medium-risk (Tier 2)
+            write_ops = {
+                "create_draft", "create_event", "update_event",
+                "create_page",
+            }
+            # Send operations are high-risk (Tier 3)
+            send_ops = {"send_email"}
+
+            if operation in read_ops:
+                return "READ_EXTERNAL"
+            if operation in write_ops:
+                return "WRITE_EXTERNAL"
+            if operation in send_ops:
+                return "SEND_EXTERNAL"
+            return "EXECUTE"
 
         return tool_name.upper()
