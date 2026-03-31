@@ -216,13 +216,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             import httpx
 
             ollama_url = settings.ollama_base_url.rstrip("/")
+
+            # Resolve actual model name (handles "auto" -> best installed)
+            from app.services.providers.ollama import OllamaProvider
+
+            _prov = OllamaProvider()
+            warmup_model = await _prov._resolve_model(settings.ollama_default_model)
+            await _prov.close()
+
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(60.0, connect=5.0),
             ) as warmup_client:
                 warmup_resp = await warmup_client.post(
                     f"{ollama_url}/api/chat",
                     json={
-                        "model": settings.ollama_default_model,
+                        "model": warmup_model,
                         "messages": [{"role": "user", "content": "hi"}],
                         "stream": False,
                         "keep_alive": "30m",
@@ -232,13 +240,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 warmup_resp.raise_for_status()
             logger.info(
                 "ollama_warmup_complete",
-                model=settings.ollama_default_model,
+                model=warmup_model,
                 ms=int((_time.perf_counter() - _ws) * 1000),
             )
         except Exception as exc:
             logger.warning(
                 "ollama_warmup_failed",
-                model=settings.ollama_default_model,
                 error=str(exc),
                 impact="First request will be slow (model loads on demand)",
             )
