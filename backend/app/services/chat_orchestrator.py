@@ -709,12 +709,14 @@ class ChatOrchestrator:
         )
 
         # ── Stage 7.5: EXE dispatch (Runtime Adapter > DaenaBot) ──
-        # For complex multi-step tasks, route through AgentLoop.
-        # For simple tasks, use single-shot runtime adapter (faster).
+        # Agent loop handles tool execution ONLY when routing mode is STANDARD.
+        # When Council/QE is active, the pipeline handles reasoning through
+        # multiple models — agent loop would compete for the same CLI runtime.
         daenabot_result = None
         _last_tool_name: str | None = None
         _last_tool_desc: str | None = None
-        if chat_mode == ChatMode.EXE:
+        _skip_agent_loop = decision.mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE)
+        if chat_mode == ChatMode.EXE and not _skip_agent_loop:
             from app.core.config import get_settings
 
             settings = get_settings()
