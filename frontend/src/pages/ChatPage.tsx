@@ -106,12 +106,23 @@ export function ChatPage() {
       void setActiveSession(sessionId)
       return
     }
-    useChatStore.setState({
-      activeSessionId: null,
-      activeSession: null,
-      messages: [],
-    })
-  }, [sessionId, setActiveSession])
+    // ChatGPT-style: auto-load most recent session instead of blank page.
+    // Only create a new session on explicit "New Chat" click.
+    const tryLoadRecent = () => {
+      const { sessions } = useChatStore.getState()
+      const recentGeneral = sessions.find((s) => !s.department_id && !s.archived)
+      if (recentGeneral) {
+        navigate(`/chat/${recentGeneral.id}`, { replace: true })
+        return true
+      }
+      return false
+    }
+    // Sessions may not be loaded yet — try now, retry once after 500ms
+    if (!tryLoadRecent()) {
+      const timer = setTimeout(() => tryLoadRecent(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [sessionId, setActiveSession, navigate])
 
   const handleSend = async (content: string) => {
     if (!sessionId) {
