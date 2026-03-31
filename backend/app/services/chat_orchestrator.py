@@ -516,26 +516,25 @@ class ChatOrchestrator:
             else:
                 from app.services.model_router import RoutingDecision
 
+                # Respect the user's requested routing mode (Council/QE).
+                # The preferred model becomes the PRIMARY for synthesis,
+                # but Council/QE still runs with additional models.
+                _applied_mode = routing_mode  # Keep Council/QE if requested
                 override_metadata = {
-                    "selection_source": "user_override",
+                    "selection_source": "primary_mind_override",
                     "requested_model": preferred_model,
                     "requested_mode": requested_routing_mode.value,
-                    "applied_mode": RoutingMode.STANDARD.value,
-                    "selection_reason": "Validated explicit model "
-                    "selection from the live registry.",
+                    "applied_mode": _applied_mode.value,
+                    "selection_reason": "Primary Mind model validated in live registry. "
+                    "Routing mode preserved for Council/QE synthesis.",
                 }
-                if routing_mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE):
-                    override_metadata["mode_reason"] = (
-                        f"{routing_mode.value} was requested, but explicit model overrides "
-                        "run as STANDARD single-model requests."
-                    )
 
                 decision = RoutingDecision(
-                    mode=RoutingMode.STANDARD,
+                    mode=_applied_mode,
                     primary=override_candidate,
                     metadata=override_metadata,
                 )
-                routing_source = "user_override"
+                routing_source = "primary_mind"
 
         if decision is None and think_mode:
             decision = router.route(
