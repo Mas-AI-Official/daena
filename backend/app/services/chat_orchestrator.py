@@ -1168,7 +1168,7 @@ class ChatOrchestrator:
                         )
                         try:
                             resp = await asyncio.wait_for(
-                                provider_inst.generate(expert_request), timeout=60.0,
+                                provider_inst.generate(expert_request), timeout=120.0,
                             )
                             council_responses.append((
                                 sole.model_id,
@@ -1220,7 +1220,7 @@ class ChatOrchestrator:
                     # Gather with timeout (60s per model — Ollama needs time)
                     for candidate, task in tasks_list:
                         try:
-                            resp = await asyncio.wait_for(task, timeout=60.0)
+                            resp = await asyncio.wait_for(task, timeout=120.0)
                             council_responses.append((
                                 candidate.model_id,
                                 candidate.provider.value,
@@ -1667,12 +1667,30 @@ class ChatOrchestrator:
         return ModelProvider.OLLAMA
 
     async def _fallback_stream(self, request: GenerateRequest) -> AsyncIterator[Any]:
-        """Fallback: stream directly from OllamaProvider (MVP path)."""
+        """Fallback: stream directly from OllamaProvider (MVP path).
+
+        Ensures the model_id is a real Ollama model, not a CLI provider ID.
+        """
         from app.services.providers.ollama import OllamaProvider
 
         provider = OllamaProvider()
         try:
-            async for chunk in provider.stream(request):
+            # If the request model is a CLI provider ID (not an Ollama model),
+            # replace with the default Ollama model for fallback.
+            fallback_request = request
+            if request.model_id and request.model_id.endswith("-cli"):
+                from app.services.providers.base import GenerateRequest as _GR
+
+                default_model = "auto"  # OllamaProvider auto-detects best model
+                fallback_request = _GR(
+                    messages=request.messages,
+                    model_id=default_model,
+                    temperature=request.temperature,
+                    max_tokens=request.max_tokens,
+                    system_prompt=request.system_prompt,
+                    metadata=request.metadata,
+                )
+            async for chunk in provider.stream(fallback_request):
                 yield chunk
         finally:
             await provider.close()

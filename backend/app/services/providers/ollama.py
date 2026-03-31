@@ -37,6 +37,25 @@ def _get_default_model() -> str:
     return get_settings().ollama_default_model
 
 
+def _estimate_param_size(model_id: str) -> float:
+    """Estimate parameter count from model name for auto-selection.
+
+    Parses size tags like :27b, :14b, :7b from model names.
+    Larger models are preferred for auto-selection.
+    """
+    import re
+
+    match = re.search(r":?(\d+\.?\d*)b", model_id.lower())
+    if match:
+        return float(match.group(1))
+    # Heuristic for models without size tag
+    if "70b" in model_id or "72b" in model_id:
+        return 70.0
+    if "large" in model_id:
+        return 30.0
+    return 7.0  # assume small if unknown
+
+
 class OllamaProvider(BaseProvider):
     """Local Ollama LLM provider.
 
@@ -92,37 +111,62 @@ class OllamaProvider(BaseProvider):
         raise RuntimeError("Ollama request failed after retries")  # pragma: no cover
 
     async def _resolve_model(self, requested: str | None) -> str:
-        """Resolve model to use: requested > default > any available."""
-        model_id = requested or _get_default_model()
+        """Resolve model to use: requested > auto-detect best > any available.
 
-        # Quick check: is the model available?
+        When OLLAMA_DEFAULT_MODEL=auto or no model specified, scans
+        installed models and picks the largest/most capable one.
+        Embedding models (nomic-embed-*) are excluded from auto-select.
+        """
+        default = _get_default_model()
+        model_id = requested or default
+
         try:
             models = await self.list_models()
-            available_ids = {m.model_id for m in models}
+            available = [m for m in models if "embed" not in m.model_id]
+            available_ids = {m.model_id for m in available}
+
+            # Auto-detect: pick the best installed model by parameter size
+            if model_id in ("auto", "") or model_id is None:
+                if available:
+                    best = max(available, key=lambda m: _estimate_param_size(m.model_id))
+                    logger.info(
+                        "ollama_model_auto",
+                        selected=best.model_id,
+                        context_window=best.context_window,
+                        total_available=len(available),
+                    )
+                    return best.model_id
+                raise RuntimeError("No Ollama models installed. Run 'ollama pull qwen3.5:27b'.")
+
+            # CLI provider model IDs are not Ollama models — auto-select
+            if model_id.endswith("-cli"):
+                if available:
+                    best = max(available, key=lambda m: _estimate_param_size(m.model_id))
+                    logger.info("ollama_model_auto_cli_fallback", requested=model_id, selected=best.model_id)
+                    return best.model_id
+                raise RuntimeError("No Ollama models available for fallback.")
 
             if model_id in available_ids:
                 return model_id
 
-            # Try without tag (e.g., "llama3.1" matches "llama3.1:latest")
+            # Try without tag (e.g., "llama3.1" matches "llama3.1:8b")
             for avail in available_ids:
                 if avail.startswith(model_id.split(":")[0]):
                     logger.info("ollama_model_resolved", requested=model_id, resolved=avail)
                     return avail
 
-            # Use any available model as last resort
-            if available_ids:
-                fallback = next(iter(available_ids))
-                logger.warning("ollama_model_fallback", requested=model_id, fallback=fallback)
-                return fallback
+            # Use best available as last resort
+            if available:
+                best = max(available, key=lambda m: _estimate_param_size(m.model_id))
+                logger.warning("ollama_model_fallback", requested=model_id, fallback=best.model_id)
+                return best.model_id
 
-            # No models at all
             raise RuntimeError(
                 f"No Ollama models available. Run 'ollama pull {model_id}' to download one."
             )
         except RuntimeError:
             raise
         except Exception:
-            # If list_models fails, try the requested model anyway
             return model_id
 
     async def generate(self, request: GenerateRequest) -> LLMResponse:
