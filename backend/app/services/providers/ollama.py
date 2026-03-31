@@ -37,6 +37,41 @@ def _get_default_model() -> str:
     return get_settings().ollama_default_model
 
 
+def _pick_best_model(models: list) -> object:
+    """Pick the best model from available models.
+
+    Strategy: prefer the largest model that fits comfortably in RAM.
+    Models above 27B params often OOM on consumer hardware (32GB RAM).
+    Sort by: models 8-27B first (sweet spot), then smaller, then larger.
+    """
+    sorted_models = sorted(
+        models,
+        key=lambda m: _model_preference_score(_estimate_param_size(m.model_id)),
+        reverse=True,
+    )
+    return sorted_models[0]
+
+
+def _model_preference_score(param_b: float) -> float:
+    """Score a model by how preferable it is for auto-selection.
+
+    Prefer models that fit in typical consumer RAM (16-32GB).
+    7-8B models are the sweet spot: good quality, always fit.
+    14B+ needs 32GB+, often OOM on real machines.
+    """
+    if 7 <= param_b <= 8:
+        return param_b + 200  # best balance: quality + fits everywhere
+    if 3 <= param_b < 7:
+        return param_b + 150  # small but reliable
+    if 8 < param_b <= 14:
+        return param_b + 100  # good if RAM allows
+    if 14 < param_b <= 27:
+        return param_b + 50   # risky on 32GB
+    if param_b > 27:
+        return param_b        # likely OOM
+    return param_b             # tiny, last resort
+
+
 def _estimate_param_size(model_id: str) -> float:
     """Estimate parameter count from model name for auto-selection.
 
@@ -125,23 +160,25 @@ class OllamaProvider(BaseProvider):
             available = [m for m in models if "embed" not in m.model_id]
             available_ids = {m.model_id for m in available}
 
-            # Auto-detect: pick the best installed model by parameter size
+            # Auto-detect: pick the best model that fits in memory.
+            # Sort by size descending, prefer models in the 7-14B range
+            # (most likely to fit in available RAM without OOM errors).
             if model_id in ("auto", "") or model_id is None:
                 if available:
-                    best = max(available, key=lambda m: _estimate_param_size(m.model_id))
+                    best = _pick_best_model(available)
                     logger.info(
                         "ollama_model_auto",
                         selected=best.model_id,
-                        context_window=best.context_window,
+                        params_b=_estimate_param_size(best.model_id),
                         total_available=len(available),
                     )
                     return best.model_id
-                raise RuntimeError("No Ollama models installed. Run 'ollama pull qwen3.5:27b'.")
+                raise RuntimeError("No Ollama models installed. Run 'ollama pull llama3.1:8b'.")
 
             # CLI provider model IDs are not Ollama models — auto-select
             if model_id.endswith("-cli"):
                 if available:
-                    best = max(available, key=lambda m: _estimate_param_size(m.model_id))
+                    best = _pick_best_model(available)
                     logger.info("ollama_model_auto_cli_fallback", requested=model_id, selected=best.model_id)
                     return best.model_id
                 raise RuntimeError("No Ollama models available for fallback.")
@@ -157,7 +194,7 @@ class OllamaProvider(BaseProvider):
 
             # Use best available as last resort
             if available:
-                best = max(available, key=lambda m: _estimate_param_size(m.model_id))
+                best = _pick_best_model(available)
                 logger.warning("ollama_model_fallback", requested=model_id, fallback=best.model_id)
                 return best.model_id
 
