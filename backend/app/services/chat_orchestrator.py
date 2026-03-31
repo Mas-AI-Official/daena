@@ -765,45 +765,110 @@ class ChatOrchestrator:
 
             settings = get_settings()
 
-            # Check if task is complex enough for AgentLoop
+            # Check if task is complex enough for multi-step execution
             _use_agent_loop = False
             _multi_step_verbs = ("create", "write", "read", "search", "find", "fix",
                                  "test", "run", "deploy", "build", "update", "delete",
-                                 "draft", "save", "generate", "analyze", "audit")
+                                 "draft", "save", "generate", "analyze", "audit",
+                                 "email", "schedule", "research", "review", "check")
             _verb_count = sum(1 for w in user_content.lower().split() if w in _multi_step_verbs)
             if _verb_count > 2 or len(user_content.split()) > 50:
                 _use_agent_loop = True
 
             if _use_agent_loop:
+                # ── SwarmPlanner: decompose into subtasks and route to departments ──
                 try:
-                    from app.services.agent_core.agent_loop import AgentLoop
+                    from app.core.events import get_runtime_registry
+                    from app.services.swarm.planner import SwarmPlanner
+                    from app.services.swarm.executor import SwarmExecutor
+                    from app.services.department_router import DepartmentRouter
 
-                    agent = AgentLoop()
-                    agent_output_lines: list[str] = []
-                    async for update in agent.execute(user_content, {"original_task": user_content}):
-                        # Stream agent updates to frontend
-                        yield update
-                        if update.get("type") == "agent_observed" and update.get("output"):
-                            agent_output_lines.append(update["output"])
+                    _rt_reg = get_runtime_registry()
+                    planner = SwarmPlanner(_rt_reg)
+                    subtasks = await planner.decompose_and_route(
+                        user_content,
+                        context={"cost_ceiling": 0.10},
+                    )
 
-                    receipt = agent.get_receipt()
-                    if receipt:
+                    if len(subtasks) > 1:
+                        # Route subtasks to department agents
+                        dept_router = DepartmentRouter(self.db, tenant_id)
+                        await dept_router.load_agents()
+                        await dept_router.route_subtasks(subtasks)
+
+                        yield {
+                            "type": "thinking",
+                            "stage": "swarm_planning",
+                            "subtasks": [st.to_dict() for st in subtasks],
+                            "department_routed": sum(1 for st in subtasks if "agent_id" in st.metadata),
+                        }
+
+                        # Execute subtasks in parallel via SwarmExecutor
+                        executor = SwarmExecutor(_rt_reg)
+                        exec_output_lines: list[str] = []
+                        async for receipt in executor.execute_plan(subtasks):
+                            yield {
+                                "type": "daenabot_activity",
+                                "agent": receipt.get("runtime_id", "swarm"),
+                                "operation": receipt.get("subtask_id", ""),
+                                "status": receipt.get("status", "running"),
+                                "description": receipt.get("description", "")[:200],
+                            }
+                            if receipt.get("output"):
+                                exec_output_lines.append(str(receipt["output"])[:1000])
+
+                        completed = sum(1 for st in subtasks if st.status == "complete")
+                        failed = sum(1 for st in subtasks if st.status == "failed")
+
                         daenabot_result = {
-                            "status": receipt.get("status", "completed").upper(),
+                            "status": "COMPLETED" if failed == 0 else "PARTIAL",
                             "result": {
-                                "success": receipt.get("steps_failed", 0) == 0,
-                                "runtime": "agent_loop",
-                                "display_name": "Agent Loop",
-                                "output": "\n".join(agent_output_lines)[:4000],
-                                "receipt": receipt,
+                                "success": failed == 0,
+                                "runtime": "swarm_executor",
+                                "display_name": "Department Swarm",
+                                "output": "\n---\n".join(exec_output_lines)[:4000],
+                                "subtasks_completed": completed,
+                                "subtasks_failed": failed,
+                                "subtasks_total": len(subtasks),
                             },
                         }
-                        _last_tool_name = "agent_loop"
-                        _last_tool_desc = f"Executed {receipt.get('steps_completed', 0)} steps via Agent Loop"
+                        _last_tool_name = "swarm_executor"
+                        _last_tool_desc = f"Swarm: {completed}/{len(subtasks)} subtasks via {len({st.metadata.get('department', 'auto') for st in subtasks})} departments"
 
-                except Exception as al_exc:
-                    logger.warning("orchestrator.agent_loop_failed", error=str(al_exc))
-                    # Fall through to single-shot runtime
+                except Exception as swarm_exc:
+                    logger.warning("orchestrator.swarm_failed", error=str(swarm_exc))
+                    # Fall through to AgentLoop
+
+                # ── AgentLoop fallback for single-step or failed swarm ──
+                if daenabot_result is None:
+                    try:
+                        from app.services.agent_core.agent_loop import AgentLoop
+
+                        agent = AgentLoop()
+                        agent_output_lines: list[str] = []
+                        async for update in agent.execute(user_content, {"original_task": user_content}):
+                            yield update
+                            if update.get("type") == "agent_observed" and update.get("output"):
+                                agent_output_lines.append(update["output"])
+
+                        receipt = agent.get_receipt()
+                        if receipt:
+                            daenabot_result = {
+                                "status": receipt.get("status", "completed").upper(),
+                                "result": {
+                                    "success": receipt.get("steps_failed", 0) == 0,
+                                    "runtime": "agent_loop",
+                                    "display_name": "Agent Loop",
+                                    "output": "\n".join(agent_output_lines)[:4000],
+                                    "receipt": receipt,
+                                },
+                            }
+                            _last_tool_name = "agent_loop"
+                            _last_tool_desc = f"Executed {receipt.get('steps_completed', 0)} steps via Agent Loop"
+
+                    except Exception as al_exc:
+                        logger.warning("orchestrator.agent_loop_failed", error=str(al_exc))
+                        # Fall through to single-shot runtime
 
             # Step 0: Try runtime adapter (Claude Code, Codex, etc.)
             # Priority: user-selected runtime > auto-select best CLI
