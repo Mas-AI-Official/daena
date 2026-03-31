@@ -529,9 +529,24 @@ class ChatOrchestrator:
                     "Routing mode preserved for Council/QE synthesis.",
                 }
 
+                # For Council/QE: populate council_models from router
+                # so multi-model synthesis has models to work with.
+                _council = []
+                if _applied_mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE):
+                    # Get diverse models from the router, add primary as first
+                    _router_decision = router.route(
+                        qu_result, requested_mode=_applied_mode,
+                    )
+                    _council = [override_candidate]
+                    for cm in _router_decision.council_models:
+                        if cm.model_id != override_candidate.model_id and len(_council) < 5:
+                            _council.append(cm)
+                    override_metadata["council_count"] = len(_council)
+
                 decision = RoutingDecision(
                     mode=_applied_mode,
                     primary=override_candidate,
+                    council_models=_council,
                     metadata=override_metadata,
                 )
                 routing_source = "primary_mind"
