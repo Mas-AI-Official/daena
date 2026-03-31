@@ -47,10 +47,11 @@ export const VoiceControls = memo(function VoiceControls({
 
   const {
     isActive,
+    ttsEnabled,
     isSttMode,
     isListening,
     isSpeaking,
-    toggle,
+    toggleTts,
     startStt,
     stopStt,
     availableVoices,
@@ -126,18 +127,18 @@ export const VoiceControls = memo(function VoiceControls({
         )}
       </AnimatePresence>
 
-      {/* TTS status icon (shows when speaking) */}
+      {/* Speaker icon: TTS-only (auto-read responses) */}
       {ttsSupported && (
         <button
-          onClick={toggle}
+          onClick={toggleTts}
           className={`p-2 rounded-lg transition-all cursor-pointer ${
-            isActive
+            ttsEnabled || isActive
               ? 'text-primary-400 bg-primary-500/10'
               : 'text-starlight-400 hover:text-starlight-200 hover:bg-white/5'
           }`}
-          title={isActive ? (isSpeaking ? 'Daena speaking...' : 'Voice ON') : 'Enable voice'}
+          title={ttsEnabled ? (isSpeaking ? 'Speaking...' : 'TTS ON (click to stop)') : isActive ? 'Conversation mode (TTS active)' : 'Read responses aloud'}
         >
-          {isActive ? <Volume2 size={18} className={isSpeaking ? 'animate-pulse' : ''} /> : <VolumeX size={18} />}
+          {ttsEnabled || isActive ? <Volume2 size={18} className={isSpeaking ? 'animate-pulse' : ''} /> : <VolumeX size={18} />}
         </button>
       )}
 

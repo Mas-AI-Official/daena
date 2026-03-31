@@ -4,7 +4,7 @@ Wraps the `codex` CLI for autonomous code generation and bulk file
 operations. Codex excels at large-scale refactoring and consistent
 pattern application across many files. Best for async/batch work.
 
-CLI reference: codex "task" --approval-mode full-auto
+CLI reference: codex exec "task" (non-interactive mode)
 
 Note: All subprocess calls use asyncio.to_thread(subprocess.run)
 instead of asyncio.create_subprocess_exec because uvicorn on Windows
@@ -98,7 +98,7 @@ class CodexAdapter(BaseRuntimeAdapter):
         """Spawn codex CLI and return result."""
         cwd = context.get("working_directory", ".")
 
-        cmd = [self._codex_bin, task, "--approval-mode", "full-auto"]
+        cmd = [self._codex_bin, "exec", task]
 
         logger.info("codex.execute", task=task[:200], cwd=cwd)
 

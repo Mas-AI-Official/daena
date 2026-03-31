@@ -13,6 +13,7 @@ from app.models.identity import RefreshToken, Tenant, User
 from app.models.memory import LearningLog, MemoryEntry
 from app.models.organization import Agent, BrainModel, Department
 from app.models.pipeline import ProjectPipeline
+from app.models.project import Project
 from app.models.skill import RefinedSkill
 from app.models.waitlist import WaitlistEntry
 
@@ -28,5 +29,6 @@ __all__ = [
     "Connector", "ConnectorInstance", "ConnectorPermission",
     "UsageLedger", "VaultSecret", "Subscription",
     "ProjectPipeline",
+    "Project",
     "WaitlistEntry",
 ]

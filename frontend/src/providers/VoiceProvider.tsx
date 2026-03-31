@@ -27,9 +27,11 @@ import { toast } from '@/stores/toastStore'
 // ── Context interface ─────────────────────────────────────────────────────────
 
 export interface VoiceState {
-  /** Conversational mode (auto-send + auto-speak) */
+  /** Conversational mode: listen + speak (header Voice button) */
   isActive: boolean
-  /** STT-only mode (fills text input) */
+  /** TTS-only mode: auto-read responses (speaker icon) */
+  ttsEnabled: boolean
+  /** STT-only mode: fills text input (mic icon) */
   isSttMode: boolean
   /** Microphone is currently capturing */
   isListening: boolean
@@ -37,8 +39,10 @@ export interface VoiceState {
   transcript: string
   availableVoices: SpeechSynthesisVoice[]
   selectedVoice: string
-  /** Toggle conversational mode (header Voice button) */
+  /** Toggle conversational mode: listen + speak (header Voice button) */
   toggle: () => void
+  /** Toggle TTS-only: just speak responses (speaker icon) */
+  toggleTts: () => void
   /** Start STT-only mode; callback receives final transcript */
   startStt: (onTranscript: (text: string) => void) => void
   /** Stop STT-only mode */
@@ -105,6 +109,7 @@ const STOP_WORDS = new Set([
 
 export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [isActive, setIsActive] = useState(false)
+  const [ttsEnabled, setTtsEnabled] = useState(false)
   const [isSttMode, setIsSttMode] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
@@ -115,6 +120,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   // Refs for closure-safe access inside event handlers
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
   const isActiveRef = useRef(false)
+  const ttsEnabledRef = useRef(false)
   const isSttModeRef = useRef(false)
   const isSpeakingRef = useRef(false)
   // Set to true when mic permission is denied; blocks onend restart loop
@@ -127,6 +133,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   // Keep refs in sync with state
   useEffect(() => { isActiveRef.current = isActive }, [isActive])
+  useEffect(() => { ttsEnabledRef.current = ttsEnabled }, [ttsEnabled])
   useEffect(() => { isSttModeRef.current = isSttMode }, [isSttMode])
   useEffect(() => { isSpeakingRef.current = isSpeaking }, [isSpeaking])
   useEffect(() => { selectedVoiceRef.current = selectedVoice }, [selectedVoice])
@@ -273,7 +280,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   // ── TTS dispatcher ────────────────────────────────────────────────────────
 
   const speakResponse = useCallback((text: string) => {
-    if (!isActiveRef.current) return
+    if (!isActiveRef.current && !ttsEnabledRef.current) return
     try { recognitionRef.current?.stop() } catch {}
 
     const apiKey = localStorage.getItem('daena:elevenlabs_key')
@@ -284,84 +291,60 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [speakWithElevenLabs, speakWithBrowser])
 
-  // ── Chat API (conversational mode only) ───────────────────────────────────
+  // ── Voice-through-chat: send via chatStore (text shows in UI) ─────────────
 
-  const sendVoiceMessage = useCallback(async (text: string) => {
+  const sendViaChat = useCallback(async (text: string) => {
+    try { recognitionRef.current?.stop() } catch {}
     try {
-      try { recognitionRef.current?.stop() } catch {}
-
-      const token = useAuthStore.getState().token
-      if (!token) {
-        console.error('[VoiceProvider] No auth token for voice message')
-        if (isActiveRef.current) try { recognitionRef.current?.start() } catch {}
-        return
-      }
-
-      const chatStore = useChatStore.getState()
-      let sessionId = chatStore.activeSessionId
-
-      if (!sessionId) {
-        try {
-          const res = await fetch('/api/v1/chat/sessions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ title: 'Voice Conversation' }),
-          })
-          const data = await res.json()
-          sessionId = data.data?.id ?? null
-          if (sessionId) void chatStore.setActiveSession(sessionId)
-        } catch {}
-      }
-
-      const res = await fetch('/api/v1/chat/messages/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          content: text,
-          session_id: sessionId ?? undefined,
-          governance_slider: 'STANDARD',
-          routing_mode: 'STANDARD',
-          mode: 'CMD',
-        }),
-      })
-
-      if (!res.ok || !res.body) {
-        console.error('[VoiceProvider] Chat API error:', res.status)
-        if (isActiveRef.current) try { recognitionRef.current?.start() } catch {}
-        return
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let fullResponse = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        for (const line of chunk.split('\n')) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const event = JSON.parse(line.slice(6))
-            if (event.type === 'chunk' && event.content) {
-              fullResponse += event.content
-            }
-          } catch {}
-        }
-      }
-
-      if (fullResponse.trim()) {
-        speakResponse(fullResponse.trim())
-      } else {
-        if (isActiveRef.current) try { recognitionRef.current?.start() } catch {}
-      }
+      // Send through normal chat pipeline -- message appears in chat UI
+      await useChatStore.getState().sendMessage(text)
     } catch (err) {
-      console.error('[VoiceProvider] sendVoiceMessage error:', err)
-      if (isActiveRef.current) try { recognitionRef.current?.start() } catch {}
+      console.error('[VoiceProvider] sendViaChat error:', err)
     }
-  }, [speakResponse])
+    // Restart mic after a delay (TTS auto-read will handle speaking)
+    if (isActiveRef.current) {
+      setTimeout(() => { if (isActiveRef.current && !isSpeakingRef.current) try { recognitionRef.current?.start() } catch {} }, 500)
+    }
+  }, [])
 
-  useEffect(() => { sendVoiceMessageRef.current = sendVoiceMessage }, [sendVoiceMessage])
+  useEffect(() => { sendVoiceMessageRef.current = sendViaChat }, [sendViaChat])
+
+  // ── Auto-read: speak new assistant messages when voice is active ──────────
+
+  useEffect(() => {
+    // Subscribe to chatStore messages; when a new assistant message arrives, speak it
+    let lastMsgCount = useChatStore.getState().messages.length
+
+    const unsub = useChatStore.subscribe((state) => {
+      if (!isActiveRef.current && !ttsEnabledRef.current) return
+      const msgs = state.messages
+      if (msgs.length <= lastMsgCount) {
+        lastMsgCount = msgs.length
+        return
+      }
+      // Check if the newest message is from assistant and is complete (not streaming)
+      const newest = msgs[msgs.length - 1]
+      if (
+        newest &&
+        newest.role === 'assistant' &&
+        newest.content &&
+        !state.isStreaming
+      ) {
+        lastMsgCount = msgs.length
+        // Speak the response (strips markdown for cleaner TTS)
+        const cleanText = newest.content
+          .replace(/```[\s\S]*?```/g, ' code block ')
+          .replace(/[#*_~`>|]/g, '')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .trim()
+        if (cleanText) speakResponse(cleanText.slice(0, 2000))
+      } else {
+        lastMsgCount = msgs.length
+      }
+    })
+
+    return unsub
+  }, [speakResponse])
 
   // ── SpeechRecognition singleton (created once) ────────────────────────────
 
@@ -491,6 +474,21 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   const toggle = useCallback(() => setIsActive((prev) => !prev), [])
 
+  const toggleTts = useCallback(() => {
+    setTtsEnabled((prev) => {
+      if (!prev) {
+        // Turning TTS on -- stop conversational mode if active (they're separate)
+        if (isActiveRef.current) { setIsActive(false) }
+      } else {
+        // Turning TTS off -- stop any speech in progress
+        window.speechSynthesis?.cancel()
+        setIsSpeaking(false)
+        isSpeakingRef.current = false
+      }
+      return !prev
+    })
+  }, [])
+
   const startStt = useCallback((onTranscript: (text: string) => void) => {
     // Synchronously update ref so onend/useEffect see correct state immediately
     if (isActiveRef.current) {
@@ -533,6 +531,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     <VoiceContext.Provider
       value={{
         isActive,
+        ttsEnabled,
         isSttMode,
         isListening,
         isSpeaking,
@@ -540,6 +539,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         availableVoices,
         selectedVoice,
         toggle,
+        toggleTts,
         startStt,
         stopStt,
         stopSpeaking,

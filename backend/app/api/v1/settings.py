@@ -112,6 +112,7 @@ _UI_PREF_KEYS = (
     "dark_mode", "conversational_mode", "sidebar_collapsed",
     "default_chat_mode", "default_routing_mode", "default_governance_slider", "default_runtime",
     "local_first_routing", "cost_aware_routing",
+    "autopilot_active", "persist_thinking", "deep_research", "auto_read_responses",
     "debug_mode", "verbose_logging",
     "monthly_budget", "over_budget_action",
     # Privacy
@@ -137,6 +138,10 @@ _UI_PREF_DEFAULTS: dict[str, object] = {
     "default_runtime": "auto",
     "local_first_routing": True,
     "cost_aware_routing": True,
+    "autopilot_active": False,
+    "persist_thinking": True,
+    "deep_research": False,
+    "auto_read_responses": False,
     "debug_mode": False,
     "verbose_logging": False,
     "monthly_budget": 25,
@@ -186,6 +191,10 @@ class UserPreferencesUpdate(BaseModel):
     default_runtime: str | None = None
     local_first_routing: bool | None = None
     cost_aware_routing: bool | None = None
+    autopilot_active: bool | None = None
+    persist_thinking: bool | None = None
+    deep_research: bool | None = None
+    auto_read_responses: bool | None = None
     debug_mode: bool | None = None
     verbose_logging: bool | None = None
     monthly_budget: int | None = Field(None, ge=0)

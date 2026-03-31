@@ -119,69 +119,107 @@ class TestRuntimeRoutingIntegration:
 
 
 class TestProjectScopingIntegration:
-    """Verify project isolation by owner."""
+    """Verify project isolation by owner (async DB-backed service)."""
 
-    def test_create_and_retrieve_project(self):
+    @pytest.mark.asyncio
+    async def test_create_and_retrieve_project(self, db_session):
         """Projects should be retrievable by ID."""
-        service = ProjectService()
+        import uuid
 
-        project = service.create(
+        from app.models.identity import Tenant
+
+        # Create prerequisite tenant
+        tenant = Tenant(name="Test Tenant", slug=f"test-{uuid.uuid4().hex[:8]}", plan="FREE")
+        db_session.add(tenant)
+        await db_session.flush()
+
+        service = ProjectService(db_session)
+        owner_id = uuid.uuid4()
+
+        project = await service.create(
             name="Test Project",
-            owner_id="user-1",
+            owner_id=owner_id,
+            tenant_id=tenant.id,
             description="Integration test project",
         )
         assert project is not None
-        assert project.name == "Test Project"
+        assert project["name"] == "Test Project"
 
         # Retrieve by ID
-        retrieved = service.get(project.id)
+        retrieved = await service.get(uuid.UUID(project["id"]), tenant_id=tenant.id)
         assert retrieved is not None
-        assert retrieved.id == project.id
+        assert retrieved["id"] == project["id"]
 
-    def test_project_isolation_between_owners(self):
+    @pytest.mark.asyncio
+    async def test_project_isolation_between_owners(self, db_session):
         """Owner B should not see Owner A's projects in list."""
-        service = ProjectService()
+        import uuid
 
-        service.create(
-            name="Owner A Project",
-            owner_id="owner-A",
-        )
-        service.create(
-            name="Owner B Project",
-            owner_id="owner-B",
-        )
+        from app.models.identity import Tenant
 
-        a_projects = service.list_for_user("owner-A")
-        b_projects = service.list_for_user("owner-B")
+        tenant = Tenant(name="Isolation Tenant", slug=f"iso-{uuid.uuid4().hex[:8]}", plan="FREE")
+        db_session.add(tenant)
+        await db_session.flush()
 
-        a_names = [p.name for p in a_projects]
-        b_names = [p.name for p in b_projects]
+        service = ProjectService(db_session)
+        owner_a = uuid.uuid4()
+        owner_b = uuid.uuid4()
+
+        await service.create(name="Owner A Project", owner_id=owner_a, tenant_id=tenant.id)
+        await service.create(name="Owner B Project", owner_id=owner_b, tenant_id=tenant.id)
+
+        a_projects = await service.list_for_user(owner_id=owner_a, tenant_id=tenant.id)
+        b_projects = await service.list_for_user(owner_id=owner_b, tenant_id=tenant.id)
+
+        a_names = [p["name"] for p in a_projects]
+        b_names = [p["name"] for p in b_projects]
 
         assert "Owner A Project" in a_names
         assert "Owner B Project" not in a_names
         assert "Owner B Project" in b_names
         assert "Owner A Project" not in b_names
 
-    def test_project_delete(self):
-        """Deleted projects should not be retrievable."""
-        service = ProjectService()
-        project = service.create(name="Delete Me", owner_id="user-1")
-        pid = project.id
+    @pytest.mark.asyncio
+    async def test_project_delete(self, db_session):
+        """Deleted projects should not appear in list (soft-delete)."""
+        import uuid
 
-        deleted = service.delete(pid)
+        from app.models.identity import Tenant
+
+        tenant = Tenant(name="Del Tenant", slug=f"del-{uuid.uuid4().hex[:8]}", plan="FREE")
+        db_session.add(tenant)
+        await db_session.flush()
+
+        service = ProjectService(db_session)
+        owner_id = uuid.uuid4()
+        project = await service.create(name="Delete Me", owner_id=owner_id, tenant_id=tenant.id)
+        pid = uuid.UUID(project["id"])
+
+        deleted = await service.delete(pid, tenant_id=tenant.id)
         assert deleted is True
 
-        retrieved = service.get(pid)
-        assert retrieved is None
+        # Soft-deleted projects are excluded from list
+        projects = await service.list_for_user(owner_id=owner_id, tenant_id=tenant.id)
+        assert not any(p["id"] == str(pid) for p in projects)
 
-    def test_project_update(self):
+    @pytest.mark.asyncio
+    async def test_project_update(self, db_session):
         """Projects should be updatable."""
-        service = ProjectService()
-        project = service.create(name="Original", owner_id="user-1")
+        import uuid
 
-        updated = service.update(project.id, name="Updated Name")
+        from app.models.identity import Tenant
+
+        tenant = Tenant(name="Upd Tenant", slug=f"upd-{uuid.uuid4().hex[:8]}", plan="FREE")
+        db_session.add(tenant)
+        await db_session.flush()
+
+        service = ProjectService(db_session)
+        owner_id = uuid.uuid4()
+        project = await service.create(name="Original", owner_id=owner_id, tenant_id=tenant.id)
+
+        updated = await service.update(uuid.UUID(project["id"]), tenant_id=tenant.id, name="Updated Name")
         assert updated is not None
-        assert updated.name == "Updated Name"
+        assert updated["name"] == "Updated Name"
 
 
 # ── 4. Query understanding ──

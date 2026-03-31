@@ -31,6 +31,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Shimmer, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
+import { toast } from '@/stores/toastStore'
 import type { SkillResponse, ApiResponse, PermissionLevel } from '@/types/api'
 
 // ── Constants ──────────────────────────────────────────────────────────────

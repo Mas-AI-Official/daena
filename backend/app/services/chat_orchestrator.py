@@ -491,9 +491,11 @@ class ChatOrchestrator:
         from app.services.providers.claude_cli import CLI_RUNTIME_TO_MODEL
 
         _effective_preferred = preferred_model
-        if not _effective_preferred and primary_mind in _CLI_RUNTIME_IDS and chat_mode != ChatMode.EXE:
+        # Map CLI runtime IDs to provider model IDs in ALL modes.
+        # "claude_code" → "claude-code-cli", "codex" → "codex-cli", etc.
+        if not _effective_preferred and primary_mind in _CLI_RUNTIME_IDS:
             _effective_preferred = CLI_RUNTIME_TO_MODEL.get(primary_mind)
-        elif _effective_preferred in _CLI_RUNTIME_IDS and chat_mode != ChatMode.EXE:
+        elif _effective_preferred in _CLI_RUNTIME_IDS:
             _effective_preferred = CLI_RUNTIME_TO_MODEL.get(_effective_preferred)
 
         if _effective_preferred:

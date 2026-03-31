@@ -2,34 +2,27 @@
 
 Users create projects to organize tasks, files, chat sessions,
 and department assignments into isolated workspaces.
+Projects persist in the database (survive restarts).
 """
 
 from __future__ import annotations
 
 import html as _html
 import re as _re
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user
+from app.core.database import get_db
 from app.core.logging import get_logger
 from app.services.project_service import ProjectService
 
 logger = get_logger(__name__)
 
 router = APIRouter()
-
-# Singleton project service
-_project_service: ProjectService | None = None
-
-
-def get_project_service() -> ProjectService:
-    """Get or create the singleton ProjectService."""
-    global _project_service
-    if _project_service is None:
-        _project_service = ProjectService()
-    return _project_service
 
 
 # ── Helpers ──
@@ -92,16 +85,6 @@ class UpdateProjectBody(BaseModel):
         return v
 
 
-class AddTaskBody(BaseModel):
-    """Request body for associating a task with a project."""
-    task_id: str
-
-
-class AddFileBody(BaseModel):
-    """Request body for tracking a file in a project."""
-    file_path: str
-
-
 # ── Endpoints ──
 
 
@@ -109,12 +92,17 @@ class AddFileBody(BaseModel):
 async def list_projects(
     limit: int = 50,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """List all projects for the current user, most recent first."""
-    service = get_project_service()
-    projects = service.list_for_user(str(user.id), limit=limit)
+    service = ProjectService(db)
+    projects = await service.list_for_user(
+        owner_id=user.id,
+        tenant_id=user.tenant_id,
+        limit=limit,
+    )
     return {
-        "projects": [p.to_dict() for p in projects],
+        "projects": projects,
         "count": len(projects),
     }
 
@@ -123,125 +111,63 @@ async def list_projects(
 async def create_project(
     body: CreateProjectBody,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new project workspace."""
-    service = get_project_service()
-    project = service.create(
+    service = ProjectService(db)
+    project = await service.create(
         name=body.name,
-        owner_id=str(user.id),
+        owner_id=user.id,
+        tenant_id=user.tenant_id,
         description=body.description,
         working_directory=body.working_directory,
         settings=body.settings,
     )
-    return {"success": True, "project": project.to_dict()}
+    await db.commit()
+    return {"success": True, "project": project}
 
 
 @router.get("/{project_id}")
 async def get_project(
-    project_id: str,
+    project_id: UUID,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get a specific project by ID."""
-    service = get_project_service()
-    project = service.get(project_id)
+    service = ProjectService(db)
+    project = await service.get(project_id, tenant_id=user.tenant_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != str(user.id):
-        raise HTTPException(status_code=403, detail="Not your project")
-    return project.to_dict()
+    return project
 
 
 @router.put("/{project_id}")
 async def update_project(
-    project_id: str,
+    project_id: UUID,
     body: UpdateProjectBody,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Update project fields."""
-    service = get_project_service()
-    project = service.get(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != str(user.id):
-        raise HTTPException(status_code=403, detail="Not your project")
-
+    service = ProjectService(db)
     updates = body.model_dump(exclude_none=True)
-    updated = service.update(project_id, **updates)
-    return {"success": True, "project": updated.to_dict()}
+    updated = await service.update(project_id, tenant_id=user.tenant_id, **updates)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Project not found")
+    await db.commit()
+    return {"success": True, "project": updated}
 
 
 @router.delete("/{project_id}")
 async def delete_project(
-    project_id: str,
+    project_id: UUID,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Delete a project."""
-    service = get_project_service()
-    project = service.get(project_id)
-    if not project:
+    """Delete a project (soft-delete)."""
+    service = ProjectService(db)
+    deleted = await service.delete(project_id, tenant_id=user.tenant_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != str(user.id):
-        raise HTTPException(status_code=403, detail="Not your project")
-
-    service.delete(project_id)
-    return {"success": True}
-
-
-@router.get("/{project_id}/tasks")
-async def list_project_tasks(
-    project_id: str,
-    user: CurrentUser = Depends(get_current_user),
-):
-    """List task IDs associated with a project."""
-    service = get_project_service()
-    project = service.get(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return {"task_ids": project.task_ids, "count": len(project.task_ids)}
-
-
-@router.post("/{project_id}/tasks")
-async def add_project_task(
-    project_id: str,
-    body: AddTaskBody,
-    user: CurrentUser = Depends(get_current_user),
-):
-    """Associate a task with a project."""
-    service = get_project_service()
-    added = service.add_task(project_id, body.task_id)
-    if not added:
-        raise HTTPException(
-            status_code=404,
-            detail="Project not found or task already added",
-        )
-    return {"success": True}
-
-
-@router.get("/{project_id}/files")
-async def list_project_files(
-    project_id: str,
-    user: CurrentUser = Depends(get_current_user),
-):
-    """List file paths tracked by a project."""
-    service = get_project_service()
-    project = service.get(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return {"file_paths": project.file_paths, "count": len(project.file_paths)}
-
-
-@router.post("/{project_id}/files")
-async def add_project_file(
-    project_id: str,
-    body: AddFileBody,
-    user: CurrentUser = Depends(get_current_user),
-):
-    """Track a file in a project."""
-    service = get_project_service()
-    added = service.add_file(project_id, body.file_path)
-    if not added:
-        raise HTTPException(
-            status_code=404,
-            detail="Project not found or file already tracked",
-        )
+    await db.commit()
     return {"success": True}

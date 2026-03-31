@@ -127,6 +127,8 @@ def _run_cli(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     try:
         stdout, stderr = proc.communicate(

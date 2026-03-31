@@ -52,6 +52,10 @@ interface RuntimeData {
     is_authenticated: boolean
     plan_name: string | null
     user_display: string | null
+    login_url?: string
+    setup_command?: string
+    method?: string
+    status?: string
   } | null
 }
 
@@ -291,13 +295,14 @@ function ContextMenu({ items, onClose }: { items: { label: string; icon: React.R
 
 // ── Runtime Row with expandable config ──
 
-function RuntimeRow({ runtime, isPrimary, expanded, onToggleExpand, onSetPrimary, onTest }: {
+function RuntimeRow({ runtime, isPrimary, expanded, onToggleExpand, onSetPrimary, onTest, onRefreshAuth }: {
   runtime: RuntimeData
   isPrimary: boolean
   expanded: boolean
   onToggleExpand: () => void
   onSetPrimary: () => void
   onTest: () => void
+  onRefreshAuth?: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -336,11 +341,55 @@ function RuntimeRow({ runtime, isPrimary, expanded, onToggleExpand, onSetPrimary
         </div>
         <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
           {isOnline && isAuthenticated ? (
-            <span className="text-xs text-accent-green font-medium">Connected</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                toast.info(`${runtime.display_name} disconnected. Click "Connect" to reconnect.`)
+                // Trigger refresh to update status
+                onRefreshAuth?.()
+              }}
+              className="px-3 py-1 rounded-lg text-xs bg-accent-green/10 text-accent-green hover:bg-status-error/10 hover:text-status-error cursor-pointer transition-colors group/conn"
+            >
+              <span className="group-hover/conn:hidden">Connected</span>
+              <span className="hidden group-hover/conn:inline">Disconnect</span>
+            </button>
           ) : isOnline && !isAuthenticated ? (
-            <span className="text-xs text-accent-amber font-medium">Not authenticated</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                const urls: Record<string, string> = {
+                  'claude_code': 'https://docs.anthropic.com/en/docs/claude-code',
+                  'codex': 'https://github.com/openai/codex',
+                  'gemini_cli': 'https://github.com/google-gemini/gemini-cli',
+                  'grok_cli': 'https://docs.x.ai/overview',
+                  'ollama': 'https://ollama.ai',
+                }
+                const url = urls[runtime.runtime_id] || runtime.subscription?.login_url
+                if (url) window.open(url, '_blank')
+                else toast.info(`Run the auth command for ${runtime.display_name} in your terminal.`)
+              }}
+              className="px-3 py-1 rounded-lg text-xs bg-accent-amber/10 text-accent-amber hover:bg-accent-amber/20 cursor-pointer"
+            >
+              Connect
+            </button>
           ) : isInstalled ? (
-            <span className="text-xs text-accent-amber font-medium">Not authenticated</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                const urls: Record<string, string> = {
+                  'claude_code': 'https://docs.anthropic.com/en/docs/claude-code',
+                  'codex': 'https://github.com/openai/codex',
+                  'gemini_cli': 'https://github.com/google-gemini/gemini-cli',
+                  'grok_cli': 'https://docs.x.ai/overview',
+                  'ollama': 'https://ollama.ai',
+                }
+                const url = urls[runtime.runtime_id] || runtime.subscription?.login_url
+                if (url) window.open(url, '_blank')
+              }}
+              className="px-3 py-1 rounded-lg text-xs bg-accent-amber/10 text-accent-amber hover:bg-accent-amber/20 cursor-pointer"
+            >
+              Connect
+            </button>
           ) : (
             <button
               onClick={(e) => {
@@ -349,7 +398,7 @@ function RuntimeRow({ runtime, isPrimary, expanded, onToggleExpand, onSetPrimary
                   'claude_code': 'https://docs.anthropic.com/en/docs/claude-code',
                   'codex': 'https://github.com/openai/codex',
                   'gemini_cli': 'https://github.com/google-gemini/gemini-cli',
-                  'grok_cli': 'https://docs.x.ai/docs/grok-cli',
+                  'grok_cli': 'https://docs.x.ai/overview',
                   'ollama': 'https://ollama.ai',
                 }
                 const url = urls[runtime.runtime_id] || runtime.subscription?.login_url
@@ -896,6 +945,7 @@ export function ConnectionsPage() {
                       onToggleExpand={() => toggleExpand(rt.runtime_id)}
                       onSetPrimary={() => void handleSetPrimary(rt.runtime_id)}
                       onTest={() => void handleTestRuntime(rt.runtime_id)}
+                      onRefreshAuth={() => void fetchRuntimes()}
                     />
                   ))}
                   {runtimes.length === 0 && !loading && (

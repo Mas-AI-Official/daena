@@ -109,18 +109,18 @@ export const useUiStore = create<UiState>((set) => ({
   sidebarWidth: 256,
   historySidebarOpen: false,
   mobileSidebarOpen: false,
-  chatMode: 'CMD',
-  routingMode: 'STANDARD',
-  governanceSlider: 'STANDARD',
+  chatMode: (localStorage.getItem('daena:chatMode') as ChatMode) || 'CMD',
+  routingMode: (localStorage.getItem('daena:routingMode') as RoutingMode) || 'STANDARD',
+  governanceSlider: (localStorage.getItem('daena:governanceSlider') as GovernanceSlider) || 'STANDARD',
   darkMode: localStorage.getItem('daena:darkMode') !== 'false',
   thinkingVisible: localStorage.getItem('daena:thinkingVisible') !== 'false',
-  persistThinking: true,
-  deepResearch: false,
+  persistThinking: localStorage.getItem('daena:persistThinking') !== 'false',
+  deepResearch: localStorage.getItem('daena:deepResearch') === 'true',
   conversationalMode: false,
   speechEnabled: false,
   voiceListening: false,
   volume: 0.7,
-  autopilotActive: false,
+  autopilotActive: localStorage.getItem('daena:autopilotActive') === 'true',
   localFirstRouting: true,
   costAwareRouting: true,
   daenaBotEnabled: true,
@@ -138,9 +138,9 @@ export const useUiStore = create<UiState>((set) => ({
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleHistorySidebar: () => set((s) => ({ historySidebarOpen: !s.historySidebarOpen })),
-  setChatMode: (mode) => set({ chatMode: mode }),
-  setRoutingMode: (mode) => set({ routingMode: mode }),
-  setGovernanceSlider: (slider) => set({ governanceSlider: slider }),
+  setChatMode: (mode) => { localStorage.setItem('daena:chatMode', mode); set({ chatMode: mode }) },
+  setRoutingMode: (mode) => { localStorage.setItem('daena:routingMode', mode); set({ routingMode: mode }) },
+  setGovernanceSlider: (slider) => { localStorage.setItem('daena:governanceSlider', slider); set({ governanceSlider: slider }) },
   toggleDarkMode: () => set((s) => {
     const next = !s.darkMode
     localStorage.setItem('daena:darkMode', String(next))
@@ -159,13 +159,13 @@ export const useUiStore = create<UiState>((set) => ({
     localStorage.setItem('daena:thinkingVisible', String(next))
     return { thinkingVisible: next }
   }),
-  togglePersistThinking: () => set((s) => ({ persistThinking: !s.persistThinking })),
-  toggleDeepResearch: () => set((s) => ({ deepResearch: !s.deepResearch })),
+  togglePersistThinking: () => set((s) => { const next = !s.persistThinking; localStorage.setItem('daena:persistThinking', String(next)); return { persistThinking: next } }),
+  toggleDeepResearch: () => set((s) => { const next = !s.deepResearch; localStorage.setItem('daena:deepResearch', String(next)); return { deepResearch: next } }),
   toggleConversational: () => set((s) => ({ conversationalMode: !s.conversationalMode })),
   toggleSpeech: () => set((s) => ({ speechEnabled: !s.speechEnabled })),
   setVoiceListening: (listening) => set({ voiceListening: listening }),
   setVolume: (v) => set({ volume: Math.max(0, Math.min(1, v)) }),
-  toggleAutopilot: () => set((s) => ({ autopilotActive: !s.autopilotActive })),
+  toggleAutopilot: () => set((s) => { const next = !s.autopilotActive; localStorage.setItem('daena:autopilotActive', String(next)); return { autopilotActive: next } }),
   toggleLocalFirstRouting: () => set((s) => ({ localFirstRouting: !s.localFirstRouting })),
   toggleCostAwareRouting: () => set((s) => ({ costAwareRouting: !s.costAwareRouting })),
   toggleDaenaBot: () => set((s) => ({ daenaBotEnabled: !s.daenaBotEnabled })),
@@ -257,15 +257,16 @@ export async function hydrateUiFromBackend(): Promise<void> {
     // SpeechRecognition cannot auto-start without a user gesture.
     // Voice must always start OFF and require a click to activate.
     if (data.sidebar_collapsed != null) updates.sidebarOpen = !data.sidebar_collapsed
-    if (data.default_chat_mode) updates.chatMode = data.default_chat_mode
-    if (data.default_routing_mode) updates.routingMode = data.default_routing_mode
-    if (data.default_governance_slider) updates.governanceSlider = data.default_governance_slider
+    if (data.default_chat_mode) { updates.chatMode = data.default_chat_mode; localStorage.setItem('daena:chatMode', data.default_chat_mode) }
+    if (data.default_routing_mode) { updates.routingMode = data.default_routing_mode; localStorage.setItem('daena:routingMode', data.default_routing_mode) }
+    if (data.default_governance_slider) { updates.governanceSlider = data.default_governance_slider; localStorage.setItem('daena:governanceSlider', data.default_governance_slider) }
     if (data.local_first_routing != null) updates.localFirstRouting = data.local_first_routing
     if (data.cost_aware_routing != null) updates.costAwareRouting = data.cost_aware_routing
     if (data.debug_mode != null) updates.debugMode = data.debug_mode
     if (data.verbose_logging != null) updates.verboseLogging = data.verbose_logging
-    if (data.autopilot_active != null) updates.autopilotActive = data.autopilot_active
-    if (data.persist_thinking != null) updates.persistThinking = data.persist_thinking
+    if (data.autopilot_active != null) { updates.autopilotActive = data.autopilot_active; localStorage.setItem('daena:autopilotActive', String(data.autopilot_active)) }
+    if (data.persist_thinking != null) { updates.persistThinking = data.persist_thinking; localStorage.setItem('daena:persistThinking', String(data.persist_thinking)) }
+    if (data.deep_research != null) { updates.deepResearch = data.deep_research; localStorage.setItem('daena:deepResearch', String(data.deep_research)) }
     // conversationalMode excluded: see comment above
     if (data.auto_read_responses != null) updates.autoReadResponses = data.auto_read_responses
     if (data.default_runtime && data.default_runtime !== 'auto') updates.selectedRuntime = data.default_runtime

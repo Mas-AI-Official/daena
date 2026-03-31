@@ -60,7 +60,14 @@ export function DepartmentsPage() {
     const fetchDepts = async () => {
       try {
         const { data } = await api.get<ApiResponse<DepartmentResponse[]>>('/agents/departments')
-        setDepartments(data.data || [])
+        const depts = data.data || []
+        if (depts.length > 0) {
+          setDepartments(depts)
+        } else {
+          // API returned empty or auth failed silently (200 + success:false)
+          // Fall back to defaults so the page is never blank
+          throw new Error('Empty department list from API')
+        }
       } catch (err) {
         console.error('Failed to load departments, using defaults:', err)
         setDepartments(

@@ -71,17 +71,20 @@ export const Header = memo(function Header() {
   const handleChatMode = useCallback((mode: ChatMode) => {
     setChatMode(mode)
     syncSession({ mode })
+    persistUiPref('default_chat_mode', mode)
   }, [setChatMode])
 
   const handleRoutingMode = useCallback((mode: RoutingMode) => {
     setRoutingMode(mode)
     syncSession({ routing_mode: mode })
+    persistUiPref('default_routing_mode', mode)
   }, [setRoutingMode])
 
   const handleThinkToggle = useCallback(() => {
     const newVal = !useUiStore.getState().thinkingVisible
     toggleThinking()
     syncSession({ think_mode: newVal })
+    persistUiPref('persist_thinking', newVal)
   }, [toggleThinking])
 
   const handleAutopilotToggle = useCallback(() => {
@@ -94,6 +97,7 @@ export const Header = memo(function Header() {
   const handleGovernanceSlider = useCallback((slider: GSlider) => {
     setGovernanceSlider(slider)
     syncSession({ governance_slider: slider })
+    persistUiPref('default_governance_slider', slider)
   }, [setGovernanceSlider])
 
   return (
