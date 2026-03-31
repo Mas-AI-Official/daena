@@ -354,8 +354,25 @@ class SwarmExecutor:
         context: dict[str, Any],
         output_chunks: list[str],
     ) -> None:
-        """Collect streaming output from a runtime adapter."""
-        async for chunk in adapter.execute(subtask.description, context):
+        """Collect streaming output from a runtime adapter.
+
+        If the subtask is routed to a department agent, injects the
+        agent's specialized prompt into the task description.
+        """
+        task_desc = subtask.description
+
+        # Inject department agent prompt if routed
+        dept = subtask.metadata.get("department")
+        sub_cap = subtask.metadata.get("sub_capability")
+        if dept and sub_cap:
+            try:
+                from app.services.department_prompts import get_agent_prompt
+                agent_prompt = get_agent_prompt(dept, sub_cap)
+                task_desc = f"[{dept}.{sub_cap}] {agent_prompt}\n\nTASK: {task_desc}"
+            except Exception:
+                pass  # Fall back to plain description
+
+        async for chunk in adapter.execute(task_desc, context):
             output_chunks.append(chunk)
 
     def _make_receipt(
