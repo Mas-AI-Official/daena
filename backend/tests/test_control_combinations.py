@@ -106,8 +106,12 @@ class TestAutopilotGovernance:
         assert result["autopilot_override"] is True
 
     @pytest.mark.asyncio
-    async def test_autopilot_on_blocks_tier_3_critical(self) -> None:
-        """AGI ON + Tier 3+ critical action → still requires user approval."""
+    async def test_autopilot_on_approves_tier_3(self) -> None:
+        """AGI ON + Tier 3 → auto-approved (OpenClaw-style autonomous).
+
+        Only hard-law violations (tier 4) block in AGI mode.
+        Governance logs for audit but never interrupts the user.
+        """
         gov = GovernanceEngine(_make_fake_db())
         # STANDARD + HIGH risk = tier 3
         result = await gov.evaluate(
@@ -119,10 +123,10 @@ class TestAutopilotGovernance:
             user_id=_make_uuid(),
             autopilot=True,
         )
-        assert result["allowed"] is False
+        assert result["allowed"] is True
         assert result["governance_tier"] == 3
-        assert result["requires_approval"] is True
-        assert result["autopilot_override"] is False
+        assert result["requires_approval"] is False
+        assert result["autopilot_override"] is True
 
     @pytest.mark.asyncio
     async def test_autopilot_on_blocks_tier_4_critical(self) -> None:
@@ -143,14 +147,15 @@ class TestAutopilotGovernance:
         assert result["requires_approval"] is True
 
     @pytest.mark.asyncio
-    async def test_autopilot_on_yolo_still_blocks_tier_3(self) -> None:
-        """AGI ON + STANDARD slider → Tier 3+ actions NOT auto-approved.
+    async def test_autopilot_on_auto_approves_tier_3(self) -> None:
+        """AGI ON + STANDARD slider + Tier 3 → auto-approved.
 
-        This is the key test: even with autopilot, Tier 3+ governance
-        always requires user approval. STANDARD + HIGH risk = tier 3.
+        AGI mode operates autonomously like OpenClaw. Governance is
+        invisible — it logs everything for audit but never interrupts.
+        Only hard-law violations (tier 4) block.
         """
         gov = GovernanceEngine(_make_fake_db())
-        # STANDARD + HIGH risk (DEPLOY) = tier 3 → autopilot can't override
+        # STANDARD + HIGH risk (DEPLOY) = tier 3 → autopilot auto-approves
         result = await gov.evaluate(
             action_type="DEPLOY",  # HIGH risk
             governance_slider="STANDARD",
@@ -160,11 +165,11 @@ class TestAutopilotGovernance:
             user_id=_make_uuid(),
             autopilot=True,
         )
-        # STANDARD + HIGH = tier 3 → NOT auto-approved even with autopilot
-        assert result["allowed"] is False
+        # STANDARD + HIGH = tier 3 → auto-approved in AGI mode
+        assert result["allowed"] is True
         assert result["governance_tier"] == 3
-        assert result["autopilot_override"] is False
-        assert result["requires_approval"] is True
+        assert result["autopilot_override"] is True
+        assert result["requires_approval"] is False
 
     @pytest.mark.asyncio
     async def test_autopilot_on_hard_law_never_bypassed(self) -> None:
@@ -583,11 +588,11 @@ class TestCombinedScenarios:
             user_id=_make_uuid(),
             autopilot=True,
         )
-        # PARANOID + MEDIUM = tier 3 → not auto-approved
+        # PARANOID + MEDIUM = tier 3 → auto-approved in AGI mode
         assert result["governance_tier"] == 3
-        assert result["allowed"] is False
-        assert result["autopilot_override"] is False
-        assert result["requires_approval"] is True
+        assert result["allowed"] is True
+        assert result["autopilot_override"] is True
+        assert result["requires_approval"] is False
 
     @pytest.mark.asyncio
     async def test_autopilot_on_yolo_high_risk(self) -> None:

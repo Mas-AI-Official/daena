@@ -112,6 +112,35 @@ class ModelRegistry:
             except Exception:
                 logger.exception("provider.init_failed", provider=provider_enum.value)
 
+        # CLI runtime providers: use subscription auth (no API key needed).
+        # Auto-register for any provider slot that has no API key configured
+        # but DOES have an installed CLI binary. This allows Claude Code,
+        # Codex, and Gemini CLI to participate in Council/QE as proper providers.
+        try:
+            from app.services.providers.claude_cli import ALL_CLI_SPECS, CliProvider
+
+            for spec in ALL_CLI_SPECS:
+                if spec.provider in self._providers:
+                    continue  # API-key provider already registered
+                try:
+                    cli_provider = CliProvider(spec)
+                    health = await cli_provider.health_check()
+                    if health == HealthStatus.HEALTHY:
+                        self._providers[spec.provider] = cli_provider
+                        logger.info(
+                            "provider.registered",
+                            provider=spec.provider.value,
+                            via=f"{spec.runtime_id}_cli",
+                        )
+                except Exception:
+                    logger.debug(
+                        "provider.cli_init_failed",
+                        runtime=spec.runtime_id,
+                        exc_info=True,
+                    )
+        except Exception:
+            logger.debug("provider.cli_import_failed", exc_info=True)
+
         self._initialized = True
         logger.info(
             "registry.initialized",

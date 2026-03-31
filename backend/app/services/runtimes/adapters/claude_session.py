@@ -28,17 +28,39 @@ logger = get_logger(__name__)
 def _run_claude(
     cmd: list[str],
     *,
+    task_stdin: str | None = None,
     cwd: str | None = None,
     timeout: float = 300.0,
 ) -> subprocess.CompletedProcess[str]:
-    """Run claude command synchronously (called from thread pool)."""
-    return subprocess.run(
+    """Run claude command synchronously (called from thread pool).
+
+    Uses Popen + communicate() so the subprocess is properly killed
+    on timeout (subprocess.run with timeout does NOT kill on Windows).
+    Optionally passes the task via stdin instead of -p for large inputs.
+    """
+    proc = subprocess.Popen(
         cmd,
-        capture_output=True,
+        stdin=subprocess.PIPE if task_stdin else subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout,
         cwd=cwd,
     )
+    try:
+        stdout, stderr = proc.communicate(
+            input=task_stdin,
+            timeout=timeout,
+        )
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=proc.returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+        raise
 
 
 @dataclass
@@ -83,11 +105,20 @@ class ClaudeSession:
 
         First command creates the session. Subsequent commands resume it.
         """
-        cmd = [
-            self.claude_bin, "-p", task,
-            "--output-format", "json",
-            "--dangerously-skip-permissions",
-        ]
+        # Use stdin for large tasks to avoid Windows arg size limits (32KB)
+        _use_stdin = len(task) > 8000
+        if _use_stdin:
+            cmd = [
+                self.claude_bin, "-p", "-",
+                "--output-format", "json",
+                "--dangerously-skip-permissions",
+            ]
+        else:
+            cmd = [
+                self.claude_bin, "-p", task,
+                "--output-format", "json",
+                "--dangerously-skip-permissions",
+            ]
 
         # Resume existing session if we have a CLI session ID
         if self.cli_session_id:
@@ -98,12 +129,16 @@ class ClaudeSession:
             daena_session=self.daena_session_id,
             cli_session=self.cli_session_id or "new",
             task=task[:200],
+            task_size=len(task),
+            use_stdin=_use_stdin,
             command_num=self.command_count + 1,
         )
 
         try:
             proc_result = await asyncio.to_thread(
-                _run_claude, cmd, cwd=cwd, timeout=timeout,
+                _run_claude, cmd,
+                task_stdin=task if _use_stdin else None,
+                cwd=cwd, timeout=timeout,
             )
 
             # Parse the JSON result (may be multiple lines, take last result type)
@@ -127,8 +162,15 @@ class ClaudeSession:
 
         except subprocess.TimeoutExpired:
             self.is_alive = False
+            logger.error(
+                "claude_session.timeout",
+                daena_session=self.daena_session_id,
+                task_size=len(task),
+                use_stdin=_use_stdin,
+                timeout_seconds=timeout,
+            )
             return ClaudeSessionResult(
-                result_text="[Session timed out]",
+                result_text="[Session timed out -- subprocess killed]",
                 session_id=self.cli_session_id or "",
                 is_error=True,
                 duration_ms=int(timeout * 1000),

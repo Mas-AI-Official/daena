@@ -226,10 +226,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setActiveSession: async (sessionId) => {
     // Skip if already active (prevents clearing messages after auto-create + send)
     if (get().activeSessionId === sessionId) return
-    // Never reload messages while streaming (prevents user message disappearance)
+    // If streaming, cancel current stream before switching sessions.
+    // User intent to switch is explicit -- don't block on a stale stream.
     if (get().stream.isStreaming) {
-      set((s) => ({ activeSessionId: sessionId, activeSession: s.sessions.find((ses) => ses.id === sessionId) || s.activeSession }))
-      return
+      get().cancelStream()
     }
 
     const { sessions } = get()
@@ -638,7 +638,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
               const uiStore = await import('@/stores/uiStore')
               uiStore.useUiStore.getState().addPrompt(event as never)
             } else if (event.type === 'error') {
-              toast.error(event.message || 'Stream error')
+              const errorMsg = event.message || 'Stream error'
+              toast.error(errorMsg)
+              // Save content for retry if backend says retryable
+              if (event.can_retry) {
+                set({ lastFailedMessage: optimistic.content })
+              }
               cancelStream()
             }
           } catch {

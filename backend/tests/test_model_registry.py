@@ -65,7 +65,15 @@ class TestModelRegistryInit:
             await registry.initialize()
 
         assert registry._initialized is True
-        assert len(registry.available_providers) == 0
+        # API-key providers are skipped, but CLI providers (claude, codex, gemini)
+        # auto-register if their binaries are installed on the system.
+        # Only verify that no API-key-based providers were registered.
+        api_key_providers = {
+            p for p in registry.available_providers
+            if not isinstance(registry._providers.get(p), type(None))
+            and getattr(registry._providers.get(p), '_spec', None) is None
+        }
+        assert len(api_key_providers) == 0
 
     @pytest.mark.asyncio
     async def test_double_initialize_is_noop(self):

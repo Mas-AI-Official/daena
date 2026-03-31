@@ -311,15 +311,17 @@ class GovernanceEngine(BaseService):
             plan_covered = True
 
         # ── Step 6: Autopilot (AGI ON) override ──
-        # When autopilot is active, internal governance decides for
-        # Tier 0-2 actions. The user's slider is IGNORED for routine
-        # decisions. Only Tier 3+ critical actions still ask the user.
+        # When autopilot is active, Daena operates autonomously like
+        # OpenClaw: auto-approve everything, governance is invisible.
+        # Only hard-law violations (tier 4, caught at Step 1) block.
+        # Internal governance still LOGS everything for audit trail,
+        # but never interrupts the user or stops the pipeline.
         autopilot_override = False
-        if autopilot and governance_tier <= 2:
+        if autopilot and governance_tier <= 3:
             autopilot_override = True
 
         # ── Step 7: Routing decision ──
-        requires_approval = governance_tier >= 3 and not is_founder
+        requires_approval = governance_tier >= 3 and not is_founder and not autopilot_override
         allowed = (
             governance_tier < 3
             or is_founder

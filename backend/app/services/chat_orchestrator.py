@@ -216,7 +216,7 @@ class ChatOrchestrator:
             selectable_count = 0
             if self._registry:
                 try:
-                    snapshot = self._registry.snapshot(force_refresh=False)
+                    snapshot = self._registry.snapshot(force_refresh=True)
                     summary = snapshot.get("summary", {})
                     raw_count = summary.get("selectable_model_count", 0)
                     selectable_count = int(raw_count) if isinstance(raw_count, (int, float)) else 0
@@ -433,7 +433,14 @@ class ChatOrchestrator:
                 f"(slider: {governance_slider}, risk: {gov_result.get('risk_level', 'unknown')})"
             )
 
-        if governance_tier >= 2 or _mode_downgraded or autopilot_override:
+        # In AGI ON mode, governance is invisible — only emit notices for
+        # mode downgrades or genuinely blocked actions (hard laws).
+        # The audit log still records everything, but the user isn't interrupted.
+        _should_notify = (
+            _mode_downgraded
+            or (governance_tier >= 2 and not autopilot_override)
+        )
+        if _should_notify:
             yield {
                 "type": "governance_notice",
                 "tier": governance_tier,
@@ -475,119 +482,22 @@ class ChatOrchestrator:
         decision = None
         routing_source = "auto_routed"
 
-        # ── CLI Runtime direct routing ──
-        # If user selected a CLI runtime (claude_code, codex), bypass LLM
-        # routing and pipe directly through the runtime adapter.
+        # ── CLI Runtime → Provider mapping (ALL modes) ──
+        # CLI runtimes are proper LLM providers in the pipeline. No bypass.
+        # ALL modes (CMD + EXE) go through the full pipeline: model router,
+        # memory recall, Council/QE, DCP experts, governance, audit.
+        # EXE-mode tool execution happens at Stage 7.5 (DaenaBot) separately.
         _CLI_RUNTIME_IDS = {"claude_code", "codex", "gemini_cli", "grok_cli"}
-        if preferred_model and preferred_model in _CLI_RUNTIME_IDS:
-            yield {
-                "type": "thinking",
-                "stage": "runtime_direct",
-                "runtime": preferred_model,
-            }
+        from app.services.providers.claude_cli import CLI_RUNTIME_TO_MODEL
 
-            try:
-                from app.core.events import get_runtime_registry
+        _effective_preferred = preferred_model
+        if not _effective_preferred and primary_mind in _CLI_RUNTIME_IDS and chat_mode != ChatMode.EXE:
+            _effective_preferred = CLI_RUNTIME_TO_MODEL.get(primary_mind)
+        elif _effective_preferred in _CLI_RUNTIME_IDS and chat_mode != ChatMode.EXE:
+            _effective_preferred = CLI_RUNTIME_TO_MODEL.get(_effective_preferred)
 
-                rt_registry = get_runtime_registry()
-                adapter = rt_registry.get_adapter(preferred_model)
-                if adapter is None or not rt_registry._installed_cache.get(preferred_model, False):
-                    yield {"type": "error", "message": f"Runtime {preferred_model} is not available"}
-                    return
-
-                # Execute through runtime adapter (async generator)
-                import asyncio as _aio
-
-                response_lines: list[str] = []
-                async def _collect_runtime():
-                    async for line in adapter.execute(user_content, context={
-                        "session_id": str(session_id),
-                        "working_directory": ".",
-                    }):
-                        response_lines.append(line)
-
-                await _aio.wait_for(_collect_runtime(), timeout=120.0)
-
-                # Extract response text
-                response_text = "\n".join(response_lines).strip()
-
-                # Stream as chunks
-                chunk_size = 20
-                collected_content = ""
-                for i in range(0, len(response_text), chunk_size):
-                    chunk = response_text[i:i + chunk_size]
-                    collected_content += chunk
-                    yield {"type": "chunk", "content": chunk, "model_id": preferred_model}
-
-                # Persist response
-                cli_assistant_msg = None
-                try:
-                    from app.services.chat_service import ChatService as _ChatSvc
-
-                    chat_svc = _ChatSvc(self._db)
-                    cli_assistant_msg = await chat_svc.add_message(
-                        session_id=session_id,
-                        tenant_id=tenant_id,
-                        role="ASSISTANT",
-                        content=collected_content,
-                        model_used=preferred_model,
-                        provider_used="CLI_RUNTIME",
-                    )
-                    await self._db.flush()
-                except Exception:
-                    logger.warning("orchestrator.cli_persist_failed", exc_info=True)
-
-                done_data = ChatService._message_to_dict(cli_assistant_msg) if cli_assistant_msg else {
-                    "id": str(uuid.uuid4()),
-                    "session_id": str(session_id),
-                    "role": "ASSISTANT",
-                    "content": collected_content,
-                    "model_used": preferred_model,
-                    "provider_used": "CLI_RUNTIME",
-                    "governance_tier": None,
-                    "cost_usd": 0.0,
-                    "latency_ms": 0,
-                    "token_count_input": None,
-                    "token_count_output": None,
-                    "created_at": datetime.utcnow().isoformat(),
-                }
-                yield {
-                    "type": "done",
-                    "data": done_data,
-                    "model_id": preferred_model,
-                    "provider": "CLI_RUNTIME",
-                    "cost_usd": 0.0,
-                    "latency_ms": 0,
-                }
-
-                # Log cost
-                try:
-                    from app.services.billing.cost_tracker import UnifiedCostTracker
-
-                    tracker = UnifiedCostTracker.get_instance()
-                    tracker.log_usage(
-                        provider="CLI_RUNTIME",
-                        model=preferred_model,
-                        input_tokens=len(user_content) // 4,
-                        output_tokens=len(collected_content) // 4,
-                        cost_usd=0.0,
-                        task_type="chat_cli_runtime",
-                        session_id=str(session_id),
-                    )
-                except Exception:
-                    pass
-
-                return  # Skip the normal LLM pipeline
-            except _aio.TimeoutError:
-                yield {"type": "error", "message": f"Runtime {preferred_model} timed out (120s)"}
-                return
-            except Exception as exc:
-                logger.error("orchestrator.cli_runtime_failed", error=str(exc), runtime=preferred_model)
-                yield {"type": "error", "message": f"Runtime {preferred_model} failed: {exc}"}
-                return
-
-        if preferred_model:
-            override_candidate, override_reason = self._resolve_override_candidate(preferred_model)
+        if _effective_preferred:
+            override_candidate, override_reason = self._resolve_override_candidate(_effective_preferred)
             if override_candidate is None:
                 logger.warning(
                     "orchestrator.preferred_model_unavailable",
@@ -1208,6 +1118,25 @@ class ChatOrchestrator:
                     and len(_all_experts) > 1
                 )
 
+                if (
+                    decision.mode == RoutingMode.QUINTESSENCE
+                    and len(_all_experts) < 2
+                ):
+                    logger.warning(
+                        "orchestrator.qe_insufficient_experts",
+                        expert_count=len(_all_experts),
+                        intent=qu_result.intent.value if qu_result else "unknown",
+                    )
+                    yield {
+                        "type": "governance_notice",
+                        "tier": 2,
+                        "message": (
+                            f"Quintessence mode: only {len(_all_experts)} DCP expert(s) "
+                            f"available for this intent. Falling back to Standard mode. "
+                            f"Check dcps.json has experts for all domains."
+                        ),
+                    }
+
                 if _single_model_qe:
                     sole = decision.council_models[0]
                     provider_inst = llm._get_provider(sole)
@@ -1238,7 +1167,7 @@ class ChatOrchestrator:
                         )
                         try:
                             resp = await asyncio.wait_for(
-                                provider_inst.generate(expert_request), timeout=20.0,
+                                provider_inst.generate(expert_request), timeout=60.0,
                             )
                             council_responses.append((
                                 sole.model_id,
@@ -1287,10 +1216,10 @@ class ChatOrchestrator:
                         task = asyncio.create_task(provider_inst.generate(model_request))
                         tasks_list.append((candidate, task))
 
-                    # Gather with timeout (15s per model)
+                    # Gather with timeout (60s per model — Ollama needs time)
                     for candidate, task in tasks_list:
                         try:
-                            resp = await asyncio.wait_for(task, timeout=15.0)
+                            resp = await asyncio.wait_for(task, timeout=60.0)
                             council_responses.append((
                                 candidate.model_id,
                                 candidate.provider.value,
@@ -1391,9 +1320,22 @@ class ChatOrchestrator:
                     token_count += 1
                     yield {"type": "chunk", "content": chunk.content}
         else:
-            # Standard streaming
+            # Standard streaming (with error-chunk detection)
+            _stream_error: str | None = None
             try:
                 async for chunk in llm.stream(request, decision):
+                    # LLMService yields error chunks (finish_reason="error")
+                    # when all providers in the fallback chain fail.
+                    # Do NOT collect these as content.
+                    if getattr(chunk, "finish_reason", None) == "error":
+                        _stream_error = chunk.content
+                        logger.warning(
+                            "orchestrator.llm_error_chunk",
+                            error=chunk.content,
+                            model=model_id,
+                        )
+                        break
+
                     collected_content += chunk.content
                     token_count += 1
                     event: dict = {"type": "chunk", "content": chunk.content}
@@ -1404,45 +1346,120 @@ class ChatOrchestrator:
                         provider_name = chunk.provider.value
                     yield event
             except Exception as exc:
+                _stream_error = str(exc)
                 logger.error(
                     "orchestrator.stream_failed",
-                    error=str(exc),
+                    error=_stream_error,
                     model=model_id,
                 )
-                # Try fallback to direct Ollama
-                if not collected_content:
-                    yield {"type": "thinking", "stage": "fallback_streaming"}
-                    try:
-                        async for chunk in self._fallback_stream(request):
-                            collected_content += chunk.content
-                            token_count += 1
-                            yield {"type": "chunk", "content": chunk.content}
-                        provider_name = "ollama"
-                        model_id = chunk.model_id if chunk else model_id
-                    except Exception as fallback_exc:
-                        # Demo mode: return mock response instead of error
-                        from app.services.demo_mode import is_demo_mode, mock_llm_response
-                        if is_demo_mode():
-                            mock_content = mock_llm_response(user_content)
-                            collected_content = mock_content
-                            provider_name = "demo"
-                            model_id = "demo-mock"
-                            yield {"type": "chunk", "content": mock_content}
-                        else:
-                            error_msg = ChatMessage(
-                                session_id=session_id,
-                                role="ASSISTANT",
-                                content=(
-                                    "I'm sorry, I couldn't generate a response. "
-                                    "Please check that your LLM providers are configured correctly."
-                                ),
+
+            # If primary + fallback chain failed, try emergency Ollama
+            if _stream_error and not collected_content:
+                yield {
+                    "type": "thinking",
+                    "stage": "fallback_streaming",
+                    "reason": _stream_error,
+                }
+                try:
+                    async for chunk in self._fallback_stream(request):
+                        collected_content += chunk.content
+                        token_count += 1
+                        yield {"type": "chunk", "content": chunk.content}
+                    provider_name = "ollama"
+                    model_id = chunk.model_id if chunk else model_id
+                except Exception as fallback_exc:
+                    # Demo mode: return mock response instead of error
+                    from app.services.demo_mode import is_demo_mode, mock_llm_response
+                    if is_demo_mode():
+                        mock_content = mock_llm_response(user_content)
+                        collected_content = mock_content
+                        provider_name = "demo"
+                        model_id = "demo-mock"
+                        yield {"type": "chunk", "content": mock_content}
+                    else:
+                        # All LLM API providers failed. Try CLI runtimes
+                        # (Claude Code, Codex) as final fallback before error.
+                        cli_fallback_done = False
+                        try:
+                            from app.core.events import get_runtime_registry
+                            import asyncio as _aio
+
+                            rt_registry = get_runtime_registry()
+                            for rt_id in ("claude_code", "codex", "gemini_cli"):
+                                adapter = rt_registry.get_adapter(rt_id)
+                                if adapter is None:
+                                    continue
+                                if not rt_registry._installed_cache.get(rt_id, False):
+                                    continue
+                                # Check if authenticated
+                                try:
+                                    sub = await adapter.check_subscription()
+                                    if not getattr(sub, "is_authenticated", False):
+                                        continue
+                                except Exception:
+                                    continue
+
+                                yield {
+                                    "type": "thinking",
+                                    "stage": "cli_runtime_fallback",
+                                    "runtime": rt_id,
+                                }
+
+                                try:
+                                    lines: list[str] = []
+                                    async def _run_cli():
+                                        async for line in adapter.execute(
+                                            user_content,
+                                            context={
+                                                "session_id": str(session_id),
+                                                "working_directory": ".",
+                                            },
+                                        ):
+                                            lines.append(line)
+
+                                    await _aio.wait_for(_run_cli(), timeout=120.0)
+                                    cli_response = "\n".join(lines).strip()
+                                    if cli_response:
+                                        collected_content = cli_response
+                                        provider_name = "CLI_RUNTIME"
+                                        model_id = rt_id
+                                        # Stream the response
+                                        for i in range(0, len(cli_response), 20):
+                                            yield {
+                                                "type": "chunk",
+                                                "content": cli_response[i:i + 20],
+                                                "model_id": rt_id,
+                                            }
+                                        cli_fallback_done = True
+                                        break
+                                except Exception as cli_exc:
+                                    logger.warning(
+                                        "orchestrator.cli_fallback_failed",
+                                        runtime=rt_id,
+                                        error=str(cli_exc),
+                                    )
+                                    continue
+                        except Exception:
+                            pass
+
+                        if not cli_fallback_done:
+                            tried_models = [decision.primary.model_id] + [
+                                c.model_id for c in decision.fallback_chain
+                            ]
+                            error_detail = (
+                                f"All models failed (tried: {', '.join(tried_models)}, "
+                                f"then Ollama emergency fallback, then CLI runtimes). "
+                                f"Last error: {fallback_exc}"
                             )
-                            self._db.add(error_msg)
-                            await self._db.flush()
+                            logger.error(
+                                "orchestrator.all_models_failed",
+                                tried=tried_models,
+                                final_error=str(fallback_exc),
+                            )
                             yield {
                                 "type": "error",
-                                "message": str(fallback_exc),
-                                "data": ChatService._message_to_dict(error_msg),
+                                "message": error_detail,
+                                "can_retry": True,
                             }
                             return
 
