@@ -10,7 +10,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import 'highlight.js/styles/github-dark-dimmed.min.css'
-import { Clock, Copy, Cpu, Zap, Pencil, Check, X, RotateCcw, ChevronDown, Terminal, FileText, Globe, AlertCircle } from 'lucide-react'
+import { Clock, Copy, Cpu, Zap, Pencil, Check, X, RotateCcw, ChevronDown, ChevronUp, Terminal, FileText, Globe, AlertCircle, Maximize2, Minimize2, ThumbsUp, ThumbsDown, Building2 } from 'lucide-react'
 import { DaenaAvatar } from './DaenaAvatar'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -196,11 +196,79 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+/** Thumbs up/down feedback — sends to backend for quality tracking */
+function FeedbackButtons({ messageId }: { messageId: string }) {
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null)
+
+  const sendFeedback = async (type: 'up' | 'down') => {
+    if (feedback === type) {
+      setFeedback(null)
+      return
+    }
+    setFeedback(type)
+    try {
+      const token = localStorage.getItem('daena_token')
+      await fetch(`/api/v1/chat/messages/${messageId}/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ rating: type === 'up' ? 1 : -1 }),
+      })
+    } catch {
+      // Silent fail — feedback is non-critical
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-0.5">
+      <button
+        onClick={() => sendFeedback('up')}
+        className={`p-1 rounded transition-all cursor-pointer ${
+          feedback === 'up'
+            ? 'text-status-success bg-status-success/10'
+            : 'text-starlight-500 hover:text-starlight-200 hover:bg-white/5'
+        }`}
+        title="Good response"
+        aria-label="Thumbs up"
+      >
+        <ThumbsUp size={11} />
+      </button>
+      <button
+        onClick={() => sendFeedback('down')}
+        className={`p-1 rounded transition-all cursor-pointer ${
+          feedback === 'down'
+            ? 'text-status-error bg-status-error/10'
+            : 'text-starlight-500 hover:text-starlight-200 hover:bg-white/5'
+        }`}
+        title="Poor response"
+        aria-label="Thumbs down"
+      >
+        <ThumbsDown size={11} />
+      </button>
+    </div>
+  )
+}
+
+/** Threshold for collapsing long messages (line count) */
+const COLLAPSE_LINE_THRESHOLD = 30
+/** How many lines to show when collapsed */
+const COLLAPSED_PREVIEW_LINES = 12
+
 export const MessageBubble = memo(function MessageBubble({ message, isStreaming, streamedContent, daenabotActivity, onEdit, onRegenerate, isLastAssistant }: MessageBubbleProps) {
   const chatMode = useUiStore((s) => s.chatMode)
   const routingMode = useUiStore((s) => s.routingMode)
   const isUser = message.role === 'USER'
   const content = isStreaming && streamedContent ? streamedContent : message.content
+
+  // Collapse state for long messages
+  const lineCount = content.split('\n').length
+  const isLongMessage = !isUser && !isStreaming && lineCount > COLLAPSE_LINE_THRESHOLD
+  const [isCollapsed, setIsCollapsed] = useState(true) // Start collapsed for long messages
+  const displayContent = isLongMessage && isCollapsed
+    ? content.split('\n').slice(0, COLLAPSED_PREVIEW_LINES).join('\n') + '\n...'
+    : content
 
   // Edit state — only for USER messages
   const [isEditing, setIsEditing] = useState(false)
@@ -320,8 +388,27 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming,
                 : 'glass-card text-starlight-200 rounded-bl-md'
             }`}
           >
+            {/* Long message header bar */}
+            {isLongMessage && (
+              <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/5">
+                <FileText size={12} className="text-starlight-500" />
+                <span className="text-[10px] font-mono text-starlight-500">
+                  {lineCount} lines
+                </span>
+                <button
+                  onClick={() => setIsCollapsed(!isCollapsed)}
+                  className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded text-[10px]
+                             text-primary-400 hover:text-primary-300 hover:bg-primary-500/10
+                             transition-all cursor-pointer"
+                >
+                  {isCollapsed ? <Maximize2 size={10} /> : <Minimize2 size={10} />}
+                  {isCollapsed ? 'Show full' : 'Collapse'}
+                </button>
+              </div>
+            )}
+
             {/* Markdown content */}
-            <div className="prose-daena break-words">
+            <div className={`prose-daena break-words ${isLongMessage && isCollapsed ? 'relative' : ''}`}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeHighlight]}
@@ -384,9 +471,28 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming,
                   ),
                 }}
               >
-                {content}
+                {displayContent}
               </ReactMarkdown>
+
+              {/* Fade overlay when collapsed */}
+              {isLongMessage && isCollapsed && (
+                <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-midnight-500/95 to-transparent pointer-events-none" />
+              )}
             </div>
+
+            {/* Expand bar at bottom of collapsed messages */}
+            {isLongMessage && isCollapsed && (
+              <button
+                onClick={() => setIsCollapsed(false)}
+                className="flex items-center justify-center gap-1.5 w-full mt-1 pt-2 pb-1
+                           text-[11px] text-primary-400 hover:text-primary-300
+                           border-t border-white/5 hover:bg-primary-500/5
+                           transition-all cursor-pointer rounded-b-lg"
+              >
+                <ChevronDown size={12} />
+                Show full response ({lineCount} lines)
+              </button>
+            )}
 
             {/* Collapsible model metadata */}
             {!isUser && <ModelMeta message={message} />}
@@ -426,10 +532,18 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming,
                 Edit
               </button>
             )}
-            {/* Copy + Regenerate — ASSISTANT messages only */}
+            {/* Copy + Feedback + Regenerate — ASSISTANT messages only */}
             {!isUser && (
               <>
+                {/* Department indicator — shows which department handled this */}
+                {(message as Record<string, unknown>).department_name && (
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] text-primary-400/80 bg-primary-500/8">
+                    <Building2 size={9} />
+                    {String((message as Record<string, unknown>).department_name)}
+                  </span>
+                )}
                 <CopyButton text={content} />
+                <FeedbackButtons messageId={message.id} />
                 {isLastAssistant && onRegenerate && (
                   <button
                     onClick={() => onRegenerate(message.id)}

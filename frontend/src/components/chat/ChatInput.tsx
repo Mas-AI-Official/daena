@@ -502,12 +502,15 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
                          max-h-[200px] leading-relaxed transition-colors"
               style={{ outline: 'none' }}
             />
-            {/* Character count warning near limit */}
-            {value.length > MAX_MESSAGE_LENGTH * 0.9 && (
-              <span className={`absolute bottom-1 right-2 text-[9px] font-mono ${
-                value.length > MAX_MESSAGE_LENGTH * 0.95 ? 'text-status-error' : 'text-starlight-500'
+            {/* Character count + estimated cost — visible when typing */}
+            {value.length > 20 && (
+              <span className={`absolute bottom-1 right-2 text-[9px] font-mono transition-opacity ${
+                value.length > MAX_MESSAGE_LENGTH * 0.9 ? 'text-status-error' : 'text-starlight-600'
               }`}>
-                {value.length.toLocaleString()}/{MAX_MESSAGE_LENGTH.toLocaleString()}
+                {value.length > MAX_MESSAGE_LENGTH * 0.9
+                  ? `${value.length.toLocaleString()}/${MAX_MESSAGE_LENGTH.toLocaleString()}`
+                  : `~${Math.ceil(value.length / 4)} tokens · ~$${(Math.ceil(value.length / 4) * 0.003 / 1000).toFixed(4)}`
+                }
               </span>
             )}
           </div>

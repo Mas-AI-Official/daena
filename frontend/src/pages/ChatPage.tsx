@@ -5,7 +5,8 @@
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen, Keyboard, X } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { useChatStore } from '@/stores/chatStore'
 import { useModelRegistryStore } from '@/stores/modelRegistryStore'
@@ -110,7 +111,7 @@ export function ChatPage() {
     // Only create a new session on explicit "New Chat" click.
     const tryLoadRecent = () => {
       const { sessions } = useChatStore.getState()
-      const recentGeneral = sessions.find((s) => !s.department_id && !s.archived)
+      const recentGeneral = sessions.find((s) => !s.department_id && !s.is_archived)
       if (recentGeneral) {
         navigate(`/chat/${recentGeneral.id}`, { replace: true })
         return true
@@ -123,6 +124,34 @@ export function ChatPage() {
       return () => clearTimeout(timer)
     }
   }, [sessionId, setActiveSession, navigate])
+
+  /** Auto-name a session from the first message content */
+  const autoNameSession = useCallback(async (sessionIdToName: string, firstMessage: string) => {
+    // Generate a short title: first 50 chars, trim to last word boundary
+    const raw = firstMessage.replace(/\n/g, ' ').trim()
+    let title = raw.slice(0, 50)
+    if (raw.length > 50) {
+      const lastSpace = title.lastIndexOf(' ')
+      if (lastSpace > 20) title = title.slice(0, lastSpace)
+      title += '...'
+    }
+    if (!title) return
+    try {
+      const token = localStorage.getItem('daena_token')
+      await fetch(`/api/v1/chat/sessions/${sessionIdToName}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ title }),
+      })
+      // Update in store
+      useChatStore.getState().updateSession(sessionIdToName, { title })
+    } catch {
+      // Non-critical — session works fine without a title
+    }
+  }, [])
 
   const handleSend = async (content: string) => {
     if (!sessionId) {
@@ -140,6 +169,8 @@ export function ChatPage() {
         },
         onSessionResolved: (session) => {
           navigate(`/chat/${session.id}`, { replace: true })
+          // Auto-name the new session from the first message
+          void autoNameSession(session.id, content)
         },
       })
       return
@@ -147,8 +178,76 @@ export function ChatPage() {
     void sendMessageStream(content, effectiveModel, governanceSlider)
   }
 
+  // Keyboard shortcuts overlay
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // ? key (without modifier) when not focused on input
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+        const tag = (e.target as HTMLElement)?.tagName
+        if (tag === 'TEXTAREA' || tag === 'INPUT') return
+        e.preventDefault()
+        setShowShortcuts((prev) => !prev)
+      }
+      if (e.key === 'Escape' && showShortcuts) {
+        setShowShortcuts(false)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [showShortcuts])
+
   return (
     <div className="h-full flex relative">
+      {/* Keyboard shortcuts overlay */}
+      <AnimatePresence>
+        {showShortcuts && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowShortcuts(false)}
+          >
+            <motion.div
+              className="bg-midnight-300 border border-white/10 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Keyboard size={18} className="text-primary-400" />
+                  <h3 className="text-sm font-semibold text-starlight-100">Keyboard Shortcuts</h3>
+                </div>
+                <button onClick={() => setShowShortcuts(false)} className="p-1 rounded hover:bg-white/10 text-starlight-400 cursor-pointer">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="space-y-2">
+                {[
+                  ['Enter', 'Send message'],
+                  ['Shift + Enter', 'New line'],
+                  ['Esc', 'Cancel edit / Close'],
+                  ['/', 'Slash commands'],
+                  ['?', 'Toggle this overlay'],
+                  ['Ctrl + Shift + S', 'Toggle sidebar'],
+                  ['Ctrl + Shift + E', 'Toggle execution view'],
+                  ['Ctrl + Shift + N', 'New session'],
+                ].map(([key, desc]) => (
+                  <div key={key} className="flex items-center justify-between py-1">
+                    <span className="text-xs text-starlight-300">{desc}</span>
+                    <kbd className="px-2 py-0.5 rounded bg-midnight-500 border border-white/10 text-[10px] font-mono text-starlight-400">{key}</kbd>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-starlight-600 mt-4 text-center">Press ? anywhere to toggle</p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Session sidebar — collapsible via inline width for reliable CSS transition */}
       <div
         className="shrink-0 bg-midnight-300/30 overflow-hidden"
