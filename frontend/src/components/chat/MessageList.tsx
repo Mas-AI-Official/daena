@@ -13,6 +13,62 @@ import { useChatStore } from '@/stores/chatStore'
 import { speakText } from './VoiceControls'
 import type { MessageResponse } from '@/types/api'
 
+/** Animated thinking bubble — cycles through meaningful stage descriptions
+ *  instead of just showing 3 dots. Makes Daena feel alive and working. */
+const THINKING_VERBS = [
+  'Understanding your request',
+  'Analyzing intent',
+  'Checking governance',
+  'Selecting best model',
+  'Preparing response',
+  'Gathering context',
+]
+
+function ThinkingBubble({ stages }: { stages?: { label: string; status: string }[] }) {
+  const [verbIndex, setVerbIndex] = useState(0)
+
+  // Cycle through verbs every 2.5s, or use real pipeline stages if available
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVerbIndex((prev) => (prev + 1) % THINKING_VERBS.length)
+    }, 2500)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Use real stage label if available, otherwise use rotating verbs
+  const activeStage = stages?.find(s => s.status === 'active')
+  const displayText = activeStage?.label || THINKING_VERBS[verbIndex]
+
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl glass-card rounded-bl-md">
+      {/* Animated dots */}
+      <div className="flex items-center gap-1">
+        {[0, 1, 2].map((i) => (
+          <motion.span
+            key={i}
+            className="w-1.5 h-1.5 rounded-full bg-primary-400/80"
+            animate={{ opacity: [0.3, 1, 0.3], scale: [0.7, 1.2, 0.7] }}
+            transition={{ duration: 1.2, delay: i * 0.15, repeat: Infinity }}
+          />
+        ))}
+      </div>
+      {/* Stage text with fade transition */}
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={displayText}
+          className="text-xs text-starlight-400 font-medium"
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.2 }}
+        >
+          {displayText}
+        </motion.span>
+      </AnimatePresence>
+    </div>
+  )
+}
+
 interface DaenaBotActivity {
   agent: string
   operation: string
@@ -326,7 +382,7 @@ export const MessageList = memo(function MessageList({
           )}
         </AnimatePresence>
 
-        {/* Typing indicator — shows immediately when streaming starts, before first token */}
+        {/* Thinking indicator — animated stage-aware states while waiting for first token */}
         {isStreaming && !streamedContent && (
           <motion.div
             className="flex gap-3 px-4 py-3"
@@ -336,16 +392,7 @@ export const MessageList = memo(function MessageList({
             <div className="shrink-0 pt-1">
               <DaenaAvatar state="thinking" size={32} chatMode={chatMode} routingMode={routingMode} />
             </div>
-            <div className="flex items-center gap-1.5 px-4 py-3 rounded-2xl glass-card rounded-bl-md">
-              {[0, 1, 2].map((i) => (
-                <motion.span
-                  key={i}
-                  className="w-2 h-2 rounded-full bg-primary-400/60"
-                  animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.1, 0.8] }}
-                  transition={{ duration: 1, delay: i * 0.2, repeat: Infinity }}
-                />
-              ))}
-            </div>
+            <ThinkingBubble stages={pipelineStages} />
           </motion.div>
         )}
 

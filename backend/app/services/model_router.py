@@ -592,14 +592,28 @@ class ModelRouter:
     ) -> list[ModelCandidate]:
         """Score each candidate on tag match, cost, locality, and context.
 
-        Scoring weights:
-            - Tag match:      0.40  (does the model suit the intent?)
-            - Locality:       0.25  (local > cloud — free and fast)
-            - Cost efficiency: 0.20  (lower cost = higher score)
-            - Context window:  0.15  (larger window = higher score for
-              complex queries, less important for simple ones)
+        Weights adapt to complexity:
+            SIMPLE:       cost 0.40, locality 0.30, tag 0.20, context 0.10
+            MODERATE:     tag 0.35, locality 0.25, cost 0.25, context 0.15
+            COMPLEX:      tag 0.45, context 0.20, cost 0.15, locality 0.20
+            VERY_COMPLEX: tag 0.50, context 0.25, locality 0.15, cost 0.10
+
+        Philosophy: simple tasks should use the cheapest available model.
+        Complex tasks should use the most capable, regardless of cost.
         """
         preferred_tags = list(preferred_tags or _INTENT_TAGS.get(qu.intent, []))
+
+        # Complexity-adaptive scoring weights
+        from app.services.query_understanding import ComplexityLabel
+        _weights = {
+            ComplexityLabel.SIMPLE:       (0.20, 0.30, 0.40, 0.10),
+            ComplexityLabel.MODERATE:     (0.35, 0.25, 0.25, 0.15),
+            ComplexityLabel.COMPLEX:      (0.45, 0.20, 0.15, 0.20),
+            ComplexityLabel.VERY_COMPLEX: (0.50, 0.15, 0.10, 0.25),
+        }
+        w_tag, w_loc, w_cost, w_ctx = _weights.get(
+            qu.complexity_label, (0.35, 0.25, 0.25, 0.15)
+        )
 
         scored: list[ModelCandidate] = []
         for c in candidates:
@@ -613,10 +627,10 @@ class ModelRouter:
             ]
 
             composite = (
-                0.40 * tag_score
-                + 0.25 * locality_score
-                + 0.20 * cost_score
-                + 0.15 * context_score
+                w_tag * tag_score
+                + w_loc * locality_score
+                + w_cost * cost_score
+                + w_ctx * context_score
             )
 
             scored.append(
@@ -633,6 +647,8 @@ class ModelRouter:
                         "cost_score": round(cost_score, 4),
                         "locality_score": round(locality_score, 4),
                         "context_score": round(context_score, 4),
+                        "weights": f"tag={w_tag} loc={w_loc} cost={w_cost} ctx={w_ctx}",
+                        "complexity": qu.complexity_label.value,
                         "matched_tags": matched_tags,
                         "provider_health": self._registry.get_health(c.provider).value,
                         "family_priority": self._family_priority(c.model_id, qu.intent),

@@ -4,7 +4,7 @@
  */
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Square, Paperclip, X, ChevronDown, ChevronRight, ArrowLeft, Check } from 'lucide-react'
+import { Send, Square, Paperclip, X, ChevronDown, ChevronRight, ArrowLeft, Check, FileText } from 'lucide-react'
 import { useModelRegistryStore } from '@/stores/modelRegistryStore'
 import { useUiStore } from '@/stores/uiStore'
 import { toast } from '@/stores/toastStore'
@@ -123,6 +123,26 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
   // Max message length: 32KB (prevents accidental huge payloads)
   const MAX_MESSAGE_LENGTH = 32_768
 
+  // Long paste detection: when user pastes >10 lines, collapse into a file-like chip
+  // (ChatGPT-style "Pasted text" attachment pattern)
+  const LONG_PASTE_LINE_THRESHOLD = 10
+  const [pastedChip, setPastedChip] = useState<{ text: string; lineCount: number; preview: string } | null>(null)
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = e.clipboardData.getData('text')
+    if (!pasted) return
+
+    const lines = pasted.split('\n')
+    if (lines.length > LONG_PASTE_LINE_THRESHOLD) {
+      e.preventDefault()
+      // Collapse into chip, keep the textarea for the user's actual question
+      const preview = lines.slice(0, 3).join('\n') + (lines.length > 3 ? '\n...' : '')
+      setPastedChip({ text: pasted, lineCount: lines.length, preview })
+    }
+  }, [])
+
+  const removePastedChip = useCallback(() => setPastedChip(null), [])
+
   // Slash commands
   const showSlashMenu = value.startsWith('/') && !value.includes(' ')
 
@@ -164,19 +184,27 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
 
   const handleSubmit = () => {
     const trimmed = value.trim()
-    if ((!trimmed && attachedFiles.length === 0) || isStreaming || disabled) return
+    const hasPastedContent = pastedChip !== null
+    if ((!trimmed && attachedFiles.length === 0 && !hasPastedContent) || isStreaming || disabled) return
     // Don't send slash commands as messages -- they're handled by the menu
     if (trimmed.startsWith('/') && !trimmed.includes(' ')) return
-    if (trimmed.length > MAX_MESSAGE_LENGTH) {
-      toast.error(`Message too long (${trimmed.length.toLocaleString()} chars). Max: ${MAX_MESSAGE_LENGTH.toLocaleString()}.`)
+
+    // Combine pasted chip content + typed message
+    const fullMessage = hasPastedContent
+      ? pastedChip.text + (trimmed ? `\n\n${trimmed}` : '')
+      : trimmed
+
+    if (fullMessage.length > MAX_MESSAGE_LENGTH) {
+      toast.error(`Message too long (${fullMessage.length.toLocaleString()} chars). Max: ${MAX_MESSAGE_LENGTH.toLocaleString()}.`)
       return
     }
     // Prepend file references so the orchestrator can read them
     const filePrefix = attachedFiles.map((f) => `[file:${f.file_id}|${f.filename}]`).join(' ')
-    const content = filePrefix ? `${filePrefix}\n${trimmed}` : trimmed
+    const content = filePrefix ? `${filePrefix}\n${fullMessage}` : fullMessage
     onSend(content)
     setValue('')
     setAttachedFiles([])
+    setPastedChip(null)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -436,12 +464,33 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
               onSelect={(cmd) => { cmd.action(); setValue('') }}
               onClose={() => {}}
             />
+            {/* Pasted text chip -- ChatGPT-style collapsed long paste */}
+            {pastedChip && (
+              <div className="mb-2 flex items-start gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                <FileText size={16} className="shrink-0 mt-0.5 text-primary-400" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-starlight-200">Pasted text</span>
+                    <span className="text-[10px] text-starlight-500">{pastedChip.lineCount} lines</span>
+                  </div>
+                  <pre className="text-[10px] text-starlight-500 mt-0.5 line-clamp-2 whitespace-pre-wrap font-mono">{pastedChip.preview}</pre>
+                </div>
+                <button
+                  onClick={removePastedChip}
+                  className="shrink-0 p-0.5 rounded text-starlight-500 hover:text-starlight-200 hover:bg-white/10 transition-colors cursor-pointer"
+                  aria-label="Remove pasted text"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
             <textarea
               ref={textareaRef}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={customPlaceholder || 'Message Daena...'}
+              onPaste={handlePaste}
+              placeholder={pastedChip ? 'Add a question about the pasted text...' : (customPlaceholder || 'Message Daena...')}
               aria-label="Message input"
               disabled={disabled}
               maxLength={MAX_MESSAGE_LENGTH}
