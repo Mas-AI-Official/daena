@@ -293,9 +293,14 @@ class ModelRouter:
             preferred_tags=preferred_tags,
         )
 
-        # Boost Primary Mind: if user has set a primary runtime and it's in
-        # the candidate list, give it a significant score boost so it's selected
-        # first (unless founder policy already forced a different model).
+        # Boost Primary Mind: when the user explicitly sets a Primary Mind,
+        # it MUST win the routing unless it's completely unavailable.
+        # This is a hard preference (+2.0), not a soft nudge.
+        #
+        # The old +0.5 boost was too weak -- adaptive cost weights could
+        # still push free local models above the user's chosen primary.
+        # A user choosing Claude Code as Primary Mind expects Claude to
+        # handle their requests, not deepseek-r1:14b.
         #
         # primary_mind can be a runtime_id (e.g. "claude_code"), a model_id
         # (e.g. "llama3.1:latest"), or a provider value (e.g. "OLLAMA").
@@ -314,12 +319,12 @@ class ModelRouter:
             for c in scored:
                 # Direct model_id or provider.value match
                 if c.model_id == primary_mind or c.provider.value == primary_mind:
-                    c.score += 0.5
+                    c.score += 2.0  # Hard preference: always wins
                     boosted = True
                     break
                 # Runtime-to-provider match: boost best candidate from provider
                 if target_provider and c.provider == target_provider:
-                    c.score += 0.5
+                    c.score += 2.0  # Hard preference: always wins
                     boosted = True
                     break
 
