@@ -275,6 +275,24 @@ class ChatOrchestrator:
                 "run commands, search the web), call the appropriate tool. "
                 "Do NOT guess -- use tools to get real data.\n"
             )
+
+            # Inject multi-runtime orchestration prompt when runtimes are available
+            try:
+                from app.core.events import get_runtime_registry
+                from app.services.runtimes.base_adapter import RuntimeStatus
+                _rt_reg = get_runtime_registry()
+                _online_runtimes = [
+                    rid for rid in ["claude_code", "codex", "gemini_cli", "ollama"]
+                    if _rt_reg.get_health(rid) == RuntimeStatus.ONLINE
+                ]
+                if len(_online_runtimes) >= 2:
+                    from app.services.skills.claude_code_orchestration import get_orchestration_system_prompt
+                    system_prompt += "\n" + get_orchestration_system_prompt(
+                        _online_runtimes,
+                        agi_mode=autopilot,
+                    )
+            except Exception:
+                pass  # Non-critical: orchestration prompt is optional
             # Inject dynamic tool schema so LLM can autonomously call tools
             try:
                 from app.services.tool_schema_builder import build_tool_schema, build_tool_prompt
@@ -373,6 +391,33 @@ class ChatOrchestrator:
             complexity=qu_result.complexity_label.value,
             risk=qu_result.risk_level.value,
             confidence=qu_result.confidence,
+        )
+
+        # ── Stage 2.5: Intent Amplification ──────────────────
+        # Decodes vague requests into power-user intent and selects
+        # optimal hidden capabilities per runtime provider.
+        from app.services.intent_amplifier import amplify_intent
+
+        amplified = amplify_intent(
+            query=user_content,
+            understanding=qu_result,
+            provider=(preferred_model or "").split("/")[0] if preferred_model else "anthropic",
+        )
+
+        if amplified.clarifying_note:
+            yield {
+                "type": "intent_amplified",
+                "message": amplified.clarifying_note,
+                "capabilities": amplified.capability_hints[:5],
+                "is_vague": amplified.is_vague,
+            }
+
+        logger.info(
+            "orchestrator.intent_amplified",
+            is_vague=amplified.is_vague,
+            power_user_intent=amplified.power_user_intent,
+            capabilities=amplified.capability_hints,
+            time_ms=amplified.processing_time_ms,
         )
 
         # ── Stage 3: Governance pre-check ─────────────────────
@@ -519,8 +564,9 @@ class ChatOrchestrator:
         from app.services.providers.claude_cli import CLI_RUNTIME_TO_MODEL
 
         _effective_preferred = preferred_model
-        # Map CLI runtime IDs to provider model IDs in ALL modes.
-        # "claude_code" → "claude-code-cli", "codex" → "codex-cli", etc.
+        # Map CLI runtime IDs to their model IDs for registry lookup.
+        # CLI runtimes (claude_code, codex, gemini_cli) are authenticated
+        # via subscriptions, NOT API keys. They handle both chat AND execution.
         if not _effective_preferred and primary_mind in _CLI_RUNTIME_IDS:
             _effective_preferred = CLI_RUNTIME_TO_MODEL.get(primary_mind)
         elif _effective_preferred in _CLI_RUNTIME_IDS:
@@ -528,19 +574,25 @@ class ChatOrchestrator:
 
         if _effective_preferred:
             override_candidate, override_reason = self._resolve_override_candidate(_effective_preferred)
+            if override_candidate is None and primary_mind in _CLI_RUNTIME_IDS:
+                # CLI runtime model not in the chat model registry.
+                # This is normal -- CLI runtimes use subscriptions, not API keys.
+                # For CMD mode: let the model router auto-select with Primary Mind boost.
+                # For EXE mode: the runtime will be used at Stage 7.5.
+                # The model router already boosts the corresponding provider's models
+                # via primary_mind score boost (+0.5) at model_router.py line 317.
+                logger.info(
+                    "orchestrator.cli_primary_mind_chat_fallback",
+                    primary_mind=primary_mind,
+                    note="CLI runtime uses subscription. Model router will boost corresponding provider.",
+                )
+                # Do NOT override -- let auto-router handle it with primary_mind boost
             if override_candidate is None:
-                logger.warning(
-                    "orchestrator.preferred_model_unavailable",
-                    requested_model=preferred_model,
+                logger.debug(
+                    "orchestrator.preferred_model_fallback_to_router",
+                    requested_model=_effective_preferred,
                     reason=override_reason,
                 )
-                yield {
-                    "type": "thinking",
-                    "stage": "routing_override_unavailable",
-                    "model": preferred_model,
-                    "source": "user_override",
-                    "reason": override_reason,
-                }
             else:
                 from app.services.model_router import RoutingDecision
 
@@ -737,6 +789,19 @@ class ChatOrchestrator:
                 role = "user"
             llm_messages.append(LLMMessage(role=role, content=msg.content))
 
+        # Merge amplified runtime params into request metadata.
+        # Provider-specific params (beta headers, reasoning effort, etc.)
+        # are passed through metadata so the provider adapter can apply them.
+        _amplified_meta = {}
+        if amplified.capability_hints:
+            _amplified_meta["amplified_capabilities"] = amplified.capability_hints
+        if amplified.runtime_params.get("provider_params"):
+            _amplified_meta["provider_params"] = amplified.runtime_params["provider_params"]
+        if amplified.runtime_params.get("orchestration"):
+            _amplified_meta["orchestration_hints"] = amplified.runtime_params["orchestration"]
+        if amplified.power_user_intent:
+            _amplified_meta["power_user_intent"] = amplified.power_user_intent
+
         request = GenerateRequest(
             messages=llm_messages,
             system_prompt=system_prompt,
@@ -749,6 +814,7 @@ class ChatOrchestrator:
                 "applied_routing_mode": decision.mode.value,
                 "routing_source": routing_source,
                 "selection_reason": decision.metadata.get("selection_reason"),
+                **_amplified_meta,
             },
         )
 
@@ -791,6 +857,20 @@ class ChatOrchestrator:
                     )
 
                     if len(subtasks) > 1:
+                        # Auto-detect if a new department is needed
+                        try:
+                            from app.services.dynamic_departments import auto_detect_and_create
+                            new_dept = await auto_detect_and_create(user_content, self.db, tenant_id)
+                            if new_dept:
+                                yield {
+                                    "type": "thinking",
+                                    "stage": "department_created",
+                                    "department": new_dept["name"],
+                                    "agents": new_dept["agent_count"],
+                                }
+                        except Exception:
+                            pass  # Non-critical: dynamic dept creation is best-effort
+
                         # Route subtasks to department agents
                         dept_router = DepartmentRouter(self.db, tenant_id)
                         await dept_router.load_agents()
@@ -935,30 +1015,55 @@ class ChatOrchestrator:
                             }
 
                         runtime_output = "\n".join(output_lines)
-                        daenabot_result = {
-                            "status": "COMPLETED",
-                            "result": {
-                                "success": True,
-                                "runtime": selected_rid,
-                                "display_name": adapter.display_name,
-                                "output": runtime_output[:4000],
-                            },
-                        }
-                        _last_tool_name = f"runtime.{selected_rid}"
-                        _last_tool_desc = f"Executed via {adapter.display_name}"
 
-                        yield {
-                            "type": "runtime_activity",
-                            "runtime_id": selected_rid,
-                            "display_name": adapter.display_name,
-                            "status": "completed",
-                            "description": f"Completed via {adapter.display_name}",
-                        }
+                        # Check if runtime returned an error (timeout, crash)
+                        _has_error = any(
+                            "[" in line and ("error" in line.lower() or "timed out" in line.lower() or "killed" in line.lower())
+                            for line in output_lines
+                        )
+
+                        if _has_error:
+                            # Runtime failed silently -- do NOT mark as complete.
+                            # Let it fall through to agentic loop fallback.
+                            yield {
+                                "type": "runtime_activity",
+                                "runtime_id": selected_rid,
+                                "display_name": adapter.display_name,
+                                "status": "failed",
+                                "description": f"{adapter.display_name} timed out. Retrying with agentic loop...",
+                            }
+                            logger.warning(
+                                "orchestrator.runtime_output_has_error",
+                                runtime=selected_rid,
+                                error_sample=runtime_output[:200],
+                            )
+                            # Do NOT set daenabot_result -- let fallback path execute
+                        else:
+                            daenabot_result = {
+                                "status": "COMPLETED",
+                                "result": {
+                                    "success": True,
+                                    "runtime": selected_rid,
+                                    "display_name": adapter.display_name,
+                                    "output": runtime_output[:4000],
+                                },
+                            }
+                            _last_tool_name = f"runtime.{selected_rid}"
+                            _last_tool_desc = f"Executed via {adapter.display_name}"
+
+                            yield {
+                                "type": "runtime_activity",
+                                "runtime_id": selected_rid,
+                                "display_name": adapter.display_name,
+                                "status": "completed",
+                                "description": f"Completed via {adapter.display_name}",
+                            }
 
                         logger.info(
                             "orchestrator.runtime_dispatched",
                             runtime=selected_rid,
                             output_lines=len(output_lines),
+                            has_error=_has_error,
                         )
                     except Exception as rt_exc:
                         yield {
@@ -1218,7 +1323,23 @@ class ChatOrchestrator:
 
                     dcp_loader = get_dcp_loader()
                     intent_str = qu_result.intent.value
-                    _expert_count = max(len(decision.council_models), 5)
+
+                    # Adaptive Quintessence depth based on query complexity
+                    # SIMPLE -> QE-Light (2 experts, fast)
+                    # MODERATE -> QE-Standard (3 experts)
+                    # COMPLEX/MULTI_STEP -> QE-Deep (5 experts + cross-validation)
+                    # Architecture/critical -> QE-Council (all experts)
+                    _complexity = qu_result.complexity.value if qu_result and qu_result.complexity else "MODERATE"
+                    _qe_depth_map = {
+                        "SIMPLE": 2,
+                        "MODERATE": 3,
+                        "COMPLEX": 5,
+                        "MULTI_STEP": 5,
+                    }
+                    _expert_count = _qe_depth_map.get(_complexity, 3)
+                    # Override: if user explicitly set QE mode, use at least 3
+                    _expert_count = max(_expert_count, len(decision.council_models))
+
                     _all_experts = dcp_loader.get_experts_for_intent(
                         intent_str, count=_expert_count,
                     )

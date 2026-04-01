@@ -499,18 +499,6 @@ def _desktop_tools() -> list[dict[str, Any]]:
                 "required": ["x", "y"],
             },
         },
-        {
-            "name": "computer_use",
-            "description": "Autonomously control the computer to complete a visual task. Takes screenshots, understands UI elements via vision AI, and performs clicks/typing/scrolling to accomplish the goal. Use this for tasks that require interacting with desktop applications (not web browsers -- use browser tools for those).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task": {"type": "string", "description": "What to accomplish on the desktop (e.g., 'Open VS Code and create a new file called app.py')"},
-                    "max_steps": {"type": "integer", "description": "Maximum number of screenshot-action cycles (default: 10)"},
-                },
-                "required": ["task"],
-            },
-        },
     ]
 
 
@@ -746,7 +734,6 @@ TOOL_DISPATCH_MAP: dict[str, tuple[str, str]] = {
     "desktop_hotkey": ("desktop", "hotkey"),
     "desktop_scroll": ("desktop", "scroll"),
     "desktop_move_mouse": ("desktop", "move_mouse"),
-    "computer_use": ("vision", "execute_task"),
     # MCP bridge
     "mcp_call": ("mcp", "call_tool"),
     # Gmail

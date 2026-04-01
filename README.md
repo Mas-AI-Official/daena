@@ -30,7 +30,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-1424_passing-00C853?style=flat-square&logo=pytest&logoColor=white" />
+  <img src="https://img.shields.io/badge/tests-1651_passing-00C853?style=flat-square&logo=pytest&logoColor=white" />
   <img src="https://img.shields.io/badge/TypeScript-0_errors-3178C6?style=flat-square&logo=typescript&logoColor=white" />
   <img src="https://img.shields.io/badge/agents-60-7C3AED?style=flat-square" />
   <img src="https://img.shields.io/badge/departments-10-7C3AED?style=flat-square" />
@@ -183,19 +183,22 @@ Engineering sits next to Product. Legal sits next to Security. Finance sits next
 Every single message -- whether "hello" or "deploy to production" -- passes through this pipeline. No exceptions.
 
 ```
-  1. SecurityGate     Prompt injection scanning
-  2. LoadSession      Fetch context + last 20 messages
-  3. QueryUnderstand  Intent, complexity, risk classification
-  4. GovernanceCheck  Policy evaluation (tier 0-4)
-  5. CostPreflight    Budget validation
-  6. ModelRouter      Smart model selection + Primary Mind
-  7. MemoryRecall     NBMF context enrichment
-  8. BuildRequest     Format messages + system prompt
-  9. LLMStream        Stream response via SSE
- 10. Persist + Audit  Save response, log cost, governance trail
+  1.  SecurityGate       Prompt injection scanning
+  2.  LoadSession        Fetch context + last 20 messages
+  3.  QueryUnderstand    Intent, complexity, risk classification
+  3.5 IntentAmplifier    Decode vague requests + select hidden capabilities
+  4.  GovernanceCheck    Policy evaluation (tier 0-4)
+  5.  CostPreflight      Budget validation
+  6.  ModelRouter        Smart model selection + Primary Mind
+  7.  MemoryRecall       NBMF context enrichment
+  8.  BuildRequest       Format messages + system prompt + runtime params
+  9.  LLMStream          Stream response via SSE
+ 10.  Persist + Audit    Save response, log cost, governance trail
 ```
 
 **Pipeline overhead: under 25ms.** Invisible for routine tasks. Visible only when it catches something dangerous.
+
+**Stage 3.5 (IntentAmplifier)** is unique to Daena: it detects when a user's request is vague ("fix it", "make it better") and automatically expands it to what a power user would have asked for. It then selects the optimal hidden API capabilities per runtime -- extended thinking for complex reasoning, prompt caching for repeated context, batch APIs for background work -- with zero LLM calls in under 1ms.
 
 The governance engine has 4 tiers:
 - **Tier 0-1**: Logged silently. You never notice.
