@@ -265,18 +265,20 @@ class LLMService:
         responses: list[LLMResponse] = []
         total_cost = 0.0
 
-        for candidate, task in tasks:
-            try:
-                response = await task
-                responses.append(response)
-                total_cost += response.cost_usd
-            except Exception as exc:
+        gather_results = await asyncio.gather(
+            *[t for _, t in tasks], return_exceptions=True,
+        )
+        for (candidate, _), result in zip(tasks, gather_results):
+            if isinstance(result, BaseException):
                 logger.warning(
                     "llm.council_member_failed",
                     model=candidate.model_id,
                     provider=candidate.provider.value,
-                    error=str(exc),
+                    error=str(result),
                 )
+                continue
+            responses.append(result)
+            total_cost += result.cost_usd
 
         if not responses:
             raise ProviderUnavailableError(

@@ -1383,6 +1383,8 @@ class ChatOrchestrator:
                         "model": sole.model_id,
                     }
 
+                    # Parallel expert lenses -- all fire at once, gather results
+                    expert_tasks: list[tuple[Any, asyncio.Task]] = []
                     for expert in _all_experts[:5]:
                         expert_system = (
                             system_prompt
@@ -1398,22 +1400,28 @@ class ChatOrchestrator:
                             system_prompt=expert_system,
                             metadata={"stage": "quintessence_lens", "expert": expert.id},
                         )
-                        try:
-                            resp = await asyncio.wait_for(
-                                provider_inst.generate(expert_request), timeout=120.0,
-                            )
-                            council_responses.append((
-                                sole.model_id,
-                                sole.provider.value,
-                                resp.content,
-                            ))
-                            dcp_experts_used.append(f"{expert.id}:{expert.archetype}")
-                        except (TimeoutError, Exception) as exc:
+                        t = asyncio.create_task(
+                            asyncio.wait_for(provider_inst.generate(expert_request), timeout=120.0)
+                        )
+                        expert_tasks.append((expert, t))
+
+                    results = await asyncio.gather(
+                        *[t for _, t in expert_tasks], return_exceptions=True,
+                    )
+                    for (expert, _), result in zip(expert_tasks, results):
+                        if isinstance(result, BaseException):
                             logger.warning(
-                                "orchestrator.qe_sequential_expert_failed",
+                                "orchestrator.qe_expert_failed",
                                 expert=expert.id,
-                                error=str(exc),
+                                error=str(result),
                             )
+                            continue
+                        council_responses.append((
+                            sole.model_id,
+                            sole.provider.value,
+                            result.content,
+                        ))
+                        dcp_experts_used.append(f"{expert.id}:{expert.archetype}")
                     council_models_used.append(sole.model_id)
                 else:
                     # Multi-model: parallel execution with optional DCP directives
@@ -1449,22 +1457,28 @@ class ChatOrchestrator:
                         task = asyncio.create_task(provider_inst.generate(model_request))
                         tasks_list.append((candidate, task))
 
-                    # Gather with timeout (60s per model — Ollama needs time)
-                    for candidate, task in tasks_list:
-                        try:
-                            resp = await asyncio.wait_for(task, timeout=120.0)
-                            council_responses.append((
-                                candidate.model_id,
-                                candidate.provider.value,
-                                resp.content,
-                            ))
-                            council_models_used.append(candidate.model_id)
-                        except (TimeoutError, Exception) as exc:
+                    # Parallel gather -- all models run concurrently
+                    wrapped_tasks = [
+                        asyncio.wait_for(task, timeout=120.0)
+                        for _, task in tasks_list
+                    ]
+                    gather_results = await asyncio.gather(
+                        *wrapped_tasks, return_exceptions=True,
+                    )
+                    for (candidate, _), result in zip(tasks_list, gather_results):
+                        if isinstance(result, BaseException):
                             logger.warning(
                                 "orchestrator.council_member_failed",
                                 model=candidate.model_id,
-                                error=str(exc),
-                        )
+                                error=str(result),
+                            )
+                            continue
+                        council_responses.append((
+                            candidate.model_id,
+                            candidate.provider.value,
+                            result.content,
+                        ))
+                        council_models_used.append(candidate.model_id)
 
                 if not council_responses:
                     raise RuntimeError("All council models failed to respond")

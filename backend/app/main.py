@@ -129,8 +129,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if settings.disable_auth:
         logger.warning("AUTH_DISABLED — all endpoints return dev user. Do NOT deploy this.")
 
-    # --- Auto-create tables in development (bypasses Alembic) ---
-    if not settings.is_production:
+    # --- Auto-create tables (safe for SQLite in any environment) ---
+    # Only skip auto-create for PostgreSQL in production (use Alembic there).
+    _db_url = settings.database_url
+    _skip_auto_create = settings.is_production and not _db_url.startswith("sqlite")
+    if not _skip_auto_create:
         _ts = _time.perf_counter()
         from app.core.database import engine
         from app.models import Base  # noqa: F401 — triggers all model imports
@@ -413,6 +416,29 @@ def create_app() -> FastAPI:
                 "error": {
                     "code": exc.error_code,
                     "message": exc.message,
+                },
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def generic_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        """Catch-all: never leak internal error messages to users."""
+        from app.core.logging import get_logger
+        _log = get_logger("error_handler")
+        _log.error(
+            "unhandled_exception",
+            path=request.url.path,
+            method=request.method,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "Something went wrong. Please try again.",
                 },
             },
         )

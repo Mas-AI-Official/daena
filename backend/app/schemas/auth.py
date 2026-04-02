@@ -24,6 +24,7 @@ class RegisterRequest(BaseModel):
     confirm_password: str | None = None
     display_name: str
     tenant_name: str
+    agreed_to_terms: bool = True  # Frontend enforces checkbox; server records timestamp
 
     @field_validator("password")
     @classmethod

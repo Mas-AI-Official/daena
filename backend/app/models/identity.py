@@ -63,6 +63,12 @@ class User(Base, TimestampMixin):
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     settings: Mapped[dict] = mapped_column(JSONBCompat, nullable=False, server_default="{}")
 
+    # Legal: timestamp when user accepted Terms of Service + Privacy Policy
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    terms_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # OAuth fields (null for email/password users)
     oauth_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     oauth_provider_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

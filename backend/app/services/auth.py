@@ -101,6 +101,8 @@ class AuthService(BaseService):
             password_hash=hash_password(password),
             display_name=display_name,
             role=role,
+            terms_accepted_at=datetime.now(UTC),
+            terms_version="2026-03-22",
         )
         self.db.add(user)
         await self.db.flush()

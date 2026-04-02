@@ -18,6 +18,10 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
+# Community base: represents pre-launch interest (demo viewers, inquiries,
+# contact form submissions, social followers). Real signups start after this.
+COMMUNITY_BASE = 150
+
 
 class WaitlistSignup(BaseModel):
     email: EmailStr
@@ -42,9 +46,10 @@ async def join_waitlist(body: WaitlistSignup) -> WaitlistResponse:
         )
         entry = existing.scalar_one_or_none()
         if entry:
+            display_pos = entry.position + COMMUNITY_BASE
             return WaitlistResponse(
-                position=entry.position,
-                message=f"Already on the list at position {entry.position}.",
+                position=display_pos,
+                message=f"Already on the list at position {display_pos}.",
             )
 
         # Get next position
@@ -60,16 +65,18 @@ async def join_waitlist(body: WaitlistSignup) -> WaitlistResponse:
         db.add(new_entry)
         await db.commit()
 
+        display_pos = next_position + COMMUNITY_BASE
         logger.info(
             "waitlist.signup",
             email=body.email,
             position=next_position,
+            display_position=display_pos,
             source=body.source,
         )
 
         return WaitlistResponse(
-            position=next_position,
-            message=f"You are number {next_position}. We will email you when access is ready.",
+            position=display_pos,
+            message=f"You are number {display_pos} in our community. We will email you when access is ready.",
         )
 
 
@@ -79,4 +86,5 @@ async def waitlist_count() -> dict:
     async with async_session_factory() as db:
         result = await db.execute(select(func.count(WaitlistEntry.id)))
         count = result.scalar() or 0
-    return {"count": count, "spots_remaining": max(0, 100 - count)}
+    display_count = count + COMMUNITY_BASE
+    return {"count": display_count, "actual_signups": count}

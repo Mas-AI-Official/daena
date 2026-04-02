@@ -189,17 +189,20 @@ class TestRateLimitMiddleware:
             assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_rate_limit_fails_open_in_all_environments(
+    async def test_rate_limit_fails_open_when_redis_down(
         self, client: AsyncClient, auth_headers: dict
     ) -> None:
-        """All environments fail-open on Redis errors to avoid blocking users."""
+        """Rate limiter fails open in ALL environments -- blocking users is
+        worse than skipping rate limits when Redis is unavailable."""
         mock_redis = AsyncMock()
         mock_redis.incr.side_effect = ConnectionError("Redis down")
 
         with (
             patch("app.core.redis.get_redis_client", return_value=mock_redis),
             patch("app.core.redis.check_redis_health", return_value=True),
+            patch("app.middleware.rate_limit.get_settings") as mock_settings,
         ):
+            mock_settings.return_value.allows_unsafe_dev_features = False
             response = await client.get(
                 "/api/v1/health", headers=auth_headers
             )
