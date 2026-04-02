@@ -459,6 +459,21 @@ class ExecutionService(BaseService):
             finally:
                 await agent.close()
 
+        elif agent_prefix == "vision_browser":
+            from app.services.daenabot.vision_browser_agent import VisionBrowserAgent
+
+            agent = VisionBrowserAgent()
+            try:
+                return await agent.execute(operation, params)
+            finally:
+                await agent.close()
+
+        elif agent_prefix == "web_crawler":
+            from app.services.daenabot.web_crawler_agent import WebCrawlerAgent
+
+            agent = WebCrawlerAgent()
+            return await agent.execute(operation, params)
+
         elif agent_prefix in ("gmail", "calendar", "google-calendar", "notion"):
             # External integration -- route through IntegrationRouter
             from app.services.integrations.integration_router import IntegrationRouter
@@ -515,6 +530,14 @@ class ExecutionService(BaseService):
         if agent_prefix == "browser":
             from app.services.daenabot.browser_agent import BrowserAgent
             return BrowserAgent.OPERATION_ACTION_MAP.get(operation, "EXECUTE")
+
+        if agent_prefix == "vision_browser":
+            from app.services.daenabot.vision_browser_agent import VisionBrowserAgent
+            return VisionBrowserAgent.OPERATION_ACTION_MAP.get(operation, "EXECUTE")
+
+        if agent_prefix == "web_crawler":
+            from app.services.daenabot.web_crawler_agent import WebCrawlerAgent
+            return WebCrawlerAgent.OPERATION_ACTION_MAP.get(operation, "READ")
 
         # External integrations -- classify by operation risk
         if agent_prefix in ("gmail", "calendar", "google-calendar", "notion"):

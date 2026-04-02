@@ -25,6 +25,7 @@ from app.core.logging import get_logger
 from app.services.heartbeat.heartbeat_checks import (
     ActionPriority,
     HeartbeatCheckResult,
+    check_autonomous_work,
     check_department_workflows,
     check_file,
     check_git_status,
@@ -319,6 +320,15 @@ class HeartbeatDaemon:
             return await generate_daily_report()
         elif check_type == CheckType.DEPARTMENT_WORKFLOWS:
             return await check_department_workflows()
+        elif check_type == CheckType.AUTONOMOUS_WORK:
+            # Only run in AGI mode -- expensive LLM calls
+            if self.config.autopilot_level == AutopilotLevel.AGI:
+                return await check_autonomous_work()
+            return HeartbeatCheckResult(
+                check_type="autonomous_work",
+                status="ok",
+                summary="Skipped: requires AGI autopilot level",
+            )
         else:
             return HeartbeatCheckResult(
                 check_type=check_type.value,

@@ -201,7 +201,32 @@ async def list_agents(
             {
                 "name": "BrowserAgent",
                 "description": "Web automation via Playwright: navigate, screenshot, extract text",
-                "operations": ["navigate", "screenshot", "extract_text"],
+                "operations": [
+                    "navigate", "screenshot", "extract_text",
+                    "fill_form", "click_element", "submit_form",
+                ],
+            },
+            {
+                "name": "VisionBrowserAgent",
+                "description": (
+                    "AI-powered browser with visual understanding. "
+                    "Sees web pages through screenshots and navigates autonomously."
+                ),
+                "operations": [
+                    "browse_and_act", "research_url", "screenshot_analyze",
+                    "fill_form_smart", "multi_step_task",
+                ],
+            },
+            {
+                "name": "WebCrawlerAgent",
+                "description": (
+                    "Web crawling and data extraction. "
+                    "Turns websites into clean markdown for analysis."
+                ),
+                "operations": [
+                    "extract_page", "deep_crawl",
+                    "extract_structured", "research_topic",
+                ],
             },
         ],
     }

@@ -71,13 +71,13 @@ export function ThinkingProcess({
           className={isActive ? 'animate-pulse text-accent-cyan' : 'text-status-success'}
         />
         <span className={`font-medium ${isActive ? 'text-accent-cyan' : 'text-starlight-500'}`}>
-          {isActive ? 'Processing' : 'Routed'}
+          {isActive ? 'Daena is thinking' : 'Complete'}
         </span>
 
-        {/* Model pill */}
-        {modelUsed && (
-          <span className="inline-flex items-center gap-0.5 text-[9px] text-starlight-500">
-            <Cpu size={8} className="opacity-60" /> {modelUsed}
+        {/* Model pill -- shown in compact form, no raw model IDs */}
+        {modelUsed && !isActive && (
+          <span className="inline-flex items-center gap-0.5 text-[9px] text-starlight-600">
+            <Cpu size={8} className="opacity-40" /> via {modelUsed.split(':')[0]}
           </span>
         )}
 

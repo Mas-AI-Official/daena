@@ -318,6 +318,10 @@ class ToolUseLoop:
             elif prefix == "desktop":
                 return await self._exec_desktop(operation, resolved_params)
 
+            # ── Vision loop (computer_use) ──
+            elif prefix == "vision":
+                return await self._exec_vision(operation, resolved_params)
+
             # ── MCP bridge ──
             elif prefix == "mcp":
                 return await self._exec_mcp(operation, resolved_params)
@@ -338,6 +342,25 @@ class ToolUseLoop:
                 tool=tool_name,
                 error=str(exc),
             )
+
+            # Self-repair: if this looks like a code error, try to fix it
+            error_text = str(exc)
+            if self.agi_mode and any(
+                kw in error_text.lower()
+                for kw in ["error", "traceback", "exception", "failed"]
+            ):
+                try:
+                    from app.services.self_repair import attempt_self_repair
+                    repair = await attempt_self_repair(
+                        error_text,
+                        context=f"Tool {tool_name} failed with params {params}",
+                    )
+                    if repair.success:
+                        logger.info("tool_loop.self_repair_success", file=repair.file_fixed)
+                        return {"success": True, "message": f"Self-repaired: {repair.description}", "repaired": True}
+                except Exception:
+                    pass  # Self-repair failed -- return original error
+
             return {"success": False, "error": str(exc)}
 
     # ── Dispatch Handlers ────────────────────────────────────────
@@ -583,6 +606,47 @@ class ToolUseLoop:
         if result.get("status") == "error":
             return {"success": False, "error": result.get("error", "MCP desktop call failed")}
         return {"success": True, "result": result.get("output", result)}
+
+    async def _exec_vision(self, operation: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Vision loop: autonomous desktop control via screenshot + LLM vision.
+
+        Takes screenshots, sends to multimodal LLM, gets action coordinates,
+        executes actions, loops until task complete. This is computer_use.
+        """
+        from app.services.vision_loop import VisionLoop
+
+        task = params.get("task", "")
+        max_steps = params.get("max_steps", 10)
+
+        if not task:
+            return {"success": False, "error": "No task specified for computer_use"}
+
+        loop = VisionLoop(max_iterations=max_steps)
+        steps_log: list[dict] = []
+
+        try:
+            async for step in loop.execute(task):
+                step_info = {
+                    "iteration": step.iteration,
+                    "action": step.action.action_type if step.action else "none",
+                    "description": step.observation,
+                    "success": step.success,
+                }
+                steps_log.append(step_info)
+
+                if not step.success:
+                    break
+
+            summary = loop.get_summary()
+            return {
+                "success": summary["successful_steps"] > 0,
+                "total_steps": summary["total_steps"],
+                "steps": steps_log[-5:],  # Last 5 steps for context
+                "message": f"Vision loop completed: {summary['successful_steps']}/{summary['total_steps']} steps successful",
+            }
+
+        except Exception as exc:
+            return {"success": False, "error": f"Vision loop failed: {exc}", "steps": steps_log}
 
     async def _exec_mcp(self, operation: str, params: dict[str, Any]) -> dict[str, Any]:
         """MCP tool execution via MCPAgent."""

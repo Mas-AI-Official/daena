@@ -177,9 +177,9 @@ class TestIntentMapping:
 
     def test_experts_for_intent(self, loader: DCPLoader) -> None:
         experts = loader.get_experts_for_intent("ANALYSIS", count=3)
-        # ANALYSIS maps to PRODUCT, ENGINEERING
-        # Should get PRD-01 and ENG-01 (one per domain)
-        assert len(experts) == 2
+        # ANALYSIS maps to PRODUCT, ENGINEERING (3 total experts)
+        # Blind-spot complementarity selects up to count=3 with diversity
+        assert len(experts) == 3
         ids = {e.id for e in experts}
         assert "PRD-01" in ids
         assert "ENG-01" in ids
@@ -190,10 +190,10 @@ class TestIntentMapping:
 
     def test_experts_for_intent_with_empty_domain(self, loader: DCPLoader) -> None:
         # CODE_GENERATION maps to ENGINEERING, DESIGN
-        # DESIGN has no experts, so should only get ENGINEERING experts
+        # DESIGN has no experts, so should get ENGINEERING experts (2 available)
         experts = loader.get_experts_for_intent("CODE_GENERATION", count=3)
-        assert len(experts) == 1
-        assert experts[0].domain == "ENGINEERING"
+        assert len(experts) == 2
+        assert all(e.domain == "ENGINEERING" for e in experts)
 
 
 # ── Real config file ──

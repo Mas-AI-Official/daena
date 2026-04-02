@@ -326,9 +326,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       const newest = msgs[msgs.length - 1]
       if (
         newest &&
-        newest.role === 'assistant' &&
+        newest.role === 'ASSISTANT' &&
         newest.content &&
-        !state.isStreaming
+        !state.stream.isStreaming
       ) {
         lastMsgCount = msgs.length
         // Speak the response (strips markdown for cleaner TTS)

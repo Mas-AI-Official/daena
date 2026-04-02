@@ -150,6 +150,109 @@ _BROWSER_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
     ),
 ]
 
+# ── Vision Browser patterns (AI-powered, no selectors needed) ──
+
+_VISION_BROWSER_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
+    # "research <url>" or "analyze website <url>"
+    (
+        re.compile(
+            r"(?:research|analyze|study|investigate|review)\s+(?:the\s+)?(?:website|page|site)?\s*(https?://\S+)",
+            re.IGNORECASE,
+        ),
+        "vision_browser.research_url",
+        lambda m: {"url": m.group(1).strip(), "question": ""},
+        "Research {url}",
+    ),
+    # "what's on <url>" or "what does <url> show"
+    (
+        re.compile(
+            r"(?:what(?:'s| is| does))\s+(?:on|at|the)\s+(https?://\S+)",
+            re.IGNORECASE,
+        ),
+        "vision_browser.research_url",
+        lambda m: {"url": m.group(1).strip(), "question": "What is on this page?"},
+        "Analyze {url}",
+    ),
+    # "fill out the form at <url> with ..." (smart form filling)
+    (
+        re.compile(
+            r"(?:fill\s+(?:out|in)\s+(?:the\s+)?form)\s+(?:at|on)\s+(https?://\S+)",
+            re.IGNORECASE,
+        ),
+        "vision_browser.fill_form_smart",
+        lambda m: {"url": m.group(1).strip(), "form_data": {}, "submit": False},
+        "Fill form at {url}",
+    ),
+    # "browse <url> and <goal>" (autonomous browsing with a goal)
+    (
+        re.compile(
+            r"(?:browse|explore|use)\s+(https?://\S+)\s+(?:and|to)\s+(.+)",
+            re.IGNORECASE,
+        ),
+        "vision_browser.browse_and_act",
+        lambda m: {"url": m.group(1).strip(), "goal": m.group(2).strip()},
+        "Browse {url} and {goal}",
+    ),
+    # Generic "do <task> on <url>"
+    (
+        re.compile(
+            r"(?:on|at)\s+(https?://\S+)\s*[,:]\s*(.+)",
+            re.IGNORECASE,
+        ),
+        "vision_browser.browse_and_act",
+        lambda m: {"url": m.group(1).strip(), "goal": m.group(2).strip()},
+        "Act on {url}: {goal}",
+    ),
+]
+
+# ── Web Crawler patterns (data extraction and research) ──
+
+_WEB_CRAWLER_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
+    # "crawl <url>" or "scrape site <url>"
+    (
+        re.compile(
+            r"(?:crawl|deep\s*crawl|spider|scrape\s+(?:the\s+)?site)\s+(https?://\S+)",
+            re.IGNORECASE,
+        ),
+        "web_crawler.deep_crawl",
+        lambda m: {"url": m.group(1).strip(), "max_pages": 5},
+        "Deep crawl {url}",
+    ),
+    # "extract data from <url>"
+    (
+        re.compile(
+            r"(?:extract|pull|get)\s+(?:the\s+)?(?:data|info(?:rmation)?|content|details?)\s+(?:from|off|on)\s+(https?://\S+)",
+            re.IGNORECASE,
+        ),
+        "web_crawler.extract_page",
+        lambda m: {"url": m.group(1).strip()},
+        "Extract data from {url}",
+    ),
+    # "read page <url>"
+    (
+        re.compile(
+            r"(?:read|fetch|download)\s+(?:the\s+)?(?:page|content)\s+(?:at|from|of)\s+(https?://\S+)",
+            re.IGNORECASE,
+        ),
+        "web_crawler.extract_page",
+        lambda m: {"url": m.group(1).strip()},
+        "Read page {url}",
+    ),
+    # "research <topic> from <url1>, <url2>"
+    (
+        re.compile(
+            r"research\s+(.+?)\s+(?:from|using)\s+(https?://\S+(?:\s*,\s*https?://\S+)*)",
+            re.IGNORECASE,
+        ),
+        "web_crawler.research_topic",
+        lambda m: {
+            "topic": m.group(1).strip(),
+            "urls": [u.strip() for u in m.group(2).split(",")],
+        },
+        "Research {topic}",
+    ),
+]
+
 # ── Integration patterns (Gmail, Calendar, Notion) ───────────
 
 _GMAIL_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
@@ -242,14 +345,17 @@ _NOTION_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
     ),
 ]
 
-# Priority order: terminal > integration > file > browser
-# Integration patterns are checked before file patterns to avoid
-# "check my email" matching file "check" operations.
+# Priority order: terminal > integration > vision_browser > web_crawler > file > browser
+# Integration patterns checked before file patterns to avoid "check my email"
+# matching file "check" operations. Vision/crawler patterns checked before
+# basic browser to prefer AI-powered navigation for research tasks.
 _ALL_PATTERNS = (
     _TERMINAL_PATTERNS
     + _GMAIL_PATTERNS
     + _CALENDAR_PATTERNS
     + _NOTION_PATTERNS
+    + _VISION_BROWSER_PATTERNS
+    + _WEB_CRAWLER_PATTERNS
     + _FILE_PATTERNS
     + _BROWSER_PATTERNS
 )

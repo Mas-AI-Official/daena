@@ -124,11 +124,16 @@ class ClaudeCodeAdapter(BaseRuntimeAdapter):
             cwd=cwd,
         )
 
+        # Dynamic timeout based on task complexity
+        # Short tasks: 120s, medium: 300s, complex (>200 words): 600s
+        _word_count = len(task.split())
+        _timeout = 120.0 if _word_count < 50 else 300.0 if _word_count < 200 else 600.0
+
         result = await self._session_manager.send(
             daena_session_id=session_id,
             task=task,
             cwd=cwd,
-            timeout=300.0,
+            timeout=_timeout,
         )
 
         if result.is_error:

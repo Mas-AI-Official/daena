@@ -16,12 +16,14 @@ import type { MessageResponse } from '@/types/api'
 /** Animated thinking bubble — cycles through meaningful stage descriptions
  *  instead of just showing 3 dots. Makes Daena feel alive and working. */
 const THINKING_VERBS = [
-  'Understanding your request',
-  'Analyzing intent',
-  'Checking governance',
-  'Selecting best model',
-  'Preparing response',
-  'Gathering context',
+  'Understanding your request...',
+  'Analyzing intent and complexity...',
+  'Checking governance policies...',
+  'Selecting optimal strategy...',
+  'Searching knowledge base...',
+  'Preparing governed response...',
+  'Cross-validating accuracy...',
+  'Synthesizing perspectives...',
 ]
 
 function ThinkingBubble({ stages }: { stages?: { label: string; status: string }[] }) {

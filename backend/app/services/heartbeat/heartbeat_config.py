@@ -42,6 +42,7 @@ class CheckType(Enum):
     DAILY_REPORT = "daily_report"  # Generate engineering status report
     OLLAMA_HEALTH = "ollama_health"  # Check Ollama model loading status
     DEPARTMENT_WORKFLOWS = "department_workflows"  # Run scheduled department workflows
+    AUTONOMOUS_WORK = "autonomous_work"  # AGI mode: pick up pending tasks and execute via SwarmPlanner
     CUSTOM = "custom"  # User-defined check
 
 
@@ -143,6 +144,12 @@ class HeartbeatConfig:
                     check_type=CheckType.DEPARTMENT_WORKFLOWS,
                     description="Run scheduled department workflows (briefings, reports, tasks)",
                     enabled=True,
+                ),
+                HeartbeatCheck(
+                    check_type=CheckType.AUTONOMOUS_WORK,
+                    description="AGI mode: pick up pending tasks, decompose via SwarmPlanner, execute in parallel",
+                    enabled=True,
+                    max_cost_usd=0.50,
                 ),
             ],
         )

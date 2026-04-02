@@ -136,30 +136,77 @@ class DCPLoader:
         intent: str,
         count: int = 3,
     ) -> list[DCPExpert]:
-        """Select experts for a given intent.
+        """Select experts for a given intent using blind-spot complementarity.
 
-        Picks one expert per relevant domain (round-robin through
-        domain experts). Ensures diverse perspectives.
+        Instead of always picking the first expert per domain, selects
+        experts whose blind_spots are covered by other selected experts'
+        decision_priorities. This maximizes perspective diversity and
+        minimizes collective blind spots.
 
         Args:
             intent: QueryUnderstanding intent string.
             count: Maximum number of experts to return.
 
         Returns:
-            List of DCPExpert instances, one per domain, up to count.
+            List of DCPExpert instances with complementary perspectives.
         """
         self.load()
         domain_names = self.get_domains_for_intent(intent)
-        selected: list[DCPExpert] = []
 
+        # Collect all candidate experts from relevant domains
+        candidates: list[DCPExpert] = []
         for domain_name in domain_names:
-            if len(selected) >= count:
-                break
             domain = self._domains.get(domain_name)
             if domain and domain.experts:
-                # Pick the first expert from each domain
-                # (Phase 2: could use blind-spot complementarity scoring)
-                selected.append(domain.experts[0])
+                candidates.extend(domain.experts)
+
+        if len(candidates) <= count:
+            return candidates
+
+        # Greedy blind-spot complementarity selection:
+        # 1. Start with the first candidate
+        # 2. Each subsequent pick maximizes coverage of existing blind spots
+        selected: list[DCPExpert] = [candidates[0]]
+        remaining = candidates[1:]
+
+        while len(selected) < count and remaining:
+            # Collect current blind spots not yet covered
+            current_priorities = set()
+            for s in selected:
+                current_priorities.update(s.decision_priorities)
+
+            current_blind_spots = set()
+            for s in selected:
+                current_blind_spots.update(s.blind_spots)
+
+            # Score each remaining candidate by how many current blind spots
+            # their priorities can address
+            best_score = -1
+            best_idx = 0
+            for idx, cand in enumerate(remaining):
+                # How many of the current blind spots does this expert's
+                # priorities address? (word-level matching)
+                cand_priority_words = set()
+                for p in cand.decision_priorities:
+                    cand_priority_words.update(p.lower().split("_"))
+
+                blind_spot_words = set()
+                for bs in current_blind_spots:
+                    blind_spot_words.update(bs.lower().split())
+
+                # Coverage: overlap between candidate's strengths and team's weaknesses
+                coverage = len(cand_priority_words & blind_spot_words)
+
+                # Diversity bonus: penalize same-domain picks
+                same_domain = sum(1 for s in selected if s.domain == cand.domain)
+                diversity = max(0, 2 - same_domain)
+
+                score = coverage + diversity
+                if score > best_score:
+                    best_score = score
+                    best_idx = idx
+
+            selected.append(remaining.pop(best_idx))
 
         return selected
 

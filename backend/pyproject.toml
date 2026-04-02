@@ -45,6 +45,11 @@ dependencies = [
     # Utilities
     "python-dotenv>=1.0.1",
     "orjson>=3.10.0",
+
+    # Agent capabilities
+    "browser-use>=0.12.0",
+    "crawl4ai>=0.8.0",
+    "playwright>=1.40.0",
 ]
 
 [project.optional-dependencies]

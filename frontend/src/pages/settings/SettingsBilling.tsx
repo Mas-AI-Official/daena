@@ -5,7 +5,7 @@
  */
 import { useEffect, useState, useCallback } from 'react'
 import { Card, Badge } from '@/components/common'
-import { DollarSign, BarChart3, Bell, TrendingUp } from 'lucide-react'
+import { DollarSign, BarChart3, Bell, TrendingUp, Layers, Calendar } from 'lucide-react'
 import { api } from '@/lib/api'
 import { persistUiPref } from '@/stores/uiStore'
 
@@ -23,6 +23,17 @@ interface ProviderCost {
   call_count: number
 }
 
+interface TaskTypeCost {
+  task_type: string
+  cost_usd: number
+  count: number
+}
+
+interface DayHistoryEntry {
+  date: string
+  cost_usd: number
+}
+
 const OVER_BUDGET_OPTIONS = [
   { value: 'warn', label: 'Warn only' },
   { value: 'fallback', label: 'Fallback to cheapest model' },
@@ -37,13 +48,17 @@ export function SettingsBilling() {
     session_cost: 0, daily_cost: 0, monthly_cost: 0, total_entries: 0,
   })
   const [providers, setProviders] = useState<ProviderCost[]>([])
+  const [taskTypes, setTaskTypes] = useState<TaskTypeCost[]>([])
+  const [history, setHistory] = useState<DayHistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchBilling = useCallback(async () => {
     try {
-      const [ovRes, pvRes] = await Promise.allSettled([
+      const [ovRes, pvRes, ttRes, hRes] = await Promise.allSettled([
         api.get('/billing/overview'),
         api.get('/billing/by-provider'),
+        api.get('/billing/by-task-type'),
+        api.get('/billing/history?days=14'),
       ])
       if (ovRes.status === 'fulfilled') {
         const payload = ovRes.value.data?.data ?? ovRes.value.data
@@ -53,13 +68,29 @@ export function SettingsBilling() {
       }
       if (pvRes.status === 'fulfilled') {
         const raw = pvRes.value.data?.data ?? pvRes.value.data
-        if (!raw) return
-        // Convert object to array
-        const arr: ProviderCost[] = Object.entries(raw).map(([provider, data]) => ({
-          provider,
-          ...(data as Record<string, number>),
-        } as ProviderCost))
-        setProviders(arr)
+        if (raw) {
+          const arr: ProviderCost[] = Object.entries(raw).map(([provider, data]) => ({
+            provider,
+            ...(data as Record<string, number>),
+          } as ProviderCost))
+          setProviders(arr)
+        }
+      }
+      if (ttRes.status === 'fulfilled') {
+        const raw = ttRes.value.data?.data ?? ttRes.value.data
+        if (raw && typeof raw === 'object') {
+          const arr: TaskTypeCost[] = Object.entries(raw).map(([task_type, data]) => ({
+            task_type,
+            ...(data as Record<string, number>),
+          } as TaskTypeCost))
+          setTaskTypes(arr)
+        }
+      }
+      if (hRes.status === 'fulfilled') {
+        const raw = hRes.value.data?.data ?? hRes.value.data
+        if (Array.isArray(raw)) {
+          setHistory(raw as DayHistoryEntry[])
+        }
       }
     } catch { /* graceful */ }
     finally { setLoading(false) }
@@ -150,6 +181,61 @@ export function SettingsBilling() {
                 </div>
               )
             })}
+          </div>
+        )}
+      </Card>
+
+      {/* Cost by Task Type */}
+      <Card variant="glass" padding="lg">
+        <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
+          <Layers size={14} /> Cost by Task Type
+        </h3>
+        {taskTypes.length === 0 ? (
+          <p className="text-xs text-starlight-500 italic">No task type data yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {taskTypes.map((t) => (
+              <div key={t.task_type} className="flex items-center justify-between px-3 py-2 rounded-lg bg-midnight-800/30 border border-white/5">
+                <div>
+                  <p className="text-sm text-starlight-200 capitalize">{t.task_type.replace(/_/g, ' ')}</p>
+                  <p className="text-[10px] text-starlight-500">{t.count || 0} calls</p>
+                </div>
+                <p className="text-sm font-medium text-starlight-100">${(t.cost_usd || 0).toFixed(4)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* 14-Day Cost History */}
+      <Card variant="glass" padding="lg">
+        <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
+          <Calendar size={14} /> 14-Day Cost History
+        </h3>
+        {history.length === 0 ? (
+          <p className="text-xs text-starlight-500 italic">No history data available yet.</p>
+        ) : (
+          <div className="space-y-1">
+            {/* Simple bar chart */}
+            {(() => {
+              const maxCost = Math.max(...history.map(h => h.cost_usd || 0), 0.01)
+              return history.map((h) => {
+                const pct = Math.round(((h.cost_usd || 0) / maxCost) * 100)
+                const dateStr = new Date(h.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                return (
+                  <div key={h.date} className="flex items-center gap-3">
+                    <span className="text-[10px] text-starlight-500 w-14 shrink-0 text-right font-mono">{dateStr}</span>
+                    <div className="flex-1 h-4 rounded bg-midnight-400/30 overflow-hidden">
+                      <div
+                        className="h-full rounded bg-primary-500/40"
+                        style={{ width: `${Math.max(pct, 2)}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-starlight-400 w-14 shrink-0 font-mono">${(h.cost_usd || 0).toFixed(3)}</span>
+                  </div>
+                )
+              })
+            })()}
           </div>
         )}
       </Card>

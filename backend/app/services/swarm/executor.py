@@ -20,8 +20,18 @@ from app.services.swarm.planner import SubTask
 
 logger = get_logger(__name__)
 
-# Maximum parallel subtasks to prevent resource exhaustion
-MAX_PARALLEL_SUBTASKS = 5
+# Global maximum parallel subtasks
+MAX_PARALLEL_SUBTASKS = 40
+
+# Per-runtime concurrency limits to prevent overload
+RUNTIME_CONCURRENCY_LIMITS: dict[str, int] = {
+    "claude_code": 8,   # Each spawns a subprocess
+    "codex": 8,          # Each spawns a subprocess
+    "gemini_cli": 5,     # Rate-limited by Google
+    "grok_cli": 5,
+    "ollama": 4,          # GPU memory bound (1 model at a time on most GPUs)
+}
+DEFAULT_RUNTIME_CONCURRENCY = 5
 
 # Per-subtask execution timeout (seconds)
 SUBTASK_TIMEOUT = 300.0
@@ -53,6 +63,11 @@ class SwarmExecutor:
         self._cost = cost_estimator or CostEstimator()
         self._governance = governance_engine
         self._cancelled = False
+        # Per-runtime semaphores for concurrent execution control
+        self._runtime_semaphores: dict[str, asyncio.Semaphore] = {
+            rid: asyncio.Semaphore(limit)
+            for rid, limit in RUNTIME_CONCURRENCY_LIMITS.items()
+        }
 
     def cancel(self) -> None:
         """Signal cancellation to stop processing new subtasks."""
@@ -184,9 +199,23 @@ class SwarmExecutor:
         subtask: SubTask,
         context: dict[str, Any],
     ) -> ExecutionReceipt:
-        """Wrap execution with concurrency limiter."""
+        """Wrap execution with global + per-runtime concurrency limiters.
+
+        Two-layer gating:
+        1. Global semaphore (40 total) prevents total system overload
+        2. Per-runtime semaphore (e.g., 8 for Claude Code) prevents
+           overloading any single runtime
+        """
+        # Get per-runtime semaphore
+        rid = subtask.assigned_runtime
+        rt_sem = self._runtime_semaphores.get(
+            rid,
+            asyncio.Semaphore(DEFAULT_RUNTIME_CONCURRENCY),
+        )
+
         async with semaphore:
-            return await self._execute_subtask(subtask, context)
+            async with rt_sem:
+                return await self._execute_subtask(subtask, context)
 
     async def _execute_subtask(
         self,
@@ -354,8 +383,25 @@ class SwarmExecutor:
         context: dict[str, Any],
         output_chunks: list[str],
     ) -> None:
-        """Collect streaming output from a runtime adapter."""
-        async for chunk in adapter.execute(subtask.description, context):
+        """Collect streaming output from a runtime adapter.
+
+        If the subtask is routed to a department agent, injects the
+        agent's specialized prompt into the task description.
+        """
+        task_desc = subtask.description
+
+        # Inject department agent prompt if routed
+        dept = subtask.metadata.get("department")
+        sub_cap = subtask.metadata.get("sub_capability")
+        if dept and sub_cap:
+            try:
+                from app.services.department_prompts import get_agent_prompt
+                agent_prompt = get_agent_prompt(dept, sub_cap)
+                task_desc = f"[{dept}.{sub_cap}] {agent_prompt}\n\nTASK: {task_desc}"
+            except Exception:
+                pass  # Fall back to plain description
+
+        async for chunk in adapter.execute(task_desc, context):
             output_chunks.append(chunk)
 
     def _make_receipt(

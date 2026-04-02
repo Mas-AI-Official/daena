@@ -10,7 +10,6 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     agents,
-    approval_dashboard,
     auth,
     autopilot,
     benchmark,
@@ -62,7 +61,8 @@ router.include_router(dynamic_models.router, prefix="/dynamic-models", tags=["dy
 router.include_router(settings.router, prefix="/settings", tags=["settings"])
 router.include_router(autopilot.router, prefix="/autopilot", tags=["autopilot"])
 router.include_router(mcp_server.router, prefix="/mcp", tags=["mcp"])
-router.include_router(approval_dashboard.router, prefix="/approvals", tags=["approvals"])
+# approval_dashboard removed -- dead code (in-memory duplicate of governance/approvals).
+# Archived to .archive/dead_approval_queue/. Real approvals live at /governance/approvals.
 router.include_router(pipeline.router, prefix="/pipeline", tags=["pipeline"])
 router.include_router(projects.router, prefix="/projects", tags=["projects"])
 router.include_router(prompts.router, prefix="/prompts", tags=["prompts"])

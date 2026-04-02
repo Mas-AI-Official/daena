@@ -164,6 +164,7 @@ export function DashboardPage() {
   const [stats, setStats] = useState({
     sessions: 0,
     pendingApprovals: 0,
+    blockedApprovals: 0,
     memories: 0,
     activeAgents: 10,  // 10 departments
     pipelineTotal: 0,
@@ -183,9 +184,10 @@ export function DashboardPage() {
     const loadData = async () => {
       try {
         // Parallel fetch: stats + departments + memories + audit
-        const [sessionsRes, approvalsRes, deptsRes, healthRes, memoriesRes, auditRes, pipelineRes, runtimesRes] = await Promise.allSettled([
+        const [sessionsRes, approvalsRes, blockedRes, deptsRes, healthRes, memoriesRes, auditRes, pipelineRes, runtimesRes] = await Promise.allSettled([
           api.get('/chat/sessions?page_size=1'),
           api.get('/governance/approvals?status=PENDING&page_size=1'),
+          api.get('/governance/approvals?status=REJECTED&page_size=1'),
           api.get('/agents/departments'),
           api.get('/health/detailed'),
           api.get('/memory/memories?page_size=1'),
@@ -215,6 +217,7 @@ export function DashboardPage() {
             ? sessionsRes.value.data?.pagination?.total ?? 0
             : 0,
           pendingApprovals: approvalsRes.status === 'fulfilled' ? approvalsRes.value.data?.pagination?.total ?? 0 : 0,
+          blockedApprovals: blockedRes.status === 'fulfilled' ? blockedRes.value.data?.pagination?.total ?? 0 : 0,
           memories: memoryCount,
           activeAgents: deptsRes.status === 'fulfilled' && deptsRes.value.data?.data
             ? (deptsRes.value.data.data as Array<{ is_active: boolean }>).filter(d => d.is_active).length
@@ -474,7 +477,9 @@ export function DashboardPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-starlight-300">Blocked</span>
-                  <span className="text-xs font-mono text-starlight-500">0</span>
+                  <span className={`text-xs font-mono ${stats.blockedApprovals > 0 ? 'text-status-danger' : 'text-starlight-500'}`}>
+                    {loading ? '—' : stats.blockedApprovals}
+                  </span>
                 </div>
               </div>
             </Card>

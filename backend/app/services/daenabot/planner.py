@@ -39,18 +39,30 @@ Available agents and operations:
 - FileAgent: read_file(path), list_directory(path), create_file(path, content), \
 write_file(path, content), move_file(source, destination), delete_file(path)
 - TerminalAgent: execute_command(command)
-- BrowserAgent: navigate(url), screenshot(url), extract_text(url)
+- BrowserAgent: navigate(url), screenshot(url), extract_text(url), fill_form(selector, value), \
+click_element(selector), submit_form(selector)
+- VisionBrowserAgent: browse_and_act(goal, url), research_url(url, question), \
+screenshot_analyze(url, analysis_prompt), fill_form_smart(url, form_data, submit), \
+multi_step_task(task_description, starting_url)
+- WebCrawlerAgent: extract_page(url), deep_crawl(url, max_pages), \
+extract_structured(url, fields), research_topic(topic, urls)
+
+When to use which browser agent:
+- Use "browser" when you have exact CSS selectors or simple navigation
+- Use "vision_browser" when you need AI to understand a page and decide what to do
+- Use "web_crawler" when you need to extract content as clean text/markdown
 
 User request: {intent}
 
 Return a JSON array of steps. Each step has:
-- "agent": one of "file", "terminal", "browser"
+- "agent": one of "file", "terminal", "browser", "vision_browser", "web_crawler"
 - "operation": the operation name
 - "params": dict of parameters
 - "description": human-readable description
 
 If the request is a single action, return an array with one element.
 If the request requires reading something and then processing it, split into steps.
+For research tasks, prefer web_crawler for data extraction and vision_browser for interactive tasks.
 
 Return ONLY the JSON array. No explanation.
 """

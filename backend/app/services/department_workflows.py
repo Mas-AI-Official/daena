@@ -361,6 +361,313 @@ _register(WorkflowDef(
 ))
 
 
+# --- Marketing Department (Web-Powered) ---
+
+_register(WorkflowDef(
+    id="mkt.seo_analysis",
+    name="SEO & Content Gap Analysis",
+    department="Marketing",
+    description="Crawl competitor sites and identify content gaps for MAS-AI positioning",
+    schedule="0 9 * * 1",  # Monday 9 AM
+    required_integrations=[],
+    steps=[
+        WorkflowStep(
+            name="competitor_perplexity",
+            step_type="web_crawl",
+            params={
+                "operation": "extract_page",
+                "url": "https://www.perplexity.ai",
+            },
+            optional=True,
+        ),
+        WorkflowStep(
+            name="competitor_openclaw",
+            step_type="web_crawl",
+            params={
+                "operation": "extract_page",
+                "url": "https://github.com/openclaw/openclaw",
+            },
+            optional=True,
+        ),
+        WorkflowStep(
+            name="seo_analysis",
+            step_type="llm_reason",
+            input_from=["competitor_perplexity", "competitor_openclaw"],
+            prompt_template=(
+                "Analyze these competitor pages and produce an SEO strategy for MAS-AI (Daena):\n\n"
+                "PERPLEXITY.AI:\n{competitor_perplexity}\n\n"
+                "OPENCLAW (GitHub):\n{competitor_openclaw}\n\n"
+                "Produce:\n"
+                "1. Top 10 keywords they rank for that Daena should target\n"
+                "2. Content gaps: topics they cover that MAS-AI doesn't\n"
+                "3. Positioning angles: where Daena's governance-first approach wins\n"
+                "4. 3 blog post ideas with titles and outlines\n"
+                "5. Social media hooks for each differentiator"
+            ),
+        ),
+    ],
+))
+
+_register(WorkflowDef(
+    id="mkt.product_hunt_prep",
+    name="Product Hunt Launch Prep",
+    department="Marketing",
+    description="Research top Product Hunt AI launches and prepare Daena's launch strategy",
+    required_integrations=[],
+    steps=[
+        WorkflowStep(
+            name="ph_research",
+            step_type="web_crawl",
+            params={
+                "operation": "extract_page",
+                "url": "https://www.producthunt.com/topics/artificial-intelligence",
+            },
+            optional=True,
+        ),
+        WorkflowStep(
+            name="launch_strategy",
+            step_type="llm_reason",
+            input_from=["ph_research"],
+            prompt_template=(
+                "Based on Product Hunt AI trends:\n{ph_research}\n\n"
+                "Create a Product Hunt launch plan for Daena by MAS-AI Technologies:\n"
+                "1. Tagline (under 60 chars) - emphasize governed AI orchestration\n"
+                "2. Description (3 paragraphs)\n"
+                "3. Key features to highlight (5 bullet points)\n"
+                "4. First comment from maker (authentic, not salesy)\n"
+                "5. Target communities to notify\n"
+                "6. Best day/time to launch\n"
+                "7. Response templates for common questions"
+            ),
+        ),
+    ],
+))
+
+_register(WorkflowDef(
+    id="mkt.social_content_web",
+    name="Web-Powered Social Content",
+    department="Marketing",
+    description="Research trending AI topics and create timely social media content",
+    schedule="0 8 * * 1,3,5",  # Mon/Wed/Fri 8 AM
+    required_integrations=[],
+    steps=[
+        WorkflowStep(
+            name="ai_news",
+            step_type="web_crawl",
+            params={
+                "operation": "extract_page",
+                "url": "https://news.ycombinator.com",
+            },
+            optional=True,
+        ),
+        WorkflowStep(
+            name="content_creation",
+            step_type="llm_reason",
+            input_from=["ai_news"],
+            prompt_template=(
+                "Based on today's tech/AI news:\n{ai_news}\n\n"
+                "Create social media content for MAS-AI Technologies:\n"
+                "1. LinkedIn post (200 words): connect a trending topic to Daena's governance approach\n"
+                "2. X/Twitter thread (5 tweets): explain a Daena capability through the lens of current news\n"
+                "3. Short-form hook for Instagram/TikTok: 15-second script about AI governance\n\n"
+                "Brand voice: professional, forward-thinking, technical credibility. "
+                "Color palette: dark slate + gold + teal. "
+                "Always position Daena as governed-first, not local-first."
+            ),
+        ),
+    ],
+))
+
+# --- Sales Department (Web-Powered) ---
+
+_register(WorkflowDef(
+    id="sales.prospect_research",
+    name="Prospect Company Research",
+    department="Sales",
+    description="Research a prospect company's website to prepare for outreach",
+    required_integrations=[],
+    steps=[
+        WorkflowStep(
+            name="company_site",
+            step_type="web_crawl",
+            params={
+                "operation": "extract_page",
+                "url": "{prospect_url}",
+            },
+        ),
+        WorkflowStep(
+            name="research_report",
+            step_type="llm_reason",
+            input_from=["company_site"],
+            prompt_template=(
+                "Based on this company's website:\n{company_site}\n\n"
+                "Produce a sales research brief:\n"
+                "1. Company overview (what they do, industry, size)\n"
+                "2. Pain points Daena could solve (AI governance, multi-runtime, audit trails)\n"
+                "3. Potential use cases for their industry\n"
+                "4. Decision maker titles to target\n"
+                "5. Personalized outreach email (under 150 words)\n"
+                "6. Follow-up call talking points"
+            ),
+        ),
+    ],
+))
+
+_register(WorkflowDef(
+    id="sales.accelerator_research",
+    name="Accelerator Application Research",
+    department="Sales",
+    description="Research an accelerator program and prepare application materials",
+    required_integrations=[],
+    steps=[
+        WorkflowStep(
+            name="accelerator_page",
+            step_type="web_crawl",
+            params={
+                "operation": "extract_page",
+                "url": "{accelerator_url}",
+            },
+        ),
+        WorkflowStep(
+            name="application_prep",
+            step_type="llm_reason",
+            input_from=["accelerator_page"],
+            prompt_template=(
+                "Based on this accelerator program page:\n{accelerator_page}\n\n"
+                "Company: MAS-AI Technologies Inc. (Daena - governed multi-agent AI platform)\n"
+                "Founder: Masoud Masoori, solo founder, Ontario Canada\n"
+                "Stage: Pre-revenue, MVP complete, 1328 tests passing\n"
+                "IP: 2 USPTO provisionals (PhiLattice Architecture, NBMF)\n"
+                "Differentiators: Governed-first (not local-first), multi-runtime orchestration, "
+                "visible execution, bring-your-own-runtimes, audit trail\n\n"
+                "Produce:\n"
+                "1. Program fit analysis (why Daena is a good fit)\n"
+                "2. Key application talking points\n"
+                "3. Draft answers for common accelerator questions:\n"
+                "   - What problem do you solve?\n"
+                "   - What is your unfair advantage?\n"
+                "   - What is your business model?\n"
+                "   - What traction do you have?\n"
+                "   - What are you looking for from this program?\n"
+                "4. Red flags to address proactively\n"
+                "5. Follow-up strategy after submission"
+            ),
+        ),
+    ],
+))
+
+_register(WorkflowDef(
+    id="sales.competitive_battlecard",
+    name="Live Competitive Battlecard",
+    department="Sales",
+    description="Generate an up-to-date competitive battlecard using live web data",
+    schedule="0 10 * * 1",  # Monday 10 AM
+    required_integrations=[],
+    steps=[
+        WorkflowStep(
+            name="perplexity_data",
+            step_type="web_crawl",
+            params={
+                "operation": "extract_page",
+                "url": "https://www.perplexity.ai/hub/blog",
+            },
+            optional=True,
+        ),
+        WorkflowStep(
+            name="manus_data",
+            step_type="web_crawl",
+            params={
+                "operation": "extract_page",
+                "url": "https://manus.im",
+            },
+            optional=True,
+        ),
+        WorkflowStep(
+            name="battlecard",
+            step_type="llm_reason",
+            input_from=["perplexity_data", "manus_data"],
+            prompt_template=(
+                "Create a competitive battlecard for the sales team.\n\n"
+                "PERPLEXITY LATEST:\n{perplexity_data}\n\n"
+                "MANUS LATEST:\n{manus_data}\n\n"
+                "For each competitor (Perplexity Computer, Manus, OpenClaw, NemoClaw):\n"
+                "1. Current pricing\n"
+                "2. Key features\n"
+                "3. Recent announcements\n"
+                "4. Daena wins against them (governance, multi-runtime, visible execution)\n"
+                "5. Daena loses against them (honestly assess gaps)\n"
+                "6. Objection handlers (what to say when prospect mentions them)\n\n"
+                "End with: TOP 3 unique selling points for Daena that NO competitor has."
+            ),
+        ),
+    ],
+))
+
+# --- Product Department ---
+
+_register(WorkflowDef(
+    id="product.feature_landscape",
+    name="AI Agent Feature Landscape",
+    department="Product",
+    description="Scan the AI agent ecosystem for features Daena should prioritize",
+    schedule="0 9 * * 1",  # Monday 9 AM
+    required_integrations=[],
+    steps=[
+        WorkflowStep(
+            name="hn_trends",
+            step_type="web_crawl",
+            params={
+                "operation": "extract_page",
+                "url": "https://news.ycombinator.com/",
+            },
+            optional=True,
+        ),
+        WorkflowStep(
+            name="feature_analysis",
+            step_type="llm_reason",
+            input_from=["hn_trends"],
+            prompt_template=(
+                "Based on current tech trends:\n{hn_trends}\n\n"
+                "Analyze the AI agent feature landscape for Daena's product roadmap:\n"
+                "1. Most-requested features in the AI agent space\n"
+                "2. Features that align with Daena's governed-first identity\n"
+                "3. Features to avoid (would dilute positioning)\n"
+                "4. Quick wins (< 1 week to implement, high user value)\n"
+                "5. Strategic bets (1-3 months, could be game-changers)\n"
+                "6. Priority ranking with effort/impact scores"
+            ),
+        ),
+    ],
+))
+
+# --- Legal & Compliance Department ---
+
+_register(WorkflowDef(
+    id="legal.ip_landscape",
+    name="IP Landscape Scan",
+    department="Legal & Compliance",
+    description="Monitor patent filings and IP activity in AI agent governance space",
+    schedule="0 8 * * 1",  # Monday 8 AM
+    required_integrations=[],
+    steps=[
+        WorkflowStep(
+            name="ip_scan",
+            step_type="llm_reason",
+            prompt_template=(
+                "Generate a weekly IP landscape report for MAS-AI Technologies:\n"
+                "1. Recent patent filings in AI agent orchestration and governance\n"
+                "2. Open-source projects that may affect our PhiLattice and NBMF patents\n"
+                "3. Competitor IP activity (Anthropic, OpenAI, Google, NVIDIA, Meta)\n"
+                "4. Recommended defensive actions\n"
+                "5. Opportunities to strengthen our provisional filings\n\n"
+                "Our patents: PhiLattice Architecture (sunflower-honeycomb topology), "
+                "NBMF (Neural-Backed Memory Fabric with tiered trust)."
+            ),
+        ),
+    ],
+))
+
+
 # ── Workflow Engine ───────────────────────────────────────────
 
 class DepartmentWorkflowEngine:
@@ -502,6 +809,10 @@ class DepartmentWorkflowEngine:
             return await self._execute_tool_step(step, context)
         elif step.step_type == "llm_reason":
             return await self._execute_llm_step(step, context)
+        elif step.step_type == "web_crawl":
+            return await self._execute_web_crawl_step(step, context)
+        elif step.step_type == "vision_browse":
+            return await self._execute_vision_browse_step(step, context)
         elif step.step_type == "aggregate":
             return self._aggregate(step, context)
         else:
@@ -569,6 +880,73 @@ class DepartmentWorkflowEngine:
 
         # Fallback: return the formatted prompt as the "result"
         return f"[LLM unavailable] Prompt: {prompt[:500]}"
+
+    async def _execute_web_crawl_step(
+        self,
+        step: WorkflowStep,
+        context: dict[str, Any],
+    ) -> Any:
+        """Execute a web crawling step using WebCrawlerAgent.
+
+        Params:
+            url: URL to crawl (supports {context_var} substitution)
+            operation: extract_page | deep_crawl | extract_structured | research_topic
+            Additional params passed to the agent operation.
+        """
+        from app.services.daenabot.web_crawler_agent import WebCrawlerAgent
+
+        params = {**step.params}
+        # Substitute context variables in params
+        for key, value in params.items():
+            if isinstance(value, str) and "{" in value and "}" in value:
+                for ctx_key, ctx_val in context.items():
+                    value = value.replace(f"{{{ctx_key}}}", str(ctx_val))
+                params[key] = value
+
+        operation = params.pop("operation", "extract_page")
+        agent = WebCrawlerAgent()
+        result = await agent.execute(operation, params)
+
+        if result.get("success"):
+            output = result.get("output", {})
+            # Return markdown content for LLM steps to consume
+            return output.get("markdown", "") or output.get("content", "") or str(output)
+        else:
+            raise RuntimeError(result.get("error", "Web crawl failed"))
+
+    async def _execute_vision_browse_step(
+        self,
+        step: WorkflowStep,
+        context: dict[str, Any],
+    ) -> Any:
+        """Execute a vision browsing step using VisionBrowserAgent.
+
+        Params:
+            url: URL to browse
+            operation: browse_and_act | research_url | fill_form_smart
+            goal: What to accomplish (for browse_and_act)
+            question: What to answer (for research_url)
+        """
+        from app.services.daenabot.vision_browser_agent import VisionBrowserAgent
+
+        params = {**step.params}
+        for key, value in params.items():
+            if isinstance(value, str) and "{" in value and "}" in value:
+                for ctx_key, ctx_val in context.items():
+                    value = value.replace(f"{{{ctx_key}}}", str(ctx_val))
+                params[key] = value
+
+        operation = params.pop("operation", "research_url")
+        agent = VisionBrowserAgent()
+        try:
+            result = await agent.execute(operation, params)
+            if result.get("success"):
+                output = result.get("output", {})
+                return output.get("content", "") or str(output)
+            else:
+                raise RuntimeError(result.get("error", "Vision browse failed"))
+        finally:
+            await agent.close()
 
     @staticmethod
     def _aggregate(step: WorkflowStep, context: dict[str, Any]) -> dict[str, Any]:

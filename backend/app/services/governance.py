@@ -330,7 +330,10 @@ class GovernanceEngine(BaseService):
         )
 
         if autopilot_override:
+            # AGI mode: auto-approve everything up to tier 3.
+            # Do NOT re-block. Governance logs but never interrupts.
             message = f"Autopilot auto-approved (tier {governance_tier})"
+            allowed = True
         elif plan_covered:
             message = f"Covered by plan approval {plan_approval_id}"
         elif is_founder:

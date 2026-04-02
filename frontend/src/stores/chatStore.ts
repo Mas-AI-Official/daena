@@ -496,32 +496,51 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 ),
               }))
             } else if (event.type === 'thinking') {
-              // Pipeline stage updates (analyzing, governance, routing, etc.)
+              // Pipeline stage updates -- show intelligent processing stages,
+              // not raw model names. Makes Daena feel like a thinking system.
               const stage = event.stage || ''
-              const model = event.model ? ` → ${event.model}` : ''
+              // Model info kept in detail (expandable), NOT shown in main label
+              const modelDetail = event.model ? event.model : undefined
               const STAGE_LABELS: Record<string, string> = {
-                analyzing: 'Intent analysis',
-                governance: 'Governance check',
-                routing: 'Model routing',
-                routing_override_unavailable: 'Model unavailable',
-                council_synthesizing: 'Consulting models',
-                council_completed: 'Synthesis complete',
-                fallback_streaming: 'Fallback stream',
+                // Core pipeline stages -- feel alive and working
+                analyzing: 'Understanding your request...',
+                governance: 'Checking governance policies...',
+                routing: 'Selecting optimal strategy...',
+                routing_override_unavailable: 'Adapting to available resources...',
+                // Council/Quintessence stages -- show intelligence, not API names
+                council_synthesizing: 'Consulting multiple perspectives...',
+                council_completed: 'Cross-validation complete',
+                quintessence_sequential: 'Deep expert analysis...',
+                quintessence_lens: 'Applying expert perspective...',
+                // Execution stages
+                fallback_streaming: 'Switching to backup pathway...',
+                cli_runtime_fallback: 'Retrying with alternative...',
+                tool_loop_continuing: 'Executing next step...',
+                swarm_planning: 'Decomposing into subtasks...',
+                department_created: 'Activating specialist department...',
+                // Cost & memory
+                cost_preflight: 'Checking budget...',
+                memory_recall: 'Searching knowledge base...',
               }
               let label = STAGE_LABELS[stage] || stage
-              // Enrich council stages with model/expert info
+              // Enrich council/quintessence stages with count info (not model names)
               if (stage === 'council_synthesizing') {
                 const models = event.models as string[] | undefined
                 if (models && models.length > 0) {
-                  label = `Consulting ${models.length} models...`
+                  label = `Cross-validating across ${models.length} perspectives...`
                 }
               } else if (stage === 'council_completed') {
                 const count = event.responses as number | undefined
                 const experts = event.experts_used as string[] | undefined
                 if (experts && experts.length > 0) {
-                  label = `${count ?? 0} models + ${experts.length} experts synthesized`
+                  label = `Synthesized ${experts.length} expert perspectives`
                 } else if (count && count > 1) {
-                  label = `${count} models synthesized`
+                  label = `Synthesized ${count} perspectives`
+                }
+              } else if (stage === 'quintessence_sequential') {
+                const expertCount = event.experts as number | undefined
+                if (expertCount) {
+                  label = `Deep analysis with ${expertCount} expert lenses...`
                 }
               }
               set((s) => {
@@ -531,13 +550,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 )
                 const newStage: PipelineStage = {
                   label,
-                  detail: model || event.reason || undefined,
+                  // Model name goes in detail (visible on expand only)
+                  detail: modelDetail || event.reason || undefined,
                   status: 'active',
                 }
                 return {
                   stream: {
                     ...s.stream,
-                    thinkingContent: stage + model,
+                    thinkingContent: label,
                     pipelineStages: [...prev, newStage],
                   },
                 }
