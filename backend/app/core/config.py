@@ -340,7 +340,7 @@ class Settings(BaseSettings):
                 "source": self._field_source("ollama_default_model"),
             },
             "provider_keys": self.provider_key_status,
-            "rate_limit_fail_open": self.allows_unsafe_dev_features,
+            "rate_limit_fail_open": True,  # Always fail-open to avoid blocking users
             "env_file": str(self.env_file_path) if self.env_file_path else None,
             "env_file_present": bool(self.env_file_path and self.env_file_path.exists()),
             "guardrail_issues": self.runtime_guardrail_issues(),

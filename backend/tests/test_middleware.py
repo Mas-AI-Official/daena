@@ -189,25 +189,21 @@ class TestRateLimitMiddleware:
             assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_rate_limit_fails_closed_outside_dev_env(
+    async def test_rate_limit_fails_open_in_all_environments(
         self, client: AsyncClient, auth_headers: dict
     ) -> None:
-        """Non-local environments should not silently fail open on Redis errors."""
+        """All environments fail-open on Redis errors to avoid blocking users."""
         mock_redis = AsyncMock()
         mock_redis.incr.side_effect = ConnectionError("Redis down")
 
         with (
             patch("app.core.redis.get_redis_client", return_value=mock_redis),
             patch("app.core.redis.check_redis_health", return_value=True),
-            patch("app.middleware.rate_limit.get_settings") as mock_settings,
         ):
-            mock_settings.return_value.allows_unsafe_dev_features = False
             response = await client.get(
                 "/api/v1/health", headers=auth_headers
             )
-            assert response.status_code == 503
-            data = response.json()
-            assert data["error"]["code"] == "RATE_LIMIT_BACKEND_UNAVAILABLE"
+            assert response.status_code == 200
 
     @pytest.mark.asyncio
     async def test_docs_endpoint_skips_rate_limit(

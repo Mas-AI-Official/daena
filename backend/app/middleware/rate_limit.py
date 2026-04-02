@@ -148,19 +148,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return response
 
         except Exception:
-            settings = get_settings()
-            if settings.allows_unsafe_dev_features:
-                logger.warning("rate_limit_redis_unavailable", path=path, mode="fail_open")
-                return await call_next(request)
-
-            logger.error("rate_limit_redis_unavailable", path=path, mode="fail_closed")
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "success": False,
-                    "error": {
-                        "code": "RATE_LIMIT_BACKEND_UNAVAILABLE",
-                        "message": "Rate limiting backend unavailable.",
-                    },
-                },
-            )
+            # Fail-OPEN: blocking all users is worse than skipping rate limits.
+            # Redis unavailability should never prevent registration or login.
+            logger.warning("rate_limit_redis_unavailable", path=path, mode="fail_open")
+            return await call_next(request)
