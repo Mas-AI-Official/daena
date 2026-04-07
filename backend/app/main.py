@@ -43,29 +43,32 @@ async def _seed_departments_for_all_tenants() -> None:
 
             seeded = 0
             for tenant in tenants:
-                count_stmt = (
-                    select(func.count(Department.id))
-                    .where(Department.tenant_id == tenant.id)
+                # Always run seed_defaults — it's idempotent and creates
+                # any missing departments, agents, AND skills.
+                # Previously only ran when dept_count == 0, which meant
+                # skills added after initial deployment were never seeded.
+                svc = AgentService(db)
+                result = await svc.seed_defaults(tenant_id=tenant.id)
+                created = (
+                    result["departments_created"]
+                    + result["agents_created"]
+                    + result["skills_created"]
                 )
-                count_result = await db.execute(count_stmt)
-                dept_count = count_result.scalar() or 0
-
-                if dept_count == 0:
-                    svc = AgentService(db)
-                    result = await svc.seed_defaults(tenant_id=tenant.id)
+                if created > 0:
                     seeded += 1
                     logger.info(
-                        "departments_seeded",
+                        "tenant_seeded",
                         tenant_id=str(tenant.id),
                         departments=result["departments_created"],
                         agents=result["agents_created"],
+                        skills=result["skills_created"],
                     )
 
             await db.commit()
             if seeded:
                 logger.info("auto_seed_complete", tenants_seeded=seeded)
             else:
-                logger.debug("auto_seed_skipped", reason="all tenants already have departments")
+                logger.debug("auto_seed_skipped", reason="all tenants fully seeded")
         except Exception as exc:
             await db.rollback()
             logger.warning("auto_seed_failed", error=str(exc))
@@ -129,10 +132,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if settings.disable_auth:
         logger.warning("AUTH_DISABLED — all endpoints return dev user. Do NOT deploy this.")
 
-    # --- Auto-create tables (safe for SQLite in any environment) ---
-    # Only skip auto-create for PostgreSQL in production (use Alembic there).
-    _db_url = settings.database_url
-    _skip_auto_create = settings.is_production and not _db_url.startswith("sqlite")
+    # --- Auto-create tables (idempotent — only creates missing tables) ---
+    # create_all is safe for both SQLite and PostgreSQL: it checks for
+    # existing tables first and only creates those that are missing.
+    _skip_auto_create = False  # Always ensure tables exist
     if not _skip_auto_create:
         _ts = _time.perf_counter()
         from app.core.database import engine

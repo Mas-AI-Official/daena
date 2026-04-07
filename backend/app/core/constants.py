@@ -296,6 +296,114 @@ DEFAULT_DEPARTMENTS: list[dict[str, str | int]] = [
 
 
 # ============================================================
+# Default Skills (50+ pre-installed across 10 departments)
+# ============================================================
+
+DEFAULT_SKILLS: list[dict] = [
+    # ── Engineering (dept 0) ──
+    {"name": "code_review", "description": "Automated code review with style, security, and performance checks", "category": "Engineering", "governance_tier": 1},
+    {"name": "generate_tests", "description": "Generate unit and integration tests for a given module or function", "category": "Engineering", "governance_tier": 1},
+    {"name": "debug_analysis", "description": "Analyze error traces and logs to identify root cause of bugs", "category": "Engineering", "governance_tier": 1},
+    {"name": "refactor_code", "description": "Suggest and apply code refactoring for improved readability and performance", "category": "Engineering", "governance_tier": 2},
+    {"name": "deploy_checklist", "description": "Generate pre-deployment verification checklist for a release", "category": "Engineering", "governance_tier": 2},
+    {"name": "dependency_audit", "description": "Scan project dependencies for vulnerabilities and outdated packages", "category": "Engineering", "governance_tier": 1},
+
+    # ── Product (dept 1) ──
+    {"name": "write_spec", "description": "Draft a product requirements document from a feature idea or user story", "category": "Product", "governance_tier": 1},
+    {"name": "prioritize_backlog", "description": "Score and rank backlog items using RICE or weighted scoring framework", "category": "Product", "governance_tier": 1},
+    {"name": "user_story_generator", "description": "Generate user stories with acceptance criteria from a feature brief", "category": "Product", "governance_tier": 0},
+    {"name": "competitive_analysis", "description": "Research and compare competitor features, pricing, and positioning", "category": "Product", "governance_tier": 1},
+    {"name": "metrics_dashboard", "description": "Define and track key product metrics with trend analysis", "category": "Product", "governance_tier": 1},
+    {"name": "release_notes", "description": "Generate user-facing release notes from commit history and tickets", "category": "Product", "governance_tier": 0},
+
+    # ── Marketing (dept 2) ──
+    {"name": "seo_audit", "description": "Analyze page content for SEO optimization opportunities and keyword gaps", "category": "Marketing", "governance_tier": 1},
+    {"name": "blog_draft", "description": "Draft a blog post from a topic outline with SEO-optimized structure", "category": "Marketing", "governance_tier": 0},
+    {"name": "social_media_calendar", "description": "Plan and schedule social media posts across platforms", "category": "Marketing", "governance_tier": 1},
+    {"name": "email_campaign", "description": "Design and draft multi-step email marketing sequences", "category": "Marketing", "governance_tier": 1},
+    {"name": "brand_voice_check", "description": "Evaluate content against brand voice guidelines for tone and consistency", "category": "Marketing", "governance_tier": 0},
+    {"name": "landing_page_copy", "description": "Write conversion-optimized landing page copy with A/B test variants", "category": "Marketing", "governance_tier": 1},
+
+    # ── Sales (dept 3) ──
+    {"name": "lead_research", "description": "Research a prospect company and key contacts for sales outreach", "category": "Sales", "governance_tier": 1},
+    {"name": "outreach_draft", "description": "Draft personalized cold outreach emails based on prospect context", "category": "Sales", "governance_tier": 1},
+    {"name": "proposal_generator", "description": "Generate a tailored sales proposal from deal parameters and templates", "category": "Sales", "governance_tier": 2},
+    {"name": "crm_update", "description": "Summarize call notes and update CRM records with next steps", "category": "Sales", "governance_tier": 1},
+    {"name": "pipeline_analysis", "description": "Analyze sales pipeline health with deal velocity and conversion metrics", "category": "Sales", "governance_tier": 1},
+
+    # ── Finance (dept 4) ──
+    {"name": "budget_forecast", "description": "Build monthly or quarterly budget forecasts with variance analysis", "category": "Finance", "governance_tier": 2},
+    {"name": "expense_categorize", "description": "Categorize and tag expenses from transaction data for reporting", "category": "Finance", "governance_tier": 1},
+    {"name": "invoice_generator", "description": "Generate professional invoices from billing data and templates", "category": "Finance", "governance_tier": 2},
+    {"name": "financial_report", "description": "Compile financial summary reports with key ratios and trends", "category": "Finance", "governance_tier": 2},
+    {"name": "cost_optimization", "description": "Identify cost reduction opportunities across infrastructure and services", "category": "Finance", "governance_tier": 1},
+
+    # ── Operations (dept 5) ──
+    {"name": "project_status_report", "description": "Generate project status reports with milestones, risks, and blockers", "category": "Operations", "governance_tier": 0},
+    {"name": "meeting_agenda", "description": "Create structured meeting agendas with time allocations and action items", "category": "Operations", "governance_tier": 0},
+    {"name": "process_documentation", "description": "Document operational processes with flowcharts and SOPs", "category": "Operations", "governance_tier": 1},
+    {"name": "vendor_evaluation", "description": "Evaluate and compare vendors using weighted scoring criteria", "category": "Operations", "governance_tier": 1},
+    {"name": "resource_allocation", "description": "Plan and optimize team resource allocation across projects", "category": "Operations", "governance_tier": 1},
+
+    # ── Research (dept 6) ──
+    {"name": "market_research", "description": "Conduct market research with industry trends, sizing, and opportunity analysis", "category": "Research", "governance_tier": 1},
+    {"name": "tech_scouting", "description": "Scout emerging technologies and evaluate relevance to current projects", "category": "Research", "governance_tier": 1},
+    {"name": "literature_review", "description": "Summarize academic papers and technical publications on a topic", "category": "Research", "governance_tier": 0},
+    {"name": "data_analysis", "description": "Perform exploratory data analysis with statistical summaries and visualizations", "category": "Research", "governance_tier": 1},
+    {"name": "patent_search", "description": "Search and analyze patent filings related to a technology or invention", "category": "Research", "governance_tier": 1},
+
+    # ── Legal & Compliance (dept 7) ──
+    {"name": "contract_review", "description": "Review contracts for risk clauses, missing terms, and compliance issues", "category": "Legal & Compliance", "governance_tier": 3},
+    {"name": "privacy_audit", "description": "Audit data handling practices against GDPR, CCPA, and PIPEDA requirements", "category": "Legal & Compliance", "governance_tier": 3},
+    {"name": "ip_tracker", "description": "Track intellectual property filings, deadlines, and renewal dates", "category": "Legal & Compliance", "governance_tier": 2},
+    {"name": "regulatory_check", "description": "Check business actions against applicable regulatory frameworks", "category": "Legal & Compliance", "governance_tier": 3},
+    {"name": "nda_triage", "description": "Classify incoming NDAs as standard, modified, or high-risk for review", "category": "Legal & Compliance", "governance_tier": 2},
+    {"name": "terms_generator", "description": "Draft terms of service and privacy policy documents from templates", "category": "Legal & Compliance", "governance_tier": 3},
+
+    # ── Skill Governance (dept 8) ──
+    {"name": "skill_extraction", "description": "Extract reusable skills from conversation transcripts and documents", "category": "Skill Governance", "governance_tier": 1},
+    {"name": "skill_quality_score", "description": "Score skill quality on completeness, clarity, and reusability metrics", "category": "Skill Governance", "governance_tier": 1},
+    {"name": "skill_dedup", "description": "Detect and merge duplicate or overlapping skills in the catalog", "category": "Skill Governance", "governance_tier": 2},
+    {"name": "skill_promotion", "description": "Evaluate skills for tier promotion based on usage and quality thresholds", "category": "Skill Governance", "governance_tier": 2},
+    {"name": "knowledge_gap_finder", "description": "Identify gaps in the skill catalog by analyzing query patterns and failures", "category": "Skill Governance", "governance_tier": 1},
+
+    # ── Security Operations (dept 9) ──
+    {"name": "threat_detection", "description": "Scan inputs and outputs for prompt injection, data exfiltration, and adversarial patterns", "category": "Security Operations", "governance_tier": 3},
+    {"name": "access_audit", "description": "Audit user access patterns and flag anomalous permission usage", "category": "Security Operations", "governance_tier": 3},
+    {"name": "vulnerability_scan", "description": "Scan codebase and dependencies for known security vulnerabilities", "category": "Security Operations", "governance_tier": 2},
+    {"name": "incident_report", "description": "Generate structured incident reports with timeline, impact, and remediation", "category": "Security Operations", "governance_tier": 2},
+    {"name": "secret_rotation", "description": "Check and enforce rotation schedules for API keys, tokens, and credentials", "category": "Security Operations", "governance_tier": 3},
+
+    # ── System Tools (built-in capabilities) ──
+    {"name": "file_manager", "description": "Read, write, search, copy, move, and organize files on the computer", "category": "System", "governance_tier": 1},
+    {"name": "terminal", "description": "Execute shell commands, run scripts, install packages, and manage processes", "category": "System", "governance_tier": 2},
+    {"name": "python_executor", "description": "Run Python code for data processing, calculations, scripting, and automation", "category": "System", "governance_tier": 2},
+    {"name": "desktop_control", "description": "Control the desktop: mouse clicks, keyboard typing, screenshots, hotkeys, scrolling", "category": "System", "governance_tier": 3},
+    {"name": "computer_use", "description": "Autonomously complete visual tasks on the desktop using AI vision and screen interaction", "category": "System", "governance_tier": 3},
+    {"name": "package_installer", "description": "Install Python (pip) and JavaScript (npm) packages", "category": "System", "governance_tier": 2},
+
+    # ── Web Tools ──
+    {"name": "web_search", "description": "Search the web for current information, documentation, news, and answers", "category": "Web", "governance_tier": 0},
+    {"name": "web_browser", "description": "Navigate websites, take screenshots, extract text, fill forms, and click elements", "category": "Web", "governance_tier": 1},
+    {"name": "http_client", "description": "Make HTTP GET and POST requests to any API endpoint", "category": "Web", "governance_tier": 1},
+    {"name": "web_scraper", "description": "Extract structured data from web pages for analysis and automation", "category": "Web", "governance_tier": 1},
+
+    # ── Communication ──
+    {"name": "email_send", "description": "Send emails via Gmail with subject, body, and recipients", "category": "Communication", "governance_tier": 3},
+    {"name": "email_draft", "description": "Create email drafts in Gmail without sending", "category": "Communication", "governance_tier": 1},
+    {"name": "email_search", "description": "Search Gmail inbox using query syntax (from, subject, labels, etc.)", "category": "Communication", "governance_tier": 0},
+    {"name": "calendar_manage", "description": "List, create, and manage Google Calendar events and find free time", "category": "Communication", "governance_tier": 2},
+    {"name": "notion_workspace", "description": "Search, read, and create pages in Notion workspaces", "category": "Communication", "governance_tier": 1},
+
+    # ── Custom/Local ──
+    {"name": "mcp_bridge", "description": "Connect to any MCP server and use its tools with governance", "category": "Custom", "governance_tier": 2},
+    {"name": "workflow_runner", "description": "Run department workflows: daily briefings, competitor analysis, lead research, and more", "category": "Custom", "governance_tier": 1},
+    {"name": "skill_creator", "description": "Create new reusable skills from conversations or documents", "category": "Custom", "governance_tier": 1},
+    {"name": "report_generator", "description": "Generate formatted reports from data, analysis, or conversation history", "category": "Custom", "governance_tier": 0},
+]
+
+
+# ============================================================
 # Governance Tier Mapping
 # ============================================================
 

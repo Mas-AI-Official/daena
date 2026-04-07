@@ -20,13 +20,16 @@ import {
   XCircle,
   ChevronDown,
   ChevronRight,
-  Globe,
-  HardDrive,
   Wrench,
-  Cpu,
   LayoutGrid,
   Upload,
   Code2,
+  Layers,
+  Megaphone,
+  Settings2,
+  Palette,
+  DollarSign,
+  MessageSquare,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Shimmer, EmptyState } from '@/components/common'
@@ -44,39 +47,81 @@ const TIER_LABELS: Record<number, { label: string; variant: 'default' | 'success
   4: { label: 'Council', variant: 'danger' },
 }
 
-type CategoryKey = 'all' | 'web' | 'local' | 'custom' | 'system'
+type CategoryKey = 'all' | 'system' | 'web' | 'engineering' | 'product' | 'marketing' | 'research' | 'operations' | 'design' | 'sales' | 'communication' | 'other'
 
 const CATEGORIES: { key: CategoryKey; label: string; icon: React.ReactNode; match: (s: SkillResponse) => boolean }[] = [
-  {
-    key: 'all',
-    label: 'All Skills',
-    icon: <LayoutGrid size={14} />,
-    match: () => true,
-  },
-  {
-    key: 'web',
-    label: 'Web',
-    icon: <Globe size={14} />,
-    match: (s) => s.category?.toLowerCase() === 'web',
-  },
-  {
-    key: 'local',
-    label: 'Local',
-    icon: <HardDrive size={14} />,
-    match: (s) => s.category?.toLowerCase() === 'local',
-  },
-  {
-    key: 'custom',
-    label: 'Custom',
-    icon: <Wrench size={14} />,
-    match: (s) => s.category?.toLowerCase() === 'custom',
-  },
-  {
-    key: 'system',
-    label: 'System',
-    icon: <Cpu size={14} />,
-    match: (s) => s.category?.toLowerCase() === 'system',
-  },
+  { key: 'all', label: 'All Skills', icon: <LayoutGrid size={14} />, match: () => true },
+  { key: 'system', label: 'System', icon: <Settings2 size={14} />, match: (s) => {
+    const cat = s.category?.toLowerCase() ?? ''
+    const name = s.name?.toLowerCase() ?? ''
+    const desc = s.description?.toLowerCase() ?? ''
+    return ['system', 'local'].includes(cat) ||
+      /\b(file|terminal|shell|command|desktop|screen|mouse|keyboard|python|package|install)\b/.test(name + ' ' + desc)
+  }},
+  { key: 'web', label: 'Web', icon: <Search size={14} />, match: (s) => {
+    const cat = s.category?.toLowerCase() ?? ''
+    const name = s.name?.toLowerCase() ?? ''
+    const desc = s.description?.toLowerCase() ?? ''
+    return ['web', 'browser', 'search'].includes(cat) ||
+      /\b(web|browser|http|api|scrape|search|navigate|screenshot|url)\b/.test(name + ' ' + desc)
+  }},
+  { key: 'engineering', label: 'Engineering', icon: <Code2 size={14} />, match: (s) => {
+    const cat = s.category?.toLowerCase() ?? ''
+    const name = s.name?.toLowerCase() ?? ''
+    const desc = s.description?.toLowerCase() ?? ''
+    return ['engineering', 'code', 'development', 'testing'].includes(cat) ||
+      /\b(code|debug|test|build|deploy|git|refactor|lint|compile|typescript|python|review|pr|commit)\b/.test(name + ' ' + desc)
+  }},
+  { key: 'product', label: 'Product', icon: <Layers size={14} />, match: (s) => {
+    const cat = s.category?.toLowerCase() ?? ''
+    const name = s.name?.toLowerCase() ?? ''
+    const desc = s.description?.toLowerCase() ?? ''
+    return ['product', 'feature', 'spec', 'planning'].includes(cat) ||
+      /\b(product|roadmap|spec|feature|prd|sprint|backlog|requirement|user.?story|metric|stakeholder)\b/.test(name + ' ' + desc)
+  }},
+  { key: 'marketing', label: 'Marketing', icon: <Megaphone size={14} />, match: (s) => {
+    const cat = s.category?.toLowerCase() ?? ''
+    const name = s.name?.toLowerCase() ?? ''
+    const desc = s.description?.toLowerCase() ?? ''
+    return ['marketing', 'content', 'seo', 'social'].includes(cat) ||
+      /\b(marketing|seo|content|brand|email|campaign|social|blog|newsletter|outreach|copywriting)\b/.test(name + ' ' + desc)
+  }},
+  { key: 'research', label: 'Research', icon: <Search size={14} />, match: (s) => {
+    const cat = s.category?.toLowerCase() ?? ''
+    const name = s.name?.toLowerCase() ?? ''
+    const desc = s.description?.toLowerCase() ?? ''
+    return ['research', 'analysis', 'competitive'].includes(cat) ||
+      /\b(research|analysis|competitive|survey|insight|data|report|intelligence|benchmark)\b/.test(name + ' ' + desc)
+  }},
+  { key: 'operations', label: 'Operations', icon: <Settings2 size={14} />, match: (s) => {
+    const cat = s.category?.toLowerCase() ?? ''
+    const name = s.name?.toLowerCase() ?? ''
+    const desc = s.description?.toLowerCase() ?? ''
+    return ['operations', 'ops', 'automation', 'workflow'].includes(cat) ||
+      /\b(operations|ops|automation|workflow|process|schedule|vendor|runbook|incident|standup|status)\b/.test(name + ' ' + desc)
+  }},
+  { key: 'design', label: 'Design', icon: <Palette size={14} />, match: (s) => {
+    const cat = s.category?.toLowerCase() ?? ''
+    const name = s.name?.toLowerCase() ?? ''
+    const desc = s.description?.toLowerCase() ?? ''
+    return ['design', 'ui', 'ux'].includes(cat) ||
+      /\b(design|figma|ui|ux|accessibility|wireframe|prototype|layout|style|css|theme|visual)\b/.test(name + ' ' + desc)
+  }},
+  { key: 'sales', label: 'Sales & Finance', icon: <DollarSign size={14} />, match: (s) => {
+    const cat = s.category?.toLowerCase() ?? ''
+    const name = s.name?.toLowerCase() ?? ''
+    const desc = s.description?.toLowerCase() ?? ''
+    return ['sales', 'finance', 'billing'].includes(cat) ||
+      /\b(sales|finance|billing|invoice|payment|revenue|pipeline|deal|lead|prospect|forecast|budget|cost|expense)\b/.test(name + ' ' + desc)
+  }},
+  { key: 'communication', label: 'Communication', icon: <MessageSquare size={14} />, match: (s) => {
+    const cat = s.category?.toLowerCase() ?? ''
+    const name = s.name?.toLowerCase() ?? ''
+    const desc = s.description?.toLowerCase() ?? ''
+    return ['communication', 'messaging'].includes(cat) ||
+      /\b(slack|gmail|email|chat|message|notification|announcement|calendar|meeting|agenda)\b/.test(name + ' ' + desc)
+  }},
+  { key: 'other', label: 'Other', icon: <Wrench size={14} />, match: () => true },
 ]
 
 // ── PermissionDropdown (same pattern as ConnectionsPage) ───────────────────
@@ -384,10 +429,19 @@ export function SkillsPage() {
     )
   })
 
+  // When viewing 'other', exclude skills matched by any specific category
+  const finalFiltered = activeCategory === 'other'
+    ? filtered.filter(s => !CATEGORIES.filter(c => c.key !== 'all' && c.key !== 'other').some(c => c.match(s)))
+    : filtered
+
   // Count per category for badges
   const countFor = (key: CategoryKey) => {
     const def = CATEGORIES.find((c) => c.key === key)
     if (!def) return 0
+    if (key === 'other') {
+      const specificCategories = CATEGORIES.filter(c => c.key !== 'all' && c.key !== 'other')
+      return skills.filter(s => !specificCategories.some(c => c.match(s))).length
+    }
     return skills.filter((s) => def.match(s)).length
   }
 
@@ -455,14 +509,14 @@ export function SkillsPage() {
                   const level = e.target.value as PermissionLevel
                   if (!level) return
                   const updated = { ...permissions }
-                  filtered.forEach((s) => { updated[s.id] = level })
+                  finalFiltered.forEach((s) => { updated[s.id] = level })
                   setPermissions(updated)
                   localStorage.setItem('daena:skill_permissions', JSON.stringify(updated))
                   // Sync to backend
-                  filtered.forEach((s) => {
+                  finalFiltered.forEach((s) => {
                     api.patch(`/skills/${s.id}`, { governance_tier: level === 'ALWAYS_ALLOW' ? 0 : level === 'ASK_EACH_TIME' ? 2 : 4 }).catch(() => {})
                   })
-                  toast.success(`Set ${filtered.length} skills to ${level === 'ALWAYS_ALLOW' ? 'Always Allow' : level === 'ASK_EACH_TIME' ? 'Needs Approval' : 'Blocked'}`)
+                  toast.success(`Set ${finalFiltered.length} skills to ${level === 'ALWAYS_ALLOW' ? 'Always Allow' : level === 'ASK_EACH_TIME' ? 'Needs Approval' : 'Blocked'}`)
                   e.target.value = ''
                 }}
                 className="px-2 py-1.5 rounded-lg text-xs bg-white/5 border border-white/10 text-starlight-400 cursor-pointer"
@@ -527,7 +581,7 @@ export function SkillsPage() {
           {/* Content */}
           {loading ? (
             <Shimmer count={4} layout="list" />
-          ) : filtered.length === 0 ? (
+          ) : finalFiltered.length === 0 ? (
             <EmptyState
               icon={Sparkles}
               title={
@@ -556,7 +610,7 @@ export function SkillsPage() {
           ) : (
             <AnimatePresence mode="popLayout">
               <div className="space-y-2">
-                {filtered.map((skill, i) => (
+                {finalFiltered.map((skill, i) => (
                   <SkillCard
                     key={skill.id}
                     skill={skill}
