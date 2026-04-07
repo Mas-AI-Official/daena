@@ -214,10 +214,76 @@ class ToolUseLoop:
         """Generate LLM response (non-streaming, collect full response).
 
         For the tool-use loop, we need the full response to parse tool calls.
-        Fallback chain: Ollama (direct HTTP) -> runtime adapters -> error.
+        Fallback chain: Cloud API (Groq/Gemini) -> Ollama -> runtime adapters -> error.
         """
-        # Use Ollama directly for fast local generation
-        if provider.lower() in ("ollama", "local"):
+        # Try cloud providers first (works on Cloud Run where Ollama is unavailable)
+        try:
+            from app.core.config import get_settings
+            settings = get_settings()
+
+            # Build messages array for cloud API
+            api_messages = [{"role": "system", "content": system_prompt}]
+            for msg in messages:
+                role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
+                content = msg.content if hasattr(msg, "content") else msg.get("content", "")
+                api_messages.append({"role": role.lower(), "content": content})
+
+            # Try Groq (fast, free tier available)
+            groq_key = (settings.groq_api_key or "").strip()
+            if groq_key:
+                import httpx
+                try:
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        resp = await client.post(
+                            "https://api.groq.com/openai/v1/chat/completions",
+                            headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                            json={
+                                "model": model_id if "groq" in provider.lower() else "llama-3.3-70b-versatile",
+                                "messages": api_messages,
+                                "temperature": temperature,
+                                "max_tokens": max_tokens,
+                            },
+                        )
+                        if resp.status_code == 200:
+                            text = resp.json()["choices"][0]["message"]["content"]
+                            yield text
+                            return
+                except Exception as exc:
+                    logger.warning("tool_loop.groq_failed", error=str(exc))
+
+            # Try Gemini
+            gemini_key = (settings.gemini_api_key or "").strip()
+            if gemini_key:
+                import httpx
+                try:
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        resp = await client.post(
+                            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}",
+                            headers={"Content-Type": "application/json"},
+                            json={
+                                "contents": [{"parts": [{"text": m["content"]}], "role": "user" if m["role"] == "user" else "model"} for m in api_messages if m["role"] != "system"],
+                                "systemInstruction": {"parts": [{"text": system_prompt}]},
+                                "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+                            },
+                        )
+                        if resp.status_code == 200:
+                            text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                            yield text
+                            return
+                except Exception as exc:
+                    logger.warning("tool_loop.gemini_failed", error=str(exc))
+        except Exception:
+            pass  # Settings unavailable, try Ollama
+
+        # Ollama (local)
+        ollama_url = "http://localhost:11434"
+        try:
+            from app.core.config import get_settings
+            ollama_url = get_settings().ollama_base_url or ollama_url
+        except Exception:
+            pass
+
+        if provider.lower() in ("ollama", "local") or True:  # Always try Ollama as fallback
             import httpx
             prompt_parts = [system_prompt, ""]
             for msg in messages:
@@ -230,7 +296,7 @@ class ToolUseLoop:
             try:
                 async with httpx.AsyncClient(timeout=120.0) as client:
                     resp = await client.post(
-                        "http://localhost:11434/api/generate",
+                        f"{ollama_url}/api/generate",
                         json={
                             "model": model_id or "llama3.1:8b",
                             "prompt": full_prompt,

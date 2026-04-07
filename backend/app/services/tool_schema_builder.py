@@ -121,8 +121,11 @@ def build_tool_prompt(tools: list[dict[str, Any]]) -> str:
 def parse_tool_calls(llm_response: str) -> list[dict[str, Any]]:
     """Parse tool calls from LLM response text.
 
-    Looks for ```tool_call blocks with JSON inside.
-    Also handles bare JSON objects with "tool" key.
+    Handles multiple formats LLMs may use:
+    - ```tool_call ... ``` (our preferred format)
+    - ```json ... ``` with tool key inside
+    - Bare JSON objects with "tool" key (including nested params)
+    - Entire response as JSON
 
     Returns:
         List of dicts with "tool" and "params" keys.
@@ -132,51 +135,77 @@ def parse_tool_calls(llm_response: str) -> list[dict[str, Any]]:
 
     calls: list[dict[str, Any]] = []
 
-    # Pattern 1: ```tool_call ... ```
+    def _extract(data: dict) -> dict | None:
+        if isinstance(data, dict) and "tool" in data:
+            return {
+                "tool": data["tool"],
+                "params": data.get("params", data.get("arguments", data.get("parameters", {}))),
+            }
+        return None
+
+    # Pattern 1: ```tool_call ... ``` (our canonical format)
     pattern = r'```tool_call\s*\n?(.*?)\n?```'
     matches = re.findall(pattern, llm_response, re.DOTALL)
     for match in matches:
         try:
             data = json.loads(match.strip())
-            if isinstance(data, dict) and "tool" in data:
-                calls.append({
-                    "tool": data["tool"],
-                    "params": data.get("params", data.get("arguments", {})),
-                })
+            extracted = _extract(data)
+            if extracted:
+                calls.append(extracted)
         except json.JSONDecodeError:
             continue
 
-    # Pattern 2: {"tool": "name", "params": {...}} anywhere in text
+    # Pattern 2: ```json ... ``` blocks containing tool calls
     if not calls:
-        json_pattern = r'\{[^{}]*"tool"\s*:\s*"[^"]+"\s*[,}][^{}]*\}'
-        for match in re.finditer(json_pattern, llm_response):
+        json_block_pattern = r'```(?:json)?\s*\n?(.*?)\n?```'
+        for match in re.findall(json_block_pattern, llm_response, re.DOTALL):
             try:
-                data = json.loads(match.group())
-                if "tool" in data:
-                    calls.append({
-                        "tool": data["tool"],
-                        "params": data.get("params", data.get("arguments", {})),
-                    })
+                data = json.loads(match.strip())
+                extracted = _extract(data)
+                if extracted:
+                    calls.append(extracted)
             except json.JSONDecodeError:
                 continue
 
-    # Pattern 3: Nested JSON with tool_call wrapper
+    # Pattern 3: Find JSON objects with "tool" key using brace-matching
+    if not calls:
+        # Find all positions where {"tool" or { "tool" starts
+        for m in re.finditer(r'\{\s*"tool"\s*:', llm_response):
+            start = m.start()
+            # Walk forward to find matching closing brace
+            depth = 0
+            end = start
+            for i in range(start, len(llm_response)):
+                if llm_response[i] == '{':
+                    depth += 1
+                elif llm_response[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            if end > start:
+                try:
+                    data = json.loads(llm_response[start:end])
+                    extracted = _extract(data)
+                    if extracted:
+                        calls.append(extracted)
+                except json.JSONDecodeError:
+                    continue
+
+    # Pattern 4: Entire response is JSON
     if not calls:
         try:
-            # Try parsing the entire response as JSON
             data = json.loads(llm_response.strip())
-            if isinstance(data, dict) and "tool" in data:
-                calls.append({
-                    "tool": data["tool"],
-                    "params": data.get("params", {}),
-                })
+            if isinstance(data, dict):
+                extracted = _extract(data)
+                if extracted:
+                    calls.append(extracted)
             elif isinstance(data, list):
                 for item in data:
-                    if isinstance(item, dict) and "tool" in item:
-                        calls.append({
-                            "tool": item["tool"],
-                            "params": item.get("params", {}),
-                        })
+                    if isinstance(item, dict):
+                        extracted = _extract(item)
+                        if extracted:
+                            calls.append(extracted)
         except (json.JSONDecodeError, ValueError):
             pass
 

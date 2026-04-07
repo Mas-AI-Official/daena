@@ -35,6 +35,7 @@ import {
   ToggleRight,
   Save,
   ExternalLink,
+  Unplug,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { api } from '@/lib/api'
@@ -181,6 +182,16 @@ const BROWSE_EXTENSIONS_CATALOG: BrowseCatalogItem[] = [
   // Git
   { id: 'git', name: 'Git', description: 'Read, search, and analyze local Git repositories', category: 'Development', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/git' },
 ]
+
+// ── Cloud-mode pre-installed extensions (mapped from BROWSE_EXTENSIONS_CATALOG) ──
+
+const CLOUD_PREINSTALLED_EXTENSIONS: ExtensionData[] = BROWSE_EXTENSIONS_CATALOG.map((item) => ({
+  id: item.id,
+  name: item.name,
+  description: item.description,
+  enabled: true,
+  permission: 'ALLOW',
+}))
 
 // ── Permission Select (Allow / Ask each time / Block) ──
 
@@ -331,6 +342,12 @@ function RuntimeRow({ runtime, isPrimary, expanded, onToggleExpand, onSetPrimary
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-starlight-100">{runtime.display_name}</span>
             {isPrimary && <Crown size={12} className="text-accent-amber" aria-label="Primary Mind" />}
+            {runtime.subscription?.is_authenticated && (
+              <span className="flex items-center gap-1 text-[10px] text-status-success">
+                <CheckCircle2 size={10} />
+                Connected
+              </span>
+            )}
           </div>
           <p className="text-xs text-starlight-500 truncate">
             {isOnline && runtime.subscription?.is_authenticated
@@ -474,6 +491,24 @@ function RuntimeRow({ runtime, isPrimary, expanded, onToggleExpand, onSetPrimary
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-white/5 text-starlight-300 hover:bg-white/10 cursor-pointer"
             >
               {testing ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />} Test connection
+            </button>
+          )}
+          {runtime.subscription?.is_authenticated && (
+            <button
+              onClick={async () => {
+                if (!confirm(`Disconnect ${runtime.display_name}? You can reconnect anytime.`)) return
+                try {
+                  await api.post(`/runtimes/${runtime.runtime_id}/disconnect`)
+                  toast.success(`${runtime.display_name} disconnected`)
+                  onRefreshAuth?.()
+                } catch {
+                  toast.error('Failed to disconnect')
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-accent-red bg-accent-red/10 border border-accent-red/20 hover:bg-accent-red/20 cursor-pointer"
+            >
+              <Unplug size={12} />
+              Disconnect
             </button>
           )}
         </div>
@@ -779,6 +814,8 @@ export function ConnectionsPage() {
   const [connectorInstances, setConnectorInstances] = useState<Record<string, string>>({})
   const [extensions, setExtensions] = useState<ExtensionData[]>([])
   const [extLoading, setExtLoading] = useState(true)
+  const [cloudMode, setCloudMode] = useState(false)
+  const [apiProviders, setApiProviders] = useState<{provider: string, status: string, display_name: string}[]>([])
   // Track which item is expanded (only one at a time per tab)
   const [expandedItem, setExpandedItem] = useState<string | null>(null)
   // Browse modal (Claude Desktop-style connector/extension marketplace)
@@ -793,6 +830,8 @@ export function ConnectionsPage() {
       setRuntimes(data)
       const persistedPrimary = res.data?.data?.primary_runtime
       if (persistedPrimary) setPrimaryRuntime(persistedPrimary)
+      setCloudMode(res.data?.data?.cloud_mode === true)
+      setApiProviders(res.data?.data?.api_providers || [])
     } catch { /* graceful */ }
     finally { setLoading(false) }
   }, [])
@@ -935,8 +974,42 @@ export function ConnectionsPage() {
                     <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
                   </button>
                 </div>
+
+                {cloudMode && (
+                  <div className="rounded-xl border border-accent-amber/20 bg-accent-amber/5 px-4 py-3">
+                    <p className="text-xs text-accent-amber font-medium mb-1">Running in cloud mode</p>
+                    <p className="text-[11px] text-starlight-400">Local runtimes (Ollama, CLI tools) are not available. Connect API providers in Settings &gt; Models.</p>
+                  </div>
+                )}
+
+                {cloudMode && apiProviders.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold px-4 mb-2">API Providers</p>
+                    <div className="rounded-xl border border-white/5 divide-y divide-white/5">
+                      {apiProviders.map((ap) => (
+                        <div key={ap.provider} className="flex items-center gap-4 px-4 py-3">
+                          <div className="w-10 h-10 rounded-lg bg-midnight-400/60 flex items-center justify-center shrink-0">
+                            <Globe size={22} className="text-starlight-300" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium text-starlight-100">{ap.display_name}</span>
+                            <p className="text-xs text-starlight-500">{ap.provider} API</p>
+                          </div>
+                          <span className="flex items-center gap-1 text-[10px] text-status-success">
+                            <CheckCircle2 size={10} />
+                            Connected
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="rounded-xl border border-white/5 divide-y divide-white/5">
-                  {runtimes.map((rt) => (
+                  {(cloudMode
+                    ? runtimes.filter((rt) => rt.runtime_id !== 'ollama' && rt.installed)
+                    : runtimes
+                  ).map((rt) => (
                     <RuntimeRow
                       key={rt.runtime_id}
                       runtime={rt}
@@ -961,40 +1034,55 @@ export function ConnectionsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-lg font-display font-bold text-starlight-100">Extensions</h2>
-                    <p className="text-xs text-starlight-400">Allow Daena to directly interact with apps, data, and tools on your computer</p>
+                    <p className="text-xs text-starlight-400">
+                      {cloudMode
+                        ? 'Pre-installed extensions available in cloud mode'
+                        : 'Allow Daena to directly interact with apps, data, and tools on your computer'}
+                    </p>
                   </div>
-                  <button
-                    onClick={() => setBrowseModal('extensions')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer"
-                  >
-                    <Plus size={12} /> Browse extensions
-                  </button>
+                  {!cloudMode && (
+                    <button
+                      onClick={() => setBrowseModal('extensions')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer"
+                    >
+                      <Plus size={12} /> Browse extensions
+                    </button>
+                  )}
                 </div>
 
                 <div>
-                  <p className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold px-4 mb-2">Installed on your computer</p>
+                  <p className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold px-4 mb-2">
+                    {cloudMode ? 'Pre-installed extensions' : 'Installed on your computer'}
+                  </p>
                   <div className="rounded-xl border border-white/5 divide-y divide-white/5">
-                    {extensions.map((ext) => (
+                    {(cloudMode ? CLOUD_PREINSTALLED_EXTENSIONS : extensions).map((ext) => (
                       <ExtensionRow
                         key={ext.id}
                         ext={ext}
                         expanded={expandedItem === ext.id}
                         onToggleExpand={() => toggleExpand(ext.id)}
                         onToggle={(id, enabled) => {
-                          setExtensions((prev) => prev.map((e) => e.id === id ? { ...e, enabled } : e))
-                          toast.success(`${ext.name} ${enabled ? 'enabled' : 'disabled'}`)
+                          if (cloudMode) {
+                            // Cloud mode: toggle is visual-only (no API call needed)
+                            toast.success(`${ext.name} ${enabled ? 'enabled' : 'disabled'}`)
+                          } else {
+                            setExtensions((prev) => prev.map((e) => e.id === id ? { ...e, enabled } : e))
+                            toast.success(`${ext.name} ${enabled ? 'enabled' : 'disabled'}`)
+                          }
                         }}
                       />
                     ))}
-                    {extensions.length === 0 && !extLoading && (
+                    {!cloudMode && extensions.length === 0 && !extLoading && (
                       <div className="px-4 py-8 text-center text-xs text-starlight-500">No extensions installed. Install MCP servers to add extensions.</div>
                     )}
                   </div>
                 </div>
 
-                <div className="border-2 border-dashed border-white/10 rounded-xl p-6 text-center">
-                  <p className="text-xs text-starlight-500">Drag .MCPB or .DXT files here to install</p>
-                </div>
+                {!cloudMode && (
+                  <div className="border-2 border-dashed border-white/10 rounded-xl p-6 text-center">
+                    <p className="text-xs text-starlight-500">Drag .MCPB or .DXT files here to install</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1115,9 +1203,35 @@ export function ConnectionsPage() {
                         onClick={() => {
                           if (isConnected) {
                             setBrowseModal(null)
-                            setActiveTab(browseModal)
+                            setActiveTab(browseModal === 'connectors' ? 'connectors' : 'extensions')
                             setExpandedItem(item.id)
+                          } else if (browseModal === 'extensions' && cloudMode) {
+                            // Cloud mode: auto-install the extension
+                            setExtensions((prev) => {
+                              if (prev.some((e) => e.id === item.id)) return prev
+                              return [...prev, {
+                                id: item.id,
+                                name: item.name,
+                                description: item.description,
+                                enabled: true,
+                                permission: 'ALLOW',
+                              }]
+                            })
+                            toast.success(`${item.name} installed and enabled`)
+                          } else if (browseModal === 'extensions' && !cloudMode) {
+                            // Local mode: install via backend API
+                            api.post('/connections/extensions/install', {
+                              id: item.id,
+                              name: item.name,
+                              description: item.description,
+                            }).then(() => {
+                              void fetchExtensions()
+                              toast.success(`${item.name} installed`)
+                            }).catch(() => {
+                              toast.error(`Failed to install ${item.name}. Check MCP server configuration.`)
+                            })
                           } else if (item.authUrl) {
+                            // Connectors: open auth URL
                             window.open(item.authUrl, '_blank')
                           }
                         }}
@@ -1138,6 +1252,8 @@ export function ConnectionsPage() {
                         <div className="shrink-0">
                           {isConnected ? (
                             <CheckCircle2 size={18} className="text-accent-green" />
+                          ) : browseModal === 'extensions' ? (
+                            <span className="text-[10px] font-medium text-primary-400 bg-primary-500/10 px-2 py-1 rounded group-hover:bg-primary-500/20">Install</span>
                           ) : (
                             <Plus size={18} className="text-starlight-500 group-hover:text-primary-400 transition-colors" />
                           )}
