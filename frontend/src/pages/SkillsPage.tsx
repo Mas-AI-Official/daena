@@ -214,10 +214,11 @@ interface SkillCardProps {
   skill: SkillResponse
   permission: PermissionLevel
   onPermissionChange: (id: string, level: PermissionLevel) => void
+  onToggleActive: (id: string, active: boolean) => void
   index: number
 }
 
-function SkillCard({ skill, permission, onPermissionChange, index }: SkillCardProps) {
+function SkillCard({ skill, permission, onPermissionChange, onToggleActive, index }: SkillCardProps) {
   const [expanded, setExpanded] = useState(false)
   const tier = TIER_LABELS[skill.governance_tier] ?? { label: `Tier ${skill.governance_tier}`, variant: 'default' as const }
 
@@ -277,12 +278,24 @@ function SkillCard({ skill, permission, onPermissionChange, index }: SkillCardPr
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-3 text-[10px] text-starlight-500">
+            {/* On/Off toggle */}
+            <button
+              onClick={() => onToggleActive(skill.id, !skill.is_active)}
+              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors cursor-pointer ${
+                skill.is_active ? 'bg-accent-green' : 'bg-starlight-600'
+              }`}
+              title={skill.is_active ? 'Disable skill' : 'Enable skill'}
+            >
+              <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                skill.is_active ? 'translate-x-4' : 'translate-x-0.5'
+              }`} />
+            </button>
             <span className="flex items-center gap-1">
               <Shield size={10} />
               Tier {skill.governance_tier}
             </span>
             <span>v{skill.version}</span>
-            <span>{skill.usage_count} uses</span>
+            <span>{skill.usage_count ?? 0} uses</span>
           </div>
           <PermissionDropdown
             value={permission}
@@ -616,6 +629,14 @@ export function SkillsPage() {
                     skill={skill}
                     permission={permissions[skill.id] ?? 'ASK_EACH_TIME'}
                     onPermissionChange={handlePermissionChange}
+                    onToggleActive={(id, active) => {
+                      api.patch(`/skills/${id}`, { is_active: active }).then(() => {
+                        setSkills((prev) => prev.map((s) => s.id === id ? { ...s, is_active: active } : s))
+                        toast.success(`Skill ${active ? 'enabled' : 'disabled'}`)
+                      }).catch(() => {
+                        toast.error('Failed to update skill')
+                      })
+                    }}
                     index={i}
                   />
                 ))}

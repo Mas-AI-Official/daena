@@ -400,6 +400,121 @@ DEFAULT_SKILLS: list[dict] = [
     {"name": "workflow_runner", "description": "Run department workflows: daily briefings, competitor analysis, lead research, and more", "category": "Custom", "governance_tier": 1},
     {"name": "skill_creator", "description": "Create new reusable skills from conversations or documents", "category": "Custom", "governance_tier": 1},
     {"name": "report_generator", "description": "Generate formatted reports from data, analysis, or conversation history", "category": "Custom", "governance_tier": 0},
+
+    # ══════════════════════════════════════════════════════════
+    # Extended Skill Catalog (generic, no company-specific data)
+    # ══════════════════════════════════════════════════════════
+
+    # ── Engineering (extended) ──
+    {"name": "architecture_review", "description": "Create or evaluate architecture decision records (ADRs) for technical choices", "category": "Engineering", "governance_tier": 1},
+    {"name": "incident_response", "description": "Run incident response workflow: triage, communicate, and write postmortem", "category": "Engineering", "governance_tier": 2},
+    {"name": "system_design", "description": "Design systems, services, and architectures with diagrams and trade-off analysis", "category": "Engineering", "governance_tier": 1},
+    {"name": "tech_debt_tracker", "description": "Identify, categorize, and prioritize technical debt across the codebase", "category": "Engineering", "governance_tier": 1},
+    {"name": "testing_strategy", "description": "Design test strategies and test plans with coverage analysis", "category": "Engineering", "governance_tier": 1},
+    {"name": "documentation_writer", "description": "Write and maintain technical documentation for APIs, systems, and processes", "category": "Engineering", "governance_tier": 0},
+    {"name": "standup_generator", "description": "Generate standup updates from recent git activity and task progress", "category": "Engineering", "governance_tier": 0},
+    {"name": "mutation_testing", "description": "Evaluate test suite quality by introducing code mutations and verifying tests catch them", "category": "Engineering", "governance_tier": 2},
+
+    # ── Product (extended) ──
+    {"name": "product_brainstorm", "description": "Brainstorm product ideas, explore problem spaces, and challenge assumptions", "category": "Product", "governance_tier": 0},
+    {"name": "competitive_brief", "description": "Create competitive analysis brief with positioning and messaging comparison", "category": "Product", "governance_tier": 1},
+    {"name": "sprint_planning", "description": "Plan sprints: scope work, estimate capacity, set goals, and draft sprint plan", "category": "Product", "governance_tier": 1},
+    {"name": "stakeholder_update", "description": "Generate stakeholder updates tailored to audience and cadence", "category": "Product", "governance_tier": 0},
+    {"name": "roadmap_planner", "description": "Create, update, and reprioritize product roadmaps with milestone tracking", "category": "Product", "governance_tier": 1},
+    {"name": "research_synthesis", "description": "Synthesize user research from interviews, surveys, and feedback into insights", "category": "Product", "governance_tier": 1},
+
+    # ── Marketing (extended) ──
+    {"name": "content_creator", "description": "Draft marketing content across channels: blog posts, social media, newsletters", "category": "Marketing", "governance_tier": 1},
+    {"name": "campaign_planner", "description": "Generate campaign briefs with objectives, audience, messaging, and channel strategy", "category": "Marketing", "governance_tier": 1},
+    {"name": "performance_report", "description": "Build marketing performance reports with key metrics, trends, and recommendations", "category": "Marketing", "governance_tier": 0},
+    {"name": "email_sequence_builder", "description": "Design multi-email sequences with copy, timing, branching logic, and A/B variants", "category": "Marketing", "governance_tier": 1},
+    {"name": "brand_review", "description": "Review content against brand voice and style guide, flagging inconsistencies", "category": "Marketing", "governance_tier": 0},
+
+    # ── Sales (extended) ──
+    {"name": "call_prep", "description": "Prepare for sales calls with account context, attendee research, and suggested agenda", "category": "Sales", "governance_tier": 1},
+    {"name": "call_summary", "description": "Process call notes: extract action items, draft follow-up email, update pipeline", "category": "Sales", "governance_tier": 1},
+    {"name": "daily_briefing", "description": "Start the day with a prioritized sales briefing on deals, tasks, and follow-ups", "category": "Sales", "governance_tier": 0},
+    {"name": "forecast_builder", "description": "Generate weighted sales forecast with best/likely/worst scenarios", "category": "Sales", "governance_tier": 1},
+    {"name": "competitive_intelligence", "description": "Research competitors and build interactive battlecards for sales enablement", "category": "Sales", "governance_tier": 1},
+    {"name": "sales_asset_creator", "description": "Generate tailored sales assets: landing pages, decks, one-pagers, workflow demos", "category": "Sales", "governance_tier": 1},
+
+    # ── Finance (extended) ──
+    {"name": "reconciliation", "description": "Reconcile accounts by comparing GL balances to subledgers and bank statements", "category": "Finance", "governance_tier": 2},
+    {"name": "variance_analysis", "description": "Decompose financial variances into drivers with narrative explanations", "category": "Finance", "governance_tier": 1},
+    {"name": "financial_statements", "description": "Generate income statements, balance sheets, and cash flow reports", "category": "Finance", "governance_tier": 2},
+    {"name": "journal_entry_prep", "description": "Prepare journal entries with proper debits, credits, and supporting documentation", "category": "Finance", "governance_tier": 2},
+    {"name": "close_management", "description": "Manage month-end close process with task sequencing and status tracking", "category": "Finance", "governance_tier": 2},
+    {"name": "audit_support", "description": "Support SOX compliance with control testing, sample selection, and documentation", "category": "Finance", "governance_tier": 3},
+
+    # ── Operations (extended) ──
+    {"name": "runbook_creator", "description": "Create or update operational runbooks for recurring tasks and procedures", "category": "Operations", "governance_tier": 1},
+    {"name": "risk_assessment", "description": "Identify, assess, and mitigate operational risks with severity scoring", "category": "Operations", "governance_tier": 2},
+    {"name": "compliance_tracking", "description": "Track compliance requirements and audit readiness across regulations", "category": "Operations", "governance_tier": 2},
+    {"name": "capacity_planning", "description": "Plan resource capacity with workload analysis and utilization forecasting", "category": "Operations", "governance_tier": 1},
+    {"name": "change_request", "description": "Create change management requests with impact analysis and rollback plans", "category": "Operations", "governance_tier": 2},
+    {"name": "status_reporter", "description": "Generate status reports with KPIs, risks, and action items for stakeholders", "category": "Operations", "governance_tier": 0},
+
+    # ── Design ──
+    {"name": "ux_copy_writer", "description": "Write or review UX copy: microcopy, error messages, empty states, CTAs", "category": "Design", "governance_tier": 0},
+    {"name": "design_critique", "description": "Get structured design feedback on usability, hierarchy, and consistency", "category": "Design", "governance_tier": 0},
+    {"name": "accessibility_audit", "description": "Run WCAG 2.1 AA accessibility audit on designs or web pages", "category": "Design", "governance_tier": 1},
+    {"name": "design_system_manager", "description": "Audit, document, or extend design system components and tokens", "category": "Design", "governance_tier": 1},
+    {"name": "design_handoff", "description": "Generate developer handoff specs from designs with measurements and tokens", "category": "Design", "governance_tier": 0},
+    {"name": "user_research_planner", "description": "Plan, conduct, and synthesize user research with interview guides and reports", "category": "Design", "governance_tier": 1},
+
+    # ── Data & Analytics ──
+    {"name": "data_analyzer", "description": "Answer data questions from quick lookups to full exploratory analysis", "category": "Data", "governance_tier": 1},
+    {"name": "visualization_creator", "description": "Create publication-quality charts and visualizations with Python", "category": "Data", "governance_tier": 1},
+    {"name": "sql_writer", "description": "Write optimized SQL across dialects (Snowflake, BigQuery, Postgres, MySQL)", "category": "Data", "governance_tier": 1},
+    {"name": "dashboard_builder", "description": "Build interactive HTML dashboards with charts, filters, and tables", "category": "Data", "governance_tier": 1},
+    {"name": "data_validator", "description": "QA analysis before sharing: methodology, accuracy, and bias checks", "category": "Data", "governance_tier": 1},
+    {"name": "data_explorer", "description": "Profile and explore datasets to understand shape, quality, and patterns", "category": "Data", "governance_tier": 0},
+    {"name": "statistical_analysis", "description": "Apply statistical methods: descriptive stats, trend analysis, outlier detection", "category": "Data", "governance_tier": 1},
+
+    # ── Human Resources ──
+    {"name": "onboarding_planner", "description": "Generate onboarding checklists and first-week plans for new hires", "category": "Human Resources", "governance_tier": 0},
+    {"name": "interview_prep", "description": "Create structured interview plans with competency-based questions and scorecards", "category": "Human Resources", "governance_tier": 1},
+    {"name": "performance_review", "description": "Structure performance reviews with self-assessment and manager templates", "category": "Human Resources", "governance_tier": 1},
+    {"name": "offer_letter_draft", "description": "Draft offer letters with compensation details and employment terms", "category": "Human Resources", "governance_tier": 3},
+    {"name": "policy_lookup", "description": "Find and explain company policies in plain language", "category": "Human Resources", "governance_tier": 0},
+    {"name": "comp_analysis", "description": "Analyze compensation benchmarking, band placement, and equity modeling", "category": "Human Resources", "governance_tier": 2},
+    {"name": "org_planning", "description": "Headcount planning, org design, and team structure optimization", "category": "Human Resources", "governance_tier": 2},
+    {"name": "recruiting_pipeline", "description": "Track and manage recruiting pipeline stages with status updates", "category": "Human Resources", "governance_tier": 1},
+
+    # ── Customer Support ──
+    {"name": "ticket_triage", "description": "Triage and prioritize support tickets with severity classification", "category": "Customer Support", "governance_tier": 1},
+    {"name": "kb_article_writer", "description": "Draft knowledge base articles from resolved issues or common questions", "category": "Customer Support", "governance_tier": 0},
+    {"name": "customer_escalation", "description": "Package escalations for engineering, product, or leadership with full context", "category": "Customer Support", "governance_tier": 2},
+    {"name": "response_drafter", "description": "Draft professional customer-facing responses tailored to situation and tone", "category": "Customer Support", "governance_tier": 1},
+    {"name": "customer_research", "description": "Multi-source research on customer questions with source attribution", "category": "Customer Support", "governance_tier": 1},
+
+    # ── Productivity ──
+    {"name": "task_manager", "description": "Create, track, and manage tasks with priorities and due dates", "category": "Productivity", "governance_tier": 0},
+    {"name": "meeting_prep", "description": "Prepare meeting briefs with agenda, attendees, and linked documents", "category": "Productivity", "governance_tier": 0},
+    {"name": "weekly_digest", "description": "Generate weekly summary of meetings, tasks, and unread messages", "category": "Productivity", "governance_tier": 0},
+    {"name": "standup_report", "description": "Create daily standup summaries from meetings and open tasks", "category": "Productivity", "governance_tier": 0},
+
+    # ── PDF & Documents ──
+    {"name": "pdf_viewer", "description": "Open, view, and annotate PDF documents with interactive controls", "category": "Documents", "governance_tier": 0},
+    {"name": "pdf_form_filler", "description": "Fill PDF form fields interactively with visual feedback", "category": "Documents", "governance_tier": 1},
+    {"name": "pdf_extractor", "description": "Extract text, tables, and data from PDF documents", "category": "Documents", "governance_tier": 0},
+    {"name": "document_creator", "description": "Create Word documents, presentations, and spreadsheets", "category": "Documents", "governance_tier": 1},
+
+    # ── Video & Media ──
+    {"name": "video_production", "description": "Cinematic video production: FFmpeg, compositing, B-roll, captions, and export", "category": "Media", "governance_tier": 2},
+    {"name": "presentation_builder", "description": "Create and manage slide presentations with structured content", "category": "Media", "governance_tier": 1},
+
+    # ── Enterprise Search ──
+    {"name": "cross_source_search", "description": "Search across all connected sources (email, docs, chat, files) in one query", "category": "Enterprise Search", "governance_tier": 0},
+    {"name": "knowledge_synthesis", "description": "Combine search results from multiple sources into coherent, deduplicated answers", "category": "Enterprise Search", "governance_tier": 0},
+    {"name": "daily_digest", "description": "Generate daily or weekly digest of activity across all connected sources", "category": "Enterprise Search", "governance_tier": 0},
+
+    # ── Project Management ──
+    {"name": "project_planner", "description": "Create detailed project plans with task breakdown, dependencies, and milestones", "category": "Project Management", "governance_tier": 1},
+    {"name": "project_tracker", "description": "Track project progress with status updates, blockers, and completion metrics", "category": "Project Management", "governance_tier": 0},
+    {"name": "phase_executor", "description": "Execute project phases with atomic commits, deviation handling, and checkpoints", "category": "Project Management", "governance_tier": 2},
+    {"name": "codebase_mapper", "description": "Analyze codebase architecture, quality, and concerns across the project", "category": "Project Management", "governance_tier": 0},
+    {"name": "integration_checker", "description": "Verify cross-phase integration and end-to-end workflow completion", "category": "Project Management", "governance_tier": 1},
 ]
 
 
