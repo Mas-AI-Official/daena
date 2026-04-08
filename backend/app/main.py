@@ -450,6 +450,10 @@ def create_app() -> FastAPI:
     from app.api.v1 import router as v1_router
     app.include_router(v1_router, prefix="/api/v1")
 
+    # --- DaenaBot Bridge WebSocket ---
+    from app.api.v1.bridge import router as bridge_router
+    app.include_router(bridge_router)
+
     # --- Health Check (root) ---
     _version = os.environ.get("DAENA_VERSION", "2.0.0")
 

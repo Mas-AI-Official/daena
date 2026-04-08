@@ -1005,6 +1005,43 @@ export function ConnectionsPage() {
                   </div>
                 )}
 
+                {/* DaenaBot Bridge -- gives Daena hands on user's machine */}
+                {cloudMode && (
+                  <div className="rounded-xl border-2 border-primary-500/30 bg-gradient-to-r from-primary-500/5 to-accent-teal/5 p-4 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center">
+                        <Zap size={20} className="text-primary-400" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-starlight-100">DaenaBot</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary-500/20 text-primary-400 font-semibold">RECOMMENDED</span>
+                        </div>
+                        <p className="text-xs text-starlight-400 mt-0.5">
+                          Install DaenaBot on your computer so Daena can access your files, run commands, control your desktop, and use CLI tools like Gemini CLI and Claude Code.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          // Generate install command and show instructions
+                          const installCmd = 'pip install daena-bot && daena-bot connect'
+                          navigator.clipboard.writeText(installCmd).then(() => {
+                            toast.success('Install command copied! Paste in your terminal.')
+                          }).catch(() => {
+                            toast.info(`Run in terminal: ${installCmd}`)
+                          })
+                        }}
+                        className="px-4 py-2 rounded-lg text-xs font-semibold bg-primary-500 text-white hover:bg-primary-600 cursor-pointer whitespace-nowrap"
+                      >
+                        Install
+                      </button>
+                    </div>
+                    <div className="text-[10px] text-starlight-500 bg-midnight-800/60 rounded-lg px-3 py-2 font-mono">
+                      pip install daena-bot && daena-bot connect
+                    </div>
+                  </div>
+                )}
+
                 <div className="rounded-xl border border-white/5 divide-y divide-white/5">
                   {(cloudMode
                     ? runtimes.filter((rt) => rt.runtime_id !== 'ollama' && rt.installed)

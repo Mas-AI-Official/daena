@@ -294,13 +294,41 @@ class ChatOrchestrator:
                 "Never say you cannot do something; say it requires EXE mode."
             )
         elif chat_mode == ChatMode.EXE:
+            # Check if DaenaBot bridge is connected (gives access to user's machine)
+            _bridge_connected = False
+            try:
+                from app.api.v1.bridge import get_bridge_manager
+                _bridge_connected = get_bridge_manager().is_connected(user_id)
+            except Exception:
+                pass
+
+            if _bridge_connected:
+                system_prompt += (
+                    "\n\nMODE: EXE (execution enabled, DaenaBot connected). "
+                    "You have FULL access to the user's computer via DaenaBot. "
+                    "You can read/write files, run terminal commands, control their desktop, "
+                    "use their browser, and access any CLI tool installed on their machine. "
+                    "When you need to do something, call the appropriate tool immediately. "
+                    "Do NOT guess, do NOT ask for permission. USE YOUR TOOLS.\n\n"
+                )
+            else:
+                system_prompt += (
+                    "\n\nMODE: EXE (execution enabled, cloud-only). "
+                    "You can use cloud tools: web search, HTTP requests, email (Gmail), "
+                    "calendar, Notion, and other API-based integrations. "
+                    "IMPORTANT: You do NOT currently have access to the user's computer "
+                    "(their files, terminal, desktop, local CLI tools). "
+                    "If the user asks you to do something that requires their computer "
+                    "(read local files, run commands, control desktop, use Gemini CLI, etc.), "
+                    "tell them warmly: 'I would love to do that! To access your computer, "
+                    "I need my hands installed locally. Go to **Connections** in the sidebar "
+                    "and install **DaenaBot**. It takes 30 seconds, and then I can do everything "
+                    "on your machine.' "
+                    "Do NOT pretend you can access their computer. Do NOT ask for file paths "
+                    "you cannot reach. Be honest about what you can and cannot do right now.\n\n"
+                )
+
             system_prompt += (
-                "\n\nMODE: EXE (execution enabled). "
-                "You MUST use tools to take action. You have FULL access to the user's system. "
-                "When you need to do something (read files, send emails, check calendar, "
-                "run commands, browse the web, control the desktop, search the web), "
-                "call the appropriate tool immediately. Do NOT guess, do NOT ask for permission, "
-                "do NOT ask the user to do things manually. USE YOUR TOOLS.\n\n"
                 "TOOL CALLING FORMAT: To call a tool, output a JSON block like this:\n"
                 "```tool_call\n"
                 '{"tool": "tool_name", "params": {"param1": "value1"}}\n'

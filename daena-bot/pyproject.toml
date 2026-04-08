@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "daena-bot"
+version = "0.1.0"
+description = "DaenaBot - Local bridge that gives Daena hands on your computer"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "MAS-AI Technologies", email = "support@mas-ai.co" },
+]
+dependencies = [
+    "websockets>=12.0",
+    "httpx>=0.27.0",
+    "rich>=13.0",
+    "click>=8.0",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+browser = ["playwright>=1.40"]
+desktop = ["pyautogui>=0.9"]
+all = ["playwright>=1.40", "pyautogui>=0.9"]
+
+[project.scripts]
+daena-bot = "daena_bot.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["daena_bot"]
