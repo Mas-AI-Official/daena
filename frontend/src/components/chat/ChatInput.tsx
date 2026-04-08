@@ -45,6 +45,8 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const modelDropdownRef = useRef<HTMLDivElement>(null)
+  const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null)
+  const [isOverQuota, setIsOverQuota] = useState(false)
   const { chatMode, governanceSlider, selectedModel, setSelectedModel } = useUiStore()
   const registry = useModelRegistryStore((s) => s.registry)
   const registryLoading = useModelRegistryStore((s) => s.loading)
@@ -54,6 +56,29 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
   useEffect(() => {
     void fetchRegistry(true)
   }, [fetchRegistry])
+
+  // Fetch quota on mount and every 60s
+  useEffect(() => {
+    const fetchQuota = () => {
+      const token = localStorage.getItem('daena_token')
+      if (!token) return
+      fetch('/api/v1/billing/my-quota', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then(r => r.json())
+        .then(data => {
+          const d = data?.data ?? data
+          if (d) {
+            setQuotaRemaining(d.remaining_monthly_usd)
+            setIsOverQuota(d.is_over_quota)
+          }
+        })
+        .catch(() => {})
+    }
+    fetchQuota()
+    const interval = setInterval(fetchQuota, 60000)
+    return () => clearInterval(interval)
+  }, [])
 
   const liveOptions: ModelOption[] = (registry?.models ?? []).map((model) => ({
     id: model.model_id,
@@ -233,6 +258,20 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
           </span>
           <span className="text-starlight-600">·</span>
           <span className="text-starlight-500">Gov: {governanceSlider}</span>
+          {quotaRemaining !== null && (
+            <>
+              <span className="text-starlight-600">·</span>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                isOverQuota
+                  ? 'bg-accent-amber/15 text-accent-amber'
+                  : quotaRemaining < 1
+                    ? 'bg-accent-amber/10 text-accent-amber'
+                    : 'text-starlight-500'
+              }`}>
+                {isOverQuota ? 'Free mode' : `$${quotaRemaining.toFixed(2)} left`}
+              </span>
+            </>
+          )}
           <span className="text-starlight-600">·</span>
 
           {/* Model selector */}
@@ -524,7 +563,7 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
               title="Stop generation"
               aria-label="Stop generation"
             >
-              <Square size={18} />
+              <Square size={16} className="fill-current" />
             </motion.button>
           ) : (
             <motion.button

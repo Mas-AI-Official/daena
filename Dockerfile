@@ -65,13 +65,10 @@ RUN apt-get update && \
         libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for fast Python dependency resolution
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
 # Install Python dependencies (cache-friendly: pyproject.toml first)
 COPY backend/pyproject.toml backend/README.md ./
 COPY backend/app/ ./app/
-RUN uv pip install --system "."
+RUN pip install --no-cache-dir "."
 
 # Copy remaining backend files (migrations, run.py, etc.)
 COPY backend/ ./

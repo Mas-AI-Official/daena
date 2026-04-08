@@ -57,6 +57,14 @@ export function TasksPage() {
 
   useEffect(() => { fetchTasks() }, [filter])
 
+  // Auto-refresh when running tasks exist
+  useEffect(() => {
+    const hasRunning = tasks.some(t => t.status === 'RUNNING')
+    if (!hasRunning) return
+    const interval = setInterval(() => { void fetchTasks() }, 15000)
+    return () => clearInterval(interval)
+  }, [tasks])
+
   // ── Selection helpers ──
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
@@ -122,6 +130,29 @@ export function TasksPage() {
             Refresh
           </Button>
         </motion.div>
+
+        {/* Stats summary */}
+        {!loading && tasks.length > 0 && (
+          <div className="flex items-center gap-4 px-4 py-3 rounded-xl bg-midnight-400/20 border border-white/5">
+            {[
+              { status: 'RUNNING', label: 'Running', color: 'text-accent-cyan' },
+              { status: 'PENDING', label: 'Queued', color: 'text-starlight-400' },
+              { status: 'COMPLETED', label: 'Done', color: 'text-status-success' },
+              { status: 'FAILED', label: 'Failed', color: 'text-status-error' },
+            ].map(({ status, label, color }) => {
+              const count = tasks.filter(t => t.status === status).length
+              return (
+                <div key={status} className="flex items-center gap-1.5">
+                  <span className={`text-lg font-bold ${color}`}>{count}</span>
+                  <span className="text-[10px] text-starlight-500">{label}</span>
+                </div>
+              )
+            })}
+            <div className="ml-auto text-[10px] text-starlight-500">
+              Last updated: {new Date().toLocaleTimeString()}
+            </div>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -231,10 +262,21 @@ export function TasksPage() {
                             <span>{task.progress}%</span>
                           </div>
 
-                          {task.error && (
+                          {task.error ? (
                             <p className="mt-2 text-[11px] text-status-error bg-status-error/5 px-2 py-1 rounded border border-status-error/10">
-                              {task.error}
+                              {String(task.error)}
                             </p>
+                          ) : null}
+
+                          {task.status === 'COMPLETED' && task.result != null && (
+                            <details className="mt-2">
+                              <summary className="text-[10px] text-primary-400 cursor-pointer hover:text-primary-300">
+                                View result
+                              </summary>
+                              <pre className="mt-1 text-[10px] text-starlight-400 bg-midnight-900/50 rounded-lg p-2 overflow-x-auto max-h-32 whitespace-pre-wrap font-mono">
+                                {typeof task.result === 'string' ? task.result : JSON.stringify(task.result as Record<string, unknown>, null, 2)}
+                              </pre>
+                            </details>
                           )}
                         </div>
 

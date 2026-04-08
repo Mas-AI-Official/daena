@@ -197,37 +197,69 @@ class TestDepartmentRouter:
 
 
 class TestOAuthService:
-    """Tests for ConnectorOAuthService."""
+    """Tests for ConnectorOAuthService (multi-provider)."""
 
     def test_generate_auth_url(self):
         from app.services.integrations.oauth_service import ConnectorOAuthService
         service = ConnectorOAuthService(db=AsyncMock())
+        # Mock settings to have a client ID
+        service._settings = MagicMock(google_client_id="test-client-id", google_client_secret="test-secret")
         url, state = service.generate_auth_url(
             provider="gmail",
             redirect_uri="http://localhost:8000/callback",
         )
         assert "accounts.google.com" in url
         assert "gmail.modify" in url
+        assert "test-client-id" in url
         assert state is not None
         assert len(state) > 20
 
     def test_generate_auth_url_calendar(self):
         from app.services.integrations.oauth_service import ConnectorOAuthService
         service = ConnectorOAuthService(db=AsyncMock())
+        service._settings = MagicMock(google_client_id="test-client-id")
         url, state = service.generate_auth_url(
             provider="google-calendar",
             redirect_uri="http://localhost:8000/callback",
         )
         assert "calendar" in url
 
+    def test_generate_auth_url_github(self):
+        from app.services.integrations.oauth_service import ConnectorOAuthService
+        service = ConnectorOAuthService(db=AsyncMock())
+        service._settings = MagicMock(github_client_id="gh-test-id")
+        url, state = service.generate_auth_url(
+            provider="github",
+            redirect_uri="http://localhost:8000/callback",
+        )
+        assert "github.com/login/oauth" in url
+        assert "gh-test-id" in url
+
+    def test_generate_auth_url_missing_credentials(self):
+        from app.services.integrations.oauth_service import ConnectorOAuthService, OAuthConfigError
+        service = ConnectorOAuthService(db=AsyncMock())
+        service._settings = MagicMock(google_client_id="")
+        with pytest.raises(OAuthConfigError, match="OAuth not configured"):
+            service.generate_auth_url(
+                provider="gmail",
+                redirect_uri="http://localhost:8000/callback",
+            )
+
     def test_generate_auth_url_unknown_provider(self):
         from app.services.integrations.oauth_service import ConnectorOAuthService
         service = ConnectorOAuthService(db=AsyncMock())
-        with pytest.raises(ValueError, match="No OAuth scopes"):
+        with pytest.raises(ValueError, match="No OAuth provider configured"):
             service.generate_auth_url(
                 provider="unknown-provider",
                 redirect_uri="http://localhost:8000/callback",
             )
+
+    def test_supported_providers(self):
+        from app.services.integrations.oauth_service import ConnectorOAuthService, OAUTH_PROVIDERS
+        service = ConnectorOAuthService(db=AsyncMock())
+        providers = service.get_supported_providers()
+        assert len(providers) == len(OAUTH_PROVIDERS)
+        assert any(p["provider_id"] == "github" for p in providers)
 
     @pytest.mark.asyncio
     async def test_check_and_refresh_valid_token(self):

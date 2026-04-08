@@ -1,12 +1,18 @@
 /**
- * LLM settings — model providers, routing config, cost tracking.
+ * LLM settings -- model providers, routing config, cost tracking.
  */
 import { useEffect, useState } from 'react'
 import { Card, Badge, Switch } from '@/components/common'
 import { useModelRegistryStore } from '@/stores/modelRegistryStore'
 import { useUiStore, persistUiPref } from '@/stores/uiStore'
 import { api } from '@/lib/api'
-import { Brain, DollarSign, Zap } from 'lucide-react'
+import { Brain, DollarSign, Zap, CheckCircle2 } from 'lucide-react'
+
+interface RuntimeSubscription {
+  provider: string
+  plan_name: string
+  is_authenticated: boolean
+}
 
 export function SettingsLLM() {
   const {
@@ -20,6 +26,7 @@ export function SettingsLLM() {
   const registryError = useModelRegistryStore((s) => s.error)
   const fetchRegistry = useModelRegistryStore((s) => s.fetchRegistry)
   const [costs, setCosts] = useState({ session_cost: 0, daily_cost: 0, monthly_cost: 0 })
+  const [subscriptions, setSubscriptions] = useState<RuntimeSubscription[]>([])
   const handleLocalFirstToggle = () => {
     const next = !localFirstRouting
     toggleLocalFirstRouting()
@@ -36,6 +43,17 @@ export function SettingsLLM() {
   }, [fetchRegistry])
 
   useEffect(() => {
+    api.get('/runtimes/subscriptions')
+      .then((res) => {
+        const payload = res.data?.data ?? res.data
+        if (Array.isArray(payload)) {
+          setSubscriptions(payload)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
     api.get('/billing/overview')
       .then((res) => {
         const payload = res.data?.data ?? res.data
@@ -49,8 +67,34 @@ export function SettingsLLM() {
       .catch(() => {})
   }, [])
 
+  // Build a lookup: provider name (lowercase) -> subscription info
+  const subByProvider = new Map<string, RuntimeSubscription>()
+  for (const sub of subscriptions) {
+    subByProvider.set(sub.provider.toLowerCase(), sub)
+  }
+  const authenticatedCount = subscriptions.filter((s) => s.is_authenticated).length
+
   return (
     <div className="space-y-6">
+      {/* Connected Providers summary */}
+      {authenticatedCount > 0 && (
+        <Card variant="glass" padding="lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-status-success/10 border border-status-success/20 flex items-center justify-center">
+              <CheckCircle2 size={18} className="text-status-success" />
+            </div>
+            <div>
+              <h3 className="text-sm font-display font-semibold text-starlight-100">
+                {authenticatedCount} Connected Provider{authenticatedCount !== 1 ? 's' : ''}
+              </h3>
+              <p className="text-xs text-starlight-400">
+                {subscriptions.filter((s) => s.is_authenticated).map((s) => s.provider).join(', ')} connected via subscription
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <Card variant="glass" padding="lg">
         <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
           <Brain size={14} /> Model Providers
@@ -71,13 +115,19 @@ export function SettingsLLM() {
             const providerModels = (registry?.models ?? []).filter(
               (model) => model.provider === provider.provider,
             )
-            const stateVariant = provider.selectable
+            const matchedSub = subByProvider.get(provider.provider.toLowerCase())
+            const hasSubscription = matchedSub?.is_authenticated === true
+            const stateVariant = hasSubscription
               ? 'success'
-              : provider.reachable
-                ? 'warning'
-                : provider.configured
-                  ? 'danger'
-                  : 'default'
+              : provider.selectable
+                ? 'success'
+                : provider.reachable && provider.model_count > 0
+                  ? 'success'
+                  : provider.reachable
+                    ? 'warning'
+                    : provider.configured
+                      ? 'danger'
+                      : 'default'
 
             return (
               <div
@@ -92,9 +142,19 @@ export function SettingsLLM() {
                     <Badge variant={provider.kind === 'local' ? 'success' : 'info'} size="sm">
                       {provider.kind === 'local' ? 'Local' : 'Cloud'}
                     </Badge>
-                    <Badge variant={stateVariant} size="sm">
-                      {provider.reason}
-                    </Badge>
+                    {hasSubscription ? (
+                      <Badge variant="success" size="sm">
+                        Connected via {matchedSub.plan_name}
+                      </Badge>
+                    ) : provider.reachable && provider.model_count > 0 && !provider.configured ? (
+                      <Badge variant="success" size="sm">
+                        Connected via subscription
+                      </Badge>
+                    ) : (
+                      <Badge variant={stateVariant} size="sm">
+                        {provider.reason}
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex gap-1 mt-1 flex-wrap">
                     {providerModels.length > 0 ? providerModels.map((model) => (
@@ -131,9 +191,10 @@ export function SettingsLLM() {
       </Card>
 
       <Card variant="glass" padding="lg">
-        <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
-          <Zap size={14} /> Routing Strategy
+        <h3 className="text-sm font-display font-semibold text-starlight-100 mb-2 flex items-center gap-2">
+          <Zap size={14} /> Cost Optimization & Routing
         </h3>
+        <p className="text-xs text-starlight-500 mb-4">Control how Daena routes queries to minimize cost while maintaining quality.</p>
         <div className="space-y-3 max-w-md">
           <div className="flex items-center justify-between">
             <div>

@@ -8,20 +8,25 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, profileComplete } = useAuthStore()
   const location = useLocation()
   const hydrated = useRef(false)
 
   // Hydrate UI preferences from backend once after auth confirmed
   useEffect(() => {
-    if (isAuthenticated && !hydrated.current) {
+    if (isAuthenticated && profileComplete && !hydrated.current) {
       hydrated.current = true
       void hydrateUiFromBackend()
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, profileComplete])
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  // OAuth users who haven't accepted terms yet
+  if (!profileComplete && location.pathname !== '/complete-profile') {
+    return <Navigate to="/complete-profile" replace />
   }
 
   return <>{children}</>

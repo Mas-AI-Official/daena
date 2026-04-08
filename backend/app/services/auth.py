@@ -116,6 +116,7 @@ class AuthService(BaseService):
             role=user.role,
             email=user.email,
             display_name=user.display_name or "",
+            profile_complete=True,
         )
 
         raw_refresh, token_hash = generate_refresh_token()
@@ -138,6 +139,7 @@ class AuthService(BaseService):
                 "display_name": user.display_name,
                 "role": user.role,
                 "tenant_id": str(tenant.id),
+                "profile_complete": True,
             },
         }
 
@@ -222,6 +224,9 @@ class AuthService(BaseService):
         # Update last login
         user.last_login = datetime.now(UTC)
 
+        # Profile is complete only when terms have been accepted
+        _profile_complete = user.terms_accepted_at is not None
+
         # Issue tokens
         access_token = create_access_token(
             user_id=str(user.id),
@@ -229,6 +234,7 @@ class AuthService(BaseService):
             role=user.role,
             email=user.email,
             display_name=user.display_name or "",
+            profile_complete=_profile_complete,
         )
         raw_refresh, token_hash = generate_refresh_token()
         refresh = RefreshToken(
@@ -250,6 +256,7 @@ class AuthService(BaseService):
                 "display_name": user.display_name,
                 "role": user.role,
                 "tenant_id": str(user.tenant_id),
+                "profile_complete": _profile_complete,
             },
         }
 
@@ -280,6 +287,8 @@ class AuthService(BaseService):
         # Update last login
         user.last_login = datetime.now(UTC)
 
+        _profile_complete = user.terms_accepted_at is not None
+
         # Create access token
         access_token = create_access_token(
             user_id=str(user.id),
@@ -287,6 +296,7 @@ class AuthService(BaseService):
             role=user.role,
             email=user.email,
             display_name=user.display_name or "",
+            profile_complete=_profile_complete,
         )
 
         # Create refresh token
@@ -310,6 +320,7 @@ class AuthService(BaseService):
                 "display_name": user.display_name,
                 "role": user.role,
                 "tenant_id": str(user.tenant_id),
+                "profile_complete": _profile_complete,
             },
         }
 
@@ -429,6 +440,94 @@ class AuthService(BaseService):
             )
 
         return count
+
+    # --- Complete Profile (OAuth users who skipped terms) ---
+
+    async def complete_profile(
+        self,
+        *,
+        user_id: UUID,
+        tenant_name: str | None = None,
+        agreed_to_terms: bool,
+    ) -> dict:
+        """Complete an OAuth user's profile by accepting terms and optionally renaming their tenant.
+
+        Args:
+            user_id: UUID of the current user.
+            tenant_name: Optional company/workspace name to rename the tenant.
+            agreed_to_terms: Must be True to proceed.
+
+        Returns:
+            Dict with new access_token and updated user data.
+
+        Raises:
+            AuthenticationError: If terms not accepted or user not found.
+        """
+        if not agreed_to_terms:
+            raise AuthenticationError("You must accept the Terms of Service and Privacy Policy")
+
+        result = await self.db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+
+        if not user or not user.is_active:
+            raise AuthenticationError("User not found or deactivated")
+
+        # Set terms acceptance
+        user.terms_accepted_at = datetime.now(UTC)
+        user.terms_version = "2026-03-22"
+
+        # Optionally rename the tenant (e.g. "John's Workspace" -> "Acme Corp")
+        if tenant_name and tenant_name.strip():
+            tenant_result = await self.db.execute(
+                select(Tenant).where(Tenant.id == user.tenant_id)
+            )
+            tenant = tenant_result.scalar_one_or_none()
+            if tenant:
+                tenant.name = tenant_name.strip()
+                new_slug = re.sub(r"[^a-z0-9-]", "-", tenant_name.lower()).strip("-")
+                # Only update slug if new one is unique
+                existing_slug = await self.db.execute(
+                    select(Tenant).where(Tenant.slug == new_slug, Tenant.id != tenant.id)
+                )
+                if not existing_slug.scalar_one_or_none():
+                    tenant.slug = new_slug
+
+        await self.db.flush()
+
+        # Issue new tokens with profile_complete=True
+        settings = get_settings()
+        access_token = create_access_token(
+            user_id=str(user.id),
+            tenant_id=str(user.tenant_id),
+            role=user.role,
+            email=user.email,
+            display_name=user.display_name or "",
+            profile_complete=True,
+        )
+
+        raw_refresh, token_hash = generate_refresh_token()
+        refresh = RefreshToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=datetime.now(UTC)
+            + timedelta(days=settings.jwt_refresh_token_expire_days),
+        )
+        self.db.add(refresh)
+
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": settings.jwt_access_token_expire_minutes * 60,
+            "raw_refresh_token": raw_refresh,
+            "user": {
+                "user_id": str(user.id),
+                "email": user.email,
+                "display_name": user.display_name,
+                "role": user.role,
+                "tenant_id": str(user.tenant_id),
+                "profile_complete": True,
+            },
+        }
 
     # --- Password Reset ---
 

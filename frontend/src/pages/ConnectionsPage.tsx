@@ -519,13 +519,14 @@ function RuntimeRow({ runtime, isPrimary, expanded, onToggleExpand, onSetPrimary
 
 // ── Connector Row with expandable config ──
 
-function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpand, onDisconnect }: {
+function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpand, onDisconnect, fetchInstances }: {
   connector: typeof CONNECTORS[0]
   connected: boolean
   instanceId: string | null
   expanded: boolean
   onToggleExpand: () => void
   onDisconnect: (instanceId: string) => void
+  fetchInstances?: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [apiKeyValue, setApiKeyValue] = useState('')
@@ -561,9 +562,50 @@ function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpa
     }
   }
 
-  const handleOAuthConnect = () => {
-    // In production, this would redirect to the OAuth provider
-    toast.info(`${connector.name} OAuth flow will open in a new window. Configure your OAuth credentials in Settings > Developer first.`)
+  const handleOAuthConnect = async () => {
+    try {
+      const res = await api.get(`/connectors/${connector.id}/oauth/authorize`)
+      const data = res.data
+      if (data?.error_type === 'oauth_not_configured') {
+        toast.error(`${connector.name} OAuth not configured. ${data.help || 'Contact admin.'}`)
+        return
+      }
+      const authUrl = data?.authorization_url
+      if (!authUrl) {
+        toast.error(`Failed to get authorization URL for ${connector.name}`)
+        return
+      }
+      // Open OAuth consent in popup
+      const popup = window.open(authUrl, `daena_oauth_${connector.id}`, 'width=600,height=700,popup=yes')
+      if (!popup) {
+        toast.error('Popup blocked. Please allow popups for this site.')
+        return
+      }
+      // Listen for postMessage from callback page
+      const handler = (event: MessageEvent) => {
+        if (event.data?.type === 'oauth_success' && event.data?.connector === connector.id) {
+          toast.success(`${connector.name} connected successfully`)
+          window.removeEventListener('message', handler)
+          // Refresh connector instances to show Connected state
+          void fetchInstances?.()
+        } else if (event.data?.type === 'oauth_error' && event.data?.connector === connector.id) {
+          toast.error(`${connector.name} connection failed: ${event.data.error || 'Unknown error'}`)
+          window.removeEventListener('message', handler)
+        }
+      }
+      window.addEventListener('message', handler)
+      // Auto-cleanup listener after 5 minutes
+      setTimeout(() => window.removeEventListener('message', handler), 300_000)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      // Check if it's the config error
+      const axiosErr = err as { response?: { data?: { error_type?: string; help?: string } } }
+      if (axiosErr?.response?.data?.error_type === 'oauth_not_configured') {
+        toast.error(`${connector.name} OAuth not configured. ${axiosErr.response.data.help || 'Set credentials in .env file.'}`)
+      } else {
+        toast.error(`Failed to start OAuth: ${msg}`)
+      }
+    }
   }
 
   return (
@@ -798,6 +840,194 @@ function ExtensionRow({ ext, expanded, onToggleExpand, onToggle }: {
   )
 }
 
+// ── CLI Bridge Card (connects user's local CLI tools to Daena cloud) ──
+
+function CLIBridgeCard() {
+  const [expanded, setExpanded] = useState(false)
+  const [bridgeToken, setBridgeToken] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
+  const [bridgeStatus, setBridgeStatus] = useState<{active_bridges: number} | null>(null)
+
+  useEffect(() => {
+    api.get('/bridge/status').then(res => {
+      setBridgeStatus(res.data?.data || null)
+    }).catch(() => {/* graceful */})
+  }, [])
+
+  const isConnected = (bridgeStatus?.active_bridges ?? 0) > 0
+
+  const generateToken = async () => {
+    setGenerating(true)
+    try {
+      const res = await api.post('/bridge/token', { label: 'CLI Bridge' })
+      const token = res.data?.data?.token
+      if (token) {
+        setBridgeToken(token)
+        toast.success('Bridge token generated! Follow the setup instructions below.')
+      }
+    } catch {
+      toast.error('Failed to generate bridge token')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const copyCommand = (cmd: string) => {
+    navigator.clipboard.writeText(cmd).then(() => {
+      toast.success('Copied to clipboard!')
+    }).catch(() => {
+      toast.info(`Command: ${cmd}`)
+    })
+  }
+
+  return (
+    <div className="rounded-xl border-2 border-primary-500/30 bg-gradient-to-r from-primary-500/5 to-accent-teal/5 p-4 space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center">
+          <Zap size={20} className="text-primary-400" />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-starlight-100">Daena CLI Bridge</span>
+            {isConnected ? (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-green/20 text-accent-green font-semibold">CONNECTED</span>
+            ) : (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary-500/20 text-primary-400 font-semibold">RECOMMENDED</span>
+            )}
+          </div>
+          <p className="text-xs text-starlight-400 mt-0.5">
+            Connect your local CLI tools (Claude Code, Gemini CLI, Codex) to Daena.
+            Your subscriptions stay on your machine -- Daena adds governance, departments, and audit.
+          </p>
+        </div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="px-4 py-2 rounded-lg text-xs font-semibold bg-primary-500 text-white hover:bg-primary-600 cursor-pointer whitespace-nowrap"
+        >
+          {expanded ? 'Close' : 'Set Up'}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden space-y-4"
+          >
+            {/* Security info */}
+            <div className="flex items-start gap-2 bg-accent-green/5 border border-accent-green/20 rounded-lg px-3 py-2">
+              <Shield size={14} className="text-accent-green mt-0.5 shrink-0" />
+              <p className="text-[11px] text-starlight-300">
+                <strong className="text-accent-green">Your keys never leave your machine.</strong>{' '}
+                Daena sends task descriptions. Your CLI executes them with your own credentials.
+                Results are returned to Daena for audit logging only.
+              </p>
+            </div>
+
+            {/* Step 1: Generate token */}
+            <div className="space-y-2">
+              <p className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold">Step 1: Generate Bridge Token</p>
+              {bridgeToken ? (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="password"
+                      value={bridgeToken}
+                      readOnly
+                      className="flex-1 glass-input px-3 py-2 rounded-lg text-xs text-starlight-200 font-mono"
+                    />
+                    <button
+                      onClick={() => copyCommand(bridgeToken)}
+                      className="px-3 py-2 rounded-lg text-xs bg-white/5 text-starlight-300 hover:bg-white/10 cursor-pointer"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-starlight-500">Token expires in 30 days. You can generate a new one anytime.</p>
+                </div>
+              ) : (
+                <button
+                  onClick={() => void generateToken()}
+                  disabled={generating}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-primary-500/15 text-primary-400 hover:bg-primary-500/25 cursor-pointer border border-primary-500/20 disabled:opacity-50"
+                >
+                  {generating ? <Loader2 size={12} className="animate-spin" /> : <Key size={12} />}
+                  Generate Token
+                </button>
+              )}
+            </div>
+
+            {/* Step 2: Install & connect */}
+            <div className="space-y-2">
+              <p className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold">Step 2: Install & Connect</p>
+
+              {/* Claude Code method */}
+              <div className="rounded-lg border border-white/10 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Terminal size={12} className="text-primary-400" />
+                  <span className="text-xs font-medium text-starlight-200">Claude Code (recommended)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-[10px] text-starlight-400 bg-midnight-800/60 rounded px-2 py-1.5 font-mono overflow-x-auto">
+                    claude mcp add daena -- npx @mas-ai/daena-mcp{bridgeToken ? ` --token ${bridgeToken.slice(0, 20)}...` : ' --token YOUR_TOKEN'}
+                  </code>
+                  <button
+                    onClick={() => copyCommand(`claude mcp add daena -- npx @mas-ai/daena-mcp${bridgeToken ? ` --token ${bridgeToken}` : ' --token YOUR_TOKEN'}`)}
+                    className="px-2 py-1 rounded text-[10px] bg-white/5 text-starlight-400 hover:bg-white/10 cursor-pointer shrink-0"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* npm method */}
+              <div className="rounded-lg border border-white/10 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Globe size={12} className="text-accent-teal" />
+                  <span className="text-xs font-medium text-starlight-200">npm (standalone)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-[10px] text-starlight-400 bg-midnight-800/60 rounded px-2 py-1.5 font-mono">
+                    npm install -g @mas-ai/daena-mcp
+                  </code>
+                  <button
+                    onClick={() => copyCommand('npm install -g @mas-ai/daena-mcp')}
+                    className="px-2 py-1 rounded text-[10px] bg-white/5 text-starlight-400 hover:bg-white/10 cursor-pointer shrink-0"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* pip method */}
+              <div className="rounded-lg border border-white/10 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Globe size={12} className="text-accent-amber" />
+                  <span className="text-xs font-medium text-starlight-200">pip (Python)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-[10px] text-starlight-400 bg-midnight-800/60 rounded px-2 py-1.5 font-mono">
+                    pip install daena-mcp
+                  </code>
+                  <button
+                    onClick={() => copyCommand('pip install daena-mcp')}
+                    className="px-2 py-1 rounded text-[10px] bg-white/5 text-starlight-400 hover:bg-white/10 cursor-pointer shrink-0"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 // ── Main Page ──
 
 type TabKey = 'runtimes' | 'extensions' | 'connectors'
@@ -1005,42 +1235,8 @@ export function ConnectionsPage() {
                   </div>
                 )}
 
-                {/* DaenaBot Bridge -- gives Daena hands on user's machine */}
-                {cloudMode && (
-                  <div className="rounded-xl border-2 border-primary-500/30 bg-gradient-to-r from-primary-500/5 to-accent-teal/5 p-4 space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center">
-                        <Zap size={20} className="text-primary-400" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-starlight-100">DaenaBot</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary-500/20 text-primary-400 font-semibold">RECOMMENDED</span>
-                        </div>
-                        <p className="text-xs text-starlight-400 mt-0.5">
-                          Install DaenaBot on your computer so Daena can access your files, run commands, control your desktop, and use CLI tools like Gemini CLI and Claude Code.
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          // Generate install command and show instructions
-                          const installCmd = 'pip install daena-bot && daena-bot connect'
-                          navigator.clipboard.writeText(installCmd).then(() => {
-                            toast.success('Install command copied! Paste in your terminal.')
-                          }).catch(() => {
-                            toast.info(`Run in terminal: ${installCmd}`)
-                          })
-                        }}
-                        className="px-4 py-2 rounded-lg text-xs font-semibold bg-primary-500 text-white hover:bg-primary-600 cursor-pointer whitespace-nowrap"
-                      >
-                        Install
-                      </button>
-                    </div>
-                    <div className="text-[10px] text-starlight-500 bg-midnight-800/60 rounded-lg px-3 py-2 font-mono">
-                      pip install daena-bot && daena-bot connect
-                    </div>
-                  </div>
-                )}
+                {/* CLI Bridge -- connect user's local tools to Daena cloud */}
+                <CLIBridgeCard />
 
                 <div className="rounded-xl border border-white/5 divide-y divide-white/5">
                   {(cloudMode
@@ -1160,6 +1356,7 @@ export function ConnectionsPage() {
                       expanded={expandedItem === c.id}
                       onToggleExpand={() => toggleExpand(c.id)}
                       onDisconnect={handleDisconnectConnector}
+                      fetchInstances={fetchConnectorInstances}
                     />
                   ))}
                 </div>

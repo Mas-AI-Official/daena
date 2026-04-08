@@ -55,6 +55,33 @@ async def list_runtimes(
 
     data = registry.to_dict()
     data["primary_runtime"] = primary_runtime
+
+    # Cloud mode detection: True when Ollama is not configured
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    ollama_url = (settings.ollama_base_url or "").strip()
+    data["cloud_mode"] = not bool(ollama_url)
+
+    # API providers with configured keys
+    provider_map = [
+        ("groq_api_key", "Groq", "Groq Cloud"),
+        ("gemini_api_key", "Gemini", "Google Gemini"),
+        ("anthropic_api_key", "Anthropic", "Anthropic Claude"),
+        ("openai_api_key", "OpenAI", "OpenAI"),
+        ("openrouter_api_key", "OpenRouter", "OpenRouter"),
+        ("together_api_key", "Together", "Together AI"),
+        ("perplexity_api_key", "Perplexity", "Perplexity AI"),
+    ]
+    api_providers = []
+    for attr, provider, display_name in provider_map:
+        key_value = (getattr(settings, attr, "") or "").strip()
+        if key_value:
+            api_providers.append(
+                {"provider": provider, "status": "connected", "display_name": display_name}
+            )
+    data["api_providers"] = api_providers
+
     return {"success": True, "data": data}
 
 

@@ -254,6 +254,7 @@ export interface ApprovalResponse {
   decision_reason: string | null
   expires_at: string | null
   session_id: string | null
+  context: { project_name?: string; [key: string]: unknown } | null
   created_at: string
   updated_at: string
 }

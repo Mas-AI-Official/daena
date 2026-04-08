@@ -2,6 +2,7 @@ import { memo, useCallback, useState, useEffect, useRef } from 'react'
 import { Bell, Search, Brain, BrainCircuit, Zap, X, Menu, Heart, Mic, MicOff, AudioLines, AudioWaveform, Telescope } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useUiStore, persistUiPref } from '@/stores/uiStore'
+import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useModelRegistryStore } from '@/stores/modelRegistryStore'
@@ -92,6 +93,11 @@ export const Header = memo(function Header() {
     toggleAutopilot()
     syncSession({ autopilot: newVal })
     persistUiPref('autopilot_active', newVal)
+    useToastStore.getState().addToast(
+      newVal
+        ? { type: 'success', message: 'AGI Mode activated -- non-critical actions auto-approved' }
+        : { type: 'info', message: 'AGI Mode deactivated' },
+    )
   }, [toggleAutopilot])
 
   const handleGovernanceSlider = useCallback((slider: GSlider) => {
@@ -251,7 +257,7 @@ export const Header = memo(function Header() {
           >
             <Bell size={18} />
             {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-status-error rounded-full text-[10px] font-bold flex items-center justify-center text-white">
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-status-error text-white text-[9px] font-bold flex items-center justify-center">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}

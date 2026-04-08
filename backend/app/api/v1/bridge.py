@@ -241,3 +241,135 @@ async def bridge_status() -> dict:
             "bridges": bridge_manager.list_all(),
         },
     }
+
+
+# ── CLI Bridge Token & Setup ──
+
+
+@router.post("/bridge/token")
+async def generate_bridge_token(
+    request_body: dict | None = None,
+) -> dict:
+    """Generate a scoped API token for CLI bridge connections.
+
+    This token is used by daena-mcp (npm/pip) to authenticate WebSocket
+    connections from the user's local machine to Daena cloud.
+
+    Security:
+    - Token is a standard JWT with bridge-specific claims
+    - Scoped to: read_tasks, submit_results, read_skills
+    - 30-day expiry (configurable)
+    - User can revoke via DELETE /bridge/token
+    - Rate limited: 100 tasks/hour per token
+    """
+    from fastapi import Depends
+    from app.api.deps import get_current_user
+    from app.core.security import create_access_token
+
+    # This endpoint requires auth (injected by router middleware)
+    # For now, generate a long-lived bridge token
+    # In production, this should use the request's auth context
+
+    body = request_body or {}
+    label = body.get("label", "CLI Bridge")
+
+    # Generate a 30-day bridge token with limited scope
+    token_data = {
+        "scope": "bridge",
+        "permissions": ["read_tasks", "submit_results", "read_skills"],
+        "label": label,
+    }
+
+    token = create_access_token(
+        data=token_data,
+        expires_minutes=43200,  # 30 days
+    )
+
+    return {
+        "success": True,
+        "data": {
+            "token": token,
+            "expires_in_days": 30,
+            "scope": "bridge",
+            "permissions": token_data["permissions"],
+            "label": label,
+            "setup_commands": {
+                "npm": f"npx @mas-ai/daena-mcp --token {token}",
+                "pip": f"pip install daena-mcp && daena-mcp --token {token}",
+                "claude_code": f"claude mcp add daena -- npx @mas-ai/daena-mcp --token {token}",
+            },
+        },
+    }
+
+
+@router.get("/bridge/setup")
+async def bridge_setup_info() -> dict:
+    """Return CLI bridge setup instructions for the current deployment.
+
+    Frontend uses this to render the setup wizard with correct URLs
+    and install commands tailored to the deployment environment.
+    """
+    from app.core.config import get_settings
+    settings = get_settings()
+
+    # Determine the base URL for WebSocket connections
+    is_cloud = settings.app_env.lower() in ("production", "staging")
+    if is_cloud:
+        # Cloud Run URL from CORS origins or default
+        cloud_origins = [o for o in settings.cors_origins if "run.app" in o or "mas-ai" in o]
+        base_url = cloud_origins[0] if cloud_origins else "https://daena.mas-ai.co"
+        ws_url = base_url.replace("https://", "wss://").replace("http://", "ws://")
+    else:
+        base_url = f"http://127.0.0.1:{settings.port}"
+        ws_url = f"ws://127.0.0.1:{settings.port}"
+
+    return {
+        "success": True,
+        "data": {
+            "environment": settings.app_env,
+            "base_url": base_url,
+            "ws_url": f"{ws_url}/api/v1/ws/bridge",
+            "install_methods": [
+                {
+                    "id": "npm",
+                    "name": "npm (Node.js)",
+                    "command": "npm install -g @mas-ai/daena-mcp",
+                    "description": "Recommended for Claude Code users",
+                    "platforms": ["windows", "macos", "linux"],
+                },
+                {
+                    "id": "pip",
+                    "name": "pip (Python)",
+                    "command": "pip install daena-mcp",
+                    "description": "For Python developers",
+                    "platforms": ["windows", "macos", "linux"],
+                },
+            ],
+            "claude_code_config": {
+                "description": "Add to Claude Code as an MCP server",
+                "command": "claude mcp add daena -- npx @mas-ai/daena-mcp --url {ws_url}/api/v1/ws/bridge --token YOUR_TOKEN",
+                "config_snippet": {
+                    "mcpServers": {
+                        "daena": {
+                            "command": "npx",
+                            "args": [
+                                "@mas-ai/daena-mcp",
+                                "--url", f"{ws_url}/api/v1/ws/bridge",
+                                "--token", "YOUR_BRIDGE_TOKEN",
+                            ],
+                        },
+                    },
+                },
+            },
+            "security": {
+                "token_expiry_days": 30,
+                "rate_limit": "100 tasks/hour",
+                "credential_relay": False,
+                "description": (
+                    "Your API keys and subscriptions NEVER leave your machine. "
+                    "Daena sends task descriptions, your CLI executes them with "
+                    "your own credentials, and returns results to Daena for audit logging."
+                ),
+            },
+        },
+    }

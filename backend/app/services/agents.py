@@ -12,8 +12,9 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
-from app.core.constants import DEFAULT_DEPARTMENTS, SubCapability
+from app.core.constants import DEFAULT_DEPARTMENTS, DEFAULT_SKILLS, SubCapability
 from app.core.exceptions import ConflictError, ValidationError
+from app.models.execution import Skill
 from app.models.organization import Agent, Department
 from app.services._base import BaseService
 
@@ -355,13 +356,40 @@ class AgentService(BaseService):
                     self.db.add(agent)
                     agents_created += 1
 
+        # ── Seed default skills ──
+        skills_created = 0
+
+        for skill_def in DEFAULT_SKILLS:
+            existing_skill_stmt = select(Skill).where(
+                Skill.tenant_id == tenant_id,
+                Skill.name == skill_def["name"],
+            )
+            skill_result = await self.db.execute(existing_skill_stmt)
+            if skill_result.scalar_one_or_none() is None:
+                skill = Skill(
+                    tenant_id=tenant_id,
+                    name=skill_def["name"],
+                    description=skill_def["description"],
+                    category=skill_def["category"],
+                    schema_def={},
+                    implementation=None,
+                    governance_tier=skill_def["governance_tier"],
+                    is_active=True,
+                    version="1.0.0",
+                    usage_count=0,
+                )
+                self.db.add(skill)
+                skills_created += 1
+
         await self.db.flush()
 
         return {
             "departments_created": departments_created,
             "agents_created": agents_created,
+            "skills_created": skills_created,
             "total_departments": len(DEFAULT_DEPARTMENTS),
             "total_agents": len(DEFAULT_DEPARTMENTS) * len(SubCapability),
+            "total_skills": len(DEFAULT_SKILLS),
         }
 
     # ── Serialization ──

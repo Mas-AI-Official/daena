@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import GUID, Base, JSONBCompat, TenantMixin, TimestampMixin
@@ -87,4 +87,47 @@ class Subscription(Base, TenantMixin, TimestampMixin):
     monthly_budget_usd: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
     spend_this_month_usd: Mapped[float] = mapped_column(
         Numeric(10, 2), nullable=False, server_default="0"
+    )
+
+
+class UserQuota(Base, TenantMixin, TimestampMixin):
+    """Per-user usage quota within a tenant's budget."""
+
+    __tablename__ = "user_quotas"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, unique=True, index=True,
+    )
+    plan_tier: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="FREE"
+    )
+    monthly_credit_usd: Mapped[float] = mapped_column(
+        Numeric(10, 2), nullable=False, server_default="0.50"
+    )
+    spend_this_month_usd: Mapped[float] = mapped_column(
+        Numeric(10, 6), nullable=False, server_default="0"
+    )
+    daily_credit_usd: Mapped[float | None] = mapped_column(
+        Numeric(10, 2), nullable=True, server_default="0.10"
+    )
+    spend_today_usd: Mapped[float] = mapped_column(
+        Numeric(10, 6), nullable=False, server_default="0"
+    )
+    overage_action: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="fallback_free"
+    )
+    max_tenant_share_pct: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="50"
+    )
+    admin_override: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    period_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

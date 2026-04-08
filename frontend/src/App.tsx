@@ -15,6 +15,7 @@ import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 import { TermsPage } from '@/pages/TermsPage'
 import { PrivacyPage } from '@/pages/PrivacyPage'
+import { CompleteProfilePage } from '@/pages/CompleteProfilePage'
 
 // Protected pages — lazy loaded to keep the shell bundle smaller
 const ChatPage = lazy(() => import('@/pages/ChatPage'))
@@ -57,6 +58,16 @@ function AppRoutes() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
+
+      {/* Complete Profile — authenticated but no PageLayout */}
+      <Route
+        path="/complete-profile"
+        element={
+          <ProtectedRoute>
+            <CompleteProfilePage />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Protected — wrapped in PageLayout */}
       <Route

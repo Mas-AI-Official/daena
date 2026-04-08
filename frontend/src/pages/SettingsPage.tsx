@@ -3,9 +3,9 @@
  * Each tab is lazy-loaded so only the active one is downloaded.
  *
  * Tab order (locked):
- *   General > LLM Providers > Models & Runtimes > Governance > Memory >
- *   Voice > Billing & Usage > Privacy & Data > Notifications > Shortcuts >
- *   Daena Heartbeat > Developer > About
+ *   General > LLM Providers > Governance > Models & Runtimes > Memory >
+ *   Billing & Usage > Privacy & Data > Notifications > Voice >
+ *   Developer > Daena Heartbeat > Shortcuts > About
  */
 import { lazy, Suspense } from 'react'
 import { usePageTitle } from '@/hooks/usePageTitle'
@@ -49,17 +49,16 @@ const SettingsAbout = lazy(() => import('./settings/SettingsAbout').then(m => ({
 const CATEGORIES: readonly { key: string; label: string; icon: ComponentType<{ size?: number }>; component: ComponentType }[] = [
   { key: 'general', label: 'General', icon: Settings, component: SettingsGeneral },
   { key: 'llm', label: 'LLM Providers', icon: Cpu, component: SettingsLLM },
-  { key: 'models', label: 'Models & Runtimes', icon: Cpu, component: SettingsModelsRuntimes },
   { key: 'governance', label: 'Governance', icon: Shield, component: SettingsGovernance },
-  // Connections tab removed -- dedicated page at /connections
+  { key: 'models', label: 'Models & Runtimes', icon: Cpu, component: SettingsModelsRuntimes },
   { key: 'memory', label: 'Memory', icon: Database, component: SettingsMemory },
-  { key: 'voice', label: 'Voice', icon: Mic, component: SettingsVoice },
   { key: 'billing', label: 'Billing & Usage', icon: DollarSign, component: SettingsBilling },
   { key: 'privacy', label: 'Privacy & Data', icon: Lock, component: SettingsPrivacy },
   { key: 'notifications', label: 'Notifications', icon: Bell, component: SettingsNotifications },
-  { key: 'shortcuts', label: 'Shortcuts', icon: Keyboard, component: SettingsShortcuts },
-  { key: 'heartbeat', label: 'Daena Heartbeat', icon: Heart, component: SettingsHeartbeat },
+  { key: 'voice', label: 'Voice', icon: Mic, component: SettingsVoice },
   { key: 'developer', label: 'Developer', icon: Code, component: SettingsDeveloper },
+  { key: 'heartbeat', label: 'Daena Heartbeat', icon: Heart, component: SettingsHeartbeat },
+  { key: 'shortcuts', label: 'Shortcuts', icon: Keyboard, component: SettingsShortcuts },
   { key: 'about', label: 'About', icon: Info, component: SettingsAbout },
 ]
 

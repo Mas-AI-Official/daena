@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daena | The Governed AI Platform</title>
-    <meta name="description" content="Multi-agent orchestration with 5-tier governance, expert councils, and auditable decisions. Not another chatbot.">
+    <title>Daena | The Governed AI Operating System</title>
+    <meta name="description" content="The governed AI operating system. 10 departments, 60 agents, 54 pre-installed skills. Bring your own runtimes. Every action visible, auditable, overridable.">
     <meta name="author" content="MAS-AI Technologies Inc.">
-    <meta property="og:title" content="Daena | The Governed AI Platform">
-    <meta property="og:description" content="Multi-agent orchestration with 5-tier governance, expert councils, and auditable decisions.">
+    <meta property="og:title" content="Daena | The Governed AI Operating System">
+    <meta property="og:description" content="10 departments. 60 agents. 54 skills. Your runtimes, governed. Every action visible, auditable, overridable.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://daena.mas-ai.co">
-    <meta property="og:image" content="https://daena.mas-ai.co/screenshots/01_chat_light.png">
+    <meta property="og:image" content="https://daena.mas-ai.co/screenshots/01_chat.png">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Daena | The Governed AI Platform">
-    <meta name="twitter:description" content="Multi-agent orchestration with 5-tier governance, expert councils, and auditable decisions.">
-    <meta name="twitter:image" content="https://daena.mas-ai.co/screenshots/01_chat_light.png">
+    <meta name="twitter:title" content="Daena | The Governed AI Operating System">
+    <meta name="twitter:description" content="10 departments. 60 agents. 54 skills. Your runtimes, governed.">
+    <meta name="twitter:image" content="https://daena.mas-ai.co/screenshots/01_chat.png">
     <link rel="icon" type="image/png" href="/daena-blue.png">
     <link rel="apple-touch-icon" href="/daena-blue.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -34,6 +34,7 @@
                             accent: '#3B82F6',
                             green: '#10B981',
                             purple: '#8B5CF6',
+                            amber: '#F59E0B',
                             muted: '#94A3B8',
                         }
                     }
@@ -45,24 +46,18 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html { scroll-behavior: smooth; }
         body { font-family: 'Inter', system-ui, sans-serif; background: #0B1120; color: #E2E8F0; }
-
-        /* Gradient mesh background */
         .hero-gradient {
             background:
                 radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent),
                 radial-gradient(ellipse 60% 40% at 80% 50%, rgba(139, 92, 246, 0.08), transparent),
                 radial-gradient(ellipse 50% 30% at 20% 80%, rgba(16, 185, 129, 0.06), transparent);
         }
-
-        /* Subtle grid pattern */
         .grid-pattern {
             background-image:
                 linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
             background-size: 60px 60px;
         }
-
-        /* Card hover glow */
         .card-glow {
             transition: all 0.3s ease;
             border: 1px solid rgba(51, 65, 85, 0.6);
@@ -72,22 +67,13 @@
             box-shadow: 0 0 40px rgba(59, 130, 246, 0.08);
             transform: translateY(-2px);
         }
-
-        /* Fade in animation */
         .fade-in {
             opacity: 0;
             transform: translateY(24px);
             transition: opacity 0.6s ease, transform 0.6s ease;
         }
-        .fade-in.visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        /* Stats counter animation */
-        .stat-item {
-            position: relative;
-        }
+        .fade-in.visible { opacity: 1; transform: translateY(0); }
+        .stat-item { position: relative; }
         .stat-item::after {
             content: '';
             position: absolute;
@@ -98,8 +84,6 @@
             background: rgba(51, 65, 85, 0.6);
         }
         .stat-item:last-child::after { display: none; }
-
-        /* Screenshot gallery */
         .screenshot-card {
             overflow: hidden;
             border-radius: 12px;
@@ -111,27 +95,17 @@
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
             transform: translateY(-4px);
         }
-        .screenshot-card img {
-            transition: transform 0.4s ease;
-        }
-        .screenshot-card:hover img {
-            transform: scale(1.02);
-        }
-
-        /* Step connector */
+        .screenshot-card img { transition: transform 0.4s ease; }
+        .screenshot-card:hover img { transform: scale(1.02); }
         .step-connector {
             width: 48px;
             height: 2px;
             background: linear-gradient(90deg, rgba(59, 130, 246, 0.6), rgba(139, 92, 246, 0.6));
         }
-
-        /* Glowing accent line */
         .accent-line {
             height: 1px;
             background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.4), rgba(139, 92, 246, 0.4), transparent);
         }
-
-        /* CTA button gradient */
         .btn-primary {
             background: linear-gradient(135deg, #3B82F6, #2563EB);
             transition: all 0.2s ease;
@@ -140,7 +114,6 @@
             background: linear-gradient(135deg, #60A5FA, #3B82F6);
             box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
         }
-
         .btn-secondary {
             border: 1px solid rgba(59, 130, 246, 0.4);
             transition: all 0.2s ease;
@@ -149,17 +122,49 @@
             border-color: rgba(59, 130, 246, 0.8);
             background: rgba(59, 130, 246, 0.1);
         }
-
-        /* Pipeline steps */
         .pipeline-step {
             background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(30, 41, 59, 0.4));
             border: 1px solid rgba(51, 65, 85, 0.5);
         }
+        .pricing-card {
+            border: 1px solid rgba(51, 65, 85, 0.5);
+            transition: all 0.3s ease;
+        }
+        .pricing-card:hover {
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-2px);
+        }
+        .pricing-popular {
+            border-color: rgba(59, 130, 246, 0.5);
+            box-shadow: 0 0 30px rgba(59, 130, 246, 0.1);
+        }
     </style>
 </head>
 <body>
-    <!-- ═══════════ HERO ═══════════ -->
-    <section class="hero-gradient grid-pattern min-h-screen flex items-center justify-center relative overflow-hidden">
+
+    <!-- NAV -->
+    <nav class="fixed top-0 w-full z-50 bg-brand-bg/80 backdrop-blur-lg border-b border-brand-border/30">
+        <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+            <a href="#" class="flex items-center gap-2">
+                <img src="/daena-blue.png" alt="Daena" class="w-7 h-7">
+                <span class="font-bold text-white text-lg">Daena</span>
+            </a>
+            <div class="hidden sm:flex items-center gap-6 text-sm text-brand-muted">
+                <a href="#features" class="hover:text-white transition-colors">Features</a>
+                <a href="#screenshots" class="hover:text-white transition-colors">Product</a>
+                <a href="#pricing" class="hover:text-white transition-colors">Pricing</a>
+                <a href="https://app.daena.mas-ai.co" class="btn-primary px-4 py-1.5 rounded-lg text-white font-medium text-sm">
+                    Try Online Free
+                </a>
+            </div>
+            <a href="https://app.daena.mas-ai.co" class="sm:hidden btn-primary px-4 py-1.5 rounded-lg text-white font-medium text-sm">
+                Try Free
+            </a>
+        </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero-gradient grid-pattern min-h-screen flex items-center justify-center relative overflow-hidden pt-14">
         <div class="absolute inset-0 pointer-events-none">
             <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-brand-accent/5 rounded-full blur-[120px]"></div>
             <div class="absolute bottom-1/4 right-1/4 w-80 h-80 bg-brand-purple/5 rounded-full blur-[100px]"></div>
@@ -168,26 +173,25 @@
             <div class="fade-in">
                 <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-brand-border/60 bg-brand-card/40 text-sm text-brand-muted mb-8">
                     <span class="w-2 h-2 rounded-full bg-brand-green animate-pulse"></span>
-                    2 USPTO Provisionals Filed
+                    Live on Cloud -- Try it now
                 </div>
-                <h1 class="text-6xl sm:text-7xl md:text-8xl font-bold tracking-tight text-white mb-4">
-                    Daena
+                <h1 class="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight text-white mb-4">
+                    Your AI workforce,<br>governed.
                 </h1>
-                <h2 class="text-xl sm:text-2xl md:text-3xl font-light text-brand-muted mb-6">
-                    Your AI workforce, governed.
-                </h2>
                 <p class="text-lg sm:text-xl text-brand-muted/80 max-w-2xl mx-auto mb-10 leading-relaxed">
-                    10 departments. 60 agents. Your existing subscriptions. Zero extra API costs.
+                    10 departments. 60 agents. 54 pre-installed skills. Bring your own runtimes -- Claude, Gemini, Groq, Ollama.
                     <span class="text-white font-medium">Every action visible, auditable, overridable.</span>
                 </p>
                 <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-                    <a href="#early-access" class="btn-primary px-8 py-3.5 rounded-lg text-white font-medium text-base">
-                        Get Early Access
+                    <a href="https://app.daena.mas-ai.co" class="btn-primary px-8 py-3.5 rounded-lg text-white font-semibold text-base inline-flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        Try Daena Free
                     </a>
                     <a href="#screenshots" class="btn-secondary px-8 py-3.5 rounded-lg text-brand-accent font-medium text-base">
                         See It In Action
                     </a>
                 </div>
+                <p class="text-xs text-brand-muted/50 mt-4">No credit card. Sign in with Google or create an account.</p>
             </div>
         </div>
         <div class="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
@@ -197,55 +201,52 @@
         </div>
     </section>
 
-    <!-- ═══════════ THREE PILLARS ═══════════ -->
-    <section class="py-24 px-6">
+    <!-- THREE PILLARS -->
+    <section id="features" class="py-24 px-6">
         <div class="max-w-6xl mx-auto">
             <div class="text-center mb-16 fade-in">
                 <p class="text-brand-accent text-sm font-semibold tracking-widest uppercase mb-3">Why Daena</p>
-                <h2 class="text-3xl sm:text-4xl font-bold text-white">Three pillars. Zero compromise.</h2>
+                <h2 class="text-3xl sm:text-4xl font-bold text-white">Governed orchestration. Any runtime.</h2>
             </div>
             <div class="grid md:grid-cols-3 gap-6">
-                <!-- Multi-Runtime -->
                 <div class="card-glow rounded-xl p-8 bg-brand-card/60 backdrop-blur fade-in">
                     <div class="w-12 h-12 rounded-lg bg-brand-accent/10 flex items-center justify-center mb-5">
                         <svg class="w-6 h-6 text-brand-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008zm-3 6h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008z"/></svg>
                     </div>
                     <h3 class="text-xl font-semibold text-white mb-3">Multi-Runtime Orchestration</h3>
                     <p class="text-brand-muted leading-relaxed">
-                        Claude Code, Codex, Gemini, Ollama. Use what you already pay for. Daena routes tasks to the best runtime automatically.
+                        Claude, Gemini, Groq, Ollama, OpenAI, OpenRouter, Together, Perplexity. Use what you already pay for. Daena routes each task to the best runtime automatically.
                     </p>
                 </div>
-                <!-- Governed Execution -->
                 <div class="card-glow rounded-xl p-8 bg-brand-card/60 backdrop-blur fade-in" style="transition-delay: 0.1s">
                     <div class="w-12 h-12 rounded-lg bg-brand-purple/10 flex items-center justify-center mb-5">
                         <svg class="w-6 h-6 text-brand-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
                     </div>
                     <h3 class="text-xl font-semibold text-white mb-3">Governed Execution</h3>
                     <p class="text-brand-muted leading-relaxed">
-                        Every action visible, auditable, overridable. 5 governance tiers, AES-256 vault, 9 immutable safety laws. Not bolted on.
+                        10-stage pipeline with 5 governance tiers. Every action is visible, auditable, and overridable. AES-256 vault. 9 immutable safety laws. Governance is the brain, not a wrapper.
                     </p>
                 </div>
-                <!-- Custom Departments -->
                 <div class="card-glow rounded-xl p-8 bg-brand-card/60 backdrop-blur fade-in" style="transition-delay: 0.2s">
                     <div class="w-12 h-12 rounded-lg bg-brand-green/10 flex items-center justify-center mb-5">
                         <svg class="w-6 h-6 text-brand-green" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"/></svg>
                     </div>
-                    <h3 class="text-xl font-semibold text-white mb-3">Custom Departments</h3>
+                    <h3 class="text-xl font-semibold text-white mb-3">10 AI Departments</h3>
                     <p class="text-brand-muted leading-relaxed">
-                        10 built-in departments from Engineering to Legal. Build custom AI departments for your niche. They learn and improve over time.
+                        Engineering, Product, Marketing, Sales, Finance, Operations, Research, Legal, Skill Governance, Security Ops. 60 agents with 54 pre-installed skills. Build custom departments for your niche.
                     </p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- ═══════════ STATS STRIP ═══════════ -->
+    <!-- STATS -->
     <section class="py-8">
         <div class="accent-line max-w-5xl mx-auto mb-8"></div>
         <div class="max-w-5xl mx-auto px-6">
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-6 text-center fade-in">
                 <div class="stat-item py-4">
-                    <p class="text-2xl font-bold text-brand-green">934</p>
+                    <p class="text-2xl font-bold text-brand-green">1,328</p>
                     <p class="text-xs text-brand-muted mt-1 tracking-wide uppercase">Tests Passing</p>
                 </div>
                 <div class="stat-item py-4">
@@ -257,12 +258,12 @@
                     <p class="text-xs text-brand-muted mt-1 tracking-wide uppercase">AI Agents</p>
                 </div>
                 <div class="stat-item py-4">
-                    <p class="text-2xl font-bold text-brand-accent">9</p>
-                    <p class="text-xs text-brand-muted mt-1 tracking-wide uppercase">LLM Providers</p>
+                    <p class="text-2xl font-bold text-brand-accent">54</p>
+                    <p class="text-xs text-brand-muted mt-1 tracking-wide uppercase">Pre-built Skills</p>
                 </div>
                 <div class="stat-item py-4">
-                    <p class="text-2xl font-bold text-brand-purple">55</p>
-                    <p class="text-xs text-brand-muted mt-1 tracking-wide uppercase">Expert Profiles</p>
+                    <p class="text-2xl font-bold text-brand-purple">9</p>
+                    <p class="text-xs text-brand-muted mt-1 tracking-wide uppercase">LLM Providers</p>
                 </div>
                 <div class="stat-item py-4">
                     <p class="text-2xl font-bold text-brand-purple">2</p>
@@ -273,7 +274,7 @@
         <div class="accent-line max-w-5xl mx-auto mt-8"></div>
     </section>
 
-    <!-- ═══════════ HOW IT WORKS ═══════════ -->
+    <!-- HOW IT WORKS -->
     <section class="py-24 px-6">
         <div class="max-w-5xl mx-auto">
             <div class="text-center mb-16 fade-in">
@@ -281,41 +282,37 @@
                 <h2 class="text-3xl sm:text-4xl font-bold text-white">Four steps. Full governance.</h2>
             </div>
             <div class="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-0 fade-in">
-                <!-- Step 1 -->
                 <div class="pipeline-step rounded-xl px-6 py-5 text-center min-w-[180px]">
-                    <div class="text-3xl mb-2">🔌</div>
-                    <p class="text-sm font-semibold text-white">1. Connect runtimes</p>
-                    <p class="text-xs text-brand-muted mt-1">Claude, Codex, Ollama</p>
+                    <div class="text-3xl mb-2">&#9889;</div>
+                    <p class="text-sm font-semibold text-white">1. Sign in</p>
+                    <p class="text-xs text-brand-muted mt-1">Google, GitHub, or email</p>
                 </div>
                 <div class="step-connector hidden md:block"></div>
                 <svg class="w-5 h-5 text-brand-accent/40 md:hidden rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
-                <!-- Step 2 -->
                 <div class="pipeline-step rounded-xl px-6 py-5 text-center min-w-[180px]">
-                    <div class="text-3xl mb-2">🧠</div>
+                    <div class="text-3xl mb-2">&#129504;</div>
                     <p class="text-sm font-semibold text-white">2. Daena decomposes</p>
                     <p class="text-xs text-brand-muted mt-1">Routes to best runtime</p>
                 </div>
                 <div class="step-connector hidden md:block"></div>
                 <svg class="w-5 h-5 text-brand-accent/40 md:hidden rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
-                <!-- Step 3 -->
                 <div class="pipeline-step rounded-xl px-6 py-5 text-center min-w-[180px]">
-                    <div class="text-3xl mb-2">👁️</div>
+                    <div class="text-3xl mb-2">&#128065;</div>
                     <p class="text-sm font-semibold text-white">3. Watch execution</p>
                     <p class="text-xs text-brand-muted mt-1">Approve or override</p>
                 </div>
                 <div class="step-connector hidden md:block"></div>
                 <svg class="w-5 h-5 text-brand-accent/40 md:hidden rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
-                <!-- Step 4 -->
                 <div class="pipeline-step rounded-xl px-6 py-5 text-center min-w-[180px]">
-                    <div class="text-3xl mb-2">📈</div>
+                    <div class="text-3xl mb-2">&#128200;</div>
                     <p class="text-sm font-semibold text-white">4. Departments learn</p>
-                    <p class="text-xs text-brand-muted mt-1">Improve every task</p>
+                    <p class="text-xs text-brand-muted mt-1">Skills improve over time</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- ═══════════ ARCHITECTURE ═══════════ -->
+    <!-- ARCHITECTURE -->
     <section class="py-24 px-6 relative overflow-hidden">
         <div class="absolute inset-0 pointer-events-none">
             <div class="absolute top-1/2 left-0 w-full h-px bg-gradient-to-r from-transparent via-brand-accent/10 to-transparent"></div>
@@ -323,36 +320,44 @@
         <div class="max-w-4xl mx-auto relative z-10">
             <div class="text-center mb-12 fade-in">
                 <p class="text-brand-accent text-sm font-semibold tracking-widest uppercase mb-3">Under the Hood</p>
-                <h2 class="text-3xl sm:text-4xl font-bold text-white">Built for enterprises that need AI they can trust.</h2>
+                <h2 class="text-3xl sm:text-4xl font-bold text-white">Built for teams that need AI they can trust.</h2>
             </div>
             <div class="card-glow rounded-xl p-8 sm:p-10 bg-brand-card/40 backdrop-blur fade-in">
                 <div class="grid sm:grid-cols-2 gap-6 text-sm">
                     <div class="space-y-4">
                         <div class="flex items-start gap-3">
                             <span class="text-brand-accent mt-0.5">&#9670;</span>
-                            <p class="text-brand-muted"><span class="text-white font-medium">10-stage governed pipeline.</span> Security gate, query understanding, governance check, cost preflight, model routing, memory recall, LLM stream, persist and audit.</p>
+                            <p class="text-brand-muted"><span class="text-white font-medium">10-stage governed pipeline.</span> Security gate, query understanding, governance check, cost preflight, model routing, memory recall, LLM stream, persist, and audit.</p>
                         </div>
                         <div class="flex items-start gap-3">
                             <span class="text-brand-accent mt-0.5">&#9670;</span>
-                            <p class="text-brand-muted"><span class="text-white font-medium">Local-first model routing.</span> Ollama models preferred. Cloud only when local can't handle it. Your data, your hardware, your rules.</p>
+                            <p class="text-brand-muted"><span class="text-white font-medium">Governed-first orchestration.</span> You choose the brain: Claude, Gemini, Groq, Ollama. Daena governs every decision regardless of which runtime is primary.</p>
                         </div>
                         <div class="flex items-start gap-3">
                             <span class="text-brand-accent mt-0.5">&#9670;</span>
                             <p class="text-brand-muted"><span class="text-white font-medium">9 integrated LLM providers.</span> Ollama, Anthropic, OpenAI, Google Gemini, Groq, OpenRouter, Together.ai, Perplexity. One interface, every model.</p>
                         </div>
+                        <div class="flex items-start gap-3">
+                            <span class="text-brand-accent mt-0.5">&#9670;</span>
+                            <p class="text-brand-muted"><span class="text-white font-medium">Council + Quintessence modes.</span> Multi-model synthesis with expert lens injection. 3+ models reason in parallel, then synthesize.</p>
+                        </div>
                     </div>
                     <div class="space-y-4">
                         <div class="flex items-start gap-3">
                             <span class="text-brand-purple mt-0.5">&#9670;</span>
-                            <p class="text-brand-muted"><span class="text-white font-medium">PhiLattice topology</span> (patent-pending). Fibonacci-derived hexagonal agent arrangement for optimal knowledge flow.</p>
+                            <p class="text-brand-muted"><span class="text-white font-medium">PhiLattice topology</span> (patent-pending). Fibonacci-derived hexagonal agent arrangement for optimal knowledge flow between departments.</p>
                         </div>
                         <div class="flex items-start gap-3">
                             <span class="text-brand-purple mt-0.5">&#9670;</span>
-                            <p class="text-brand-muted"><span class="text-white font-medium">NBMF memory</span> with 5 tiers from ephemeral (1hr) to permanent (founder-only). Hallucinations auto-expire. Only verified knowledge persists.</p>
+                            <p class="text-brand-muted"><span class="text-white font-medium">NBMF memory</span> (patent-pending). 5 tiers from ephemeral to permanent. Hallucinations auto-expire. Only verified knowledge persists.</p>
                         </div>
                         <div class="flex items-start gap-3">
                             <span class="text-brand-purple mt-0.5">&#9670;</span>
-                            <p class="text-brand-muted"><span class="text-white font-medium">10 departments, 60 capabilities.</span> Engineering, Product, Marketing, Sales, Finance, Operations, Research, Legal, Skill Governance, Security Ops. Each with MIND, EYES, HANDS, VOICE, SHIELD, MEMORY.</p>
+                            <p class="text-brand-muted"><span class="text-white font-medium">54 pre-installed skills.</span> Code review, contract analysis, SEO audit, budget forecasting, vulnerability scanning, and more. Ready out of the box.</p>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="text-brand-purple mt-0.5">&#9670;</span>
+                            <p class="text-brand-muted"><span class="text-white font-medium">MCP extensions + 35 connectors.</span> Gmail, Slack, GitHub, Notion, Figma, Stripe, and more. Allow/Ask/Block per tool.</p>
                         </div>
                     </div>
                 </div>
@@ -360,7 +365,7 @@
         </div>
     </section>
 
-    <!-- ═══════════ COMPETITIVE COMPARISON ═══════════ -->
+    <!-- COMPETITIVE COMPARISON -->
     <section class="py-24 px-6">
         <div class="max-w-5xl mx-auto">
             <div class="text-center mb-12 fade-in">
@@ -381,24 +386,24 @@
                     <tbody class="text-brand-muted">
                         <tr class="border-b border-brand-border/20">
                             <td class="py-3 px-4 font-medium text-white">Pricing</td>
-                            <td class="py-3 px-4 text-center text-brand-green">Your existing subs</td>
-                            <td class="py-3 px-4 text-center">$200/mo fixed</td>
-                            <td class="py-3 px-4 text-center">Free (Meta ecosystem)</td>
+                            <td class="py-3 px-4 text-center text-brand-green">Free tier + your keys</td>
+                            <td class="py-3 px-4 text-center">$200/mo</td>
+                            <td class="py-3 px-4 text-center">Free (Meta only)</td>
                             <td class="py-3 px-4 text-center">Free (open source)</td>
                         </tr>
                         <tr class="border-b border-brand-border/20">
-                            <td class="py-3 px-4 font-medium text-white">Models</td>
-                            <td class="py-3 px-4 text-center text-brand-green">Bring your own</td>
+                            <td class="py-3 px-4 font-medium text-white">Runtimes</td>
+                            <td class="py-3 px-4 text-center text-brand-green">9 providers, bring your own</td>
                             <td class="py-3 px-4 text-center">19 locked models</td>
                             <td class="py-3 px-4 text-center">Meta models only</td>
                             <td class="py-3 px-4 text-center">Configurable</td>
                         </tr>
                         <tr class="border-b border-brand-border/20">
                             <td class="py-3 px-4 font-medium text-white">Governance</td>
-                            <td class="py-3 px-4 text-center text-brand-green">5-tier pipeline</td>
+                            <td class="py-3 px-4 text-center text-brand-green">5-tier native pipeline</td>
                             <td class="py-3 px-4 text-center">Basic permissions</td>
                             <td class="py-3 px-4 text-center">None</td>
-                            <td class="py-3 px-4 text-center">Via NemoClaw wrapper</td>
+                            <td class="py-3 px-4 text-center">NemoClaw wrapper</td>
                         </tr>
                         <tr class="border-b border-brand-border/20">
                             <td class="py-3 px-4 font-medium text-white">Departments</td>
@@ -408,18 +413,18 @@
                             <td class="py-3 px-4 text-center">No</td>
                         </tr>
                         <tr class="border-b border-brand-border/20">
+                            <td class="py-3 px-4 font-medium text-white">Skills</td>
+                            <td class="py-3 px-4 text-center text-brand-green">54 pre-installed</td>
+                            <td class="py-3 px-4 text-center">Actions only</td>
+                            <td class="py-3 px-4 text-center">No</td>
+                            <td class="py-3 px-4 text-center">Community</td>
+                        </tr>
+                        <tr>
                             <td class="py-3 px-4 font-medium text-white">Audit Trail</td>
-                            <td class="py-3 px-4 text-center text-brand-green">Full</td>
+                            <td class="py-3 px-4 text-center text-brand-green">Full + exportable</td>
                             <td class="py-3 px-4 text-center">Limited</td>
                             <td class="py-3 px-4 text-center">None</td>
                             <td class="py-3 px-4 text-center">Partial</td>
-                        </tr>
-                        <tr>
-                            <td class="py-3 px-4 font-medium text-white">Local-first</td>
-                            <td class="py-3 px-4 text-center text-brand-green">Yes (Ollama)</td>
-                            <td class="py-3 px-4 text-center">Cloud only</td>
-                            <td class="py-3 px-4 text-center">Desktop app</td>
-                            <td class="py-3 px-4 text-center">Self-hosted</td>
                         </tr>
                     </tbody>
                 </table>
@@ -427,7 +432,7 @@
         </div>
     </section>
 
-    <!-- ═══════════ SCREENSHOT GALLERY ═══════════ -->
+    <!-- SCREENSHOTS -->
     <section id="screenshots" class="py-24 px-6">
         <div class="max-w-6xl mx-auto">
             <div class="text-center mb-16 fade-in">
@@ -436,72 +441,121 @@
             </div>
             <div class="grid md:grid-cols-2 gap-6 fade-in">
                 <div class="screenshot-card">
-                    <img src="screenshots/01_chat.png" alt="Intelligent Chat with Local-First Routing" class="w-full" loading="lazy">
+                    <img src="screenshots/01_chat.png" alt="Intelligent Chat" class="w-full" loading="lazy">
                     <div class="p-4 bg-brand-card/80">
-                        <p class="text-sm font-medium text-white">Intelligent Chat with Local-First Routing</p>
+                        <p class="text-sm font-medium text-white">Intelligent Chat with Multi-Runtime Routing</p>
                         <p class="text-xs text-brand-muted mt-1">Real-time streaming with model attribution and governance badges</p>
                     </div>
                 </div>
                 <div class="screenshot-card">
-                    <img src="screenshots/02_audit.png" alt="Complete Governance Audit Trail" class="w-full" loading="lazy">
+                    <img src="screenshots/07_departments.png" alt="Department Intelligence" class="w-full" loading="lazy">
+                    <div class="p-4 bg-brand-card/80">
+                        <p class="text-sm font-medium text-white">10 AI Departments</p>
+                        <p class="text-xs text-brand-muted mt-1">Engineering, Product, Marketing, Sales, Finance, Ops, Research, Legal, Skills, Security</p>
+                    </div>
+                </div>
+                <div class="screenshot-card">
+                    <img src="screenshots/02_audit.png" alt="Audit Trail" class="w-full" loading="lazy">
                     <div class="p-4 bg-brand-card/80">
                         <p class="text-sm font-medium text-white">Complete Governance Audit Trail</p>
-                        <p class="text-xs text-brand-muted mt-1">Every decision logged, timestamped, and tamper-evident</p>
+                        <p class="text-xs text-brand-muted mt-1">Every decision logged, timestamped, and exportable</p>
                     </div>
                 </div>
                 <div class="screenshot-card">
-                    <img src="screenshots/03_founder.png" alt="Founder Routing Control Panel" class="w-full" loading="lazy">
+                    <img src="screenshots/06_skills.png" alt="Skill Catalog" class="w-full" loading="lazy">
                     <div class="p-4 bg-brand-card/80">
-                        <p class="text-sm font-medium text-white">Founder Routing Control Panel</p>
-                        <p class="text-xs text-brand-muted mt-1">Real-time telemetry on model selection, scoring, and fallback chains</p>
+                        <p class="text-sm font-medium text-white">54 Pre-installed Skills</p>
+                        <p class="text-xs text-brand-muted mt-1">Code review, SEO audit, contract analysis, budget forecast, and more</p>
                     </div>
                 </div>
                 <div class="screenshot-card">
-                    <img src="screenshots/04_settings_llm.png" alt="Live Model Registry" class="w-full" loading="lazy">
+                    <img src="screenshots/04_settings_llm.png" alt="Model Registry" class="w-full" loading="lazy">
                     <div class="p-4 bg-brand-card/80">
                         <p class="text-sm font-medium text-white">Live Model Registry</p>
                         <p class="text-xs text-brand-muted mt-1">Auto-discover and manage models across 9 providers</p>
                     </div>
                 </div>
                 <div class="screenshot-card">
-                    <img src="screenshots/05_governance.png" alt="5-Tier Governance Configuration" class="w-full" loading="lazy">
+                    <img src="screenshots/05_governance.png" alt="Governance Config" class="w-full" loading="lazy">
                     <div class="p-4 bg-brand-card/80">
                         <p class="text-sm font-medium text-white">5-Tier Governance Configuration</p>
-                        <p class="text-xs text-brand-muted mt-1">From autonomous to locked-down, configurable per action type</p>
-                    </div>
-                </div>
-                <div class="screenshot-card">
-                    <img src="screenshots/06_skills.png" alt="Skill Catalog with 10 Departments" class="w-full" loading="lazy">
-                    <div class="p-4 bg-brand-card/80">
-                        <p class="text-sm font-medium text-white">Skill Catalog with 10 Departments</p>
-                        <p class="text-xs text-brand-muted mt-1">60 capabilities organized by department with versioned profiles</p>
-                    </div>
-                </div>
-                <div class="screenshot-card">
-                    <img src="screenshots/07_departments.png" alt="Department Intelligence Map" class="w-full" loading="lazy">
-                    <div class="p-4 bg-brand-card/80">
-                        <p class="text-sm font-medium text-white">Department Intelligence Map</p>
-                        <p class="text-xs text-brand-muted mt-1">10 AI departments collaborating like a governed organization</p>
-                    </div>
-                </div>
-                <div class="screenshot-card">
-                    <img src="screenshots/08_chat_final.png" alt="Seamless Multi-Model Chat" class="w-full" loading="lazy">
-                    <div class="p-4 bg-brand-card/80">
-                        <p class="text-sm font-medium text-white">Seamless Multi-Model Chat</p>
-                        <p class="text-xs text-brand-muted mt-1">Transparent model switching with cost tracking and session continuity</p>
+                        <p class="text-xs text-brand-muted mt-1">From YOLO to PARANOID, configurable per action type</p>
                     </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- ═══════════ FOUNDER ═══════════ -->
+    <!-- PRICING -->
+    <section id="pricing" class="py-24 px-6">
+        <div class="max-w-5xl mx-auto">
+            <div class="text-center mb-16 fade-in">
+                <p class="text-brand-accent text-sm font-semibold tracking-widest uppercase mb-3">Pricing</p>
+                <h2 class="text-3xl sm:text-4xl font-bold text-white">Start free. Scale when ready.</h2>
+            </div>
+            <div class="grid md:grid-cols-3 gap-6 fade-in">
+                <div class="pricing-card rounded-xl p-8 bg-brand-card/60 backdrop-blur">
+                    <p class="text-brand-green text-sm font-semibold uppercase tracking-wider mb-2">Free</p>
+                    <p class="text-4xl font-bold text-white mb-1">$0</p>
+                    <p class="text-sm text-brand-muted mb-6">Bring your own API keys</p>
+                    <ul class="space-y-3 text-sm text-brand-muted mb-8">
+                        <li class="flex items-center gap-2"><span class="text-brand-green">&#10003;</span> 10 departments, 60 agents</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-green">&#10003;</span> 54 pre-installed skills</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-green">&#10003;</span> Ollama local (unlimited)</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-green">&#10003;</span> Groq, Gemini, OpenRouter</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-green">&#10003;</span> Full governance pipeline</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-green">&#10003;</span> Audit trail + export</li>
+                    </ul>
+                    <a href="https://app.daena.mas-ai.co/register" class="block text-center btn-secondary px-6 py-3 rounded-lg text-brand-accent font-medium text-sm">
+                        Get Started Free
+                    </a>
+                </div>
+                <div class="pricing-card pricing-popular rounded-xl p-8 bg-brand-card/60 backdrop-blur relative">
+                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-brand-accent text-white text-xs font-semibold">
+                        Coming Soon
+                    </div>
+                    <p class="text-brand-accent text-sm font-semibold uppercase tracking-wider mb-2">Pro</p>
+                    <p class="text-4xl font-bold text-white mb-1">$29<span class="text-lg font-normal text-brand-muted">/mo</span></p>
+                    <p class="text-sm text-brand-muted mb-6">For power users and small teams</p>
+                    <ul class="space-y-3 text-sm text-brand-muted mb-8">
+                        <li class="flex items-center gap-2"><span class="text-brand-accent">&#10003;</span> Everything in Free</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-accent">&#10003;</span> Council + Quintessence modes</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-accent">&#10003;</span> Autopilot mode</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-accent">&#10003;</span> MCP extensions</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-accent">&#10003;</span> Custom departments</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-accent">&#10003;</span> Priority support</li>
+                    </ul>
+                    <a href="#early-access" class="block text-center btn-primary px-6 py-3 rounded-lg text-white font-medium text-sm">
+                        Join Waitlist
+                    </a>
+                </div>
+                <div class="pricing-card rounded-xl p-8 bg-brand-card/60 backdrop-blur">
+                    <p class="text-brand-purple text-sm font-semibold uppercase tracking-wider mb-2">Enterprise</p>
+                    <p class="text-4xl font-bold text-white mb-1">Custom</p>
+                    <p class="text-sm text-brand-muted mb-6">SSO, on-prem, custom governance</p>
+                    <ul class="space-y-3 text-sm text-brand-muted mb-8">
+                        <li class="flex items-center gap-2"><span class="text-brand-purple">&#10003;</span> Everything in Pro</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-purple">&#10003;</span> SSO + RBAC (6 roles)</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-purple">&#10003;</span> On-prem deployment</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-purple">&#10003;</span> Custom governance policies</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-purple">&#10003;</span> SLA + dedicated support</li>
+                        <li class="flex items-center gap-2"><span class="text-brand-purple">&#10003;</span> SOC 2 compliance path</li>
+                    </ul>
+                    <a href="mailto:masoud.masoori@mas-ai.co" class="block text-center btn-secondary px-6 py-3 rounded-lg text-brand-purple font-medium text-sm">
+                        Contact Sales
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FOUNDER -->
     <section class="py-24 px-6">
         <div class="max-w-3xl mx-auto text-center fade-in">
             <div class="accent-line mb-16"></div>
             <p class="text-brand-accent text-sm font-semibold tracking-widest uppercase mb-6">Founder</p>
             <h3 class="text-2xl sm:text-3xl font-bold text-white mb-4">Built by Masoud Masoori</h3>
-            <p class="text-brand-muted mb-2">Solo founder, MAS-AI Technologies Inc.</p>
+            <p class="text-brand-muted mb-2">CEO, MAS-AI Technologies Inc.</p>
             <p class="text-brand-muted mb-8">Ontario, Canada</p>
             <div class="flex items-center justify-center gap-6">
                 <a href="https://mas-ai.co" target="_blank" class="text-brand-accent hover:text-brand-accent/80 text-sm font-medium transition-colors">
@@ -519,13 +573,13 @@
         </div>
     </section>
 
-    <!-- ═══════════ EARLY ACCESS ═══════════ -->
+    <!-- EARLY ACCESS -->
     <section id="early-access" class="py-24 px-6">
         <div class="max-w-2xl mx-auto text-center fade-in">
             <div class="accent-line mb-16"></div>
             <p class="text-brand-accent text-sm font-semibold tracking-widest uppercase mb-3">Early Access</p>
-            <h2 class="text-3xl sm:text-4xl font-bold text-white mb-4">Get on the list.</h2>
-            <p class="text-brand-muted mb-8">First 100 users get lifetime early-bird pricing. No credit card. No spam.</p>
+            <h2 class="text-3xl sm:text-4xl font-bold text-white mb-4">Get on the list for Pro.</h2>
+            <p class="text-brand-muted mb-8">First 100 users get lifetime early-bird pricing. Free tier is live now.</p>
             <form action="https://formspree.io/f/xpwzgkjl" method="POST" class="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
                 <input type="email" name="email" required placeholder="you@company.com"
                     class="flex-1 px-4 py-3 rounded-lg bg-brand-card border border-brand-border/60 text-white placeholder-brand-muted/60 text-sm focus:outline-none focus:border-brand-accent transition-colors">
@@ -534,17 +588,22 @@
                     Join Waitlist
                 </button>
             </form>
-            <p class="text-xs text-brand-muted/50 mt-4">We send one email when your access is ready. Nothing else.</p>
+            <p class="text-xs text-brand-muted/50 mt-4">We send one email when Pro is ready. Nothing else.</p>
+            <div class="mt-8">
+                <a href="https://app.daena.mas-ai.co" class="text-brand-accent hover:text-brand-accent/80 text-sm font-medium transition-colors">
+                    Or try the free tier now &#8594;
+                </a>
+            </div>
         </div>
     </section>
 
-    <!-- ═══════════ FOOTER ═══════════ -->
+    <!-- FOOTER -->
     <footer class="border-t border-brand-border/30 py-10 px-6">
         <div class="max-w-5xl mx-auto">
             <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
                 <div class="text-center sm:text-left">
                     <p class="text-sm text-brand-muted">&copy; 2026 MAS-AI Technologies Inc. | Ontario, Canada</p>
-                    <p class="text-xs text-brand-muted/60 mt-1">2 USPTO provisional patents filed</p>
+                    <p class="text-xs text-brand-muted/60 mt-1">2 USPTO provisional patents filed (PhiLattice Architecture, NBMF)</p>
                 </div>
                 <div class="flex items-center gap-4 text-sm">
                     <a href="https://app.daena.mas-ai.co/terms" class="text-brand-muted hover:text-white transition-colors">Terms</a>
@@ -562,7 +621,7 @@
         </div>
     </footer>
 
-    <!-- ═══════════ INTERSECTION OBSERVER ═══════════ -->
+    <!-- INTERSECTION OBSERVER -->
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const observer = new IntersectionObserver((entries) => {
@@ -575,7 +634,6 @@
                 threshold: 0.1,
                 rootMargin: '0px 0px -40px 0px'
             });
-
             document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
         });
     </script>

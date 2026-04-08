@@ -4,7 +4,7 @@
  */
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowDown, RotateCcw } from 'lucide-react'
+import { ArrowDown, RotateCcw, Code2, Search, FileText, Bug, BookOpen } from 'lucide-react'
 import { MessageBubble } from './MessageBubble'
 import { ThinkingProcess } from './ThinkingProcess'
 import { DaenaAvatar } from './DaenaAvatar'
@@ -250,21 +250,24 @@ export const MessageList = memo(function MessageList({
             </p>
           </div>
           <div className="flex gap-2 flex-wrap justify-center">
-            {[
-              'Analyze this codebase',
-              'Research a topic',
-              'Draft a proposal',
-              'Debug an error',
-              'Explain a concept',
-            ].map((s) => (
+            {([
+              { label: 'Analyze this codebase', icon: Code2, desc: 'Understand structure and patterns' },
+              { label: 'Research a topic', icon: Search, desc: 'Deep dive with multiple sources' },
+              { label: 'Draft a proposal', icon: FileText, desc: 'Business documents and specs' },
+              { label: 'Debug an error', icon: Bug, desc: 'Trace and fix issues step by step' },
+              { label: 'Explain a concept', icon: BookOpen, desc: 'Learn with clear examples' },
+            ] as const).map((action) => (
               <button
-                key={s}
-                onClick={() => onQuickAction?.(s)}
-                className="px-3 py-1.5 rounded-lg text-xs text-starlight-300 border border-white/10
-                           hover:border-primary-500/30 hover:text-primary-400 hover:bg-primary-500/5
-                           transition-all cursor-pointer active:scale-95"
+                key={action.label}
+                onClick={() => onQuickAction?.(action.label)}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/5 bg-white/[0.02]
+                           hover:bg-white/[0.05] hover:border-white/10 transition-all text-left cursor-pointer group"
               >
-                {s}
+                <action.icon size={16} className="text-primary-400 shrink-0 group-hover:scale-110 transition-transform" />
+                <div>
+                  <p className="text-sm text-starlight-200">{action.label}</p>
+                  <p className="text-[10px] text-starlight-500">{action.desc}</p>
+                </div>
               </button>
             ))}
           </div>

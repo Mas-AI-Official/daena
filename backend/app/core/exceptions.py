@@ -112,6 +112,12 @@ class BudgetExceededError(DaenaError):
     error_code = "BUDGET_EXCEEDED"
 
 
+class UserQuotaExhaustedError(DaenaError):
+    """Per-user usage quota exhausted. Routes to free models."""
+    status_code = 429
+    error_code = "USER_QUOTA_EXHAUSTED"
+
+
 # --- Execution ---
 
 class ExecutionTimeoutError(DaenaError):

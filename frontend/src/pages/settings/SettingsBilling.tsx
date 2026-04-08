@@ -5,7 +5,7 @@
  */
 import { useEffect, useState, useCallback } from 'react'
 import { Card, Badge } from '@/components/common'
-import { DollarSign, BarChart3, Bell, TrendingUp, Layers, Calendar } from 'lucide-react'
+import { DollarSign, BarChart3, Bell, TrendingUp, Layers, Calendar, CheckCircle, Gauge, Users } from 'lucide-react'
 import { api } from '@/lib/api'
 import { persistUiPref } from '@/stores/uiStore'
 
@@ -34,6 +34,17 @@ interface DayHistoryEntry {
   cost_usd: number
 }
 
+const PROVIDER_DISPLAY: Record<string, string> = {
+  ollama: 'Ollama (Local)',
+  anthropic: 'Anthropic (Claude)',
+  openai: 'OpenAI',
+  google: 'Google (Gemini)',
+  groq: 'Groq',
+  openrouter: 'OpenRouter',
+  together: 'Together.ai',
+  perplexity: 'Perplexity',
+}
+
 const OVER_BUDGET_OPTIONS = [
   { value: 'warn', label: 'Warn only' },
   { value: 'fallback', label: 'Fallback to cheapest model' },
@@ -51,6 +62,23 @@ export function SettingsBilling() {
   const [taskTypes, setTaskTypes] = useState<TaskTypeCost[]>([])
   const [history, setHistory] = useState<DayHistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [quota, setQuota] = useState<{
+    monthly_credit_usd: number
+    spend_this_month_usd: number
+    remaining_monthly_usd: number
+    daily_credit_usd: number | null
+    spend_today_usd: number
+    remaining_daily_usd: number | null
+    overage_action: string
+    is_over_quota: boolean
+  } | null>(null)
+  const [userQuotas, setUserQuotas] = useState<Array<{
+    user_id: string; email: string; display_name: string | null;
+    plan_tier: string; monthly_credit_usd: number; spend_this_month_usd: number;
+    daily_credit_usd: number | null; spend_today_usd: number;
+    overage_action: string; max_tenant_share_pct: number; admin_override: boolean;
+  }>>([])
+  const [showAdmin, setShowAdmin] = useState(false)
 
   const fetchBilling = useCallback(async () => {
     try {
@@ -117,11 +145,97 @@ export function SettingsBilling() {
     }).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    api.get('/billing/my-quota')
+      .then(res => {
+        const d = res.data?.data ?? res.data
+        if (d) setQuota(d)
+      })
+      .catch(() => {})
+  }, [])
+
+  // Check if user is admin and fetch quotas
+  useEffect(() => {
+    api.get('/billing/user-quotas')
+      .then(res => {
+        const d = res.data?.data ?? res.data
+        if (Array.isArray(d)) {
+          setUserQuotas(d)
+          setShowAdmin(true)
+        }
+      })
+      .catch(() => {}) // Non-admin gets 403, ignore
+  }, [])
+
   const monthlyPct = monthlyBudget > 0 ? Math.round((overview.monthly_cost / monthlyBudget) * 100) : 0
   const totalTokens = providers.reduce((sum, p) => sum + (p.total_tokens || 0), 0)
 
   return (
     <div className="space-y-6">
+      {/* My Quota */}
+      {quota && (
+        <Card variant="glass" padding="lg">
+          <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
+            <Gauge size={14} /> My Quota
+          </h3>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="px-3 py-3 rounded-lg bg-midnight-800/40 border border-white/5">
+              <p className="text-lg font-display font-bold text-starlight-100">
+                ${quota.remaining_monthly_usd.toFixed(2)}
+              </p>
+              <p className="text-[10px] text-starlight-500">Monthly remaining</p>
+              <p className="text-[10px] text-starlight-400 mt-0.5">
+                ${quota.spend_this_month_usd.toFixed(2)} of ${quota.monthly_credit_usd.toFixed(2)} used
+              </p>
+            </div>
+            {quota.daily_credit_usd != null && (
+              <div className="px-3 py-3 rounded-lg bg-midnight-800/40 border border-white/5">
+                <p className="text-lg font-display font-bold text-starlight-100">
+                  ${(quota.remaining_daily_usd ?? 0).toFixed(2)}
+                </p>
+                <p className="text-[10px] text-starlight-500">Daily remaining</p>
+                <p className="text-[10px] text-starlight-400 mt-0.5">
+                  ${quota.spend_today_usd.toFixed(2)} of ${quota.daily_credit_usd.toFixed(2)} today
+                </p>
+              </div>
+            )}
+          </div>
+          {/* Monthly progress bar */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs text-starlight-400">Monthly quota</span>
+              <span className="text-xs text-starlight-300 font-medium">
+                {quota.monthly_credit_usd > 0 ? Math.round((quota.spend_this_month_usd / quota.monthly_credit_usd) * 100) : 0}%
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-midnight-400/50 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  quota.is_over_quota ? 'bg-status-error' :
+                  quota.spend_this_month_usd / quota.monthly_credit_usd > 0.8 ? 'bg-accent-amber' :
+                  'bg-status-success'
+                }`}
+                style={{ width: `${Math.min(100, quota.monthly_credit_usd > 0 ? (quota.spend_this_month_usd / quota.monthly_credit_usd) * 100 : 0)}%` }}
+              />
+            </div>
+          </div>
+          {/* Overage action label */}
+          <p className="text-[10px] text-starlight-500 mt-2 flex items-center gap-1">
+            {quota.overage_action === 'fallback_free' && 'When limit reached: switches to free local models'}
+            {quota.overage_action === 'block' && 'When limit reached: requests are paused'}
+            {quota.overage_action === 'warn' && 'When limit reached: you will be warned but can continue'}
+            {quota.overage_action === 'allow_overage' && 'Overage allowed against team budget'}
+          </p>
+          {quota.is_over_quota && (
+            <div className="mt-3 px-3 py-2 rounded-lg bg-accent-amber/10 border border-accent-amber/20">
+              <p className="text-[10px] text-accent-amber font-medium">
+                Quota reached. {quota.overage_action === 'fallback_free' ? 'Queries are routed to free local models.' : 'Contact your admin for more credits.'}
+              </p>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Cost Overview */}
       <Card variant="glass" padding="lg">
         <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
@@ -140,6 +254,9 @@ export function SettingsBilling() {
             </div>
           ))}
         </div>
+        <p className="text-[10px] text-status-success mt-2 flex items-center gap-1">
+          <CheckCircle size={10} /> Local Ollama queries are always free
+        </p>
         {/* Monthly budget progress bar */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
@@ -171,7 +288,7 @@ export function SettingsBilling() {
               return (
                 <div key={p.provider} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-midnight-800/30 border border-white/5">
                   <div>
-                    <p className="text-sm text-starlight-200">{p.provider}</p>
+                    <p className="text-sm text-starlight-200">{PROVIDER_DISPLAY[p.provider.toLowerCase()] || p.provider}</p>
                     <p className="text-[10px] text-starlight-500">{tokens.toLocaleString()} tokens</p>
                   </div>
                   <div className="text-right">
@@ -293,6 +410,53 @@ export function SettingsBilling() {
           </div>
         </div>
       </Card>
+
+      {/* Admin: Per-User Quotas */}
+      {showAdmin && (
+        <Card variant="glass" padding="lg">
+          <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
+            <Users size={14} /> Per-User Quotas
+          </h3>
+          {userQuotas.length === 0 ? (
+            <p className="text-xs text-starlight-500 italic">No user quotas provisioned yet. Users get quotas on their first chat message.</p>
+          ) : (
+            <div className="space-y-2">
+              {userQuotas.map((uq) => {
+                const pct = uq.monthly_credit_usd > 0
+                  ? Math.round((uq.spend_this_month_usd / uq.monthly_credit_usd) * 100)
+                  : 0
+                return (
+                  <div key={uq.user_id} className="flex items-center gap-4 px-3 py-2.5 rounded-lg bg-midnight-800/30 border border-white/5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-starlight-200 truncate">
+                        {uq.display_name || uq.email}
+                      </p>
+                      <div className="flex items-center gap-3 text-[10px] text-starlight-500 mt-0.5">
+                        <span>{uq.plan_tier}</span>
+                        <span>${uq.spend_this_month_usd.toFixed(2)} / ${uq.monthly_credit_usd.toFixed(2)}</span>
+                        {uq.daily_credit_usd != null && (
+                          <span>Today: ${uq.spend_today_usd.toFixed(2)} / ${uq.daily_credit_usd.toFixed(2)}</span>
+                        )}
+                        <span className="capitalize">{uq.overage_action.replace('_', ' ')}</span>
+                        {uq.admin_override && <span className="text-accent-amber">Custom</span>}
+                      </div>
+                    </div>
+                    <div className="w-24">
+                      <div className="h-1.5 rounded-full bg-midnight-400/50 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${pct > 90 ? 'bg-status-error' : pct > 70 ? 'bg-accent-amber' : 'bg-status-success'}`}
+                          style={{ width: `${Math.min(pct, 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-[9px] text-starlight-500 text-right mt-0.5">{pct}%</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   )
 }

@@ -3,12 +3,14 @@
  * All toggles persist to backend via PUT /settings/user JSONB.
  */
 import { useState, useEffect } from 'react'
-import { Bell, Volume2, Mail } from 'lucide-react'
+import { Bell, Volume2, Mail, CheckCircle2 } from 'lucide-react'
 import { Card, Switch } from '@/components/common'
+import { useAuthStore } from '@/stores/authStore'
 import { api } from '@/lib/api'
 import { persistUiPref } from '@/stores/uiStore'
 
 export function SettingsNotifications() {
+  const userEmail = useAuthStore((s) => s.user?.email || '')
   const [desktop, setDesktop] = useState(true)
   const [taskComplete, setTaskComplete] = useState(true)
   const [budgetAlert, setBudgetAlert] = useState(true)
@@ -36,6 +38,22 @@ export function SettingsNotifications() {
     }).catch(() => {})
   }, [])
 
+  const [permStatus, setPermStatus] = useState<NotificationPermission>(
+    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  )
+
+  const requestPermission = async () => {
+    if (typeof Notification === 'undefined') return
+    const result = await Notification.requestPermission()
+    setPermStatus(result)
+    if (result === 'granted') {
+      new Notification('Daena Notifications Enabled', {
+        body: 'You will now receive desktop notifications for important events.',
+        icon: '/daena-blue.png',
+      })
+    }
+  }
+
   const toggle = (key: string, current: boolean, setter: (v: boolean) => void) => {
     setter(!current)
     persistUiPref(key, !current)
@@ -57,6 +75,24 @@ export function SettingsNotifications() {
             </div>
             <Switch checked={desktop} onChange={() => toggle('notif_desktop', desktop, setDesktop)} label="" size="sm" />
           </div>
+          {desktop && permStatus !== 'granted' && (
+            <div className="mt-2 px-3 py-2 rounded-lg bg-accent-amber/10 border border-accent-amber/20 flex items-center justify-between">
+              <p className="text-[10px] text-accent-amber">Browser notifications need permission to work.</p>
+              <button
+                onClick={requestPermission}
+                className="text-[10px] font-medium text-accent-amber hover:text-accent-amber/80 underline cursor-pointer"
+              >
+                Grant Permission
+              </button>
+            </div>
+          )}
+          {desktop && permStatus === 'granted' && (
+            <div className="mt-2 px-3 py-2 rounded-lg bg-status-success/10 border border-status-success/20">
+              <p className="text-[10px] text-status-success flex items-center gap-1">
+                <CheckCircle2 size={10} /> Desktop notifications are active
+              </p>
+            </div>
+          )}
           {desktop && (
             <div className="pl-4 border-l border-white/10 space-y-3 mt-1">
               <div className="flex items-center justify-between">
@@ -121,7 +157,7 @@ export function SettingsNotifications() {
                 <label className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold">Email</label>
                 <input
                   type="email"
-                  defaultValue="masoud.masoori@mas-ai.co"
+                  defaultValue={userEmail}
                   className="w-full glass-input px-3 py-2 rounded-lg text-xs text-starlight-200 mt-1"
                 />
               </div>
@@ -134,6 +170,34 @@ export function SettingsNotifications() {
               </div>
             </div>
           )}
+        </Card>
+      </section>
+
+      {/* Test */}
+      <section className="space-y-3">
+        <h3 className="text-sm font-display font-semibold text-starlight-100 flex items-center gap-2">
+          Test
+        </h3>
+        <Card variant="glass" padding="md">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-starlight-200">Send a test notification</p>
+              <p className="text-[10px] text-starlight-500">Verify your notification setup is working.</p>
+            </div>
+            <button
+              onClick={() => {
+                if (desktop && permStatus === 'granted') {
+                  new Notification('Test from Daena', { body: 'Notifications are working correctly!', icon: '/daena-blue.png' })
+                }
+                import('@/stores/uiStore').then(({ useUiStore }) => {
+                  useUiStore.getState().addNotification({ type: 'info', title: 'Test', message: 'Notification system is working.' })
+                })
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-500/10 text-primary-400 border border-primary-500/20 hover:bg-primary-500/20 cursor-pointer"
+            >
+              Send Test
+            </button>
+          </div>
         </Card>
       </section>
     </div>

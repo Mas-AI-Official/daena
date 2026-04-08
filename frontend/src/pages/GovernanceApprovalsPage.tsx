@@ -13,6 +13,8 @@ import {
   Timer,
   Filter,
   RefreshCw,
+  User,
+  Building2,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button, Shimmer, EmptyState } from '@/components/common'
@@ -52,6 +54,13 @@ export function GovernanceApprovalsPage() {
 
   useEffect(() => {
     fetchApprovals()
+  }, [activeFilter])
+
+  // Auto-refresh pending approvals every 30s
+  useEffect(() => {
+    if (activeFilter !== 'PENDING' && activeFilter !== 'ALL') return
+    const interval = setInterval(() => { fetchApprovals() }, 30000)
+    return () => clearInterval(interval)
   }, [activeFilter])
 
   const handleAction = async (id: string, action: 'approve' | 'reject') => {
@@ -165,9 +174,23 @@ export function GovernanceApprovalsPage() {
                         <p className="text-sm font-medium text-starlight-200 mb-1">
                           {approval.action_type || 'Unknown Action'}
                         </p>
-                        <p className="text-xs text-starlight-500">
-                          Risk: {approval.risk_level || 'N/A'} · Requested {new Date(approval.created_at).toLocaleString()}
-                        </p>
+                        {approval.context?.project_name && (
+                          <p className="text-xs text-primary-400 mb-1 flex items-center gap-1">
+                            <Building2 size={10} />
+                            {approval.context.project_name}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-3 text-xs text-starlight-500 flex-wrap">
+                          <span>Risk: {approval.risk_level || 'N/A'}</span>
+                          <span>Requested {new Date(approval.created_at).toLocaleString()}</span>
+                          {approval.decided_by && (
+                            <span className="flex items-center gap-1 text-status-success">
+                              <User size={10} />
+                              {approval.decided_by}
+                              {approval.decided_at && ` at ${new Date(approval.decided_at).toLocaleString()}`}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Action buttons for pending */}

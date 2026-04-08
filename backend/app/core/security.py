@@ -52,6 +52,7 @@ def create_access_token(
     role: str,
     email: str = "",
     display_name: str = "",
+    profile_complete: bool = True,
     expires_delta: timedelta | None = None,
 ) -> str:
     """Create a JWT access token.
@@ -62,6 +63,7 @@ def create_access_token(
         role: User's RBAC role.
         email: User's email (included so frontend can display without extra API call).
         display_name: User's display name (same reason).
+        profile_complete: Whether user has accepted terms and filled company name.
         expires_delta: Custom expiration (default from settings).
 
     Returns:
@@ -78,6 +80,7 @@ def create_access_token(
         "role": role,
         "email": email,
         "display_name": display_name,
+        "profile_complete": profile_complete,
         "jti": str(uuid.uuid4()),
         "iat": now,
         "exp": now + expires_delta,

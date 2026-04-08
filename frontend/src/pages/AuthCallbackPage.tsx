@@ -32,10 +32,12 @@ export function AuthCallbackPage() {
 
     oauthExchange(code)
       .then(() => {
-        if (useAuthStore.getState().isAuthenticated) {
-          navigate('/chat', { replace: true })
+        const state = useAuthStore.getState()
+        if (state.isAuthenticated) {
+          // Redirect to complete-profile if terms not accepted, else to chat
+          navigate(state.profileComplete ? '/chat' : '/complete-profile', { replace: true })
         } else {
-          const storeError = useAuthStore.getState().error
+          const storeError = state.error
           setError(storeError || `${provider ?? 'OAuth'} login failed`)
         }
       })

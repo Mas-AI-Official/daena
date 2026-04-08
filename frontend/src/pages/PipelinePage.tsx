@@ -17,6 +17,7 @@ import {
   Clock,
   Star,
   ChevronRight,
+  AlertCircle,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button, Shimmer, EmptyState } from '@/components/common'
@@ -30,6 +31,17 @@ const STAGES = [
 ] as const
 
 const HUMAN_GATES = new Set(['PROPOSAL', 'CONTRACT', 'DELIVERY'])
+
+const STAGE_SHORT_LABELS: Record<string, string> = {
+  DISCOVERY: 'Discovery',
+  QUALIFICATION: 'Qualify',
+  PROPOSAL: 'Proposal',
+  CONTRACT: 'Contract',
+  EXECUTION: 'Execute',
+  DELIVERY: 'Deliver',
+  BILLING: 'Billing',
+  CLOSED: 'Closed',
+}
 
 const STAGE_COLORS: Record<string, string> = {
   DISCOVERY: 'border-accent-cyan/30',
@@ -64,26 +76,36 @@ export function PipelinePage() {
   const [summary, setSummary] = useState<PipelineSummary | null>(null)
   const [projects, setProjects] = useState<PipelineProject[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const [sumRes, projRes] = await Promise.allSettled([
         api.get<ApiResponse<PipelineSummary>>('/pipeline/summary'),
         api.get<ApiResponse<{ projects: PipelineProject[] }>>('/pipeline/projects'),
       ])
       if (sumRes.status === 'fulfilled') setSummary(sumRes.value.data.data || null)
+      else setError('Failed to load pipeline summary')
       if (projRes.status === 'fulfilled') {
         const p = projRes.value.data
         setProjects((p as any).projects || (p as any).data?.projects || [])
-      }
-    } catch { /* graceful */ }
+      } else if (!error) setError('Failed to load pipeline projects')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load pipeline data')
+    }
     finally { setLoading(false) }
   }, [])
 
   useEffect(() => { void fetchData() }, [fetchData])
+
+  useEffect(() => {
+    const interval = setInterval(() => { void fetchData() }, 60000)
+    return () => clearInterval(interval)
+  }, [fetchData])
 
   const handleCreateProject = async () => {
     if (!newTitle.trim()) return
@@ -150,6 +172,14 @@ export function PipelinePage() {
           </div>
         </div>
 
+        {error && (
+          <div className="mb-4 px-4 py-3 rounded-xl bg-status-error/10 border border-status-error/20 flex items-center gap-2">
+            <AlertCircle size={14} className="text-status-error shrink-0" />
+            <p className="text-xs text-status-error">{error}</p>
+            <button onClick={() => void fetchData()} className="ml-auto text-xs text-status-error hover:text-status-error/80 underline cursor-pointer">Retry</button>
+          </div>
+        )}
+
         {/* Kanban board */}
         <div className="flex gap-3">
           {STAGES.map((stage) => {
@@ -163,8 +193,8 @@ export function PipelinePage() {
                 <div className="flex items-center justify-between px-2 py-1.5 mb-2">
                   <div className="flex items-center gap-1.5">
                     {isGate && <Lock size={10} className="text-accent-amber" />}
-                    <span className="text-[10px] font-semibold text-starlight-300 uppercase tracking-wider">
-                      {stage.slice(0, 5)}
+                    <span className="text-[10px] font-semibold text-starlight-300">
+                      {STAGE_SHORT_LABELS[stage] || stage}
                     </span>
                   </div>
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 text-starlight-500">

@@ -125,8 +125,8 @@ export function DepartmentsPage() {
                   <Card
                     variant="glass"
                     padding="md"
-                    className="cursor-pointer hover:border-white/10 transition-all group"
-                    onClick={() => navigate(`/departments/${dept.id}`)}
+                    className="cursor-pointer hover:border-white/10 hover:bg-white/[0.02] transition-all group"
+                    onClick={() => navigate(`/departments/${dept.id}/chat`)}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className={`p-2.5 rounded-lg ${meta.bgColor} ${meta.color}`}>
@@ -157,10 +157,10 @@ export function DepartmentsPage() {
 
                     <div className="flex items-center justify-between text-[10px] text-starlight-500">
                       <span>{dept.agent_count} agents</span>
-                      <ChevronRight
-                        size={12}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                      />
+                      <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-primary-400">
+                        Chat with department
+                        <ChevronRight size={12} />
+                      </span>
                     </div>
                   </Card>
                 </motion.div>

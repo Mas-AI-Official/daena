@@ -27,12 +27,12 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BudgetExceededError
+from app.core.exceptions import BudgetExceededError, UserQuotaExhaustedError
 from app.core.logging import get_logger
-from app.models.financial import Subscription, UsageLedger
+from app.models.financial import Subscription, UsageLedger, UserQuota
 
 logger = get_logger(__name__)
 
@@ -64,6 +64,27 @@ class BudgetStatus:
     spend_this_month_usd: float
     remaining_usd: float | None  # None = unlimited
     is_over_budget: bool
+
+
+@dataclass(frozen=True, slots=True)
+class UserBudgetStatus:
+    """Current quota state for a user."""
+    monthly_credit_usd: float
+    spend_this_month_usd: float
+    daily_credit_usd: float | None
+    spend_today_usd: float
+    remaining_monthly_usd: float
+    remaining_daily_usd: float | None
+    overage_action: str
+    is_over_quota: bool
+
+
+PLAN_DEFAULTS: dict[str, dict] = {
+    "FREE": {"monthly_credit_usd": 0.50, "daily_credit_usd": 0.10, "overage_action": "fallback_free", "max_tenant_share_pct": 100},
+    "BASIC": {"monthly_credit_usd": 5.00, "daily_credit_usd": 1.00, "overage_action": "warn", "max_tenant_share_pct": 50},
+    "PRO": {"monthly_credit_usd": 10.00, "daily_credit_usd": 2.00, "overage_action": "warn", "max_tenant_share_pct": 50},
+    "ENTERPRISE": {"monthly_credit_usd": 50.00, "daily_credit_usd": None, "overage_action": "allow_overage", "max_tenant_share_pct": 30},
+}
 
 
 # ── Cost Guard ────────────────────────────────────────────────
@@ -115,10 +136,95 @@ class CostGuard:
             is_over_budget=over,
         )
 
+    async def _get_or_create_user_quota(
+        self, tenant_id: uuid.UUID, user_id: uuid.UUID,
+    ) -> UserQuota:
+        """Lazy-provision: get existing quota or create with plan defaults."""
+        from datetime import date, timezone
+
+        stmt = select(UserQuota).where(UserQuota.user_id == user_id)
+        result = await self._db.execute(stmt)
+        quota = result.scalar_one_or_none()
+
+        if quota is not None:
+            # Lazy daily reset: if period_start is from a previous day, reset daily spend
+            today = date.today()
+            if quota.period_start.date() < today:
+                await self._db.execute(
+                    update(UserQuota)
+                    .where(UserQuota.id == quota.id)
+                    .values(spend_today_usd=0, period_start=func.now())
+                )
+                await self._db.flush()
+                # Re-read to get updated values
+                result = await self._db.execute(
+                    select(UserQuota).where(UserQuota.id == quota.id)
+                )
+                quota = result.scalar_one()
+            return quota
+
+        # Determine plan tier from tenant
+        sub_stmt = select(Subscription.plan).where(
+            Subscription.tenant_id == tenant_id,
+            Subscription.status == "ACTIVE",
+        )
+        sub_result = await self._db.execute(sub_stmt)
+        plan = sub_result.scalar_one_or_none() or "FREE"
+
+        defaults = PLAN_DEFAULTS.get(plan.upper(), PLAN_DEFAULTS["FREE"])
+
+        new_quota = UserQuota(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            plan_tier=plan,
+            monthly_credit_usd=defaults["monthly_credit_usd"],
+            daily_credit_usd=defaults["daily_credit_usd"],
+            spend_this_month_usd=0,
+            spend_today_usd=0,
+            overage_action=defaults["overage_action"],
+            max_tenant_share_pct=defaults["max_tenant_share_pct"],
+            admin_override=False,
+        )
+        self._db.add(new_quota)
+        await self._db.flush()
+        logger.info("cost_guard.user_quota_created", user_id=str(user_id), plan=plan)
+        return new_quota
+
+    async def get_user_budget_status(
+        self, tenant_id: uuid.UUID, user_id: uuid.UUID,
+    ) -> UserBudgetStatus:
+        """Get the user's current quota state."""
+        quota = await self._get_or_create_user_quota(tenant_id, user_id)
+
+        monthly_credit = float(quota.monthly_credit_usd)
+        monthly_spent = float(quota.spend_this_month_usd)
+        daily_credit = float(quota.daily_credit_usd) if quota.daily_credit_usd is not None else None
+        daily_spent = float(quota.spend_today_usd)
+
+        remaining_monthly = max(0.0, monthly_credit - monthly_spent)
+        remaining_daily = max(0.0, daily_credit - daily_spent) if daily_credit is not None else None
+
+        is_over = (
+            monthly_spent >= monthly_credit
+            or (daily_credit is not None and daily_spent >= daily_credit)
+        )
+
+        return UserBudgetStatus(
+            monthly_credit_usd=monthly_credit,
+            spend_this_month_usd=monthly_spent,
+            daily_credit_usd=daily_credit,
+            spend_today_usd=daily_spent,
+            remaining_monthly_usd=remaining_monthly,
+            remaining_daily_usd=remaining_daily,
+            overage_action=quota.overage_action,
+            is_over_quota=is_over,
+        )
+
     async def preflight_check(
         self,
         tenant_id: uuid.UUID,
         estimated_cost: float = 0.0,
+        user_id: uuid.UUID | None = None,
     ) -> BudgetStatus:
         """Check if the tenant can afford an upcoming LLM call.
 
@@ -155,6 +261,33 @@ class CostGuard:
                 f"Estimated cost ${estimated_cost:.4f} exceeds "
                 f"remaining budget ${status.remaining_usd:.2f}"
             )
+
+        # Per-user quota check (after tenant check passes)
+        if user_id is not None:
+            user_status = await self.get_user_budget_status(tenant_id, user_id)
+            if user_status.is_over_quota:
+                action = user_status.overage_action
+                if action == "block":
+                    raise BudgetExceededError(
+                        f"Personal quota exhausted: "
+                        f"${user_status.spend_this_month_usd:.2f} / "
+                        f"${user_status.monthly_credit_usd:.2f}"
+                    )
+                if action == "fallback_free":
+                    raise UserQuotaExhaustedError(
+                        f"Personal quota reached: "
+                        f"${user_status.spend_this_month_usd:.2f} / "
+                        f"${user_status.monthly_credit_usd:.2f}. "
+                        f"Routing to free model."
+                    )
+                # "warn" and "allow_overage" pass through
+                logger.info(
+                    "cost_guard.user_over_quota",
+                    user_id=str(user_id),
+                    action=action,
+                    spent=user_status.spend_this_month_usd,
+                    limit=user_status.monthly_credit_usd,
+                )
 
         return status
 
@@ -201,6 +334,16 @@ class CostGuard:
                 )
             )
             await self._db.execute(stmt)
+
+            # Also increment user quota spend
+            await self._db.execute(
+                update(UserQuota)
+                .where(UserQuota.user_id == user_id)
+                .values(
+                    spend_this_month_usd=UserQuota.spend_this_month_usd + cost_usd,
+                    spend_today_usd=UserQuota.spend_today_usd + cost_usd,
+                )
+            )
 
         await self._db.flush()
 

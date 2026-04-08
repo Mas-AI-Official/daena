@@ -382,6 +382,50 @@ async def oauth_exchange(
     return {"success": True, "data": result}
 
 
+# --- Complete Profile (OAuth users missing terms acceptance) ---
+
+
+class CompleteProfileRequest(BaseModel):
+    """Complete profile after OAuth sign-up: accept terms and optionally set company name."""
+    agreed_to_terms: bool
+    tenant_name: str | None = None
+
+
+@router.patch("/complete-profile")
+async def complete_profile(
+    body: CompleteProfileRequest,
+    response: Response,
+    user: CurrentUser = Depends(get_current_user),
+    service: AuthService = Depends(get_auth_service),
+) -> dict:
+    """Complete profile for OAuth users who haven't accepted terms yet.
+
+    Requires authentication. Sets terms_accepted_at and optionally renames
+    the tenant. Returns new JWT tokens with profile_complete=True.
+    """
+    settings = get_settings()
+
+    result = await service.complete_profile(
+        user_id=user.id,
+        tenant_name=body.tenant_name,
+        agreed_to_terms=body.agreed_to_terms,
+    )
+
+    # Set refresh cookie (same as login)
+    raw_refresh = result.pop("raw_refresh_token")
+    response.set_cookie(
+        key="refresh_token",
+        value=raw_refresh,
+        httponly=True,
+        secure=settings.is_production,
+        samesite="strict",
+        path="/api/v1/auth",
+        max_age=settings.jwt_refresh_token_expire_days * 86400,
+    )
+
+    return {"success": True, "data": result}
+
+
 # --- Password Reset Endpoints ---
 
 

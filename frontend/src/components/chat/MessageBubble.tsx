@@ -353,7 +353,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming,
                 e.target.style.height = `${e.target.scrollHeight}px`
               }}
               onKeyDown={handleEditKeyDown}
-              className="w-full resize-none rounded-xl bg-primary-500/10 border border-primary-500/40
+              className="w-full resize-none rounded-2xl rounded-br-md bg-primary-500/10 border border-primary-500/30
                          text-sm text-starlight-100 px-4 py-3 focus:outline-none
                          focus:ring-1 focus:ring-primary-500/60 leading-relaxed"
               rows={1}
@@ -536,10 +536,10 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming,
             {!isUser && (
               <>
                 {/* Department indicator — shows which department handled this */}
-                {(message as Record<string, unknown>).department_name && (
+                {(message as unknown as Record<string, unknown>).department_name && (
                   <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] text-primary-400/80 bg-primary-500/8">
                     <Building2 size={9} />
-                    {String((message as Record<string, unknown>).department_name)}
+                    {String((message as unknown as Record<string, unknown>).department_name)}
                   </span>
                 )}
                 <CopyButton text={content} />

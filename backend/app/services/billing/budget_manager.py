@@ -27,6 +27,34 @@ class BudgetConfig:
             self.alert_thresholds = [0.5, 0.8, 1.0]
 
 
+PLAN_DEFAULTS: dict[str, dict] = {
+    "FREE": {
+        "monthly_credit_usd": 0.50,
+        "daily_credit_usd": 0.10,
+        "overage_action": "fallback_free",
+        "max_tenant_share_pct": 100,
+    },
+    "BASIC": {
+        "monthly_credit_usd": 5.00,
+        "daily_credit_usd": 1.00,
+        "overage_action": "warn",
+        "max_tenant_share_pct": 50,
+    },
+    "PRO": {
+        "monthly_credit_usd": 10.00,
+        "daily_credit_usd": 2.00,
+        "overage_action": "warn",
+        "max_tenant_share_pct": 50,
+    },
+    "ENTERPRISE": {
+        "monthly_credit_usd": 50.00,
+        "daily_credit_usd": None,
+        "overage_action": "allow_overage",
+        "max_tenant_share_pct": 30,
+    },
+}
+
+
 class BudgetManager:
     """Enforces cost limits."""
 
@@ -41,6 +69,11 @@ class BudgetManager:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
+
+    @staticmethod
+    def get_user_defaults(plan: str) -> dict:
+        """Return default per-user quota values for a plan tier."""
+        return PLAN_DEFAULTS.get(plan.upper(), PLAN_DEFAULTS["FREE"]).copy()
 
     def check_before_execution(self, estimated_cost: float) -> dict[str, Any]:
         """Called before every task. Returns allow/warn/block decision."""

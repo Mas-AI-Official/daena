@@ -31,29 +31,72 @@ _API_BASE = "https://api.groq.com/openai"
 _DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 _MODELS: list[dict[str, Any]] = [
+    # --- Frontier (best quality) ---
+    {
+        "id": "moonshotai/kimi-k2-instruct",
+        "name": "Kimi K2 (Moonshot)",
+        "ctx": 131_072,
+        "in": 0.40,
+        "out": 0.80,
+        "tags": ["reasoning", "frontier", "fast"],
+    },
+    {
+        "id": "moonshotai/kimi-k2-instruct-0905",
+        "name": "Kimi K2.5 (Moonshot)",
+        "ctx": 262_144,
+        "in": 0.40,
+        "out": 0.80,
+        "tags": ["reasoning", "frontier", "long-context"],
+    },
+    {
+        "id": "openai/gpt-oss-120b",
+        "name": "GPT-OSS 120B (OpenAI)",
+        "ctx": 131_072,
+        "in": 0.60,
+        "out": 1.20,
+        "tags": ["reasoning", "frontier"],
+    },
+    # --- Strong general (best value) ---
     {
         "id": "llama-3.3-70b-versatile",
         "name": "Llama 3.3 70B",
-        "ctx": 128_000,
+        "ctx": 131_072,
         "in": 0.59,
         "out": 0.79,
-        "tags": ["fast", "cheap", "versatile"],
+        "tags": ["fast", "versatile"],
     },
+    {
+        "id": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "name": "Llama 4 Scout 17B",
+        "ctx": 131_072,
+        "in": 0.11,
+        "out": 0.34,
+        "tags": ["fast", "cheap", "new"],
+    },
+    {
+        "id": "qwen/qwen3-32b",
+        "name": "Qwen 3 32B",
+        "ctx": 131_072,
+        "in": 0.30,
+        "out": 0.60,
+        "tags": ["reasoning", "code"],
+    },
+    # --- Ultra-fast (cheapest) ---
     {
         "id": "llama-3.1-8b-instant",
         "name": "Llama 3.1 8B Instant",
-        "ctx": 128_000,
+        "ctx": 131_072,
         "in": 0.05,
         "out": 0.08,
         "tags": ["ultra-fast", "cheapest"],
     },
     {
-        "id": "gemma2-9b-it",
-        "name": "Gemma 2 9B",
-        "ctx": 8_192,
-        "in": 0.20,
-        "out": 0.20,
-        "tags": ["fast", "small"],
+        "id": "openai/gpt-oss-20b",
+        "name": "GPT-OSS 20B (OpenAI)",
+        "ctx": 131_072,
+        "in": 0.10,
+        "out": 0.30,
+        "tags": ["fast", "cheap"],
     },
 ]
 

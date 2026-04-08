@@ -9,12 +9,14 @@ interface AuthState {
   user: UserResponse | null
   token: string | null
   isAuthenticated: boolean
+  profileComplete: boolean
   isLoading: boolean
   error: string | null
 
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, displayName: string, tenantName: string) => Promise<void>
   oauthExchange: (code: string) => Promise<void>
+  completeProfile: (agreedToTerms: boolean, tenantName?: string) => Promise<void>
   logout: () => Promise<void>
   loadFromStorage: () => void
   clearError: () => void
@@ -24,6 +26,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
   isAuthenticated: false,
+  profileComplete: true,
   isLoading: false,
   error: null,
 
@@ -36,7 +39,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       })
       const { access_token, user } = data.data
       localStorage.setItem('daena_token', access_token)
-      set({ user, token: access_token, isAuthenticated: true, isLoading: false })
+      const profileComplete = ((user as unknown as Record<string, unknown>).profile_complete !== false)
+      set({ user, token: access_token, isAuthenticated: true, profileComplete, isLoading: false })
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
@@ -56,7 +60,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       })
       const { access_token, user } = data.data
       localStorage.setItem('daena_token', access_token)
-      set({ user, token: access_token, isAuthenticated: true, isLoading: false })
+      set({ user, token: access_token, isAuthenticated: true, profileComplete: true, isLoading: false })
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
@@ -74,7 +78,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       )
       const { access_token, user } = data.data
       localStorage.setItem('daena_token', access_token)
-      set({ user, token: access_token, isAuthenticated: true, isLoading: false })
+      const profileComplete = ((user as unknown as Record<string, unknown>).profile_complete !== false)
+      set({ user, token: access_token, isAuthenticated: true, profileComplete, isLoading: false })
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { error?: { message?: string } } } })
@@ -83,25 +88,45 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
+  completeProfile: async (agreedToTerms, tenantName) => {
+    set({ isLoading: true, error: null })
+    try {
+      const { data } = await api.patch<{ success: boolean; data: TokenData }>(
+        '/auth/complete-profile',
+        { agreed_to_terms: agreedToTerms, tenant_name: tenantName },
+      )
+      const { access_token, user } = data.data
+      localStorage.setItem('daena_token', access_token)
+      set({ user, token: access_token, isAuthenticated: true, profileComplete: true, isLoading: false })
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { error?: { message?: string } } } })
+          ?.response?.data?.error?.message || 'Failed to complete profile'
+      set({ error: message, isLoading: false })
+    }
+  },
+
   logout: async () => {
     try {
       await api.post('/auth/logout')
     } catch {
-      // silent — server may be down
+      // silent -- server may be down
     }
     localStorage.removeItem('daena_token')
-    set({ user: null, token: null, isAuthenticated: false })
+    set({ user: null, token: null, isAuthenticated: false, profileComplete: true })
   },
 
   loadFromStorage: () => {
     const token = localStorage.getItem('daena_token')
     if (token) {
-      // Decode JWT payload to get user info (no verification — server validates)
+      // Decode JWT payload to get user info (no verification -- server validates)
       try {
         const payload = JSON.parse(atob(token.split('.')[1]))
+        const profileComplete = payload.profile_complete !== false
         set({
           token,
           isAuthenticated: true,
+          profileComplete,
           user: {
             user_id: payload.sub || payload.user_id,
             email: payload.email || '',

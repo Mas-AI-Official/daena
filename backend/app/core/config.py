@@ -127,11 +127,17 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 1440  # 24hr for dev; tighten to 30min for production
     jwt_refresh_token_expire_days: int = 7
 
-    # --- OAuth ---
+    # --- OAuth (multi-provider) ---
     google_client_id: str = ""
     google_client_secret: str = ""
     github_client_id: str = ""
     github_client_secret: str = ""
+    figma_client_id: str = ""
+    figma_client_secret: str = ""
+    slack_client_id: str = ""
+    slack_client_secret: str = ""
+    canva_client_id: str = ""
+    canva_client_secret: str = ""
     oauth_redirect_base_url: str = "http://127.0.0.1:5173"
 
     # --- CORS ---
