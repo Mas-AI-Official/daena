@@ -50,6 +50,20 @@ async def create_skill(
     return {"success": True, "data": skill}
 
 
+@router.post("/seed")
+async def seed_skills(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Force re-seed default skills for the current tenant. Idempotent."""
+    from app.services.agents import AgentService
+
+    svc = AgentService(db)
+    result = await svc.seed_defaults(tenant_id=user.tenant_id)
+    await db.commit()
+    return {"success": True, "data": result}
+
+
 @router.get("")
 async def list_skills(
     user: CurrentUser = Depends(get_current_user),

@@ -1240,7 +1240,7 @@ export function ConnectionsPage() {
 
                 <div className="rounded-xl border border-white/5 divide-y divide-white/5">
                   {(cloudMode
-                    ? runtimes.filter((rt) => rt.runtime_id !== 'ollama' && rt.installed)
+                    ? runtimes.filter((rt) => rt.runtime_id !== 'ollama')
                     : runtimes
                   ).map((rt) => (
                     <RuntimeRow

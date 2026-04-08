@@ -56,12 +56,13 @@ async def list_runtimes(
     data = registry.to_dict()
     data["primary_runtime"] = primary_runtime
 
-    # Cloud mode detection: True when Ollama is not configured
+    # Cloud mode detection: True when Ollama is not reachable or no local runtimes installed
     from app.core.config import get_settings
 
     settings = get_settings()
     ollama_url = (settings.ollama_base_url or "").strip()
-    data["cloud_mode"] = not bool(ollama_url)
+    no_local_runtimes = not any(registry._installed_cache.values())
+    data["cloud_mode"] = not bool(ollama_url) or no_local_runtimes
 
     # API providers with configured keys
     provider_map = [

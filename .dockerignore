@@ -5,6 +5,12 @@
 # Version control
 .git
 .gitignore
+.claude
+
+# MCP/packages (not needed in container)
+packages
+mempalace.yaml
+entities.json
 
 # Node dependencies (rebuilt in container)
 frontend/node_modules
