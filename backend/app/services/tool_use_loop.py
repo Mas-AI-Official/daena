@@ -363,6 +363,48 @@ class ToolUseLoop:
 
         prefix, operation = parts
 
+        # ── Cloud mode: check if local tools need DaenaBot bridge ──
+        _local_prefixes = {"file", "terminal", "browser", "desktop", "vision"}
+        if prefix in _local_prefixes:
+            # Check if DaenaBot bridge is connected for this user
+            _bridge_conn = None
+            try:
+                from app.api.v1.bridge import get_bridge_manager
+                _bridge_conn = get_bridge_manager().get(self.user_id)
+            except Exception:
+                pass
+
+            if _bridge_conn is not None:
+                # Route through bridge to user's machine
+                try:
+                    result = await _bridge_conn.send_tool_call(
+                        qualified_name, resolved_params,
+                        governance_tier=0,
+                    )
+                    return result
+                except Exception as exc:
+                    logger.warning("tool_loop.bridge_call_failed", error=str(exc))
+                    return {"success": False, "error": f"DaenaBot bridge call failed: {exc}"}
+
+            # No bridge: check if we're in cloud mode (no Ollama = cloud)
+            _is_cloud = True
+            try:
+                from app.core.config import get_settings
+                _is_cloud = not bool((get_settings().ollama_base_url or "").strip())
+            except Exception:
+                pass
+
+            if _is_cloud:
+                return {
+                    "success": False,
+                    "error": (
+                        "This action requires access to your computer, but DaenaBot is not installed. "
+                        "Go to Connections in the sidebar and install DaenaBot to give me access to "
+                        "your files, terminal, browser, and desktop. It takes 30 seconds."
+                    ),
+                    "needs_bridge": True,
+                }
+
         try:
             # ── File system tools ──
             if prefix == "file":
