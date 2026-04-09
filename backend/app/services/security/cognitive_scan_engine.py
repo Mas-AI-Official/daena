@@ -1626,6 +1626,62 @@ class CognitiveScanEngine:
         # makes Daena anti-fragile: every scan makes future scans smarter.
         await self._maybe_self_upgrade()
 
+        # ── RED TEAM OPS (post-scan analysis) ────
+        # When offensive mode is active and findings exist, automatically
+        # generate exfiltration analysis, persistence mapping, and
+        # social engineering assessment.
+        if self.offensive_mode and result.findings:
+            try:
+                from app.services.security.red_team_ops import (
+                    ExfiltrationProver,
+                    ImplantSimulator,
+                )
+                # Exfiltration channel analysis
+                exfil = ExfiltrationProver()
+                channels = exfil.analyze_exfil_channels(target, result.findings)
+                if channels:
+                    result.thinking_log.append(
+                        f"[RED TEAM] Exfiltration analysis: {len(channels)} channels identified"
+                    )
+                    for ch in channels[:3]:
+                        result.thinking_log.append(
+                            f"  -> {ch.channel_type}: {ch.description[:80]} "
+                            f"(stealth: {ch.stealth}, DLP bypass: {ch.dlp_bypass})"
+                        )
+                    # Store as a high-level finding
+                    dlp_bypass = [c for c in channels if c.dlp_bypass]
+                    if dlp_bypass:
+                        result.findings.append({
+                            "type": "exfiltration_risk",
+                            "url": target,
+                            "info": {
+                                "name": f"Data exfiltration possible via {len(channels)} channels ({len(dlp_bypass)} bypass DLP)",
+                                "severity": "critical" if len(dlp_bypass) >= 2 else "high",
+                                "description": (
+                                    f"Identified {len(channels)} exfiltration channels. "
+                                    f"{len(dlp_bypass)} can bypass typical DLP solutions."
+                                ),
+                            },
+                        })
+                        result.total_findings = len(result.findings)
+
+                # Persistence mapping
+                implant = ImplantSimulator()
+                plans = implant.map_persistence(result.findings)
+                if plans:
+                    result.thinking_log.append(
+                        f"[RED TEAM] Persistence mapping: {len(plans)} techniques identified"
+                    )
+                    for plan in plans[:3]:
+                        result.thinking_log.append(
+                            f"  -> {plan.technique}: {plan.location[:80]} "
+                            f"(detection: {plan.detection_risk})"
+                        )
+            except Exception as exc:
+                result.thinking_log.append(
+                    f"[RED TEAM] Post-scan analysis error: {str(exc)[:80]}"
+                )
+
         logger.info(
             "cognitive_scan.complete",
             target=target,
