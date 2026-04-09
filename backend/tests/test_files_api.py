@@ -56,7 +56,7 @@ async def test_list_files(client: AsyncClient, auth_headers: dict) -> None:
         headers=auth_headers,
     )
 
-    resp = await client.get("/api/v1/files/", headers=auth_headers)
+    resp = await client.get("/api/v1/files", headers=auth_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["success"] is True
@@ -78,7 +78,7 @@ async def test_list_files_search(client: AsyncClient, auth_headers: dict) -> Non
         headers=auth_headers,
     )
 
-    resp = await client.get("/api/v1/files/", params={"search": "unique_search"}, headers=auth_headers)
+    resp = await client.get("/api/v1/files", params={"search": "unique_search"}, headers=auth_headers)
     assert resp.status_code == 200
     body = resp.json()
     names = [f["original_filename"] for f in body["data"]]
@@ -88,7 +88,7 @@ async def test_list_files_search(client: AsyncClient, auth_headers: dict) -> Non
 @pytest.mark.asyncio
 async def test_list_files_sort(client: AsyncClient, auth_headers: dict) -> None:
     """Sort files by size ascending."""
-    resp = await client.get("/api/v1/files/", params={"sort": "size_bytes", "dir": "asc"}, headers=auth_headers)
+    resp = await client.get("/api/v1/files", params={"sort": "size_bytes", "dir": "asc"}, headers=auth_headers)
     assert resp.status_code == 200
 
 

@@ -743,3 +743,333 @@ class TestModuleCapabilityCount:
 
         # All imports succeeded -- capabilities are wired
         assert True
+
+
+# ---------------------------------------------------------------------------
+# OPSEC Integration Tests (wired into CognitiveScanEngine)
+# ---------------------------------------------------------------------------
+
+class TestOpsecWiring:
+    """Test OpsecManager wiring into CognitiveScanEngine."""
+
+    def test_engine_has_opsec_attr(self):
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        engine = CognitiveScanEngine(offensive_mode=True)
+        assert hasattr(engine, '_opsec')
+
+    def test_opsec_not_initialized_before_scan(self):
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        engine = CognitiveScanEngine(offensive_mode=True)
+        assert engine._opsec is None  # initialized in scan()
+
+    def test_get_request_headers_fallback(self):
+        """Without OPSEC or proxy manager, returns basic UA."""
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        engine = CognitiveScanEngine()
+        headers = engine._get_request_headers()
+        assert "User-Agent" in headers
+        assert "Mozilla" in headers["User-Agent"]
+
+    def test_get_request_headers_opsec(self):
+        """With OPSEC active, returns full browser profile."""
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        from app.services.security.opsec import OpsecManager
+        engine = CognitiveScanEngine(offensive_mode=True)
+        engine._opsec = OpsecManager()
+        headers = engine._get_request_headers()
+        assert "User-Agent" in headers
+        assert "Accept" in headers
+        assert "Accept-Language" in headers
+        # Full browser profile has more headers than basic UA
+        assert len(headers) >= 4
+
+    @pytest.mark.asyncio
+    async def test_opsec_wait_no_opsec(self):
+        """Without OPSEC, wait returns 0 immediately."""
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        engine = CognitiveScanEngine()
+        delay = await engine._opsec_wait()
+        assert delay == 0
+
+    @pytest.mark.asyncio
+    async def test_opsec_wait_with_opsec(self):
+        """With OPSEC, first wait returns 0 (first request)."""
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        from app.services.security.opsec import OpsecManager
+        engine = CognitiveScanEngine(offensive_mode=True)
+        engine._opsec = OpsecManager()
+        delay = await engine._opsec_wait()
+        assert delay == 0  # First request always 0
+
+    def test_opsec_rotate_noop_cycle_1(self):
+        """Fingerprint rotation does nothing on cycle 1."""
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        from app.services.security.opsec import OpsecManager
+        engine = CognitiveScanEngine(offensive_mode=True)
+        engine._opsec = OpsecManager()
+        initial_count = engine._opsec.fingerprints.rotation_count
+        engine._opsec_rotate_if_needed(1)
+        assert engine._opsec.fingerprints.rotation_count == initial_count
+
+    def test_opsec_rotate_cycle_2(self):
+        """Fingerprint rotation triggers on cycle 2+."""
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        from app.services.security.opsec import OpsecManager
+        engine = CognitiveScanEngine(offensive_mode=True)
+        engine._opsec = OpsecManager()
+        engine._opsec_rotate_if_needed(2)
+        assert engine._opsec.fingerprints.rotation_count >= 1
+
+    def test_opsec_check_response_no_opsec(self):
+        """Counter-detection is a noop when OPSEC not active."""
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        engine = CognitiveScanEngine()
+        thinking = []
+        engine._opsec_check_response("body", {}, thinking)
+        assert len(thinking) == 0
+
+    def test_opsec_check_response_honeypot_detected(self):
+        """Counter-detection flags honeypot indicators."""
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        from app.services.security.opsec import OpsecManager
+        engine = CognitiveScanEngine(offensive_mode=True)
+        engine._opsec = OpsecManager()
+        thinking = []
+        engine._opsec_check_response(
+            "var fp = canvasFingerprint(); detect(navigator.plugins);",
+            {},
+            thinking,
+        )
+        assert len(thinking) >= 1
+        assert "OPSEC" in thinking[0]
+
+    def test_opsec_check_response_clean(self):
+        """No false positives on normal HTML."""
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        from app.services.security.opsec import OpsecManager
+        engine = CognitiveScanEngine(offensive_mode=True)
+        engine._opsec = OpsecManager()
+        thinking = []
+        engine._opsec_check_response(
+            "<html><body>Hello World</body></html>",
+            {"content-type": "text/html"},
+            thinking,
+        )
+        assert len(thinking) == 0
+
+
+# ---------------------------------------------------------------------------
+# New Strategy Template Tests
+# ---------------------------------------------------------------------------
+
+class TestCanaryEchoStrategy:
+    """Test canary echo strategy template."""
+
+    def test_strategy_created(self):
+        from app.services.security.cognitive_scan_engine import _canary_echo_strategy
+        strategy = _canary_echo_strategy("example.com", ["https://example.com"])
+        assert strategy.name == "canary_echo"
+        assert len(strategy.steps) == 1
+        assert strategy.steps[0]["operation"] == "_canary_echo"
+
+    def test_strategy_with_empty_hosts(self):
+        from app.services.security.cognitive_scan_engine import _canary_echo_strategy
+        strategy = _canary_echo_strategy("example.com", [])
+        assert strategy.steps[0]["params"]["targets"] == ["https://example.com"]
+
+
+class TestStateMachineStrategy:
+    """Test state machine strategy template."""
+
+    def test_strategy_created(self):
+        from app.services.security.cognitive_scan_engine import _state_machine_strategy
+        strategy = _state_machine_strategy("example.com", ["/api/v1/users"])
+        assert strategy.name == "state_machine"
+        assert len(strategy.steps) == 1
+        assert strategy.steps[0]["operation"] == "_state_machine"
+        assert strategy.steps[0]["params"]["known_endpoints"] == ["/api/v1/users"]
+
+    def test_strategy_empty_endpoints(self):
+        from app.services.security.cognitive_scan_engine import _state_machine_strategy
+        strategy = _state_machine_strategy("example.com", [])
+        assert strategy.steps[0]["params"]["known_endpoints"] == []
+
+
+class TestCostAmplificationStrategy:
+    """Test cost amplification strategy template."""
+
+    def test_strategy_created(self):
+        from app.services.security.cognitive_scan_engine import _cost_amplification_strategy
+        strategy = _cost_amplification_strategy("example.com", ["https://example.com"])
+        assert strategy.name == "cost_amplification"
+        assert strategy.steps[0]["operation"] == "_cost_amplification"
+
+    def test_strategy_with_empty_hosts(self):
+        from app.services.security.cognitive_scan_engine import _cost_amplification_strategy
+        strategy = _cost_amplification_strategy("example.com", [])
+        assert strategy.steps[0]["params"]["targets"] == ["https://example.com"]
+
+
+# ---------------------------------------------------------------------------
+# Strategy Generation Wiring Tests
+# ---------------------------------------------------------------------------
+
+class TestStrategyGeneration:
+    """Test that new strategies are generated in _generate_strategies."""
+
+    @pytest.mark.asyncio
+    async def test_offensive_generates_all_new_strategies(self):
+        from app.services.security.cognitive_scan_engine import (
+            CognitiveScanEngine, TargetProfile,
+        )
+        engine = CognitiveScanEngine(offensive_mode=True)
+        profile = TargetProfile(
+            domain="test.example.com",
+            live_hosts=[{"url": "https://test.example.com"}],
+            interesting_paths=["/api/v1/users"],
+        )
+        strategies = await engine._generate_strategies(
+            "test.example.com", profile, [],
+        )
+        names = [s.name for s in strategies]
+        assert "canary_echo" in names
+        assert "state_machine" in names
+        assert "cost_amplification" in names
+        assert "forgotten_infrastructure" in names
+
+    @pytest.mark.asyncio
+    async def test_non_offensive_skips_new_strategies(self):
+        from app.services.security.cognitive_scan_engine import (
+            CognitiveScanEngine, TargetProfile,
+        )
+        engine = CognitiveScanEngine(offensive_mode=False)
+        profile = TargetProfile(
+            domain="test.example.com",
+            live_hosts=[{"url": "https://test.example.com"}],
+        )
+        strategies = await engine._generate_strategies(
+            "test.example.com", profile, [],
+        )
+        names = [s.name for s in strategies]
+        assert "canary_echo" not in names
+        assert "state_machine" not in names
+        assert "cost_amplification" not in names
+
+    @pytest.mark.asyncio
+    async def test_strategy_ordering(self):
+        """New strategies ordered after standard templates, before novel."""
+        from app.services.security.cognitive_scan_engine import (
+            CognitiveScanEngine, TargetProfile,
+        )
+        engine = CognitiveScanEngine(offensive_mode=True)
+        profile = TargetProfile(
+            domain="test.example.com",
+            live_hosts=[{"url": "https://test.example.com"}],
+            interesting_paths=["/api"],
+        )
+        strategies = await engine._generate_strategies(
+            "test.example.com", profile, [],
+        )
+        names = [s.name for s in strategies]
+        # Standard templates come before interactive strategies
+        if "passive_osint" in names and "canary_echo" in names:
+            assert names.index("passive_osint") < names.index("canary_echo")
+        if "canary_echo" in names and "cost_amplification" in names:
+            assert names.index("canary_echo") <= names.index("cost_amplification")
+
+
+# ---------------------------------------------------------------------------
+# Internal Operation Dispatch Tests
+# ---------------------------------------------------------------------------
+
+class TestInternalOperationDispatch:
+    """Test that _execute_internal dispatches new operations."""
+
+    @pytest.mark.asyncio
+    async def test_canary_echo_dispatched(self):
+        from app.services.security.cognitive_scan_engine import (
+            CognitiveScanEngine, TargetProfile,
+        )
+        engine = CognitiveScanEngine(offensive_mode=True)
+        profile = TargetProfile(domain="example.com")
+        result = await engine._execute_internal(
+            "_canary_echo",
+            {"targets": ["https://httpbin.org/get"]},
+            profile,
+            None,
+        )
+        # May fail due to network, but operation is dispatched (not "not implemented")
+        assert "not implemented" not in result.get("summary", "").lower()
+
+    @pytest.mark.asyncio
+    async def test_state_machine_dispatched(self):
+        from app.services.security.cognitive_scan_engine import (
+            CognitiveScanEngine, TargetProfile,
+        )
+        engine = CognitiveScanEngine(offensive_mode=True)
+        profile = TargetProfile(domain="example.com")
+        result = await engine._execute_internal(
+            "_state_machine",
+            {"target": "https://httpbin.org", "known_endpoints": []},
+            profile,
+            None,
+        )
+        assert "not implemented" not in result.get("summary", "").lower()
+
+    @pytest.mark.asyncio
+    async def test_cost_amplification_dispatched(self):
+        from app.services.security.cognitive_scan_engine import (
+            CognitiveScanEngine, TargetProfile,
+        )
+        engine = CognitiveScanEngine(offensive_mode=True)
+        profile = TargetProfile(domain="example.com")
+        result = await engine._execute_internal(
+            "_cost_amplification",
+            {"targets": ["https://httpbin.org/get"]},
+            profile,
+            None,
+        )
+        assert "not implemented" not in result.get("summary", "").lower()
+
+    @pytest.mark.asyncio
+    async def test_unknown_operation_returns_not_implemented(self):
+        from app.services.security.cognitive_scan_engine import (
+            CognitiveScanEngine, TargetProfile,
+        )
+        engine = CognitiveScanEngine()
+        profile = TargetProfile(domain="example.com")
+        result = await engine._execute_internal(
+            "_nonexistent_op",
+            {},
+            profile,
+            None,
+        )
+        assert "not implemented" in result.get("summary", "").lower()
+
+
+# ---------------------------------------------------------------------------
+# Full Capability Import Verification (updated)
+# ---------------------------------------------------------------------------
+
+class TestAllCapabilitiesImportV2:
+    """Verify all 48+ capabilities can be imported."""
+
+    def test_all_new_wiring_imports(self):
+        # OPSEC integration
+        from app.services.security.opsec import (
+            OpsecManager, FingerprintManager, TimingController,
+            EvidenceVault, FingerprintDetector, CleanupProtocol,
+        )
+        # New strategy templates
+        from app.services.security.cognitive_scan_engine import (
+            _canary_echo_strategy,
+            _state_machine_strategy,
+            _cost_amplification_strategy,
+        )
+        # Interactive capabilities used by strategies
+        from app.services.cognition.unreplicable import (
+            ResponseEchoAnalyzer,
+            StateMachineInferrer,
+            CostAmplificationDetector,
+        )
+        assert True

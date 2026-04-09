@@ -286,7 +286,7 @@ class TestOffensiveLenses:
     """Tests for the offensive framework lenses in CognitiveReasoner."""
 
     def test_offensive_frameworks_exist(self):
-        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 16
+        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 17
         required = [
             "defender_assumption_mapping",
             "legitimacy_mimicry",
@@ -295,6 +295,7 @@ class TestOffensiveLenses:
             "temporal_analysis",
             "business_logic_exploitation",
             "evidence_maximization",
+            "existence_decomposition",
         ]
         for name in required:
             assert name in OFFENSIVE_FRAMEWORK_PROMPTS
@@ -813,7 +814,7 @@ class TestCognitiveReasonerFullSpectrum:
 
     def test_offensive_count(self):
         """Should have 16 offensive lenses total (7 original + 3 phase 3 + 6 beyond-Mythos)."""
-        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 16
+        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 17
 
     def test_beyond_mythos_lenses_exist(self):
         """Beyond-Mythos lenses must exist."""

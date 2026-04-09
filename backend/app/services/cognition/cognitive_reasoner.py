@@ -301,9 +301,57 @@ OFFENSIVE_FRAMEWORK_PROMPTS: dict[str, str] = {
         "designers didn't intend? This is the fundamental question of all "
         "security testing. Every vulnerability is an answer to this question."
     ),
+    "existence_decomposition": (
+        "EXISTENCE DECOMPOSITION: Before you hack a target, understand WHY "
+        "it exists and HOW it connects to the world. Every system is a chain: "
+        "a user connects via DNS -> CDN/WAF -> load balancer -> app server -> "
+        "runtime -> OS -> hardware. The app talks to: database, cache, queue, "
+        "external APIs, storage. Each link in this chain makes ASSUMPTIONS "
+        "about the links around it. The CDN assumes origin IPs are secret. "
+        "The app assumes the database enforces permissions. The runtime assumes "
+        "the OS patches are current. The operators assume old staging servers "
+        "are shut down. DECOMPOSE the target into its full existence chain, "
+        "then ask for EACH link: what does this link assume? How can I verify "
+        "or break that assumption? The lowest broken assumption invalidates "
+        "everything above it. A hardened app means nothing if the platform "
+        "it sits on has a known bypass. Cloudflare's ACME path disabled WAF "
+        "for every customer behind it -- one platform assumption, millions of "
+        "affected sites. Think about the PLATFORM, not just the app. Think "
+        "about the INFRASTRUCTURE, not just the endpoint. Think about the "
+        "PEOPLE, not just the code. The vulnerability is in the chain."
+    ),
 }
 
 # Framework selection guidance -- which lenses to use when
+FIRST_PRINCIPLES_PREAMBLE = """BEFORE applying any framework, think from FIRST PRINCIPLES about
+what you are looking at.
+
+Everything on the internet exists because of a chain of dependencies:
+- Something HOSTS it (a server, a container, a serverless function)
+- Something CONNECTS it to the network (an IP, a domain, DNS, BGP)
+- Something PROTECTS it (a WAF, a firewall, TLS, authentication)
+- Something RUNS it (a runtime, a framework, an OS, a kernel)
+- Someone BUILT it (a developer with a skill level, a team with priorities)
+- Someone OPERATES it (an ops team with tools, schedules, blind spots)
+
+Every vulnerability is a broken assumption somewhere in this chain.
+The Cloudflare ACME bypass: they assumed validation tokens were always
+legitimate. OpenBSD's 27-year kernel bug: they assumed a page table
+entry was only writable by privileged code. Every $50K+ bounty comes
+from finding the assumption nobody questioned.
+
+THINK ABOUT THE WHOLE STACK, not just the endpoint:
+- How does a user REACH this? (DNS -> CDN -> load balancer -> origin)
+- How does the app TALK to its dependencies? (DB, cache, queue, APIs)
+- How is the PLATFORM configured? (cloud provider, container, secrets)
+- What do the OPERATORS assume is true? (that configs are correct,
+  that old services are decommissioned, that internal APIs are unreachable)
+
+Break every question into smaller questions until you hit something
+you can actually TEST. Then test bottom-up: the lowest broken
+assumption invalidates everything above it.
+"""
+
 FRAMEWORK_SELECTION_PROMPT = """You have access to these reasoning frameworks as thinking tools.
 You don't need to use all of them. Select the 2-4 that are most relevant
 to THIS specific situation and apply them.
@@ -311,6 +359,7 @@ to THIS specific situation and apply them.
 Available frameworks:
 {frameworks}
 
+""" + FIRST_PRINCIPLES_PREAMBLE + """
 Apply the relevant frameworks to reason about the situation below.
 Think flexibly -- these are lenses to see through, not scripts to follow.
 If the situation requires thinking that no framework covers, think freely.
@@ -330,12 +379,21 @@ TASK: {task}
 
 {failure_context}
 
-Using the reasoning frameworks above, analyze this situation:
+FIRST: Think about what this target IS before analyzing scan results.
+- How does it exist on the internet? What hosts it? What connects it?
+- What is the chain of assumptions holding it together?
+- Where is the weakest assumption in that chain?
+
+THEN: Analyze what you've observed.
 1. What is ACTUALLY happening here? (Map vs Territory -- verify, don't assume)
-2. If something succeeded -- WHY? What defense was missing? What made it easy?
+2. If something succeeded -- WHY? What assumption was broken?
 3. If something failed -- WHY really? Not the surface error. The root cause.
-4. What does this teach us that we didn't know before?
-5. What should we try next and WHY? (Not template-matching -- reason about THIS situation)
+   Is the failure itself revealing? (A 403 means the path EXISTS.
+   A timeout means the server is PROCESSING. A redirect reveals ROUTING.)
+4. What does this teach us about the target's FULL STACK?
+   (Not just the endpoint -- the platform, the operators, the assumptions)
+5. What should we try next and WHY?
+   Think bottom-up: what is the lowest-layer assumption we haven't tested?
 
 Think step by step. Be specific to this exact situation.
 If something unexpected happened, that's the most interesting part -- explore it.
@@ -368,14 +426,22 @@ RESULTS: {results}
 SUCCESS: {success}
 
 Answer honestly:
-1. Did it work? If yes -- WHY? What was the key factor?
+1. Did it work? If yes -- WHY? What assumption was broken or what gap existed?
    (Understanding success is as important as understanding failure)
 2. If it failed -- what is the ROOT CAUSE? Not the symptom.
    Apply 5 Whys: keep asking WHY until you reach something actionable.
+   Is the failure itself revealing? A 403 means the path EXISTS.
+   A timeout means the server is PROCESSING. Every response is data.
 3. What LESSON should Daena remember from this experience?
    (Something specific that makes future work better, not a platitude)
-4. What CONSTRAINT did we discover? Was it real or assumed?
+   Think at THREE levels:
+   - App level: what did we learn about this specific target?
+   - Platform level: what did we learn about the hosting/CDN/cloud provider?
+   - Pattern level: does this reveal something true about ALL similar systems?
+4. What ASSUMPTION did we discover? Was it real or wrong?
+   Every defense is built on assumptions. Which ones did we just test?
 5. What should we try NEXT?
+   Think bottom-up: what is the lowest-layer assumption we haven't tested?
    (Novel reasoning about THIS situation, not a generic fallback)
 
 Be specific. Generic lessons like "try harder" are useless.
@@ -383,6 +449,11 @@ A good lesson: "Google Cloud's datastudio subdomains return 404 with
 HTTP/3 but the response includes Google Cloud Trace headers, revealing
 the internal observability stack. This information disclosure pattern
 likely exists on other Google regional endpoints."
+A GREAT lesson: "Cloudflare's ACME validation path bypasses WAF for
+ANY customer. This is a platform-level assumption: the WAF assumes
+certificate validation traffic is always legitimate. Any CDN that does
+TLS termination likely has a similar trust boundary at the validation
+layer. Test ACME paths on Akamai, Fastly, AWS CloudFront."
 """
 
 LEARNING_PROMPT = """Extract a permanent lesson from this experience.
@@ -932,11 +1003,15 @@ class CognitiveReasoner:
             f"FINDINGS SO FAR:\n{''.join(findings_summary) or '  (none yet)'}\n"
             f"{exploit_context}\n"
             f"STRATEGIES ALREADY TRIED: {', '.join(previous_strategies) or 'none'}\n\n"
+            f"THINK FIRST: How does this target exist on the internet?\n"
+            f"What hosts it? What connects it? What platform assumptions hold it up?\n"
+            f"What would break if a platform-level assumption was wrong?\n\n"
             f"Generate 2-3 NOVEL exploitation strategies that:\n"
             f"1. Are SPECIFIC to this target (not generic scanner templates)\n"
             f"2. Build on what we already found (chain findings together)\n"
             f"3. Use unconventional approaches (business logic, timing, chaining)\n"
-            f"4. Include concrete steps with operations and parameters\n\n"
+            f"4. Think about the FULL STACK: platform, infrastructure, operators, not just the app\n"
+            f"5. Include concrete steps with operations and parameters\n\n"
             f"Available operations:\n"
             f"  - http_request: {{url, method, headers, body}} -- hit any HTTP endpoint\n"
             f"  - tcp_connect: {{host, port, send_data}} -- raw TCP interaction\n"

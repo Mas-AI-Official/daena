@@ -47,11 +47,12 @@ async def _register_and_login(client: AsyncClient) -> dict:
 async def test_create_skill(client: AsyncClient) -> None:
     """POST /skills creates a skill with correct defaults."""
     auth = await _register_and_login(client)
+    unique = uuid.uuid4().hex[:8]
 
     response = await client.post(
         "/api/v1/skills",
         json={
-            "name": "web_search",
+            "name": f"test_skill_{unique}",
             "description": "Search the web using Perplexity API",
             "category": "research",
             "schema_def": {
@@ -67,7 +68,7 @@ async def test_create_skill(client: AsyncClient) -> None:
     assert response.status_code == 201
     body = response.json()
     assert body["success"] is True
-    assert body["data"]["name"] == "web_search"
+    assert body["data"]["name"] == f"test_skill_{unique}"
     assert body["data"]["governance_tier"] == 1
     assert body["data"]["is_active"] is True
     assert body["data"]["version"] == "1.0.0"

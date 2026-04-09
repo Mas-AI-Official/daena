@@ -252,6 +252,84 @@ def _targeted_vuln_scan_strategy(target: str, technologies: list[str], cves: lis
     )
 
 
+def _canary_echo_strategy(target: str, live_hosts: list[str]) -> ScanStrategy:
+    """Strategy 5: Canary echo analysis -- one string, four vuln classes."""
+    probe_urls = live_hosts[:3] if live_hosts else [f"https://{target}"]
+    return ScanStrategy(
+        name="canary_echo",
+        description=(
+            "Inject a unique canary string into multiple input channels "
+            "(query, path, header, body) and analyze where it appears in "
+            "responses. One probe tests XSS, info disclosure, stored "
+            "injection, and filter behavior simultaneously."
+        ),
+        steps=[
+            {"operation": "_canary_echo", "params": {"targets": probe_urls}},
+        ],
+        reasoning=(
+            "Most scanners test one vuln class per payload. A canary tests "
+            "FOUR classes in one request: reflected = XSS, in error = info "
+            "disclosure, in later response = stored, transformed = filter "
+            "analysis. Maximum signal per request."
+        ),
+        confidence=0.6,
+        stealth_level="low",
+        frameworks_used=["first_principles", "constraint_probe"],
+    )
+
+
+def _state_machine_strategy(target: str, known_endpoints: list[str]) -> ScanStrategy:
+    """Strategy 6: State machine inference -- test action sequences, not endpoints."""
+    return ScanStrategy(
+        name="state_machine",
+        description=(
+            "Test application state transitions: access after logout, "
+            "IDOR via sequential user IDs, method override (GET -> DELETE). "
+            "Finds broken access control that endpoint-by-endpoint scanning misses."
+        ),
+        steps=[
+            {"operation": "_state_machine", "params": {
+                "target": target,
+                "known_endpoints": known_endpoints,
+            }},
+        ],
+        reasoning=(
+            "Applications have STATE. After login you can do X, after logout "
+            "you shouldn't. Most scanners test endpoints in isolation. State "
+            "machine inference tests SEQUENCES to find broken access control, "
+            "session fixation, and IDOR."
+        ),
+        confidence=0.5,
+        stealth_level="medium",
+        frameworks_used=["constraint_probe", "five_whys"],
+    )
+
+
+def _cost_amplification_strategy(target: str, live_hosts: list[str]) -> ScanStrategy:
+    """Strategy 7: Cost amplification detection -- find DoS via timing."""
+    probe_urls = live_hosts[:3] if live_hosts else [f"https://{target}"]
+    return ScanStrategy(
+        name="cost_amplification",
+        description=(
+            "Find endpoints where small requests cause disproportionate "
+            "server work: ReDoS, deep JSON nesting, large array processing, "
+            "GraphQL depth attacks. Detected via timing, not exploitation."
+        ),
+        steps=[
+            {"operation": "_cost_amplification", "params": {"targets": probe_urls}},
+        ],
+        reasoning=(
+            "A search query that takes 5 seconds = potential ReDoS. A GraphQL "
+            "query resolving 1000 nested objects = amplification. We detect "
+            "these via timing differential (probe vs baseline), not by causing "
+            "actual denial of service. The proof is the ratio."
+        ),
+        confidence=0.5,
+        stealth_level="low",
+        frameworks_used=["first_principles", "inversion"],
+    )
+
+
 # ---------------------------------------------------------------------------
 # The Engine
 # ---------------------------------------------------------------------------
@@ -308,6 +386,7 @@ class CognitiveScanEngine:
         self._reasoner_initialized = False
         self._evidence = None  # EvidenceCapture, initialized in scan()
         self._proxy_manager = None  # ProxyManager, initialized in scan()
+        self._opsec = None  # OpsecManager, initialized in scan() when offensive
 
     async def scan(
         self,
@@ -353,6 +432,16 @@ class CognitiveScanEngine:
                 target=target,
             )
 
+        # Initialize OPSEC (offensive mode: browser fingerprints, timing, counter-detection)
+        if self.offensive_mode:
+            from app.services.security.opsec import OpsecManager
+            self._opsec = OpsecManager()
+            logger.info(
+                "cognitive_scan.opsec_active",
+                scan_id=self._scan_id,
+                profile=self._opsec.fingerprints.get_profile().get("name", "unknown"),
+            )
+
         # Initialize the LLM brain for ORIENT/DECIDE/REFLECT
         # In offensive mode, offensive framework lenses are loaded
         reasoner = CognitiveReasoner(
@@ -383,6 +472,9 @@ class CognitiveScanEngine:
         for cycle_num in range(1, self.max_cycles + 1):
             result.cycles_used = cycle_num
             thinking = []
+
+            # ── OPSEC: Rotate fingerprint between cycles ──────
+            self._opsec_rotate_if_needed(cycle_num)
 
             # ── OBSERVE ────────────────────────────────────────
             thinking.append(f"[OBSERVE] Cycle {cycle_num}: What do I know about {target}?")
@@ -850,11 +942,7 @@ class CognitiveScanEngine:
                 # Fire decoys asynchronously
                 import asyncio
                 import httpx as _httpx
-                req_headers = (
-                    self._proxy_manager.get_request_headers()
-                    if self._proxy_manager
-                    else {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-                )
+                req_headers = self._get_request_headers()
                 deception_proxy = self._resolve_proxy()
                 try:
                     async with _httpx.AsyncClient(
@@ -913,6 +1001,9 @@ class CognitiveScanEngine:
                 if proxy and "proxy" not in params:
                     params["proxy"] = proxy
 
+                # OPSEC: human-like timing before each request
+                await self._opsec_wait()
+
                 # Execute via VulnScannerAgent
                 step_result = await agent.execute(op, params)
                 cycle_result.raw_results.append(step_result)
@@ -927,6 +1018,15 @@ class CognitiveScanEngine:
                     thinking.append(f"  [{op}] Failed: {step_result.get('error', 'unknown')}")
 
             cycle_result.findings = step_findings
+
+            # ── OPSEC: Check if target is fingerprinting us ───
+            if self.offensive_mode:
+                for raw in cycle_result.raw_results:
+                    output = raw.get("output", {})
+                    body = str(output.get("body", ""))
+                    hdrs = output.get("headers", {})
+                    if isinstance(hdrs, dict) and body:
+                        self._opsec_check_response(body, hdrs, thinking)
 
             # ── EVIDENCE CAPTURE (/3vilbob mode) ──────────────
             # Auto-capture evidence for every finding
@@ -961,11 +1061,7 @@ class CognitiveScanEngine:
                         # Re-fetch the file content for parsing
                         try:
                             import httpx as _hx
-                            req_h = (
-                                self._proxy_manager.get_request_headers()
-                                if self._proxy_manager
-                                else {"User-Agent": "Mozilla/5.0"}
-                            )
+                            req_h = self._get_request_headers()
                             async with _hx.AsyncClient(
                                 timeout=10.0, verify=False,
                                 proxy=self._resolve_proxy() or None,
@@ -1200,11 +1296,7 @@ class CognitiveScanEngine:
 
                         # Execute hypothesis tests
                         import httpx as _hx2
-                        req_h2 = (
-                            self._proxy_manager.get_request_headers()
-                            if self._proxy_manager
-                            else {"User-Agent": "Mozilla/5.0"}
-                        )
+                        req_h2 = self._get_request_headers()
                         _proxy2 = self._resolve_proxy()
                         try:
                             async with _hx2.AsyncClient(
@@ -1416,6 +1508,20 @@ class CognitiveScanEngine:
 
         result.target_profile = profile
         result.offensive_mode = self.offensive_mode
+
+        # Attach OPSEC report (/3vilbob mode)
+        if self._opsec:
+            opsec_report = self._opsec.generate_report()
+            result.evidence_summary["opsec"] = {
+                "profiles_rotated": opsec_report.profiles_rotated,
+                "total_requests": opsec_report.total_requests,
+                "timing_delays_total_ms": opsec_report.timing_delays_total_ms,
+                "detected_fingerprinting": opsec_report.detected_fingerprinting,
+            }
+            result.thinking_log.append(
+                f"[OPSEC] Report: {opsec_report.profiles_rotated} identity rotations, "
+                f"{opsec_report.total_requests} requests with {opsec_report.timing_delays_total_ms}ms total timing delays"
+            )
 
         # Attach evidence chain summary (/3vilbob mode)
         if self._evidence:
@@ -1673,6 +1779,63 @@ class CognitiveScanEngine:
         return "Exploitation completed"
 
     # ------------------------------------------------------------------
+    # OPSEC helpers (fingerprint rotation, timing, counter-detection)
+    # ------------------------------------------------------------------
+
+    def _get_request_headers(self) -> dict[str, str]:
+        """Get request headers with OPSEC-grade browser fingerprints.
+
+        When OPSEC is active: full browser profile (UA, Sec-CH-UA,
+        Sec-Fetch, Accept, etc.) that passes bot detection.
+        Fallback: proxy manager headers or basic UA.
+        """
+        if self._opsec:
+            return self._opsec.get_request_headers()
+        if self._proxy_manager:
+            return self._proxy_manager.get_request_headers()
+        return {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+    async def _opsec_wait(self) -> int:
+        """Wait with human-like timing before next request.
+
+        Returns delay in ms (0 if OPSEC not active).
+        """
+        if self._opsec:
+            return await self._opsec.timing.wait_before_request()
+        return 0
+
+    def _opsec_rotate_if_needed(self, cycle_num: int) -> None:
+        """Rotate browser fingerprint between OODA cycles.
+
+        Different cycles look like different users visiting the site.
+        """
+        if self._opsec and cycle_num > 1:
+            self._opsec.rotate_identity()
+            logger.debug(
+                "cognitive_scan.opsec_rotated",
+                cycle=cycle_num,
+                profile=self._opsec.fingerprints.get_profile().get("name", ""),
+                rotations=self._opsec.fingerprints.rotation_count,
+            )
+
+    def _opsec_check_response(
+        self,
+        body: str,
+        headers: dict[str, str],
+        thinking: list[str],
+    ) -> None:
+        """Check if the target is trying to fingerprint our scanner."""
+        if not self._opsec:
+            return
+        result = self._opsec.detect_fingerprinting(body, headers)
+        if result["fingerprinting_detected"]:
+            thinking.append(
+                f"[OPSEC] Counter-fingerprinting detected (risk: {result['risk']}): "
+                f"{'; '.join(result['findings'][:3])}"
+            )
+            thinking.append(f"  Recommendation: {result['recommendation']}")
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
@@ -1764,6 +1927,21 @@ class CognitiveScanEngine:
         # Forgotten infrastructure scan (/3vilbob mode)
         if self.offensive_mode:
             strategies.append(_forgotten_infra_strategy(target))
+
+        # Canary echo analysis (/3vilbob mode)
+        if self.offensive_mode:
+            live_urls = [h.get("url", "") for h in profile.live_hosts if h.get("url")]
+            strategies.append(_canary_echo_strategy(target, live_urls))
+
+        # State machine inference (/3vilbob mode, after cycle 1 when we have endpoints)
+        if self.offensive_mode and (profile.interesting_paths or profile.live_hosts):
+            endpoints = list(profile.interesting_paths)
+            strategies.append(_state_machine_strategy(target, endpoints))
+
+        # Cost amplification detection (/3vilbob mode)
+        if self.offensive_mode:
+            live_urls = [h.get("url", "") for h in profile.live_hosts if h.get("url")]
+            strategies.append(_cost_amplification_strategy(target, live_urls))
 
         # Targeted vuln scan -- only after we know the stack
         strategies.append(_targeted_vuln_scan_strategy(
@@ -1871,13 +2049,35 @@ class CognitiveScanEngine:
                 logger.debug("cognitive_scan.novel_strategy_gen_failed", error=str(exc)[:200])
 
         # Reorder based on target type (template strategies first, novel after)
-        template_names = {"passive_osint", "header_analysis", "path_discovery", "targeted_vuln_scan", "forgotten_infrastructure"}
+        # New interactive strategies (echo, state machine, cost amp) run after
+        # standard templates but before LLM-generated novel strategies.
+        template_names = {
+            "passive_osint", "header_analysis", "path_discovery",
+            "targeted_vuln_scan", "forgotten_infrastructure",
+            "canary_echo", "state_machine", "cost_amplification",
+            "semantic_mutation_bypass",
+        }
         if profile.target_type == "hardened_cloud":
-            order = {"passive_osint": 0, "header_analysis": 1, "path_discovery": 2, "targeted_vuln_scan": 3}
+            order = {
+                "passive_osint": 0, "header_analysis": 1, "path_discovery": 2,
+                "targeted_vuln_scan": 3, "forgotten_infrastructure": 4,
+                "canary_echo": 5, "state_machine": 6, "cost_amplification": 7,
+                "semantic_mutation_bypass": 8,
+            }
         elif profile.target_type == "waf_protected":
-            order = {"passive_osint": 0, "header_analysis": 1, "targeted_vuln_scan": 2, "path_discovery": 3}
+            order = {
+                "passive_osint": 0, "header_analysis": 1, "targeted_vuln_scan": 2,
+                "path_discovery": 3, "forgotten_infrastructure": 4,
+                "semantic_mutation_bypass": 5, "canary_echo": 6,
+                "state_machine": 7, "cost_amplification": 8,
+            }
         else:
-            order = {"passive_osint": 0, "header_analysis": 1, "path_discovery": 2, "targeted_vuln_scan": 3}
+            order = {
+                "passive_osint": 0, "header_analysis": 1, "path_discovery": 2,
+                "targeted_vuln_scan": 3, "forgotten_infrastructure": 4,
+                "canary_echo": 5, "state_machine": 6, "cost_amplification": 7,
+                "semantic_mutation_bypass": 8,
+            }
 
         # Novel strategies get order 10+ (used after templates exhausted)
         def _sort_key(s: ScanStrategy) -> int:
@@ -1956,6 +2156,21 @@ class CognitiveScanEngine:
         elif operation == "_forgotten_infra_scan":
             # Scan for forgotten infrastructure services
             return await self._forgotten_infra_scan(params.get("domain", ""))
+
+        elif operation == "_canary_echo":
+            # Canary echo analysis -- one string, four vuln classes
+            return await self._canary_echo(params.get("targets", []))
+
+        elif operation == "_state_machine":
+            # State machine inference -- test action sequences
+            return await self._state_machine(
+                params.get("target", ""),
+                params.get("known_endpoints", []),
+            )
+
+        elif operation == "_cost_amplification":
+            # Cost amplification detection -- timing-based DoS detection
+            return await self._cost_amplification(params.get("targets", []))
 
         return {"summary": f"Internal operation {operation} not implemented yet", "findings": []}
 
@@ -2138,12 +2353,8 @@ class CognitiveScanEngine:
                 for path in interesting_paths:
                     try:
                         url = f"{target.rstrip('/')}{path}"
-                        # Use legitimacy mimicry headers if ProxyManager available
-                        req_headers = (
-                            self._proxy_manager.get_request_headers()
-                            if self._proxy_manager
-                            else {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-                        )
+                        req_headers = self._get_request_headers()
+                        await self._opsec_wait()
                         resp = await client.get(url, headers=req_headers)
                         if resp.status_code not in (404, 403, 301, 302, 503):
                             findings.append({
@@ -2188,11 +2399,7 @@ class CognitiveScanEngine:
         findings: list[dict[str, Any]] = []
 
         # Use legitimacy mimicry headers
-        req_headers = (
-            self._proxy_manager.get_request_headers()
-            if self._proxy_manager
-            else {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        )
+        req_headers = self._get_request_headers()
         proxy = self._resolve_proxy()
 
         try:
@@ -2324,9 +2531,7 @@ class CognitiveScanEngine:
         # 3. Capture response snapshot if we can re-fetch
         try:
             import httpx
-            request_headers = {}
-            if self._proxy_manager:
-                request_headers = self._proxy_manager.get_request_headers()
+            request_headers = self._get_request_headers()
 
             async with httpx.AsyncClient(
                 timeout=10.0,
@@ -2334,6 +2539,7 @@ class CognitiveScanEngine:
                 verify=False,
                 proxy=self._resolve_proxy() or None,
             ) as client:
+                await self._opsec_wait()
                 resp = await client.get(url, headers=request_headers)
                 resp_headers = dict(resp.headers)
                 body = resp.text
@@ -2508,3 +2714,208 @@ class CognitiveScanEngine:
             evidence = self._evidence.get_evidence_summary()
 
         return gen.generate(vuln_findings, metadata, evidence_summary=evidence)
+
+    # ------------------------------------------------------------------
+    # Interactive strategies (send probes, analyze responses)
+    # ------------------------------------------------------------------
+
+    async def _canary_echo(self, target_urls: list[str]) -> dict[str, Any]:
+        """Inject canary strings and analyze where they echo back.
+
+        One unique string tests four vulnerability classes simultaneously:
+        reflected XSS, error disclosure, header injection, filter analysis.
+        """
+        import httpx
+        from app.services.cognition.unreplicable import ResponseEchoAnalyzer
+
+        analyzer = ResponseEchoAnalyzer()
+        canary = analyzer.generate_canary()
+        probes = analyzer.build_canary_probes(target_urls, canary)
+
+        findings: list[dict[str, Any]] = []
+        req_headers = self._get_request_headers()
+        proxy = self._resolve_proxy()
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=8.0,
+                follow_redirects=False,
+                verify=False,
+                proxy=proxy or None,
+            ) as client:
+                for probe in probes:
+                    await self._opsec_wait()
+                    try:
+                        url = probe["url"]
+                        method = probe.get("method", "GET")
+                        headers = {**req_headers, **probe.get("headers", {})}
+                        body = probe.get("body", "")
+
+                        if method == "POST":
+                            resp = await client.post(url, content=body, headers=headers)
+                        else:
+                            resp = await client.get(url, headers=headers)
+
+                        # Check for counter-fingerprinting
+                        self._opsec_check_response(resp.text, dict(resp.headers), [])
+
+                        # Analyze echo
+                        echo_findings = analyzer.analyze_echo(
+                            canary=canary,
+                            probe=probe,
+                            response_body=resp.text,
+                            response_headers=dict(resp.headers),
+                            status_code=resp.status_code,
+                        )
+                        for ef in echo_findings:
+                            ef["url"] = url
+                            ef["canary"] = canary
+                            ef["info"] = {
+                                "name": f"Echo: {ef['type']} at {probe.get('injection_point', 'unknown')}",
+                                "severity": ef.get("severity", "medium"),
+                                "description": ef.get("description", ""),
+                            }
+                            findings.append(ef)
+                    except Exception:
+                        continue
+        except Exception as exc:
+            return {"summary": f"Canary echo failed: {str(exc)[:100]}", "findings": []}
+
+        return {
+            "summary": f"Canary echo: {len(findings)} reflections found across {len(probes)} probes",
+            "findings": findings,
+        }
+
+    async def _state_machine(
+        self,
+        target: str,
+        known_endpoints: list[str],
+    ) -> dict[str, Any]:
+        """Test application state transitions for broken access control.
+
+        Generates sequences (login -> access -> logout -> access) and
+        checks if state transitions are properly enforced.
+        """
+        import httpx
+        from app.services.cognition.unreplicable import StateMachineInferrer
+
+        inferrer = StateMachineInferrer()
+        sequences = inferrer.generate_sequences(target, known_endpoints)
+
+        findings: list[dict[str, Any]] = []
+        req_headers = self._get_request_headers()
+        proxy = self._resolve_proxy()
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=10.0,
+                follow_redirects=False,
+                verify=False,
+                proxy=proxy or None,
+            ) as client:
+                for sequence in sequences:
+                    seq_results = []
+                    for step in sequence:
+                        await self._opsec_wait()
+                        try:
+                            method = step.get("method", "GET")
+                            url = step.get("url", "")
+                            if method == "POST":
+                                resp = await client.post(url, headers=req_headers)
+                            elif method == "DELETE":
+                                resp = await client.request("DELETE", url, headers=req_headers)
+                            elif method == "PUT":
+                                resp = await client.put(url, headers=req_headers)
+                            else:
+                                resp = await client.get(url, headers=req_headers)
+
+                            seq_results.append({
+                                "status_code": resp.status_code,
+                                "body_length": len(resp.content),
+                            })
+                        except Exception:
+                            seq_results.append({"status_code": 0, "body_length": 0})
+
+                    # Analyze sequence results
+                    seq_findings = inferrer.analyze_sequence_results(sequence, seq_results)
+                    for sf in seq_findings:
+                        sf["info"] = {
+                            "name": f"State: {sf.get('type', 'violation')} -- {sf.get('step_name', '')}",
+                            "severity": sf.get("severity", "high"),
+                            "description": sf.get("description", ""),
+                        }
+                        findings.append(sf)
+        except Exception as exc:
+            return {"summary": f"State machine failed: {str(exc)[:100]}", "findings": []}
+
+        return {
+            "summary": f"State machine: {len(findings)} violations in {len(sequences)} sequences",
+            "findings": findings,
+        }
+
+    async def _cost_amplification(self, target_urls: list[str]) -> dict[str, Any]:
+        """Detect endpoints vulnerable to cost amplification via timing.
+
+        Sends normal baseline request, then amplification probes,
+        and compares response times. High ratio = vulnerable.
+        """
+        import httpx
+        from app.services.cognition.unreplicable import CostAmplificationDetector
+
+        detector = CostAmplificationDetector()
+        probes = detector.build_timing_probes(target_urls)
+
+        findings: list[dict[str, Any]] = []
+        req_headers = self._get_request_headers()
+        proxy = self._resolve_proxy()
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=15.0,
+                follow_redirects=False,
+                verify=False,
+                proxy=proxy or None,
+            ) as client:
+                # Establish baseline timing with a simple GET
+                baseline_ms = 200  # Default assumption
+                if target_urls:
+                    await self._opsec_wait()
+                    try:
+                        start = time.time()
+                        await client.get(target_urls[0], headers=req_headers)
+                        baseline_ms = int((time.time() - start) * 1000)
+                    except Exception:
+                        pass
+
+                for probe in probes:
+                    await self._opsec_wait()
+                    try:
+                        url = probe["url"]
+                        method = probe.get("method", "GET")
+                        headers = {**req_headers, **probe.get("headers", {})}
+                        body = probe.get("body", "")
+
+                        start = time.time()
+                        if method == "POST":
+                            await client.post(url, content=body, headers=headers)
+                        else:
+                            await client.get(url, headers=headers)
+                        elapsed_ms = int((time.time() - start) * 1000)
+
+                        finding = detector.analyze_timing(probe, elapsed_ms, baseline_ms)
+                        if finding:
+                            finding["info"] = {
+                                "name": f"Amplification: {finding['probe_name']}",
+                                "severity": finding.get("severity", "medium"),
+                                "description": finding.get("description", ""),
+                            }
+                            findings.append(finding)
+                    except Exception:
+                        continue
+        except Exception as exc:
+            return {"summary": f"Cost amplification failed: {str(exc)[:100]}", "findings": []}
+
+        return {
+            "summary": f"Cost amplification: {len(findings)} amplifiable endpoints from {len(probes)} probes (baseline: {baseline_ms}ms)",
+            "findings": findings,
+        }
