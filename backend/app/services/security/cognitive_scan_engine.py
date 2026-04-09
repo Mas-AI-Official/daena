@@ -263,7 +263,10 @@ class CognitiveScanEngine:
         self.proxy = proxy
         self.use_tor = use_tor
         self.agi_mode = agi_mode
-        self.offensive_mode = offensive_mode
+        # Offensive mode: local flag OR global /3vilbob mode
+        # The global mode is the source of truth, local flag is for direct API use
+        from app.services.security.evilbob_mode import is_active
+        self.offensive_mode = offensive_mode or is_active()
         self._scan_id = str(uuid4())[:8]
         self._reasoner_initialized = False
         self._evidence = None  # EvidenceCapture, initialized in scan()

@@ -522,10 +522,77 @@ class ExecutionService(BaseService):
             offensive = params.get("offensive_mode", False)
             agi = params.get("agi_mode", False)
 
+            # If offensive requested, activate global /3vilbob mode
+            if offensive:
+                from app.services.security.evilbob_mode import activate, is_active
+                if not is_active():
+                    evilbob_key = os.environ.get("EVILBOB_KEY", "")
+                    state = activate(key=evilbob_key, user_id="founder")
+                    if not state.active:
+                        return {
+                            "agent": "SecurityAgent",
+                            "success": False,
+                            "operation": tool_name,
+                            "output": None,
+                            "error": f"/3vilbob activation failed: {state.reason_denied}",
+                        }
+
             engine = CognitiveScanEngine(
                 agi_mode=agi,
                 offensive_mode=offensive,
             )
+
+            if operation == "evilbob_toggle":
+                from app.services.security.evilbob_mode import (
+                    activate, deactivate, get_state, is_active,
+                )
+                action = params.get("action", "STATUS")
+                if action == "ON":
+                    evilbob_key = os.environ.get("EVILBOB_KEY", "")
+                    state = activate(key=evilbob_key, user_id="founder")
+                    return {
+                        "agent": "SecurityAgent",
+                        "success": state.active,
+                        "operation": tool_name,
+                        "output": {
+                            "active": state.active,
+                            "capabilities": state.capabilities,
+                            "environment": state.environment,
+                            "message": (
+                                "Full spectrum mode active. Defensive + offensive."
+                                if state.active
+                                else f"Activation failed: {state.reason_denied}"
+                            ),
+                        },
+                        "error": state.reason_denied if not state.active else None,
+                    }
+                elif action == "OFF":
+                    state = deactivate()
+                    return {
+                        "agent": "SecurityAgent",
+                        "success": True,
+                        "operation": tool_name,
+                        "output": {
+                            "active": False,
+                            "message": "Defensive mode only. Offensive capabilities deactivated.",
+                        },
+                        "error": None,
+                    }
+                else:  # STATUS
+                    state = get_state()
+                    return {
+                        "agent": "SecurityAgent",
+                        "success": True,
+                        "operation": tool_name,
+                        "output": {
+                            "active": state.active,
+                            "capabilities": state.capabilities,
+                            "environment": state.environment,
+                            "activated_at": state.activated_at,
+                            "activated_by": state.activated_by,
+                        },
+                        "error": None,
+                    }
 
             if operation in ("cognitive_scan", "cognitive_scan_offensive"):
                 result = await engine.scan(target, program=program)

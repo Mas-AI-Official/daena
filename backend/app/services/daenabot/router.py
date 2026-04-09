@@ -327,7 +327,18 @@ _CALENDAR_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
 # ── Security scan patterns (/3vilbob hidden activation) ──────
 
 _SECURITY_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
-    # /3vilbob <target> [program] -- hidden offensive mode activation
+    # /3vilbob ON -- activate full-spectrum mode (defensive + offensive)
+    # /3vilbob OFF -- deactivate back to defensive-only
+    (
+        re.compile(
+            r"/3vilbob\s+(on|off|status)\s*$",
+            re.IGNORECASE,
+        ),
+        "security.evilbob_toggle",
+        lambda m: {"action": m.group(1).upper()},
+        "Toggle /3vilbob mode",
+    ),
+    # /3vilbob <target> [program] -- activate + scan in one command
     # No help text, no menu entry. You know it or you don't.
     (
         re.compile(
@@ -341,7 +352,7 @@ _SECURITY_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
             "offensive_mode": True,
             "agi_mode": True,
         },
-        "Offensive scan: {target}",
+        "Full spectrum scan: {target}",
     ),
     # "scan <target>" or "security scan <domain>"
     (

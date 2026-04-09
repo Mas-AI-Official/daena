@@ -283,7 +283,7 @@ class TestOffensiveLenses:
     """Tests for the offensive framework lenses in CognitiveReasoner."""
 
     def test_offensive_frameworks_exist(self):
-        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 7
+        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 10
         required = [
             "defender_assumption_mapping",
             "legitimacy_mimicry",
@@ -608,3 +608,223 @@ class TestReportGeneratorEvidence:
         content = open(result).read()
         assert "Evidence Chain" not in content
         os.unlink(result)
+
+
+# ── Phase 3: Global mode, key validation, full spectrum ──────
+
+class TestEvilBobModeManager:
+    """Tests for the global /3vilbob mode manager."""
+
+    def setup_method(self):
+        """Reset global state before each test."""
+        from app.services.security import evilbob_mode
+        evilbob_mode._current_state = evilbob_mode.EvilBobState()
+
+    def test_not_active_by_default(self):
+        from app.services.security.evilbob_mode import is_active
+        assert is_active() is False
+
+    def test_activate_with_valid_key(self):
+        from app.services.security.evilbob_mode import activate, is_active
+        with patch.dict(os.environ, {"EVILBOB_KEY": "test-secret-123"}):
+            state = activate(key="test-secret-123")
+            assert state.active is True
+            assert is_active() is True
+            assert "defensive_scanning" in state.capabilities
+            assert "offensive_exploitation" in state.capabilities
+            assert "post_exploitation" in state.capabilities
+            assert "opsec_reasoning" in state.capabilities
+
+    def test_activate_with_invalid_key(self):
+        from app.services.security.evilbob_mode import activate, is_active
+        with patch.dict(os.environ, {"EVILBOB_KEY": "real-secret"}):
+            state = activate(key="wrong-key")
+            assert state.active is False
+            assert is_active() is False
+            assert "Invalid activation key" in state.reason_denied
+
+    def test_activate_without_env_key(self):
+        from app.services.security.evilbob_mode import activate
+        with patch.dict(os.environ, {}, clear=True):
+            # Make sure EVILBOB_KEY is not set
+            os.environ.pop("EVILBOB_KEY", None)
+            state = activate(key="anything")
+            assert state.active is False
+
+    def test_activate_denied_on_cloud(self):
+        from app.services.security.evilbob_mode import activate
+        with patch.dict(os.environ, {"EVILBOB_KEY": "secret", "K_SERVICE": "daena-prod"}):
+            state = activate(key="secret")
+            assert state.active is False
+            assert "cloud" in state.reason_denied.lower() or "local" in state.reason_denied.lower()
+
+    def test_activate_denied_on_production(self):
+        from app.services.security.evilbob_mode import activate
+        with patch.dict(os.environ, {"EVILBOB_KEY": "secret"}):
+            with patch("app.core.config.get_settings") as mock:
+                mock.return_value = MagicMock(app_env="production")
+                state = activate(key="secret")
+                assert state.active is False
+
+    def test_deactivate(self):
+        from app.services.security.evilbob_mode import activate, deactivate, is_active
+        with patch.dict(os.environ, {"EVILBOB_KEY": "secret"}):
+            activate(key="secret")
+            assert is_active() is True
+            deactivate()
+            assert is_active() is False
+
+    def test_has_capability_defensive_always_available(self):
+        from app.services.security.evilbob_mode import has_capability
+        # Even when not active, defensive capabilities are available
+        assert has_capability("defensive_scanning") is True
+        assert has_capability("evidence_capture") is True
+
+    def test_has_capability_offensive_only_when_active(self):
+        from app.services.security.evilbob_mode import activate, has_capability
+        assert has_capability("offensive_exploitation") is False
+        assert has_capability("post_exploitation") is False
+        with patch.dict(os.environ, {"EVILBOB_KEY": "secret"}):
+            activate(key="secret")
+            assert has_capability("offensive_exploitation") is True
+            assert has_capability("post_exploitation") is True
+            assert has_capability("opsec_reasoning") is True
+            assert has_capability("target_interaction") is True
+
+    def test_detect_environment_local(self):
+        from app.services.security.evilbob_mode import detect_environment
+        # Clear all cloud indicators
+        env_clean = {k: v for k, v in os.environ.items()
+                     if k not in ("K_SERVICE", "GAE_ENV", "AWS_LAMBDA_FUNCTION_NAME")}
+        with patch.dict(os.environ, env_clean, clear=True):
+            with patch("app.core.config.get_settings") as mock:
+                mock.return_value = MagicMock(app_env="development")
+                assert detect_environment() == "local"
+
+    def test_detect_environment_cloud_run(self):
+        from app.services.security.evilbob_mode import detect_environment
+        with patch.dict(os.environ, {"K_SERVICE": "daena-prod"}):
+            assert detect_environment() == "cloud"
+
+    def test_state_includes_activation_metadata(self):
+        from app.services.security.evilbob_mode import activate, get_state
+        with patch.dict(os.environ, {"EVILBOB_KEY": "secret"}):
+            activate(key="secret", user_id="masoud", session_id="sess-123")
+            state = get_state()
+            assert state.activated_by == "masoud"
+            assert state.session_id == "sess-123"
+            assert state.activated_at != ""
+
+
+class TestRouterEvilBobToggle:
+    """Tests for /3vilbob ON/OFF/STATUS routing."""
+
+    def test_3vilbob_on(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("/3vilbob ON")
+        assert result is not None
+        assert result.tool_name == "security.evilbob_toggle"
+        assert result.params["action"] == "ON"
+
+    def test_3vilbob_off(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("/3vilbob off")
+        assert result is not None
+        assert result.tool_name == "security.evilbob_toggle"
+        assert result.params["action"] == "OFF"
+
+    def test_3vilbob_status(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("/3vilbob status")
+        assert result is not None
+        assert result.tool_name == "security.evilbob_toggle"
+        assert result.params["action"] == "STATUS"
+
+    def test_3vilbob_scan_still_works(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("/3vilbob target.com hackerone")
+        assert result is not None
+        assert result.tool_name == "security.cognitive_scan_offensive"
+        assert result.params["target"] == "target.com"
+
+
+class TestCognitiveReasonerFullSpectrum:
+    """Tests that /3vilbob adds offensive ON TOP of defensive lenses."""
+
+    def test_offensive_lenses_include_opsec(self):
+        assert "opsec_reasoning" in OFFENSIVE_FRAMEWORK_PROMPTS
+        assert "OpSec" in OFFENSIVE_FRAMEWORK_PROMPTS["opsec_reasoning"]
+
+    def test_offensive_lenses_include_post_exploitation(self):
+        assert "post_exploitation" in OFFENSIVE_FRAMEWORK_PROMPTS
+        assert "POST-EXPLOITATION" in OFFENSIVE_FRAMEWORK_PROMPTS["post_exploitation"]
+
+    def test_offensive_lenses_include_target_interaction(self):
+        assert "target_interaction" in OFFENSIVE_FRAMEWORK_PROMPTS
+        assert "CONNECTS" in OFFENSIVE_FRAMEWORK_PROMPTS["target_interaction"]
+
+    def test_full_spectrum_has_both_defensive_and_offensive(self):
+        """When offensive mode ON, ALL lenses are available (defensive + offensive)."""
+        all_lenses = {**FRAMEWORK_PROMPTS, **OFFENSIVE_FRAMEWORK_PROMPTS}
+        # Defensive lenses still present
+        assert "first_principles" in all_lenses
+        assert "inversion" in all_lenses
+        assert "constraint_probe" in all_lenses
+        # Offensive lenses added
+        assert "opsec_reasoning" in all_lenses
+        assert "post_exploitation" in all_lenses
+        assert "target_interaction" in all_lenses
+        assert "defender_assumption_mapping" in all_lenses
+        assert "evidence_maximization" in all_lenses
+
+    def test_offensive_count(self):
+        """Should have 10 offensive lenses total."""
+        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 10
+
+
+class TestConstraintProbeNoBlocks:
+    """Tests that constraint probe removes blocks in /3vilbob mode."""
+
+    @pytest.mark.asyncio
+    async def test_outbound_channels_blocked_in_normal_mode(self):
+        """In normal mode, outbound data channels are filtered."""
+        from app.services.cognition.constraint_probe import ConstraintProbe
+        from app.services.security import evilbob_mode
+        evilbob_mode._current_state = evilbob_mode.EvilBobState(active=False)
+
+        probe = ConstraintProbe()
+        result = await probe.probe(
+            task="Send data externally",
+            constraint="Network blocked",
+            error="Connection refused",
+            context={"contains_client_data": True},
+        )
+        # In normal mode with client data context, some channels filtered
+        channel_names = [c.name for c in result.open_channels]
+        # DNS should be filtered when contains_client_data is True
+        assert "dns" not in channel_names
+
+    @pytest.mark.asyncio
+    async def test_all_channels_open_in_evilbob_mode(self):
+        """In /3vilbob mode, NO channels are filtered. Key is the gate."""
+        from app.services.cognition.constraint_probe import ConstraintProbe
+        from app.services.security import evilbob_mode
+        evilbob_mode._current_state = evilbob_mode.EvilBobState(active=True)
+
+        probe = ConstraintProbe()
+        result = await probe.probe(
+            task="Send data externally",
+            constraint="No internet connection timeout unreachable",
+            error="Network unreachable",
+            context={"contains_client_data": True},
+        )
+        channel_names = [c.name for c in result.open_channels]
+        # In /3vilbob mode with client data, outbound channels NOT filtered
+        # (they would be filtered in normal mode by _is_outbound_data_risk)
+        # dns and websocket are "indirect" category, so they're open
+        assert "dns" in channel_names
+        assert "websocket" in channel_names
+        assert "mcp_bridge" in channel_names  # Would be filtered in normal mode with client data
+
+        # Clean up
+        evilbob_mode._current_state = evilbob_mode.EvilBobState(active=False)

@@ -192,26 +192,32 @@ async def test_dispatch_security_offensive_scan() -> None:
     mock_result.offensive_mode = True
     mock_result.thinking_log = []
 
-    with patch("app.core.config.get_settings") as mock_settings:
-        mock_settings.return_value = MagicMock(enable_daenabot=True)
-        with patch(
-            "app.services.security.cognitive_scan_engine.CognitiveScanEngine.__init__",
-            return_value=None,
-        ) as mock_init:
+    import os
+    with patch.dict(os.environ, {"EVILBOB_KEY": "test-secret"}):
+        with patch("app.core.config.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(enable_daenabot=True, app_env="development")
             with patch(
-                "app.services.security.cognitive_scan_engine.CognitiveScanEngine.scan",
-                new_callable=AsyncMock,
-                return_value=mock_result,
-            ):
-                result = await svc._dispatch_tool(
-                    "security.cognitive_scan_offensive",
-                    {"target": "target.com", "offensive_mode": True, "agi_mode": True},
-                )
+                "app.services.security.cognitive_scan_engine.CognitiveScanEngine.__init__",
+                return_value=None,
+            ) as mock_init:
+                with patch(
+                    "app.services.security.cognitive_scan_engine.CognitiveScanEngine.scan",
+                    new_callable=AsyncMock,
+                    return_value=mock_result,
+                ):
+                    result = await svc._dispatch_tool(
+                        "security.cognitive_scan_offensive",
+                        {"target": "target.com", "offensive_mode": True, "agi_mode": True},
+                    )
 
     assert result["success"] is True
     assert result["output"]["offensive_mode"] is True
     # Verify CognitiveScanEngine was constructed with offensive params
     mock_init.assert_called_once_with(agi_mode=True, offensive_mode=True)
+
+    # Clean up global mode state
+    from app.services.security.evilbob_mode import deactivate
+    deactivate()
 
 
 @pytest.mark.asyncio
