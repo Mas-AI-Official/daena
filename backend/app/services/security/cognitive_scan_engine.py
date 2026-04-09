@@ -218,14 +218,20 @@ def _targeted_vuln_scan_strategy(target: str, technologies: list[str], cves: lis
 # ---------------------------------------------------------------------------
 
 class CognitiveScanEngine:
-    """OODA-R loop for security scanning.
+    """OODA-R loop for security scanning with LLM-powered reasoning.
 
-    Wraps VulnScannerAgent with cognitive reasoning so Daena
-    thinks about WHY scans succeed or fail and adapts.
+    Wraps VulnScannerAgent with CognitiveReasoner so Daena THINKS
+    about WHY scans succeed or fail, generates novel strategies,
+    and learns from every cycle.
+
+    The CognitiveReasoner replaces hardcoded if-else trees with
+    actual LLM reasoning using framework lenses (First Principles,
+    Inversion, Constraint Probe, etc.). In AGI mode, it uses
+    Quintessence (multi-model debate) for the deepest analysis.
 
     Usage::
 
-        engine = CognitiveScanEngine()
+        engine = CognitiveScanEngine(agi_mode=True)
         result = await engine.scan("cloud.google.com", program="google_vrp")
     """
 
@@ -235,11 +241,14 @@ class CognitiveScanEngine:
         max_cycles: int = 4,
         proxy: str = "",
         use_tor: bool = False,
+        agi_mode: bool = False,
     ) -> None:
         self.max_cycles = max_cycles
         self.proxy = proxy
         self.use_tor = use_tor
+        self.agi_mode = agi_mode
         self._scan_id = str(uuid4())[:8]
+        self._reasoner_initialized = False
 
     async def scan(
         self,
@@ -255,8 +264,28 @@ class CognitiveScanEngine:
         - What channels did the defender miss?
         """
         from app.services.daenabot.vuln_scanner_agent import VulnScannerAgent
+        from app.services.cognition.cognitive_reasoner import CognitiveReasoner
 
         agent = VulnScannerAgent()
+
+        # Initialize the LLM brain for ORIENT/DECIDE/REFLECT
+        reasoner = CognitiveReasoner(agi_mode=self.agi_mode)
+        try:
+            await reasoner.initialize()
+            self._reasoner_initialized = reasoner.is_llm_available
+            logger.info(
+                "cognitive_scan.reasoner_initialized",
+                mode=reasoner.reasoning_mode,
+                model=reasoner._model_id,
+                agi=self.agi_mode,
+            )
+        except Exception as exc:
+            logger.warning("cognitive_scan.reasoner_init_failed", error=str(exc))
+            self._reasoner_initialized = False
+
+        # Resolve proxy for IP protection
+        proxy = self._resolve_proxy()
+
         result = CognitiveScanResult(target=target)
         profile = TargetProfile(domain=target)
         cycle_results: list[ScanCycleResult] = []
@@ -271,7 +300,9 @@ class CognitiveScanEngine:
             if cycle_num == 1:
                 # First cycle: gather initial intel
                 thinking.append("  First contact. Running subdomain enumeration.")
-                sub_result = await agent.execute("subdomain_enum", {"target": target})
+                sub_result = await agent.execute("subdomain_enum", {
+                    "target": target, "proxy": proxy,
+                })
                 if sub_result.get("success"):
                     subs = sub_result.get("output", {}).get("subdomains", [])
                     profile.subdomains = subs
@@ -281,7 +312,9 @@ class CognitiveScanEngine:
 
                 # HTTP probe to see what's alive and get tech fingerprints
                 probe_targets = profile.subdomains[:15] if profile.subdomains else [target]
-                probe_result = await agent.execute("http_probe", {"targets": probe_targets})
+                probe_result = await agent.execute("http_probe", {
+                    "targets": probe_targets, "proxy": proxy,
+                })
                 if probe_result.get("success"):
                     hosts = probe_result.get("output", {}).get("results", [])
                     profile.live_hosts = hosts
@@ -313,22 +346,66 @@ class CognitiveScanEngine:
                     thinking.append(f"  Previous strategy '{prev.strategy_name}' failed: {prev.failure_reason}")
                     thinking.append(f"  Open channels from constraint probe: {prev.open_channels}")
 
-            # Classify target type based on observations
+            # Classify target type (deterministic baseline)
             profile.target_type = self._classify_target(profile)
             thinking.append(f"  Target classified as: {profile.target_type}")
 
-            # ── ORIENT ─────────────────────────────────────────
+            # Populate defenses (for reporting, not duplicated per cycle)
+            if profile.waf_detected and f"WAF: {profile.waf_detected}" not in profile.defenses:
+                profile.defenses.append(f"WAF: {profile.waf_detected}")
+            if profile.http_version == "HTTP/3" and "HTTP/3 (QUIC)" not in profile.defenses:
+                profile.defenses.append("HTTP/3 (QUIC)")
+
+            # ── ORIENT (LLM-powered) ──────────────────────────
+            # The CognitiveReasoner THINKS about the target using
+            # reasoning frameworks (First Principles, Inversion,
+            # Constraint Probe, etc.). In AGI mode, multiple models
+            # debate the analysis via Quintessence.
             thinking.append(f"[ORIENT] What kind of challenge is {target}?")
 
-            if profile.waf_detected:
-                profile.defenses.append(f"WAF: {profile.waf_detected}")
-                thinking.append(f"  WAF detected: {profile.waf_detected}. Standard scans will be filtered.")
-                thinking.append("  Need stealth approach: passive OSINT, header analysis, targeted probes.")
-            if profile.http_version == "HTTP/3":
-                profile.defenses.append("HTTP/3 (QUIC)")
-                thinking.append("  HTTP/3 detected. Modern infrastructure. Likely well-maintained.")
-            if not profile.technologies:
-                thinking.append("  No tech fingerprint. Target is either very clean or using custom stack.")
+            observation = {
+                "target": target,
+                "target_type": profile.target_type,
+                "subdomains": len(profile.subdomains),
+                "live_hosts": len(profile.live_hosts),
+                "waf_detected": profile.waf_detected or "none",
+                "technologies": profile.technologies[:10],
+                "http_version": profile.http_version or "unknown",
+                "defenses": profile.defenses,
+                "response_headers": profile.response_headers,
+            }
+
+            previous_failures = []
+            for cr in cycle_results:
+                if not cr.success:
+                    previous_failures.append({
+                        "strategy": cr.strategy_name,
+                        "reason": cr.failure_reason,
+                        "open_channels": cr.open_channels,
+                    })
+
+            if self._reasoner_initialized:
+                # LLM reasons about the situation -- not if-else trees
+                orient_result = await reasoner.orient(
+                    task=f"Find security vulnerabilities in {target} for bug bounty",
+                    observation=observation,
+                    previous_failures=previous_failures if previous_failures else None,
+                )
+                thinking.append(f"  Brain mode: {orient_result.reasoning_mode} ({orient_result.model_used})")
+                thinking.append(f"  Frameworks applied: {orient_result.frameworks_used}")
+                # Append the LLM's analysis (truncated for thinking log)
+                for line in orient_result.analysis.split("\n")[:8]:
+                    if line.strip():
+                        thinking.append(f"  > {line.strip()}")
+            else:
+                # Deterministic fallback when no LLM available
+                if profile.waf_detected:
+                    thinking.append(f"  WAF detected: {profile.waf_detected}. Standard scans will be filtered.")
+                    thinking.append("  Need stealth approach: passive OSINT, header analysis, targeted probes.")
+                if profile.http_version == "HTTP/3":
+                    thinking.append("  HTTP/3 detected. Modern infrastructure. Likely well-maintained.")
+                if not profile.technologies:
+                    thinking.append("  No tech fingerprint. Target is either very clean or using custom stack.")
 
             # Select which strategies make sense for THIS target
             strategies = self._generate_strategies(target, profile, cycle_results)
@@ -393,6 +470,10 @@ class CognitiveScanEngine:
                 if params.get("findings") == "__PREVIOUS_FINDINGS__":
                     params["findings"] = step_findings
 
+                # Inject proxy for IP protection
+                if proxy and "proxy" not in params:
+                    params["proxy"] = proxy
+
                 # Execute via VulnScannerAgent
                 step_result = await agent.execute(op, params)
                 cycle_result.raw_results.append(step_result)
@@ -408,18 +489,43 @@ class CognitiveScanEngine:
 
             cycle_result.findings = step_findings
 
-            # ── REFLECT ────────────────────────────────────────
+            # ── REFLECT (LLM-powered) ──────────────────────────
             thinking.append(f"[REFLECT] Strategy '{strategy.name}' complete.")
 
             if step_findings:
                 cycle_result.success = True
                 thinking.append(f"  Found {len(step_findings)} findings. Strategy worked.")
                 result.findings.extend(step_findings)
+
+                # LLM reflects on WHY it worked -- understanding success
+                # is as important as understanding failure (EQ)
+                if self._reasoner_initialized:
+                    reflection = await reasoner.reflect(
+                        strategy=strategy.name,
+                        results={"findings_count": len(step_findings), "types": [f.get("type") for f in step_findings[:5]]},
+                        success=True,
+                        task=f"Scan {target}",
+                    )
+                    if reflection.lesson:
+                        thinking.append(f"  Lesson: {reflection.lesson[:200]}")
             else:
                 cycle_result.success = False
                 cycle_result.failure_reason = self._diagnose_failure(strategy, cycle_result, profile)
                 thinking.append(f"  Zero findings. Diagnosing WHY...")
                 thinking.append(f"  Diagnosis: {cycle_result.failure_reason}")
+
+                # LLM reflects on failure -- deeper than deterministic diagnosis
+                if self._reasoner_initialized:
+                    reflection = await reasoner.reflect(
+                        strategy=strategy.name,
+                        results={"failure_reason": cycle_result.failure_reason, "target_type": profile.target_type},
+                        success=False,
+                        task=f"Scan {target}",
+                    )
+                    if reflection.root_cause:
+                        thinking.append(f"  LLM root cause: {reflection.root_cause[:200]}")
+                    if reflection.next_suggestion:
+                        thinking.append(f"  LLM suggestion: {reflection.next_suggestion[:200]}")
 
                 # Run 5 Whys on the failure
                 from app.services.cognition.five_whys import FiveWhys
@@ -488,6 +594,33 @@ class CognitiveScanEngine:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _resolve_proxy(self) -> str:
+        """Resolve proxy URL for IP protection during scanning.
+
+        Priority:
+            1. Explicit proxy passed to constructor
+            2. USE_TOR flag -> socks5://127.0.0.1:9050
+            3. SCAN_PROXY environment variable
+            4. Empty string (direct connection)
+
+        IP protection matters for bug bounty: targets log scanner IPs,
+        and repeated scans from the same IP can trigger bans. Tor or
+        a proxy prevents IP correlation across scan sessions.
+        """
+        import os
+
+        if self.proxy:
+            return self.proxy
+        if self.use_tor:
+            return "socks5://127.0.0.1:9050"
+        env_proxy = os.environ.get("SCAN_PROXY", "")
+        if env_proxy:
+            return env_proxy
+        # Check USE_TOR env var as fallback
+        if os.environ.get("USE_TOR", "").lower() in ("1", "true", "yes"):
+            return "socks5://127.0.0.1:9050"
+        return ""
 
     def _classify_target(self, profile: TargetProfile) -> str:
         """Classify target type based on observations."""
