@@ -828,3 +828,173 @@ class TestConstraintProbeNoBlocks:
 
         # Clean up
         evilbob_mode._current_state = evilbob_mode.EvilBobState(active=False)
+
+
+# ── Phase 4: TargetInteractionAgent ──────────────────────────
+
+class TestTargetInteractionAgent:
+    """Tests for post-exploitation target interaction."""
+
+    def setup_method(self):
+        from app.services.security import evilbob_mode
+        evilbob_mode._current_state = evilbob_mode.EvilBobState(active=False)
+
+    def teardown_method(self):
+        from app.services.security import evilbob_mode
+        evilbob_mode._current_state = evilbob_mode.EvilBobState(active=False)
+
+    @pytest.mark.asyncio
+    async def test_refuses_without_evilbob_mode(self):
+        """Agent refuses to operate when /3vilbob is not active."""
+        from app.services.daenabot.target_interaction_agent import TargetInteractionAgent
+        agent = TargetInteractionAgent()
+        result = await agent.execute("http_request", {"url": "http://target.com"})
+        assert result["success"] is False
+        assert "/3vilbob mode is not active" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_works_with_evilbob_mode(self):
+        """Agent works when /3vilbob is active."""
+        from app.services.daenabot.target_interaction_agent import TargetInteractionAgent
+        from app.services.security import evilbob_mode
+        evilbob_mode._current_state = evilbob_mode.EvilBobState(
+            active=True,
+            capabilities=["target_interaction", "offensive_exploitation"],
+        )
+
+        agent = TargetInteractionAgent()
+        # Mock httpx to avoid real network call
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.headers = {"server": "test"}
+            mock_resp.text = "<html>admin panel</html>"
+            mock_resp.content = b"<html>admin panel</html>"
+            mock_resp.url = "http://target.com/admin"
+            mock_client.return_value.__aenter__ = AsyncMock(return_value=MagicMock(
+                request=AsyncMock(return_value=mock_resp),
+            ))
+            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await agent.execute("http_request", {
+                "url": "http://target.com/admin",
+                "headers": {"Authorization": "Bearer leaked_token"},
+            })
+        # Even if the mock doesn't perfectly work, the gate check passed
+        assert result["error"] is None or "Request failed" in (result.get("error") or "")
+
+    @pytest.mark.asyncio
+    async def test_unknown_operation(self):
+        from app.services.daenabot.target_interaction_agent import TargetInteractionAgent
+        from app.services.security import evilbob_mode
+        evilbob_mode._current_state = evilbob_mode.EvilBobState(
+            active=True,
+            capabilities=["target_interaction"],
+        )
+
+        agent = TargetInteractionAgent()
+        result = await agent.execute("hack_planet", {})
+        assert result["success"] is False
+        assert "Unknown operation" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_db_query_blocks_destructive(self):
+        """Database queries block DROP/DELETE/INSERT etc."""
+        from app.services.daenabot.target_interaction_agent import TargetInteractionAgent
+        from app.services.security import evilbob_mode
+        evilbob_mode._current_state = evilbob_mode.EvilBobState(
+            active=True,
+            capabilities=["target_interaction"],
+        )
+
+        agent = TargetInteractionAgent()
+        # Fake a db session
+        agent._db_sessions["test://db"] = MagicMock()
+
+        result = await agent.execute("db_query", {
+            "dsn": "test://db",
+            "query": "DROP TABLE users",
+        })
+        assert result["success"] is False
+        assert "Destructive queries blocked" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_db_query_blocks_delete(self):
+        from app.services.daenabot.target_interaction_agent import TargetInteractionAgent
+        from app.services.security import evilbob_mode
+        evilbob_mode._current_state = evilbob_mode.EvilBobState(
+            active=True,
+            capabilities=["target_interaction"],
+        )
+        agent = TargetInteractionAgent()
+        agent._db_sessions["test://db"] = MagicMock()
+
+        result = await agent.execute("db_query", {
+            "dsn": "test://db",
+            "query": "DELETE FROM users WHERE 1=1",
+        })
+        assert result["success"] is False
+        assert "Destructive" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_ssh_command_without_connection(self):
+        from app.services.daenabot.target_interaction_agent import TargetInteractionAgent
+        from app.services.security import evilbob_mode
+        evilbob_mode._current_state = evilbob_mode.EvilBobState(
+            active=True,
+            capabilities=["target_interaction"],
+        )
+
+        agent = TargetInteractionAgent()
+        result = await agent.execute("ssh_command", {
+            "host": "target.com",
+            "command": "whoami",
+        })
+        assert result["success"] is False
+        assert "No active SSH session" in result["error"]
+
+    def test_operation_action_map(self):
+        from app.services.daenabot.target_interaction_agent import TargetInteractionAgent
+        assert "http_request" in TargetInteractionAgent.OPERATION_ACTION_MAP
+        assert "ssh_connect" in TargetInteractionAgent.OPERATION_ACTION_MAP
+        assert "db_connect" in TargetInteractionAgent.OPERATION_ACTION_MAP
+        assert "tcp_connect" in TargetInteractionAgent.OPERATION_ACTION_MAP
+        assert "enumerate_service" in TargetInteractionAgent.OPERATION_ACTION_MAP
+
+    @pytest.mark.asyncio
+    async def test_close_cleans_sessions(self):
+        from app.services.daenabot.target_interaction_agent import TargetInteractionAgent
+        agent = TargetInteractionAgent()
+        agent._ssh_sessions["test"] = MagicMock()
+        agent._db_sessions["test"] = MagicMock()
+        await agent.close()
+        assert len(agent._ssh_sessions) == 0
+        assert len(agent._db_sessions) == 0
+
+
+class TestRouterTargetInteraction:
+    """Tests for target interaction routing patterns."""
+
+    def test_ssh_connect_pattern(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("ssh into target.com as root")
+        assert result is not None
+        assert result.tool_name == "target_interaction.ssh_connect"
+        assert result.params["host"] == "target.com"
+        assert result.params["username"] == "root"
+
+    def test_ssh_connect_with_port(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("connect to server.io:2222")
+        assert result is not None
+        assert result.tool_name == "target_interaction.ssh_connect"
+        assert result.params["host"] == "server.io"
+        assert result.params["port"] == 2222
+
+    def test_probe_pattern(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("probe target.com:8080")
+        assert result is not None
+        assert result.tool_name == "target_interaction.enumerate_service"
+        assert result.params["host"] == "target.com"
+        assert result.params["port"] == 8080

@@ -510,6 +510,17 @@ class ExecutionService(BaseService):
             agent = WebCrawlerAgent()
             return await agent.execute(operation, params)
 
+        elif agent_prefix == "target_interaction":
+            from app.services.daenabot.target_interaction_agent import (
+                TargetInteractionAgent,
+            )
+
+            agent = TargetInteractionAgent()
+            try:
+                return await agent.execute(operation, params)
+            finally:
+                await agent.close()
+
         elif agent_prefix == "security":
             # Security scan dispatch -- cognitive scan engine
             # BACKGROUND PATH ONLY -- never import in hot path

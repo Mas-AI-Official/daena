@@ -407,6 +407,40 @@ _SECURITY_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
         lambda m: {"vault_path": m.group(1).strip()},
         "Decrypt evidence token",
     ),
+    # "connect to <host>" or "ssh into <host>"
+    (
+        re.compile(
+            r"(?:connect|ssh|login)\s+(?:to|into)\s+([\w.\-]+(?::\d+)?)\s*(?:as\s+(\S+))?",
+            re.IGNORECASE,
+        ),
+        "target_interaction.ssh_connect",
+        lambda m: {
+            "host": m.group(1).split(":")[0],
+            "port": int(m.group(1).split(":")[1]) if ":" in m.group(1) else 22,
+            "username": (m.group(2) or "").strip(),
+        },
+        "Connect to {host}",
+    ),
+    # "query <dsn> <sql>" -- database interaction
+    (
+        re.compile(
+            r"(?:query|sql)\s+(\S+://\S+)\s+(.+)",
+            re.IGNORECASE,
+        ),
+        "target_interaction.db_query",
+        lambda m: {"dsn": m.group(1).strip(), "query": m.group(2).strip()},
+        "Database query",
+    ),
+    # "probe <host>:<port>" -- service enumeration
+    (
+        re.compile(
+            r"(?:probe|fingerprint|identify)\s+([\w.\-]+):(\d+)",
+            re.IGNORECASE,
+        ),
+        "target_interaction.enumerate_service",
+        lambda m: {"host": m.group(1), "port": int(m.group(2))},
+        "Probe {host}:{port}",
+    ),
 ]
 
 _NOTION_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
