@@ -829,6 +829,64 @@ class ChatOrchestrator:
         except Exception:
             logger.debug("orchestrator.experience_recall_failed", exc_info=True)
 
+        # ── Stage 6.2: CKG cross-domain insight injection ─────
+        # Query the Cognitive Knowledge Graph for validated patterns
+        # that transfer across domains. Security scan insights can
+        # improve engineering, product, research chat quality -- and
+        # vice versa. Only high-confidence (>=0.5) abstractions injected.
+        ckg_count = 0
+        try:
+            from app.services.cognition.knowledge_graph import (
+                CognitiveKnowledgeGraph, Domain,
+            )
+
+            # Map department name to CKG domain
+            _DEPT_TO_DOMAIN = {
+                "engineering": Domain.ENGINEERING,
+                "product": Domain.PRODUCT,
+                "marketing": Domain.MARKETING,
+                "sales": Domain.SALES,
+                "finance": Domain.FINANCE,
+                "operations": Domain.OPERATIONS,
+                "research": Domain.RESEARCH,
+                "legal": Domain.LEGAL,
+                "skill governance": Domain.SKILL_GOVERNANCE,
+                "security": Domain.SECURITY,
+                "security operations": Domain.SECURITY,
+            }
+            ckg_domain = _DEPT_TO_DOMAIN.get(
+                (dept_name or "").lower(), Domain.REASONING
+            )
+
+            ckg = CognitiveKnowledgeGraph()
+            ckg_insights = ckg.query(
+                domain=ckg_domain,
+                context=user_content,
+                limit=3,
+                min_confidence=0.5,
+            )
+            if ckg_insights:
+                ckg_lines = []
+                for insight in ckg_insights:
+                    origin = insight.origin_domain.value if insight.origin_domain else ""
+                    ckg_lines.append(
+                        f"- [{origin}] {insight.abstracted_pattern[:150]} "
+                        f"(confidence: {insight.confidence:.2f})"
+                    )
+                if ckg_lines:
+                    system_prompt += (
+                        "\n\nCross-domain insights (from Cognitive Knowledge Graph):\n"
+                        + "\n".join(ckg_lines)
+                    )
+                    ckg_count = len(ckg_lines)
+                    logger.info(
+                        "orchestrator.ckg_insights_injected",
+                        count=ckg_count,
+                        domain=ckg_domain.value,
+                    )
+        except Exception:
+            logger.debug("orchestrator.ckg_retrieval_failed", exc_info=True)
+
         # ── Stage 6.5: Skill retrieval ─────────────────────────
         # Inject evidence-backed patterns from the Skill Refinery
         # into the system prompt.  Only T2+ skills are eligible

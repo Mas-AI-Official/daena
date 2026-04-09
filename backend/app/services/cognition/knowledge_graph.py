@@ -286,12 +286,14 @@ class CognitiveKnowledgeGraph:
         transfers = ckg.find_transfers(insight.id)
     """
 
-    def __init__(self, storage_dir: str = "") -> None:
+    def __init__(self, storage_dir: str = "", llm_abstraction: bool = True) -> None:
         self._storage_dir = storage_dir or os.path.join(
             os.environ.get("DAENA_VAR", "var"), "ckg"
         )
         self._insights: dict[str, Insight] = {}
         self._edges: list[TransferEdge] = []
+        self._llm_abstraction_enabled = llm_abstraction
+        self._pending_abstractions: list[dict[str, Any]] = []
         self._load()
 
     # ── Core learning pipeline ──────────────────────────────────
@@ -493,19 +495,178 @@ class CognitiveKnowledgeGraph:
         """Abstract a raw observation into a domain-independent pattern.
 
         Returns (category_name, abstracted_description).
+
+        Two-tier system:
+        1. Fast keyword matching (deterministic, zero-cost)
+        2. LLM semantic abstraction (when keyword matching fails and LLM available)
         """
         raw_lower = raw.lower()
 
-        # Match against structural categories
+        # Tier 1: Keyword matching (fast, deterministic)
         for cat_name, cat_info in STRUCTURAL_CATEGORIES.items():
-            # Simple keyword matching -- LLM-based abstraction is the upgrade path
             keywords = cat_name.replace("_", " ").split()
             matches = sum(1 for kw in keywords if kw in raw_lower)
             if matches >= 2 or (matches >= 1 and domain in cat_info["domains"]):
                 return cat_name, f"{cat_info['description']} (from {domain.value}: {raw[:100]})"
 
+        # Tier 2: LLM semantic abstraction (when keywords fail)
+        if self._llm_abstraction_enabled:
+            try:
+                llm_result = self._llm_abstract(raw, domain)
+                if llm_result:
+                    return llm_result
+            except Exception as exc:
+                logger.debug("ckg.llm_abstraction_failed", error=str(exc)[:80])
+
         # Fallback: use as-is with domain tag
         return "", f"[{domain.value}] {raw[:200]}"
+
+    def _llm_abstract(self, raw: str, domain: Domain) -> tuple[str, str] | None:
+        """Use LLM to semantically abstract a raw observation.
+
+        The LLM receives the observation and the structural category catalog,
+        then returns which category fits and the domain-independent abstraction.
+        This is synchronous (called from sync code paths) and uses a simple
+        prompt-response pattern.
+        """
+        categories_desc = "\n".join(
+            f"- {name}: {info['description'][:80]}"
+            for name, info in STRUCTURAL_CATEGORIES.items()
+        )
+
+        prompt = (
+            f"Given this observation from {domain.value} domain:\n"
+            f"\"{raw[:300]}\"\n\n"
+            f"Which structural category does it fit?\n{categories_desc}\n\n"
+            f"Respond with EXACTLY two lines:\n"
+            f"CATEGORY: <category_name or NONE>\n"
+            f"ABSTRACT: <domain-independent pattern in 1 sentence>"
+        )
+
+        # Store prompt for deferred async execution
+        # (CKG is sync but the reasoner may not be available)
+        self._pending_abstractions.append({
+            "raw": raw,
+            "domain": domain.value,
+            "prompt": prompt,
+        })
+        return None
+
+    async def process_pending_abstractions(self, llm_fn: Any) -> int:
+        """Process deferred LLM abstractions.
+
+        Called from async context (e.g., after scan completion) with the
+        LLM function from CognitiveReasoner. Returns count processed.
+
+        Args:
+            llm_fn: async callable(prompt: str) -> str
+        """
+        if not self._pending_abstractions:
+            return 0
+
+        processed = 0
+        pending = self._pending_abstractions.copy()
+        self._pending_abstractions.clear()
+
+        for item in pending:
+            try:
+                response = await llm_fn(item["prompt"])
+                if not response:
+                    continue
+
+                category = ""
+                abstract = ""
+                for line in response.strip().split("\n"):
+                    if line.startswith("CATEGORY:"):
+                        cat = line[9:].strip().lower()
+                        if cat != "none" and cat in STRUCTURAL_CATEGORIES:
+                            category = cat
+                    elif line.startswith("ABSTRACT:"):
+                        abstract = line[9:].strip()
+
+                if abstract:
+                    domain = Domain(item["domain"])
+                    # Re-process the insight with LLM abstraction
+                    raw = item["raw"]
+                    insight_id = hashlib.sha256(abstract.encode()).hexdigest()[:16]
+
+                    if insight_id in self._insights:
+                        # Reinforce existing
+                        self.reinforce(insight_id, True)
+                    else:
+                        domains = self._infer_domains(category, domain) if category else [domain]
+                        insight = Insight(
+                            id=insight_id,
+                            raw_observation=raw[:300],
+                            abstracted_pattern=abstract,
+                            origin_domain=domain,
+                            applicable_domains=domains,
+                            confidence=0.6,  # Higher than keyword-matched (LLM validated)
+                            evidence_count=1,
+                            evidence_sources=[],
+                            created_at=time.time(),
+                            last_validated_at=time.time(),
+                            nbmf_tier=0,
+                            tags=[category] if category else [],
+                            transfer_score=0.5 if len(domains) > 1 else 0.2,
+                        )
+                        self._insights[insight.id] = insight
+                        self._connect(insight)
+                    processed += 1
+
+            except Exception as exc:
+                logger.debug("ckg.llm_abstraction_process_failed", error=str(exc)[:80])
+
+        if processed:
+            self._persist()
+            logger.info("ckg.llm_abstractions_processed", count=processed)
+
+        return processed
+
+    def semantic_query(
+        self,
+        query: str,
+        max_results: int = 5,
+        min_confidence: float = 0.3,
+    ) -> list[Insight]:
+        """Semantic (cross-domain) query using word overlap scoring.
+
+        Unlike domain-scoped query(), this searches ALL insights regardless
+        of domain, ranking purely by semantic relevance to the query string.
+        Used by chat_orchestrator when no specific department context exists.
+        """
+        if not query or not self._insights:
+            return []
+
+        query_words = set(query.lower().split())
+        scored: list[tuple[float, Insight]] = []
+
+        for insight in self._insights.values():
+            if insight.confidence < min_confidence:
+                continue
+
+            # Score: word overlap with pattern + tags
+            pattern_words = set(insight.abstracted_pattern.lower().split())
+            tag_words = set(
+                w for tag in insight.tags for w in tag.replace("_", " ").split()
+            )
+            all_words = pattern_words | tag_words
+
+            overlap = len(query_words & all_words)
+            if overlap == 0:
+                continue
+
+            # Weighted score: overlap * confidence * transfer breadth
+            breadth = len(insight.applicable_domains) / len(Domain)
+            score = (
+                overlap * 0.5
+                + insight.confidence * 0.3
+                + breadth * 0.2
+            )
+            scored.append((score, insight))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [ins for _, ins in scored[:max_results]]
 
     def _infer_domains(self, category: str, origin: Domain) -> list[Domain]:
         """Infer which domains an insight applies to based on its category."""

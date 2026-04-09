@@ -818,6 +818,51 @@ class CognitiveScanEngine:
                 except Exception as exc:
                     thinking.append(f"[ZERO-DAY] Analysis error: {str(exc)[:80]}")
 
+            # ── SUPPLY CHAIN ATTACK ANALYSIS (Zero-Day Engine) ──
+            # Analyze the target's technology stack for supply chain
+            # attack vectors: dependency confusion, typosquatting,
+            # maintainer takeover, build pipeline injection.
+            if self.offensive_mode and cycle_num == 1 and profile.technologies:
+                try:
+                    from app.services.security.zero_day_engine import (
+                        SupplyChainAttackPlanner,
+                    )
+                    sc_planner = SupplyChainAttackPlanner()
+                    sc_campaign = sc_planner.plan_campaign(
+                        target_org=target,
+                        technologies=profile.technologies,
+                    )
+                    stages = sc_campaign.get("stages", [])
+                    if stages:
+                        thinking.append(
+                            f"[ZERO-DAY/SUPPLY-CHAIN] Campaign planned: "
+                            f"{len(stages)} stages, "
+                            f"timeline: {sc_campaign.get('estimated_timeline', 'unknown')}"
+                        )
+                        for stage in stages[:2]:
+                            thinking.append(
+                                f"  -> Stage {stage['stage']}: {stage['name']} "
+                                f"({stage.get('duration', 'unknown')})"
+                            )
+                        # Add as finding so it appears in report
+                        result.findings.append({
+                            "type": "supply_chain_risk",
+                            "url": target,
+                            "info": {
+                                "name": f"Supply chain attack campaign viable ({len(stages)} stages)",
+                                "severity": "high",
+                                "description": (
+                                    f"Supply chain analysis identified viable attack path "
+                                    f"against {target}. Technologies: {', '.join(profile.technologies[:5])}. "
+                                    f"Estimated timeline: {sc_campaign.get('estimated_timeline', 'unknown')}. "
+                                    f"Success probability: {sc_campaign.get('success_probability', 'unknown')}."
+                                ),
+                            },
+                        })
+                        result.total_findings = len(result.findings)
+                except Exception as exc:
+                    thinking.append(f"[ZERO-DAY/SUPPLY-CHAIN] Error: {str(exc)[:80]}")
+
             # Select which strategies make sense for THIS target
             strategies = await self._generate_strategies(
                 target, profile, cycle_results, result, reasoner,
@@ -1741,6 +1786,100 @@ class CognitiveScanEngine:
                             f"  -> {plan.technique}: {plan.location[:80]} "
                             f"(detection: {plan.detection_risk})"
                         )
+                # Social engineering assessment (auto-craft from OSINT)
+                # If the scan found any people data (emails, names, roles),
+                # automatically craft personalized phishing scenarios to show
+                # the human attack surface.
+                try:
+                    from app.services.security.red_team_ops import (
+                        SocialEngineeringCrafter,
+                    )
+                    # Extract OSINT data from findings
+                    osint_findings = [
+                        f for f in result.findings
+                        if f.get("type") in (
+                            "osint_email", "osint_person", "email_pattern",
+                            "people_intelligence", "osint",
+                        )
+                    ]
+                    # Also check for technology data to personalize scenarios
+                    osint_data = {
+                        "technologies": profile.technologies if profile else [],
+                        "sources_used": [
+                            f.get("info", {}).get("source", "scan")
+                            for f in osint_findings
+                        ],
+                    }
+
+                    if osint_findings:
+                        se_crafter = SocialEngineeringCrafter()
+                        # Craft scenarios for each discovered person
+                        all_scenarios = []
+                        persons_processed = set()
+                        for of in osint_findings[:5]:  # Cap at 5 people
+                            info = of.get("info", {})
+                            person_name = info.get("name", info.get("person", "Unknown"))
+                            if person_name in persons_processed:
+                                continue
+                            persons_processed.add(person_name)
+                            person_role = info.get("role", info.get("title", "Employee"))
+                            scenarios = se_crafter.craft_scenarios(
+                                target_person=person_name,
+                                target_role=person_role,
+                                target_company=target,
+                                osint_data=osint_data,
+                            )
+                            all_scenarios.extend(scenarios)
+
+                        if all_scenarios:
+                            result.thinking_log.append(
+                                f"[RED TEAM] Social engineering: {len(all_scenarios)} "
+                                f"scenarios crafted for {len(persons_processed)} people"
+                            )
+                            high_risk = [s for s in all_scenarios if s.risk_level == "high"]
+                            for s in all_scenarios[:3]:
+                                result.thinking_log.append(
+                                    f"  -> {s.attack_vector}: {s.pretext[:60]} "
+                                    f"(risk: {s.risk_level})"
+                                )
+                            if high_risk:
+                                result.findings.append({
+                                    "type": "social_engineering_risk",
+                                    "url": target,
+                                    "info": {
+                                        "name": (
+                                            f"Social engineering viable: {len(all_scenarios)} scenarios "
+                                            f"({len(high_risk)} high-risk)"
+                                        ),
+                                        "severity": "high" if len(high_risk) >= 2 else "medium",
+                                        "description": (
+                                            f"OSINT data enabled {len(all_scenarios)} personalized "
+                                            f"phishing scenarios targeting {len(persons_processed)} people. "
+                                            f"{len(high_risk)} scenarios target executives/finance."
+                                        ),
+                                    },
+                                })
+                                result.total_findings = len(result.findings)
+
+                        # Also run full human attack surface assessment if
+                        # we have enough OSINT data
+                        if len(osint_findings) >= 3:
+                            assessment = se_crafter.assess_human_attack_surface({
+                                "verified_emails": [
+                                    f.get("info", {}).get("email", "")
+                                    for f in osint_findings
+                                    if f.get("info", {}).get("email")
+                                ],
+                                "technologies": profile.technologies if profile else [],
+                            })
+                            if assessment.get("risk_level") in ("high", "critical"):
+                                result.thinking_log.append(
+                                    f"[RED TEAM] Human attack surface: {assessment['risk_level']}"
+                                )
+                except Exception as se_exc:
+                    result.thinking_log.append(
+                        f"[RED TEAM] Social engineering error: {str(se_exc)[:80]}"
+                    )
             except Exception as exc:
                 result.thinking_log.append(
                     f"[RED TEAM] Post-scan analysis error: {str(exc)[:80]}"
@@ -2113,7 +2252,32 @@ class CognitiveScanEngine:
                 thinking_entries=len(trace["thinking_log"]),
             )
             # Feed findings into Cognitive Knowledge Graph for cross-domain learning
-            self._feed_knowledge_graph(target, result, profile)
+            ckg = self._feed_knowledge_graph(target, result, profile)
+
+            # Process LLM abstractions (async -- keyword matching deferred these)
+            if ckg and ckg._pending_abstractions and self._reasoner_initialized:
+                try:
+                    from app.services.cognition.cognitive_reasoner import CognitiveReasoner
+                    llm_reasoner = CognitiveReasoner(
+                        agi_mode=self.agi_mode,
+                        offensive_mode=self.offensive_mode,
+                    )
+                    await llm_reasoner.initialize()
+                    if llm_reasoner.is_llm_available:
+                        async def _llm_fn(prompt: str) -> str:
+                            return await llm_reasoner._call_llm(prompt, "ckg_abstraction")
+                        processed = await ckg.process_pending_abstractions(_llm_fn)
+                        if processed:
+                            logger.info(
+                                "cognitive_scan.ckg_llm_abstractions",
+                                scan_id=self._scan_id,
+                                processed=processed,
+                            )
+                except Exception as llm_exc:
+                    logger.debug(
+                        "cognitive_scan.ckg_llm_abstraction_failed",
+                        error=str(llm_exc)[:80],
+                    )
 
         except Exception as exc:
             # Archival is best-effort, never blocks the scan
@@ -2124,8 +2288,10 @@ class CognitiveScanEngine:
         target: str,
         result: CognitiveScanResult,
         profile: TargetProfile,
-    ) -> None:
+    ) -> Any:
         """Feed scan insights into the Cognitive Knowledge Graph.
+
+        Returns the CKG instance for post-processing (e.g., LLM abstractions).
 
         This is the bridge between security scanning and Daena's universal
         learning substrate. Every finding, every strategy outcome, every
@@ -2201,9 +2367,11 @@ class CognitiveScanEngine:
                 scan_id=self._scan_id,
                 insights_total=ckg.total_insights,
             )
+            return ckg
         except Exception as exc:
             # CKG feeding is best-effort
             logger.debug("cognitive_scan.ckg_feed_failed", error=str(exc)[:100])
+            return None
 
     # ------------------------------------------------------------------
     # Self-improvement (Meta-Harness loop)
