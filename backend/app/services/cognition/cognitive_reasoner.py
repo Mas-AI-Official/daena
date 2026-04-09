@@ -761,15 +761,16 @@ class CognitiveReasoner:
             #
             # This gives: e.g., Perplexity (search-augmented) + Claude (deep reasoning)
             # + Codex (code execution) -- genuinely different capabilities per debate slot.
+            # NOTE: Keys MUST be UPPERCASE to match ModelProvider.value
             _REASONING_RANK: dict[str, int] = {
-                "perplexity": 10,    # Best for research/analysis with live search
-                "anthropic": 9,      # Claude: strongest general reasoning
-                "openai": 8,         # GPT-4o / o3: very strong reasoning
-                "gemini": 7,         # Gemini: strong, good at code
-                "groq": 6,           # Fast cloud inference
-                "openrouter": 5,     # Aggregator
-                "together": 4,       # Aggregator
-                "ollama": 2,         # Local -- only when cloud insufficient
+                "PERPLEXITY": 10,    # Best for research/analysis with live search
+                "ANTHROPIC": 9,      # Claude: strongest general reasoning
+                "OPENAI": 8,         # Codex CLI / GPT-4o: strong reasoning + code execution
+                "GEMINI": 7,         # Gemini: strong, good at code
+                "GROQ": 6,           # Fast cloud inference
+                "OPENROUTER": 5,     # Aggregator
+                "TOGETHER": 4,       # Aggregator
+                "OLLAMA": 2,         # Local -- only when cloud insufficient
             }
 
             # Exclude the primary/synthesizer model from debate
