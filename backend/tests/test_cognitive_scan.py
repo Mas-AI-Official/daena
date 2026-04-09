@@ -200,7 +200,8 @@ class TestTargetClassification:
 class TestStrategyGeneration:
     """Test strategy generation and ordering."""
 
-    def test_hardened_target_orders_passive_first(self) -> None:
+    @pytest.mark.asyncio
+    async def test_hardened_target_orders_passive_first(self) -> None:
         engine = CognitiveScanEngine()
         profile = TargetProfile(
             domain="cloud.google.com",
@@ -208,7 +209,7 @@ class TestStrategyGeneration:
             live_hosts=[{"url": "https://a.cloud.google.com"}],
             target_type="hardened_cloud",
         )
-        strategies = engine._generate_strategies("cloud.google.com", profile, [])
+        strategies = await engine._generate_strategies("cloud.google.com", profile, [])
         names = [s.name for s in strategies]
 
         # Passive should come first for hardened targets
@@ -216,7 +217,8 @@ class TestStrategyGeneration:
         # Standard vuln scan should be LAST
         assert names[-1] == "targeted_vuln_scan"
 
-    def test_standard_target_has_all_strategies(self) -> None:
+    @pytest.mark.asyncio
+    async def test_standard_target_has_all_strategies(self) -> None:
         engine = CognitiveScanEngine()
         profile = TargetProfile(
             domain="example.com",
@@ -224,7 +226,7 @@ class TestStrategyGeneration:
             live_hosts=[{"url": "https://www.example.com"}],
             target_type="standard",
         )
-        strategies = engine._generate_strategies("example.com", profile, [])
+        strategies = await engine._generate_strategies("example.com", profile, [])
         names = [s.name for s in strategies]
 
         assert "passive_osint" in names

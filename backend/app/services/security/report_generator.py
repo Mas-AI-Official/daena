@@ -478,3 +478,359 @@ class BugBountyReportGenerator:
                 reference_url=ref_url,
             ))
         return links
+
+
+# ---------------------------------------------------------------------------
+# Remediation Report Generator (the $20K report)
+# ---------------------------------------------------------------------------
+
+class RemediationReportGenerator:
+    """Generate a remediation roadmap -- the solutions report.
+
+    Security consultants charge $5K for findings and $20K for
+    the remediation roadmap. This generates both.
+
+    The findings report says WHAT is broken.
+    The remediation report says HOW to fix it, in priority order,
+    with code examples, configuration changes, and timelines.
+    """
+
+    # Remediation templates by vulnerability type
+    _REMEDIATION_DB: dict[str, dict[str, Any]] = {
+        "header_analysis": {
+            "category": "Configuration",
+            "priority": "P2",
+            "effort": "Low (< 1 hour)",
+            "fix": (
+                "Add security headers to your web server or application:\n"
+                "```\n"
+                "# Nginx\n"
+                "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n"
+                "add_header X-Frame-Options \"DENY\" always;\n"
+                "add_header X-Content-Type-Options \"nosniff\" always;\n"
+                "add_header Content-Security-Policy \"default-src 'self'\" always;\n"
+                "add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;\n"
+                "```\n"
+                "For Express.js, use the `helmet` middleware:\n"
+                "```javascript\n"
+                "const helmet = require('helmet');\n"
+                "app.use(helmet());\n"
+                "```"
+            ),
+            "verification": "Re-scan headers after deployment. All security headers should be present.",
+        },
+        "path_discovery": {
+            "category": "Access Control",
+            "priority": "P1",
+            "effort": "Medium (1-4 hours)",
+            "fix": (
+                "1. Remove or restrict access to exposed paths:\n"
+                "   - /.env, /.git: Add deny rules in web server config\n"
+                "   - /admin, /debug: Require authentication + IP whitelist\n"
+                "   - /api/docs, /swagger: Disable in production\n"
+                "   - /metrics, /health: Internal-only or auth-protected\n\n"
+                "2. Nginx deny rules:\n"
+                "```\n"
+                "location ~ /\\. { deny all; }\n"
+                "location /admin { allow 10.0.0.0/8; deny all; }\n"
+                "```\n"
+                "3. Remove debug endpoints before production deploy."
+            ),
+            "verification": "All exposed paths should return 404 or 403 after fix.",
+        },
+        "credential_exposure": {
+            "category": "Secrets Management",
+            "priority": "P0 (IMMEDIATE)",
+            "effort": "High (4-8 hours)",
+            "fix": (
+                "1. IMMEDIATELY rotate all exposed credentials:\n"
+                "   - API keys, database passwords, tokens\n"
+                "   - Assume they are already compromised\n\n"
+                "2. Move secrets to a secrets manager:\n"
+                "   - AWS Secrets Manager, HashiCorp Vault, or GCP Secret Manager\n"
+                "   - Never store in .env files deployed to production\n\n"
+                "3. Add .env to .gitignore (check git history for past commits)\n"
+                "4. Use git-secrets or trufflehog to scan for leaked secrets\n"
+                "5. Enable secret scanning on GitHub/GitLab"
+            ),
+            "verification": "Verify all old credentials are revoked and new ones are in secrets manager.",
+        },
+        "vulnerability_verification": {
+            "category": "Application Security",
+            "priority": "P0",
+            "effort": "Varies",
+            "fix": (
+                "Address the specific vulnerability identified:\n"
+                "- SQL Injection: Use parameterized queries / prepared statements\n"
+                "- XSS: Sanitize output, use Content-Security-Policy\n"
+                "- SSRF: Validate and whitelist URLs, block internal IPs\n"
+                "- IDOR: Implement proper authorization checks per resource\n"
+                "- RCE: Never pass user input to system commands\n\n"
+                "General defense-in-depth:\n"
+                "1. Input validation at every boundary\n"
+                "2. Output encoding appropriate to context\n"
+                "3. Principle of least privilege for all accounts\n"
+                "4. Web Application Firewall as defense layer"
+            ),
+            "verification": "Re-test the specific vulnerability. Should no longer be exploitable.",
+        },
+        "unauthorized_access": {
+            "category": "Authentication / Authorization",
+            "priority": "P0",
+            "effort": "Medium-High",
+            "fix": (
+                "1. Implement authentication on ALL endpoints:\n"
+                "   - JWT validation middleware on every route\n"
+                "   - No endpoint should be accessible without auth (except public pages)\n\n"
+                "2. Implement authorization (RBAC/ABAC):\n"
+                "   - Check user role before every action\n"
+                "   - Admin endpoints require admin role, not just authentication\n\n"
+                "3. Rate limit authentication endpoints\n"
+                "4. Implement account lockout after N failed attempts\n"
+                "5. Use MFA for admin and sensitive operations"
+            ),
+            "verification": "Attempt to access protected resources without auth. Should get 401/403.",
+        },
+        "api_exposure": {
+            "category": "API Security",
+            "priority": "P1",
+            "effort": "Low-Medium",
+            "fix": (
+                "1. Disable API documentation in production:\n"
+                "```python\n"
+                "# FastAPI\n"
+                "app = FastAPI(docs_url=None, redoc_url=None) if PRODUCTION else FastAPI()\n"
+                "```\n\n"
+                "2. If docs must be available, require authentication\n"
+                "3. Rate limit API endpoints\n"
+                "4. Validate all input with strict schemas\n"
+                "5. Return minimal error information in production"
+            ),
+            "verification": "API docs endpoints should be inaccessible in production.",
+        },
+        "attack_chain": {
+            "category": "Architecture",
+            "priority": "P0",
+            "effort": "High",
+            "fix": (
+                "Attack chains exploit COMBINATIONS of weaknesses. Fix each link:\n"
+                "1. Address each individual finding in the chain\n"
+                "2. Add defense-in-depth: even if one control fails, others hold\n"
+                "3. Implement monitoring/alerting on the chain path\n"
+                "4. Conduct threat modeling to identify other chains"
+            ),
+            "verification": "Re-test the full chain. Breaking any link should break the chain.",
+        },
+        "emergent_vulnerability": {
+            "category": "Architecture / Integration",
+            "priority": "P0-P1",
+            "effort": "High",
+            "fix": (
+                "Emergent vulnerabilities exist in component interactions:\n"
+                "1. Review all data flows between components\n"
+                "2. Apply input validation at EVERY component boundary\n"
+                "3. Never trust data from another internal component without validation\n"
+                "4. Implement integration tests that test component combinations\n"
+                "5. Conduct architecture review focused on data flow"
+            ),
+            "verification": "Test the specific component interaction identified.",
+        },
+        "post_exploitation": {
+            "category": "Incident Response",
+            "priority": "P0 (IMMEDIATE)",
+            "effort": "High",
+            "fix": (
+                "Post-exploitation was successful -- attacker impact was proven.\n"
+                "1. Treat this as a confirmed breach scenario\n"
+                "2. Review logs for the timeframe of the assessment\n"
+                "3. Rotate all credentials that could have been accessed\n"
+                "4. Implement monitoring for the exploitation path\n"
+                "5. Address the root vulnerability that enabled access"
+            ),
+            "verification": "Re-test the full exploitation path. Should be blocked at every stage.",
+        },
+    }
+
+    def generate(
+        self,
+        findings: list[VulnFinding],
+        scan_findings: list[dict[str, Any]],
+        metadata: ReportMetadata,
+        dev_profile: dict[str, Any] | None = None,
+        supply_chain: list[dict[str, Any]] | None = None,
+    ) -> str:
+        """Generate a remediation roadmap report."""
+        os.makedirs(REPORTS_DIR, exist_ok=True)
+
+        safe_target = metadata.target.replace(".", "_").replace("/", "_")[:30]
+        filename = f"{safe_target}_{metadata.date}_REMEDIATION.md"
+        filepath = os.path.join(REPORTS_DIR, filename)
+
+        lines = [
+            f"# Remediation Roadmap: {metadata.target}",
+            f"**Date:** {metadata.date}",
+            f"**Prepared by:** {metadata.researcher}",
+            f"**Tool:** {metadata.tool}",
+            "",
+            "---",
+            "",
+            "## Executive Summary",
+            "",
+        ]
+
+        # Severity counts
+        severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        for f in findings:
+            sev = f.severity.lower()
+            if sev in severity_counts:
+                severity_counts[sev] += 1
+            elif sev == "informational":
+                severity_counts["info"] += 1
+
+        lines.append(
+            f"This assessment identified **{len(findings)} findings**: "
+            f"{severity_counts['critical']} Critical, {severity_counts['high']} High, "
+            f"{severity_counts['medium']} Medium, {severity_counts['low']} Low, "
+            f"{severity_counts['info']} Informational."
+        )
+        lines.append("")
+
+        # Developer profile insights
+        if dev_profile:
+            lines.append("## Developer Profile Assessment")
+            lines.append("")
+            lines.append(f"- **Experience Level:** {dev_profile.get('experience', 'unknown')}")
+            lines.append(f"- **Primary Framework:** {dev_profile.get('framework', 'unknown')}")
+            lines.append(f"- **Security Awareness:** {dev_profile.get('security_awareness', 'unknown')}")
+            lines.append("")
+            predictions = dev_profile.get("predictions", [])
+            if predictions:
+                lines.append("**Predicted additional risks based on developer profile:**")
+                for p in predictions[:5]:
+                    lines.append(f"- {p}")
+                lines.append("")
+
+        # Supply chain risks
+        if supply_chain:
+            lines.append("## Supply Chain Risks")
+            lines.append("")
+            for sc in supply_chain[:10]:
+                risk = sc.get("risk_notes", "")
+                if risk:
+                    lines.append(f"- **{sc.get('service_name', '?')}** ({sc.get('category', '')}): {risk}")
+            lines.append("")
+
+        # Remediation roadmap by priority
+        lines.append("## Remediation Roadmap")
+        lines.append("")
+        lines.append("Fixes are ordered by priority. Address P0 items within 24 hours.")
+        lines.append("")
+
+        # Group findings by remediation priority
+        by_priority: dict[str, list] = {"P0": [], "P1": [], "P2": [], "P3": []}
+
+        for i, sf in enumerate(scan_findings):
+            finding_type = sf.get("type", "")
+            info = sf.get("info", {})
+            severity = info.get("severity", "low")
+
+            remediation = self._REMEDIATION_DB.get(finding_type, self._REMEDIATION_DB.get("vulnerability_verification", {}))
+            priority = remediation.get("priority", "P2")
+            # Override priority based on severity
+            if severity == "critical":
+                priority = "P0 (IMMEDIATE)"
+            elif severity == "high" and "P0" not in priority:
+                priority = "P1"
+
+            pkey = priority.split()[0] if " " in priority else priority
+            if pkey not in by_priority:
+                pkey = "P2"
+            by_priority.setdefault(pkey, []).append({
+                "finding": sf,
+                "remediation": remediation,
+                "priority": priority,
+                "index": i + 1,
+            })
+
+        for prio in ["P0", "P1", "P2", "P3"]:
+            items = by_priority.get(prio, [])
+            if not items:
+                continue
+
+            lines.append(f"### {prio} -- {'IMMEDIATE' if prio == 'P0' else 'This Week' if prio == 'P1' else 'This Month' if prio == 'P2' else 'Backlog'}")
+            lines.append("")
+
+            for item in items:
+                sf = item["finding"]
+                rem = item["remediation"]
+                info = sf.get("info", {})
+                lines.append(f"#### Finding #{item['index']}: {info.get('name', sf.get('type', ''))}")
+                lines.append(f"**Severity:** {info.get('severity', 'unknown')} | "
+                             f"**Category:** {rem.get('category', '?')} | "
+                             f"**Effort:** {rem.get('effort', '?')}")
+                lines.append("")
+                if sf.get("url"):
+                    lines.append(f"**Affected:** `{sf['url']}`")
+                    lines.append("")
+                lines.append("**How to fix:**")
+                lines.append("")
+                lines.append(rem.get("fix", "Address the vulnerability identified in the findings report."))
+                lines.append("")
+                lines.append(f"**Verification:** {rem.get('verification', 'Re-test after fix.')}")
+                lines.append("")
+                lines.append("---")
+                lines.append("")
+
+        lines.append(f"\nGenerated by MAS-AI Technologies Inc. on {metadata.date}")
+        lines.append("This remediation roadmap accompanies the findings report.")
+
+        with open(filepath, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines))
+
+        logger.info("remediation_report.created", path=filepath)
+        return filepath
+
+
+class DualReportGenerator:
+    """Generate both reports in one call.
+
+    Report 1: What's broken (findings + evidence + chains)
+    Report 2: How to fix it (remediation + code examples + timelines)
+    """
+
+    def __init__(self) -> None:
+        self.findings_gen = BugBountyReportGenerator()
+        self.remediation_gen = RemediationReportGenerator()
+
+    def generate_both(
+        self,
+        vuln_findings: list[VulnFinding],
+        scan_findings: list[dict[str, Any]],
+        metadata: ReportMetadata,
+        evidence_summary: dict[str, Any] | None = None,
+        dev_profile: dict[str, Any] | None = None,
+        supply_chain: list[dict[str, Any]] | None = None,
+    ) -> dict[str, str]:
+        """Generate both findings and remediation reports.
+
+        Returns dict with 'findings_report' and 'remediation_report' paths.
+        """
+        findings_path = self.findings_gen.generate(
+            vuln_findings, metadata, evidence_summary,
+        )
+        remediation_path = self.remediation_gen.generate(
+            vuln_findings, scan_findings, metadata,
+            dev_profile=dev_profile,
+            supply_chain=supply_chain,
+        )
+
+        logger.info(
+            "dual_report.generated",
+            findings=findings_path,
+            remediation=remediation_path,
+        )
+
+        return {
+            "findings_report": findings_path,
+            "remediation_report": remediation_path,
+        }

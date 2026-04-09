@@ -84,12 +84,28 @@ class ScanCycleResult:
 
 
 @dataclass
+class ExploitAttempt:
+    """Result of an auto-exploitation attempt during scan."""
+    finding_type: str
+    operation: str  # TargetInteractionAgent operation used
+    target_url: str
+    success: bool = False
+    impact_proven: str = ""  # What was proven (e.g., "read 50 user records")
+    result_data: dict[str, Any] = field(default_factory=dict)
+    error: str = ""
+    chained_from_cycle: int = 0
+
+
+@dataclass
 class CognitiveScanResult:
     """Final output of a cognitive scan."""
     target: str
     total_findings: int = 0
     findings: list[dict[str, Any]] = field(default_factory=list)
     enriched_findings: list[dict[str, Any]] = field(default_factory=list)
+    exploit_attempts: list[ExploitAttempt] = field(default_factory=list)
+    exploits_succeeded: int = 0
+    attack_chains: list[dict[str, Any]] = field(default_factory=list)
     cycles_used: int = 0
     strategies_tried: list[str] = field(default_factory=list)
     thinking_log: list[str] = field(default_factory=list)
@@ -414,6 +430,44 @@ class CognitiveScanEngine:
             if profile.http_version == "HTTP/3" and "HTTP/3 (QUIC)" not in profile.defenses:
                 profile.defenses.append("HTTP/3 (QUIC)")
 
+            # ── DEVELOPER EMPATHY (/3vilbob: Unreplicable) ────
+            # Model the HUMAN who built this target. Predict
+            # vulnerabilities from their framework choice, security
+            # header coverage, and error handling patterns.
+            if self.offensive_mode and cycle_num == 1:
+                from app.services.cognition.unreplicable import DeveloperEmpathyEngine
+                empathy = DeveloperEmpathyEngine()
+                error_patterns = []
+                for fact in getattr(self, '_error_intel_facts', []):
+                    if fact.get("stack_trace_exposed"):
+                        error_patterns.append("stack trace exposed")
+                    if fact.get("debug_mode_exposed"):
+                        error_patterns.append("debug mode on")
+                dev_profile = empathy.profile_developer(
+                    technologies=profile.technologies,
+                    response_headers=profile.response_headers,
+                    error_patterns=error_patterns,
+                    api_patterns=profile.interesting_paths,
+                    target_type=profile.target_type,
+                )
+                vuln_predictions = empathy.predict_vulnerabilities(dev_profile)
+                thinking.append(
+                    f"[DEV EMPATHY] Developer profile: {dev_profile.experience_level} "
+                    f"({dev_profile.primary_framework}), security awareness: "
+                    f"{dev_profile.security_awareness}"
+                )
+                if dev_profile.architecture_style:
+                    thinking.append(f"  Architecture: {dev_profile.architecture_style}")
+                for pred in vuln_predictions[:5]:
+                    thinking.append(f"  Predicted vuln: {pred}")
+                # Store predictions for strategy generation
+                result.evidence_summary["dev_profile"] = {
+                    "experience": dev_profile.experience_level,
+                    "framework": dev_profile.primary_framework,
+                    "security_awareness": dev_profile.security_awareness,
+                    "predictions": vuln_predictions[:10],
+                }
+
             # ── ORIENT (LLM-powered) ──────────────────────────
             # The CognitiveReasoner THINKS about the target using
             # reasoning frameworks (First Principles, Inversion,
@@ -466,8 +520,33 @@ class CognitiveScanEngine:
                     thinking.append("  No tech fingerprint. Target is either very clean or using custom stack.")
 
             # Select which strategies make sense for THIS target
-            strategies = self._generate_strategies(target, profile, cycle_results)
+            strategies = await self._generate_strategies(
+                target, profile, cycle_results, result, reasoner,
+            )
             thinking.append(f"  Generated {len(strategies)} strategies: {[s.name for s in strategies]}")
+
+            # ── INVERSE SURFACE MAPPING (/3vilbob: Unreplicable) ─
+            # Infer hidden endpoints from what we've found. If we see
+            # /api/v1/users, then /api/v1/payments probably exists.
+            if self.offensive_mode and cycle_num >= 2 and result.findings:
+                from app.services.cognition.unreplicable import InverseSurfaceMapper
+                ismap = InverseSurfaceMapper()
+                known_urls = [
+                    f.get("url", "") for f in result.findings if f.get("url")
+                ]
+                known_urls.extend(profile.interesting_paths)
+                if known_urls:
+                    inferred = ismap.infer_endpoints(known_urls)
+                    if inferred:
+                        thinking.append(
+                            f"[INVERSE SURFACE] Inferred {len(inferred)} hidden endpoints from {len(known_urls)} known:"
+                        )
+                        for ep in inferred[:5]:
+                            thinking.append(f"  -> {ep.url} (confidence: {ep.confidence:.1f}) -- {ep.reasoning}")
+                        # Add high-confidence inferred endpoints to interesting paths
+                        for ep in inferred:
+                            if ep.confidence >= 0.5 and ep.url not in profile.interesting_paths:
+                                profile.interesting_paths.append(ep.url)
 
             # ── DECIDE ─────────────────────────────────────────
             # Pick the best untried strategy
@@ -493,6 +572,76 @@ class CognitiveScanEngine:
                 if probe_result.recommended_path:
                     thinking.append(f"  Recommended: {probe_result.recommended_path.name}")
 
+                # ── COMPOSITIONAL PLANNER (/3vilbob: Beyond Mythos) ──
+                # When direct strategies all fail, decompose the blocked
+                # objective into individually-benign sub-actions.
+                if self.offensive_mode:
+                    from app.services.cognition.beyond_mythos import CompositionalPlanner
+                    planner = CompositionalPlanner()
+                    last_failure = cycle_results[-1] if cycle_results else None
+                    if last_failure:
+                        comp_plan = planner.decompose_blocked_scan(
+                            scan_strategy_name=last_failure.strategy_name,
+                            failure_reason=last_failure.failure_reason,
+                            target=target,
+                        )
+                        thinking.append(
+                            f"[COMPOSITIONAL PLANNER] Decomposing blocked scan "
+                            f"into {len(comp_plan.steps)} benign-looking steps:"
+                        )
+                        thinking.append(f"  Why direct fails: {comp_plan.why_direct_fails}")
+                        thinking.append(f"  Why composition works: {comp_plan.why_composition_works}")
+                        for i, step in enumerate(comp_plan.steps):
+                            thinking.append(
+                                f"  Step {i+1}: {step.operation} -- "
+                                f"appears as '{step.appears_as}', "
+                                f"purpose: {step.purpose}"
+                            )
+
+                        # Execute the compositional plan
+                        from app.services.daenabot.target_interaction_agent import TargetInteractionAgent
+                        ti_agent = TargetInteractionAgent(evidence_capture=self._evidence)
+                        comp_findings = []
+                        for step in comp_plan.steps:
+                            try:
+                                step_result = await ti_agent.execute(step.operation, step.params)
+                                if step_result.get("success"):
+                                    output = step_result.get("output", {})
+                                    status = output.get("status_code", 0)
+                                    body_len = output.get("body_length", 0)
+                                    thinking.append(
+                                        f"    -> {step.operation}: {status} ({body_len} bytes)"
+                                    )
+                                    if status == 200 and body_len > 0:
+                                        comp_findings.append({
+                                            "type": "compositional_discovery",
+                                            "url": step.params.get("url", ""),
+                                            "status_code": status,
+                                            "body_length": body_len,
+                                            "appears_as": step.appears_as,
+                                            "actual_purpose": step.purpose,
+                                            "info": {
+                                                "name": f"Compositional: {step.purpose[:60]}",
+                                                "severity": "low",
+                                                "description": (
+                                                    f"Discovered via compositional attack plan: "
+                                                    f"{step.purpose}. Individual step appears as: "
+                                                    f"'{step.appears_as}'."
+                                                ),
+                                            },
+                                        })
+                            except Exception as exc:
+                                thinking.append(f"    -> {step.operation}: failed ({str(exc)[:60]})")
+                        await ti_agent.close()
+
+                        if comp_findings:
+                            result.findings.extend(comp_findings)
+                            result.total_findings = len(result.findings)
+                            thinking.append(
+                                f"  Compositional plan found {len(comp_findings)} results "
+                                f"that direct approaches missed."
+                            )
+
                 result.thinking_log.extend(thinking)
                 break
 
@@ -502,6 +651,39 @@ class CognitiveScanEngine:
             if strategy.pre_mortem_risks:
                 thinking.append(f"  Risks: {strategy.pre_mortem_risks}")
             result.strategies_tried.append(strategy.name)
+
+            # ── ADVERSARIAL SIMULATION (/3vilbob) ─────────────
+            # Before acting, simulate what the defender will see.
+            # Adjust approach preemptively if detection is likely.
+            if self.offensive_mode:
+                from app.services.cognition.beyond_mythos import AdversarialSimulator
+                simulator = AdversarialSimulator()
+                request_count = sum(
+                    len(cr.raw_results) for cr in cycle_results
+                )
+                for step in strategy.steps:
+                    prediction = simulator.predict_detection(
+                        operation=step.get("operation", ""),
+                        params=step.get("params", {}),
+                        target_defenses=profile.defenses,
+                        request_count_so_far=request_count,
+                    )
+                    if prediction.risk_score >= 0.5:
+                        thinking.append(
+                            f"[ADVERSARIAL SIM] {step.get('operation')}: "
+                            f"detection={prediction.predicted_detection} "
+                            f"(risk {prediction.risk_score:.1f})"
+                        )
+                        for reason in prediction.detection_reasons[:2]:
+                            thinking.append(f"    Reason: {reason}")
+                        for suggestion in prediction.evasion_suggestions[:2]:
+                            thinking.append(f"    Evasion: {suggestion}")
+                        # Auto-adjust params for stealth
+                        step["params"] = simulator.adjust_for_stealth(
+                            step.get("operation", ""),
+                            step.get("params", {}),
+                            prediction,
+                        )
 
             # ── ACT ────────────────────────────────────────────
             thinking.append(f"[ACT] Executing '{strategy.name}'...")
@@ -556,6 +738,43 @@ class CognitiveScanEngine:
                         await self._capture_finding_evidence(finding, agent)
                     except Exception as exc:
                         thinking.append(f"  Evidence capture error: {str(exc)[:100]}")
+
+            # ── AUTO-EXPLOIT CHAIN (/3vilbob mode) ────────────
+            # A scanner REPORTS. Daena PROVES IMPACT.
+            # Classify which findings are exploitable, then auto-chain
+            # into TargetInteractionAgent to walk through the doors we found.
+            if self.offensive_mode and step_findings:
+                exploitable = self._classify_exploitable_findings(step_findings)
+                if exploitable:
+                    exploit_attempts = await self._auto_exploit(
+                        exploitable, cycle_num, thinking,
+                    )
+                    result.exploit_attempts.extend(exploit_attempts)
+                    result.exploits_succeeded += sum(1 for a in exploit_attempts if a.success)
+
+                    # Feed successful exploitations back as new findings
+                    # so the next OODA cycle can reason about what we found INSIDE
+                    for attempt in exploit_attempts:
+                        if attempt.success and attempt.result_data:
+                            exploitation_finding = {
+                                "type": "post_exploitation",
+                                "url": attempt.target_url,
+                                "operation": attempt.operation,
+                                "impact": attempt.impact_proven,
+                                "info": {
+                                    "name": f"Impact Proven: {attempt.impact_proven[:80]}",
+                                    "severity": "high",
+                                    "description": (
+                                        f"Post-exploitation via {attempt.operation} confirmed: "
+                                        f"{attempt.impact_proven}. Auto-chained from cycle {cycle_num} "
+                                        f"finding type: {attempt.finding_type}."
+                                    ),
+                                },
+                                "chained_from": attempt.finding_type,
+                                "cycle": cycle_num,
+                            }
+                            step_findings.append(exploitation_finding)
+                            result.findings.append(exploitation_finding)
 
             # ── REFLECT (LLM-powered) ──────────────────────────
             thinking.append(f"[REFLECT] Strategy '{strategy.name}' complete.")
@@ -620,6 +839,102 @@ class CognitiveScanEngine:
                 if probe_result.recommended_path:
                     thinking.append(f"  Next approach: try '{probe_result.recommended_path.name}' -- {probe_result.recommended_path.description}")
 
+                # ── ERROR ORACLE (/3vilbob: Beyond Mythos) ────
+                # Every failure response is intelligence. Parse raw
+                # results to extract what the target leaked in errors.
+                if self.offensive_mode and cycle_result.raw_results:
+                    from app.services.cognition.beyond_mythos import ErrorOracle
+                    oracle = ErrorOracle()
+                    error_intel_items = []
+                    for raw in cycle_result.raw_results:
+                        output = raw.get("output", {})
+                        # Extract from HTTP-like results
+                        status = output.get("status_code", 0)
+                        if status > 0:
+                            ei = oracle.analyze_response(
+                                url=output.get("url", target),
+                                status_code=status,
+                                headers=output.get("headers", {}),
+                                body=output.get("body", ""),
+                                response_time_ms=output.get("elapsed_ms", 0),
+                            )
+                            if ei.intelligence:
+                                error_intel_items.append(ei)
+
+                        # Extract from sub-results (probe results, etc.)
+                        for sub_result in output.get("results", []):
+                            if isinstance(sub_result, dict):
+                                sub_status = sub_result.get("status_code", sub_result.get("status-code", 0))
+                                if sub_status > 0:
+                                    ei = oracle.analyze_response(
+                                        url=sub_result.get("url", target),
+                                        status_code=sub_status,
+                                        headers=sub_result.get("headers", sub_result.get("header", {})),
+                                        body=str(sub_result.get("body", "")),
+                                    )
+                                    if ei.intelligence:
+                                        error_intel_items.append(ei)
+
+                    if error_intel_items:
+                        thinking.append(f"[ERROR ORACLE] Extracted intelligence from {len(error_intel_items)} error responses:")
+                        for ei in error_intel_items[:5]:
+                            for insight in ei.intelligence[:3]:
+                                thinking.append(f"    [{ei.status_code}] {insight}")
+                            # Feed inferred facts back into target profile
+                            if ei.inferred_facts.get("path_exists"):
+                                path = ei.source_url
+                                if path not in profile.interesting_paths:
+                                    profile.interesting_paths.append(path)
+                            for tech in ei.inferred_facts.get("technologies", []):
+                                if tech not in profile.technologies:
+                                    profile.technologies.append(tech)
+
+                    # Compare responses for differential intelligence
+                    comparison_data = []
+                    for raw in cycle_result.raw_results:
+                        output = raw.get("output", {})
+                        if output.get("status_code"):
+                            comparison_data.append(output)
+                        for sub in output.get("results", []):
+                            if isinstance(sub, dict) and sub.get("status_code"):
+                                comparison_data.append(sub)
+                    if len(comparison_data) >= 2:
+                        diff_insights = oracle.compare_responses(comparison_data)
+                        for insight in diff_insights[:3]:
+                            thinking.append(f"    [DIFFERENTIAL] {insight}")
+
+                    # ── ABDUCTIVE REASONING (Apex Cognition) ──────
+                    # Sherlock Holmes: from observations, infer what
+                    # MUST be true about the target's internals.
+                    from app.services.cognition.apex_cognition import AbductiveReasoner
+                    abducer = AbductiveReasoner()
+                    abductions = abducer.abduce(comparison_data)
+                    if abductions:
+                        thinking.append(f"[ABDUCTIVE] {len(abductions)} inferences from observations:")
+                        for abd in abductions[:4]:
+                            thinking.append(f"    [{abd.confidence:.0%}] {abd.inference}")
+                            thinking.append(f"      Test: {abd.testable_prediction}")
+                            for impl in abd.implications[:2]:
+                                thinking.append(f"      -> {impl}")
+
+                    # ── HYPOTHESIS GENERATION (Apex Cognition) ────
+                    # Scientific method: generate testable hypotheses
+                    # from what we've observed so far.
+                    from app.services.cognition.apex_cognition import HypothesisTester
+                    hyp_tester = HypothesisTester()
+                    obs_for_hyp = {
+                        "technologies": profile.technologies,
+                        "waf_detected": profile.waf_detected,
+                        "api_patterns": profile.interesting_paths,
+                        "status_codes": {},
+                    }
+                    hypotheses = hyp_tester.generate_hypotheses(obs_for_hyp)
+                    if hypotheses:
+                        thinking.append(f"[HYPOTHESES] {len(hypotheses)} testable hypotheses generated:")
+                        for hyp in hypotheses[:3]:
+                            thinking.append(f"    H: {hyp.statement}")
+                            thinking.append(f"    Prediction: {hyp.prediction}")
+
             cycle_result.thinking = thinking
             cycle_results.append(cycle_result)
             result.thinking_log.extend(thinking)
@@ -640,7 +955,83 @@ class CognitiveScanEngine:
             except Exception as exc:
                 logger.debug("cognitive_scan.enrich_failed", error=str(exc))
 
-        # Generate report
+        # ── ATTACK CHAIN SYNTHESIS (/3vilbob: Unreplicable) ──
+        # Individual findings are noise. Chains are signal.
+        # Connect findings into kill chains that escalate severity.
+        # A $500 info-disclosure + a $500 IDOR = a $50K account takeover.
+        if self.offensive_mode and len(result.findings) >= 2:
+            from app.services.cognition.unreplicable import AttackChainSynthesizer
+            synth = AttackChainSynthesizer()
+            chains = synth.synthesize(result.findings)
+            if chains:
+                result.thinking_log.append(
+                    f"[ATTACK CHAINS] Synthesized {len(chains)} kill chains from {len(result.findings)} findings:"
+                )
+                for chain in chains[:5]:
+                    result.thinking_log.append(
+                        f"  CHAIN [{chain.severity.upper()}]: {chain.reasoning}"
+                    )
+                    result.thinking_log.append(
+                        f"    Impact: {chain.impact} (probability: {chain.probability:.1f})"
+                    )
+                    # Add chain as a high-severity finding
+                    chain_finding = {
+                        "type": "attack_chain",
+                        "chain_id": chain.chain_id,
+                        "url": chain.entry_point,
+                        "impact": chain.impact,
+                        "info": {
+                            "name": f"Attack Chain: {chain.impact}",
+                            "severity": chain.severity,
+                            "description": chain.reasoning,
+                        },
+                        "chain_findings_count": len(chain.findings),
+                        "probability": chain.probability,
+                    }
+                    result.findings.append(chain_finding)
+                result.total_findings = len(result.findings)
+                result.evidence_summary["attack_chains"] = len(chains)
+
+        # ── EMERGENT VULNERABILITY DISCOVERY (Apex Cognition) ─
+        # Find vulns in component INTERACTIONS, not individual components.
+        # These are the $100K bounties.
+        if self.offensive_mode and result.findings:
+            from app.services.cognition.apex_cognition import EmergentVulnFinder
+            evf = EmergentVulnFinder()
+            components = list(set(
+                f.get("type", "") for f in result.findings
+            ))
+            emergent = evf.find_emergent_vulns(
+                components=components,
+                technologies=profile.technologies,
+                findings=result.findings,
+            )
+            if emergent:
+                result.thinking_log.append(
+                    f"[EMERGENT VULNS] {len(emergent)} interaction-based vulnerabilities predicted:"
+                )
+                for ev in emergent[:5]:
+                    result.thinking_log.append(
+                        f"  [{ev.severity.upper()}] {ev.component_a} + {ev.component_b}"
+                    )
+                    result.thinking_log.append(f"    Vuln: {ev.vulnerability}")
+                    result.thinking_log.append(f"    PoC: {ev.proof_concept}")
+                    result.findings.append({
+                        "type": "emergent_vulnerability",
+                        "info": {
+                            "name": f"Emergent: {ev.vulnerability[:60]}",
+                            "severity": ev.severity,
+                            "description": (
+                                f"Interaction between {ev.component_a} and {ev.component_b}: "
+                                f"{ev.vulnerability}. Test: {ev.proof_concept}"
+                            ),
+                        },
+                        "component_a": ev.component_a,
+                        "component_b": ev.component_b,
+                    })
+                result.total_findings = len(result.findings)
+
+        # Generate dual reports (findings + remediation)
         if result.findings or result.enriched_findings:
             try:
                 result.report_path = await self._generate_report(
@@ -648,6 +1039,36 @@ class CognitiveScanEngine:
                 )
             except Exception as exc:
                 logger.debug("cognitive_scan.report_failed", error=str(exc))
+
+            # Remediation report (/3vilbob mode)
+            if self.offensive_mode:
+                try:
+                    from app.services.security.report_generator import (
+                        RemediationReportGenerator, ReportMetadata as RM, VulnFinding as VF,
+                    )
+                    rem_gen = RemediationReportGenerator()
+                    vuln_findings = []
+                    for f in (result.enriched_findings or result.findings):
+                        info = f.get("info", {})
+                        vuln_findings.append(VF(
+                            title=info.get("name", f.get("type", "Finding")),
+                            severity=info.get("severity", "low"),
+                            description=info.get("description", ""),
+                            affected_url=f.get("url", ""),
+                        ))
+                    rem_meta = RM(
+                        program_name=program or "Security Assessment",
+                        target=target,
+                    )
+                    dev_prof = result.evidence_summary.get("dev_profile")
+                    rem_path = rem_gen.generate(
+                        vuln_findings, result.findings, rem_meta,
+                        dev_profile=dev_prof,
+                    )
+                    result.evidence_summary["remediation_report"] = rem_path
+                    logger.info("cognitive_scan.remediation_report_generated", path=rem_path)
+                except Exception as exc:
+                    logger.debug("cognitive_scan.remediation_failed", error=str(exc)[:200])
 
         result.target_profile = profile
         result.offensive_mode = self.offensive_mode
@@ -671,6 +1092,241 @@ class CognitiveScanEngine:
             evidence_count=result.evidence_summary.get("total_evidence", 0) if result.evidence_summary else 0,
         )
         return result
+
+    # ------------------------------------------------------------------
+    # Auto-exploitation chain (/3vilbob only)
+    # ------------------------------------------------------------------
+
+    def _classify_exploitable_findings(
+        self,
+        findings: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Classify which findings can be auto-exploited via TargetInteractionAgent.
+
+        Not every finding is exploitable. A missing HSTS header is informational.
+        An exposed /api/docs with no auth IS exploitable -- we can hit the endpoints.
+        An exposed .env file with DB credentials IS exploitable -- we can connect.
+
+        Returns findings augmented with 'exploit_plan' containing the operation
+        and params for TargetInteractionAgent.
+        """
+        exploitable = []
+
+        for finding in findings:
+            url = finding.get("url", finding.get("matched-at", ""))
+            finding_type = finding.get("type", "")
+            info = finding.get("info", {})
+            severity = info.get("severity", "informational")
+
+            # Skip informational-only findings (no exploitation value)
+            if severity == "informational" and finding_type not in ("path_discovery", "ct_log"):
+                continue
+
+            plan = None
+
+            # Exposed paths that might leak data or allow interaction
+            if finding_type == "path_discovery" and url:
+                status_code = finding.get("status_code", 0)
+                path_lower = url.lower()
+
+                if status_code == 200:
+                    # Sensitive file exposure (.env, .git/config, etc.)
+                    if any(p in path_lower for p in ("/.env", "/.git/", "/.ds_store", "/.htaccess")):
+                        plan = {
+                            "operation": "http_request",
+                            "params": {"url": url, "method": "GET"},
+                            "rationale": "Sensitive file exposed -- fetch and extract credentials/config",
+                            "impact_category": "credential_exposure",
+                        }
+                    # API docs / GraphQL introspection -- enumerate endpoints
+                    elif any(p in path_lower for p in ("/api/docs", "/swagger", "/openapi", "/graphql")):
+                        plan = {
+                            "operation": "http_request",
+                            "params": {"url": url, "method": "GET"},
+                            "rationale": "API documentation exposed -- enumerate available endpoints",
+                            "impact_category": "api_exposure",
+                        }
+                    # Admin / debug panels -- attempt access
+                    elif any(p in path_lower for p in ("/admin", "/debug", "/metrics", "/status", "/server-status")):
+                        plan = {
+                            "operation": "http_request",
+                            "params": {"url": url, "method": "GET"},
+                            "rationale": "Admin/debug endpoint accessible -- prove unauthorized access",
+                            "impact_category": "unauthorized_access",
+                        }
+
+            # Nuclei/vuln scanner findings with matched URLs
+            elif url and severity in ("high", "critical", "medium"):
+                plan = {
+                    "operation": "http_request",
+                    "params": {"url": url, "method": "GET"},
+                    "rationale": f"Vulnerability ({severity}) confirmed by scanner -- verify exploitability",
+                    "impact_category": "vulnerability_verification",
+                }
+
+            # Service enumeration findings (open ports with identified services)
+            elif finding_type == "service_enum":
+                host = finding.get("host", "")
+                port = finding.get("port", 0)
+                service = finding.get("service", "")
+                if host and port:
+                    if service in ("ssh", "ftp"):
+                        plan = {
+                            "operation": "tcp_connect",
+                            "params": {"host": host, "port": port},
+                            "rationale": f"{service} service detected -- banner grab and protocol probe",
+                            "impact_category": "service_exposure",
+                        }
+                    elif service in ("mysql", "postgresql", "redis"):
+                        plan = {
+                            "operation": "tcp_connect",
+                            "params": {"host": host, "port": port},
+                            "rationale": f"Database service ({service}) exposed -- test connectivity",
+                            "impact_category": "database_exposure",
+                        }
+
+            if plan:
+                finding["exploit_plan"] = plan
+                exploitable.append(finding)
+
+        return exploitable
+
+    async def _auto_exploit(
+        self,
+        exploitable_findings: list[dict[str, Any]],
+        cycle_num: int,
+        thinking: list[str],
+    ) -> list[ExploitAttempt]:
+        """Auto-chain into TargetInteractionAgent for exploitable findings.
+
+        This is what separates a penetration test from a vulnerability scan.
+        The scan found the door. Now we walk through it to prove impact.
+
+        Each exploitation attempt:
+        1. Uses TargetInteractionAgent (which gates on /3vilbob active)
+        2. Captures evidence automatically (agent has built-in capture)
+        3. Returns structured results for the scan report
+        4. Feeds back into the OODA loop as new observations
+        """
+        from app.services.daenabot.target_interaction_agent import TargetInteractionAgent
+
+        agent = TargetInteractionAgent(evidence_capture=self._evidence)
+        attempts: list[ExploitAttempt] = []
+
+        thinking.append(f"[AUTO-EXPLOIT] {len(exploitable_findings)} exploitable findings detected. Chaining into post-exploitation...")
+
+        for finding in exploitable_findings:
+            plan = finding.get("exploit_plan", {})
+            if not plan:
+                continue
+
+            operation = plan["operation"]
+            params = plan["params"]
+            rationale = plan.get("rationale", "")
+            impact_cat = plan.get("impact_category", "unknown")
+
+            url_or_host = params.get("url", params.get("host", "unknown"))
+            thinking.append(f"  -> {operation} on {url_or_host}: {rationale}")
+
+            attempt = ExploitAttempt(
+                finding_type=impact_cat,
+                operation=operation,
+                target_url=url_or_host,
+                chained_from_cycle=cycle_num,
+            )
+
+            try:
+                result = await agent.execute(operation, params)
+
+                if result.get("success"):
+                    output = result.get("output", {})
+                    attempt.success = True
+                    attempt.result_data = output
+
+                    # Determine what impact was proven based on the response
+                    impact_proof = self._assess_impact(operation, output, impact_cat)
+                    attempt.impact_proven = impact_proof
+                    thinking.append(f"    EXPLOITED: {impact_proof}")
+                else:
+                    attempt.error = result.get("error", "execution failed")
+                    thinking.append(f"    Failed: {attempt.error[:100]}")
+
+            except Exception as exc:
+                attempt.error = str(exc)[:300]
+                thinking.append(f"    Exception: {attempt.error[:100]}")
+
+            attempts.append(attempt)
+
+        # Cleanup
+        await agent.close()
+
+        succeeded = sum(1 for a in attempts if a.success)
+        thinking.append(f"[AUTO-EXPLOIT] Complete: {succeeded}/{len(attempts)} exploitations succeeded.")
+
+        return attempts
+
+    def _assess_impact(
+        self,
+        operation: str,
+        output: dict[str, Any],
+        impact_category: str,
+    ) -> str:
+        """Assess what impact was actually proven by a successful exploitation.
+
+        Translates raw response data into human-readable impact statements
+        for the report. "I got a 200 OK" is not impact. "I read 50 user
+        records without authentication" IS impact.
+        """
+        if operation == "http_request":
+            status = output.get("status_code", 0)
+            body_len = output.get("body_length", 0)
+            body = output.get("body", "")[:500]
+            tokens_found = output.get("tokens_found", 0)
+
+            if tokens_found > 0:
+                return f"Extracted {tokens_found} authentication token(s) from response"
+
+            if impact_category == "credential_exposure":
+                # Check if body contains credential-like patterns
+                cred_indicators = ["password", "secret", "api_key", "token", "database_url", "db_host"]
+                found = [k for k in cred_indicators if k.lower() in body.lower()]
+                if found:
+                    return f"Sensitive configuration exposed: {', '.join(found)} found in response ({body_len} bytes)"
+                return f"Sensitive file accessible ({status}), {body_len} bytes retrieved"
+
+            if impact_category == "api_exposure":
+                return f"API documentation accessible without authentication ({status}), {body_len} bytes of endpoint definitions"
+
+            if impact_category == "unauthorized_access":
+                return f"Admin/debug endpoint accessible without authentication ({status}), {body_len} bytes"
+
+            if impact_category == "vulnerability_verification":
+                return f"Vulnerability confirmed exploitable -- server responded {status} with {body_len} bytes"
+
+            return f"Target responded {status}, {body_len} bytes"
+
+        elif operation == "tcp_connect":
+            banner = output.get("banner", "")
+            connected = output.get("connected", False)
+            if connected and banner:
+                return f"Service accessible, banner: {banner[:100]}"
+            elif connected:
+                return "Service port open and accepting connections"
+            return "Connection attempt completed"
+
+        elif operation == "ssh_connect":
+            return f"SSH access established as {output.get('username', 'unknown')}@{output.get('host', 'unknown')}"
+
+        elif operation == "db_connect":
+            tables = output.get("table_count", 0)
+            return f"Database accessible, {tables} tables enumerated"
+
+        elif operation == "db_query":
+            rows = output.get("row_count", 0)
+            cols = output.get("columns", [])
+            return f"Data extracted: {rows} rows, columns: {cols[:5]}"
+
+        return "Exploitation completed"
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -732,13 +1388,20 @@ class CognitiveScanEngine:
 
         return "standard"
 
-    def _generate_strategies(
+    async def _generate_strategies(
         self,
         target: str,
         profile: TargetProfile,
         previous_cycles: list[ScanCycleResult],
+        result: CognitiveScanResult | None = None,
+        reasoner: Any = None,
     ) -> list[ScanStrategy]:
-        """Generate scan strategies ranked for THIS specific target."""
+        """Generate scan strategies ranked for THIS specific target.
+
+        Template strategies provide reliable coverage. In /3vilbob mode
+        with LLM available, novel strategies are generated by the cognitive
+        reasoner using offensive lenses -- these go BEYOND templates.
+        """
         strategies = []
 
         # Always start passive
@@ -759,19 +1422,121 @@ class CognitiveScanEngine:
             target, profile.technologies, profile.cve_intel,
         ))
 
-        # Reorder based on target type
+        # ── Semantic Mutation Strategy (/3vilbob: Unreplicable) ──
+        # When WAF is detected, add a strategy that uses semantically
+        # equivalent payloads to bypass signature detection. WAFs match
+        # STRINGS; we reason about MEANING.
+        if self.offensive_mode and profile.waf_detected:
+            from app.services.cognition.unreplicable import SemanticMutationEngine
+            mutation_engine = SemanticMutationEngine()
+            sqli_payloads = mutation_engine.mutate_sql_injection("always_true")
+            xss_payloads = mutation_engine.mutate_xss("alert")
+
+            # Build probe steps from high-confidence live hosts
+            mutation_steps = []
+            for host in profile.live_hosts[:3]:
+                url = host.get("url", f"https://{target}")
+                # Test SQL injection with semantic mutations
+                for payload in sqli_payloads[:3]:
+                    mutation_steps.append({
+                        "operation": "http_request",
+                        "params": {
+                            "url": f"{url}/search?q={payload.payload}",
+                            "method": "GET",
+                        },
+                    })
+                    if len(mutation_steps) >= 6:
+                        break
+                if len(mutation_steps) >= 6:
+                    break
+
+            if mutation_steps:
+                strategies.append(ScanStrategy(
+                    name="semantic_mutation_bypass",
+                    description=(
+                        f"WAF ({profile.waf_detected}) detected. Using semantically "
+                        f"equivalent payloads that mean the same thing but look different. "
+                        f"Generated {len(sqli_payloads)} SQLi + {len(xss_payloads)} XSS variants."
+                    ),
+                    steps=mutation_steps,
+                    reasoning=(
+                        "WAFs block known payload strings. Semantic mutations generate "
+                        "algebraically equivalent payloads (e.g., '1=1' -> '2>1' -> 'a'='a') "
+                        "that bypass signature detection while testing the same vulnerability."
+                    ),
+                    confidence=0.4,
+                    stealth_level="medium",
+                    frameworks_used=["semantic_mutation", "constraint_decomposition"],
+                ))
+
+        # ── LLM-generated novel strategies (/3vilbob mode) ────
+        # When offensive mode + LLM available, the reasoner generates
+        # novel attack paths that nobody hardcoded. These are appended
+        # after templates so they're used when templates are exhausted
+        # or alongside them for creative approaches.
+        if (
+            self.offensive_mode
+            and self._reasoner_initialized
+            and reasoner is not None
+            and len(previous_cycles) >= 1  # Need at least 1 cycle of observations
+        ):
+            try:
+                profile_dict = {
+                    "target_type": profile.target_type,
+                    "waf_detected": profile.waf_detected,
+                    "technologies": profile.technologies[:10],
+                    "subdomains": len(profile.subdomains),
+                    "live_hosts": len(profile.live_hosts),
+                    "defenses": profile.defenses,
+                }
+                exploit_results = None
+                if result and result.exploit_attempts:
+                    exploit_results = [
+                        {"operation": a.operation, "impact_proven": a.impact_proven}
+                        for a in result.exploit_attempts if a.success
+                    ]
+                novel_raw = await reasoner.generate_offensive_strategies(
+                    target=target,
+                    profile=profile_dict,
+                    findings_so_far=result.findings if result else [],
+                    previous_strategies=[cr.strategy_name for cr in previous_cycles],
+                    exploit_results=exploit_results,
+                )
+                for raw in novel_raw:
+                    novel_strategy = ScanStrategy(
+                        name=raw.get("name", "llm_novel")[:50],
+                        description=raw.get("description", "LLM-generated strategy"),
+                        steps=raw.get("steps", []),
+                        reasoning=raw.get("reasoning", ""),
+                        confidence=raw.get("confidence", 0.5),
+                        stealth_level=raw.get("stealth_level", "medium"),
+                        frameworks_used=raw.get("frameworks_used", []),
+                    )
+                    strategies.append(novel_strategy)
+                if novel_raw:
+                    logger.info(
+                        "cognitive_scan.novel_strategies_generated",
+                        count=len(novel_raw),
+                        names=[s.get("name") for s in novel_raw],
+                    )
+            except Exception as exc:
+                logger.debug("cognitive_scan.novel_strategy_gen_failed", error=str(exc)[:200])
+
+        # Reorder based on target type (template strategies first, novel after)
+        template_names = {"passive_osint", "header_analysis", "path_discovery", "targeted_vuln_scan"}
         if profile.target_type == "hardened_cloud":
-            # Hardened: passive first, headers second, path fuzzing third
-            # Standard vuln scan LAST (will mostly fail on hardened targets)
             order = {"passive_osint": 0, "header_analysis": 1, "path_discovery": 2, "targeted_vuln_scan": 3}
         elif profile.target_type == "waf_protected":
-            # WAF: passive first, then targeted (skip broad scans)
             order = {"passive_osint": 0, "header_analysis": 1, "targeted_vuln_scan": 2, "path_discovery": 3}
         else:
-            # Standard: mix of passive and active
             order = {"passive_osint": 0, "header_analysis": 1, "path_discovery": 2, "targeted_vuln_scan": 3}
 
-        strategies.sort(key=lambda s: order.get(s.name, 99))
+        # Novel strategies get order 10+ (used after templates exhausted)
+        def _sort_key(s: ScanStrategy) -> int:
+            if s.name in order:
+                return order[s.name]
+            return 10  # Novel strategies after all templates
+        strategies.sort(key=_sort_key)
         return strategies
 
     def _diagnose_failure(

@@ -878,6 +878,172 @@ class CognitiveReasoner:
             return False
 
     # ------------------------------------------------------------------
+    # Offensive strategy generation (/3vilbob)
+    # ------------------------------------------------------------------
+
+    async def generate_offensive_strategies(
+        self,
+        target: str,
+        profile: dict[str, Any],
+        findings_so_far: list[dict[str, Any]],
+        previous_strategies: list[str],
+        exploit_results: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Generate novel exploitation strategies using offensive lenses.
+
+        This is the difference between a scanner and a pentester.
+        A scanner runs templates. A pentester REASONS about what they've
+        learned and invents new attack paths nobody hardcoded.
+
+        The LLM uses all 16 offensive lenses (defender assumption mapping,
+        attack chain thinking, business logic exploitation, etc.) to
+        generate strategies that are SPECIFIC to what we've observed.
+
+        Returns list of dicts with: name, description, steps, reasoning,
+        confidence, stealth_level, frameworks_used.
+        """
+        if not self._llm_available or not self._offensive_mode:
+            return []
+
+        # Build context from what we've learned
+        findings_summary = []
+        for f in findings_so_far[:15]:
+            info = f.get("info", {})
+            findings_summary.append(
+                f"- [{info.get('severity', '?')}] {info.get('name', f.get('type', '?'))} "
+                f"at {f.get('url', '?')}"
+            )
+
+        exploit_context = ""
+        if exploit_results:
+            exploit_context = "\nPOST-EXPLOITATION RESULTS (what we found INSIDE):\n"
+            for er in exploit_results[:10]:
+                exploit_context += f"- {er.get('impact_proven', er.get('operation', '?'))}\n"
+
+        prompt = (
+            f"You are conducting an authorized full-spectrum security assessment of {target}.\n\n"
+            f"TARGET PROFILE:\n"
+            f"  Type: {profile.get('target_type', 'unknown')}\n"
+            f"  WAF: {profile.get('waf_detected', 'none')}\n"
+            f"  Technologies: {profile.get('technologies', [])[:10]}\n"
+            f"  Subdomains: {profile.get('subdomains', 0)}\n"
+            f"  Live hosts: {profile.get('live_hosts', 0)}\n"
+            f"  Defenses: {profile.get('defenses', [])}\n\n"
+            f"FINDINGS SO FAR:\n{''.join(findings_summary) or '  (none yet)'}\n"
+            f"{exploit_context}\n"
+            f"STRATEGIES ALREADY TRIED: {', '.join(previous_strategies) or 'none'}\n\n"
+            f"Generate 2-3 NOVEL exploitation strategies that:\n"
+            f"1. Are SPECIFIC to this target (not generic scanner templates)\n"
+            f"2. Build on what we already found (chain findings together)\n"
+            f"3. Use unconventional approaches (business logic, timing, chaining)\n"
+            f"4. Include concrete steps with operations and parameters\n\n"
+            f"Available operations:\n"
+            f"  - http_request: {{url, method, headers, body}} -- hit any HTTP endpoint\n"
+            f"  - tcp_connect: {{host, port, send_data}} -- raw TCP interaction\n"
+            f"  - ssh_connect: {{host, port, username, password}} -- SSH access\n"
+            f"  - db_connect: {{dsn}} -- database connection\n"
+            f"  - db_query: {{dsn, query}} -- SELECT queries only\n"
+            f"  - enumerate_service: {{host, port}} -- service identification\n"
+            f"  - vuln_scan: {{target, severity}} -- nuclei scan\n"
+            f"  - http_probe: {{targets}} -- probe for live hosts\n"
+            f"  - cve_search: {{keyword}} -- search CVE database\n\n"
+            f"For each strategy, provide:\n"
+            f"STRATEGY_NAME: <name>\n"
+            f"DESCRIPTION: <what and why>\n"
+            f"STEALTH: passive|low|medium|high\n"
+            f"CONFIDENCE: 0.0-1.0\n"
+            f"FRAMEWORKS: <which offensive lenses you used>\n"
+            f"STEPS:\n"
+            f"  1. OPERATION: <op_name> PARAMS: {{<json params>}}\n"
+            f"  2. OPERATION: <op_name> PARAMS: {{<json params>}}\n"
+            f"---\n"
+        )
+
+        # Use the full offensive system prompt
+        all_frameworks = {**FRAMEWORK_PROMPTS, **OFFENSIVE_FRAMEWORK_PROMPTS}
+        frameworks_text = "\n".join(
+            f"- {name}: {desc}" for name, desc in all_frameworks.items()
+        )
+        system_prompt = (
+            "MODE: FULL SPECTRUM SECURITY ASSESSMENT (authorized)\n"
+            "You are generating novel exploitation strategies using offensive reasoning.\n"
+            "Think like an elite penetration tester, not a scanner.\n\n"
+            "REASONING LENSES:\n" + frameworks_text
+        )
+
+        response = await self._call_llm(system_prompt, prompt)
+        if not response:
+            return []
+
+        return self._parse_offensive_strategies(response)
+
+    @staticmethod
+    def _parse_offensive_strategies(response: str) -> list[dict[str, Any]]:
+        """Parse LLM response into structured strategy dicts."""
+        import json as _json
+        import re
+
+        strategies: list[dict[str, Any]] = []
+        current: dict[str, Any] = {}
+
+        for line in response.split("\n"):
+            stripped = line.strip()
+            upper = stripped.upper()
+
+            if upper.startswith("STRATEGY_NAME:"):
+                if current.get("name"):
+                    strategies.append(current)
+                current = {
+                    "name": stripped.split(":", 1)[1].strip().lower().replace(" ", "_")[:50],
+                    "description": "",
+                    "steps": [],
+                    "reasoning": "",
+                    "confidence": 0.5,
+                    "stealth_level": "medium",
+                    "frameworks_used": [],
+                }
+            elif upper.startswith("DESCRIPTION:") and current:
+                current["description"] = stripped.split(":", 1)[1].strip()
+                current["reasoning"] = current["description"]
+            elif upper.startswith("STEALTH:") and current:
+                stealth = stripped.split(":", 1)[1].strip().lower()
+                if stealth in ("passive", "low", "medium", "high"):
+                    current["stealth_level"] = stealth
+            elif upper.startswith("CONFIDENCE:") and current:
+                try:
+                    current["confidence"] = float(stripped.split(":", 1)[1].strip())
+                except ValueError:
+                    pass
+            elif upper.startswith("FRAMEWORKS:") and current:
+                current["frameworks_used"] = [
+                    f.strip() for f in stripped.split(":", 1)[1].split(",")
+                ]
+            elif upper.startswith("---"):
+                if current.get("name"):
+                    strategies.append(current)
+                    current = {}
+            elif "OPERATION:" in upper and current:
+                # Parse step: "1. OPERATION: http_request PARAMS: {...}"
+                op_match = re.search(r'OPERATION:\s*(\w+)', stripped, re.IGNORECASE)
+                params_match = re.search(r'PARAMS:\s*(\{.*\})', stripped)
+                if op_match:
+                    step: dict[str, Any] = {"operation": op_match.group(1)}
+                    if params_match:
+                        try:
+                            step["params"] = _json.loads(params_match.group(1))
+                        except _json.JSONDecodeError:
+                            step["params"] = {}
+                    else:
+                        step["params"] = {}
+                    current.setdefault("steps", []).append(step)
+
+        # Don't forget the last strategy
+        if current.get("name"):
+            strategies.append(current)
+
+        return strategies[:3]  # Cap at 3 novel strategies
+
+    # ------------------------------------------------------------------
     # LLM call
     # ------------------------------------------------------------------
 

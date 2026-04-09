@@ -31,6 +31,9 @@ from app.services.cognition.cognitive_reasoner import (
 from app.services.security.cognitive_scan_engine import (
     CognitiveScanEngine,
     CognitiveScanResult,
+    ScanCycleResult,
+    ScanStrategy,
+    TargetProfile,
 )
 
 
@@ -1042,3 +1045,468 @@ class TestRouterTargetInteraction:
         assert result.tool_name == "target_interaction.enumerate_service"
         assert result.params["host"] == "target.com"
         assert result.params["port"] == 8080
+
+
+# ── Phase 7: OODA auto-chain into post-exploitation ───────────────
+
+class TestExploitableClassification:
+    """Tests for _classify_exploitable_findings -- which findings can be auto-exploited."""
+
+    def _engine(self):
+        return CognitiveScanEngine(offensive_mode=True)
+
+    def test_env_file_classified_as_exploitable(self):
+        engine = self._engine()
+        findings = [{
+            "type": "path_discovery",
+            "url": "https://target.com/.env",
+            "status_code": 200,
+            "info": {"name": "Exposed .env", "severity": "low"},
+        }]
+        result = engine._classify_exploitable_findings(findings)
+        assert len(result) == 1
+        assert result[0]["exploit_plan"]["operation"] == "http_request"
+        assert result[0]["exploit_plan"]["impact_category"] == "credential_exposure"
+
+    def test_git_config_classified_as_exploitable(self):
+        engine = self._engine()
+        findings = [{
+            "type": "path_discovery",
+            "url": "https://target.com/.git/config",
+            "status_code": 200,
+            "info": {"name": "Exposed .git", "severity": "low"},
+        }]
+        result = engine._classify_exploitable_findings(findings)
+        assert len(result) == 1
+        assert result[0]["exploit_plan"]["impact_category"] == "credential_exposure"
+
+    def test_swagger_classified_as_api_exposure(self):
+        engine = self._engine()
+        findings = [{
+            "type": "path_discovery",
+            "url": "https://target.com/swagger.json",
+            "status_code": 200,
+            "info": {"name": "Swagger", "severity": "low"},
+        }]
+        result = engine._classify_exploitable_findings(findings)
+        assert len(result) == 1
+        assert result[0]["exploit_plan"]["impact_category"] == "api_exposure"
+
+    def test_admin_panel_classified_as_unauthorized_access(self):
+        engine = self._engine()
+        findings = [{
+            "type": "path_discovery",
+            "url": "https://target.com/admin",
+            "status_code": 200,
+            "info": {"name": "Admin panel", "severity": "low"},
+        }]
+        result = engine._classify_exploitable_findings(findings)
+        assert len(result) == 1
+        assert result[0]["exploit_plan"]["impact_category"] == "unauthorized_access"
+
+    def test_informational_header_finding_not_exploitable(self):
+        engine = self._engine()
+        findings = [{
+            "type": "header_analysis",
+            "url": "https://target.com",
+            "info": {"name": "Missing HSTS", "severity": "informational"},
+        }]
+        result = engine._classify_exploitable_findings(findings)
+        assert len(result) == 0
+
+    def test_high_severity_vuln_classified(self):
+        engine = self._engine()
+        findings = [{
+            "type": "vuln",
+            "url": "https://target.com/api/v1/users",
+            "matched-at": "https://target.com/api/v1/users",
+            "info": {"name": "IDOR", "severity": "high"},
+        }]
+        result = engine._classify_exploitable_findings(findings)
+        assert len(result) == 1
+        assert result[0]["exploit_plan"]["impact_category"] == "vulnerability_verification"
+
+    def test_medium_severity_classified(self):
+        engine = self._engine()
+        findings = [{
+            "type": "vuln",
+            "url": "https://target.com/api",
+            "info": {"name": "XSS", "severity": "medium"},
+        }]
+        result = engine._classify_exploitable_findings(findings)
+        assert len(result) == 1
+
+    def test_404_path_not_exploitable(self):
+        """Status 404 paths should not be classified as exploitable."""
+        engine = self._engine()
+        findings = [{
+            "type": "path_discovery",
+            "url": "https://target.com/.env",
+            "status_code": 404,
+            "info": {"name": "Not found", "severity": "low"},
+        }]
+        result = engine._classify_exploitable_findings(findings)
+        assert len(result) == 0
+
+    def test_mixed_findings_correct_count(self):
+        engine = self._engine()
+        findings = [
+            {"type": "header_analysis", "url": "https://a.com", "info": {"severity": "informational"}},
+            {"type": "path_discovery", "url": "https://a.com/.env", "status_code": 200, "info": {"severity": "low"}},
+            {"type": "path_discovery", "url": "https://a.com/admin", "status_code": 200, "info": {"severity": "low"}},
+            {"type": "dns_records", "info": {"severity": "informational"}},
+        ]
+        result = engine._classify_exploitable_findings(findings)
+        assert len(result) == 2  # .env and /admin
+
+
+class TestAutoExploit:
+    """Tests for _auto_exploit -- dispatching TargetInteractionAgent mid-scan."""
+
+    @pytest.mark.asyncio
+    async def test_auto_exploit_calls_target_agent(self):
+        engine = CognitiveScanEngine(offensive_mode=True)
+        findings = [{
+            "type": "path_discovery",
+            "url": "https://target.com/.env",
+            "status_code": 200,
+            "info": {"severity": "low"},
+            "exploit_plan": {
+                "operation": "http_request",
+                "params": {"url": "https://target.com/.env", "method": "GET"},
+                "rationale": "Fetch .env",
+                "impact_category": "credential_exposure",
+            },
+        }]
+        thinking = []
+
+        with patch(
+            "app.services.daenabot.target_interaction_agent.TargetInteractionAgent.execute",
+            new_callable=AsyncMock,
+            return_value={
+                "success": True,
+                "output": {
+                    "status_code": 200,
+                    "body": "DB_PASSWORD=secret123\nAPI_KEY=abc",
+                    "body_length": 40,
+                    "tokens_found": 0,
+                },
+            },
+        ):
+            from app.services.security.cognitive_scan_engine import ExploitAttempt
+            attempts = await engine._auto_exploit(findings, 1, thinking)
+            assert len(attempts) == 1
+            assert attempts[0].success is True
+            assert "password" in attempts[0].impact_proven.lower() or "sensitive" in attempts[0].impact_proven.lower()
+
+    @pytest.mark.asyncio
+    async def test_auto_exploit_failed_attempt(self):
+        engine = CognitiveScanEngine(offensive_mode=True)
+        findings = [{
+            "type": "path_discovery",
+            "url": "https://target.com/admin",
+            "status_code": 200,
+            "info": {"severity": "low"},
+            "exploit_plan": {
+                "operation": "http_request",
+                "params": {"url": "https://target.com/admin", "method": "GET"},
+                "rationale": "Test admin access",
+                "impact_category": "unauthorized_access",
+            },
+        }]
+        thinking = []
+
+        with patch(
+            "app.services.daenabot.target_interaction_agent.TargetInteractionAgent.execute",
+            new_callable=AsyncMock,
+            return_value={"success": False, "error": "Connection refused"},
+        ):
+            attempts = await engine._auto_exploit(findings, 2, thinking)
+            assert len(attempts) == 1
+            assert attempts[0].success is False
+            assert "Connection refused" in attempts[0].error
+
+    @pytest.mark.asyncio
+    async def test_auto_exploit_exception_handled(self):
+        engine = CognitiveScanEngine(offensive_mode=True)
+        findings = [{
+            "type": "path_discovery",
+            "url": "https://target.com/.env",
+            "status_code": 200,
+            "info": {"severity": "low"},
+            "exploit_plan": {
+                "operation": "http_request",
+                "params": {"url": "https://target.com/.env", "method": "GET"},
+                "rationale": "Fetch .env",
+                "impact_category": "credential_exposure",
+            },
+        }]
+        thinking = []
+
+        with patch(
+            "app.services.daenabot.target_interaction_agent.TargetInteractionAgent.execute",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("network down"),
+        ):
+            attempts = await engine._auto_exploit(findings, 1, thinking)
+            assert len(attempts) == 1
+            assert attempts[0].success is False
+            assert "network down" in attempts[0].error
+
+
+class TestImpactAssessment:
+    """Tests for _assess_impact -- translating raw output into impact statements."""
+
+    def _engine(self):
+        return CognitiveScanEngine(offensive_mode=True)
+
+    def test_credential_exposure_with_password(self):
+        engine = self._engine()
+        output = {"status_code": 200, "body": "DB_PASSWORD=secret\nAPI_KEY=abc", "body_length": 35, "tokens_found": 0}
+        result = engine._assess_impact("http_request", output, "credential_exposure")
+        assert "password" in result.lower()
+        assert "api_key" in result.lower()
+
+    def test_token_extraction(self):
+        engine = self._engine()
+        output = {"status_code": 200, "body": "...", "body_length": 100, "tokens_found": 3}
+        result = engine._assess_impact("http_request", output, "credential_exposure")
+        assert "3" in result
+        assert "token" in result.lower()
+
+    def test_api_exposure_impact(self):
+        engine = self._engine()
+        output = {"status_code": 200, "body": '{"paths": {}}', "body_length": 5000, "tokens_found": 0}
+        result = engine._assess_impact("http_request", output, "api_exposure")
+        assert "API documentation" in result
+        assert "5000" in result
+
+    def test_unauthorized_access_impact(self):
+        engine = self._engine()
+        output = {"status_code": 200, "body": "<html>admin</html>", "body_length": 1200, "tokens_found": 0}
+        result = engine._assess_impact("http_request", output, "unauthorized_access")
+        assert "Admin" in result or "admin" in result.lower()
+
+    def test_tcp_connect_with_banner(self):
+        engine = self._engine()
+        output = {"connected": True, "banner": "SSH-2.0-OpenSSH_8.9"}
+        result = engine._assess_impact("tcp_connect", output, "service_exposure")
+        assert "SSH-2.0" in result
+
+    def test_tcp_connect_no_banner(self):
+        engine = self._engine()
+        output = {"connected": True, "banner": ""}
+        result = engine._assess_impact("tcp_connect", output, "service_exposure")
+        assert "open" in result.lower()
+
+    def test_db_connect_impact(self):
+        engine = self._engine()
+        output = {"connected": True, "table_count": 42}
+        result = engine._assess_impact("db_connect", output, "database_exposure")
+        assert "42" in result
+
+    def test_db_query_impact(self):
+        engine = self._engine()
+        output = {"row_count": 50, "columns": ["id", "email", "password_hash"]}
+        result = engine._assess_impact("db_query", output, "database_exposure")
+        assert "50" in result
+
+
+class TestOffensiveStrategyParsing:
+    """Tests for CognitiveReasoner._parse_offensive_strategies."""
+
+    def test_parse_single_strategy(self):
+        response = (
+            "STRATEGY_NAME: credential_spray_from_env\n"
+            "DESCRIPTION: Use leaked .env credentials to authenticate against discovered admin panel\n"
+            "STEALTH: low\n"
+            "CONFIDENCE: 0.8\n"
+            "FRAMEWORKS: attack_chain_thinking, credential_reuse\n"
+            "STEPS:\n"
+            '  1. OPERATION: http_request PARAMS: {"url": "https://target.com/admin/login", "method": "POST"}\n'
+            "---\n"
+        )
+        result = CognitiveReasoner._parse_offensive_strategies(response)
+        assert len(result) == 1
+        assert result[0]["name"] == "credential_spray_from_env"
+        assert result[0]["stealth_level"] == "low"
+        assert result[0]["confidence"] == 0.8
+        assert len(result[0]["steps"]) == 1
+        assert result[0]["steps"][0]["operation"] == "http_request"
+
+    def test_parse_multiple_strategies(self):
+        response = (
+            "STRATEGY_NAME: api_enumeration\n"
+            "DESCRIPTION: Enumerate all API endpoints from swagger\n"
+            "STEALTH: medium\n"
+            "CONFIDENCE: 0.6\n"
+            "FRAMEWORKS: constraint_decomposition\n"
+            "STEPS:\n"
+            '  1. OPERATION: http_request PARAMS: {"url": "https://target.com/api/v1/users", "method": "GET"}\n'
+            "---\n"
+            "STRATEGY_NAME: service_chain\n"
+            "DESCRIPTION: Chain exposed Redis into lateral movement\n"
+            "STEALTH: high\n"
+            "CONFIDENCE: 0.4\n"
+            "FRAMEWORKS: attack_chain_thinking, post_exploitation\n"
+            "STEPS:\n"
+            '  1. OPERATION: tcp_connect PARAMS: {"host": "target.com", "port": 6379}\n'
+            '  2. OPERATION: enumerate_service PARAMS: {"host": "target.com", "port": 6379}\n'
+            "---\n"
+        )
+        result = CognitiveReasoner._parse_offensive_strategies(response)
+        assert len(result) == 2
+        assert result[0]["name"] == "api_enumeration"
+        assert result[1]["name"] == "service_chain"
+        assert len(result[1]["steps"]) == 2
+
+    def test_parse_caps_at_three(self):
+        """Should cap at 3 strategies max."""
+        response = ""
+        for i in range(5):
+            response += (
+                f"STRATEGY_NAME: strat_{i}\n"
+                f"DESCRIPTION: Strategy {i}\n"
+                "STEPS:\n"
+                '  1. OPERATION: http_request PARAMS: {"url": "https://t.com"}\n'
+                "---\n"
+            )
+        result = CognitiveReasoner._parse_offensive_strategies(response)
+        assert len(result) == 3
+
+    def test_parse_empty_response(self):
+        result = CognitiveReasoner._parse_offensive_strategies("")
+        assert result == []
+
+    def test_parse_malformed_params(self):
+        """Malformed JSON params should result in empty dict, not crash."""
+        response = (
+            "STRATEGY_NAME: test\n"
+            "DESCRIPTION: test\n"
+            "STEPS:\n"
+            "  1. OPERATION: http_request PARAMS: {invalid json}\n"
+            "---\n"
+        )
+        result = CognitiveReasoner._parse_offensive_strategies(response)
+        assert len(result) == 1
+        assert result[0]["steps"][0]["params"] == {}
+
+    def test_parse_no_params_in_step(self):
+        """Steps without PARAMS should still parse the operation."""
+        response = (
+            "STRATEGY_NAME: banner_grab\n"
+            "DESCRIPTION: Grab banners\n"
+            "STEPS:\n"
+            "  1. OPERATION: tcp_connect\n"
+            "---\n"
+        )
+        result = CognitiveReasoner._parse_offensive_strategies(response)
+        assert len(result) == 1
+        assert result[0]["steps"][0]["operation"] == "tcp_connect"
+        assert result[0]["steps"][0]["params"] == {}
+
+
+class TestGenerateStrategiesAsync:
+    """Tests for the async _generate_strategies with novel strategy integration."""
+
+    @pytest.mark.asyncio
+    async def test_template_strategies_always_present(self):
+        """Template strategies should always be generated regardless of mode."""
+        engine = CognitiveScanEngine(offensive_mode=False)
+        profile = TargetProfile(domain="example.com")
+        strategies = await engine._generate_strategies("example.com", profile, [])
+        names = [s.name for s in strategies]
+        assert "passive_osint" in names
+        assert "targeted_vuln_scan" in names
+
+    @pytest.mark.asyncio
+    async def test_novel_strategies_added_in_offensive_mode(self):
+        """When offensive + LLM + previous cycles, novel strategies should be appended."""
+        engine = CognitiveScanEngine(offensive_mode=True)
+        engine._reasoner_initialized = True
+        profile = TargetProfile(domain="target.com", subdomains=["a.target.com"])
+        profile.live_hosts = [{"url": "https://a.target.com"}]
+
+        # Simulate a previous cycle
+        prev_cycle = ScanCycleResult(cycle=1, strategy_name="passive_osint", success=True)
+
+        mock_reasoner = AsyncMock()
+        mock_reasoner.generate_offensive_strategies = AsyncMock(return_value=[
+            {
+                "name": "idor_chain",
+                "description": "Chain IDOR with leaked token",
+                "steps": [{"operation": "http_request", "params": {"url": "https://target.com/api/users/1"}}],
+                "reasoning": "Business logic exploitation",
+                "confidence": 0.7,
+                "stealth_level": "low",
+                "frameworks_used": ["business_logic_exploitation"],
+            },
+        ])
+
+        scan_result = CognitiveScanResult(target="target.com")
+
+        strategies = await engine._generate_strategies(
+            "target.com", profile, [prev_cycle], scan_result, mock_reasoner,
+        )
+        names = [s.name for s in strategies]
+        assert "idor_chain" in names
+        # Novel strategy should be after templates
+        assert names.index("passive_osint") < names.index("idor_chain")
+
+    @pytest.mark.asyncio
+    async def test_novel_strategies_not_added_without_previous_cycles(self):
+        """Novel strategies require at least 1 previous cycle of observations."""
+        engine = CognitiveScanEngine(offensive_mode=True)
+        engine._reasoner_initialized = True
+        profile = TargetProfile(domain="target.com")
+
+        mock_reasoner = AsyncMock()
+        mock_reasoner.generate_offensive_strategies = AsyncMock(return_value=[])
+
+        strategies = await engine._generate_strategies(
+            "target.com", profile, [], None, mock_reasoner,
+        )
+        # Should not call the reasoner (no previous cycles)
+        mock_reasoner.generate_offensive_strategies.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_novel_strategy_failure_doesnt_break_scan(self):
+        """If LLM strategy generation fails, template strategies still work."""
+        engine = CognitiveScanEngine(offensive_mode=True)
+        engine._reasoner_initialized = True
+        profile = TargetProfile(domain="target.com")
+        prev_cycle = ScanCycleResult(cycle=1, strategy_name="passive_osint")
+
+        mock_reasoner = AsyncMock()
+        mock_reasoner.generate_offensive_strategies = AsyncMock(side_effect=RuntimeError("LLM down"))
+
+        scan_result = CognitiveScanResult(target="target.com")
+        strategies = await engine._generate_strategies(
+            "target.com", profile, [prev_cycle], scan_result, mock_reasoner,
+        )
+        # Should still have template strategies
+        assert len(strategies) >= 2
+        assert any(s.name == "passive_osint" for s in strategies)
+
+
+class TestScanResultExploitFields:
+    """Tests for CognitiveScanResult exploit tracking fields."""
+
+    def test_result_has_exploit_fields(self):
+        result = CognitiveScanResult(target="example.com")
+        assert result.exploit_attempts == []
+        assert result.exploits_succeeded == 0
+
+    def test_exploit_attempt_dataclass(self):
+        from app.services.security.cognitive_scan_engine import ExploitAttempt
+        attempt = ExploitAttempt(
+            finding_type="credential_exposure",
+            operation="http_request",
+            target_url="https://target.com/.env",
+            success=True,
+            impact_proven="Sensitive configuration exposed: password, api_key",
+            chained_from_cycle=2,
+        )
+        assert attempt.success is True
+        assert attempt.chained_from_cycle == 2
+        assert "password" in attempt.impact_proven
