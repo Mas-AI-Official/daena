@@ -18,7 +18,9 @@ timeout /t 2 /nobreak >nul
 :: Start backend
 echo  Starting backend...
 cd /d "%ROOT%\backend"
-if exist ".venv\Scripts\python.exe" (
+if exist "%ROOT%\venv_daena\Scripts\python.exe" (
+    start /b "%ROOT%\venv_daena\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+) else if exist ".venv\Scripts\python.exe" (
     start /b .venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ) else (
     start /b python -m uvicorn app.main:app --host 127.0.0.1 --port 8000

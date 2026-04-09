@@ -55,18 +55,29 @@ for /f %%V in ('node --version 2^>^&1') do echo        Found Node.js %%V
 
 :: --- Create Python virtual environment ---
 echo  [3/6] Creating Python virtual environment...
-if not exist "%BACKEND%\.venv" (
-    python -m venv "%BACKEND%\.venv"
-    echo        Created .venv
+set "VENV=%ROOT%\venv_daena"
+if not exist "%VENV%" (
+    python -m venv "%VENV%"
+    echo        Created venv_daena
 ) else (
-    echo        .venv already exists
+    echo        venv_daena already exists
 )
 
 :: --- Install backend dependencies ---
 echo  [4/6] Installing backend dependencies...
-call "%BACKEND%\.venv\Scripts\activate.bat"
+call "%VENV%\Scripts\activate.bat"
 pip install -e "%BACKEND%[dev]" --quiet --quiet 2>NUL
 echo        Backend dependencies installed
+
+:: --- Install Playwright browsers ---
+echo  [4b/6] Installing Playwright browsers...
+playwright install chromium --with-deps 2>NUL
+if errorlevel 1 (
+    echo        [WARN] Playwright browser install failed. Run manually:
+    echo               venv_daena\Scripts\playwright install chromium
+) else (
+    echo        Playwright chromium installed
+)
 
 :: --- Install frontend dependencies ---
 echo  [5/6] Installing frontend dependencies...
@@ -75,7 +86,7 @@ call npm install --quiet 2>NUL
 echo        Frontend dependencies installed
 
 :: --- Create .env if missing ---
-echo  [6/6] Setting up environment...
+echo  [5/6] Setting up environment...
 if not exist "%BACKEND%\.env" (
     if exist "%ROOT%\.env.example" (
         copy "%ROOT%\.env.example" "%BACKEND%\.env" >NUL
@@ -115,7 +126,7 @@ echo.
 echo      DAENA IS READY
 echo.
 echo      Start backend:   cd backend
-echo                        .venv\Scripts\activate
+echo                        ..\venv_daena\Scripts\activate
 echo                        python run.py
 echo.
 echo      Start frontend:  cd frontend

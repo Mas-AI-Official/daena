@@ -17,7 +17,7 @@ echo.
 
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
-set "VENV=%ROOT%\backend\.venv"
+set "VENV=%ROOT%\venv_daena"
 set "BACKEND=%ROOT%\backend"
 set "FRONTEND=%ROOT%\frontend"
 set "PORT_FILE=%BACKEND%\.daena-port"
@@ -27,7 +27,7 @@ set "DAENA_ENV_PRECEDENCE=env_file_first"
 :: --- Check venv exists ---
 if not exist "%VENV%\Scripts\python.exe" (
     echo  [ERROR] Virtual environment not found at %VENV%
-    echo  Run setup-daena.bat first.
+    echo  Run setup-daena.bat first, or create venv_daena manually.
     pause
     exit /b 1
 )

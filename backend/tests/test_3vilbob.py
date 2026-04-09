@@ -179,7 +179,7 @@ class TestEvidenceCapture:
         assert any(t["type"] == "github_token" for t in tokens)
 
     def test_token_detection_stripe(self):
-        content = 'STRIPE_LIVE_PLACEHOLDER_1234567890abcdefghijklmn'
+        content = 'STRIPE_TEST_PLACEHOLDER_1234567890abcdefghijklmn'
         tokens = EvidenceCapture.detect_tokens(content)
         assert any(t["type"] == "stripe_key" for t in tokens)
 
@@ -468,7 +468,7 @@ class TestEvidenceCapturePhase2:
     def test_decrypt_token_insecure_fallback(self):
         """Test base64 fallback decryption (when cryptography not installed)."""
         import tempfile, base64
-        token_val = "STRIPE_LIVE_PLACEHOLDER_test123456789"
+        token_val = "STRIPE_TEST_PLACEHOLDER_test123456789"
         encoded = base64.b64encode(f"INSECURE:{token_val}".encode())
         tmp_path = os.path.join(tempfile.gettempdir(), "test_decrypt_fallback.enc")
         try:

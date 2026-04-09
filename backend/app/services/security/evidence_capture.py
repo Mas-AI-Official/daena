@@ -682,7 +682,7 @@ class EvidenceCapture:
             "jwt": r"(?:eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})",
             "google_api_key": r"(?:AIza[0-9A-Za-z_-]{35})",
             "slack_token": r"(?:xox[baprs]-[0-9A-Za-z-]{10,})",
-            "stripe_key": r"(?:STRIPE_LIVE_PLACEHOLDER_[0-9a-zA-Z]{24,})",
+            "stripe_key": r"(?:STRIPE_TEST_PLACEHOLDER_[0-9a-zA-Z]{24,})",
             "stripe_publishable": r"(?:pk_live_[0-9a-zA-Z]{24,})",
             "private_key_begin": r"(?:-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----)",
             "bearer_token": r"(?:Bearer\s+[A-Za-z0-9_.-]{20,})",
