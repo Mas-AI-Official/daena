@@ -98,24 +98,48 @@ class OllamaProvider(BaseProvider):
     All inference is free and runs on the user's hardware.
     """
 
+    # Reasoning models do internal chain-of-thought that can take 5-10 minutes.
+    # Standard 120s timeout causes premature failures on deepseek-r1, qwen3 /think, etc.
+    _REASONING_MODEL_PATTERNS = ("deepseek-r1", "deepseek-r2", "qwq", "o1", "o3")
+    _REASONING_TIMEOUT = 600.0  # 10 minutes for reasoning models
+    _STANDARD_TIMEOUT = 120.0   # 2 minutes for standard models
+
     def __init__(self, base_url: str | None = None, timeout: float = 120.0) -> None:
         super().__init__(ModelProvider.OLLAMA)
         self._base_url = (base_url or get_settings().ollama_base_url).rstrip("/")
-        self._timeout = timeout
+        self._default_timeout = timeout
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=httpx.Timeout(timeout, connect=10.0),
         )
 
+    def _timeout_for_model(self, model_id: str) -> httpx.Timeout:
+        """Return an appropriate timeout for the model.
+
+        Reasoning models (deepseek-r1, qwq, etc.) do internal
+        chain-of-thought that can take 5-10 minutes. Standard
+        models rarely exceed 2 minutes.
+        """
+        model_lower = model_id.lower()
+        for pattern in self._REASONING_MODEL_PATTERNS:
+            if pattern in model_lower:
+                return httpx.Timeout(self._REASONING_TIMEOUT, connect=10.0)
+        return httpx.Timeout(self._default_timeout, connect=10.0)
+
     async def _post_with_retry(
-        self, path: str, payload: dict[str, Any], *, max_retries: int = 3
+        self,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        max_retries: int = 3,
+        timeout: httpx.Timeout | None = None,
     ) -> httpx.Response:
         """POST with exponential backoff for 529/overloaded and connection errors."""
         delays = [1.0, 2.0, 4.0]
         last_exc: Exception | None = None
         for attempt in range(max_retries + 1):
             try:
-                resp = await self._client.post(path, json=payload)
+                resp = await self._client.post(path, json=payload, timeout=timeout)
                 if resp.status_code == 529 and attempt < max_retries:
                     logger.warning(
                         "ollama_overloaded_retry",
@@ -212,8 +236,9 @@ class OllamaProvider(BaseProvider):
         start = self._start_timer()
 
         payload = self._build_payload(request, model_id, stream=False)
+        model_timeout = self._timeout_for_model(model_id)
         try:
-            resp = await self._post_with_retry("/api/chat", payload)
+            resp = await self._post_with_retry("/api/chat", payload, timeout=model_timeout)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 raise RuntimeError(
@@ -254,13 +279,16 @@ class OllamaProvider(BaseProvider):
         """
         model_id = await self._resolve_model(request.model_id)
         payload = self._build_payload(request, model_id, stream=True)
+        model_timeout = self._timeout_for_model(model_id)
 
         # Retry loop for stream initialization
         delays = [1.0, 2.0, 4.0]
         resp_cm = None
         for attempt in range(4):
             try:
-                resp_cm = self._client.stream("POST", "/api/chat", json=payload)
+                resp_cm = self._client.stream(
+                    "POST", "/api/chat", json=payload, timeout=model_timeout,
+                )
                 break
             except httpx.ConnectError as exc:
                 raise RuntimeError(
