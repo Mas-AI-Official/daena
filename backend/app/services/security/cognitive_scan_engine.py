@@ -754,6 +754,70 @@ class CognitiveScanEngine:
                 if not profile.technologies:
                     thinking.append("  No tech fingerprint. Target is either very clean or using custom stack.")
 
+            # ── ZERO-DAY ENGINE (first-principles vulnerability discovery) ──
+            # Before generating strategies, check for spec-gap and logic-flow
+            # vulnerabilities. These go BEYOND CVE matching -- they reason about
+            # what the spec says vs what the implementation does.
+            if self.offensive_mode and cycle_num == 1:
+                try:
+                    from app.services.security.zero_day_engine import (
+                        SpecGapAnalyzer, LogicFlowAnalyzer,
+                    )
+
+                    # Spec-gap analysis based on detected technologies
+                    spec_analyzer = SpecGapAnalyzer()
+                    spec_candidates = spec_analyzer.analyze_target(
+                        technologies=profile.technologies,
+                        headers=profile.response_headers,
+                        endpoints=profile.interesting_paths,
+                    )
+                    if spec_candidates:
+                        critical = [c for c in spec_candidates if c.severity == "critical"]
+                        thinking.append(
+                            f"[ZERO-DAY/SPEC-GAP] {len(spec_candidates)} spec-gap candidates "
+                            f"({len(critical)} critical)"
+                        )
+                        for c in spec_candidates[:3]:
+                            thinking.append(f"  -> [{c.severity}] {c.title[:80]}")
+                            thinking.append(f"     Test: {c.exploitation_path[:80]}")
+
+                        # Add critical spec-gaps as high-priority findings
+                        for c in critical[:2]:
+                            result.findings.append({
+                                "type": "zero_day_candidate",
+                                "url": target,
+                                "info": {
+                                    "name": c.title,
+                                    "severity": c.severity,
+                                    "description": (
+                                        f"{c.description}. "
+                                        f"CWE: {c.cwe}. "
+                                        f"Reasoning: {' -> '.join(c.reasoning_chain[:2])}"
+                                    ),
+                                },
+                            })
+                            result.total_findings = len(result.findings)
+
+                    # Logic flow analysis on discovered endpoints
+                    if profile.interesting_paths:
+                        logic_analyzer = LogicFlowAnalyzer()
+                        endpoints_for_analysis = [
+                            {"path": p, "params": ""} for p in profile.interesting_paths[:20]
+                        ]
+                        logic_candidates = logic_analyzer.analyze_endpoints(endpoints_for_analysis)
+                        high_conf = [c for c in logic_candidates if c.confidence >= 0.5]
+                        if high_conf:
+                            thinking.append(
+                                f"[ZERO-DAY/LOGIC] {len(high_conf)} logic flow candidates"
+                            )
+                            for c in high_conf[:3]:
+                                thinking.append(
+                                    f"  -> [{c.severity}] {c.title[:80]} "
+                                    f"(confidence: {c.confidence:.2f})"
+                                )
+                except Exception as exc:
+                    thinking.append(f"[ZERO-DAY] Analysis error: {str(exc)[:80]}")
+
             # Select which strategies make sense for THIS target
             strategies = await self._generate_strategies(
                 target, profile, cycle_results, result, reasoner,

@@ -24,13 +24,18 @@ set "PORT_FILE=%BACKEND%\.daena-port"
 set "BACKEND_PORT="
 set "DAENA_ENV_PRECEDENCE=env_file_first"
 
-:: --- Check venv exists ---
+:: --- Check venv exists (try venv_daena first, then backend/.venv) ---
 if not exist "%VENV%\Scripts\python.exe" (
-    echo  [ERROR] Virtual environment not found at %VENV%
-    echo  Run setup-daena.bat first, or create venv_daena manually.
+    set "VENV=%BACKEND%\.venv"
+)
+if not exist "%VENV%\Scripts\python.exe" (
+    echo  [ERROR] Virtual environment not found.
+    echo          Checked: %ROOT%\venv_daena and %BACKEND%\.venv
+    echo  Run setup-daena.bat first, or create the venv manually.
     pause
     exit /b 1
 )
+echo  Using venv: %VENV%
 
 :: --- Start Ollama if not running ---
 echo  [1/4] Checking Ollama...

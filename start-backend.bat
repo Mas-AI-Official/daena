@@ -22,15 +22,18 @@ echo   DAENA BACKEND
 echo  ============================================
 echo.
 
-:: Check venv exists
+:: Check venv exists (try venv_daena first, then backend/.venv)
 if not exist "%VENV%\Scripts\python.exe" (
-    echo  [ERROR] Virtual environment not found at:
-    echo          %VENV%
-    echo.
+    set "VENV=%BACKEND%\.venv"
+)
+if not exist "%VENV%\Scripts\python.exe" (
+    echo  [ERROR] Virtual environment not found.
+    echo          Checked: %ROOT%\venv_daena and %BACKEND%\.venv
     echo  Run setup-daena.bat first to create it.
     pause
     exit /b 1
 )
+echo  Using venv: %VENV%
 
 :: Check backend dir
 if not exist "%BACKEND%\app\main.py" (
