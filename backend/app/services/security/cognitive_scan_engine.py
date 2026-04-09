@@ -1992,9 +1992,98 @@ class CognitiveScanEngine:
                 path=trace_path,
                 thinking_entries=len(trace["thinking_log"]),
             )
+            # Feed findings into Cognitive Knowledge Graph for cross-domain learning
+            self._feed_knowledge_graph(target, result, profile)
+
         except Exception as exc:
             # Archival is best-effort, never blocks the scan
             logger.debug("cognitive_scan.trace_archive_failed", error=str(exc)[:200])
+
+    def _feed_knowledge_graph(
+        self,
+        target: str,
+        result: CognitiveScanResult,
+        profile: TargetProfile,
+    ) -> None:
+        """Feed scan insights into the Cognitive Knowledge Graph.
+
+        This is the bridge between security scanning and Daena's universal
+        learning substrate. Every finding, every strategy outcome, every
+        thinking pattern gets abstracted and stored for cross-domain use.
+
+        Example: "timing analysis revealed WAF rules" becomes a universal
+        insight that Engineering can use for API debugging, Operations
+        can use for capacity planning, and Research can use for competitive
+        analysis.
+        """
+        try:
+            from app.services.cognition.knowledge_graph import (
+                CognitiveKnowledgeGraph, Domain, Experience,
+            )
+            ckg = CognitiveKnowledgeGraph()
+
+            # Feed successful strategy outcomes
+            for finding in result.findings[:10]:  # Cap to avoid flooding
+                observation = (
+                    f"{finding.get('type', 'unknown')}: "
+                    f"{finding.get('info', {}).get('name', '')} "
+                    f"(severity: {finding.get('info', {}).get('severity', 'unknown')})"
+                )
+                exp = Experience(
+                    domain=Domain.SECURITY,
+                    task_type="cognitive_scan",
+                    outcome="success",
+                    observation=observation,
+                    context={
+                        "target_type": profile.target_type,
+                        "waf": profile.defenses.get("waf", ""),
+                        "technologies": profile.technologies[:5],
+                    },
+                    trace_id=self._scan_id,
+                )
+                ckg.learn(exp)
+
+            # Feed strategy outcomes (successes and failures)
+            for strategy_name in result.strategies_tried:
+                had_findings = any(
+                    strategy_name in str(f.get("strategy", ""))
+                    for f in result.findings
+                )
+                exp = Experience(
+                    domain=Domain.SECURITY,
+                    task_type="strategy_outcome",
+                    outcome="success" if had_findings else "failure",
+                    observation=(
+                        f"strategy '{strategy_name}' on {profile.target_type} target"
+                        f"{' with WAF ' + profile.defenses.get('waf', '') if profile.defenses.get('waf') else ''}"
+                    ),
+                    trace_id=self._scan_id,
+                )
+                ckg.learn(exp)
+
+            # Feed thinking patterns (key observations from the scan)
+            for entry in result.thinking_log[-5:]:  # Last 5 thinking entries
+                if any(kw in entry.lower() for kw in [
+                    "timing", "error", "boundary", "decompos", "bypass",
+                    "state", "absence", "missing", "inverse", "cost",
+                ]):
+                    exp = Experience(
+                        domain=Domain.SECURITY,
+                        task_type="cognitive_observation",
+                        outcome="success",
+                        observation=entry[:200],
+                        trace_id=self._scan_id,
+                    )
+                    ckg.learn(exp)
+
+            logger.debug(
+                "cognitive_scan.ckg_fed",
+                scan_id=self._scan_id,
+                insights_total=ckg.total_insights,
+            )
+        except Exception as exc:
+            # CKG feeding is best-effort
+            logger.debug("cognitive_scan.ckg_feed_failed", error=str(exc)[:100])
 
     # ------------------------------------------------------------------
     # Self-improvement (Meta-Harness loop)
