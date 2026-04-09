@@ -1,5 +1,5 @@
 /**
- * SecurityDashboardPage -- /3vilbob command center.
+ * SecurityDashboardPage -- security operations command center.
  *
  * Consumes /api/v1/security/* endpoints:
  *   GET /status  -- mode, shields, tools, history, self-improvement
@@ -250,7 +250,7 @@ export function SecurityDashboardPage() {
               <p className="text-sm text-starlight-500">
                 {isActive
                   ? 'Full-spectrum mode active -- offensive + defensive'
-                  : 'Defensive mode -- activate /3vilbob for full spectrum'}
+                  : 'Defensive mode'}
               </p>
             </div>
           </div>
@@ -671,7 +671,7 @@ function ScansTab({
       <EmptyState
         icon={<Crosshair className="text-starlight-500" size={40} />}
         title="No scans yet"
-        description="Run /3vilbob target.com to start your first scan"
+        description="No scans recorded yet"
       />
     )
   }
@@ -768,7 +768,7 @@ function ShieldsTab({ shields }: { shields: ShieldDetails | null }) {
       <EmptyState
         icon={<Shield className="text-starlight-500" size={40} />}
         title="SHIELD data unavailable"
-        description="Activate /3vilbob to enable Hidden SHIELD"
+        description="SHIELD data not available"
       />
     )
   }
@@ -783,7 +783,7 @@ function ShieldsTab({ shields }: { shields: ShieldDetails | null }) {
           </span>
         </div>
         <p className="text-xs text-starlight-500 mb-4">
-          When /3vilbob activates, every department's SHIELD sub-capability gets
+          When full-spectrum mode activates, every department's SHIELD sub-capability gets
           an offensive security prompt overlay. This is invisible to the user
           but transforms each department into a security operator.
         </p>
