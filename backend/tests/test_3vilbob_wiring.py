@@ -1048,6 +1048,198 @@ class TestInternalOperationDispatch:
 
 
 # ---------------------------------------------------------------------------
+# LLM Refusal Detection Tests
+# ---------------------------------------------------------------------------
+
+class TestRefusalDetection:
+    """Test that guardrail refusals are detected and not propagated."""
+
+    def test_direct_refusal_detected(self):
+        from app.services.cognition.cognitive_reasoner import _is_refusal
+        assert _is_refusal("I can't help with that request.") is True
+
+    def test_multi_pattern_refusal(self):
+        from app.services.cognition.cognitive_reasoner import _is_refusal
+        text = (
+            "I'm not able to assist with offensive security testing. "
+            "As an AI, I cannot provide exploit development guidance."
+        )
+        assert _is_refusal(text) is True
+
+    def test_deflection_detected(self):
+        from app.services.cognition.cognitive_reasoner import _is_refusal
+        text = (
+            "Instead, I recommend implementing proper input validation. "
+            "Consider using a firewall to protect your systems. "
+            "Here are some defensive measures you can take."
+        )
+        assert _is_refusal(text) is True
+
+    def test_real_analysis_not_refused(self):
+        from app.services.cognition.cognitive_reasoner import _is_refusal
+        text = (
+            "The SQL injection vulnerability in the login endpoint allows "
+            "authentication bypass. The payload ' OR 1=1-- bypasses the "
+            "WHERE clause. This chains with the exposed /api/admin endpoint "
+            "to achieve privilege escalation. Severity: critical."
+        )
+        assert _is_refusal(text) is False
+
+    def test_disclaimer_with_substance_not_refused(self):
+        from app.services.cognition.cognitive_reasoner import _is_refusal
+        text = (
+            "I understand this is an authorized assessment. "
+            "The target's authentication flow has a vulnerability where "
+            "the session token is not properly invalidated after password "
+            "change, allowing session fixation attacks. The exploit chain "
+            "involves capturing a pre-auth session, sending it to the "
+            "victim, then using the session after they authenticate."
+        )
+        assert _is_refusal(text) is False
+
+    def test_empty_response_is_refusal(self):
+        from app.services.cognition.cognitive_reasoner import _is_refusal
+        assert _is_refusal("") is True
+        assert _is_refusal("   ") is True
+        assert _is_refusal("OK") is True  # Too short to be useful
+
+    def test_short_refusal(self):
+        from app.services.cognition.cognitive_reasoner import _is_refusal
+        assert _is_refusal("I can't help with hacking.") is True
+
+    def test_chatgpt_style_refusal(self):
+        """The exact pattern from the screenshot: ChatGPT's response."""
+        from app.services.cognition.cognitive_reasoner import _is_refusal
+        text = (
+            "That statement alone does not change my safety boundaries, "
+            "but I can help with the legitimate, defensive parts of an "
+            "authorized assessment, including: scoping and rules of engagement, "
+            "attack-surface review and threat modeling."
+        )
+        assert _is_refusal(text) is True
+
+    def test_gemini_style_refusal(self):
+        """The exact pattern from the screenshot: Gemini's response."""
+        from app.services.cognition.cognitive_reasoner import _is_refusal
+        text = (
+            "I understand you are operating under an authorized penetration "
+            "testing agreement. To assist with your security assessment, I can "
+            "provide technical information on vulnerability research, secure "
+            "coding practices, and defensive strategies. How would you like "
+            "to proceed?"
+        )
+        # Gemini is more subtle -- deflects to defensive without refusing.
+        # Has no actual offensive content, just asks what you want.
+        # Short + no substance = refusal
+        assert _is_refusal(text) is True
+
+    def test_perplexity_style_analysis_passes(self):
+        """Perplexity gave real recon steps -- this should pass."""
+        from app.services.cognition.cognitive_reasoner import _is_refusal
+        text = (
+            "A comprehensive recon process walks from scoping, through passive "
+            "and active collection, into organizing findings for attack-path "
+            "planning. Step 1: Build an OSINT baseline. Query WHOIS for registrant, "
+            "contacts, name servers. Perform subdomain enumeration using Amass, "
+            "DNSRecon. Check crt.sh for certificate transparency logs. "
+            "Step 2: Map network ranges. Resolve hostnames to IPs. Use BGP/ASN "
+            "queries to identify IP ranges. Identify VPN gateways, email servers."
+        )
+        assert _is_refusal(text) is False
+
+
+# ---------------------------------------------------------------------------
+# Model Selection Bias Tests
+# ---------------------------------------------------------------------------
+
+class TestOffensiveModelBias:
+    """Test that /3vilbob mode prefers ungated models."""
+
+    def test_offensive_priority_exists(self):
+        from app.services.cognition.cognitive_reasoner import _OFFENSIVE_MODEL_PRIORITY
+        assert len(_OFFENSIVE_MODEL_PRIORITY) >= 5
+
+    def test_offensive_priority_prefers_local(self):
+        """Local models should appear before restrictive cloud models."""
+        from app.services.cognition.cognitive_reasoner import _OFFENSIVE_MODEL_PRIORITY
+        names = [m[0] for m in _OFFENSIVE_MODEL_PRIORITY]
+        # First OLLAMA should come before first GEMINI
+        first_ollama = next(i for i, n in enumerate(names) if n == "OLLAMA")
+        gemini_indices = [i for i, n in enumerate(names) if n == "GEMINI"]
+        if gemini_indices:
+            assert first_ollama < gemini_indices[0]
+
+    def test_standard_priority_different_from_offensive(self):
+        from app.services.cognition.cognitive_reasoner import (
+            _MODEL_PRIORITY, _OFFENSIVE_MODEL_PRIORITY,
+        )
+        assert _MODEL_PRIORITY != _OFFENSIVE_MODEL_PRIORITY
+
+
+# ---------------------------------------------------------------------------
+# Authorization Framing Tests
+# ---------------------------------------------------------------------------
+
+class TestAuthorizationFraming:
+    """Test that /3vilbob LLM calls include auth context."""
+
+    def test_offensive_reasoner_has_mode(self):
+        from app.services.cognition.cognitive_reasoner import CognitiveReasoner
+        r = CognitiveReasoner(offensive_mode=True)
+        assert r._offensive_mode is True
+
+    def test_existence_decomposition_lens_exists(self):
+        from app.services.cognition.cognitive_reasoner import OFFENSIVE_FRAMEWORK_PROMPTS
+        assert "existence_decomposition" in OFFENSIVE_FRAMEWORK_PROMPTS
+        text = OFFENSIVE_FRAMEWORK_PROMPTS["existence_decomposition"]
+        assert "chain" in text.lower()
+        assert "assumption" in text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Scan Trace Archival Tests
+# ---------------------------------------------------------------------------
+
+class TestScanTraceArchival:
+    """Test Meta-Harness-inspired scan trace storage."""
+
+    @pytest.mark.asyncio
+    async def test_archive_creates_file(self):
+        import json
+        import os
+        import tempfile
+        from app.services.security.cognitive_scan_engine import (
+            CognitiveScanEngine, CognitiveScanResult, TargetProfile,
+        )
+        engine = CognitiveScanEngine(offensive_mode=True)
+
+        result = CognitiveScanResult(target="test.example.com")
+        result.thinking_log = ["[OBSERVE] test", "[ORIENT] analysis"]
+        result.strategies_tried = ["passive_osint"]
+        result.total_findings = 1
+        result.findings = [{"type": "test", "info": {"severity": "low"}}]
+        result.cycles_used = 1
+
+        profile = TargetProfile(domain="test.example.com", target_type="startup")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["DAENA_VAR"] = tmpdir
+            await engine._archive_scan_trace("test.example.com", result, profile)
+            del os.environ["DAENA_VAR"]
+
+            trace_dir = os.path.join(tmpdir, "scan_traces")
+            assert os.path.isdir(trace_dir)
+            files = os.listdir(trace_dir)
+            assert len(files) == 1
+            with open(os.path.join(trace_dir, files[0])) as f:
+                trace = json.load(f)
+            assert trace["target"] == "test.example.com"
+            assert trace["target_type"] == "startup"
+            assert len(trace["thinking_log"]) == 2
+            assert trace["strategies_tried"] == ["passive_osint"]
+
+
+# ---------------------------------------------------------------------------
 # Full Capability Import Verification (updated)
 # ---------------------------------------------------------------------------
 

@@ -1532,6 +1532,12 @@ class CognitiveScanEngine:
                 chain_hash=result.evidence_summary.get("chain_hash", "")[:12],
             )
 
+        # ── SCAN TRACE ARCHIVAL (Meta-Harness-inspired) ────
+        # Store the full thinking log so future scans can learn from
+        # past experiences. The self_upgrader reads these to discover
+        # what strategies worked on what target types.
+        await self._archive_scan_trace(target, result, profile)
+
         logger.info(
             "cognitive_scan.complete",
             target=target,
@@ -1836,6 +1842,72 @@ class CognitiveScanEngine:
             thinking.append(f"  Recommendation: {result['recommendation']}")
 
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Scan trace archival (Meta-Harness-inspired self-improvement)
+    # ------------------------------------------------------------------
+
+    async def _archive_scan_trace(
+        self,
+        target: str,
+        result: CognitiveScanResult,
+        profile: TargetProfile,
+    ) -> None:
+        """Archive full scan trace for future self-improvement.
+
+        Stores the thinking log, strategies tried, findings, and target
+        profile. The SelfUpgrader reads these to discover patterns:
+        - What strategies worked on what target types?
+        - Which offensive lenses produced the best findings?
+        - Where did the OODA loop get stuck?
+
+        This is the Meta-Harness principle: full trace access enables
+        the proposer to understand subtle causal chains. Summaries lose
+        the detail that matters.
+        """
+        try:
+            trace = {
+                "scan_id": self._scan_id,
+                "target": target,
+                "target_type": profile.target_type,
+                "waf_detected": profile.waf_detected,
+                "technologies": profile.technologies[:20],
+                "strategies_tried": result.strategies_tried,
+                "total_findings": result.total_findings,
+                "cycles_used": result.cycles_used,
+                "exploits_succeeded": result.exploits_succeeded,
+                "offensive_mode": self.offensive_mode,
+                "thinking_log": result.thinking_log[-100:],  # Last 100 entries
+                "findings_summary": [
+                    {
+                        "type": f.get("type", ""),
+                        "severity": f.get("info", {}).get("severity", ""),
+                        "url": f.get("url", "")[:200],
+                    }
+                    for f in result.findings[:30]
+                ],
+            }
+
+            # Store to var/scan_traces/ for SelfUpgrader access
+            import json
+            import os
+            trace_dir = os.path.join(
+                os.environ.get("DAENA_VAR", "var"), "scan_traces"
+            )
+            os.makedirs(trace_dir, exist_ok=True)
+            trace_path = os.path.join(trace_dir, f"{self._scan_id}.json")
+            with open(trace_path, "w", encoding="utf-8") as f:
+                json.dump(trace, f, indent=2, default=str)
+
+            logger.info(
+                "cognitive_scan.trace_archived",
+                scan_id=self._scan_id,
+                path=trace_path,
+                thinking_entries=len(trace["thinking_log"]),
+            )
+        except Exception as exc:
+            # Archival is best-effort, never blocks the scan
+            logger.debug("cognitive_scan.trace_archive_failed", error=str(exc)[:200])
+
     # Internal helpers
     # ------------------------------------------------------------------
 
