@@ -789,6 +789,88 @@ class CognitiveScanEngine:
             available = [s for s in strategies if s.name not in tried_names]
 
             if not available:
+                # ── TOOL CATALOG: auto-equip before creative fallbacks ──
+                # Before trying creative workarounds, check if better tooling
+                # would solve the gap. This is the "equip yourself" pattern.
+                try:
+                    from app.services.security.tool_catalog import ToolCatalog
+                    catalog = ToolCatalog()
+
+                    # Identify capability gaps from failed strategies
+                    failed_caps: set[str] = set()
+                    for cr in cycle_results:
+                        if not cr.success and cr.failure_reason:
+                            reason = cr.failure_reason.lower()
+                            if "port" in reason or "service" in reason:
+                                failed_caps.update(["port_scanning", "service_detection"])
+                            if "waf" in reason or "blocked" in reason or "403" in reason:
+                                failed_caps.update(["waf_bypass", "waf_detection"])
+                            if "dns" in reason:
+                                failed_caps.update(["dns_recon", "dns_bruteforce"])
+                            if "credential" in reason or "auth" in reason:
+                                failed_caps.update(["credential_bruteforce", "password_spraying"])
+                            if "vuln" in reason or "cve" in reason:
+                                failed_caps.update(["vulnerability_scanning", "cve_detection"])
+
+                    # Also recommend based on target type
+                    target_type = self._classify_target(profile)
+                    waf = profile.defenses.get("waf", "")
+                    recommended = catalog.recommend_for_target(target_type, waf)
+
+                    # Filter to uninstalled tools that match capability gaps
+                    equip_candidates = []
+                    for tool in recommended:
+                        if not catalog.is_installed(tool.name):
+                            tool_caps = set(tool.capabilities)
+                            if failed_caps & tool_caps or not failed_caps:
+                                equip_candidates.append(tool)
+
+                    if equip_candidates:
+                        thinking.append(
+                            f"[DECIDE/TOOL-CATALOG] {len(equip_candidates)} "
+                            f"uninstalled tools could help:"
+                        )
+                        installed_any = False
+                        for tool in equip_candidates[:3]:  # Cap at 3 auto-installs
+                            thinking.append(
+                                f"  -> {tool.name} ({tool.category}): "
+                                f"{', '.join(tool.capabilities[:3])}"
+                            )
+                            # Auto-install if offensive mode allows it
+                            if self.offensive_mode:
+                                install_result = await catalog.auto_install(tool.name)
+                                if install_result.get("success"):
+                                    thinking.append(
+                                        f"     INSTALLED: {tool.name} is now available"
+                                    )
+                                    installed_any = True
+                                else:
+                                    thinking.append(
+                                        f"     INSTALL FAILED: {install_result.get('error', 'unknown')}"
+                                    )
+                            else:
+                                thinking.append(
+                                    f"     Install: {tool.install_cmd}"
+                                )
+
+                        if installed_any:
+                            # Re-generate strategies with new tools available
+                            thinking.append(
+                                "[DECIDE/TOOL-CATALOG] New tools installed -- "
+                                "regenerating strategies for next cycle."
+                            )
+                            result.thinking_log.extend(thinking)
+                            # Don't break -- let the constraint probe also run,
+                            # but record what tools were equipped
+                    else:
+                        thinking.append(
+                            "[DECIDE/TOOL-CATALOG] All recommended tools already installed."
+                        )
+                except Exception as exc:
+                    thinking.append(
+                        f"[DECIDE/TOOL-CATALOG] Catalog check failed: {str(exc)[:80]}"
+                    )
+
                 thinking.append("[DECIDE] All strategies exhausted. Running constraint probe for creative paths.")
                 # Run constraint probe (Mythos method)
                 from app.services.cognition.constraint_probe import ConstraintProbe

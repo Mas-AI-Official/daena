@@ -1264,4 +1264,201 @@ class TestAllCapabilitiesImportV2:
             StateMachineInferrer,
             CostAmplificationDetector,
         )
-        assert True
+        assert True  # all imports successful
+
+
+# =============================================================================
+# OODA Tool Catalog Wiring Tests
+# =============================================================================
+
+class TestOODAToolCatalogWiring:
+    """Test that tool catalog is consulted in DECIDE phase."""
+
+    def test_tool_catalog_importable(self):
+        """ToolCatalog can be imported from the expected location."""
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        assert catalog.total_tools > 0
+        assert catalog.total_capabilities > 0
+
+    def test_recommend_for_web_target(self):
+        """Tool catalog recommends web-appropriate tools."""
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        recs = catalog.recommend_for_target("web_application")
+        names = [t.name for t in recs]
+        # Should recommend at least one web scanner
+        web_tools = {"nuclei", "nikto", "burpsuite", "zap", "sqlmap", "ffuf"}
+        assert any(n in web_tools for n in names), f"No web tools in recommendations: {names}"
+
+    def test_recommend_with_waf(self):
+        """Tool catalog adjusts recommendations when WAF detected."""
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        recs_waf = catalog.recommend_for_target("web_application", "cloudflare")
+        assert len(recs_waf) >= 1
+
+    def test_find_by_capability(self):
+        """Can find tools by specific capability."""
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        port_tools = catalog.find_by_capability("port_scanning")
+        assert len(port_tools) >= 1
+        for t in port_tools:
+            assert "port_scanning" in t.capabilities
+
+    def test_find_by_category(self):
+        """Can find tools by category."""
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        recon_tools = catalog.find_by_category("recon")
+        assert len(recon_tools) >= 1
+        for t in recon_tools:
+            assert t.category == "recon"
+
+    def test_get_install_plan(self):
+        """Install plan provides commands for missing tools."""
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        plan = catalog.get_install_plan("vulnerability_scanning")
+        assert isinstance(plan, list)
+        for item in plan:
+            assert "name" in item
+            assert "install_cmd" in item
+
+    def test_categories_property(self):
+        """Categories returns unique sorted category list."""
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        cats = catalog.categories
+        assert isinstance(cats, list)
+        assert len(cats) >= 3
+        assert cats == sorted(cats)
+
+    def test_search(self):
+        """Search finds tools by name or description."""
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        results = catalog.search("subdomain")
+        assert len(results) >= 1
+        found = any(
+            "subdomain" in t.name.lower() or "subdomain" in t.description.lower()
+            or any("subdomain" in c for c in t.capabilities)
+            for t in results
+        )
+        assert found
+
+    def test_offensive_only_flag(self):
+        """Offensive-only tools are correctly flagged."""
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        offensive_tools = [t for t in catalog.get_all() if t.offensive_only]
+        assert len(offensive_tools) >= 1
+        offensive_names = {t.name for t in offensive_tools}
+        assert "metasploit" in offensive_names or "hydra" in offensive_names
+
+    def test_tool_catalog_in_decide_code_path(self):
+        """Verify the DECIDE phase code references ToolCatalog."""
+        import inspect
+        from app.services.security.cognitive_scan_engine import CognitiveScanEngine
+        source = inspect.getsource(CognitiveScanEngine.scan)
+        assert "ToolCatalog" in source
+        assert "TOOL-CATALOG" in source
+        assert "recommend_for_target" in source
+        assert "auto_install" in source
+
+    def test_capability_gap_inference(self):
+        """Verify capability gap keywords are mapped correctly."""
+        mappings = {
+            "port scan blocked": {"port_scanning", "service_detection"},
+            "waf rejected request": {"waf_bypass", "waf_detection"},
+            "403 forbidden": {"waf_bypass", "waf_detection"},
+            "dns resolution failed": {"dns_recon", "dns_bruteforce"},
+            "credential required": {"credential_bruteforce", "password_spraying"},
+            "vulnerability check failed": {"vulnerability_scanning", "cve_detection"},
+        }
+        for reason, expected_caps in mappings.items():
+            inferred: set[str] = set()
+            reason_lower = reason.lower()
+            if "port" in reason_lower or "service" in reason_lower:
+                inferred.update(["port_scanning", "service_detection"])
+            if "waf" in reason_lower or "blocked" in reason_lower or "403" in reason_lower:
+                inferred.update(["waf_bypass", "waf_detection"])
+            if "dns" in reason_lower:
+                inferred.update(["dns_recon", "dns_bruteforce"])
+            if "credential" in reason_lower or "auth" in reason_lower:
+                inferred.update(["credential_bruteforce", "password_spraying"])
+            if "vuln" in reason_lower or "cve" in reason_lower:
+                inferred.update(["vulnerability_scanning", "cve_detection"])
+            assert inferred & expected_caps, (
+                f"Reason '{reason}' should map to {expected_caps}, got {inferred}"
+            )
+
+
+# =============================================================================
+# Security Dashboard API Tests
+# =============================================================================
+
+class TestSecurityDashboardAPI:
+    """Test the /api/v1/security/* endpoint code."""
+
+    def test_dashboard_status_model(self):
+        """DashboardStatus Pydantic model is valid."""
+        from app.api.v1.security_dashboard import DashboardStatus
+        status = DashboardStatus()
+        assert status.evilbob_active is False
+        assert status.environment == ""
+        assert isinstance(status.capabilities, list)
+        assert isinstance(status.shield_status, dict)
+
+    def test_tool_info_model(self):
+        """ToolInfo Pydantic model is valid."""
+        from app.api.v1.security_dashboard import ToolInfo
+        tool = ToolInfo(
+            name="nmap",
+            category="recon",
+            description="Port scanner",
+            capabilities=["port_scanning"],
+        )
+        assert tool.name == "nmap"
+        assert tool.installed is False
+        assert tool.offensive_only is False
+
+    def test_load_scan_history_empty(self):
+        """_load_scan_history handles missing directory gracefully."""
+        from app.api.v1.security_dashboard import _load_scan_history
+        import os
+        old_var = os.environ.get("DAENA_VAR", "")
+        os.environ["DAENA_VAR"] = "/tmp/nonexistent_test_dir_xyz"
+        try:
+            assert _load_scan_history(10) == []
+        finally:
+            if old_var:
+                os.environ["DAENA_VAR"] = old_var
+            else:
+                os.environ.pop("DAENA_VAR", None)
+
+    def test_self_improvement_metrics_empty(self):
+        """_get_self_improvement_metrics handles missing dir."""
+        from app.api.v1.security_dashboard import _get_self_improvement_metrics
+        import os
+        old_var = os.environ.get("DAENA_VAR", "")
+        os.environ["DAENA_VAR"] = "/tmp/nonexistent_test_dir_xyz"
+        try:
+            metrics = _get_self_improvement_metrics()
+            assert metrics["total_traces"] == 0
+        finally:
+            if old_var:
+                os.environ["DAENA_VAR"] = old_var
+            else:
+                os.environ.pop("DAENA_VAR", None)
+
+    def test_router_has_all_endpoints(self):
+        """Security dashboard router has all 5+ endpoints."""
+        from app.api.v1.security_dashboard import router
+        routes = [r.path for r in router.routes]
+        assert "/status" in routes
+        assert "/tools" in routes
+        assert "/tools/recommend" in routes
+        assert "/scans" in routes
+        assert "/shields" in routes

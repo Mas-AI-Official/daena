@@ -5,6 +5,7 @@ import {
   MessageSquare,
   LayoutDashboard,
   Shield,
+  ShieldAlert,
   Brain,
   Zap,
   Plug,
@@ -87,6 +88,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Approvals', path: '/governance/approvals', icon: <Shield size={18} />, badgeKey: 'approvals' },
       { label: 'Audit Log', path: '/governance/audit', icon: <Shield size={18} /> },
+      { label: 'Security', path: '/security', icon: <ShieldAlert size={18} /> },
       { label: 'Analytics', path: '/analytics', icon: <BarChart3 size={18} /> },
     ],
   },

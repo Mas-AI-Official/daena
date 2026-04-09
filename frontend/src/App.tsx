@@ -38,6 +38,7 @@ const PipelinePage = lazy(() => import('@/pages/PipelinePage'))
 const AccountPage = lazy(() => import('@/pages/AccountPage'))
 const FilesPage = lazy(() => import('@/pages/FilesPage'))
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
+const SecurityDashboardPage = lazy(() => import('@/pages/SecurityDashboardPage'))
 
 /** Skeleton loading fallback with shimmer animation for polished load perception */
 function PageLoader() {
@@ -88,9 +89,10 @@ function AppRoutes() {
                   <Route path="/chat/:sessionId" element={<ChatPage />} />
                   <Route path="/dashboard" element={<DashboardPage />} />
 
-                  {/* Governance */}
+                  {/* Governance + Security */}
                   <Route path="/governance/approvals" element={<GovernanceApprovalsPage />} />
                   <Route path="/governance/audit" element={<GovernanceAuditPage />} />
+                  <Route path="/security" element={<SecurityDashboardPage />} />
 
                   {/* Intelligence */}
                   <Route path="/departments" element={<DepartmentsPage />} />
