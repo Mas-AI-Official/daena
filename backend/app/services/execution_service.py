@@ -11,6 +11,7 @@ Also manages background Tasks for Autopilot mode.
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -100,6 +101,41 @@ class ExecutionService(BaseService):
             "error": exe.error,
             "created_at": exe.created_at.isoformat() if exe.created_at else None,
         }
+
+    # ── Governance Pre-Check ─────────────────────────────────
+
+    async def check_governance(
+        self,
+        *,
+        tool_name: str,
+        params: dict,
+        session_id: UUID,
+        user_id: UUID,
+        tenant_id: UUID,
+        governance_slider: str = "STANDARD",
+        actor_role: str = "OPERATOR",
+        plan_approval_id: UUID | None = None,
+    ) -> dict[str, Any]:
+        """Pre-check governance for a tool without executing it.
+
+        Returns the governance decision dict including allowed, tier,
+        risk_level, action_type, requires_approval, and message.
+        """
+        resolved_action = self._resolve_action_type(tool_name, params)
+        engine = GovernanceEngine(self.db)
+        decision = await engine.evaluate(
+            action_type=resolved_action,
+            action_params=params,
+            governance_slider=governance_slider,
+            actor_type="USER",
+            actor_role=actor_role,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            session_id=session_id,
+            plan_approval_id=plan_approval_id,
+        )
+        decision["action_type"] = resolved_action
+        return decision
 
     # ── Tool Execution ────────────────────────────────────────
 
@@ -473,6 +509,99 @@ class ExecutionService(BaseService):
 
             agent = WebCrawlerAgent()
             return await agent.execute(operation, params)
+
+        elif agent_prefix == "security":
+            # Security scan dispatch -- cognitive scan engine
+            # BACKGROUND PATH ONLY -- never import in hot path
+            from app.services.security.cognitive_scan_engine import (
+                CognitiveScanEngine,
+            )
+
+            target = params.get("target", "")
+            program = params.get("program", "")
+            offensive = params.get("offensive_mode", False)
+            agi = params.get("agi_mode", False)
+
+            engine = CognitiveScanEngine(
+                agi_mode=agi,
+                offensive_mode=offensive,
+            )
+
+            if operation in ("cognitive_scan", "cognitive_scan_offensive"):
+                result = await engine.scan(target, program=program)
+                return {
+                    "agent": "SecurityAgent",
+                    "success": True,
+                    "operation": tool_name,
+                    "output": {
+                        "target": result.target,
+                        "findings": result.total_findings,
+                        "cycles": result.cycles_used,
+                        "strategies": result.strategies_tried,
+                        "report_path": result.report_path,
+                        "evidence_summary": result.evidence_summary,
+                        "offensive_mode": result.offensive_mode,
+                        "thinking_log": result.thinking_log[-10:],
+                    },
+                    "error": None,
+                }
+            elif operation == "view_report":
+                import glob as glob_mod
+                reports_dir = os.environ.get("SECURITY_REPORTS_DIR", "D:\\SecurityTools\\reports")
+                safe_target = target.replace(".", "_")[:30]
+                pattern = os.path.join(reports_dir, f"{safe_target}_*.pdf")
+                matches = sorted(glob_mod.glob(pattern), reverse=True)
+                if not matches:
+                    pattern = os.path.join(reports_dir, f"{safe_target}_*.md")
+                    matches = sorted(glob_mod.glob(pattern), reverse=True)
+                return {
+                    "agent": "SecurityAgent",
+                    "success": bool(matches),
+                    "operation": tool_name,
+                    "output": {"report_path": matches[0] if matches else "", "all_reports": matches[:5]},
+                    "error": None if matches else f"No reports found for {target}",
+                }
+            elif operation == "view_evidence":
+                from app.services.security.evidence_capture import EvidenceCapture
+                vaults = EvidenceCapture.list_vault_contents()
+                if target:
+                    safe = target.replace(".", "_")
+                    vaults = [v for v in vaults if safe in v.get("name", "")]
+                return {
+                    "agent": "SecurityAgent",
+                    "success": True,
+                    "operation": tool_name,
+                    "output": {"vaults": vaults},
+                    "error": None,
+                }
+            elif operation == "decrypt_token":
+                from app.services.security.evidence_capture import EvidenceCapture
+                vault_path = params.get("vault_path", "")
+                try:
+                    decrypted = EvidenceCapture.decrypt_token(vault_path)
+                    return {
+                        "agent": "SecurityAgent",
+                        "success": True,
+                        "operation": tool_name,
+                        "output": {"decrypted_value": decrypted, "path": vault_path},
+                        "error": None,
+                    }
+                except ValueError as exc:
+                    return {
+                        "agent": "SecurityAgent",
+                        "success": False,
+                        "operation": tool_name,
+                        "output": None,
+                        "error": str(exc),
+                    }
+            else:
+                return {
+                    "agent": "SecurityAgent",
+                    "success": False,
+                    "operation": tool_name,
+                    "output": None,
+                    "error": f"Unknown security operation: {operation}",
+                }
 
         elif agent_prefix in ("gmail", "calendar", "google-calendar", "notion"):
             # External integration -- route through IntegrationRouter

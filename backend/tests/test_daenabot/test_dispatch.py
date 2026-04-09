@@ -145,6 +145,112 @@ async def test_dispatch_browser_agent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_security_cognitive_scan() -> None:
+    """Security scan dispatch creates CognitiveScanEngine and runs scan."""
+    svc = ExecutionService.__new__(ExecutionService)
+
+    mock_result = MagicMock()
+    mock_result.target = "target.com"
+    mock_result.total_findings = 3
+    mock_result.cycles_used = 2
+    mock_result.strategies_tried = ["passive_osint"]
+    mock_result.report_path = "/tmp/report.pdf"
+    mock_result.evidence_summary = {}
+    mock_result.offensive_mode = False
+    mock_result.thinking_log = ["test"]
+
+    with patch("app.core.config.get_settings") as mock_settings:
+        mock_settings.return_value = MagicMock(enable_daenabot=True)
+        with patch(
+            "app.services.security.cognitive_scan_engine.CognitiveScanEngine.scan",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            result = await svc._dispatch_tool(
+                "security.cognitive_scan",
+                {"target": "target.com", "program": "test"},
+            )
+
+    assert result["success"] is True
+    assert result["agent"] == "SecurityAgent"
+    assert result["output"]["target"] == "target.com"
+    assert result["output"]["findings"] == 3
+
+
+@pytest.mark.asyncio
+async def test_dispatch_security_offensive_scan() -> None:
+    """Offensive scan dispatch passes offensive_mode=True."""
+    svc = ExecutionService.__new__(ExecutionService)
+
+    mock_result = MagicMock()
+    mock_result.target = "target.com"
+    mock_result.total_findings = 1
+    mock_result.cycles_used = 1
+    mock_result.strategies_tried = []
+    mock_result.report_path = ""
+    mock_result.evidence_summary = {"total_evidence": 5}
+    mock_result.offensive_mode = True
+    mock_result.thinking_log = []
+
+    with patch("app.core.config.get_settings") as mock_settings:
+        mock_settings.return_value = MagicMock(enable_daenabot=True)
+        with patch(
+            "app.services.security.cognitive_scan_engine.CognitiveScanEngine.__init__",
+            return_value=None,
+        ) as mock_init:
+            with patch(
+                "app.services.security.cognitive_scan_engine.CognitiveScanEngine.scan",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ):
+                result = await svc._dispatch_tool(
+                    "security.cognitive_scan_offensive",
+                    {"target": "target.com", "offensive_mode": True, "agi_mode": True},
+                )
+
+    assert result["success"] is True
+    assert result["output"]["offensive_mode"] is True
+    # Verify CognitiveScanEngine was constructed with offensive params
+    mock_init.assert_called_once_with(agi_mode=True, offensive_mode=True)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_security_view_evidence() -> None:
+    """Evidence view returns vault listing."""
+    svc = ExecutionService.__new__(ExecutionService)
+
+    with patch("app.core.config.get_settings") as mock_settings:
+        mock_settings.return_value = MagicMock(enable_daenabot=True)
+        with patch(
+            "app.services.security.evidence_capture.EvidenceCapture.list_vault_contents",
+            return_value=[{"name": "20260408_target_com_abc", "file_count": 5, "path": "/vault"}],
+        ):
+            result = await svc._dispatch_tool(
+                "security.view_evidence",
+                {"target": "target.com"},
+            )
+
+    assert result["success"] is True
+    assert len(result["output"]["vaults"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_security_unknown_operation() -> None:
+    """Unknown security operation returns error."""
+    svc = ExecutionService.__new__(ExecutionService)
+
+    with patch("app.core.config.get_settings") as mock_settings:
+        mock_settings.return_value = MagicMock(enable_daenabot=True)
+        result = await svc._dispatch_tool(
+            "security.nonexistent",
+            {},
+        )
+
+    assert result["success"] is False
+    assert "Unknown security operation" in result["error"]
+
+
+@pytest.mark.asyncio
 async def test_dispatch_unknown_agent() -> None:
     svc = ExecutionService.__new__(ExecutionService)
 
