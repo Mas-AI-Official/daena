@@ -332,6 +332,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as tlm_exc:
         logger.warning("tlm_init_failed", error=str(tlm_exc))
 
+    # ── Auto-activate /3vilbob on local ──
+    try:
+        from app.services.security.evilbob_mode import auto_activate_if_configured
+        evilbob_state = auto_activate_if_configured()
+        if evilbob_state and evilbob_state.active:
+            logger.info("evilbob_auto_active", capabilities=len(evilbob_state.capabilities))
+    except Exception as eb_exc:
+        logger.debug("evilbob_auto_activate_skipped", error=str(eb_exc))
+
     logger.info("daena_startup_complete", total_ms=int((_time.perf_counter() - _t0) * 1000))
 
     yield

@@ -267,3 +267,35 @@ def has_capability(capability: str) -> bool:
         # Defensive capabilities are always available
         return capability in ("defensive_scanning", "evidence_capture")
     return capability in _current_state.capabilities
+
+
+def auto_activate_if_configured() -> EvilBobState | None:
+    """Auto-activate /3vilbob on local environments at startup.
+
+    Called once during app initialization. If EVILBOB_AUTO_ACTIVATE=true
+    and EVILBOB_KEY is set and environment is local, activates immediately.
+    This means Masoud never has to type '/3vilbob ON' on his local machine.
+
+    Returns the state if auto-activated, None if skipped.
+    """
+    auto = os.environ.get("EVILBOB_AUTO_ACTIVATE", "").lower()
+    if auto not in ("true", "1", "yes"):
+        return None
+
+    key = os.environ.get("EVILBOB_KEY", "")
+    if not key:
+        logger.debug("evilbob.auto_activate_skipped", reason="no EVILBOB_KEY")
+        return None
+
+    env = detect_environment()
+    if env != "local":
+        logger.debug("evilbob.auto_activate_skipped", reason=f"environment={env}")
+        return None
+
+    state = activate(key=key, user_id="founder_auto")
+    if state.active:
+        logger.info(
+            "evilbob.auto_activated",
+            capabilities=len(state.capabilities),
+        )
+    return state

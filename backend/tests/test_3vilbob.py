@@ -283,7 +283,7 @@ class TestOffensiveLenses:
     """Tests for the offensive framework lenses in CognitiveReasoner."""
 
     def test_offensive_frameworks_exist(self):
-        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 10
+        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 16
         required = [
             "defender_assumption_mapping",
             "legitimacy_mimicry",
@@ -715,6 +715,37 @@ class TestEvilBobModeManager:
             assert state.session_id == "sess-123"
             assert state.activated_at != ""
 
+    def test_auto_activate_on_local(self):
+        from app.services.security.evilbob_mode import auto_activate_if_configured, is_active
+        with patch.dict(os.environ, {"EVILBOB_KEY": "secret", "EVILBOB_AUTO_ACTIVATE": "true"}):
+            with patch("app.core.config.get_settings") as mock:
+                mock.return_value = MagicMock(app_env="development")
+                state = auto_activate_if_configured()
+                assert state is not None
+                assert state.active is True
+                assert is_active() is True
+                assert state.activated_by == "founder_auto"
+
+    def test_auto_activate_skipped_without_flag(self):
+        from app.services.security.evilbob_mode import auto_activate_if_configured
+        with patch.dict(os.environ, {"EVILBOB_KEY": "secret"}):
+            # EVILBOB_AUTO_ACTIVATE not set
+            os.environ.pop("EVILBOB_AUTO_ACTIVATE", None)
+            result = auto_activate_if_configured()
+            assert result is None
+
+    def test_auto_activate_skipped_on_cloud(self):
+        from app.services.security.evilbob_mode import auto_activate_if_configured, is_active
+        with patch.dict(os.environ, {
+            "EVILBOB_KEY": "secret",
+            "EVILBOB_AUTO_ACTIVATE": "true",
+            "K_SERVICE": "daena-prod",
+        }):
+            result = auto_activate_if_configured()
+            # Returns None when env check fails before activation
+            assert result is None
+            assert is_active() is False
+
 
 class TestRouterEvilBobToggle:
     """Tests for /3vilbob ON/OFF/STATUS routing."""
@@ -778,8 +809,21 @@ class TestCognitiveReasonerFullSpectrum:
         assert "evidence_maximization" in all_lenses
 
     def test_offensive_count(self):
-        """Should have 10 offensive lenses total."""
-        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 10
+        """Should have 16 offensive lenses total (7 original + 3 phase 3 + 6 beyond-Mythos)."""
+        assert len(OFFENSIVE_FRAMEWORK_PROMPTS) == 16
+
+    def test_beyond_mythos_lenses_exist(self):
+        """Beyond-Mythos lenses must exist."""
+        beyond = [
+            "recursive_decomposition",
+            "adversarial_simulation",
+            "social_engineering_reasoning",
+            "goal_persistence",
+            "self_evolution",
+            "manipulation_reasoning",
+        ]
+        for lens in beyond:
+            assert lens in OFFENSIVE_FRAMEWORK_PROMPTS, f"Missing: {lens}"
 
 
 class TestConstraintProbeNoBlocks:
