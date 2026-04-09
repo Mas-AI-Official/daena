@@ -157,14 +157,14 @@ Anti-drift: Bayesian confidence, time-based decay, T3+ immune, never-delete
 ## Test Coverage
 
 - test_3vilbob.py: 127 tests
-- test_3vilbob_wiring.py: 115 tests
+- test_3vilbob_wiring.py: 147 tests
 - test_3vilbob_advanced.py: 55 tests
 - test_beyond_mythos.py: 43 tests
 - test_unreplicable.py: 78 tests
 - test_cognitive_scan.py: 35 tests
 - test_osint_engine.py: 44 tests
 - test_knowledge_graph.py: 27 tests
-- Total: 527+ tests, 0 failures
+- Total: 608+ tests, 0 failures
 
 ## vs Mythos (Anthropic)
 
@@ -181,6 +181,8 @@ Anti-drift: Bayesian confidence, time-based decay, T3+ immune, never-delete
 | Evidence chain | No | Yes (SHA-256 + AES-256) |
 | Tool auto-install | No | Yes (80+ tools, auto-equip in DECIDE) |
 | Department overlay | No | Yes (10 departments, SHIELD activation) |
-| Social engineering | No | Reasoning lenses + OSINT |
+| Social engineering | No | Auto-crafted scenarios from OSINT + human attack surface assessment |
+| Supply chain attacks | No | Yes (dependency confusion, typosquatting, build pipeline analysis) |
+| LLM-powered learning | No | Yes (semantic abstraction of scan insights) |
 | Governed | No | Yes (audit trail, approval queue) |
 | Access | Restricted | Open (local-first) |

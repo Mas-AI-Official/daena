@@ -923,7 +923,7 @@ class CognitiveScanEngine:
 
                     # Also recommend based on target type
                     target_type = self._classify_target(profile)
-                    waf = profile.defenses.get("waf", "")
+                    waf = profile.waf_detected or ""
                     recommended = catalog.recommend_for_target(target_type, waf)
 
                     # Filter to uninstalled tools that match capability gaps
@@ -2322,7 +2322,7 @@ class CognitiveScanEngine:
                     observation=observation,
                     context={
                         "target_type": profile.target_type,
-                        "waf": profile.defenses.get("waf", ""),
+                        "waf": profile.waf_detected or "",
                         "technologies": profile.technologies[:5],
                     },
                     trace_id=self._scan_id,

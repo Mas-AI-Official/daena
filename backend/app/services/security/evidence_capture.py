@@ -154,7 +154,11 @@ class EvidenceCapture:
 
     async def initialize(self) -> None:
         """Create the vault directory for this scan."""
-        safe_target = self.target.replace("://", "_").replace("/", "_").replace(".", "_")
+        safe_target = (
+            self.target.replace("://", "_").replace("/", "_")
+            .replace(".", "_").replace(":", "_").replace("?", "_")
+            .replace("&", "_").replace("=", "_")
+        )
         date_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self._vault_dir = EVIDENCE_VAULT / f"{date_str}_{safe_target}_{self.scan_id}"
         self._vault_dir.mkdir(parents=True, exist_ok=True)
@@ -721,7 +725,11 @@ class EvidenceCapture:
                 if loop.is_running():
                     # We're in an async context, can't await here
                     # Create directory synchronously
-                    safe_target = self.target.replace("://", "_").replace("/", "_").replace(".", "_")
+                    safe_target = (
+                        self.target.replace("://", "_").replace("/", "_")
+                        .replace(".", "_").replace(":", "_").replace("?", "_")
+                        .replace("&", "_").replace("=", "_")
+                    )
                     date_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
                     self._vault_dir = EVIDENCE_VAULT / f"{date_str}_{safe_target}_{self.scan_id}"
                     self._vault_dir.mkdir(parents=True, exist_ok=True)
