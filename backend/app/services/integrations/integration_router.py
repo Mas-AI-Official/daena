@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import ConnectorStatus, PermissionLevel
+from app.core.exceptions import ApprovalRequiredError
 from app.core.logging import get_logger
 from app.core.vault import decrypt_dict
 from app.models.connections import Connector, ConnectorInstance, ConnectorPermission
@@ -127,15 +128,11 @@ class IntegrationRouter:
                     f"Update permissions in Daena Settings > Connections."
                 )
             if permission == PermissionLevel.ASK_EACH_TIME.value:
-                # Return a governance prompt instead of executing
-                return {
-                    "status": "approval_required",
-                    "provider": provider,
-                    "tool": tool_name,
-                    "params": params,
-                    "message": f"Permission required to execute {provider}.{tool_name}",
-                    "governance_tier": 3,
-                }
+                # Raise ApprovalRequiredError so callers get a typed exception.
+                # The error carries context for the approval queue.
+                raise ApprovalRequiredError(
+                    f"Permission required to execute {provider}.{tool_name}"
+                )
 
         # Decrypt credentials
         credentials = self._decrypt_credentials(instance)

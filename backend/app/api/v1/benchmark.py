@@ -57,6 +57,26 @@ async def cost_comparison(user=Depends(get_current_user)):
     }
 
 
+@router.get("/full")
+async def full_benchmark(user=Depends(get_current_user)):
+    """Run all Daena benchmarks (governance overhead, memory, code quality, security).
+
+    Returns full suite results including competitor comparisons.
+    This endpoint may take 30-60 seconds depending on test suite runtime.
+    """
+    from app.services.benchmarks.suite import DaenaBenchmarkSuite
+
+    suite = DaenaBenchmarkSuite()
+    results = await suite.run_all()
+
+    return {
+        "data": {
+            "benchmark_count": len(results),
+            "results": {name: r.to_dict() for name, r in results.items()},
+        }
+    }
+
+
 @router.get("/quick-summary")
 async def quick_summary(user=Depends(get_current_user)):
     """One-line savings summary for dashboard/mobile."""

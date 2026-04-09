@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.constants import UserRole
 from app.core.exceptions import AuthenticationError, InsufficientRoleError, TokenExpiredError
 from app.core.security import decode_access_token
 
@@ -94,19 +95,23 @@ async def get_current_user(
 def require_role(min_role: str):
     """Dependency factory: require minimum RBAC role.
 
+    Uses UserRole.has_access() for hierarchical comparison instead
+    of duplicating the role-level mapping.
+
     Usage:
         @router.get("/admin", dependencies=[Depends(require_role("ADMIN"))])
     """
-    role_levels = {
-        "AUDITOR": 1, "VIEWER": 2, "OPERATOR": 3,
-        "MANAGER": 4, "ADMIN": 5, "FOUNDER": 6,
-    }
+    required = UserRole(min_role)
 
     async def check_role(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        user_level = role_levels.get(user.role, 0)
-        required_level = role_levels.get(min_role, 999)
+        try:
+            user_role = UserRole(user.role)
+        except ValueError:
+            raise InsufficientRoleError(
+                f"Unknown role '{user.role}'. Minimum required: '{min_role}'"
+            )
 
-        if user_level < required_level:
+        if not user_role.has_access(required):
             raise InsufficientRoleError(
                 f"Role '{user.role}' insufficient. Minimum required: '{min_role}'"
             )

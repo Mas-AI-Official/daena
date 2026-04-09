@@ -11,6 +11,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.constants import PlanType
 from app.models.base import GUID, Base, JSONBCompat, TimestampMixin
 
 
@@ -27,7 +28,9 @@ class Tenant(Base, TimestampMixin):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    plan: Mapped[str] = mapped_column(String(20), nullable=False, server_default="FREE")
+    plan: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=PlanType.FREE.value,
+    )
     settings: Mapped[dict] = mapped_column(JSONBCompat, nullable=False, server_default="{}")
 
     # Relationships

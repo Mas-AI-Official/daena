@@ -191,5 +191,6 @@ async def test_execute_unknown_operation() -> None:
 
 def test_operation_action_map_complete() -> None:
     ops = {"navigate", "extract_text", "screenshot",
-           "fill_form", "click_element", "submit_form"}
+           "fill_form", "click_element", "submit_form",
+           "extract_links", "get_form_fields", "wait_for"}
     assert set(BrowserAgent.OPERATION_ACTION_MAP.keys()) == ops

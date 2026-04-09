@@ -61,18 +61,29 @@ def _run_sync(cmd: list[str], *, cwd: str | None = None, timeout: float = 30.0) 
 
 
 async def check_runtime_health() -> HeartbeatCheckResult:
-    """Check all runtime adapters for health status."""
+    """Check all runtime adapters for health status.
+
+    Also maps each runtime to the founder account that holds its
+    subscription via get_service_account() for diagnostics.
+    """
     import time as _time
 
     t0 = _time.perf_counter()
     try:
         from app.core.events import get_runtime_registry
+        from app.config.founder_accounts import get_service_account
 
         registry = get_runtime_registry()
         health = await registry.check_health_all()
 
         online = [rid for rid, s in health.items() if s.value == "online"]
         offline = [rid for rid, s in health.items() if s.value != "online"]
+
+        # Map runtimes to founder accounts for diagnostics
+        account_map: dict[str, str | None] = {}
+        for rid in list(online) + list(offline):
+            acct = get_service_account(rid)
+            account_map[rid] = acct.label if acct else None
 
         status = "ok" if online else "warning"
         actions = []
@@ -86,7 +97,7 @@ async def check_runtime_health() -> HeartbeatCheckResult:
             check_type="runtime_health",
             status=status,
             summary=f"{len(online)} online, {len(offline)} offline",
-            details={"online": online, "offline": offline},
+            details={"online": online, "offline": offline, "account_map": account_map},
             actions=actions,
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
@@ -524,6 +535,60 @@ async def check_ollama_health() -> HeartbeatCheckResult:
             check_type="ollama_health",
             status="error",
             summary=f"Ollama check failed: {exc}",
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+
+
+async def check_ollama_model_updates() -> HeartbeatCheckResult:
+    """Check installed Ollama models for available updates via OllamaAutoUpdater.
+
+    Runs weekly. Pulls latest versions for all installed models.
+    Ollama's pull is incremental -- if already up to date, it's a no-op.
+    """
+    import time as _time
+
+    t0 = _time.perf_counter()
+    try:
+        from app.services.model_management.auto_updater import OllamaAutoUpdater
+
+        updater = OllamaAutoUpdater()
+        update_result = await updater.check_for_updates()
+
+        actions = []
+        if update_result.updated:
+            actions.append(SuggestedAction(
+                description=f"Updated {len(update_result.updated)} Ollama models: {', '.join(update_result.updated)}",
+                priority=ActionPriority.LOW,
+            ))
+        if update_result.failed:
+            actions.append(SuggestedAction(
+                description=f"Failed to update {len(update_result.failed)} models: {', '.join(update_result.failed)}",
+                priority=ActionPriority.MEDIUM,
+            ))
+
+        status = "ok"
+        if update_result.failed:
+            status = "warning"
+
+        summary = f"Checked {update_result.checked} models"
+        if update_result.updated:
+            summary += f", updated {len(update_result.updated)}"
+        if update_result.failed:
+            summary += f", {len(update_result.failed)} failed"
+
+        return HeartbeatCheckResult(
+            check_type="ollama_model_updates",
+            status=status,
+            summary=summary,
+            details=update_result.to_dict(),
+            actions=actions,
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+    except Exception as exc:
+        return HeartbeatCheckResult(
+            check_type="ollama_model_updates",
+            status="error",
+            summary=f"Model update check failed: {exc}",
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
 

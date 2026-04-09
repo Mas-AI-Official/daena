@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.schemas.execution import (
     CreateTaskRequest,
     ExecuteToolRequest,
+    GovernanceCheckResponse,
     UpdateTaskRequest,
 )
 from app.services.execution_service import ExecutionService
@@ -28,6 +29,40 @@ async def get_execution_service(
 ) -> ExecutionService:
     """Factory dependency for ExecutionService."""
     return ExecutionService(db)
+
+
+# ── Governance Pre-Check ──
+
+
+@router.post("/governance-check", response_model=GovernanceCheckResponse)
+async def governance_pre_check(
+    body: ExecuteToolRequest,
+    user: CurrentUser = Depends(get_current_user),
+    service: ExecutionService = Depends(get_execution_service),
+) -> GovernanceCheckResponse:
+    """Pre-check governance for a tool before execution.
+
+    Returns the governance decision (allowed, tier, risk) without
+    actually running the tool. Useful for UI previews and plan validation.
+    """
+    decision = await service.check_governance(
+        tool_name=body.tool_name,
+        params=body.params,
+        session_id=body.session_id,
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        actor_role=user.role,
+        plan_approval_id=body.plan_approval_id,
+    )
+    return GovernanceCheckResponse(
+        allowed=decision["allowed"],
+        governance_tier=decision["governance_tier"],
+        risk_level=decision["risk_level"],
+        action_type=decision["action_type"],
+        requires_approval=decision.get("requires_approval", False),
+        message=decision.get("message", ""),
+        plan_covered=decision.get("plan_covered", False),
+    )
 
 
 # ── Tool Execution ──

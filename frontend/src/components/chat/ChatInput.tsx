@@ -69,8 +69,9 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
         .then(data => {
           const d = data?.data ?? data
           if (d) {
-            setQuotaRemaining(d.remaining_monthly_usd)
-            setIsOverQuota(d.is_over_quota)
+            const rem = d.remaining_monthly_usd
+            setQuotaRemaining(typeof rem === 'number' ? rem : null)
+            setIsOverQuota(!!d.is_over_quota)
           }
         })
         .catch(() => {})
@@ -242,37 +243,37 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
   }
 
   return (
-    <div className="shrink-0 border-t border-white/5 bg-midnight-200/80" style={{ backdropFilter: 'blur(8px)' }}>
-      <div className="max-w-4xl mx-auto px-4 py-3">
-        {/* Mode indicator bar */}
-        <div className="flex items-center gap-2 mb-2 text-[10px] font-mono">
+    <div className="shrink-0 bg-transparent">
+      <div className="max-w-3xl mx-auto px-4 py-3">
+        {/* Mode indicator bar -- compact, inside composer area */}
+        <div className="flex items-center gap-1.5 mb-2 text-[10px] font-mono px-1">
           {/* Chat mode badge */}
           <span
-            className={`px-1.5 py-0.5 rounded ${
+            className={`px-1.5 py-0.5 rounded-md ${
               chatMode === 'CMD'
-                ? 'bg-accent-cyan/15 text-accent-cyan'
-                : 'bg-accent-amber/15 text-accent-amber'
+                ? 'bg-accent-cyan/10 text-accent-cyan/70'
+                : 'bg-accent-amber/10 text-accent-amber/70'
             }`}
           >
             {chatMode}
           </span>
-          <span className="text-starlight-600">·</span>
-          <span className="text-starlight-500">Gov: {governanceSlider}</span>
-          {quotaRemaining !== null && (
+          <span className="text-starlight-600/50">·</span>
+          <span className="text-starlight-500/70">Gov: {governanceSlider}</span>
+          {quotaRemaining != null && typeof quotaRemaining === 'number' && (
             <>
-              <span className="text-starlight-600">·</span>
+              <span className="text-starlight-600/50">·</span>
               <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
                 isOverQuota
-                  ? 'bg-accent-amber/15 text-accent-amber'
+                  ? 'bg-accent-amber/10 text-accent-amber/70'
                   : quotaRemaining < 1
-                    ? 'bg-accent-amber/10 text-accent-amber'
-                    : 'text-starlight-500'
+                    ? 'bg-accent-amber/10 text-accent-amber/70'
+                    : 'text-starlight-500/70'
               }`}>
                 {isOverQuota ? 'Free mode' : `$${quotaRemaining.toFixed(2)} left`}
               </span>
             </>
           )}
-          <span className="text-starlight-600">·</span>
+          <span className="text-starlight-600/50">·</span>
 
           {/* Model selector */}
           <div className="relative" ref={modelDropdownRef}>
@@ -484,7 +485,7 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
           />
 
           {/* Textarea + slash command menu */}
-          <div className="flex-1 relative">
+          <div className="flex-1 min-w-0 relative">
             {/* Attached file chips */}
             {attachedFiles.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
@@ -535,8 +536,8 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
               maxLength={MAX_MESSAGE_LENGTH}
               rows={1}
               className="w-full resize-none rounded-2xl glass-input px-4 py-3 pr-12
-                         text-sm text-starlight-100 placeholder:text-starlight-500
-                         focus:outline-none focus:ring-0 focus:border-primary-500/30
+                         text-sm text-starlight-100 placeholder:text-starlight-500/60
+                         focus:outline-none focus:ring-0 focus:border-primary-500/20
                          disabled:opacity-50 disabled:cursor-not-allowed
                          max-h-[200px] leading-relaxed transition-colors"
               style={{ outline: 'none' }}
@@ -559,31 +560,30 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={onCancel}
-              className="shrink-0 p-2.5 rounded-xl bg-status-error/20 text-status-error border border-status-error/30 hover:bg-status-error/30 transition-all cursor-pointer"
+              className="shrink-0 p-2 rounded-xl bg-status-error/20 text-status-error hover:bg-status-error/30 transition-all cursor-pointer"
               title="Stop generation"
               aria-label="Stop generation"
             >
-              <Square size={16} className="fill-current" />
+              <Square size={14} className="fill-current" />
             </motion.button>
           ) : (
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={handleSubmit}
               disabled={!value.trim() || disabled}
-              className="shrink-0 p-2.5 rounded-xl bg-primary-500 text-white
+              className="shrink-0 p-2 rounded-xl bg-primary-500 text-white
                          hover:bg-primary-600 transition-all
-                         disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer
-                         shadow-[var(--shadow-glow-sm)]"
+                         disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
               title="Send message"
               aria-label="Send message"
             >
-              <Send size={18} />
+              <Send size={16} />
             </motion.button>
           )}
         </div>
 
-        <p className="text-[10px] text-starlight-600 mt-1.5 text-center">
-          Daena can make mistakes. Verify important information. Not a substitute for professional advice.
+        <p className="text-[9px] text-starlight-600/60 mt-1.5 text-center">
+          Daena can make mistakes. Verify important information.
           <span className="hidden sm:inline"> · Shift+Enter for new line</span>
         </p>
         {selectedModelUnavailable && (

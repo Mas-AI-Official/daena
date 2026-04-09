@@ -10,10 +10,13 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     agents,
+    analytics,
+    api_keys,
     auth,
     autopilot,
     benchmark,
     billing,
+    bridge,
     chat,
     connections,
     connector_oauth,
@@ -29,6 +32,7 @@ from app.api.v1 import (
     mcp_server,
     memory,
     mobile,
+    org,
     pipeline,
     projects,
     prompts,
@@ -45,6 +49,7 @@ router = APIRouter()
 
 # Include sub-routers
 router.include_router(auth.router, prefix="/auth", tags=["auth"])
+router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 router.include_router(billing.router, prefix="/billing", tags=["billing"])
 router.include_router(health.router, prefix="/health", tags=["health"])
 router.include_router(chat.router, prefix="/chat", tags=["chat"])
@@ -70,9 +75,12 @@ router.include_router(runtimes.router, prefix="/runtimes", tags=["runtimes"])
 router.include_router(heartbeat.router, prefix="/heartbeat", tags=["heartbeat"])
 router.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 router.include_router(connector_oauth.router, tags=["connector-oauth"])
+router.include_router(bridge.router, tags=["bridge"])
 router.include_router(self_improvement.router, prefix="/self-improvement", tags=["self-improvement"])
 router.include_router(waitlist.router, prefix="/waitlist", tags=["waitlist"])
 router.include_router(mobile.router)
 router.include_router(benchmark.router)
 router.include_router(files.router, prefix="/files", tags=["files"])
+router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])
+router.include_router(org.router, prefix="/org", tags=["org"])
 router.include_router(ws.router, tags=["websocket"])

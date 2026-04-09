@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.core.constants import PlanType
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,25 +29,25 @@ class BudgetConfig:
 
 
 PLAN_DEFAULTS: dict[str, dict] = {
-    "FREE": {
+    PlanType.FREE.value: {
         "monthly_credit_usd": 0.50,
         "daily_credit_usd": 0.10,
         "overage_action": "fallback_free",
         "max_tenant_share_pct": 100,
     },
-    "BASIC": {
-        "monthly_credit_usd": 5.00,
-        "daily_credit_usd": 1.00,
-        "overage_action": "warn",
-        "max_tenant_share_pct": 50,
-    },
-    "PRO": {
+    PlanType.PRO.value: {
         "monthly_credit_usd": 10.00,
         "daily_credit_usd": 2.00,
         "overage_action": "warn",
         "max_tenant_share_pct": 50,
     },
-    "ENTERPRISE": {
+    PlanType.MAX.value: {
+        "monthly_credit_usd": 25.00,
+        "daily_credit_usd": 5.00,
+        "overage_action": "warn",
+        "max_tenant_share_pct": 40,
+    },
+    PlanType.ENTERPRISE.value: {
         "monthly_credit_usd": 50.00,
         "daily_credit_usd": None,
         "overage_action": "allow_overage",

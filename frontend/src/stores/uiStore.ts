@@ -107,7 +107,7 @@ interface UiState {
 export const useUiStore = create<UiState>((set) => ({
   sidebarOpen: true,
   sidebarWidth: 256,
-  historySidebarOpen: false,
+  historySidebarOpen: false, // starts collapsed (Perplexity-style)
   mobileSidebarOpen: false,
   chatMode: (localStorage.getItem('daena:chatMode') as ChatMode) || 'CMD',
   routingMode: (localStorage.getItem('daena:routingMode') as RoutingMode) || 'STANDARD',

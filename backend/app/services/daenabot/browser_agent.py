@@ -32,6 +32,9 @@ class BrowserAgent(BaseAgent):
         "navigate": "READ",
         "extract_text": "READ",
         "screenshot": "READ",
+        "extract_links": "READ",
+        "get_form_fields": "READ",
+        "wait_for": "READ",
         "fill_form": "WRITE_FILE",
         "click_element": "EXECUTE",
         "submit_form": "POST_PUBLIC",
@@ -52,6 +55,9 @@ class BrowserAgent(BaseAgent):
             "navigate": self.navigate,
             "extract_text": self.extract_text,
             "screenshot": self.screenshot,
+            "extract_links": self.extract_links,
+            "get_form_fields": self.get_form_fields,
+            "wait_for": self.wait_for,
             "fill_form": self.fill_form,
             "click_element": self.click_element,
             "submit_form": self.submit_form,
@@ -210,6 +216,60 @@ class BrowserAgent(BaseAgent):
         return self._result("submit_form", {
             "submitted": True,
             "url_after": url_after,
+        })
+
+    async def extract_links(self) -> dict[str, Any]:
+        """Extract all links from the current page."""
+        await self._ensure_browser()
+
+        links = await self._page.eval_on_selector_all(
+            "a[href]",
+            "els => els.map(e => ({href: e.href, text: e.textContent?.trim() || ''}))",
+        )
+        logger.info("browser_agent.extract_links", count=len(links))
+        return self._result("extract_links", {
+            "links": links,
+            "count": len(links),
+        })
+
+    async def get_form_fields(self) -> dict[str, Any]:
+        """Get all form fields on the current page."""
+        await self._ensure_browser()
+
+        fields = await self._page.eval_on_selector_all(
+            "input, textarea, select",
+            """els => els.map(e => ({
+                tag: e.tagName.toLowerCase(),
+                type: e.type || '',
+                name: e.name || '',
+                id: e.id || '',
+                placeholder: e.placeholder || '',
+                required: e.required || false,
+                value: e.value || '',
+            }))""",
+        )
+        logger.info("browser_agent.get_form_fields", count=len(fields))
+        return self._result("get_form_fields", {
+            "fields": fields,
+            "count": len(fields),
+        })
+
+    async def wait_for(
+        self, selector: str, timeout: int = 10000,
+    ) -> dict[str, Any]:
+        """Wait for an element to appear on the page."""
+        await self._ensure_browser()
+
+        try:
+            await self._page.wait_for_selector(selector, timeout=timeout)
+            found = True
+        except Exception:
+            found = False
+
+        logger.info("browser_agent.wait_for", selector=selector, found=found)
+        return self._result("wait_for", {
+            "selector": selector,
+            "found": found,
         })
 
     # ── validation ─────────────────────────────────────────────

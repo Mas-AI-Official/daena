@@ -110,7 +110,12 @@ api.interceptors.response.use(
         toast.error('Resource not found.')
       }
     } else if (status && status >= 500) {
-      toast.error('Server error. Please try again in a moment.')
+      // Suppress toasts for background polling endpoints
+      const url = error.config?.url || ''
+      const isSilentPoll = url.includes('/execution/tasks') || url.includes('/heartbeat/')
+      if (!isSilentPoll) {
+        toast.error('Server error. Please try again in a moment.')
+      }
     } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       toast.error('Request timed out. Please check your connection.')
     } else if (!error.response && error.message === 'Network Error') {

@@ -36,7 +36,7 @@ interface RuntimeActivity {
 interface PipelineStage {
   label: string
   detail?: string
-  status: 'done' | 'active' | 'pending'
+  status: 'done' | 'active' | 'pending' | 'error'
 }
 
 interface ToolCallEvent {
@@ -740,6 +740,97 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     runtimeOutput: s.stream.runtimeOutput + displayContent + '\n',
                   },
                 }))
+              }
+            } else if (event.type === 'cognitive_phase') {
+              // Cognitive Engine: OODA-R phase updates
+              const phaseLabels: Record<string, string> = {
+                observe: 'Observing actual state...',
+                orient: 'Analyzing problem type...',
+                decide: 'Selecting strategy...',
+                act: 'Executing...',
+                reflect: 'Reflecting on outcome...',
+              }
+              set((s) => {
+                const prev = s.stream.pipelineStages.map((p) =>
+                  p.status === 'active' ? { ...p, status: 'done' as const } : p,
+                )
+                return {
+                  stream: {
+                    ...s.stream,
+                    thinkingContent: phaseLabels[event.phase] || `Phase: ${event.phase}`,
+                    pipelineStages: [...prev, {
+                      label: `OODA: ${(event.phase as string).charAt(0).toUpperCase() + (event.phase as string).slice(1)}`,
+                      detail: phaseLabels[event.phase] || '',
+                      status: 'active' as const,
+                    }],
+                  },
+                }
+              })
+            } else if (event.type === 'strategy_switch') {
+              // Cognitive Engine: switching to a different strategy
+              set((s) => {
+                const prev = s.stream.pipelineStages.map((p) =>
+                  p.status === 'active' ? { ...p, status: 'done' as const } : p,
+                )
+                return {
+                  stream: {
+                    ...s.stream,
+                    thinkingContent: `Strategy shift: ${event.reason || 'trying alternative approach'}`,
+                    pipelineStages: [...prev, {
+                      label: `Strategy: ${event.to || 'alternative'}`,
+                      detail: event.reason || '',
+                      status: 'active' as const,
+                    }],
+                  },
+                }
+              })
+            } else if (event.type === 'cognitive_reorient') {
+              // Cognitive Engine: re-analyzing after all strategies failed
+              set((s) => ({
+                stream: {
+                  ...s.stream,
+                  thinkingContent: event.reason || 'Re-analyzing problem...',
+                },
+              }))
+            } else if (event.type === 'cognitive_complete') {
+              // Cognitive Engine: task finished
+              set((s) => {
+                const prev = s.stream.pipelineStages.map((p) =>
+                  p.status === 'active' ? { ...p, status: 'done' as const } : p,
+                )
+                const label = event.success
+                  ? `Cognitive: Done (${event.cycles} cycles, ${event.strategies_tried} strategies)`
+                  : `Cognitive: Needs input (${event.cycles} cycles tried)`
+                return {
+                  stream: {
+                    ...s.stream,
+                    pipelineStages: [...prev, { label, status: 'done' as const }],
+                  },
+                }
+              })
+            } else if (event.type === 'loop_detected') {
+              // Loop detector caught a repetition
+              set((s) => {
+                const prev = s.stream.pipelineStages.map((p) =>
+                  p.status === 'active' ? { ...p, status: 'done' as const } : p,
+                )
+                return {
+                  stream: {
+                    ...s.stream,
+                    thinkingContent: `Loop detected: ${event.message || 'changing approach'}`,
+                    pipelineStages: [...prev, {
+                      label: `Loop: ${event.detector || 'detected'}`,
+                      detail: event.message || '',
+                      status: event.level === 'critical' ? 'error' as const : 'done' as const,
+                    }],
+                  },
+                }
+              })
+            } else if (event.type === 'tool_use_response') {
+              // Cognitive Engine: final response from tool use loop
+              const content = event.content || ''
+              if (content) {
+                appendContent(content)
               }
             } else if (event.type === 'interactive_prompt') {
               // Agent is pausing for user input -- route to UI store

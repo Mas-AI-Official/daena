@@ -34,6 +34,7 @@ from app.services.heartbeat.heartbeat_checks import (
     check_github_issues,
     check_failed_tasks,
     check_ollama_health,
+    check_ollama_model_updates,
     generate_daily_report,
 )
 from app.services.heartbeat.heartbeat_config import (
@@ -320,6 +321,8 @@ class HeartbeatDaemon:
             return await generate_daily_report()
         elif check_type == CheckType.DEPARTMENT_WORKFLOWS:
             return await check_department_workflows()
+        elif check_type == CheckType.OLLAMA_MODEL_UPDATES:
+            return await check_ollama_model_updates()
         elif check_type == CheckType.AUTONOMOUS_WORK:
             # Only run in AGI mode -- expensive LLM calls
             if self.config.autopilot_level == AutopilotLevel.AGI:

@@ -264,30 +264,29 @@ export function ChatPage() {
         )}
       </div>
 
-      {/* Toggle button */}
+      {/* Toggle button -- minimal, Perplexity-style */}
       <button
         onClick={toggleHistorySidebar}
-        className="absolute top-2 z-20 p-1.5 rounded-md border border-white/10
-                   bg-midnight-400/80 backdrop-blur-sm text-starlight-400
-                   hover:text-starlight-100 hover:border-white/20
+        className="absolute top-3 z-20 p-1 rounded-md text-starlight-500
+                   hover:text-starlight-200 hover:bg-white/5
                    transition-all cursor-pointer"
         style={{ left: historySidebarOpen ? 248 : 8, transition: 'left 200ms ease' }}
-        title={historySidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        title={historySidebarOpen ? 'Collapse history' : 'Show history'}
       >
         {historySidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
       </button>
 
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Autopilot banner */}
+        {/* Autopilot banner -- minimal */}
         {autopilotActive && !autopilotBannerDismissed && (
-          <div className="shrink-0 pl-14 pr-6 py-2.5 bg-status-success/5 border-b border-status-success/10 flex items-center justify-between gap-4">
-            <p className="text-[11px] text-status-success/80 leading-relaxed">
-              Autopilot active. Non-critical actions auto-approved by internal governance. Critical actions will ask for your approval.
+          <div className="shrink-0 pl-14 pr-6 py-1.5 bg-status-success/[0.03] flex items-center justify-between gap-4">
+            <p className="text-[10px] text-status-success/60 leading-relaxed">
+              Autopilot active -- non-critical actions auto-approved, critical actions require approval
             </p>
             <button
               onClick={() => setAutopilotBannerDismissed(true)}
-              className="text-[10px] text-starlight-500 hover:text-starlight-300 shrink-0 cursor-pointer px-2 py-1 rounded hover:bg-white/5"
+              className="text-[10px] text-starlight-600 hover:text-starlight-300 shrink-0 cursor-pointer px-1.5 py-0.5 rounded hover:bg-white/5"
             >
               Dismiss
             </button>
@@ -312,7 +311,7 @@ export function ChatPage() {
 
         {/* Execution Panel (visible in EXE mode or when subtasks exist) */}
         {(chatMode === 'EXE' || subtasks.length > 0) && (
-          <div className="shrink-0 border-t border-white/5 px-4 py-2">
+          <div className="shrink-0 px-4 py-2">
             <ExecutionPanel
               subtasks={subtasks}
               visible={executionViewVisible}

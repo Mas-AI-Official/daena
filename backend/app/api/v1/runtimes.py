@@ -288,3 +288,30 @@ async def set_primary_runtime(
             "display_name": adapter.display_name,
         },
     }
+
+
+@router.post("/{runtime_id}/disconnect")
+async def disconnect_runtime(
+    runtime_id: str,
+    _user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Mark a runtime as disconnected.
+
+    Clears cached auth/install state. The runtime will be
+    re-detected on next /discover or page load.
+    """
+    from app.core.events import get_runtime_registry
+
+    registry = get_runtime_registry()
+    adapter = registry.get_adapter(runtime_id)
+    if adapter is None:
+        return {"success": False, "error": {"message": f"Runtime '{runtime_id}' not found"}}
+
+    # Clear cached install/auth state so UI shows disconnected
+    registry._installed_cache[runtime_id] = False
+    registry._auth_cache.pop(runtime_id, None)
+
+    return {
+        "success": True,
+        "data": {"runtime_id": runtime_id, "status": "disconnected"},
+    }

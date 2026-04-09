@@ -110,12 +110,11 @@ class TestUserPreferences:
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         result = await get_user_preferences(user=mock_user, db=mock_db)
-        assert result["success"] is True
-        data = result["data"]
-        assert data["display_name"] == "Test User"
-        assert data["email"] == "test@example.com"
-        assert data["role"] == "FOUNDER"
-        assert data["preferred_model"] == "gpt-4o"
+        # Route now returns UserPreferencesResponse Pydantic model
+        assert result.display_name == "Test User"
+        assert result.email == "test@example.com"
+        assert result.role == "FOUNDER"
+        assert result.preferred_model == "gpt-4o"
 
     @pytest.mark.asyncio
     async def test_update_user_display_name(self):
@@ -142,8 +141,8 @@ class TestUserPreferences:
         body = UserPreferencesUpdate(display_name="New Name")
         result = await update_user_preferences(body=body, user=mock_user, db=mock_db)
 
-        assert result["success"] is True
-        assert result["data"]["display_name"] == "New Name"
+        # Route now returns UserPreferencesResponse Pydantic model
+        assert result.display_name == "New Name"
         mock_db.flush.assert_called_once()
 
     @pytest.mark.asyncio

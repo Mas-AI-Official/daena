@@ -1,0 +1,18 @@
+{
+  "version": "1.0.1",
+  "name": "Daena",
+  "path": "D:\\Ideas\\Daena",
+  "embedding_model": "nomic-ai/nomic-embed-text-v1.5",
+  "embedding_dimensions": 384,
+  "stats": {
+    "files": 503,
+    "symbols": 7337,
+    "relationships": 29509,
+    "clusters": 65,
+    "flows": 481,
+    "dead_code": 925,
+    "coupled_pairs": 0,
+    "embeddings": 0
+  },
+  "last_indexed_at": "2026-04-08T16:03:56.214733+00:00"
+}

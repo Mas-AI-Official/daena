@@ -48,12 +48,12 @@ class RemoveRequest(BaseModel):
     provider_name: str
 
 
-@router.post("/provision")
+@router.post("/provision", response_model=ProvisionResponse)
 async def provision_provider(
     body: ProvisionRequest,
     user: CurrentUser = Depends(require_role("ADMIN")),
     svc: DynamicModelService = Depends(get_dynamic_model_service),
-) -> dict:
+) -> ProvisionResponse:
     """Add a new LLM provider at runtime.
 
     Validates the API key, registers the provider, and discovers models.
@@ -63,16 +63,14 @@ async def provision_provider(
         provider_name=body.provider_name,
         api_key=body.api_key,
     )
-    return {
-        "success": result.success,
-        "data": {
-            "provider": result.provider.value,
-            "models_discovered": result.models_discovered,
-            "health": result.health,
-            "error": result.error,
-            "model_ids": result.model_ids,
-        },
-    }
+    return ProvisionResponse(
+        provider=result.provider.value,
+        success=result.success,
+        models_discovered=result.models_discovered,
+        health=result.health,
+        error=result.error,
+        model_ids=result.model_ids,
+    )
 
 
 @router.post("/remove")

@@ -126,6 +126,23 @@ async def version_info() -> dict:
     }
 
 
+@router.get("/about")
+async def about() -> dict:
+    """Daena's identity and self-introduction. Public endpoint for
+    integrations, landing pages, and service-to-service handshakes.
+    """
+    from app.config.founder_accounts import DAENA_IDENTITY
+
+    return {
+        "name": DAENA_IDENTITY.display_name,
+        "role": DAENA_IDENTITY.role,
+        "company": DAENA_IDENTITY.company,
+        "email": DAENA_IDENTITY.email,
+        "introduction": DAENA_IDENTITY.introduction(),
+        "version": _DAENA_VERSION,
+    }
+
+
 @router.get("/detailed")
 async def detailed_health_check() -> dict:
     """Detailed health with cached Ollama status (30s TTL)."""

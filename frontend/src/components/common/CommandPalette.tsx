@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, MessageSquare, LayoutDashboard, Shield, Brain, Settings, Bot, Zap, X, FolderKanban, Plug, Crown, Wrench } from 'lucide-react'
+import { Search, MessageSquare, LayoutDashboard, Shield, Brain, Settings, Bot, Zap, X, FolderKanban, Plug, Crown, Wrench, FileText, BarChart3, User, Kanban } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useChatStore } from '@/stores/chatStore'
 
@@ -21,30 +21,38 @@ const PAGES: Omit<PaletteItem, 'action'>[] = [
   { id: 'p-chat', label: 'Chat', icon: <MessageSquare size={14} />, section: 'page' },
   { id: 'p-dashboard', label: 'Dashboard', icon: <LayoutDashboard size={14} />, section: 'page' },
   { id: 'p-projects', label: 'Projects', icon: <FolderKanban size={14} />, section: 'page' },
+  { id: 'p-pipeline', label: 'Pipeline', icon: <Kanban size={14} />, section: 'page' },
   { id: 'p-approvals', label: 'Governance Approvals', icon: <Shield size={14} />, section: 'page' },
   { id: 'p-audit', label: 'Audit Log', icon: <Shield size={14} />, section: 'page' },
   { id: 'p-departments', label: 'Departments', icon: <Brain size={14} />, section: 'page' },
   { id: 'p-skills', label: 'Skills', icon: <Wrench size={14} />, section: 'page' },
   { id: 'p-tasks', label: 'Tasks', icon: <Bot size={14} />, section: 'page' },
-  { id: 'p-daenabot', label: 'DaenaBot', icon: <Bot size={14} />, section: 'page' },
+  { id: 'p-files', label: 'Files', icon: <FileText size={14} />, section: 'page' },
   { id: 'p-connections', label: 'Connections', icon: <Plug size={14} />, section: 'page' },
-  { id: 'p-founder', label: 'Founder Console', icon: <Crown size={14} />, section: 'page' },
-  { id: 'p-settings', label: 'Settings', icon: <Settings size={14} />, section: 'page' },
+  { id: 'p-analytics', label: 'Analytics', icon: <BarChart3 size={14} />, section: 'page' },
+  { id: 'p-account', label: 'Account Settings', icon: <User size={14} />, section: 'page' },
+  { id: 'p-account-usage', label: 'Usage & Credits', icon: <BarChart3 size={14} />, section: 'page' },
+  { id: 'p-account-assistant', label: 'Assistant (LLM)', icon: <Bot size={14} />, section: 'page' },
+  { id: 'p-account-org', label: 'Organization Settings', icon: <Settings size={14} />, section: 'page' },
 ]
 
 const PAGE_PATHS: Record<string, string> = {
   'p-chat': '/chat',
   'p-dashboard': '/dashboard',
   'p-projects': '/projects',
+  'p-pipeline': '/pipeline',
   'p-approvals': '/governance/approvals',
   'p-audit': '/governance/audit',
   'p-departments': '/departments',
   'p-skills': '/skills',
   'p-tasks': '/tasks',
-  'p-daenabot': '/daenabot',
+  'p-files': '/files',
   'p-connections': '/connections',
-  'p-founder': '/founder',
-  'p-settings': '/settings/general',
+  'p-analytics': '/analytics',
+  'p-account': '/account/details',
+  'p-account-usage': '/account/usage',
+  'p-account-assistant': '/account/assistant',
+  'p-account-org': '/account/org/details',
 }
 
 interface CommandPaletteProps {

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_role
@@ -92,6 +92,8 @@ async def toggle_developer_mode(
 
 class UserPreferencesResponse(BaseModel):
     """User preferences readable by the frontend."""
+    model_config = ConfigDict(extra="allow")
+
     display_name: str
     email: str
     role: str
@@ -221,11 +223,11 @@ class UserPreferencesUpdate(BaseModel):
     budget_alert_threshold: int | None = Field(None, ge=0, le=100)
 
 
-@router.get("/user")
+@router.get("/user", response_model=UserPreferencesResponse)
 async def get_user_preferences(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> UserPreferencesResponse:
     """Return the current user's editable preferences."""
     # Fetch preferred_model from the User.settings JSONB column
     from sqlalchemy import select
@@ -252,25 +254,22 @@ async def get_user_preferences(
     # Extract UI preferences from settings JSONB
     ui_prefs = {k: user_settings.get(k, _UI_PREF_DEFAULTS[k]) if isinstance(user_settings, dict) else _UI_PREF_DEFAULTS[k] for k in _UI_PREF_KEYS}
 
-    return {
-        "success": True,
-        "data": {
-            "display_name": db_display_name,
-            "email": db_email,
-            "role": user.role,
-            "preferred_model": preferred_model,
-            "anti_slop_mode": anti_slop_mode,
-            **ui_prefs,
-        },
-    }
+    return UserPreferencesResponse(
+        display_name=db_display_name,
+        email=db_email,
+        role=user.role,
+        preferred_model=preferred_model,
+        anti_slop_mode=anti_slop_mode,
+        **ui_prefs,
+    )
 
 
-@router.put("/user")
+@router.put("/user", response_model=UserPreferencesResponse)
 async def update_user_preferences(
     body: UserPreferencesUpdate,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> UserPreferencesResponse:
     """Update user preferences (display name, preferred model, etc.)."""
     from sqlalchemy import select
 
@@ -313,17 +312,14 @@ async def update_user_preferences(
     # Extract UI preferences
     ui_prefs = {k: user_settings.get(k, _UI_PREF_DEFAULTS[k]) if isinstance(user_settings, dict) else _UI_PREF_DEFAULTS[k] for k in _UI_PREF_KEYS}
 
-    return {
-        "success": True,
-        "data": {
-            "display_name": body.display_name or user.display_name,
-            "email": user.email,
-            "role": user.role,
-            "preferred_model": preferred_model,
-            "anti_slop_mode": anti_slop_mode,
-            **ui_prefs,
-        },
-    }
+    return UserPreferencesResponse(
+        display_name=body.display_name or user.display_name,
+        email=user.email,
+        role=user.role,
+        preferred_model=preferred_model,
+        anti_slop_mode=anti_slop_mode,
+        **ui_prefs,
+    )
 
 
 @router.get("/user/export")
@@ -337,7 +333,7 @@ async def export_user_data(
         "success": True,
         "data": {
             "exported_at": datetime.now(timezone.utc).isoformat(),
-            "user": prefs.get("data", {}),
+            "user": prefs.model_dump(),
         },
     }
 

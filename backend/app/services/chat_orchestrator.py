@@ -897,10 +897,13 @@ class ChatOrchestrator:
             },
         )
 
-        # ── Stage 7.5: EXE dispatch (Runtime Adapter > DaenaBot) ──
+        # ── Stage 7.5: EXE dispatch (Cognitive Engine > Runtime Adapter > DaenaBot) ──
+        # PRIMARY: OODA Cognitive Engine (25 philosophical frameworks)
+        # FALLBACK: Runtime Adapter > DaenaBot (legacy cascade, kept for safety)
+        #
         # Agent loop handles tool execution ONLY when routing mode is STANDARD.
         # When Council/QE is active, the pipeline handles reasoning through
-        # multiple models — agent loop would compete for the same CLI runtime.
+        # multiple models -- agent loop would compete for the same CLI runtime.
         daenabot_result = None
         _last_tool_name: str | None = None
         _last_tool_desc: str | None = None
@@ -910,17 +913,74 @@ class ChatOrchestrator:
 
             settings = get_settings()
 
+            # ── PRIMARY: Cognitive Engine (OODA-R Loop) ──
+            # Uses the 25-framework brain with loop detection, tool classification,
+            # adaptive strategy switching, and anti-fragile learning.
+            try:
+                from app.services.cognition.ooda_engine import OODAEngine
+
+                _agi_on = getattr(settings, "autopilot_enabled", False)
+                cognitive = OODAEngine(
+                    db=self._db,
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    agi_mode=_agi_on,
+                    session_id=session_id,
+                )
+
+                _cognitive_output_lines: list[str] = []
+                _cognitive_success = False
+
+                async for event in cognitive.run(
+                    task=user_content,
+                    context={"governance_tier": governance_tier},
+                    messages=llm_messages,
+                    system_prompt=final_system_prompt,
+                    model_id=decision.primary.model_id,
+                    provider=decision.primary.provider.value,
+                ):
+                    yield event
+                    if event.get("type") == "tool_use_response":
+                        _cognitive_output_lines.append(event.get("content", ""))
+                    elif event.get("type") == "cognitive_complete":
+                        _cognitive_success = event.get("success", False)
+
+                if _cognitive_output_lines or _cognitive_success:
+                    daenabot_result = {
+                        "status": "COMPLETED" if _cognitive_success else "PARTIAL",
+                        "result": {
+                            "success": _cognitive_success,
+                            "runtime": "cognitive_engine",
+                            "display_name": "Daena Cognitive Engine",
+                            "output": "\n".join(_cognitive_output_lines)[:4000],
+                        },
+                    }
+                    _last_tool_name = "cognitive_engine"
+                    _last_tool_desc = "Executed via OODA-R Cognitive Engine"
+
+                    logger.info(
+                        "orchestrator.cognitive_dispatched",
+                        success=_cognitive_success,
+                        output_lines=len(_cognitive_output_lines),
+                    )
+
+            except Exception as cog_exc:
+                logger.warning("orchestrator.cognitive_engine_failed", error=str(cog_exc))
+                # Fall through to legacy cascade
+
+            # ── FALLBACK: Legacy cascade (only if cognitive engine didn't handle it) ──
             # Check if task is complex enough for multi-step execution
             _use_agent_loop = False
-            _multi_step_verbs = ("create", "write", "read", "search", "find", "fix",
-                                 "test", "run", "deploy", "build", "update", "delete",
-                                 "draft", "save", "generate", "analyze", "audit",
-                                 "email", "schedule", "research", "review", "check")
-            _verb_count = sum(1 for w in user_content.lower().split() if w in _multi_step_verbs)
-            if _verb_count > 2 or len(user_content.split()) > 50:
-                _use_agent_loop = True
+            if daenabot_result is None:
+                _multi_step_verbs = ("create", "write", "read", "search", "find", "fix",
+                                     "test", "run", "deploy", "build", "update", "delete",
+                                     "draft", "save", "generate", "analyze", "audit",
+                                     "email", "schedule", "research", "review", "check")
+                _verb_count = sum(1 for w in user_content.lower().split() if w in _multi_step_verbs)
+                if _verb_count > 2 or len(user_content.split()) > 50:
+                    _use_agent_loop = True
 
-            if _use_agent_loop:
+            if _use_agent_loop and daenabot_result is None:
                 # ── SwarmPlanner: decompose into subtasks and route to departments ──
                 try:
                     from app.core.events import get_runtime_registry

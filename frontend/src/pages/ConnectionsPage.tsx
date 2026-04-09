@@ -40,6 +40,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
+import { useUiStore } from '@/stores/uiStore'
 import { CONNECTOR_ICONS, RUNTIME_ICONS, EXTENSION_ICONS } from '@/components/icons/BrandIcons'
 
 // ── Types ──
@@ -156,31 +157,99 @@ const BROWSE_CONNECTORS_CATALOG: BrowseCatalogItem[] = [
 ]
 
 const BROWSE_EXTENSIONS_CATALOG: BrowseCatalogItem[] = [
-  // System
-  { id: 'filesystem', name: 'Filesystem', description: 'Read and write files on your computer', category: 'System', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem' },
-  { id: 'desktop-commander', name: 'Desktop Commander', description: 'Build, explore, and automate on your local machine', category: 'System', authUrl: 'https://github.com/wonderwhy-er/DesktopCommanderMCP' },
-  { id: 'windows-mcp', name: 'Windows MCP', description: 'MCP server for Windows OS interaction', category: 'System', authUrl: 'https://github.com/SimonB97/win-cli-mcp-server' },
-  // Design
-  { id: 'figma-mcp', name: 'Figma MCP', description: 'Generate diagrams and code from Figma designs', category: 'Design', authUrl: 'https://github.com/nicholasgriffintn/figma-mcp-server' },
-  // AI & Voice
-  { id: 'elevenlabs', name: 'ElevenLabs', description: 'Create and manage AI voice agents', category: 'AI', authUrl: 'https://elevenlabs.io' },
-  // Documents
-  { id: 'pdf-tools', name: 'PDF Tools', description: 'Fill forms, analyze, and extract text from PDFs', category: 'Documents', authUrl: 'https://github.com/modelcontextprotocol/servers' },
-  // Search
-  { id: 'brave-search', name: 'Brave Search', description: 'Web search via Brave Search API', category: 'Search', authUrl: 'https://brave.com/search/api/' },
-  // Browser
-  { id: 'puppeteer', name: 'Puppeteer', description: 'Browser automation and web scraping', category: 'Browser', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/puppeteer' },
-  { id: 'playwright', name: 'Playwright', description: 'Cross-browser testing and automation', category: 'Browser', authUrl: 'https://playwright.dev' },
-  // Data
-  { id: 'postgres', name: 'PostgreSQL', description: 'Query and manage PostgreSQL databases', category: 'Data', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/postgres' },
-  { id: 'sqlite', name: 'SQLite', description: 'Query local SQLite databases', category: 'Data', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite' },
-  { id: 'redis', name: 'Redis', description: 'In-memory data store and cache', category: 'Data', authUrl: 'https://github.com/modelcontextprotocol/servers' },
-  // Monitoring
-  { id: 'sentry-mcp', name: 'Sentry', description: 'Error tracking and performance monitoring', category: 'Monitoring', authUrl: 'https://sentry.io' },
-  // Memory
-  { id: 'memory', name: 'Memory', description: 'Persistent memory storage across conversations', category: 'AI', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/memory' },
-  // Git
-  { id: 'git', name: 'Git', description: 'Read, search, and analyze local Git repositories', category: 'Development', authUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/git' },
+  // ── System & Files ──
+  { id: 'filesystem', name: 'Filesystem', description: 'Read, write, and manage files on your computer', popularity: 'Most popular', category: 'System' },
+  { id: 'desktop-commander', name: 'Desktop Commander', description: 'Build, explore, and automate on your local machine', popularity: '#2 popular', category: 'System' },
+  { id: 'windows-mcp', name: 'Windows MCP', description: 'Windows OS interaction, screenshots, and automation', category: 'System' },
+  { id: 'macos-defaults', name: 'macOS Defaults', description: 'Read and write macOS system preferences', category: 'System' },
+  { id: 'shell', name: 'Shell', description: 'Execute shell commands with sandboxed access', category: 'System' },
+  // ── Browser & Web ──
+  { id: 'puppeteer', name: 'Puppeteer', description: 'Browser automation, screenshots, and web scraping', popularity: '#3 popular', category: 'Browser' },
+  { id: 'playwright', name: 'Playwright', description: 'Cross-browser testing and automation', category: 'Browser' },
+  { id: 'chrome-devtools', name: 'Chrome DevTools', description: 'Debug, inspect, and profile web pages via Chrome', category: 'Browser' },
+  { id: 'fetch', name: 'Fetch', description: 'Make HTTP requests and fetch web content', category: 'Browser' },
+  // ── Search ──
+  { id: 'brave-search', name: 'Brave Search', description: 'Web search via Brave Search API', popularity: '#4 popular', category: 'Search' },
+  { id: 'tavily', name: 'Tavily', description: 'AI-optimized search engine for agents', category: 'Search' },
+  { id: 'exa', name: 'Exa', description: 'Neural search engine for finding relevant content', category: 'Search' },
+  { id: 'google-search', name: 'Google Search', description: 'Search the web via Google Custom Search API', category: 'Search' },
+  { id: 'serper', name: 'Serper', description: 'Google SERP API for structured search results', category: 'Search' },
+  // ── Design ──
+  { id: 'figma-mcp', name: 'Figma', description: 'Generate code from Figma designs and inspect components', popularity: '#5 popular', category: 'Design' },
+  { id: 'canva-mcp', name: 'Canva', description: 'Create and manage Canva designs programmatically', category: 'Design' },
+  { id: 'magic-mcp', name: '21st.dev Magic', description: 'AI component builder with design system awareness', category: 'Design' },
+  // ── AI & Voice ──
+  { id: 'elevenlabs', name: 'ElevenLabs', description: 'Text-to-speech, voice cloning, and AI voice agents', category: 'AI' },
+  { id: 'openai-mcp', name: 'OpenAI', description: 'GPT models, DALL-E, Whisper, and embeddings', category: 'AI' },
+  { id: 'anthropic-mcp', name: 'Anthropic', description: 'Claude API for reasoning, analysis, and code generation', category: 'AI' },
+  { id: 'replicate', name: 'Replicate', description: 'Run open-source ML models in the cloud', category: 'AI' },
+  { id: 'huggingface-mcp', name: 'Hugging Face', description: 'Models, datasets, spaces, and inference API', category: 'AI' },
+  { id: 'memory', name: 'Memory', description: 'Persistent memory storage across conversations', category: 'AI' },
+  // ── Documents ──
+  { id: 'pdf-tools', name: 'PDF Tools', description: 'Fill forms, analyze, extract text, and annotate PDFs', category: 'Documents' },
+  { id: 'pandoc', name: 'Pandoc', description: 'Convert between document formats (Markdown, DOCX, HTML, PDF)', category: 'Documents' },
+  { id: 'markitdown', name: 'MarkItDown', description: 'Convert any file to Markdown for AI processing', category: 'Documents' },
+  { id: 'google-docs-mcp', name: 'Google Docs', description: 'Read, create, and edit Google Docs', category: 'Documents' },
+  // ── Data & Databases ──
+  { id: 'postgres', name: 'PostgreSQL', description: 'Query and manage PostgreSQL databases', popularity: '#6 popular', category: 'Data' },
+  { id: 'sqlite', name: 'SQLite', description: 'Query and manage local SQLite databases', category: 'Data' },
+  { id: 'mysql', name: 'MySQL', description: 'Query and manage MySQL databases', category: 'Data' },
+  { id: 'redis', name: 'Redis', description: 'In-memory data store, cache, and message broker', category: 'Data' },
+  { id: 'mongodb', name: 'MongoDB', description: 'Query and manage MongoDB document databases', category: 'Data' },
+  { id: 'supabase', name: 'Supabase', description: 'Postgres database, auth, storage, and realtime', category: 'Data' },
+  { id: 'neon', name: 'Neon', description: 'Serverless Postgres with branching and autoscaling', category: 'Data' },
+  { id: 'snowflake-mcp', name: 'Snowflake', description: 'Cloud data warehouse queries and management', category: 'Data' },
+  { id: 'bigquery', name: 'BigQuery', description: 'Google BigQuery data warehouse queries', category: 'Data' },
+  // ── Development ──
+  { id: 'git', name: 'Git', description: 'Read, search, and analyze local Git repositories', popularity: '#7 popular', category: 'Development' },
+  { id: 'github-mcp', name: 'GitHub', description: 'Issues, PRs, repos, actions, and code search', popularity: '#8 popular', category: 'Development' },
+  { id: 'gitlab-mcp', name: 'GitLab', description: 'Merge requests, issues, pipelines, and repositories', category: 'Development' },
+  { id: 'linear-mcp', name: 'Linear', description: 'Issue tracking, project management, and workflows', category: 'Development' },
+  { id: 'jira-mcp', name: 'Jira', description: 'Issue tracking, sprints, and project management', category: 'Development' },
+  { id: 'docker-mcp', name: 'Docker', description: 'Manage containers, images, volumes, and networks', category: 'Development' },
+  { id: 'kubernetes', name: 'Kubernetes', description: 'Manage K8s clusters, pods, deployments, and services', category: 'Development' },
+  { id: 'terraform', name: 'Terraform', description: 'Infrastructure as code management and planning', category: 'Development' },
+  { id: 'vercel-mcp', name: 'Vercel', description: 'Deploy and manage web applications on Vercel', category: 'Development' },
+  { id: 'netlify', name: 'Netlify', description: 'Deploy, manage, and monitor Netlify sites', category: 'Development' },
+  { id: 'cloudflare-mcp', name: 'Cloudflare', description: 'DNS, CDN, Workers, and security management', category: 'Development' },
+  { id: 'aws-mcp', name: 'AWS', description: 'Manage AWS services (S3, Lambda, EC2, CloudWatch)', category: 'Development' },
+  { id: 'gcp-mcp', name: 'Google Cloud', description: 'Manage GCP services (Cloud Run, Storage, BigQuery)', category: 'Development' },
+  { id: 'azure-mcp', name: 'Azure', description: 'Manage Azure services and resources', category: 'Development' },
+  // ── Monitoring & Observability ──
+  { id: 'sentry-mcp', name: 'Sentry', description: 'Error tracking, performance monitoring, and debugging', category: 'Monitoring' },
+  { id: 'datadog-mcp', name: 'Datadog', description: 'Metrics, logs, traces, and infrastructure monitoring', category: 'Monitoring' },
+  { id: 'grafana-mcp', name: 'Grafana', description: 'Dashboards, alerting, and observability', category: 'Monitoring' },
+  { id: 'pagerduty', name: 'PagerDuty', description: 'Incident management and on-call scheduling', category: 'Monitoring' },
+  // ── Communication ──
+  { id: 'slack-mcp', name: 'Slack', description: 'Send messages, search channels, and manage workflows', popularity: '#9 popular', category: 'Communication' },
+  { id: 'discord-mcp', name: 'Discord', description: 'Send messages, manage servers, and moderate channels', category: 'Communication' },
+  { id: 'email-mcp', name: 'Email (SMTP)', description: 'Send and read emails via SMTP/IMAP', category: 'Communication' },
+  { id: 'twilio', name: 'Twilio', description: 'SMS, voice calls, and messaging APIs', category: 'Communication' },
+  // ── Productivity ──
+  { id: 'google-calendar-mcp', name: 'Google Calendar', description: 'Manage events, find free time, and schedule meetings', category: 'Productivity' },
+  { id: 'google-drive-mcp', name: 'Google Drive', description: 'Access, search, and manage files and folders', category: 'Productivity' },
+  { id: 'google-sheets-mcp', name: 'Google Sheets', description: 'Read, write, and analyze spreadsheet data', category: 'Productivity' },
+  { id: 'notion-mcp', name: 'Notion', description: 'Search, create, and update Notion pages and databases', popularity: '#10 popular', category: 'Productivity' },
+  { id: 'todoist', name: 'Todoist', description: 'Task management, projects, and productivity tracking', category: 'Productivity' },
+  { id: 'obsidian', name: 'Obsidian', description: 'Read and write Obsidian vault notes and knowledge graphs', category: 'Productivity' },
+  { id: 'raycast', name: 'Raycast', description: 'macOS productivity launcher and extensions', category: 'Productivity' },
+  // ── Analytics & Data Science ──
+  { id: 'jupyter', name: 'Jupyter', description: 'Execute Python notebooks and data analysis', category: 'Analytics' },
+  { id: 'dbt', name: 'dbt', description: 'Data transformation, testing, and documentation', category: 'Analytics' },
+  { id: 'amplitude-mcp', name: 'Amplitude', description: 'Product analytics and user behavior insights', category: 'Analytics' },
+  { id: 'mixpanel', name: 'Mixpanel', description: 'Event analytics and user engagement tracking', category: 'Analytics' },
+  // ── CRM & Sales ──
+  { id: 'salesforce-mcp', name: 'Salesforce', description: 'CRM records, contacts, opportunities, and reports', category: 'CRM' },
+  { id: 'hubspot-mcp', name: 'HubSpot', description: 'CRM, marketing, sales, and service hub', category: 'CRM' },
+  { id: 'apollo-mcp', name: 'Apollo', description: 'Prospecting, enrichment, and outreach sequences', category: 'CRM' },
+  // ── Maps & Location ──
+  { id: 'google-maps', name: 'Google Maps', description: 'Geocoding, directions, places, and distance matrix', category: 'Maps' },
+  // ── Media ──
+  { id: 'youtube', name: 'YouTube', description: 'Search videos, get transcripts, and channel analytics', category: 'Media' },
+  { id: 'spotify', name: 'Spotify', description: 'Search music, manage playlists, and playback control', category: 'Media' },
+  // ── Security ──
+  { id: 'vault', name: 'HashiCorp Vault', description: 'Secrets management and data protection', category: 'Security' },
+  { id: '1password', name: '1Password', description: 'Secure password and secrets management', category: 'Security' },
 ]
 
 // ── Cloud-mode pre-installed extensions (mapped from BROWSE_EXTENSIONS_CATALOG) ──
@@ -190,7 +259,7 @@ const CLOUD_PREINSTALLED_EXTENSIONS: ExtensionData[] = BROWSE_EXTENSIONS_CATALOG
   name: item.name,
   description: item.description,
   enabled: true,
-  permission: 'ALLOW',
+  permission: 'ASK_EACH_TIME',
 }))
 
 // ── Permission Select (Allow / Ask each time / Block) ──
@@ -519,7 +588,7 @@ function RuntimeRow({ runtime, isPrimary, expanded, onToggleExpand, onSetPrimary
 
 // ── Connector Row with expandable config ──
 
-function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpand, onDisconnect, fetchInstances }: {
+function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpand, onDisconnect, fetchInstances, selected, onSelect }: {
   connector: typeof CONNECTORS[0]
   connected: boolean
   instanceId: string | null
@@ -527,6 +596,8 @@ function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpa
   onToggleExpand: () => void
   onDisconnect: (instanceId: string) => void
   fetchInstances?: () => void
+  selected?: boolean
+  onSelect?: (id: string, checked: boolean) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [apiKeyValue, setApiKeyValue] = useState('')
@@ -611,9 +682,19 @@ function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpa
   return (
     <div>
       <div
-        className="flex items-center gap-4 px-4 py-3 hover:bg-white/[0.02] transition-colors rounded-lg group cursor-pointer"
+        className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors rounded-lg group cursor-pointer"
         onClick={onToggleExpand}
       >
+        {/* Batch select checkbox */}
+        {onSelect && (
+          <input
+            type="checkbox"
+            checked={selected || false}
+            onChange={(e) => { e.stopPropagation(); onSelect(connector.id, e.target.checked) }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-3.5 h-3.5 rounded border-white/20 bg-transparent accent-primary-500 cursor-pointer shrink-0"
+          />
+        )}
         <div className="w-10 h-10 rounded-lg bg-midnight-400/60 flex items-center justify-center shrink-0">
           <Icon size={22} />
         </div>
@@ -623,7 +704,9 @@ function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpa
         </div>
         <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
           {connected ? (
-            <span className="text-xs text-accent-green font-medium">Connected</span>
+            <span className="flex items-center gap-1 text-xs text-accent-green font-medium">
+              <CheckCircle2 size={12} /> Connected
+            </span>
           ) : (
             <button
               onClick={onToggleExpand}
@@ -744,13 +827,15 @@ function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpa
   )
 }
 
-// ── Extension Row with expandable config ──
+// ── Extension Row with Perplexity-style toggle + expandable config ──
 
-function ExtensionRow({ ext, expanded, onToggleExpand, onToggle }: {
+function ExtensionRow({ ext, expanded, onToggleExpand, onToggle, selected, onSelect }: {
   ext: ExtensionData
   expanded: boolean
   onToggleExpand: () => void
   onToggle: (id: string, enabled: boolean) => void
+  selected?: boolean
+  onSelect?: (id: string, checked: boolean) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [permission, setPermission] = useState<Permission>(ext.permission as Permission || 'ASK_EACH_TIME')
@@ -759,9 +844,19 @@ function ExtensionRow({ ext, expanded, onToggleExpand, onToggle }: {
   return (
     <div>
       <div
-        className="flex items-center gap-4 px-4 py-3 hover:bg-white/[0.02] transition-colors rounded-lg group cursor-pointer"
+        className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors rounded-lg group cursor-pointer"
         onClick={onToggleExpand}
       >
+        {/* Batch select checkbox */}
+        {onSelect && (
+          <input
+            type="checkbox"
+            checked={selected || false}
+            onChange={(e) => { e.stopPropagation(); onSelect(ext.id, e.target.checked) }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-3.5 h-3.5 rounded border-white/20 bg-transparent accent-primary-500 cursor-pointer shrink-0"
+          />
+        )}
         <div className="w-10 h-10 rounded-lg bg-midnight-400/60 flex items-center justify-center shrink-0">
           <Icon size={22} />
         </div>
@@ -769,10 +864,18 @@ function ExtensionRow({ ext, expanded, onToggleExpand, onToggle }: {
           <span className="text-sm font-medium text-starlight-100">{ext.name}</span>
           <p className="text-xs text-starlight-500 truncate">{ext.description}</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-          <span className={`text-xs font-medium ${ext.enabled ? 'text-accent-green' : 'text-starlight-500'}`}>
-            {ext.enabled ? 'Enabled' : 'Disabled'}
-          </span>
+        <div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {/* Inline toggle switch (Perplexity style) -- green=enabled, red=disabled */}
+          <button
+            role="switch"
+            aria-checked={ext.enabled}
+            onClick={() => onToggle(ext.id, !ext.enabled)}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-all duration-200 cursor-pointer ${
+              ext.enabled ? 'bg-accent-green border border-accent-green' : 'bg-accent-red/60 border border-accent-red/40'
+            }`}
+          >
+            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-md transform transition-transform duration-200 ${ext.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </button>
           {expanded ? <ChevronUp size={14} className="text-starlight-400" /> : <ChevronDown size={14} className="text-starlight-400" />}
           <div className="relative">
             <button onClick={() => setMenuOpen(!menuOpen)} className="p-1 rounded hover:bg-white/5 text-starlight-500 cursor-pointer">
@@ -820,20 +923,6 @@ function ExtensionRow({ ext, expanded, onToggleExpand, onToggle }: {
               {permission === 'ALLOW' ? 'All tools run without asking' : permission === 'ASK_EACH_TIME' ? 'Daena asks before each tool use' : 'All tools blocked'}
             </span>
           </div>
-        </div>
-
-        {/* Enable/Disable toggle */}
-        <div className="flex items-center gap-3 pt-1">
-          <button
-            onClick={() => onToggle(ext.id, !ext.enabled)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs cursor-pointer ${
-              ext.enabled
-                ? 'bg-accent-red/10 text-accent-red hover:bg-accent-red/20'
-                : 'bg-accent-green/10 text-accent-green hover:bg-accent-green/20'
-            }`}
-          >
-            {ext.enabled ? <><ToggleRight size={14} /> Disable</> : <><ToggleLeft size={14} /> Enable</>}
-          </button>
         </div>
       </ConfigPanel>
     </div>
@@ -1050,8 +1139,45 @@ export function ConnectionsPage() {
   const [expandedItem, setExpandedItem] = useState<string | null>(null)
   // Browse modal (Claude Desktop-style connector/extension marketplace)
   const [browseModal, setBrowseModal] = useState<'connectors' | 'extensions' | null>(null)
+  // Batch selection (Perplexity-style multi-select)
+  const [selectedExtensions, setSelectedExtensions] = useState<Set<string>>(new Set())
+  const [selectedConnectors, setSelectedConnectors] = useState<Set<string>>(new Set())
+  // AGI auto-select awareness
+  const autopilotActive = useUiStore((s) => s.autopilotActive)
 
   const toggleExpand = (id: string) => setExpandedItem((prev) => prev === id ? null : id)
+
+  // Batch selection helpers
+  const handleSelectExtension = (id: string, checked: boolean) => {
+    setSelectedExtensions((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+  const handleSelectAllExtensions = (list: ExtensionData[]) => {
+    if (selectedExtensions.size === list.length) {
+      setSelectedExtensions(new Set())
+    } else {
+      setSelectedExtensions(new Set(list.map((e) => e.id)))
+    }
+  }
+  const handleBatchToggleExtensions = (enabled: boolean) => {
+    setExtensions((prev) =>
+      prev.map((e) => selectedExtensions.has(e.id) ? { ...e, enabled } : e)
+    )
+    toast.success(`${selectedExtensions.size} extensions ${enabled ? 'enabled' : 'disabled'}`)
+    setSelectedExtensions(new Set())
+  }
+  const handleSelectConnector = (id: string, checked: boolean) => {
+    setSelectedConnectors((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
 
   const fetchRuntimes = useCallback(async () => {
     try {
@@ -1154,14 +1280,41 @@ export function ConnectionsPage() {
     : CONNECTORS
 
   const tabs: { key: TabKey; label: string; icon: React.ReactNode; count?: number }[] = [
-    { key: 'runtimes', label: 'AI Runtimes', icon: <Cpu size={16} />, count: runtimes.filter(r => r.status === 'online').length },
-    { key: 'extensions', label: 'Extensions', icon: <Puzzle size={16} />, count: extensions.length },
-    { key: 'connectors', label: 'Connectors', icon: <Plug size={16} />, count: CONNECTORS.length },
+    { key: 'runtimes', label: 'Mind Control', icon: <Cpu size={16} />, count: runtimes.filter(r => r.status === 'online').length },
+    { key: 'extensions', label: 'MCP Servers', icon: <Puzzle size={16} />, count: extensions.length },
+    { key: 'connectors', label: 'Services', icon: <Plug size={16} />, count: CONNECTORS.length },
   ]
+
+  const totalTools = extensions.reduce((acc, e) => acc + 1, 0) + CONNECTORS.reduce((acc, c) => acc + c.tools.length, 0)
+  const onlineRuntimes = runtimes.filter(r => r.status === 'online').length
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-4xl mx-auto p-6 space-y-6">
+        {/* Hero section */}
+        <div className="p-5 rounded-xl bg-gradient-to-r from-primary-500/10 via-accent-purple/10 to-accent-cyan/10 border border-primary-500/20">
+          <h1 className="text-lg font-display font-semibold text-starlight-100 mb-1">Connect your tools</h1>
+          <p className="text-xs text-starlight-400 mb-4">Runtimes, MCP servers, and external services -- all governed by Daena</p>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-status-success" />
+              <span className="text-xs text-starlight-300"><span className="font-mono font-semibold text-starlight-100">{onlineRuntimes}</span> runtimes connected</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-accent-purple" />
+              <span className="text-xs text-starlight-300"><span className="font-mono font-semibold text-starlight-100">{extensions.length}</span> MCP servers active</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-accent-cyan" />
+              <span className="text-xs text-starlight-300"><span className="font-mono font-semibold text-starlight-100">{totalTools}</span> tools available</span>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <Shield size={12} className="text-accent-amber" />
+              <span className="text-[10px] text-starlight-500">Governance active</span>
+            </div>
+          </div>
+        </div>
+
         {/* Tab bar */}
         <div className="flex items-center gap-1 border-b border-white/5 pb-0">
           {tabs.map((tab) => (
@@ -1273,20 +1426,90 @@ export function ConnectionsPage() {
                         : 'Allow Daena to directly interact with apps, data, and tools on your computer'}
                     </p>
                   </div>
-                  {!cloudMode && (
-                    <button
-                      onClick={() => setBrowseModal('extensions')}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer"
-                    >
-                      <Plus size={12} /> Browse extensions
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {!cloudMode && (
+                      <button
+                        onClick={() => setBrowseModal('extensions')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 cursor-pointer"
+                      >
+                        <Plus size={12} /> Browse extensions
+                      </button>
+                    )}
+                  </div>
                 </div>
 
+                {/* AGI auto-select banner */}
+                {autopilotActive && (
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-status-success/10 border border-status-success/20">
+                    <Zap size={16} className="text-status-success shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold text-status-success">AGI Mode Active</p>
+                      <p className="text-[11px] text-starlight-400">All extensions auto-selected. Daena loads tools as needed for each task.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Batch action toolbar */}
+                {selectedExtensions.size > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-primary-500/10 border border-primary-500/20"
+                  >
+                    <span className="text-xs text-primary-400 font-medium">{selectedExtensions.size} selected</span>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => handleBatchToggleExtensions(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-green/10 text-accent-green hover:bg-accent-green/20 cursor-pointer"
+                    >
+                      <ToggleRight size={12} /> Enable selected
+                    </button>
+                    <button
+                      onClick={() => handleBatchToggleExtensions(false)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-red/10 text-accent-red hover:bg-accent-red/20 cursor-pointer"
+                    >
+                      <ToggleLeft size={12} /> Disable selected
+                    </button>
+                    <button
+                      onClick={() => setSelectedExtensions(new Set())}
+                      className="p-1 rounded hover:bg-white/5 text-starlight-500 cursor-pointer"
+                    >
+                      <XCircle size={14} />
+                    </button>
+                  </motion.div>
+                )}
+
                 <div>
-                  <p className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold px-4 mb-2">
-                    {cloudMode ? 'Pre-installed extensions' : 'Installed on your computer'}
-                  </p>
+                  {/* Header with select-all */}
+                  <div className="flex items-center justify-between px-4 mb-2">
+                    <p className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold">
+                      {cloudMode ? 'Pre-installed extensions' : 'Installed on your computer'}
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => handleSelectAllExtensions(cloudMode ? CLOUD_PREINSTALLED_EXTENSIONS : extensions)}
+                        className="text-[10px] text-starlight-500 hover:text-primary-400 cursor-pointer"
+                      >
+                        {selectedExtensions.size === (cloudMode ? CLOUD_PREINSTALLED_EXTENSIONS : extensions).length ? 'Deselect all' : 'Select all'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const list = cloudMode ? CLOUD_PREINSTALLED_EXTENSIONS : extensions
+                          const allEnabled = list.every((e) => e.enabled)
+                          if (allEnabled) {
+                            setExtensions((prev) => prev.map((e) => ({ ...e, enabled: false })))
+                            toast.success('All extensions disabled')
+                          } else {
+                            setExtensions((prev) => prev.map((e) => ({ ...e, enabled: true })))
+                            toast.success('All extensions enabled')
+                          }
+                        }}
+                        className="text-[10px] text-starlight-500 hover:text-accent-green cursor-pointer"
+                      >
+                        {(cloudMode ? CLOUD_PREINSTALLED_EXTENSIONS : extensions).every((e) => e.enabled) ? 'Disable all' : 'Enable all'}
+                      </button>
+                    </div>
+                  </div>
                   <div className="rounded-xl border border-white/5 divide-y divide-white/5">
                     {(cloudMode ? CLOUD_PREINSTALLED_EXTENSIONS : extensions).map((ext) => (
                       <ExtensionRow
@@ -1294,9 +1517,10 @@ export function ConnectionsPage() {
                         ext={ext}
                         expanded={expandedItem === ext.id}
                         onToggleExpand={() => toggleExpand(ext.id)}
+                        selected={selectedExtensions.has(ext.id)}
+                        onSelect={handleSelectExtension}
                         onToggle={(id, enabled) => {
                           if (cloudMode) {
-                            // Cloud mode: toggle is visual-only (no API call needed)
                             toast.success(`${ext.name} ${enabled ? 'enabled' : 'disabled'}`)
                           } else {
                             setExtensions((prev) => prev.map((e) => e.id === id ? { ...e, enabled } : e))
@@ -1335,6 +1559,17 @@ export function ConnectionsPage() {
                   </button>
                 </div>
 
+                {/* AGI auto-select banner */}
+                {autopilotActive && (
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-status-success/10 border border-status-success/20">
+                    <Zap size={16} className="text-status-success shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold text-status-success">AGI Mode Active</p>
+                      <p className="text-[11px] text-starlight-400">Connectors auto-loaded as needed. Daena selects the right tools for each task.</p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="relative">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-starlight-500" />
                   <input
@@ -1344,6 +1579,40 @@ export function ConnectionsPage() {
                     placeholder="Search connectors..."
                     className="w-full glass-input pl-9 pr-4 py-2.5 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-500"
                   />
+                </div>
+
+                {/* Batch action toolbar */}
+                {selectedConnectors.size > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-primary-500/10 border border-primary-500/20"
+                  >
+                    <span className="text-xs text-primary-400 font-medium">{selectedConnectors.size} selected</span>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => { setSelectedConnectors(new Set()); toast.info('Batch operations for connectors require individual setup') }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-white/5 text-starlight-300 hover:bg-white/10 cursor-pointer"
+                    >
+                      Clear selection
+                    </button>
+                  </motion.div>
+                )}
+
+                {/* Select all link */}
+                <div className="flex justify-end px-4">
+                  <button
+                    onClick={() => {
+                      if (selectedConnectors.size === filteredConnectors.length) {
+                        setSelectedConnectors(new Set())
+                      } else {
+                        setSelectedConnectors(new Set(filteredConnectors.map((c) => c.id)))
+                      }
+                    }}
+                    className="text-[10px] text-starlight-500 hover:text-primary-400 cursor-pointer"
+                  >
+                    {selectedConnectors.size === filteredConnectors.length ? 'Deselect all' : 'Select all'}
+                  </button>
                 </div>
 
                 <div className="rounded-xl border border-white/5 divide-y divide-white/5">
@@ -1357,6 +1626,8 @@ export function ConnectionsPage() {
                       onToggleExpand={() => toggleExpand(c.id)}
                       onDisconnect={handleDisconnectConnector}
                       fetchInstances={fetchConnectorInstances}
+                      selected={selectedConnectors.has(c.id)}
+                      onSelect={handleSelectConnector}
                     />
                   ))}
                 </div>

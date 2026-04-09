@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
+from app.core.exceptions import ApprovalRequiredError
 from app.core.logging import get_logger
 from app.services.integrations.integration_router import (
     IntegrationError,
@@ -79,6 +80,13 @@ async def execute_tool(
         )
         return {"success": True, "data": result}
 
+    except ApprovalRequiredError as exc:
+        return {
+            "success": False,
+            "error": exc.message,
+            "error_type": "approval_required",
+            "error_code": ApprovalRequiredError.error_code,
+        }
     except NotConnectedError as exc:
         return {"success": False, "error": str(exc), "error_type": "not_connected"}
     except PermissionDeniedError as exc:
@@ -109,6 +117,13 @@ async def execute_qualified_tool(
         )
         return {"success": True, "data": result}
 
+    except ApprovalRequiredError as exc:
+        return {
+            "success": False,
+            "error": exc.message,
+            "error_type": "approval_required",
+            "error_code": ApprovalRequiredError.error_code,
+        }
     except NotConnectedError as exc:
         return {"success": False, "error": str(exc), "error_type": "not_connected"}
     except PermissionDeniedError as exc:

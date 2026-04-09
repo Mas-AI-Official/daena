@@ -15,6 +15,8 @@ from app.api.deps import CurrentUser, get_current_user, require_role
 from app.core.database import get_db
 from app.schemas.governance import (
     ApprovalDecisionRequest,
+    ApprovalResponse,
+    CreateApprovalRequest,
     EvaluateRequest,
 )
 from app.services.approval import ApprovalService
@@ -95,6 +97,44 @@ async def evaluate_action(
 
 
 # ── Approvals ──
+
+
+@router.post("/approvals", status_code=201, response_model=ApprovalResponse)
+async def create_approval(
+    body: CreateApprovalRequest,
+    user: CurrentUser = Depends(get_current_user),
+    service: ApprovalService = Depends(get_approval_service),
+    audit: AuditService = Depends(get_audit_service),
+) -> ApprovalResponse:
+    """Create a governance approval request.
+
+    Used when an action requires human approval before execution.
+    Logs the request to the audit trail.
+    """
+    result = await service.request_approval(
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        action_type=body.action_type,
+        action_params=body.action_params,
+        risk_level=body.risk_level,
+        governance_tier=body.governance_tier,
+        session_id=body.session_id,
+        context=body.context,
+    )
+
+    await audit.log_decision(
+        tenant_id=user.tenant_id,
+        actor_id=user.id,
+        actor_type="USER",
+        action_type="APPROVAL_REQUESTED",
+        action_params={"action_type": body.action_type, "risk_level": body.risk_level},
+        result="PENDING",
+        risk_level=body.risk_level,
+        governance_tier=body.governance_tier,
+        session_id=body.session_id,
+    )
+
+    return ApprovalResponse(**result)
 
 
 @router.get("/approvals")

@@ -43,6 +43,7 @@ class CheckType(Enum):
     OLLAMA_HEALTH = "ollama_health"  # Check Ollama model loading status
     DEPARTMENT_WORKFLOWS = "department_workflows"  # Run scheduled department workflows
     AUTONOMOUS_WORK = "autonomous_work"  # AGI mode: pick up pending tasks and execute via SwarmPlanner
+    OLLAMA_MODEL_UPDATES = "ollama_model_updates"  # Check and pull Ollama model updates
     CUSTOM = "custom"  # User-defined check
 
 
@@ -144,6 +145,12 @@ class HeartbeatConfig:
                     check_type=CheckType.DEPARTMENT_WORKFLOWS,
                     description="Run scheduled department workflows (briefings, reports, tasks)",
                     enabled=True,
+                ),
+                HeartbeatCheck(
+                    check_type=CheckType.OLLAMA_MODEL_UPDATES,
+                    description="Check installed Ollama models for available updates (weekly)",
+                    enabled=True,
+                    max_cost_usd=0.0,
                 ),
                 HeartbeatCheck(
                     check_type=CheckType.AUTONOMOUS_WORK,

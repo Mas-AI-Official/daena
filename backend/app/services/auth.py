@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 
 from app.core.config import get_settings
-from app.core.exceptions import AuthenticationError, ConflictError
+from app.core.exceptions import AuthenticationError, ConflictError, TenantNotFoundError
 from app.core.security import (
     create_access_token,
     generate_refresh_token,
@@ -482,6 +482,10 @@ class AuthService(BaseService):
                 select(Tenant).where(Tenant.id == user.tenant_id)
             )
             tenant = tenant_result.scalar_one_or_none()
+            if tenant is None:
+                raise TenantNotFoundError(
+                    f"Tenant not found for user {user.id}"
+                )
             if tenant:
                 tenant.name = tenant_name.strip()
                 new_slug = re.sub(r"[^a-z0-9-]", "-", tenant_name.lower()).strip("-")

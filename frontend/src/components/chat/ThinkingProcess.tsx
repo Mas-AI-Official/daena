@@ -32,7 +32,7 @@ import {
 export interface ThinkingStep {
   label: string
   detail?: string
-  status: 'done' | 'active' | 'pending'
+  status: 'done' | 'active' | 'pending' | 'error'
 }
 
 interface ThinkingProcessProps {
@@ -54,10 +54,17 @@ const TIER_LABELS: Record<number, { label: string; color: string }> = {
 /** Map stage labels to context-appropriate icons */
 function getStageIcon(label: string) {
   const lower = label.toLowerCase()
+  // Cognitive Engine (OODA-R) stages
+  if (lower.includes('ooda') || lower.includes('observe') || lower.includes('orient'))
+    return BrainCircuit
+  if (lower.includes('strateg') || lower.includes('decide') || lower.includes('select'))
+    return Route
+  if (lower.includes('reflect') || lower.includes('learn')) return Sparkles
+  if (lower.includes('loop') || lower.includes('detect')) return ArrowRightLeft
+  if (lower.includes('cognitive')) return BrainCircuit
+  // Standard pipeline stages
   if (lower.includes('understand') || lower.includes('analyz')) return Search
   if (lower.includes('governance') || lower.includes('polic')) return ShieldCheck
-  if (lower.includes('select') || lower.includes('routing') || lower.includes('strateg'))
-    return Route
   if (lower.includes('consult') || lower.includes('cross-valid') || lower.includes('perspect'))
     return Users
   if (lower.includes('expert') || lower.includes('deep') || lower.includes('lens'))

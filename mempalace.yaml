@@ -1,0 +1,40 @@
+wing: daena
+exclude:
+- venv_daena/
+- venv_daena_main_py310/
+- BrowserMetrics/
+- DeferredBrowserMetrics/
+- ShaderCache/
+- component_crx_cache/
+- Default/
+- node_modules/
+- __pycache__/
+- .git/
+- uploads/
+- test-results/
+- data/
+rooms:
+- name: backend
+  description: Backend Python source code
+- name: documentation
+  description: Project documentation from Doc/
+- name: frontend
+  description: Frontend React/TypeScript source
+- name: landing
+  description: Landing page
+- name: marketing
+  description: Marketing materials
+- name: patent
+  description: Patent documentation
+- name: pitch_deck
+  description: Pitch deck materials
+- name: scripts
+  description: Build and deploy scripts
+- name: skills
+  description: Skill definitions
+- name: testing
+  description: Test files from tests/
+- name: design
+  description: Design assets
+- name: general
+  description: Files that don't fit other rooms

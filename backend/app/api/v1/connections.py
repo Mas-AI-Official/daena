@@ -12,6 +12,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_role
@@ -211,4 +212,50 @@ async def list_extensions(
     return {
         "success": True,
         "data": [e.to_dict() for e in mcp_only],
+    }
+
+
+class ExtensionInstallRequest(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+
+
+@router.post("/extensions/install", status_code=201)
+async def install_extension(
+    body: ExtensionInstallRequest,
+    _user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Install an MCP server extension from the catalog.
+
+    Writes the server config to Claude Desktop config file so it
+    appears in the extensions list on next scan.
+    """
+    import json
+    from pathlib import Path
+
+    config_path = Path.home() / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Read existing config or start fresh
+    if config_path.exists():
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    else:
+        config = {}
+
+    mcp_servers = config.setdefault("mcpServers", {})
+
+    # Add the server entry (npx-style stub -- user can configure args later)
+    server_key = body.id.replace("/", "-").replace("@", "").lower()
+    mcp_servers[server_key] = {
+        "command": "npx",
+        "args": ["-y", body.id],
+        "metadata": {"name": body.name, "description": body.description},
+    }
+
+    config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+    return {
+        "success": True,
+        "data": {"id": body.id, "name": body.name, "status": "installed"},
     }

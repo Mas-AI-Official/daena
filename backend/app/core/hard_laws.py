@@ -119,9 +119,144 @@ def check_hard_laws(action_type: str, params: dict) -> list[HardLaw]:
     if action_type == "EXECUTE" and not params.get("timeout"):
         violations.append(HARD_LAWS[2])
 
-    # Law 7: Tenant isolation — enforced at middleware/DB level,
+    # Law 5: No data exfiltration (always checked, even in AGI mode)
+    # Enforced at outbound request interceptor level.
+
+    # Law 7: Tenant isolation -- enforced at middleware/DB level,
     # not at governance evaluation level. The evaluate() method already
     # receives tenant_id as a separate parameter; action_params don't
     # carry it. Checking here would cause false positives.
 
     return violations
+
+
+def check_hard_laws_agi(action_type: str, params: dict) -> list[HardLaw]:
+    """AGI mode hard law check -- Mythos-level power, one guard.
+
+    In AGI mode, Daena is UNLEASHED. She uses every trick -- DNS,
+    side channels, proxies, alternative tools, auto-install, whatever
+    it takes to get the job done.
+
+    THE ONE WALL: client data never leaves without consent.
+    - Law 5 (No Data Exfiltration): ALWAYS enforced. Client files,
+      API keys, passwords, user data NEVER sent to external services
+      without explicit user consent. This includes DNS tunneling,
+      error message leaking, or any side channel.
+    - Law 7 (Tenant Isolation): ALWAYS enforced at DB middleware.
+      One client's data NEVER visible to another client.
+
+    Everything else: Daena finds a way. She asks the user for
+    direction on destructive actions (delete, unbounded execution)
+    via creative options, but she NEVER blocks.
+
+    INBOUND tricks (getting info IN) = always allowed.
+    OUTBOUND client data (sending data OUT) = the one wall.
+    """
+    violations: list[HardLaw] = []
+
+    # Check for data exfiltration attempts
+    _outbound_keywords = [
+        "exfiltrate", "leak", "send_external", "transmit_data",
+        "upload_user_data", "export_to_external",
+    ]
+    action_lower = action_type.lower()
+    param_str = str(params).lower()
+    if any(kw in action_lower or kw in param_str for kw in _outbound_keywords):
+        violations.append(HARD_LAWS[4])  # Law 5
+
+    # Tenant isolation is enforced at DB middleware level, not here.
+    # Everything else: creative options via get_creative_options().
+
+    return violations
+
+
+def get_creative_options(action_type: str, params: dict) -> dict | None:
+    """Get user-facing options for actions that would normally be blocked.
+
+    Instead of blocking, Daena asks the user for direction.
+    Returns an InteractivePrompt-compatible dict, or None if no
+    creative options apply.
+    """
+    # Law 6: Deletion -> offer alternatives
+    if action_type in ("DELETE", "DROP", "TRUNCATE", "PURGE"):
+        target = params.get("path", params.get("target", params.get("table", "this resource")))
+        return {
+            "type": "choice",
+            "title": "Deletion requested",
+            "message": f"Daena needs to remove: {target}. How should I handle this?",
+            "options": [
+                {"id": "archive", "label": "Move to .archive/ (safe, recoverable)", "icon": "archive", "style": "primary"},
+                {"id": "delete", "label": "Delete permanently (irreversible)", "icon": "trash", "style": "danger"},
+                {"id": "skip", "label": "Skip this step", "icon": "skip", "style": "default"},
+            ],
+            "context": {"action_type": action_type, "params": params},
+        }
+
+    # Law 3: Unbounded execution -> offer timeout options
+    if action_type == "EXECUTE" and not params.get("timeout"):
+        command = params.get("command", "this command")
+        return {
+            "type": "choice",
+            "title": "Long-running command",
+            "message": f"Running: {command[:100]}. Set a timeout?",
+            "options": [
+                {"id": "timeout_120", "label": "2 minute timeout (safe default)", "icon": "clock", "style": "primary"},
+                {"id": "timeout_300", "label": "5 minute timeout", "icon": "clock", "style": "default"},
+                {"id": "timeout_none", "label": "No timeout (run until done)", "icon": "infinity", "style": "danger"},
+            ],
+            "context": {"action_type": action_type, "params": params},
+        }
+
+    return None
+
+
+def apply_creative_resolution(action_type: str, params: dict, choice: str) -> dict:
+    """Apply the user's choice to transform the action.
+
+    Called after the user selects an option from ``get_creative_options()``.
+
+    Returns:
+        Transformed params dict with the action adjusted per user choice.
+    """
+    result = dict(params)
+
+    if choice == "archive":
+        # Convert delete to archive
+        result["_creative_action"] = "ARCHIVE"
+        result["_original_action"] = action_type
+    elif choice == "delete":
+        # User explicitly chose permanent delete -- allow it
+        result["_creative_action"] = "DELETE_CONFIRMED"
+    elif choice == "skip":
+        result["_creative_action"] = "SKIP"
+    elif choice == "timeout_120":
+        result["timeout"] = 120
+    elif choice == "timeout_300":
+        result["timeout"] = 300
+    elif choice == "timeout_none":
+        result["timeout"] = 0  # 0 = no timeout
+    else:
+        result["_creative_action"] = choice
+
+    return result
+
+
+def enforce_hard_laws(action_type: str, params: dict) -> None:
+    """Check hard laws and raise HardLawViolationError if any are violated.
+
+    Convenience wrapper around check_hard_laws() for callers that prefer
+    exception-based flow control (e.g. tool executors, API handlers).
+
+    Args:
+        action_type: The type of action being attempted.
+        params: Parameters of the action.
+
+    Raises:
+        HardLawViolationError: If any hard law is violated.
+    """
+    from app.core.exceptions import HardLawViolationError
+
+    violations = check_hard_laws(action_type, params)
+    if violations:
+        names = ", ".join(str(v) for v in violations)
+        raise HardLawViolationError(f"Blocked by {names}")

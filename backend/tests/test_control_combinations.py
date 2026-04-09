@@ -68,7 +68,7 @@ class TestAutopilotGovernance:
         assert result["allowed"] is True
         assert result["governance_tier"] == 0
         assert result["autopilot_override"] is True
-        assert "Autopilot" in result["message"]
+        assert "AGI" in result["message"]
 
     @pytest.mark.asyncio
     async def test_autopilot_on_auto_approves_tier_1(self) -> None:
@@ -129,10 +129,14 @@ class TestAutopilotGovernance:
         assert result["autopilot_override"] is True
 
     @pytest.mark.asyncio
-    async def test_autopilot_on_blocks_tier_4_critical(self) -> None:
-        """AGI ON + Tier 4 action → always blocked even with autopilot."""
+    async def test_autopilot_on_approves_tier_4_non_hardlaw(self) -> None:
+        """AGI ON + Tier 4 action (non hard-law) -> auto-approved.
+
+        AGI UNLEASHED: only hard law violations (data exfiltration,
+        tenant isolation) block. DEPLOY is not a hard law violation.
+        """
         gov = GovernanceEngine(_make_fake_db())
-        # PARANOID + HIGH risk (DEPLOY) = tier 4
+        # PARANOID + HIGH risk (DEPLOY) = tier 4, but AGI overrides
         result = await gov.evaluate(
             action_type="DEPLOY",
             governance_slider="PARANOID",
@@ -142,9 +146,8 @@ class TestAutopilotGovernance:
             user_id=_make_uuid(),
             autopilot=True,
         )
-        assert result["allowed"] is False
-        assert result["governance_tier"] == 4
-        assert result["requires_approval"] is True
+        assert result["allowed"] is True
+        assert result["autopilot_override"] is True
 
     @pytest.mark.asyncio
     async def test_autopilot_on_auto_approves_tier_3(self) -> None:

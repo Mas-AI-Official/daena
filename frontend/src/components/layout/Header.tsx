@@ -324,26 +324,7 @@ export const Header = memo(function Header() {
           </AnimatePresence>
         </div>
 
-        {/* User avatar */}
-        <div className="flex items-center gap-2 pl-2 border-l border-white/10">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-accent-purple flex items-center justify-center text-xs font-bold text-white">
-            {user?.display_name?.charAt(0)?.toUpperCase() || 'D'}
-          </div>
-          <div className="hidden lg:flex flex-col">
-            <span className="text-xs font-medium text-starlight-100 leading-tight">
-              {user?.display_name || 'User'}
-            </span>
-            <span className="text-[10px] text-starlight-400 leading-tight">
-              {user?.role || 'VIEWER'}
-            </span>
-          </div>
-          <button
-            onClick={logout}
-            className="text-[10px] text-starlight-400 hover:text-status-error transition-colors ml-1 cursor-pointer"
-          >
-            Logout
-          </button>
-        </div>
+        {/* User avatar moved to sidebar bottom (Perplexity-style) */}
       </div>
       {/* Command palette (Ctrl+K) */}
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />

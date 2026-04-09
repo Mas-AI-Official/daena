@@ -7,7 +7,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { ToastContainer, ErrorBoundary, Shimmer, ShimmerBar } from '@/components/common'
 import { VoiceProvider } from '@/providers/VoiceProvider'
 
-// Auth pages — small, load eagerly
+// Auth pages -- small, load eagerly
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { AuthCallbackPage } from '@/pages/AuthCallbackPage'
@@ -17,7 +17,7 @@ import { TermsPage } from '@/pages/TermsPage'
 import { PrivacyPage } from '@/pages/PrivacyPage'
 import { CompleteProfilePage } from '@/pages/CompleteProfilePage'
 
-// Protected pages — lazy loaded to keep the shell bundle smaller
+// Protected pages -- lazy loaded to keep the shell bundle smaller
 const ChatPage = lazy(() => import('@/pages/ChatPage'))
 const DepartmentChatPage = lazy(() => import('@/pages/DepartmentChatPage'))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
@@ -33,6 +33,11 @@ const FounderPage = lazy(() => import('@/pages/FounderPage'))
 const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
 const ProjectDetailPage = lazy(() => import('@/pages/ProjectDetailPage'))
 const PipelinePage = lazy(() => import('@/pages/PipelinePage'))
+
+// New pages (Perplexity-level redesign)
+const AccountPage = lazy(() => import('@/pages/AccountPage'))
+const FilesPage = lazy(() => import('@/pages/FilesPage'))
+const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
 
 /** Skeleton loading fallback with shimmer animation for polished load perception */
 function PageLoader() {
@@ -59,7 +64,7 @@ function AppRoutes() {
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
 
-      {/* Complete Profile — authenticated but no PageLayout */}
+      {/* Complete Profile -- authenticated but no PageLayout */}
       <Route
         path="/complete-profile"
         element={
@@ -69,7 +74,7 @@ function AppRoutes() {
         }
       />
 
-      {/* Protected — wrapped in PageLayout */}
+      {/* Protected -- wrapped in PageLayout */}
       <Route
         path="/*"
         element={
@@ -96,22 +101,43 @@ function AppRoutes() {
 
                   {/* Execution */}
                   <Route path="/tasks" element={<TasksPage />} />
-                  <Route path="/daenabot" element={<Navigate to="/chat" replace />} />
                   <Route path="/connections" element={<ConnectionsPage />} />
+                  <Route path="/daenabot" element={<Navigate to="/chat" replace />} />
 
-                  {/* Settings (9 categories) */}
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="/settings/:category" element={<SettingsPage />} />
+                  {/* New pages (Perplexity-level) */}
+                  <Route path="/files" element={<FilesPage />} />
+                  <Route path="/analytics" element={<AnalyticsPage />} />
+
+                  {/* Account (replaces old Settings) */}
+                  <Route path="/account" element={<AccountPage />} />
+                  <Route path="/account/:category" element={<AccountPage />} />
+                  <Route path="/account/org/:category" element={<AccountPage />} />
+
+                  {/* Settings redirects (backward compat) */}
+                  <Route path="/settings" element={<Navigate to="/account" replace />} />
+                  <Route path="/settings/general" element={<Navigate to="/account/preferences" replace />} />
+                  <Route path="/settings/llm" element={<Navigate to="/account/assistant" replace />} />
+                  <Route path="/settings/billing" element={<Navigate to="/account/usage" replace />} />
+                  <Route path="/settings/voice" element={<Navigate to="/account/voice" replace />} />
+                  <Route path="/settings/notifications" element={<Navigate to="/account/notifications" replace />} />
+                  <Route path="/settings/shortcuts" element={<Navigate to="/account/shortcuts" replace />} />
+                  <Route path="/settings/about" element={<Navigate to="/account/details" replace />} />
+                  <Route path="/settings/governance" element={<Navigate to="/account/org/permissions" replace />} />
+                  <Route path="/settings/models" element={<Navigate to="/account/org/models" replace />} />
+                  <Route path="/settings/memory" element={<Navigate to="/account/org/memory" replace />} />
+                  <Route path="/settings/privacy" element={<Navigate to="/account/org/privacy" replace />} />
+                  <Route path="/settings/heartbeat" element={<Navigate to="/account/org/heartbeat" replace />} />
+                  <Route path="/settings/developer" element={<Navigate to="/account/org/developer" replace />} />
 
                   {/* Projects */}
                   <Route path="/projects" element={<ProjectsPage />} />
                   <Route path="/pipeline" element={<PipelinePage />} />
                   <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
 
-                  {/* Founder (removed, redirect to settings) */}
-                  <Route path="/founder" element={<Navigate to="/settings/governance" replace />} />
+                  {/* Legacy redirects */}
+                  <Route path="/founder" element={<Navigate to="/account/org/permissions" replace />} />
 
-                  {/* Catch-all → chat */}
+                  {/* Catch-all -> chat */}
                   <Route path="*" element={<Navigate to="/chat" replace />} />
                 </Routes>
                 </div>

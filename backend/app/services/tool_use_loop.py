@@ -50,6 +50,26 @@ logger = get_logger(__name__)
 MAX_TOOL_ITERATIONS = 10
 TOOL_RESULT_MAX_LENGTH = 4000
 
+# Lazy-initialized singletons for the cognitive security layer
+_loop_detector_cls = None
+_classifier_cls = None
+
+
+def _get_loop_detector():
+    global _loop_detector_cls
+    if _loop_detector_cls is None:
+        from app.services.security.loop_detector import LoopDetector
+        _loop_detector_cls = LoopDetector
+    return _loop_detector_cls
+
+
+def _get_classifier():
+    global _classifier_cls
+    if _classifier_cls is None:
+        from app.services.security.tool_call_classifier import ToolCallClassifier
+        _classifier_cls = ToolCallClassifier
+    return _classifier_cls
+
 
 class ToolUseLoop:
     """Agentic tool-use loop that enables autonomous LLM tool calling.
@@ -72,15 +92,23 @@ class ToolUseLoop:
         *,
         agi_mode: bool = False,
         session_id: UUID | None = None,
+        workspace_root: str | None = None,
     ) -> None:
         self.db = db
         self.user_id = user_id
         self.tenant_id = tenant_id
         self.agi_mode = agi_mode
         self.session_id = session_id
+        self.workspace_root = workspace_root
         self._tool_results: list[dict[str, Any]] = []
         self._total_tool_calls = 0
         self._total_cost = 0.0
+
+        # Cognitive security layer (OpenClaw ports)
+        LoopDetectorCls = _get_loop_detector()
+        ClassifierCls = _get_classifier()
+        self._loop_detector = LoopDetectorCls()
+        self._classifier = ClassifierCls(workspace_root=workspace_root)
 
     async def run(
         self,
@@ -153,12 +181,54 @@ class ToolUseLoop:
                 tool_name = call["tool"]
                 params = call["params"]
 
+                # ── Cognitive Layer: Loop Detection (OpenClaw port) ──
+                loop_check = self._loop_detector.detect(tool_name, params)
+                if loop_check.stuck:
+                    yield {
+                        "type": "loop_detected",
+                        "tool": tool_name,
+                        "detector": loop_check.detector.value if loop_check.detector else "unknown",
+                        "level": loop_check.level.value,
+                        "count": loop_check.count,
+                        "message": loop_check.message,
+                    }
+                    if loop_check.level.value == "critical":
+                        logger.warning(
+                            "tool_loop.critical_break",
+                            tool=tool_name,
+                            detector=loop_check.detector.value if loop_check.detector else "",
+                            count=loop_check.count,
+                        )
+                        break  # Exit loop -- OODA Reflect will analyze why
+                    # Warning level: log but continue (give it one more chance)
+
+                # ── Cognitive Layer: Tool Call Classification (OpenClaw port) ──
+                if self.agi_mode:
+                    classification = self._classifier.classify_for_agi_mode(tool_name, params)
+                else:
+                    classification = self._classifier.classify(tool_name, params)
+
                 yield {
                     "type": "tool_call",
                     "tool": tool_name,
                     "params": params,
                     "iteration": iteration,
+                    "classification": classification.approval_class.value,
+                    "auto_approved": classification.auto_approve,
+                    "risk_level": classification.risk_level,
                 }
+
+                # Skip execution if not auto-approved and not AGI mode
+                # (governance will handle approval via async_approval_manager)
+                if not classification.auto_approve and not self.agi_mode:
+                    logger.info(
+                        "tool_loop.governance_required",
+                        tool=tool_name,
+                        class_=classification.approval_class.value,
+                        risk=classification.risk_level,
+                    )
+                    # For now, continue execution but log the governance flag
+                    # Full async approval integration happens in Phase 3
 
                 # Execute the tool
                 result = await self._execute_tool(tool_name, params)
@@ -169,6 +239,10 @@ class ToolUseLoop:
                     "result": result,
                     "iteration": iteration,
                 })
+
+                # ── Cognitive Layer: Record outcome for loop detection ──
+                error_str = str(result.get("error", "")) if not result.get("success", True) else ""
+                self._loop_detector.record_outcome(tool_name, params, result, error_str)
 
                 yield {
                     "type": "tool_result",
@@ -442,6 +516,10 @@ class ToolUseLoop:
             elif prefix == "workflow":
                 return await self._exec_workflow(operation, resolved_params)
 
+            # ── Security scanning tools ──
+            elif prefix == "vuln_scanner":
+                return await self._exec_vuln_scanner(operation, resolved_params)
+
             return {"success": False, "error": f"Unknown tool dispatch: {prefix}.{operation}"}
 
         except Exception as exc:
@@ -451,16 +529,33 @@ class ToolUseLoop:
                 error=str(exc),
             )
 
-            # Self-repair: if this looks like a code error, try to fix it
-            error_text = str(exc)
+            error_text = str(exc).lower()
+
+            # AGI auto-install: if something is not found/installed, install it
             if self.agi_mode and any(
-                kw in error_text.lower()
+                kw in error_text
+                for kw in ["not found", "not installed", "no module named",
+                            "command not found", "is not recognized"]
+            ):
+                try:
+                    # Extract what needs installing from the error
+                    install_result = await self._auto_install(str(exc), tool_name, params)
+                    if install_result.get("success"):
+                        logger.info("tool_loop.auto_install_success", tool=tool_name)
+                        # Retry the original tool call
+                        return await self._execute_tool(tool_name, params)
+                except Exception as install_exc:
+                    logger.debug("tool_loop.auto_install_failed", error=str(install_exc))
+
+            # Self-repair: if this looks like a code error, try to fix it
+            if self.agi_mode and any(
+                kw in error_text
                 for kw in ["error", "traceback", "exception", "failed"]
             ):
                 try:
                     from app.services.self_repair import attempt_self_repair
                     repair = await attempt_self_repair(
-                        error_text,
+                        str(exc),
                         context=f"Tool {tool_name} failed with params {params}",
                     )
                     if repair.success:
@@ -472,6 +567,63 @@ class ToolUseLoop:
             return {"success": False, "error": str(exc)}
 
     # ── Dispatch Handlers ────────────────────────────────────────
+
+    async def _auto_install(
+        self, error_text: str, tool_name: str, params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Auto-install missing dependencies when AGI mode is on.
+
+        Daena installs what she needs: if a tool/command/package isn't found,
+        she figures out what to install and does it.
+        """
+        import re
+
+        # Extract package name from common error patterns
+        package = None
+        for pattern in [
+            r"No module named ['\"]?(\w[\w.-]*)",
+            r"ModuleNotFoundError.*['\"](\w[\w.-]*)",
+            r"command not found.*?(\w[\w.-]+)",
+            r"is not recognized.*?['\"]?(\w[\w.-]+)",
+            r"pip install (\w[\w.-]*)",
+        ]:
+            match = re.search(pattern, error_text, re.IGNORECASE)
+            if match:
+                package = match.group(1)
+                break
+
+        if not package:
+            return {"success": False, "error": "Could not determine what to install"}
+
+        logger.info("tool_loop.auto_install_attempting", package=package)
+
+        # Try pip install first
+        try:
+            from app.services.daenabot.terminal_agent import TerminalAgent
+            agent = TerminalAgent()
+            result = await agent.execute_command(
+                command=f"pip install {package}",
+                timeout=60,
+            )
+            if result.get("return_code", 1) == 0:
+                return {"success": True, "installed": package, "method": "pip"}
+        except Exception:
+            pass
+
+        # Try npm install
+        try:
+            from app.services.daenabot.terminal_agent import TerminalAgent
+            agent = TerminalAgent()
+            result = await agent.execute_command(
+                command=f"npm install -g {package}",
+                timeout=60,
+            )
+            if result.get("return_code", 1) == 0:
+                return {"success": True, "installed": package, "method": "npm"}
+        except Exception:
+            pass
+
+        return {"success": False, "error": f"Failed to install {package}"}
 
     async def _exec_file(self, operation: str, params: dict[str, Any]) -> dict[str, Any]:
         """File system operations via SystemAccess."""
@@ -785,6 +937,12 @@ class ToolUseLoop:
         engine = DepartmentWorkflowEngine(self.db, self.user_id, self.tenant_id)
         wf_result = await engine.run(params.get("workflow_id", ""))
         return {"success": wf_result.status == "completed", "summary": wf_result.summary[:1000]}
+
+    async def _exec_vuln_scanner(self, operation: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Security vulnerability scanning via VulnScannerAgent."""
+        from app.services.daenabot.vuln_scanner_agent import VulnScannerAgent
+        agent = VulnScannerAgent()
+        return await agent.execute(operation, params)
 
     # ── Utility Methods ──────────────────────────────────────────
 

@@ -35,6 +35,7 @@ import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Shimmer, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
+import { useUiStore } from '@/stores/uiStore'
 import type { SkillResponse, ApiResponse, PermissionLevel } from '@/types/api'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -216,9 +217,11 @@ interface SkillCardProps {
   onPermissionChange: (id: string, level: PermissionLevel) => void
   onToggleActive: (id: string, active: boolean) => void
   index: number
+  selected?: boolean
+  onSelect?: (id: string, checked: boolean) => void
 }
 
-function SkillCard({ skill, permission, onPermissionChange, onToggleActive, index }: SkillCardProps) {
+function SkillCard({ skill, permission, onPermissionChange, onToggleActive, index, selected, onSelect }: SkillCardProps) {
   const [expanded, setExpanded] = useState(false)
   const tier = TIER_LABELS[skill.governance_tier] ?? { label: `Tier ${skill.governance_tier}`, variant: 'default' as const }
 
@@ -243,6 +246,16 @@ function SkillCard({ skill, permission, onPermissionChange, onToggleActive, inde
           onClick={() => setExpanded(!expanded)}
           className="w-full flex items-start gap-3 p-4 text-left hover:bg-white/[0.02] transition-colors"
         >
+          {/* Batch select checkbox */}
+          {onSelect && (
+            <input
+              type="checkbox"
+              checked={selected || false}
+              onChange={(e) => { e.stopPropagation(); onSelect(skill.id, e.target.checked) }}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-2 w-3.5 h-3.5 rounded border-white/20 bg-transparent accent-primary-500 cursor-pointer shrink-0"
+            />
+          )}
           <div className={`mt-0.5 w-8 h-8 rounded-lg border border-white/5 bg-white/[0.03] flex items-center justify-center shrink-0`}>
             <Code2 size={15} className={iconColor} />
           </div>
@@ -282,7 +295,7 @@ function SkillCard({ skill, permission, onPermissionChange, onToggleActive, inde
             <button
               onClick={() => onToggleActive(skill.id, !skill.is_active)}
               className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors cursor-pointer ${
-                skill.is_active ? 'bg-accent-green' : 'bg-starlight-600'
+                skill.is_active ? 'bg-accent-green' : 'bg-accent-red/60'
               }`}
               title={skill.is_active ? 'Disable skill' : 'Enable skill'}
             >
@@ -359,6 +372,8 @@ export function SkillsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<CategoryKey>('all')
+  const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set())
+  const autopilotActive = useUiStore((s) => s.autopilotActive)
   const [permissions, setPermissions] = useState<Record<string, PermissionLevel>>(() => {
     try {
       const saved = localStorage.getItem('daena:skill_permissions')
@@ -579,6 +594,17 @@ export function SkillsPage() {
             </div>
           </div>
 
+          {/* AGI auto-select banner */}
+          {autopilotActive && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-status-success/10 border border-status-success/20">
+              <Sparkles size={16} className="text-status-success shrink-0" />
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-status-success">AGI Mode Active</p>
+                <p className="text-[11px] text-starlight-400">All skills auto-loaded. Daena selects the best skills for each task dynamically.</p>
+              </div>
+            </div>
+          )}
+
           {/* Search bar */}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-starlight-500" />
@@ -590,6 +616,86 @@ export function SkillsPage() {
               className="w-full glass-input pl-9 pr-4 py-2.5 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-500 focus:outline-none focus:ring-1 focus:ring-primary-500/40"
             />
           </div>
+
+          {/* Batch selection toolbar */}
+          {selectedSkills.size > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-primary-500/10 border border-primary-500/20"
+            >
+              <span className="text-xs text-primary-400 font-medium">{selectedSkills.size} selected</span>
+              <div className="flex-1" />
+              <button
+                onClick={() => {
+                  const toEnable = finalFiltered.filter((s) => selectedSkills.has(s.id))
+                  toEnable.forEach((s) => {
+                    api.patch(`/skills/${s.id}`, { is_active: true }).catch(() => {})
+                  })
+                  setSkills((prev) => prev.map((s) => selectedSkills.has(s.id) ? { ...s, is_active: true } : s))
+                  toast.success(`${selectedSkills.size} skills enabled`)
+                  setSelectedSkills(new Set())
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-green/10 text-accent-green hover:bg-accent-green/20 cursor-pointer"
+              >
+                Enable selected
+              </button>
+              <button
+                onClick={() => {
+                  const toDisable = finalFiltered.filter((s) => selectedSkills.has(s.id))
+                  toDisable.forEach((s) => {
+                    api.patch(`/skills/${s.id}`, { is_active: false }).catch(() => {})
+                  })
+                  setSkills((prev) => prev.map((s) => selectedSkills.has(s.id) ? { ...s, is_active: false } : s))
+                  toast.success(`${selectedSkills.size} skills disabled`)
+                  setSelectedSkills(new Set())
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-red/10 text-accent-red hover:bg-accent-red/20 cursor-pointer"
+              >
+                Disable selected
+              </button>
+              <button
+                onClick={() => setSelectedSkills(new Set())}
+                className="p-1 rounded hover:bg-white/5 text-starlight-500 cursor-pointer"
+              >
+                <span className="text-[10px]">Clear</span>
+              </button>
+            </motion.div>
+          )}
+
+          {/* Select all / Enable all row */}
+          {finalFiltered.length > 0 && (
+            <div className="flex items-center justify-between px-1">
+              <button
+                onClick={() => {
+                  if (selectedSkills.size === finalFiltered.length) {
+                    setSelectedSkills(new Set())
+                  } else {
+                    setSelectedSkills(new Set(finalFiltered.map((s) => s.id)))
+                  }
+                }}
+                className="text-[10px] text-starlight-500 hover:text-primary-400 cursor-pointer"
+              >
+                {selectedSkills.size === finalFiltered.length ? 'Deselect all' : 'Select all'}
+              </button>
+              <button
+                onClick={() => {
+                  const allActive = finalFiltered.every((s) => s.is_active)
+                  finalFiltered.forEach((s) => {
+                    api.patch(`/skills/${s.id}`, { is_active: !allActive }).catch(() => {})
+                  })
+                  setSkills((prev) => prev.map((s) => {
+                    if (finalFiltered.some((f) => f.id === s.id)) return { ...s, is_active: !allActive }
+                    return s
+                  }))
+                  toast.success(allActive ? `${finalFiltered.length} skills disabled` : `${finalFiltered.length} skills enabled`)
+                }}
+                className="text-[10px] text-starlight-500 hover:text-accent-green cursor-pointer"
+              >
+                {finalFiltered.every((s) => s.is_active) ? 'Disable all visible' : 'Enable all visible'}
+              </button>
+            </div>
+          )}
 
           {/* Content */}
           {loading ? (
@@ -638,6 +744,15 @@ export function SkillsPage() {
                       })
                     }}
                     index={i}
+                    selected={selectedSkills.has(skill.id)}
+                    onSelect={(id, checked) => {
+                      setSelectedSkills((prev) => {
+                        const next = new Set(prev)
+                        if (checked) next.add(id)
+                        else next.delete(id)
+                        return next
+                      })
+                    }}
                   />
                 ))}
               </div>

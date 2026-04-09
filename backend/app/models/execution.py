@@ -20,10 +20,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import GUID, Base, JSONBCompat, TenantMixin, TimestampMixin
+from app.models.base import GUID, Base, JSONBCompat, SoftDeleteMixin, TenantMixin, TimestampMixin
 
 
-class Task(Base, TenantMixin, TimestampMixin):
+class Task(Base, TenantMixin, TimestampMixin, SoftDeleteMixin):
     """Background task (Autopilot mode). Tracks long-running operations."""
 
     __tablename__ = "tasks"
