@@ -258,3 +258,240 @@ class TestBreachIntelligenceChecker:
         )
         assert hit.severity == "high"
         assert hit.affected_records == 1000000
+
+
+# =============================================================================
+# Apollo.io Integration Tests (2026 API)
+# =============================================================================
+
+class TestApolloIntelligence:
+    """Test Apollo.io API integration (unit tests, no live API calls)."""
+
+    def test_apollo_class_exists(self):
+        """ApolloIntelligence is importable."""
+        from app.services.security.osint_engine import ApolloIntelligence
+        apollo = ApolloIntelligence()
+        assert apollo is not None
+
+    def test_base_url_correct(self):
+        """Base URL uses /api/v1 prefix (2026 API)."""
+        from app.services.security.osint_engine import ApolloIntelligence
+        assert ApolloIntelligence.BASE_URL == "https://api.apollo.io/api/v1"
+
+    def test_not_configured_without_key(self):
+        """is_configured returns False without API key."""
+        import os
+        old = os.environ.pop("APOLLO_API_KEY", None)
+        try:
+            from app.services.security.osint_engine import ApolloIntelligence
+            apollo = ApolloIntelligence()
+            assert apollo.is_configured is False
+        finally:
+            if old:
+                os.environ["APOLLO_API_KEY"] = old
+
+    def test_headers_use_x_api_key(self):
+        """Auth uses x-api-key header, not api_key in body."""
+        import os
+        os.environ["APOLLO_API_KEY"] = "test_key_123"
+        try:
+            from app.services.security.osint_engine import ApolloIntelligence
+            apollo = ApolloIntelligence()
+            headers = apollo._headers()
+            assert "x-api-key" in headers
+            assert headers["x-api-key"] == "test_key_123"
+            assert "Content-Type" in headers
+        finally:
+            os.environ.pop("APOLLO_API_KEY", None)
+
+    @pytest.mark.asyncio
+    async def test_search_returns_empty_without_key(self):
+        """search_person returns placeholder when not configured."""
+        import os
+        old = os.environ.pop("APOLLO_API_KEY", None)
+        try:
+            from app.services.security.osint_engine import ApolloIntelligence
+            apollo = ApolloIntelligence()
+            results = await apollo.search_person("John", "Doe", "example.com")
+            assert len(results) == 1
+            assert "apollo_not_configured" in results[0].sources
+        finally:
+            if old:
+                os.environ["APOLLO_API_KEY"] = old
+
+    @pytest.mark.asyncio
+    async def test_enrich_email_returns_none_without_key(self):
+        """enrich_email returns None when not configured."""
+        import os
+        old = os.environ.pop("APOLLO_API_KEY", None)
+        try:
+            from app.services.security.osint_engine import ApolloIntelligence
+            apollo = ApolloIntelligence()
+            result = await apollo.enrich_email("test@example.com")
+            assert result is None
+        finally:
+            if old:
+                os.environ["APOLLO_API_KEY"] = old
+
+    @pytest.mark.asyncio
+    async def test_search_company_returns_not_configured(self):
+        """search_company returns source=apollo_not_configured without key."""
+        import os
+        old = os.environ.pop("APOLLO_API_KEY", None)
+        try:
+            from app.services.security.osint_engine import ApolloIntelligence
+            apollo = ApolloIntelligence()
+            result = await apollo.search_company("example.com")
+            assert result["source"] == "apollo_not_configured"
+        finally:
+            if old:
+                os.environ["APOLLO_API_KEY"] = old
+
+    @pytest.mark.asyncio
+    async def test_bulk_enrich_returns_empty_without_key(self):
+        """bulk_enrich returns empty list when not configured."""
+        import os
+        old = os.environ.pop("APOLLO_API_KEY", None)
+        try:
+            from app.services.security.osint_engine import ApolloIntelligence
+            apollo = ApolloIntelligence()
+            result = await apollo.bulk_enrich([{"first_name": "John", "domain": "example.com"}])
+            assert result == []
+        finally:
+            if old:
+                os.environ["APOLLO_API_KEY"] = old
+
+    def test_parse_person_full(self):
+        """_parse_person extracts all fields from Apollo response."""
+        from app.services.security.osint_engine import ApolloIntelligence
+        apollo = ApolloIntelligence()
+        mock_data = {
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "name": "Jane Doe",
+            "email": "jane.doe@example.com",
+            "title": "CTO",
+            "phone_number": "+1-555-0123",
+            "sanitized_phone": "15550123",
+            "linkedin_url": "https://linkedin.com/in/janedoe",
+            "twitter_url": "https://twitter.com/janedoe",
+            "organization": {
+                "name": "Example Corp",
+                "phone": "+1-555-0100",
+            },
+            "phone_numbers": [
+                {"sanitized_number": "15550456", "number": "+1-555-0456"},
+            ],
+            "email_addresses": [
+                {"email": "jane.personal@gmail.com"},
+            ],
+        }
+        person = apollo._parse_person(mock_data)
+        assert person.name == "Jane Doe"
+        assert "jane.doe@example.com" in person.emails
+        assert "jane.personal@gmail.com" in person.emails
+        assert person.job_title == "CTO"
+        assert person.company == "Example Corp"
+        assert "+1-555-0123" in person.phone_patterns
+        assert "15550456" in person.phone_patterns
+        assert "company: +1-555-0100" in person.phone_patterns
+        assert person.social_profiles["linkedin"] == "https://linkedin.com/in/janedoe"
+        assert "apollo" in person.sources
+
+    def test_parse_person_minimal(self):
+        """_parse_person handles minimal data gracefully."""
+        from app.services.security.osint_engine import ApolloIntelligence
+        apollo = ApolloIntelligence()
+        person = apollo._parse_person({"first_name": "John", "last_name": "Smith"})
+        assert person.name == "John Smith"
+        assert person.emails == []
+        assert person.phone_patterns == []
+        assert person.sources == ["apollo"]
+
+    def test_parse_person_deduplicates_emails(self):
+        """Duplicate emails are removed."""
+        from app.services.security.osint_engine import ApolloIntelligence
+        apollo = ApolloIntelligence()
+        person = apollo._parse_person({
+            "email": "same@example.com",
+            "email_addresses": [{"email": "same@example.com"}],
+            "first_name": "Test",
+            "last_name": "User",
+        })
+        assert person.emails.count("same@example.com") == 1
+
+
+# =============================================================================
+# Hunter.io Integration Tests
+# =============================================================================
+
+class TestHunterIntelligence:
+    """Test Hunter.io API integration (unit tests, no live API calls)."""
+
+    def test_hunter_class_exists(self):
+        from app.services.security.osint_engine import HunterIntelligence
+        hunter = HunterIntelligence()
+        assert hunter is not None
+
+    def test_not_configured_without_key(self):
+        import os
+        old = os.environ.pop("HUNTER_API_KEY", None)
+        try:
+            from app.services.security.osint_engine import HunterIntelligence
+            hunter = HunterIntelligence()
+            assert hunter.is_configured is False
+        finally:
+            if old:
+                os.environ["HUNTER_API_KEY"] = old
+
+    @pytest.mark.asyncio
+    async def test_domain_search_not_configured(self):
+        import os
+        old = os.environ.pop("HUNTER_API_KEY", None)
+        try:
+            from app.services.security.osint_engine import HunterIntelligence
+            hunter = HunterIntelligence()
+            result = await hunter.domain_search("example.com")
+            assert result["source"] == "hunter_not_configured"
+        finally:
+            if old:
+                os.environ["HUNTER_API_KEY"] = old
+
+    @pytest.mark.asyncio
+    async def test_verify_email_not_configured(self):
+        import os
+        old = os.environ.pop("HUNTER_API_KEY", None)
+        try:
+            from app.services.security.osint_engine import HunterIntelligence
+            hunter = HunterIntelligence()
+            result = await hunter.verify_email("test@example.com")
+            assert result["status"] == "not_configured"
+        finally:
+            if old:
+                os.environ["HUNTER_API_KEY"] = old
+
+
+# =============================================================================
+# OSINTRecon Pipeline Tests
+# =============================================================================
+
+class TestOSINTRecon:
+    """Test the full OSINT pipeline orchestration."""
+
+    def test_pipeline_initializes_all_sources(self):
+        from app.services.security.osint_engine import (
+            OSINTRecon, OSINTPeopleIntelligence, ApolloIntelligence,
+            HunterIntelligence, SupplyChainAnalyzer, BreachIntelligenceChecker,
+        )
+        recon = OSINTRecon()
+        assert isinstance(recon.people, OSINTPeopleIntelligence)
+        assert isinstance(recon.apollo, ApolloIntelligence)
+        assert isinstance(recon.hunter, HunterIntelligence)
+        assert isinstance(recon.supply_chain, SupplyChainAnalyzer)
+        assert isinstance(recon.breach, BreachIntelligenceChecker)
+
+    def test_apollo_base_url_in_pipeline(self):
+        """Verify pipeline uses updated Apollo base URL."""
+        from app.services.security.osint_engine import OSINTRecon
+        recon = OSINTRecon()
+        assert recon.apollo.BASE_URL == "https://api.apollo.io/api/v1"

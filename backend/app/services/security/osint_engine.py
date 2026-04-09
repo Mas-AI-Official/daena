@@ -775,9 +775,15 @@ class ApolloIntelligence:
 
     API key goes in .env as APOLLO_API_KEY
     Sign up free: https://app.apollo.io/
+
+    API docs (2026): https://docs.apollo.io/reference/
+    Auth: x-api-key header (NOT api_key in body)
+    Search: /mixed_people/api_search (no emails/phones -- prospecting only)
+    Enrich: /people/match (returns emails/phones with reveal params)
+    Company: /organizations/enrich
     """
 
-    BASE_URL = "https://api.apollo.io/v1"
+    BASE_URL = "https://api.apollo.io/api/v1"
 
     def __init__(self) -> None:
         import os
@@ -787,6 +793,13 @@ class ApolloIntelligence:
     def is_configured(self) -> bool:
         return bool(self._api_key)
 
+    def _headers(self) -> dict[str, str]:
+        """Auth headers for Apollo API. Key goes in x-api-key header."""
+        return {
+            "Content-Type": "application/json",
+            "x-api-key": self._api_key,
+        }
+
     async def search_person(
         self,
         first_name: str = "",
@@ -795,6 +808,10 @@ class ApolloIntelligence:
         title: str = "",
     ) -> list[PersonIntel]:
         """Search for a person in Apollo's database.
+
+        Two-step process (per Apollo API 2026):
+        1. /mixed_people/api_search -- find matching people (no emails/phones)
+        2. /people/match -- enrich each match to get contact info
 
         Returns verified contact info including email and phone.
         """
@@ -807,42 +824,52 @@ class ApolloIntelligence:
         try:
             import httpx
 
-            payload: dict[str, Any] = {
-                "api_key": self._api_key,
-                "per_page": 5,
-            }
-            if first_name:
-                payload["person_titles"] = [title] if title else []
-                # Use people/search endpoint
-                search_payload = {
-                    "api_key": self._api_key,
-                    "q_person_name": f"{first_name} {last_name}".strip(),
-                    "per_page": 5,
-                }
-                if domain:
-                    search_payload["q_organization_domains"] = domain
+            # Step 1: Search for people (prospecting endpoint, no credits)
+            params: dict[str, Any] = {"per_page": 5}
+            if title:
+                params["person_titles[]"] = title
+            if domain:
+                params["organization_domains[]"] = domain
+            full_name = f"{first_name} {last_name}".strip()
+            if full_name:
+                params["q_keywords"] = full_name
 
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.post(
-                        f"{self.BASE_URL}/mixed_people/search",
-                        json=search_payload,
-                        headers={"Content-Type": "application/json"},
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    f"{self.BASE_URL}/mixed_people/api_search",
+                    params=params,
+                    headers=self._headers(),
+                )
+
+                if resp.status_code != 200:
+                    logger.debug(
+                        "apollo.search_failed",
+                        status=resp.status_code,
+                        body=resp.text[:200],
                     )
+                    return []
 
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        people = []
-                        for person_data in data.get("people", []):
-                            person = self._parse_person(person_data)
-                            people.append(person)
-                        return people
+                data = resp.json()
+                search_people = data.get("people", [])
+                if not search_people:
+                    return []
+
+                # Step 2: Enrich top matches to get emails/phones
+                people: list[PersonIntel] = []
+                for person_data in search_people[:3]:  # Cap at 3 enrichments
+                    enriched = await self._enrich_person(
+                        client,
+                        first_name=person_data.get("first_name", ""),
+                        last_name=person_data.get("last_name", ""),
+                        domain=domain or person_data.get("organization", {}).get("primary_domain", ""),
+                    )
+                    if enriched:
+                        people.append(enriched)
                     else:
-                        logger.debug(
-                            "apollo.search_failed",
-                            status=resp.status_code,
-                            body=resp.text[:200],
-                        )
-                        return []
+                        # Fallback: use search data without contact info
+                        people.append(self._parse_person(person_data))
+
+                return people
 
         except ImportError:
             logger.debug("apollo.requires_httpx")
@@ -850,6 +877,54 @@ class ApolloIntelligence:
             logger.debug("apollo.search_error", error=str(exc)[:200])
 
         return []
+
+    async def _enrich_person(
+        self,
+        client: Any,
+        first_name: str = "",
+        last_name: str = "",
+        domain: str = "",
+        email: str = "",
+    ) -> PersonIntel | None:
+        """Enrich a person via /people/match to get emails and phones.
+
+        This is the endpoint that actually returns contact info.
+        Uses reveal_personal_emails and reveal_phone_number params.
+        """
+        try:
+            body: dict[str, str] = {}
+            if first_name:
+                body["first_name"] = first_name
+            if last_name:
+                body["last_name"] = last_name
+            if domain:
+                body["domain"] = domain
+            if email:
+                body["email"] = email
+
+            if not body:
+                return None
+
+            resp = await client.post(
+                f"{self.BASE_URL}/people/match",
+                params={
+                    "reveal_personal_emails": "true",
+                    "reveal_phone_number": "true",
+                },
+                json=body,
+                headers=self._headers(),
+            )
+
+            if resp.status_code == 200:
+                data = resp.json()
+                person_data = data.get("person")
+                if person_data:
+                    return self._parse_person(person_data)
+
+        except Exception as exc:
+            logger.debug("apollo.enrich_person_error", error=str(exc)[:200])
+
+        return None
 
     async def enrich_email(self, email: str) -> PersonIntel | None:
         """Enrich a known email with full contact details from Apollo."""
@@ -860,20 +935,7 @@ class ApolloIntelligence:
             import httpx
 
             async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(
-                    f"{self.BASE_URL}/people/match",
-                    json={
-                        "api_key": self._api_key,
-                        "email": email,
-                    },
-                    headers={"Content-Type": "application/json"},
-                )
-
-                if resp.status_code == 200:
-                    data = resp.json()
-                    person_data = data.get("person")
-                    if person_data:
-                        return self._parse_person(person_data)
+                return await self._enrich_person(client, email=email)
 
         except Exception as exc:
             logger.debug("apollo.enrich_error", error=str(exc)[:200])
@@ -881,7 +943,7 @@ class ApolloIntelligence:
         return None
 
     async def search_company(self, domain: str) -> dict[str, Any]:
-        """Get company intelligence from Apollo."""
+        """Get company intelligence from Apollo via /organizations/enrich."""
         if not self._api_key:
             return {"domain": domain, "source": "apollo_not_configured"}
 
@@ -891,11 +953,8 @@ class ApolloIntelligence:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(
                     f"{self.BASE_URL}/organizations/enrich",
-                    json={
-                        "api_key": self._api_key,
-                        "domain": domain,
-                    },
-                    headers={"Content-Type": "application/json"},
+                    json={"domain": domain},
+                    headers=self._headers(),
                 )
 
                 if resp.status_code == 200:
@@ -922,12 +981,53 @@ class ApolloIntelligence:
 
         return {"domain": domain, "source": "apollo_error"}
 
+    async def bulk_enrich(
+        self,
+        people: list[dict[str, str]],
+    ) -> list[PersonIntel]:
+        """Bulk enrich up to 10 people in one API call.
+
+        Each dict in people should have some of: first_name, last_name,
+        domain, email, linkedin_url, organization_name.
+
+        Uses /people/bulk_match endpoint.
+        """
+        if not self._api_key or not people:
+            return []
+
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{self.BASE_URL}/people/bulk_match",
+                    params={
+                        "reveal_personal_emails": "true",
+                        "reveal_phone_number": "true",
+                    },
+                    json={"details": people[:10]},
+                    headers=self._headers(),
+                )
+
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return [
+                        self._parse_person(p)
+                        for p in data.get("people", [])
+                        if p
+                    ]
+
+        except Exception as exc:
+            logger.debug("apollo.bulk_enrich_error", error=str(exc)[:200])
+
+        return []
+
     def _parse_person(self, data: dict[str, Any]) -> PersonIntel:
         """Parse Apollo person response into PersonIntel."""
         emails = []
         if data.get("email"):
             emails.append(data["email"])
-        # Apollo sometimes has personal email too
+        # Apollo returns personal emails when reveal_personal_emails=true
         for email_obj in data.get("email_addresses", []):
             if isinstance(email_obj, dict) and email_obj.get("email"):
                 emails.append(email_obj["email"])
@@ -946,9 +1046,10 @@ class ApolloIntelligence:
                     phone_patterns.append(num)
             elif isinstance(phone_obj, str):
                 phone_patterns.append(phone_obj)
-        # Direct dial
-        if data.get("organization", {}).get("phone"):
-            phone_patterns.append(f"company: {data['organization']['phone']}")
+        # Direct dial from organization
+        org_data = data.get("organization", {})
+        if isinstance(org_data, dict) and org_data.get("phone"):
+            phone_patterns.append(f"company: {org_data['phone']}")
 
         socials: dict[str, str] = {}
         if data.get("linkedin_url"):
@@ -966,7 +1067,7 @@ class ApolloIntelligence:
             phone_patterns=list(set(phone_patterns)),
             social_profiles=socials,
             job_title=data.get("title", ""),
-            company=data.get("organization", {}).get("name", ""),
+            company=org_data.get("name", "") if isinstance(org_data, dict) else "",
             sources=["apollo"],
         )
 
