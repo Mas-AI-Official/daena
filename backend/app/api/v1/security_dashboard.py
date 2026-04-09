@@ -1,4 +1,4 @@
-"""/3vilbob Security Dashboard API.
+"""Daena Security Dashboard API.
 
 Provides real-time scan status, tool catalog, SHIELD activation state,
 scan trace history, and self-improvement metrics.

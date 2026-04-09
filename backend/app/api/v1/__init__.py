@@ -31,6 +31,7 @@ from app.api.v1 import (
     integrations,
     mcp_server,
     memory,
+    missions,
     mobile,
     org,
     pipeline,
@@ -85,4 +86,5 @@ router.include_router(files.router, prefix="/files", tags=["files"])
 router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])
 router.include_router(org.router, prefix="/org", tags=["org"])
 router.include_router(security_dashboard.router, prefix="/security", tags=["security-dashboard"])
+router.include_router(missions.router, prefix="/missions", tags=["missions"])
 router.include_router(ws.router, tags=["websocket"])
