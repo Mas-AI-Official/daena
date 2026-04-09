@@ -1538,6 +1538,12 @@ class CognitiveScanEngine:
         # what strategies worked on what target types.
         await self._archive_scan_trace(target, result, profile)
 
+        # ── SELF-IMPROVEMENT (Meta-Harness loop) ────
+        # Every N scans, analyze traces to discover new patterns and
+        # inject them into the reasoner's framework set. This is what
+        # makes Daena anti-fragile: every scan makes future scans smarter.
+        await self._maybe_self_upgrade()
+
         logger.info(
             "cognitive_scan.complete",
             target=target,
@@ -1907,6 +1913,99 @@ class CognitiveScanEngine:
         except Exception as exc:
             # Archival is best-effort, never blocks the scan
             logger.debug("cognitive_scan.trace_archive_failed", error=str(exc)[:200])
+
+    # ------------------------------------------------------------------
+    # Self-improvement (Meta-Harness loop)
+    # ------------------------------------------------------------------
+
+    async def _maybe_self_upgrade(self) -> None:
+        """Analyze scan traces every N scans to discover patterns.
+
+        Reads var/scan_traces/, groups by target type, extracts:
+        - Strategies that consistently produce findings
+        - Strategies that consistently fail
+        - Target type characteristics that predict vulnerability patterns
+
+        Discovered patterns get injected into the MetaReasoner's framework
+        set via SelfUpgrader.evaluate_and_adopt().
+
+        The threshold is every 10 scans (to accumulate enough data).
+        """
+        import json
+        import os
+
+        trace_dir = os.path.join(
+            os.environ.get("DAENA_VAR", "var"), "scan_traces"
+        )
+        if not os.path.isdir(trace_dir):
+            return
+
+        traces = sorted(os.listdir(trace_dir))
+        if len(traces) < 10:
+            return  # Not enough data yet
+
+        # Only run every 10 scans (check if count is multiple of 10)
+        if len(traces) % 10 != 0:
+            return
+
+        try:
+            from app.services.cognition.self_upgrader import SelfUpgrader
+
+            # Load recent traces (last 20)
+            history: list[dict] = []
+            for trace_file in traces[-20:]:
+                trace_path = os.path.join(trace_dir, trace_file)
+                try:
+                    with open(trace_path, "r", encoding="utf-8") as f:
+                        trace_data = json.load(f)
+
+                    # Convert trace to execution history format for SelfUpgrader
+                    for strategy in (trace_data.get("strategies_tried") or [""]):
+                        history.append({
+                            "success": trace_data.get("total_findings", 0) > 0,
+                            "problem_type": trace_data.get("target_type", "unknown"),
+                            "strategy": strategy,
+                            "task": f"scan_{trace_data.get('target', 'unknown')}",
+                            "findings_count": trace_data.get("total_findings", 0),
+                            "offensive_mode": trace_data.get("offensive_mode", False),
+                            "waf": trace_data.get("waf_detected", ""),
+                        })
+                except (json.JSONDecodeError, OSError):
+                    continue
+
+            if not history:
+                return
+
+            upgrader = SelfUpgrader()
+            candidates = await upgrader.discover_from_history(history)
+
+            if candidates:
+                # Backtest: score candidates based on historical success rate
+                for candidate in candidates:
+                    matching = [
+                        h for h in history
+                        if any(pt in h.get("problem_type", "") for pt in candidate.when_to_use)
+                    ]
+                    if matching:
+                        success_rate = sum(1 for h in matching if h["success"]) / len(matching)
+                        candidate.backtest_score = success_rate
+
+                # Adopt patterns that meet threshold
+                from app.services.cognition.meta_reasoner import MetaReasoner
+                meta = MetaReasoner()
+                adopted = await upgrader.evaluate_and_adopt(meta)
+
+                if adopted:
+                    logger.info(
+                        "cognitive_scan.self_upgrade",
+                        adopted_frameworks=adopted,
+                        total_traces=len(traces),
+                        history_entries=len(history),
+                    )
+
+        except Exception as exc:
+            # Self-improvement is best-effort, never blocks scans
+            logger.debug("cognitive_scan.self_upgrade_failed", error=str(exc)[:200])
 
     # Internal helpers
     # ------------------------------------------------------------------
