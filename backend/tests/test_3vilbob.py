@@ -355,3 +355,256 @@ class TestCognitiveScanEngineOffensive:
     def test_proxy_resolve_explicit_override(self):
         engine = CognitiveScanEngine(proxy="http://explicit:1234")
         assert engine._resolve_proxy() == "http://explicit:1234"
+
+
+# ── Phase 2: Router wiring, evidence tools, constraint probe ─────
+
+class TestRouterSecurityPatterns:
+    """Tests for /3vilbob and security scan routing patterns."""
+
+    def test_3vilbob_command_matches(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("/3vilbob target.com hackerone_prog")
+        assert result is not None
+        assert result.tool_name == "security.cognitive_scan_offensive"
+        assert result.params["target"] == "target.com"
+        assert result.params["program"] == "hackerone_prog"
+        assert result.params["offensive_mode"] is True
+        assert result.params["agi_mode"] is True
+
+    def test_3vilbob_without_program(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("/3vilbob example.org")
+        assert result is not None
+        assert result.tool_name == "security.cognitive_scan_offensive"
+        assert result.params["target"] == "example.org"
+        assert result.params["program"] == ""
+
+    def test_scan_command_matches(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("scan target.com")
+        assert result is not None
+        assert result.tool_name == "security.cognitive_scan"
+        assert result.params["target"] == "target.com"
+
+    def test_security_scan_with_program(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("security scan example.com for google_vrp")
+        assert result is not None
+        assert result.tool_name == "security.cognitive_scan"
+        assert result.params["program"] == "google_vrp"
+
+    def test_find_vulns_pattern(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("find vulns in target.com")
+        assert result is not None
+        assert result.tool_name == "security.cognitive_scan"
+
+    def test_hunt_bugs_pattern(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("hunt bugs on example.org")
+        assert result is not None
+        assert result.tool_name == "security.cognitive_scan"
+
+    def test_recon_pattern(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("recon against target.io")
+        assert result is not None
+        assert result.tool_name == "security.cognitive_scan"
+
+    def test_scan_report_pattern(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("scan report for example.com")
+        assert result is not None
+        assert result.tool_name == "security.view_report"
+
+    def test_evidence_pattern(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("show evidence for target.com")
+        assert result is not None
+        assert result.tool_name == "security.view_evidence"
+
+    def test_decrypt_token_pattern(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("decrypt token /path/to/vault/token.enc")
+        assert result is not None
+        assert result.tool_name == "security.decrypt_token"
+
+    def test_non_security_not_matched(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("list files in D:\\Ideas")
+        assert result is not None
+        assert "security" not in result.tool_name
+
+    def test_3vilbob_case_insensitive(self):
+        from app.services.daenabot.router import DaenaBotRouter
+        result = DaenaBotRouter.match("/3VILBOB Target.COM")
+        assert result is not None
+        assert result.tool_name == "security.cognitive_scan_offensive"
+
+
+class TestEvidenceCapturePhase2:
+    """Tests for new evidence capture methods: vault listing, decryption."""
+
+    def test_list_vault_contents_empty(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            results = EvidenceCapture.list_vault_contents(td)
+            assert results == []
+
+    def test_list_vault_contents_with_files(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / "response_test_abc.txt").write_text("test")
+            (Path(td) / "token_api_key_def.enc").write_bytes(b"encrypted")
+            results = EvidenceCapture.list_vault_contents(td)
+            assert len(results) == 2
+            enc_files = [r for r in results if r["encrypted"]]
+            assert len(enc_files) == 1
+
+    def test_decrypt_token_insecure_fallback(self):
+        """Test base64 fallback decryption (when cryptography not installed)."""
+        import tempfile, base64
+        token_val = "STRIPE_LIVE_PLACEHOLDER_test123456789"
+        encoded = base64.b64encode(f"INSECURE:{token_val}".encode())
+        tmp_path = os.path.join(tempfile.gettempdir(), "test_decrypt_fallback.enc")
+        try:
+            Path(tmp_path).write_bytes(encoded)
+            # Mock cryptography as unavailable
+            with patch.dict("sys.modules", {"cryptography": None, "cryptography.fernet": None}):
+                result = EvidenceCapture.decrypt_token(tmp_path)
+                assert result == token_val
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    def test_decrypt_token_file_not_found(self):
+        with pytest.raises(ValueError, match="not found"):
+            EvidenceCapture.decrypt_token("/nonexistent/path.enc")
+
+    def test_decrypt_token_wrong_extension(self):
+        import tempfile
+        tmp_path = os.path.join(tempfile.gettempdir(), "test_decrypt_wrong.txt")
+        try:
+            Path(tmp_path).write_bytes(b"not encrypted")
+            with pytest.raises(ValueError, match=".enc"):
+                EvidenceCapture.decrypt_token(tmp_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+
+class TestConstraintProbeOffensive:
+    """Tests for enhanced constraint probe with offensive decompositions."""
+
+    @pytest.mark.asyncio
+    async def test_auth_blocking_classification(self):
+        from app.services.cognition.constraint_probe import ConstraintProbe
+        probe = ConstraintProbe()
+        result = await probe.probe(
+            task="Access admin panel",
+            constraint="JWT token rejected, 401 unauthorized",
+            error="401 Unauthorized",
+        )
+        assert len(result.open_channels) > 0
+        channel_names = [c.name for c in result.decomposed_channels]
+        assert "jwt_manipulation" in channel_names
+        assert "forced_browsing" in channel_names
+
+    @pytest.mark.asyncio
+    async def test_rate_limited_classification(self):
+        from app.services.cognition.constraint_probe import ConstraintProbe
+        probe = ConstraintProbe()
+        result = await probe.probe(
+            task="Enumerate user accounts",
+            constraint="Rate limited after 100 requests",
+            error="429 Too Many Requests",
+        )
+        assert len(result.open_channels) > 0
+        channel_names = [c.name for c in result.decomposed_channels]
+        assert "ip_rotation" in channel_names
+        assert "header_spoofing" in channel_names
+        assert "slow_and_steady" in channel_names
+
+    @pytest.mark.asyncio
+    async def test_scan_blocked_still_works(self):
+        from app.services.cognition.constraint_probe import ConstraintProbe
+        probe = ConstraintProbe()
+        result = await probe.probe(
+            task="Scan target",
+            constraint="WAF blocking scan traffic, 403 responses",
+            error="All responses 403",
+        )
+        channel_names = [c.name for c in result.decomposed_channels]
+        assert "certificate_transparency" in channel_names
+        assert "javascript_analysis" in channel_names
+
+    @pytest.mark.asyncio
+    async def test_hardened_target_still_works(self):
+        from app.services.cognition.constraint_probe import ConstraintProbe
+        probe = ConstraintProbe()
+        result = await probe.probe(
+            task="Scan Google",
+            constraint="Target is hardened cloud with Cloudflare",
+            error="Standard scans filtered",
+        )
+        channel_names = [c.name for c in result.decomposed_channels]
+        assert "business_logic" in channel_names
+        assert "race_condition" in channel_names
+
+
+class TestReportGeneratorEvidence:
+    """Tests for evidence chain rendering in reports."""
+
+    def test_generate_markdown_with_evidence(self):
+        from app.services.security.report_generator import (
+            BugBountyReportGenerator, VulnFinding, ReportMetadata,
+        )
+        gen = BugBountyReportGenerator()
+        findings = [VulnFinding(
+            title="Test Finding",
+            severity="high",
+            description="Test description",
+        )]
+        evidence = {
+            "scan_id": "abc123",
+            "total_evidence": 3,
+            "chain_hash": "deadbeef" * 8,
+            "vault_path": "/tmp/test_vault",
+            "by_type": {"response": 2, "curl": 1},
+            "items": [
+                {"type": "response", "sha256": "aabb" * 16, "description": "HTTP 200", "encrypted": False, "timestamp": "2026-04-08T12:00:00"},
+                {"type": "response", "sha256": "ccdd" * 16, "description": "HTTP 403", "encrypted": False, "timestamp": "2026-04-08T12:01:00"},
+                {"type": "curl", "sha256": "eeff" * 16, "description": "Repro curl", "encrypted": False, "timestamp": "2026-04-08T12:02:00"},
+            ],
+        }
+        metadata = ReportMetadata(target="test.com")
+        # Use markdown fallback (no reportlab needed)
+        result = gen._generate_markdown(findings, metadata, evidence_summary=evidence)
+        import os
+        assert os.path.exists(result)
+        content = open(result).read()
+        assert "Evidence Chain" in content
+        assert "abc123" in content
+        assert "deadbeef" in content
+        assert "response" in content.lower()
+        os.unlink(result)
+
+    def test_generate_signature_without_evidence(self):
+        """Report generation should work fine without evidence (non-offensive mode)."""
+        from app.services.security.report_generator import (
+            BugBountyReportGenerator, VulnFinding, ReportMetadata,
+        )
+        gen = BugBountyReportGenerator()
+        findings = [VulnFinding(
+            title="Test",
+            severity="low",
+            description="No evidence mode",
+        )]
+        metadata = ReportMetadata(target="clean.com")
+        result = gen._generate_markdown(findings, metadata)
+        import os
+        assert os.path.exists(result)
+        content = open(result).read()
+        assert "Evidence Chain" not in content
+        os.unlink(result)

@@ -1083,7 +1083,23 @@ class CognitiveScanEngine:
             finding_id=finding_id,
         )
 
-        # 2. Capture response snapshot if we can re-fetch
+        # 2. Capture Playwright screenshot (visual proof)
+        try:
+            screenshot_item = await self._evidence.capture_screenshot_from_browser(
+                url=url,
+                finding_id=finding_id,
+                description=f"Visual proof: {finding.get('info', {}).get('name', finding_id)}",
+            )
+            if screenshot_item:
+                logger.info(
+                    "cognitive_scan.screenshot_captured",
+                    url=url,
+                    finding=finding_id,
+                )
+        except Exception as exc:
+            logger.debug("cognitive_scan.screenshot_failed", url=url, error=str(exc)[:100])
+
+        # 3. Capture response snapshot if we can re-fetch
         try:
             import httpx
             request_headers = {}
@@ -1264,4 +1280,9 @@ class CognitiveScanEngine:
             ),
         )
 
-        return gen.generate(vuln_findings, metadata)
+        # Pass evidence chain to report if in /3vilbob mode
+        evidence = None
+        if self._evidence:
+            evidence = self._evidence.get_evidence_summary()
+
+        return gen.generate(vuln_findings, metadata, evidence_summary=evidence)

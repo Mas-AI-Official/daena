@@ -485,6 +485,184 @@ class EvidenceCapture:
         }
 
     # ------------------------------------------------------------------
+    # Playwright screenshot integration
+    # ------------------------------------------------------------------
+
+    async def capture_screenshot_from_browser(
+        self,
+        url: str,
+        *,
+        finding_id: str = "",
+        description: str = "",
+        full_page: bool = True,
+    ) -> EvidenceItem | None:
+        """Capture a screenshot via BrowserAgent (Playwright).
+
+        Imports BrowserAgent lazily to avoid coupling. If Playwright
+        is not available or the page fails to load, returns None
+        instead of crashing the evidence chain.
+
+        This is the visual proof: "Here is what the vulnerability
+        looks like in a real browser at the moment of discovery."
+        """
+        try:
+            from app.services.daenabot.browser_agent import BrowserAgent
+
+            agent = BrowserAgent()
+            await agent.navigate(url)
+            # Small delay for rendering
+            import asyncio
+            await asyncio.sleep(1.5)
+            result = await agent.screenshot(full_page=full_page)
+
+            if result.get("success"):
+                output = result.get("output", {})
+                # BrowserAgent returns base64 -- decode to bytes
+                import base64
+                b64_data = output.get("base64", "")
+                if b64_data:
+                    png_bytes = base64.b64decode(b64_data)
+                    return await self.capture_screenshot(
+                        url=url,
+                        png_bytes=png_bytes,
+                        finding_id=finding_id,
+                        description=description or f"Browser screenshot of {url}",
+                    )
+
+                # BrowserAgent saved to file -- read the bytes
+                file_path = output.get("path", "")
+                if file_path:
+                    png_bytes = Path(file_path).read_bytes()
+                    return await self.capture_screenshot(
+                        url=url,
+                        png_bytes=png_bytes,
+                        finding_id=finding_id,
+                        description=description or f"Browser screenshot of {url}",
+                    )
+
+            logger.warning(
+                "evidence.screenshot_from_browser_failed",
+                url=url,
+                reason="BrowserAgent returned no image data",
+            )
+            return None
+
+        except ImportError:
+            logger.warning(
+                "evidence.playwright_not_available",
+                reason="BrowserAgent or Playwright not installed",
+            )
+            return None
+        except Exception as exc:
+            logger.warning(
+                "evidence.screenshot_from_browser_error",
+                url=url,
+                error=str(exc)[:200],
+            )
+            return None
+
+    # ------------------------------------------------------------------
+    # Token vault decryption
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def decrypt_token(encrypted_path: str, encryption_key: str = "") -> str:
+        """Decrypt a token from the evidence vault.
+
+        Args:
+            encrypted_path: Path to the .enc file in the vault.
+            encryption_key: Fernet key. If empty, derives from
+                           EVIDENCE_ENCRYPTION_KEY env var or machine ID.
+
+        Returns:
+            Decrypted token string.
+
+        Raises:
+            ValueError: If decryption fails or file not found.
+        """
+        path = Path(encrypted_path)
+        if not path.exists():
+            raise ValueError(f"Encrypted file not found: {encrypted_path}")
+        if not path.suffix == ".enc":
+            raise ValueError(f"Expected .enc file, got: {path.suffix}")
+
+        encrypted_blob = path.read_bytes()
+
+        try:
+            from cryptography.fernet import Fernet, InvalidToken
+            import base64
+
+            if encryption_key:
+                key = encryption_key.encode() if isinstance(encryption_key, str) else encryption_key
+            else:
+                key_env = os.environ.get("EVIDENCE_ENCRYPTION_KEY", "")
+                if key_env:
+                    key = key_env.encode()
+                else:
+                    import platform
+                    machine_id = f"daena-evidence-{platform.node()}-{os.getlogin()}"
+                    key_bytes = hashlib.sha256(machine_id.encode()).digest()
+                    key = base64.urlsafe_b64encode(key_bytes)
+
+            fernet = Fernet(key)
+            decrypted = fernet.decrypt(encrypted_blob)
+            return decrypted.decode("utf-8")
+
+        except ImportError:
+            # cryptography not installed -- check if it's base64 fallback
+            import base64
+            decoded = base64.b64decode(encrypted_blob).decode("utf-8")
+            if decoded.startswith("INSECURE:"):
+                return decoded[len("INSECURE:"):]
+            raise ValueError("Cannot decrypt: cryptography package not installed")
+
+        except Exception as exc:
+            raise ValueError(f"Decryption failed: {str(exc)}") from exc
+
+    @staticmethod
+    def list_vault_contents(vault_path: str = "") -> list[dict[str, Any]]:
+        """List all evidence files in a vault directory.
+
+        Args:
+            vault_path: Path to a specific vault dir. If empty,
+                       lists all vault directories.
+
+        Returns:
+            List of dicts with file info.
+        """
+        base = Path(vault_path) if vault_path else EVIDENCE_VAULT
+        if not base.exists():
+            return []
+
+        results = []
+        if vault_path:
+            # List files in a specific vault
+            for f in sorted(base.iterdir()):
+                if f.is_file():
+                    results.append({
+                        "name": f.name,
+                        "type": f.suffix.lstrip("."),
+                        "size_bytes": f.stat().st_size,
+                        "modified": datetime.fromtimestamp(
+                            f.stat().st_mtime, tz=timezone.utc
+                        ).isoformat(),
+                        "encrypted": f.suffix == ".enc",
+                        "path": str(f),
+                    })
+        else:
+            # List all vault directories
+            for d in sorted(base.iterdir()):
+                if d.is_dir():
+                    file_count = sum(1 for _ in d.iterdir() if _.is_file())
+                    results.append({
+                        "name": d.name,
+                        "file_count": file_count,
+                        "path": str(d),
+                    })
+
+        return results
+
+    # ------------------------------------------------------------------
     # Token pattern detection
     # ------------------------------------------------------------------
 

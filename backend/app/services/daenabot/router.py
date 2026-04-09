@@ -324,6 +324,80 @@ _CALENDAR_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
     ),
 ]
 
+# ── Security scan patterns (/3vilbob hidden activation) ──────
+
+_SECURITY_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
+    # /3vilbob <target> [program] -- hidden offensive mode activation
+    # No help text, no menu entry. You know it or you don't.
+    (
+        re.compile(
+            r"/3vilbob\s+([\w.\-]+(?:\.\w+)+)(?:\s+(\S+))?",
+            re.IGNORECASE,
+        ),
+        "security.cognitive_scan_offensive",
+        lambda m: {
+            "target": m.group(1).strip(),
+            "program": (m.group(2) or "").strip(),
+            "offensive_mode": True,
+            "agi_mode": True,
+        },
+        "Offensive scan: {target}",
+    ),
+    # "scan <target>" or "security scan <domain>"
+    (
+        re.compile(
+            r"(?:security\s+)?scan\s+([\w.\-]+(?:\.\w+)+)(?:\s+(?:for|program|on)\s+(\S+))?",
+            re.IGNORECASE,
+        ),
+        "security.cognitive_scan",
+        lambda m: {
+            "target": m.group(1).strip(),
+            "program": (m.group(2) or "").strip(),
+        },
+        "Security scan: {target}",
+    ),
+    # "find vulns in <target>" or "hunt bugs on <domain>"
+    (
+        re.compile(
+            r"(?:find\s+(?:vulns?|vulnerabilit(?:y|ies))|hunt\s+bugs?|pentest|recon)\s+(?:in|on|for|against)\s+([\w.\-]+(?:\.\w+)+)",
+            re.IGNORECASE,
+        ),
+        "security.cognitive_scan",
+        lambda m: {"target": m.group(1).strip(), "program": ""},
+        "Security scan: {target}",
+    ),
+    # "scan report for <target>" -- view latest report
+    (
+        re.compile(
+            r"(?:scan\s+)?report\s+(?:for|of)\s+([\w.\-]+(?:\.\w+)+)",
+            re.IGNORECASE,
+        ),
+        "security.view_report",
+        lambda m: {"target": m.group(1).strip()},
+        "View scan report: {target}",
+    ),
+    # "evidence for <target>" or "show evidence chain"
+    (
+        re.compile(
+            r"(?:show\s+)?evidence\s+(?:for|of|chain)\s*([\w.\-]+(?:\.\w+)+)?",
+            re.IGNORECASE,
+        ),
+        "security.view_evidence",
+        lambda m: {"target": (m.group(1) or "").strip()},
+        "View evidence chain",
+    ),
+    # "decrypt token <vault_path>" -- evidence review
+    (
+        re.compile(
+            r"decrypt\s+(?:token|vault|evidence)\s+(.+)",
+            re.IGNORECASE,
+        ),
+        "security.decrypt_token",
+        lambda m: {"vault_path": m.group(1).strip()},
+        "Decrypt evidence token",
+    ),
+]
+
 _NOTION_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
     (
         re.compile(
@@ -345,12 +419,14 @@ _NOTION_PATTERNS: list[tuple[re.Pattern[str], str, Any, str]] = [
     ),
 ]
 
-# Priority order: terminal > integration > vision_browser > web_crawler > file > browser
+# Priority order: security > terminal > integration > vision_browser > web_crawler > file > browser
+# Security patterns FIRST so "scan target.com" doesn't match file ops.
 # Integration patterns checked before file patterns to avoid "check my email"
 # matching file "check" operations. Vision/crawler patterns checked before
 # basic browser to prefer AI-powered navigation for research tasks.
 _ALL_PATTERNS = (
-    _TERMINAL_PATTERNS
+    _SECURITY_PATTERNS
+    + _TERMINAL_PATTERNS
     + _GMAIL_PATTERNS
     + _CALENDAR_PATTERNS
     + _NOTION_PATTERNS

@@ -80,6 +80,7 @@ class BugBountyReportGenerator:
         self,
         findings: list[VulnFinding],
         metadata: ReportMetadata,
+        evidence_summary: dict[str, Any] | None = None,
     ) -> str:
         """Generate a PDF report and return the file path."""
         os.makedirs(REPORTS_DIR, exist_ok=True)
@@ -277,6 +278,80 @@ class BugBountyReportGenerator:
                             body_style,
                         ))
 
+            # Evidence Chain (if /3vilbob mode captured evidence)
+            if evidence_summary and evidence_summary.get("total_evidence", 0) > 0:
+                elements.append(PageBreak())
+                elements.append(Paragraph("Evidence Chain", heading_style))
+                elements.append(Paragraph(
+                    f"<b>Scan ID:</b> {evidence_summary.get('scan_id', 'N/A')}",
+                    body_style,
+                ))
+                elements.append(Paragraph(
+                    f"<b>Total Evidence Items:</b> {evidence_summary['total_evidence']}",
+                    body_style,
+                ))
+                elements.append(Paragraph(
+                    f"<b>Chain Hash (SHA-256):</b> <font face='Courier'>"
+                    f"{evidence_summary.get('chain_hash', 'N/A')}</font>",
+                    body_style,
+                ))
+                vault_path = evidence_summary.get("vault_path", "")
+                if vault_path:
+                    elements.append(Paragraph(
+                        f"<b>Vault Path:</b> {vault_path}",
+                        body_style,
+                    ))
+                elements.append(Spacer(1, 8))
+
+                # Evidence type breakdown
+                by_type = evidence_summary.get("by_type", {})
+                if by_type:
+                    type_data = [["Evidence Type", "Count"]]
+                    for etype, count in sorted(by_type.items()):
+                        type_data.append([etype.replace("_", " ").title(), str(count)])
+                    et = Table(type_data, colWidths=[200, 80])
+                    et.setStyle(TableStyle([
+                        ("BACKGROUND", (0, 0), (-1, 0), HexColor("#1A2332")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), HexColor("#D4A843")),
+                        ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#CCCCCC")),
+                        ("FONTSIZE", (0, 0), (-1, -1), 9),
+                        ("TOPPADDING", (0, 0), (-1, -1), 4),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ]))
+                    elements.append(et)
+                    elements.append(Spacer(1, 8))
+
+                # Individual evidence items (truncated for readability)
+                items = evidence_summary.get("items", [])
+                for idx, item in enumerate(items[:25], 1):
+                    etype = item.get("type", "unknown")
+                    ts = item.get("timestamp", "")[:19]
+                    sha = item.get("sha256", "")[:16]
+                    desc = item.get("description", "")[:120]
+                    encrypted_tag = " [ENCRYPTED]" if item.get("encrypted") else ""
+                    elements.append(Paragraph(
+                        f"<b>#{idx}</b> [{etype.upper()}] {ts} "
+                        f"<font face='Courier'>{sha}...</font>{encrypted_tag}",
+                        body_style,
+                    ))
+                    if desc:
+                        elements.append(Paragraph(f"  {desc}", body_style))
+
+                if len(items) > 25:
+                    elements.append(Paragraph(
+                        f"<i>... and {len(items) - 25} more evidence items in vault.</i>",
+                        body_style,
+                    ))
+
+                elements.append(Spacer(1, 8))
+                elements.append(Paragraph(
+                    "<b>Note:</b> All evidence items are SHA-256 hashed and "
+                    "chained. The chain hash above proves no evidence was "
+                    "modified after capture. Encrypted tokens require the "
+                    "EVIDENCE_ENCRYPTION_KEY to decrypt.",
+                    body_style,
+                ))
+
             # Footer
             elements.append(Spacer(1, 30))
             elements.append(Paragraph(
@@ -294,12 +369,13 @@ class BugBountyReportGenerator:
 
         except ImportError:
             # Fallback: generate markdown report
-            return self._generate_markdown(findings, metadata)
+            return self._generate_markdown(findings, metadata, evidence_summary)
 
     def _generate_markdown(
         self,
         findings: list[VulnFinding],
         metadata: ReportMetadata,
+        evidence_summary: dict[str, Any] | None = None,
     ) -> str:
         """Fallback: generate markdown report if reportlab unavailable."""
         safe_target = metadata.target.replace(".", "_").replace("/", "_")[:30]
@@ -336,6 +412,35 @@ class BugBountyReportGenerator:
                     lines.append(
                         f"| {cve_link.cve_id} | {cve_link.cvss_score} | {cve_link.severity} |"
                     )
+            lines.append("")
+
+        # Evidence chain section
+        if evidence_summary and evidence_summary.get("total_evidence", 0) > 0:
+            lines.extend([
+                "",
+                "## Evidence Chain",
+                "",
+                f"**Scan ID:** {evidence_summary.get('scan_id', 'N/A')}",
+                f"**Total Evidence:** {evidence_summary['total_evidence']} items",
+                f"**Chain Hash:** `{evidence_summary.get('chain_hash', 'N/A')}`",
+                f"**Vault:** {evidence_summary.get('vault_path', 'N/A')}",
+                "",
+            ])
+            by_type = evidence_summary.get("by_type", {})
+            if by_type:
+                lines.append("| Type | Count |")
+                lines.append("|------|-------|")
+                for etype, count in sorted(by_type.items()):
+                    lines.append(f"| {etype} | {count} |")
+                lines.append("")
+
+            for idx, item in enumerate(evidence_summary.get("items", [])[:25], 1):
+                enc = " [ENC]" if item.get("encrypted") else ""
+                lines.append(
+                    f"{idx}. **{item.get('type', '?').upper()}** "
+                    f"`{item.get('sha256', '')[:16]}...` "
+                    f"{item.get('description', '')[:100]}{enc}"
+                )
             lines.append("")
 
         lines.append(f"---\nGenerated by MAS-AI Technologies Inc. on {metadata.date}")
