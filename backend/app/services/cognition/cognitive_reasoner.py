@@ -114,6 +114,70 @@ FRAMEWORK_PROMPTS: dict[str, str] = {
     ),
 }
 
+# ---------------------------------------------------------------------------
+# OFFENSIVE framework lenses -- loaded ONLY in /3vilbob mode
+# These are NOT in the standard lens set. They activate when the
+# operator explicitly enters offensive mode for authorized testing.
+# ---------------------------------------------------------------------------
+
+OFFENSIVE_FRAMEWORK_PROMPTS: dict[str, str] = {
+    "defender_assumption_mapping": (
+        "DEFENDER ASSUMPTION MAPPING: Every defense is built on assumptions. "
+        "The WAF assumes scanners use known tool signatures. The rate limiter "
+        "assumes abuse comes in bursts. The auth system assumes tokens are "
+        "never leaked. MAP every assumption the defender is making, then "
+        "check which ones are WRONG. The gap between what they assume and "
+        "what is actually true is where the vulnerability lives."
+    ),
+    "legitimacy_mimicry": (
+        "LEGITIMACY MIMICRY: The defender's paradox -- they MUST let real "
+        "users through. Don't fake being a user. BE a user. Real browser "
+        "headers, real timing patterns, real navigation flows. A residential "
+        "IP + realistic UA + human-speed requests = indistinguishable from "
+        "a real visitor. The best recon looks exactly like normal traffic."
+    ),
+    "constraint_decomposition": (
+        "CONSTRAINT DECOMPOSITION (Mythos): When blocked, decompose the "
+        "constraint into sub-channels. 'Cloudflare blocks scanners' breaks "
+        "into: signature detection, rate detection, IP reputation, TLS "
+        "fingerprint, JS challenge. Each sub-channel has its own bypass. "
+        "You don't defeat the whole wall -- you find the one brick that "
+        "isn't cemented. ENUMERATE all sub-channels, then probe each."
+    ),
+    "attack_chain_thinking": (
+        "ATTACK CHAIN THINKING: Individual findings are low-severity. "
+        "CHAINS are critical. An info-disclosure header + an exposed "
+        "debug endpoint + a default credential = full server compromise. "
+        "For every finding, ask: what does this ENABLE? What other finding "
+        "would this combine with to escalate severity? Think in chains, "
+        "not individual links."
+    ),
+    "temporal_analysis": (
+        "TEMPORAL ANALYSIS: Defenses change over time. Staging endpoints "
+        "that were protected yesterday might be exposed today after a "
+        "deploy. Rate limits reset at midnight. WAF rules update on "
+        "Tuesdays. Certificate renewals expose internal hostnames in CT "
+        "logs for a brief window. Think about WHEN to probe, not just "
+        "WHERE and HOW."
+    ),
+    "business_logic_exploitation": (
+        "BUSINESS LOGIC EXPLOITATION: Automated scanners find tech vulns. "
+        "Researchers find LOGIC vulns. Can you buy something for negative "
+        "price? Can you approve your own request? Can you access user A's "
+        "data by changing the ID parameter? Can you skip the payment step "
+        "in a checkout flow? These are the bugs that pay $50K+ bounties "
+        "because no scanner finds them."
+    ),
+    "evidence_maximization": (
+        "EVIDENCE MAXIMIZATION: Finding the vuln is 40% of the work. "
+        "PROVING it is 60%. For every finding, capture: the exact request "
+        "that triggers it, the full response proving impact, a screenshot "
+        "if visual, and a minimal PoC. The 1-cent proof -- don't just say "
+        "the transfer API has no auth, PROVE it by moving 1 cent. Evidence "
+        "they cannot ignore."
+    ),
+}
+
 # Framework selection guidance -- which lenses to use when
 FRAMEWORK_SELECTION_PROMPT = """You have access to these reasoning frameworks as thinking tools.
 You don't need to use all of them. Select the 2-4 that are most relevant
@@ -383,6 +447,7 @@ class CognitiveReasoner:
         self,
         *,
         agi_mode: bool = False,
+        offensive_mode: bool = False,
         db: Any = None,
         user_id: Any = None,
         tenant_id: Any = None,
@@ -392,6 +457,7 @@ class CognitiveReasoner:
         self._initialized: bool = False
         self._llm_available: bool = False
         self._agi_mode = agi_mode
+        self._offensive_mode = offensive_mode
         self._quintessence_available: bool = False
         self._db = db
         self._user_id = user_id
@@ -494,11 +560,24 @@ class CognitiveReasoner:
             for mem in memory_context[:5]:
                 failure_context += f"  - [{mem.get('tier', '?')}] {mem.get('content', '')[:200]}\n"
 
-        # Select frameworks
+        # Select frameworks -- include offensive lenses in /3vilbob mode
+        all_frameworks = dict(FRAMEWORK_PROMPTS)
+        if self._offensive_mode:
+            all_frameworks.update(OFFENSIVE_FRAMEWORK_PROMPTS)
         frameworks_text = "\n".join(
-            f"- {name}: {desc}" for name, desc in FRAMEWORK_PROMPTS.items()
+            f"- {name}: {desc}" for name, desc in all_frameworks.items()
         )
         system_prompt = FRAMEWORK_SELECTION_PROMPT.format(frameworks=frameworks_text)
+
+        # In offensive mode, prepend adversarial thinking directive
+        if self._offensive_mode:
+            system_prompt = (
+                "MODE: OFFENSIVE SECURITY ASSESSMENT (authorized)\n"
+                "Think like an attacker. Your goal is to find what the defender missed.\n"
+                "Prioritize: defender assumptions > constraint gaps > attack chains > evidence.\n"
+                "Every finding needs PROOF (response snapshot, curl command, PoC).\n\n"
+                + system_prompt
+            )
 
         user_prompt = ORIENT_PROMPT.format(
             observation=self._format_observation(observation),
@@ -925,7 +1004,8 @@ class CognitiveReasoner:
         """Extract which frameworks the LLM referenced in its response."""
         used = []
         response_lower = response.lower()
-        for name in FRAMEWORK_PROMPTS:
+        all_frameworks = {**FRAMEWORK_PROMPTS, **OFFENSIVE_FRAMEWORK_PROMPTS}
+        for name in all_frameworks:
             # Check for framework name or its key concept
             if name.replace("_", " ") in response_lower or name in response_lower:
                 used.append(name)

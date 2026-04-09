@@ -95,6 +95,8 @@ class CognitiveScanResult:
     thinking_log: list[str] = field(default_factory=list)
     target_profile: TargetProfile | None = None
     report_path: str = ""
+    evidence_summary: dict[str, Any] = field(default_factory=dict)  # /3vilbob evidence chain
+    offensive_mode: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -229,10 +231,23 @@ class CognitiveScanEngine:
     Inversion, Constraint Probe, etc.). In AGI mode, it uses
     Quintessence (multi-model debate) for the deepest analysis.
 
+    /3vilbob mode activates:
+    - Offensive framework lenses (defender mapping, legitimacy mimicry,
+      constraint decomposition, attack chains, business logic)
+    - Mandatory proxy rotation (refuses to scan without it)
+    - Evidence auto-capture (response snapshots, screenshots, tokens, curl)
+    - Chain of evidence (timestamped, hashed, tamper-evident)
+    - Shield ALWAYS ON (outbound data guard, encrypted token vault)
+    - Zero trace when deactivated
+
     Usage::
 
         engine = CognitiveScanEngine(agi_mode=True)
         result = await engine.scan("cloud.google.com", program="google_vrp")
+
+        # /3vilbob mode (hidden, offensive):
+        engine = CognitiveScanEngine(agi_mode=True, offensive_mode=True)
+        result = await engine.scan("target.com", program="hackerone_target")
     """
 
     def __init__(
@@ -242,13 +257,17 @@ class CognitiveScanEngine:
         proxy: str = "",
         use_tor: bool = False,
         agi_mode: bool = False,
+        offensive_mode: bool = False,
     ) -> None:
         self.max_cycles = max_cycles
         self.proxy = proxy
         self.use_tor = use_tor
         self.agi_mode = agi_mode
+        self.offensive_mode = offensive_mode
         self._scan_id = str(uuid4())[:8]
         self._reasoner_initialized = False
+        self._evidence = None  # EvidenceCapture, initialized in scan()
+        self._proxy_manager = None  # ProxyManager, initialized in scan()
 
     async def scan(
         self,
@@ -262,14 +281,44 @@ class CognitiveScanEngine:
         - What strategy will work against THIS kind of target?
         - My scan returned nothing -- WHY? What else can I try?
         - What channels did the defender miss?
+
+        In /3vilbob mode, additionally:
+        - Proxy is MANDATORY (refuses to scan without it)
+        - Evidence auto-capture is ON for every finding
+        - Offensive framework lenses are active in the reasoner
+        - All requests use legitimacy mimicry (real browser headers)
         """
         from app.services.daenabot.vuln_scanner_agent import VulnScannerAgent
         from app.services.cognition.cognitive_reasoner import CognitiveReasoner
 
         agent = VulnScannerAgent()
 
+        # Initialize ProxyManager (offensive mode enforces proxy)
+        from app.services.security.proxy_manager import ProxyManager
+        self._proxy_manager = ProxyManager(offensive_mode=self.offensive_mode)
+        self._proxy_manager.initialize()
+
+        # Initialize Evidence Capture (always in offensive mode)
+        if self.offensive_mode:
+            from app.services.security.evidence_capture import EvidenceCapture
+            self._evidence = EvidenceCapture(
+                scan_id=self._scan_id,
+                target=target,
+                program=program,
+            )
+            await self._evidence.initialize()
+            logger.info(
+                "cognitive_scan.evidence_capture_active",
+                scan_id=self._scan_id,
+                target=target,
+            )
+
         # Initialize the LLM brain for ORIENT/DECIDE/REFLECT
-        reasoner = CognitiveReasoner(agi_mode=self.agi_mode)
+        # In offensive mode, offensive framework lenses are loaded
+        reasoner = CognitiveReasoner(
+            agi_mode=self.agi_mode,
+            offensive_mode=self.offensive_mode,
+        )
         try:
             await reasoner.initialize()
             self._reasoner_initialized = reasoner.is_llm_available
@@ -278,6 +327,7 @@ class CognitiveScanEngine:
                 mode=reasoner.reasoning_mode,
                 model=reasoner._model_id,
                 agi=self.agi_mode,
+                offensive=self.offensive_mode,
             )
         except Exception as exc:
             logger.warning("cognitive_scan.reasoner_init_failed", error=str(exc))
@@ -346,9 +396,14 @@ class CognitiveScanEngine:
                     thinking.append(f"  Previous strategy '{prev.strategy_name}' failed: {prev.failure_reason}")
                     thinking.append(f"  Open channels from constraint probe: {prev.open_channels}")
 
-            # Classify target type (deterministic baseline)
-            profile.target_type = self._classify_target(profile)
-            thinking.append(f"  Target classified as: {profile.target_type}")
+            # Classify target type
+            # In offensive mode or when LLM available, use LLM-powered classification
+            if self.offensive_mode or self._reasoner_initialized:
+                profile.target_type = await self._classify_target_llm(profile, reasoner)
+                thinking.append(f"  Target classified as: {profile.target_type} (LLM-analyzed)")
+            else:
+                profile.target_type = self._classify_target(profile)
+                thinking.append(f"  Target classified as: {profile.target_type}")
 
             # Populate defenses (for reporting, not duplicated per cycle)
             if profile.waf_detected and f"WAF: {profile.waf_detected}" not in profile.defenses:
@@ -489,6 +544,16 @@ class CognitiveScanEngine:
 
             cycle_result.findings = step_findings
 
+            # ── EVIDENCE CAPTURE (/3vilbob mode) ──────────────
+            # Auto-capture evidence for every finding
+            if self._evidence and step_findings:
+                thinking.append(f"[EVIDENCE] Capturing proof for {len(step_findings)} findings...")
+                for finding in step_findings:
+                    try:
+                        await self._capture_finding_evidence(finding, agent)
+                    except Exception as exc:
+                        thinking.append(f"  Evidence capture error: {str(exc)[:100]}")
+
             # ── REFLECT (LLM-powered) ──────────────────────────
             thinking.append(f"[REFLECT] Strategy '{strategy.name}' complete.")
 
@@ -582,12 +647,25 @@ class CognitiveScanEngine:
                 logger.debug("cognitive_scan.report_failed", error=str(exc))
 
         result.target_profile = profile
+        result.offensive_mode = self.offensive_mode
+
+        # Attach evidence chain summary (/3vilbob mode)
+        if self._evidence:
+            result.evidence_summary = self._evidence.get_evidence_summary()
+            logger.info(
+                "cognitive_scan.evidence_chain_complete",
+                total_evidence=result.evidence_summary.get("total_evidence", 0),
+                chain_hash=result.evidence_summary.get("chain_hash", "")[:12],
+            )
+
         logger.info(
             "cognitive_scan.complete",
             target=target,
             findings=result.total_findings,
             cycles=result.cycles_used,
             strategies=result.strategies_tried,
+            offensive=self.offensive_mode,
+            evidence_count=result.evidence_summary.get("total_evidence", 0) if result.evidence_summary else 0,
         )
         return result
 
@@ -598,26 +676,30 @@ class CognitiveScanEngine:
     def _resolve_proxy(self) -> str:
         """Resolve proxy URL for IP protection during scanning.
 
-        Priority:
+        Uses ProxyManager for centralized proxy management.
+        In offensive mode (/3vilbob), proxy is MANDATORY.
+
+        Priority (via ProxyManager):
             1. Explicit proxy passed to constructor
-            2. USE_TOR flag -> socks5://127.0.0.1:9050
-            3. SCAN_PROXY environment variable
-            4. Empty string (direct connection)
-
-        IP protection matters for bug bounty: targets log scanner IPs,
-        and repeated scans from the same IP can trigger bans. Tor or
-        a proxy prevents IP correlation across scan sessions.
+            2. Rotating residential proxy (SCAN_PROXY env var)
+            3. Tor SOCKS5 (USE_TOR env var)
+            4. Direct connection (WARNING in offensive mode: raises)
         """
-        import os
-
+        # Explicit proxy override
         if self.proxy:
             return self.proxy
+
+        # Use ProxyManager (handles env vars, health tracking, failover)
+        if self._proxy_manager:
+            return self._proxy_manager.get_proxy()
+
+        # Legacy fallback (when ProxyManager not initialized)
+        import os
         if self.use_tor:
             return "socks5://127.0.0.1:9050"
         env_proxy = os.environ.get("SCAN_PROXY", "")
         if env_proxy:
             return env_proxy
-        # Check USE_TOR env var as fallback
         if os.environ.get("USE_TOR", "").lower() in ("1", "true", "yes"):
             return "socks5://127.0.0.1:9050"
         return ""
@@ -936,9 +1018,13 @@ class CognitiveScanEngine:
                 for path in interesting_paths:
                     try:
                         url = f"{target.rstrip('/')}{path}"
-                        resp = await client.get(url, headers={
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                        })
+                        # Use legitimacy mimicry headers if ProxyManager available
+                        req_headers = (
+                            self._proxy_manager.get_request_headers()
+                            if self._proxy_manager
+                            else {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                        )
+                        resp = await client.get(url, headers=req_headers)
                         if resp.status_code not in (404, 403, 301, 302, 503):
                             findings.append({
                                 "type": "path_discovery",
@@ -965,6 +1051,145 @@ class CognitiveScanEngine:
         # This is covered by _path_fuzz for now -- can be extended
         # with more sophisticated API discovery (GraphQL introspection, etc.)
         return {"summary": "API discovery: see path_fuzz results", "findings": []}
+
+    async def _capture_finding_evidence(
+        self,
+        finding: dict[str, Any],
+        agent: Any,
+    ) -> None:
+        """Auto-capture evidence for a finding in /3vilbob mode.
+
+        For each finding, captures:
+        1. Reproducible curl command (always)
+        2. Response snapshot (if URL available)
+        3. Token extraction (if response contains tokens)
+        """
+        if not self._evidence:
+            return
+
+        finding_id = finding.get("matcher-name", finding.get("type", "unknown"))
+        url = finding.get("url", finding.get("matched-at", finding.get("target_url", "")))
+
+        if not url:
+            return
+
+        # 1. Generate reproducible curl command
+        method = finding.get("method", "GET")
+        headers = finding.get("request_headers", {})
+        self._evidence.capture_curl(
+            method=method,
+            url=url,
+            headers=headers if isinstance(headers, dict) else {},
+            finding_id=finding_id,
+        )
+
+        # 2. Capture response snapshot if we can re-fetch
+        try:
+            import httpx
+            request_headers = {}
+            if self._proxy_manager:
+                request_headers = self._proxy_manager.get_request_headers()
+
+            async with httpx.AsyncClient(
+                timeout=10.0,
+                follow_redirects=True,
+                verify=False,
+                proxy=self._resolve_proxy() or None,
+            ) as client:
+                resp = await client.get(url, headers=request_headers)
+                resp_headers = dict(resp.headers)
+                body = resp.text
+
+                await self._evidence.capture_response(
+                    url=url,
+                    status_code=resp.status_code,
+                    headers=resp_headers,
+                    body=body,
+                    finding_id=finding_id,
+                )
+
+                # 3. Scan response for exposed tokens
+                from app.services.security.evidence_capture import EvidenceCapture
+                tokens = EvidenceCapture.detect_tokens(body)
+                for token in tokens:
+                    await self._evidence.capture_token(
+                        url=url,
+                        token_type=token["type"],
+                        token_value=token["value"],
+                        finding_id=finding_id,
+                        context=token.get("context", ""),
+                    )
+                    logger.info(
+                        "cognitive_scan.token_detected",
+                        type=token["type"],
+                        url=url,
+                    )
+
+        except Exception as exc:
+            logger.debug("cognitive_scan.evidence_refetch_failed", url=url, error=str(exc)[:100])
+
+    async def _classify_target_llm(
+        self,
+        profile: TargetProfile,
+        reasoner: Any,
+    ) -> str:
+        """LLM-powered target classification.
+
+        Instead of hardcoded domain matching, the LLM analyzes the
+        target profile and REASONS about what kind of challenge it is.
+
+        "This looks like a Google staging endpoint with test data --
+        higher chance of exposed debug endpoints."
+
+        Falls back to deterministic classification if no LLM available.
+        """
+        if not self._reasoner_initialized:
+            return self._classify_target(profile)
+
+        try:
+            classify_prompt = (
+                f"Classify this security target. Based on the profile below, "
+                f"determine what KIND of target this is and what scan strategy "
+                f"would be most effective.\n\n"
+                f"Domain: {profile.domain}\n"
+                f"Subdomains: {len(profile.subdomains)}\n"
+                f"Live hosts: {len(profile.live_hosts)}\n"
+                f"WAF: {profile.waf_detected or 'none detected'}\n"
+                f"Technologies: {profile.technologies[:10]}\n"
+                f"HTTP version: {profile.http_version or 'unknown'}\n"
+                f"Response headers: {dict(list(profile.response_headers.items())[:5])}\n\n"
+                f"Reply with ONE classification from this list:\n"
+                f"- hardened_cloud: Major cloud provider, advanced defenses\n"
+                f"- waf_protected: WAF active but not necessarily hardened\n"
+                f"- modern_infrastructure: HTTP/3, current tech, well-maintained\n"
+                f"- large_surface: Many subdomains, broad attack surface\n"
+                f"- legacy_system: Older tech, potential unpatched vulns\n"
+                f"- api_only: Pure API, no web UI\n"
+                f"- staging_or_dev: Staging/dev environment, likely less hardened\n"
+                f"- startup: Newer company, potentially rapid development with security gaps\n"
+                f"- standard: Normal web application\n\n"
+                f"Format: CLASSIFICATION: <type>\nREASONING: <why>"
+            )
+            result = await reasoner.orient(
+                task=classify_prompt,
+                observation={"domain": profile.domain},
+            )
+            # Parse classification from response
+            for line in result.analysis.split("\n"):
+                if "CLASSIFICATION:" in line.upper():
+                    classification = line.split(":", 1)[1].strip().lower().replace(" ", "_")
+                    valid_types = [
+                        "hardened_cloud", "waf_protected", "modern_infrastructure",
+                        "large_surface", "legacy_system", "api_only",
+                        "staging_or_dev", "startup", "standard",
+                    ]
+                    if classification in valid_types:
+                        return classification
+            # If we got a response but couldn't parse, use deterministic
+            return self._classify_target(profile)
+        except Exception as exc:
+            logger.debug("cognitive_scan.llm_classify_failed", error=str(exc)[:100])
+            return self._classify_target(profile)
 
     async def _generate_report(
         self,
