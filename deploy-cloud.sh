@@ -8,8 +8,8 @@ gcloud run services update daena \
   --project=daena-467315 \
   --region=us-central1 \
   --update-env-vars="\
-GROQ_API_KEY=${GROQ_API_KEY},\
-GEMINI_API_KEY=${GEMINI_API_KEY},\
+GROQ_API_KEY=\${GROQ_API_KEY},\
+GEMINI_API_KEY=\${GEMINI_API_KEY},\
 OLLAMA_BASE_URL=,\
 APP_ENV=production"
 
