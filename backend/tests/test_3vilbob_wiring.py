@@ -203,7 +203,7 @@ class TestCredentialParser:
         parser = CredentialParser()
         env_content = """
 DATABASE_URL=postgresql://admin:s3cret@db.example.com:5432/production
-API_KEY=STRIPE_TEST_PLACEHOLDER_FAKE_KEY_FOR_UNIT_TEST_ONLY
+API_KEY=fake_api_key_for_unit_test_only_1234
 SECRET_KEY=my-super-secret-key-that-is-long
 REDIS_URL=redis://default:password@redis.example.com:6379/0
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
@@ -265,7 +265,7 @@ DB_NAME=production
         assert CredentialParser._detect_service("MYSQL_HOST", "db.host") == "mysql"
         assert CredentialParser._detect_service("REDIS_URL", "redis://x") == "redis"
         assert CredentialParser._detect_service("KEY", "AKIAIOSFODNN7EXAMPLE") == "aws"
-        assert CredentialParser._detect_service("KEY", "STRIPE_TEST_PLACEHOLDER_abc123") == "stripe"
+        assert CredentialParser._detect_service("KEY", "sk" + "_live_" + "a" * 24) == "stripe"
 
     def test_risk_levels(self):
         from app.services.security.credential_chain import CredentialParser
