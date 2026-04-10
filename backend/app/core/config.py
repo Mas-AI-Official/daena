@@ -165,6 +165,8 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     together_api_key: str = ""
     groq_api_key: str = ""
+    vllm_base_url: str = "http://localhost:8100/v1"
+    vllm_default_model: str = ""  # empty = auto-detect first available
 
     # --- Feature Flags ---
     enable_web3: bool = False
@@ -283,6 +285,10 @@ class Settings(BaseSettings):
             "perplexity": {
                 "configured": bool(self.perplexity_api_key),
                 "source": self._field_source("perplexity_api_key"),
+            },
+            "vllm": {
+                "configured": True,
+                "source": self._field_source("vllm_base_url"),
             },
         }
 

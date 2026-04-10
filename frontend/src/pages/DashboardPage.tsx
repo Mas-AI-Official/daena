@@ -493,10 +493,11 @@ export function DashboardPage() {
               </div>
               <div className="p-2 space-y-0.5">
                 {[
+                  { label: 'Security Scan', path: '/scan', icon: <Shield size={14} /> },
+                  { label: 'Intelligence Benchmark', path: '/benchmark', icon: <BarChart3 size={14} /> },
                   { label: 'New Chat', path: '/chat', icon: <MessageSquare size={14} /> },
                   { label: 'Review Approvals', path: '/governance/approvals', icon: <ShieldCheck size={14} /> },
                   { label: 'View Departments', path: '/departments', icon: <Bot size={14} /> },
-                  { label: 'Projects', path: '/projects', icon: <FolderKanban size={14} /> },
                   { label: 'Audit Log', path: '/governance/audit', icon: <Activity size={14} /> },
                 ].map((action) => (
                   <button

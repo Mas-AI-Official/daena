@@ -1,7 +1,7 @@
 """Daena Security Dashboard API.
 
 Provides real-time scan status, tool catalog, SHIELD activation state,
-scan trace history, and self-improvement metrics.
+scan trace history, self-improvement metrics, and end-to-end scan workflow.
 
 This is the backend for the /security/dashboard frontend page.
 """
@@ -13,6 +13,7 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core.logging import get_logger
@@ -20,6 +21,18 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+# Singleton scan workflow instance (lazy-init to avoid import-time side effects)
+_scan_workflow = None
+
+
+def _get_workflow():
+    """Lazy-init the ScanWorkflow singleton."""
+    global _scan_workflow
+    if _scan_workflow is None:
+        from app.services.security.scan_workflow import ScanWorkflow
+        _scan_workflow = ScanWorkflow()
+    return _scan_workflow
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +244,158 @@ async def get_shield_details() -> dict[str, Any]:
     except Exception as exc:
         logger.error("security_dashboard.shields_failed", error=str(exc))
         return {"evilbob_active": False, "departments": {}}
+
+
+# ---------------------------------------------------------------------------
+# Scan Workflow Endpoints (IaaS -- Intelligence-as-a-Service)
+# ---------------------------------------------------------------------------
+
+class ScanStartRequest(BaseModel):
+    target: str                     # Repo URL, directory, or comma-separated paths
+    tier: str = "ANALYST"           # SCOUT, ANALYST, OPERATOR, ARCHITECT, EVILBOB
+    options: dict[str, Any] = {}    # Optional scan overrides
+
+
+class ScanJobResponse(BaseModel):
+    job_id: str
+    target: str
+    tier: str
+    status: str
+    created_at: float
+    progress_pct: float = 0.0
+    findings_count: int = 0
+
+
+class ScanStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    progress_pct: float = 0.0
+    files_scanned: int = 0
+    files_total: int = 0
+    findings_count: int = 0
+    error: str = ""
+
+
+class ScanReportResponse(BaseModel):
+    job_id: str
+    tier: str
+    findings: list[dict[str, Any]] = []
+    summary: str = ""
+    report_pdf_path: str = ""
+    cost_usd: float = 0.0
+    duration_secs: float = 0.0
+    pipeline_stages_used: list[str] = []
+    recommendations: list[str] = []
+    severity_counts: dict[str, int] = {}
+
+
+@router.post("/scans/start", response_model=ScanJobResponse)
+async def start_scan(body: ScanStartRequest) -> ScanJobResponse:
+    """Start a new security scan.
+
+    Kicks off the full intelligence pipeline:
+    profiling -> parallel scanning -> analysis -> report generation.
+    Returns immediately with a job ID for polling.
+    """
+    workflow = _get_workflow()
+
+    # Default user/tenant for now; will be injected from auth middleware
+    user_id = "system"
+    tenant_id = "default"
+
+    try:
+        job = await workflow.start_scan(
+            target=body.target,
+            tier=body.tier,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            options=body.options,
+        )
+        return ScanJobResponse(
+            job_id=job.id,
+            target=job.target,
+            tier=job.tier.value,
+            status=job.status.value,
+            created_at=job.created_at,
+            progress_pct=job.progress_pct,
+            findings_count=job.findings_count,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error("scan_start_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/scans/{job_id}/status", response_model=ScanStatusResponse)
+async def get_scan_status(job_id: str) -> ScanStatusResponse:
+    """Poll scan progress. Returns current status and completion percentage."""
+    workflow = _get_workflow()
+
+    try:
+        status = await workflow.get_scan_status(job_id)
+        return ScanStatusResponse(
+            job_id=status.job_id,
+            status=status.status.value,
+            progress_pct=status.progress_pct,
+            files_scanned=status.files_scanned,
+            files_total=status.files_total,
+            findings_count=status.findings_count,
+            error=status.error,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Scan job {job_id} not found")
+
+
+@router.get("/scans/{job_id}/report", response_model=ScanReportResponse)
+async def get_scan_report(job_id: str) -> ScanReportResponse:
+    """Get the completed scan report with findings, cost, and summary."""
+    workflow = _get_workflow()
+
+    try:
+        report = await workflow.get_scan_report(job_id)
+        return ScanReportResponse(
+            job_id=report.job_id,
+            tier=report.tier.value,
+            findings=report.findings,
+            summary=report.summary,
+            report_pdf_path=report.report_pdf_path,
+            cost_usd=report.cost_usd,
+            duration_secs=report.duration_secs,
+            pipeline_stages_used=report.pipeline_stages_used,
+            recommendations=report.recommendations,
+            severity_counts=report.severity_counts,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Scan job {job_id} not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.get("/scans/{job_id}/report/pdf")
+async def download_scan_report_pdf(job_id: str) -> FileResponse:
+    """Download the PDF report for a completed scan."""
+    workflow = _get_workflow()
+
+    try:
+        report = await workflow.get_scan_report(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Scan job {job_id} not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    if not report.report_pdf_path or not os.path.isfile(report.report_pdf_path):
+        raise HTTPException(
+            status_code=404,
+            detail="PDF report not available. Report data is accessible via /report endpoint.",
+        )
+
+    filename = os.path.basename(report.report_pdf_path)
+    return FileResponse(
+        path=report.report_pdf_path,
+        filename=filename,
+        media_type="application/pdf",
+    )
 
 
 # ---------------------------------------------------------------------------

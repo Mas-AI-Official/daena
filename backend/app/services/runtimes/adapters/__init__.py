@@ -9,6 +9,7 @@ from app.services.runtimes.adapters.gemini_cli import GeminiCLIAdapter
 from app.services.runtimes.adapters.grok_cli import GrokCLIAdapter
 from app.services.runtimes.adapters.mcp_bridge import MCPBridgeAdapter
 from app.services.runtimes.adapters.ollama_adapter import OllamaRuntimeAdapter
+from app.services.runtimes.adapters.vllm_adapter import VLLMRuntimeAdapter
 
 __all__ = [
     "ClaudeCodeAdapter",
@@ -17,4 +18,5 @@ __all__ = [
     "GrokCLIAdapter",
     "MCPBridgeAdapter",
     "OllamaRuntimeAdapter",
+    "VLLMRuntimeAdapter",
 ]

@@ -8,6 +8,7 @@ import {
   Brain,
   Zap,
   Plug,
+  Crosshair,
   ChevronLeft,
   ChevronRight,
   ListTodo,
@@ -60,6 +61,8 @@ const navGroups: NavGroup[] = [
     title: 'Intelligence',
     color: 'text-accent-cyan',
     items: [
+      { label: 'Security Scan', path: '/scan', icon: <Crosshair size={18} /> },
+      { label: 'Benchmark', path: '/benchmark', icon: <BarChart3 size={18} /> },
       { label: 'Departments', path: '/departments', icon: <Brain size={18} /> },
       { label: 'Skills', path: '/skills', icon: <Zap size={18} /> },
     ],
@@ -85,6 +88,7 @@ const navGroups: NavGroup[] = [
     title: 'Governance',
     color: 'text-accent-amber',
     items: [
+      { label: 'Security Ops', path: '/security', icon: <Shield size={18} /> },
       { label: 'Approvals', path: '/governance/approvals', icon: <Shield size={18} />, badgeKey: 'approvals' },
       { label: 'Audit Log', path: '/governance/audit', icon: <Shield size={18} /> },
       { label: 'Analytics', path: '/analytics', icon: <BarChart3 size={18} /> },

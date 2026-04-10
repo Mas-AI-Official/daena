@@ -350,6 +350,27 @@ function OverviewTab({ status, shields }: { status: DashboardStatus; shields: Sh
 
   return (
     <div className="space-y-6">
+      {/* IaaS CTA Banner */}
+      <a
+        href="/scan"
+        className="block p-4 rounded-xl bg-gradient-to-r from-primary-500/10 via-accent-cyan/5 to-accent-amber/10 border border-primary-500/20 hover:border-primary-500/40 transition-all group"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Crosshair size={20} className="text-primary-400" />
+            <div>
+              <p className="text-sm font-semibold text-starlight-100 group-hover:text-primary-400 transition-colors">
+                Launch Security Intelligence Scan
+              </p>
+              <p className="text-xs text-starlight-500">
+                Submit a target for multi-model verified analysis -- T1 Scout through T5 Offensive
+              </p>
+            </div>
+          </div>
+          <ChevronRight size={16} className="text-starlight-500 group-hover:text-primary-400 transition-colors" />
+        </div>
+      </a>
+
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard

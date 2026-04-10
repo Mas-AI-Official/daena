@@ -17,6 +17,7 @@ from app.core.logging import get_logger
 from app.services.runtimes.base_adapter import ExecutionReceipt
 from app.services.runtimes.cost_estimator import CostEstimator
 from app.services.runtimes.registry import RuntimeRegistry
+from app.services.sub_agent_spawner import SubAgentSpawner, KnowledgeBus
 
 logger = get_logger(__name__)
 
@@ -97,6 +98,10 @@ class SwarmPlanner:
     to decompose a task, then routes each subtask through the
     Mind Selection Engine for optimal runtime assignment.
 
+    When a subtask involves bulk operations (scanning multiple files,
+    processing multiple items), the SubAgentSpawner splits the work
+    across parallel ephemeral sub-agents within the department.
+
     Usage::
 
         planner = SwarmPlanner(registry, cost_estimator)
@@ -104,15 +109,24 @@ class SwarmPlanner:
             "Build a REST API with tests",
             context={"cost_ceiling": 0.05}
         )
+
+        # With sub-agent spawning for bulk parallelism:
+        planner = SwarmPlanner(registry, cost_estimator, spawner=spawner)
+        subtasks = await planner.decompose_and_route(
+            "Scan these 50 files for vulnerabilities",
+            context={"items": file_list, "department": "Security Operations"}
+        )
     """
 
     def __init__(
         self,
         registry: RuntimeRegistry,
         cost_estimator: CostEstimator | None = None,
+        spawner: SubAgentSpawner | None = None,
     ) -> None:
         self._registry = registry
         self._cost = cost_estimator or CostEstimator()
+        self._spawner = spawner or SubAgentSpawner()
 
     async def decompose_and_route(
         self,
@@ -198,7 +212,105 @@ class SwarmPlanner:
             total_estimated_cost=sum(st.estimated_cost_usd for st in subtasks),
         )
 
+        # Tag bulk_operations subtasks with spawn plans for SubAgentSpawner
+        items = ctx.get("items", [])
+        department = ctx.get("department", "Engineering")
+        if items:
+            for st in subtasks:
+                if st.task_type == "bulk_operations" and not st.metadata.get("spawn_plan"):
+                    plan = self._spawner.plan_spawn(
+                        task=st.description,
+                        department=department,
+                        capability="SHIELD" if "secur" in department.lower() else "MIND",
+                        items=items,
+                        task_type=st.task_type,
+                    )
+                    st.metadata["spawn_plan"] = {
+                        "task_id": plan.task_id,
+                        "total_slices": plan.total_slices,
+                        "concurrency": plan.concurrency,
+                        "estimated_tokens": plan.estimated_tokens,
+                        "estimated_cost_usd": plan.estimated_cost_usd,
+                    }
+                    st.estimated_tokens = plan.estimated_tokens
+                    st.estimated_cost_usd = plan.estimated_cost_usd
+                    logger.info(
+                        "swarm.spawn_plan_attached",
+                        subtask_id=st.id,
+                        slices=plan.total_slices,
+                        department=department,
+                    )
+
         return subtasks
+
+    @property
+    def spawner(self) -> SubAgentSpawner:
+        """Access the SubAgentSpawner for bulk task execution."""
+        return self._spawner
+
+    async def execute_bulk_subtask(
+        self,
+        subtask: SubTask,
+        executor_fn: Any,
+        items: list[str],
+        *,
+        department: str = "Engineering",
+        capability: str = "MIND",
+        timeout: float = 300.0,
+    ) -> Any:
+        """Execute a bulk_operations subtask using SubAgentSpawner.
+
+        This is the bridge between SwarmPlanner's planning layer and
+        SubAgentSpawner's execution layer. Call this for subtasks that
+        have task_type == "bulk_operations".
+
+        Args:
+            subtask: The SubTask with spawn_plan in metadata.
+            executor_fn: Async fn(task_slice: str) -> str for each item.
+            items: List of items to process in parallel.
+            department: Department name.
+            capability: Sub-capability (MIND, SHIELD, etc.).
+            timeout: Per-sub-agent timeout.
+
+        Returns:
+            SpawnResult from SubAgentSpawner.
+        """
+        from app.services.sub_agent_spawner import SpawnResult
+
+        plan = self._spawner.plan_spawn(
+            task=subtask.description,
+            department=department,
+            capability=capability,
+            items=items,
+            task_type=subtask.task_type,
+        )
+
+        result: SpawnResult = await self._spawner.spawn_and_execute(
+            plan,
+            executor_fn=executor_fn,
+            timeout=timeout,
+        )
+
+        # Update subtask status based on spawn result
+        if result.sub_agents_failed == 0:
+            subtask.status = "complete"
+        elif result.sub_agents_completed > 0:
+            subtask.status = "complete"  # Partial success is still completion
+        else:
+            subtask.status = "failed"
+
+        subtask.result_data = result.merged_result
+
+        logger.info(
+            "swarm.bulk_subtask_complete",
+            subtask_id=subtask.id,
+            spawned=result.sub_agents_spawned,
+            completed=result.sub_agents_completed,
+            failed=result.sub_agents_failed,
+            duration_ms=result.total_duration_ms,
+        )
+
+        return result
 
     async def _decompose_with_llm(self, task: str) -> list[dict]:
         """Use LLM to decompose task into structured subtasks."""

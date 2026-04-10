@@ -9,8 +9,8 @@
  * Data: fetched from GET /skills on mount, filtered client-side by category
  * and search query.
  */
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useState, useCallback } from 'react'
+
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Sparkles,
@@ -125,87 +125,40 @@ const CATEGORIES: { key: CategoryKey; label: string; icon: React.ReactNode; matc
   { key: 'other', label: 'Other', icon: <Wrench size={14} />, match: () => true },
 ]
 
-// ── PermissionDropdown (same pattern as ConnectionsPage) ───────────────────
+// ── Permission Badge (click to cycle: Allow -> Ask -> Block -> Allow) ─────
 
-const PERM_OPTIONS: { value: PermissionLevel; label: string; color: string }[] = [
-  { value: 'ALWAYS_ALLOW', label: 'Always allow', color: 'text-accent-green' },
-  { value: 'ASK_EACH_TIME', label: 'Needs approval', color: 'text-accent-amber' },
-  { value: 'BLOCK', label: 'Blocked', color: 'text-accent-red' },
-]
+const PERM_CYCLE: PermissionLevel[] = ['ALWAYS_ALLOW', 'ASK_EACH_TIME', 'BLOCK']
+const PERM_CONFIG: Record<PermissionLevel, { label: string; icon: typeof CheckCircle2; bg: string; text: string; border: string }> = {
+  ALWAYS_ALLOW: { label: 'Allow', icon: CheckCircle2, bg: 'bg-accent-green/10', text: 'text-accent-green', border: 'border-accent-green/20' },
+  ASK_EACH_TIME: { label: 'Ask', icon: Shield, bg: 'bg-accent-amber/10', text: 'text-accent-amber', border: 'border-accent-amber/20' },
+  BLOCK: { label: 'Block', icon: XCircle, bg: 'bg-accent-red/10', text: 'text-accent-red', border: 'border-accent-red/20' },
+}
 
-function PermissionDropdown({
+function PermissionBadge({
   value,
   onChange,
 }: {
   value: PermissionLevel
   onChange: (level: PermissionLevel) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const btnRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ top: 0, right: 0, openUp: false })
-  const current = PERM_OPTIONS.find((o) => o.value === value) || PERM_OPTIONS[1]
+  const cfg = PERM_CONFIG[value] || PERM_CONFIG.ASK_EACH_TIME
+  const Icon = cfg.icon
 
-  const MENU_HEIGHT = 108 // 3 options * ~36px each
-
-  const handleOpen = (e: React.MouseEvent) => {
+  const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!open && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect()
-      const spaceBelow = window.innerHeight - rect.bottom
-      const openUp = spaceBelow < MENU_HEIGHT + 8
-      setPos({
-        top: openUp ? rect.top - MENU_HEIGHT - 4 : rect.bottom + 4,
-        right: Math.max(4, window.innerWidth - rect.right),
-        openUp,
-      })
-    }
-    setOpen(!open)
+    const idx = PERM_CYCLE.indexOf(value)
+    onChange(PERM_CYCLE[(idx + 1) % PERM_CYCLE.length])
   }
 
   return (
-    <div className="relative">
-      <button
-        ref={btnRef}
-        onClick={handleOpen}
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-white/10 hover:border-white/20 transition-all cursor-pointer"
-      >
-        {current.value === 'ALWAYS_ALLOW' && <CheckCircle2 size={11} className="text-accent-green" />}
-        {current.value === 'ASK_EACH_TIME' && <Shield size={11} className="text-accent-amber" />}
-        {current.value === 'BLOCK' && <XCircle size={11} className="text-accent-red" />}
-        <span className={current.color}>{current.label}</span>
-        <ChevronDown size={9} className="text-starlight-500" />
-      </button>
-      {open && createPortal(
-        <AnimatePresence>
-          <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
-          <motion.div
-            ref={menuRef}
-            initial={{ opacity: 0, y: pos.openUp ? 4 : -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: pos.openUp ? 4 : -4 }}
-            style={{ top: Math.max(4, pos.top), right: pos.right }}
-            className="fixed w-40 rounded-lg bg-midnight-200 border border-white/10 shadow-xl z-[9999] overflow-hidden"
-          >
-            {PERM_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false) }}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-white/5 transition-colors cursor-pointer ${
-                  opt.value === value ? 'bg-white/[0.03]' : ''
-                }`}
-              >
-                {opt.value === 'ALWAYS_ALLOW' && <CheckCircle2 size={12} className="text-accent-green" />}
-                {opt.value === 'ASK_EACH_TIME' && <Shield size={12} className="text-accent-amber" />}
-                {opt.value === 'BLOCK' && <XCircle size={12} className="text-accent-red" />}
-                <span className={opt.color}>{opt.label}</span>
-              </button>
-            ))}
-          </motion.div>
-        </AnimatePresence>,
-        document.body,
-      )}
-    </div>
+    <button
+      onClick={handleClick}
+      title={`Click to change (current: ${cfg.label})`}
+      className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border} hover:brightness-125 transition-all cursor-pointer select-none`}
+    >
+      <Icon size={10} />
+      {cfg.label}
+    </button>
   )
 }
 
@@ -310,7 +263,7 @@ function SkillCard({ skill, permission, onPermissionChange, onToggleActive, inde
             <span>v{skill.version}</span>
             <span>{skill.usage_count ?? 0} uses</span>
           </div>
-          <PermissionDropdown
+          <PermissionBadge
             value={permission}
             onChange={(level) => onPermissionChange(skill.id, level)}
           />
@@ -531,30 +484,6 @@ export function SkillsPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {/* Batch permission controls */}
-              <select
-                onChange={(e) => {
-                  const level = e.target.value as PermissionLevel
-                  if (!level) return
-                  const updated = { ...permissions }
-                  finalFiltered.forEach((s) => { updated[s.id] = level })
-                  setPermissions(updated)
-                  localStorage.setItem('daena:skill_permissions', JSON.stringify(updated))
-                  // Sync to backend
-                  finalFiltered.forEach((s) => {
-                    api.patch(`/skills/${s.id}`, { governance_tier: level === 'ALWAYS_ALLOW' ? 0 : level === 'ASK_EACH_TIME' ? 2 : 4 }).catch(() => {})
-                  })
-                  toast.success(`Set ${finalFiltered.length} skills to ${level === 'ALWAYS_ALLOW' ? 'Always Allow' : level === 'ASK_EACH_TIME' ? 'Needs Approval' : 'Blocked'}`)
-                  e.target.value = ''
-                }}
-                className="px-2 py-1.5 rounded-lg text-xs bg-white/5 border border-white/10 text-starlight-400 cursor-pointer"
-              >
-                <option value="">Batch: Set all visible...</option>
-                <option value="ALWAYS_ALLOW">Allow All</option>
-                <option value="ASK_EACH_TIME">Ask All</option>
-                <option value="BLOCK">Block All</option>
-              </select>
-
               {/* Import Skill */}
               <button
                 onClick={() => {
@@ -615,6 +544,35 @@ export function SkillsPage() {
               placeholder="Search skills by name or description..."
               className="w-full glass-input pl-9 pr-4 py-2.5 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-500 focus:outline-none focus:ring-1 focus:ring-primary-500/40"
             />
+          </div>
+
+          {/* Governance control bar -- bulk permission actions */}
+          <div className="flex items-center gap-2 px-1">
+            <span className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold mr-1">Set all visible:</span>
+            {PERM_CYCLE.map((level) => {
+              const cfg = PERM_CONFIG[level]
+              const Icon = cfg.icon
+              return (
+                <button
+                  key={level}
+                  onClick={() => {
+                    const updated = { ...permissions }
+                    finalFiltered.forEach((s) => { updated[s.id] = level })
+                    setPermissions(updated)
+                    localStorage.setItem('daena:skill_permissions', JSON.stringify(updated))
+                    finalFiltered.forEach((s) => {
+                      api.patch(`/skills/${s.id}`, { governance_tier: level === 'ALWAYS_ALLOW' ? 0 : level === 'ASK_EACH_TIME' ? 2 : 4 }).catch(() => {})
+                    })
+                    toast.success(`Set ${finalFiltered.length} skills to ${cfg.label}`)
+                  }}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border} hover:brightness-125 transition-all cursor-pointer`}
+                >
+                  <Icon size={10} />
+                  {cfg.label} all
+                </button>
+              )
+            })}
+            <span className="text-[10px] text-starlight-600 ml-2">{finalFiltered.length} skill{finalFiltered.length !== 1 ? 's' : ''}</span>
           </div>
 
           {/* Batch selection toolbar */}

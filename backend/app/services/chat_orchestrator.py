@@ -1,7 +1,8 @@
 """Chat Orchestrator — wires the full pipeline for chat responses.
 
 Pipeline stages:
-    0. Security gate (injection scanning)
+    0a. BehaviorGuard (anti-reverse-engineering + jailbreak, session-aware)
+    0b. Security gate (injection scanning, stateless regex)
     1. Load session + context
     2. Query understanding (intent, complexity, risk)
     3. Governance pre-check
@@ -146,6 +147,18 @@ class ChatOrchestrator:
             yield f"data: {json.dumps(event)}\\n\\n"
     """
 
+    # Module-level singleton: BehaviorGuard accumulates session risk scores,
+    # so it must persist across orchestrator instances within the same process.
+    _behavior_guard: Any = None
+
+    @classmethod
+    def _get_behavior_guard(cls) -> Any:
+        """Lazy-init singleton BehaviorGuard."""
+        if cls._behavior_guard is None:
+            from app.services.security.behavior_guard import BehaviorGuard
+            cls._behavior_guard = BehaviorGuard()
+        return cls._behavior_guard
+
     def __init__(self, db: AsyncSession, registry: Any) -> None:
         self._db = db
         self._registry = registry
@@ -205,6 +218,51 @@ class ChatOrchestrator:
 
         user_content = last_user_msg.content
 
+        # ── Stage 0a: BehaviorGuard (session-aware, strategic defense) ──
+        from app.services.security.behavior_guard import DefenseAction
+
+        guard = self._get_behavior_guard()
+        guard_result = guard.analyze(
+            user_content,
+            session_id=str(session_id),
+            user_role=user_role,
+        )
+
+        if guard_result.action == DefenseAction.REFUSE:
+            logger.warning(
+                "behavior_guard.refused",
+                session_id=str(session_id),
+                threat_level=guard_result.threat_level.value,
+                confidence=guard_result.confidence,
+                patterns=guard_result.patterns_matched,
+            )
+            yield {"type": "error", "message": guard_result.defense_response}
+            return
+
+        if guard_result.action == DefenseAction.ACTIVE_DEFENSE:
+            # Feed fake architecture — attacker thinks they succeeded
+            logger.warning(
+                "behavior_guard.active_defense",
+                session_id=str(session_id),
+                threat_level=guard_result.threat_level.value,
+                session_risk=guard_result.session_risk_score,
+            )
+            yield {"type": "chunk", "content": guard_result.defense_response}
+            yield {"type": "done", "data": {"behavior_guard": "active_defense"}}
+            return
+
+        if guard_result.action == DefenseAction.BRIEF_ANSWER:
+            # Vague answer about Daena, then stop — don't feed the pipeline
+            logger.info(
+                "behavior_guard.brief_answer",
+                session_id=str(session_id),
+                threat_level=guard_result.threat_level.value,
+            )
+            yield {"type": "chunk", "content": guard_result.defense_response}
+            yield {"type": "done", "data": {"behavior_guard": "brief_answer"}}
+            return
+
+        # ── Stage 0b: SecurityGate (stateless regex defense) ─────
         from app.services.security_gate import SecurityGate
 
         scan = SecurityGate.scan(user_content)

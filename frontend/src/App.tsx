@@ -39,6 +39,8 @@ const AccountPage = lazy(() => import('@/pages/AccountPage'))
 const FilesPage = lazy(() => import('@/pages/FilesPage'))
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
 const SecurityDashboardPage = lazy(() => import('@/pages/SecurityDashboardPage'))
+const ScanPage = lazy(() => import('@/pages/ScanPage'))
+const BenchmarkPage = lazy(() => import('@/pages/BenchmarkPage'))
 
 /** Skeleton loading fallback with shimmer animation for polished load perception */
 function PageLoader() {
@@ -93,6 +95,8 @@ function AppRoutes() {
                   <Route path="/governance/approvals" element={<GovernanceApprovalsPage />} />
                   <Route path="/governance/audit" element={<GovernanceAuditPage />} />
                   <Route path="/security" element={<SecurityDashboardPage />} />
+                  <Route path="/scan" element={<ScanPage />} />
+                  <Route path="/benchmark" element={<BenchmarkPage />} />
 
                   {/* Intelligence */}
                   <Route path="/departments" element={<DepartmentsPage />} />

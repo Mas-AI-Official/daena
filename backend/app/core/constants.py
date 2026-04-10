@@ -66,6 +66,7 @@ class ModelProvider(str, enum.Enum):
     OPENROUTER = "OPENROUTER"
     TOGETHER = "TOGETHER"
     GROQ = "GROQ"
+    VLLM = "VLLM"
 
 
 class HealthStatus(str, enum.Enum):

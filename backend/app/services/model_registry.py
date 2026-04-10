@@ -48,6 +48,9 @@ _PROVIDER_MAP: dict[ModelProvider, tuple[str, str, str]] = {
     ModelProvider.TOGETHER: (
         "app.services.providers.together", "TogetherProvider", "together_api_key",
     ),
+    ModelProvider.VLLM: (
+        "app.services.providers.vllm", "VLLMProvider", "vllm_base_url",
+    ),
 }
 
 _PROVIDER_DISPLAY_NAMES: dict[ModelProvider, str] = {
@@ -59,6 +62,7 @@ _PROVIDER_DISPLAY_NAMES: dict[ModelProvider, str] = {
     ModelProvider.OPENROUTER: "OpenRouter",
     ModelProvider.TOGETHER: "Together",
     ModelProvider.GROQ: "Groq",
+    ModelProvider.VLLM: "vLLM",
 }
 
 _PROVIDER_KINDS: dict[ModelProvider, str] = {
@@ -70,6 +74,7 @@ _PROVIDER_KINDS: dict[ModelProvider, str] = {
     ModelProvider.OPENROUTER: "cloud",
     ModelProvider.TOGETHER: "cloud",
     ModelProvider.GROQ: "cloud",
+    ModelProvider.VLLM: "local",
 }
 
 

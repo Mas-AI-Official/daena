@@ -60,6 +60,7 @@ class TestModelRegistryInit:
         mock_settings.openrouter_api_key = ""
         mock_settings.perplexity_api_key = ""
         mock_settings.together_api_key = ""
+        mock_settings.vllm_base_url = ""
 
         with patch("app.services.model_registry.get_settings", return_value=mock_settings):
             await registry.initialize()

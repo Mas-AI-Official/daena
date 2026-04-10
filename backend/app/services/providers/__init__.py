@@ -20,6 +20,7 @@ from app.services.providers.openai import OpenAIProvider
 from app.services.providers.openrouter import OpenRouterProvider
 from app.services.providers.perplexity import PerplexityProvider
 from app.services.providers.together import TogetherProvider
+from app.services.providers.vllm import VLLMProvider
 
 __all__ = [
     "AnthropicProvider",
@@ -36,4 +37,5 @@ __all__ = [
     "OpenRouterProvider",
     "PerplexityProvider",
     "TogetherProvider",
+    "VLLMProvider",
 ]
