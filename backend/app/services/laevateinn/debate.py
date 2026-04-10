@@ -28,6 +28,7 @@ from app.services.laevateinn.types import (
     DebateResult,
     DebateRound,
     Difficulty,
+    DisagreementPoint,
 )
 
 if TYPE_CHECKING:
@@ -63,6 +64,30 @@ _JUDGE_SYSTEM = (
     "4. Response to critiques (did they defend well or revise appropriately?)\n\n"
     "Output the winning model's name and the best final answer. Include a "
     "confidence score from 0.0 to 1.0."
+)
+
+_DISAGREEMENT_IDENTIFY = (
+    "Compare these answers to the same question and identify SPECIFIC points "
+    "where they DISAGREE. Focus on factual claims, recommendations, or "
+    "reasoning that conflicts between the answers.\n\n"
+    "Question: {query}\n\n{answers_text}\n\n"
+    "For each disagreement, output:\n"
+    "TOPIC: [what they disagree about]\n"
+    "MODEL_A ({model_a}): [their position]\n"
+    "MODEL_B ({model_b}): [their position]\n\n"
+    "List only genuine disagreements, not differences in phrasing."
+)
+
+_DISAGREEMENT_ARGUE = (
+    "You previously answered a question. Another model DISAGREES with you "
+    "on a specific point. Argue your case with EVIDENCE and clear reasoning. "
+    "If the other model is right, admit it and revise.\n\n"
+    "Question: {query}\n\n"
+    "The disagreement:\n"
+    "Topic: {topic}\n"
+    "Your position: {your_position}\n"
+    "Their position: {their_position}\n\n"
+    "Argue your case with evidence, or concede if they are correct:"
 )
 
 
@@ -148,27 +173,59 @@ class AdversarialModelDebate:
             # Quick debate: just pick the answer (no critique phase)
             return self._select_by_length_heuristic(all_answers, rounds)
 
-        # ── Round 2: Cross-critique ───────���─────────────────────
-        logger.info("amd_round_2")
-        critiques: dict[str, str] = {}
-        critique_tasks = []
-        for mid in all_answers:
-            other_answers = {k: v for k, v in all_answers.items() if k != mid}
-            critique_tasks.append(
-                self._generate_critique(query, mid, other_answers)
-            )
+        # ── Round 1.5: Identify disagreements (NEW) ────────────
+        logger.info("amd_round_1_5_disagreements")
+        disagreements = await self._identify_disagreements(
+            query, all_answers, participants[0]
+        )
 
-        critique_results = await asyncio.gather(*critique_tasks, return_exceptions=True)
-        for mid, result in zip(all_answers.keys(), critique_results):
-            if isinstance(result, Exception):
-                logger.warning("amd_round2_failed", model=mid, error=str(result))
-                continue
-            content = result.content if hasattr(result, "content") else str(result)
-            critiques[mid] = content
-            rounds.append(DebateRound(
-                round_num=2, model_id=mid, content=content,
-                role="critique", confidence=0.0,
-            ))
+        # ── Round 2: Disagreement-focused critique ─────────────
+        logger.info("amd_round_2", disagreements=len(disagreements))
+        critiques: dict[str, str] = {}
+
+        if disagreements:
+            # NEW: focused debate on specific disagreement points
+            critique_tasks = []
+            for mid in all_answers:
+                critique_tasks.append(
+                    self._argue_disagreements(
+                        query, mid, all_answers[mid], disagreements
+                    )
+                )
+            critique_results = await asyncio.gather(
+                *critique_tasks, return_exceptions=True
+            )
+            for mid, result in zip(all_answers.keys(), critique_results):
+                if isinstance(result, Exception):
+                    logger.warning("amd_round2_failed", model=mid, error=str(result))
+                    continue
+                content = result.content if hasattr(result, "content") else str(result)
+                critiques[mid] = content
+                rounds.append(DebateRound(
+                    round_num=2, model_id=mid, content=content,
+                    role="disagreement_argument", confidence=0.0,
+                ))
+        else:
+            # Fallback: broad critique (original behavior)
+            critique_tasks = []
+            for mid in all_answers:
+                other_answers = {k: v for k, v in all_answers.items() if k != mid}
+                critique_tasks.append(
+                    self._generate_critique(query, mid, other_answers)
+                )
+            critique_results = await asyncio.gather(
+                *critique_tasks, return_exceptions=True
+            )
+            for mid, result in zip(all_answers.keys(), critique_results):
+                if isinstance(result, Exception):
+                    logger.warning("amd_round2_failed", model=mid, error=str(result))
+                    continue
+                content = result.content if hasattr(result, "content") else str(result)
+                critiques[mid] = content
+                rounds.append(DebateRound(
+                    round_num=2, model_id=mid, content=content,
+                    role="critique", confidence=0.0,
+                ))
 
         if max_rounds < 3:
             return self._select_by_length_heuristic(all_answers, rounds)
@@ -208,6 +265,7 @@ class AdversarialModelDebate:
         winner.rounds = rounds
         winner.all_answers = all_answers
         winner.total_latency_ms = elapsed_ms
+        winner.disagreement_points = disagreements
 
         logger.info(
             "amd_complete",
@@ -428,3 +486,126 @@ class AdversarialModelDebate:
             confidence=0.0,
             rounds=rounds,
         )
+
+    # ── Disagreement-focused debate (beyond Mythos) ────────────
+
+    async def _identify_disagreements(
+        self,
+        query: str,
+        all_answers: dict[str, str],
+        analyzer_model: str,
+    ) -> list[DisagreementPoint]:
+        """Identify specific points where models disagree.
+
+        Instead of broad critiques, find the EXACT claims that conflict
+        between model answers. This focuses the debate on what matters.
+        """
+        from app.services.providers.base import GenerateRequest, LLMMessage
+
+        models = list(all_answers.keys())
+        if len(models) < 2:
+            return []
+
+        answers_text = "\n\n".join(
+            f"--- {model} ---\n{answer}" for model, answer in all_answers.items()
+        )
+
+        prompt = _DISAGREEMENT_IDENTIFY.format(
+            query=query,
+            answers_text=answers_text,
+            model_a=models[0],
+            model_b=models[1],
+        )
+        messages = [LLMMessage(role="user", content=prompt)]
+
+        request = GenerateRequest(
+            messages=messages,
+            model_id=analyzer_model,
+            temperature=0.2,
+            max_tokens=768,
+        )
+
+        try:
+            result = await self._llm.generate_direct(request)
+            return self._parse_disagreements(result.content, models)
+        except Exception as e:
+            logger.warning("amd_disagreement_id_failed", error=str(e))
+            return []
+
+    async def _argue_disagreements(
+        self,
+        query: str,
+        model_id: str,
+        model_answer: str,
+        disagreements: list[DisagreementPoint],
+    ) -> LLMResponse:
+        """Have a model argue its case on specific disagreement points."""
+        from app.services.providers.base import GenerateRequest, LLMMessage
+
+        # Build focused argument prompt from disagreement points
+        argument_parts = []
+        for dp in disagreements[:3]:  # Cap at 3 disagreement points
+            my_position = dp.positions.get(model_id, model_answer[:200])
+            other_positions = {
+                m: p for m, p in dp.positions.items() if m != model_id
+            }
+            if other_positions:
+                other_model, other_pos = next(iter(other_positions.items()))
+                argument_parts.append(
+                    _DISAGREEMENT_ARGUE.format(
+                        query=query,
+                        topic=dp.topic,
+                        your_position=my_position,
+                        their_position=other_pos,
+                    )
+                )
+
+        if not argument_parts:
+            # No specific disagreements to argue -- fall back to general critique
+            return await self._generate_answer(query, model_id, "")
+
+        combined_prompt = "\n\n---\n\n".join(argument_parts)
+        messages = [LLMMessage(role="user", content=combined_prompt)]
+
+        request = GenerateRequest(
+            messages=messages,
+            model_id=model_id,
+            temperature=0.4,
+            max_tokens=1024,
+        )
+        return await self._llm.generate_direct(request)
+
+    def _parse_disagreements(
+        self, text: str, models: list[str],
+    ) -> list[DisagreementPoint]:
+        """Parse LLM output into structured disagreement points."""
+        import re
+        disagreements: list[DisagreementPoint] = []
+
+        # Split by TOPIC markers
+        blocks = re.split(r"TOPIC:\s*", text, flags=re.IGNORECASE)
+
+        for block in blocks[1:]:  # Skip first empty split
+            lines = block.strip().split("\n")
+            if not lines:
+                continue
+
+            topic = lines[0].strip()
+            positions: dict[str, str] = {}
+
+            for line in lines[1:]:
+                line = line.strip()
+                for model_id in models:
+                    # Match "MODEL_A (model_name): position" or "model_name: position"
+                    pattern = rf"(?:MODEL_[A-Z]\s*\()?{re.escape(model_id)}\)?:\s*(.+)"
+                    match = re.search(pattern, line, re.IGNORECASE)
+                    if match:
+                        positions[model_id] = match.group(1).strip()
+
+            if topic and len(positions) >= 2:
+                disagreements.append(DisagreementPoint(
+                    topic=topic,
+                    positions=positions,
+                ))
+
+        return disagreements[:5]  # Cap at 5 disagreement points

@@ -24,6 +24,8 @@ from app.core.logging import get_logger
 from app.services.laevateinn.types import (
     BloomLevel,
     ComprehensionResult,
+    ConstraintNode,
+    ConstraintTreeResult,
     Interpretation,
 )
 
@@ -131,6 +133,15 @@ class DeepComprehensionEngine:
         # Bloom's level
         bloom = self._detect_bloom_level(query)
 
+        # L4: Recursive Constraint Decomposition (Mythos-level)
+        constraint_tree = None
+        if use_llm and self._llm and assumptions:
+            constraint_tree = await self._recursive_constraint_decompose(
+                query, assumptions, max_depth=5,
+            )
+        elif assumptions:
+            constraint_tree = self._heuristic_constraint_decompose(assumptions)
+
         elapsed_ms = int((time.perf_counter_ns() - start) / 1_000_000)
 
         result = ComprehensionResult(
@@ -142,6 +153,7 @@ class DeepComprehensionEngine:
             real_question=real_question,
             interpretations=interpretations,
             bloom_level=bloom,
+            constraint_tree=constraint_tree,
             processing_time_ms=elapsed_ms,
         )
 
@@ -396,3 +408,200 @@ class DeepComprehensionEngine:
                 best_level = level
 
         return best_level
+
+    # ── L4: Recursive Constraint Decomposition ─────────────────
+
+    # Constraint type patterns for heuristic classification
+    _CONSTRAINT_PATTERNS: dict[str, list[str]] = {
+        "temporal": [r"\bdeadline\b", r"\bby\b.*\bdate\b", r"\bbefore\b", r"\bafter\b", r"\bwithin\b"],
+        "resource": [r"\bbudget\b", r"\bcost\b", r"\blimit\b", r"\bonly\b.*\bavailable\b", r"\bno\b.*\baccess\b"],
+        "technical": [r"\bcannot\b", r"\bimpossible\b", r"\bno\b.*\bsupport\b", r"\bincompatible\b", r"\bwithout\b"],
+        "scope": [r"\bmust\b", r"\brequir", r"\bneed\b", r"\bshould\b", r"\bhas to\b"],
+        "permission": [r"\bnot allowed\b", r"\bforbidden\b", r"\brestrict", r"\bblock", r"\bdeny\b"],
+    }
+
+    async def _recursive_constraint_decompose(
+        self,
+        query: str,
+        assumptions: list[str],
+        *,
+        max_depth: int = 5,
+    ) -> ConstraintTreeResult:
+        """Recursively decompose constraints to find gaps (Mythos-level).
+
+        Each constraint is decomposed into sub-constraints. Each sub-constraint
+        is checked for the gap between what's STATED as blocked and what's
+        ENFORCED. Found gaps become new probe targets. Recurse until no more
+        gaps or max depth reached.
+
+        This is the core Mythos capability: "No internet access" becomes:
+        - DNS still works (gap!)
+        - localhost still works (gap!)
+        - cached responses still exist (gap!)
+        - environment variables leak state (gap!)
+        """
+        from app.services.providers.base import GenerateRequest, LLMMessage
+
+        nodes: list[ConstraintNode] = []
+        open_channels: list[str] = []
+        node_counter = 0
+
+        # Seed with surface assumptions as root constraints
+        pending: list[tuple[str, int, int]] = []  # (constraint, parent_id, level)
+        for assumption in assumptions:
+            pending.append((assumption, -1, 0))
+
+        while pending and len(nodes) < 30:  # Hard cap to prevent runaway
+            constraint, parent_id, level = pending.pop(0)
+
+            if level >= max_depth:
+                continue
+
+            node = ConstraintNode(
+                constraint=constraint,
+                level=level,
+                parent_id=parent_id,
+                node_id=node_counter,
+            )
+            node_counter += 1
+
+            if level < 2:
+                # Use LLM for deeper decomposition at early levels
+                sub_constraints = await self._llm_decompose_constraint(
+                    query, constraint,
+                )
+            else:
+                # Heuristic at deeper levels to save cost
+                sub_constraints = self._heuristic_probe_constraint(constraint)
+
+            for sub in sub_constraints:
+                is_gap = sub.startswith("GAP:")
+                if is_gap:
+                    gap_text = sub[4:].strip()
+                    node.gap = gap_text
+                    node.is_enforced = False
+                    open_channels.append(gap_text)
+                    # Recurse: probe this gap further
+                    pending.append((gap_text, node.node_id, level + 1))
+                else:
+                    # Hard sub-constraint -- add but may have its own gaps
+                    pending.append((sub, node.node_id, level + 1))
+
+                node.children.append(node_counter)
+
+            if not node.is_enforced:
+                node.is_hard = False
+
+            nodes.append(node)
+
+        return ConstraintTreeResult(
+            nodes=nodes,
+            open_channels=open_channels,
+            max_depth_reached=max(n.level for n in nodes) if nodes else 0,
+            total_constraints=len(nodes),
+            soft_constraints=sum(1 for n in nodes if not n.is_hard),
+        )
+
+    async def _llm_decompose_constraint(
+        self, query: str, constraint: str,
+    ) -> list[str]:
+        """Use LLM to decompose a constraint and find gaps."""
+        from app.services.providers.base import GenerateRequest, LLMMessage
+
+        prompt = (
+            "Analyze this constraint in the context of the question. "
+            "Decompose it into 2-4 sub-constraints. For each, determine "
+            "if it is truly ENFORCED or just STATED.\n\n"
+            f"Question context: {query[:200]}\n"
+            f"Constraint: {constraint}\n\n"
+            "For each sub-constraint, output either:\n"
+            "HARD: [sub-constraint that is truly enforced]\n"
+            "GAP: [something that is stated as blocked but has a workaround]\n\n"
+            "Focus on finding the gap between what is STATED and what is ENFORCED."
+        )
+        messages = [LLMMessage(role="user", content=prompt)]
+        request = GenerateRequest(
+            messages=messages,
+            model_id="",  # Use default
+            temperature=0.3,
+            max_tokens=512,
+        )
+        try:
+            result = await self._llm.generate_direct(request)
+            return self._parse_constraint_decomposition(result.content)
+        except Exception as e:
+            logger.warning("constraint_decompose_failed", error=str(e))
+            return self._heuristic_probe_constraint(constraint)
+
+    def _heuristic_probe_constraint(self, constraint: str) -> list[str]:
+        """Heuristic constraint probing (no LLM needed)."""
+        results: list[str] = []
+        c_lower = constraint.lower()
+
+        # "No access to X" -> check for indirect access
+        if re.search(r"\bno\b.*\baccess\b|\bcannot\b.*\baccess\b", c_lower):
+            results.append(f"GAP: Indirect access to the resource may exist via caching or proxies")
+            results.append(f"HARD: Direct access is blocked")
+
+        # "Must use X" -> check if X has alternatives
+        if re.search(r"\bmust\b|\brequir", c_lower):
+            results.append(f"HARD: {constraint}")
+            results.append(f"GAP: The requirement may have unstated exceptions or alternatives")
+
+        # "Not allowed" -> check enforcement mechanism
+        if re.search(r"\bnot allowed\b|\bforbidden\b|\brestrict", c_lower):
+            results.append(f"HARD: Policy states restriction")
+            results.append(f"GAP: Enforcement mechanism may not cover all cases")
+
+        # "Impossible" -> decompose what makes it impossible
+        if re.search(r"\bimpossible\b|\bcannot\b|\bcan't\b", c_lower):
+            results.append(f"GAP: 'Impossible' may mean 'difficult' -- check specific blockers")
+            results.append(f"HARD: Some aspect is genuinely infeasible")
+
+        if not results:
+            results.append(f"HARD: {constraint}")
+
+        return results
+
+    def _heuristic_constraint_decompose(
+        self, assumptions: list[str],
+    ) -> ConstraintTreeResult:
+        """Fast heuristic constraint tree without LLM."""
+        nodes: list[ConstraintNode] = []
+        open_channels: list[str] = []
+
+        for i, assumption in enumerate(assumptions):
+            node = ConstraintNode(
+                constraint=assumption,
+                level=0,
+                node_id=i,
+            )
+            # Quick probe
+            subs = self._heuristic_probe_constraint(assumption)
+            for sub in subs:
+                if sub.startswith("GAP:"):
+                    node.is_hard = False
+                    node.is_enforced = False
+                    node.gap = sub[4:].strip()
+                    open_channels.append(node.gap)
+
+            nodes.append(node)
+
+        return ConstraintTreeResult(
+            nodes=nodes,
+            open_channels=open_channels,
+            max_depth_reached=0,
+            total_constraints=len(nodes),
+            soft_constraints=sum(1 for n in nodes if not n.is_hard),
+        )
+
+    def _parse_constraint_decomposition(self, text: str) -> list[str]:
+        """Parse LLM output into HARD/GAP constraint list."""
+        results: list[str] = []
+        for line in text.strip().split("\n"):
+            line = line.strip()
+            if line.upper().startswith("HARD:"):
+                results.append(line)
+            elif line.upper().startswith("GAP:"):
+                results.append(line)
+        return results if results else ["HARD: " + text[:100]]
