@@ -75,8 +75,8 @@ CLAUDE_SPEC = CliRuntimeSpec(
     model_id=CLAUDE_CLI_MODEL_ID,
     provider=ModelProvider.ANTHROPIC,
     display_name="Claude Code (Max/Pro)",
-    cmd_template=["{bin}", "-p", "{prompt}", "--output-format", "json"],
-    stdin_template=["{bin}", "-p", "-", "--output-format", "json"],
+    cmd_template=["{bin}", "--model", "opus", "-p", "{prompt}", "--output-format", "json"],
+    stdin_template=["{bin}", "--model", "opus", "-p", "-", "--output-format", "json"],
     json_output=True,
     context_window=200_000,
     tags=["reasoning", "coding", "analysis", "large", "planning"],
@@ -88,11 +88,11 @@ CODEX_SPEC = CliRuntimeSpec(
     model_id=CODEX_CLI_MODEL_ID,
     provider=ModelProvider.OPENAI,
     display_name="Codex (ChatGPT Plus/Pro)",
-    cmd_template=["{bin}", "exec", "{prompt}"],
-    stdin_template=["{bin}", "exec", "-"],
+    cmd_template=["{bin}", "-m", "o3", "exec", "{prompt}"],
+    stdin_template=["{bin}", "-m", "o3", "exec", "-"],
     json_output=False,
     context_window=128_000,
-    tags=["coding", "refactoring", "bulk", "analysis"],
+    tags=["coding", "refactoring", "bulk", "analysis", "reasoning"],
 )
 
 GEMINI_SPEC = CliRuntimeSpec(
@@ -100,12 +100,12 @@ GEMINI_SPEC = CliRuntimeSpec(
     binary_name="gemini",
     model_id=GEMINI_CLI_MODEL_ID,
     provider=ModelProvider.GEMINI,
-    display_name="Gemini CLI (Google)",
+    display_name="Gemini CLI (Google One AI Pro)",
     cmd_template=["{bin}", "-p", "{prompt}"],
     stdin_template=["{bin}", "-p", "-"],
     json_output=False,
     context_window=1_000_000,
-    tags=["research", "analysis", "large", "web_search"],
+    tags=["research", "analysis", "large", "web_search", "reasoning"],
 )
 
 ALL_CLI_SPECS = [CLAUDE_SPEC, CODEX_SPEC, GEMINI_SPEC]

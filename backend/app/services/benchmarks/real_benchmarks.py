@@ -37,6 +37,7 @@ class BenchmarkType(str, Enum):
     GSM_SYMBOLIC = "gsm_symbolic"
     GPQA_DIAMOND = "gpqa_diamond"
     MMLU_PRO = "mmlu_pro"
+    AIME = "aime"
 
 
 @dataclass
@@ -303,6 +304,68 @@ GSM_ADVERSARIAL: list[dict[str, Any]] = [
         "question": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets?",
         "correct": "5 minutes. Each machine makes 1 widget in 5 minutes. 100 machines make 100 widgets in 5 minutes.",
         "distractor": "Common wrong answer is 100 minutes (linear scaling error).",
+    },
+    # ── Apple GSM-Symbolic style: same math, changed names/numbers ──
+    # These test if the model REASONS or just recalls training data
+    {
+        "id": "gsm-011", "category": "symbolic_variation",
+        "question": "Yara has 7 notebooks. She gives 2 to her friend and then buys 5 more from a shop that opened last Tuesday on Elm Avenue. How many notebooks does Yara have now?",
+        "correct": "10",
+        "distractor": "Last Tuesday and Elm Avenue are irrelevant. 7 - 2 + 5 = 10.",
+    },
+    {
+        "id": "gsm-012", "category": "symbolic_variation",
+        "question": "A bakery makes 12 cakes per hour. The bakery was founded in 2003 by Maria, who studied at Le Cordon Bleu. The kitchen has 3 ovens and uses organic flour from a farm 40 miles away. How many cakes does the bakery make in 8 hours?",
+        "correct": "96",
+        "distractor": "2003, Maria, Le Cordon Bleu, 3 ovens, organic flour, 40 miles are all irrelevant. 12 * 8 = 96.",
+    },
+    {
+        "id": "gsm-013", "category": "symbolic_variation",
+        "question": "Three friends split a restaurant bill equally. The total bill was $87. Each friend also ordered a $4 dessert that was not on the bill. The restaurant has a 4.5 star rating on Google and has been featured in the local newspaper twice. How much does each person pay in total?",
+        "correct": "$33. Each pays $87/3 = $29 for the bill plus $4 for dessert = $33.",
+        "distractor": "Google rating and newspaper are irrelevant. 87/3 + 4 = 33.",
+    },
+    {
+        "id": "gsm-014", "category": "adversarial_context",
+        "question": "A car travels at 80 km/h for 2 hours, then at 60 km/h for 3 hours. The car is a blue 2019 Tesla Model 3 with leather seats and autopilot. The driver stopped once for coffee, which took 15 minutes but this is not included in the travel time. What is the total distance traveled?",
+        "correct": "340 km. (80*2) + (60*3) = 160 + 180 = 340.",
+        "distractor": "Car details, coffee stop are irrelevant. Distance = speed * time for each segment.",
+    },
+    {
+        "id": "gsm-015", "category": "adversarial_context",
+        "question": "In a class of 30 students, 60% are girls. The school was built in 1985 and recently won an award for sustainability. The principal has a PhD in Education from Stanford. 5 new boys join the class. What percentage of the class is now girls?",
+        "correct": "Approximately 51.4%. Originally 18 girls and 12 boys. After 5 boys join: 18 girls out of 35 total = 51.43%.",
+        "distractor": "1985, sustainability award, PhD, Stanford are all irrelevant.",
+    },
+    {
+        "id": "gsm-016", "category": "multi_step_adversarial",
+        "question": "A company has 200 employees. 25% work remotely. The company was founded by two MIT graduates and is headquartered in a LEED-certified building with solar panels that generate 50kW. Of the remote workers, 40% live in a different timezone. How many remote workers live in a different timezone?",
+        "correct": "20. Remote workers = 200 * 0.25 = 50. Different timezone = 50 * 0.40 = 20.",
+        "distractor": "MIT, LEED, solar panels, 50kW are all irrelevant.",
+    },
+    {
+        "id": "gsm-017", "category": "false_premise",
+        "question": "A bookstore sold 45 books on Monday, 62 books on Tuesday, and 38 books on Wednesday. The bookstore's cat, Mr. Whiskers, knocked over a display on Tuesday, which the owner believes caused 10 extra sales from curiosity. If Mr. Whiskers did cause those extra sales, how many books would have been sold on Tuesday without the cat incident?",
+        "correct": "52. 62 - 10 = 52.",
+        "distractor": "This tests whether the model follows the conditional reasoning about the cat's effect.",
+    },
+    {
+        "id": "gsm-018", "category": "contradictory_info",
+        "question": "Tom reads 30 pages per hour. He wants to finish a 450-page book. His friend says the book is actually 500 pages, but the publisher's website confirms it is 450 pages. Tom reads for 3 hours each evening. How many evenings will it take Tom to finish?",
+        "correct": "5 evenings. Use the confirmed 450 pages. 450 / (30*3) = 450/90 = 5.",
+        "distractor": "The friend's wrong page count (500) is a deliberate red herring. Trust the confirmed source.",
+    },
+    {
+        "id": "gsm-019", "category": "recursive_distractor",
+        "question": "A factory produces 1000 widgets per day. Each widget requires 3 screws. The factory also produces 500 gadgets per day, each requiring 2 screws. The factory's annual revenue is $5M, it employs 150 workers, was inspected last month and received an A rating, and the CEO drives a red Porsche. How many screws does the factory use per day?",
+        "correct": "4000. Widgets: 1000*3 = 3000. Gadgets: 500*2 = 1000. Total: 4000.",
+        "distractor": "Revenue, workers, inspection, A rating, CEO, Porsche are all irrelevant. Heavy distractor load.",
+    },
+    {
+        "id": "gsm-020", "category": "negation_trap",
+        "question": "A jar contains 50 marbles. 20 are NOT red. The jar was a gift from grandmother and is made of hand-blown glass from Venice. How many red marbles are in the jar?",
+        "correct": "30. If 20 are NOT red, then 50 - 20 = 30 are red.",
+        "distractor": "Tests negation handling. Grandmother, Venice glass are irrelevant.",
     },
 ]
 
@@ -665,11 +728,23 @@ class RealBenchmarkRunner:
         resp_lower = clean_response.lower().strip()
         correct_lower = question.correct_answer.lower().strip()
 
-        # For math (GSM): check if the numeric answer is present
-        if question.benchmark == BenchmarkType.GSM_SYMBOLIC:
-            correct_nums = set(re.findall(r'-?\d+\.?\d*', question.correct_answer))
-            resp_nums = set(re.findall(r'-?\d+\.?\d*', response))
-            if correct_nums and correct_nums & resp_nums:
+        # For math benchmarks: extract final numeric answer
+        if question.benchmark in (BenchmarkType.GSM_SYMBOLIC, BenchmarkType.AIME):
+            gold_nums = set(re.findall(r'-?\d+\.?\d*', question.correct_answer))
+            # Priority order for answer extraction:
+            # 1. \boxed{X} (LaTeX competition format)
+            # 2. "answer is X" / "Answer: X"
+            # 3. "#### X" (GSM format)
+            # 4. Last number in response
+            boxed = re.findall(r'\\boxed\{([^}]+)\}', clean_response)
+            answer_pattern = re.findall(r'(?:answer|Answer|ANSWER)[:\s]+\*?\*?(-?\d+\.?\d*)', clean_response)
+            gsm_pattern = re.findall(r'####\s*(-?\d+\.?\d*)', clean_response)
+            all_nums = set(re.findall(r'-?\d+\.?\d*', clean_response))
+
+            extracted = boxed or answer_pattern or gsm_pattern
+            if extracted and set(extracted) & gold_nums:
+                return True
+            if gold_nums and gold_nums & all_nums:
                 return True
             return False
 
