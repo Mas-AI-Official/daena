@@ -91,6 +91,35 @@ class LLMService:
         """
         self._quintessence = engine
 
+    # ── Public: direct generate (used by Laevateinn pipeline stages) ──
+
+    async def generate_direct(
+        self,
+        request: GenerateRequest,
+    ) -> LLMResponse:
+        """Call an LLM provider directly, bypassing routing decisions.
+
+        Used by Laevateinn pipeline stages that need a model call without
+        going through the full routing/governance stack. Picks the provider
+        from the request's model_id, or falls back to the first available.
+        """
+        provider: BaseProvider | None = None
+
+        if request.model_id:
+            provider = self._registry.get_provider_for_model(request.model_id)
+
+        # Fallback: use first available provider
+        if provider is None:
+            for p in self._registry.available_providers:
+                provider = self._registry.get_provider(p)
+                if provider is not None:
+                    break
+
+        if provider is None:
+            raise ProviderUnavailableError("No LLM providers available for direct call")
+
+        return await provider.generate(request)
+
     # ── Public: single-shot generate ───────────────────────────
 
     async def generate(
