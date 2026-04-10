@@ -1,25 +1,43 @@
-"""Laevateinn Pipeline v3 -- Complete Beyond-Mythos Architecture.
+"""Laevateinn Pipeline v4 -- Meta-Questioning Architecture.
 
 The most advanced reasoning pipeline in any publicly deployable system.
-17 stages/sub-stages total, with 7 unique beyond-Mythos capabilities.
+20 stages/sub-stages total, with 15 unique beyond-Mythos capabilities.
 
-    Stage 0:   Failure Memory Recall (learn from past mistakes)
-    Stage 1:   Deep Comprehension Engine (DCE) + Recursive Constraints
-    Stage 1.5: Epistemic State Analysis + Meta-Strategy Selection
-    Stage 2:   Dynamic Compute Scaler (DCS)
-    Stage 3:   Adversarial Model Debate (AMD) with disagreement focus
-    Stage 3.5: Cross-Domain Analogy Engine (for CREATE/ANALYZE queries)
-    Stage 4:   Recursive Depth Engine (RDE) + CoVe
-    Stage 4.5: Causal Reasoning Graph (CRG) -- structural verification
-    Stage 5:   Validation Gauntlet
-    Stage 5.5: Counterfactual Engine -- "what if the answer were different?"
-    Stage 6:   Adversarial Verification Gate -- counter-evidence falsification
-    Stage 6.5: Outcome Simulator -- predict consequences of following advice
-    Stage 7:   Consensus Gradient -- per-section confidence mapping
-    Stage 8:   Confidence Calibration -- calibrated scores from history
-    Stage 9:   Jobs Delivery Engine
+    Stage 0:    Failure Memory Recall (learn from past mistakes)
+    Stage 0.5:  Socratic Inversion -- upgrade the QUESTION before answering
+                (Socrates + Musk + Shannon + Kahneman + Munger + Taleb)
+    Stage 1:    Deep Comprehension Engine (DCE) + Recursive Constraints
+    Stage 1.5:  Epistemic State Analysis + Meta-Strategy Selection
+    Stage 1.75: Question Quality Auditor -- Meta-Level 3 cognition
+                (Shannon info gain + Popper falsifiability + de Bono frames
+                + Hofstadter meta-levels + Feynman gap detection)
+    Stage 2:    Dynamic Compute Scaler (DCS)
+    Stage 3:    Adversarial Model Debate (AMD) with disagreement focus
+    Stage 3.5:  Cross-Domain Analogy Engine (for CREATE/ANALYZE queries)
+    Stage 4:    Recursive Depth Engine (RDE) + CoVe
+    Stage 4.5:  Causal Reasoning Graph (CRG) -- structural verification
+    Stage 5:    Validation Gauntlet
+    Stage 5.25: Cognitive Separation -- independent falsification vs construction
+                (Popper/Taleb bug-finding || Polya/Feynman solution-finding)
+    Stage 5.5:  Counterfactual Engine -- "what if the answer were different?"
+    Stage 6:    Adversarial Verification Gate -- counter-evidence falsification
+    Stage 6.5:  Outcome Simulator -- predict consequences of following advice
+    Stage 7:    Consensus Gradient -- per-section confidence mapping
+    Stage 8:    Confidence Calibration -- calibrated scores from history
+    Stage 9:    Jobs Delivery Engine
 
     Stage 10 (Self-Evolution) runs asynchronously after delivery.
+
+Meta-Questioning capabilities (unique to Laevateinn v4):
+    1. Socratic Inversion -- upgrade questions before answering them
+    2. Question Quality Audit -- Meta-Level 3: audit the auditor
+    3. Cognitive Separation -- isolated bug-finding vs solution-finding tracks
+
+These three capabilities implement what no other system has:
+    Level 0: Ask a question about the domain ("What is the answer?")
+    Level 1: Ask a question about the question ("Is this the right question?")
+    Level 2: Ask about the questioning process ("Is my method working?")
+    Level 3: Ask about the meta-questioning framework ("Is my framework adequate?")
 
 Integration with Daena:
     Called from chat_orchestrator.py between QueryUnderstanding and LLMStream.
@@ -35,6 +53,7 @@ from app.services.laevateinn.adversarial_gate import AdversarialVerificationGate
 from app.services.laevateinn.analogy_engine import AnalogyEngine
 from app.services.laevateinn.calibration import ConfidenceCalibrator
 from app.services.laevateinn.causal_graph import CausalReasoningGraph
+from app.services.laevateinn.cognitive_separation import CognitiveSeparationEngine
 from app.services.laevateinn.comprehension import DeepComprehensionEngine
 from app.services.laevateinn.compute_scaler import DynamicComputeScaler
 from app.services.laevateinn.consensus_gradient import ConsensusGradientEngine
@@ -45,6 +64,9 @@ from app.services.laevateinn.depth_engine import RecursiveDepthEngine
 from app.services.laevateinn.epistemic_tracker import EpistemicStateTracker
 from app.services.laevateinn.failure_memory import FailureMemoryEngine
 from app.services.laevateinn.outcome_simulator import OutcomeSimulator
+from app.services.laevateinn.perspective_oscillator import PerspectiveOscillator
+from app.services.laevateinn.question_auditor import QuestionQualityAuditor
+from app.services.laevateinn.socratic_inversion import SocraticInversionEngine
 from app.services.laevateinn.types import (
     ComputeProfile,
     DeliveryResult,
@@ -79,6 +101,10 @@ class LaevateinnPipeline:
 
     def __init__(self, llm_service: LLMService) -> None:
         self._llm = llm_service
+        # Meta-Questioning engines (Level 3 cognition)
+        self._socratic = SocraticInversionEngine(llm_service)
+        self._question_auditor = QuestionQualityAuditor(llm_service)
+        self._cognitive_sep = CognitiveSeparationEngine(llm_service)
         # Core stages
         self._dce = DeepComprehensionEngine(llm_service)
         self._dcs = DynamicComputeScaler()
@@ -96,6 +122,7 @@ class LaevateinnPipeline:
         self._analogy = AnalogyEngine(llm_service)
         self._calibrator = ConfidenceCalibrator()
         self._consensus = ConsensusGradientEngine()
+        self._oscillator = PerspectiveOscillator(llm_service)
 
     async def process(
         self,
@@ -125,6 +152,33 @@ class LaevateinnPipeline:
                     risks=len(trace.failure_memory.risk_flags),
                 )
             trace.stages_executed.append("failure_memory")
+
+        # ── Stage 0.5: Socratic Inversion ──────────────────────
+        # Upgrades the question BEFORE DCE sees it.
+        # Combines: Socrates, Musk, Polya, Shannon, Kahneman, Munger, Taleb.
+        if "socratic" not in skip:
+            logger.info("laev_stage_0_5_socratic", query=query[:80])
+            use_llm_socratic = (
+                force_difficulty in (Difficulty.HARD, Difficulty.BRUTAL)
+                if force_difficulty else False
+            )
+            trace.socratic_inversion = await self._socratic.upgrade(
+                query,
+                context=context,
+                use_llm=use_llm_socratic,
+            )
+            # If upgrade found a better question, use it downstream
+            if (
+                trace.socratic_inversion
+                and trace.socratic_inversion.upgraded_question != query
+            ):
+                query = trace.socratic_inversion.upgraded_question
+                logger.info(
+                    "laev_socratic_upgraded",
+                    depth=trace.socratic_inversion.depth_reached.value,
+                    substitution=trace.socratic_inversion.substitution_detected,
+                )
+            trace.stages_executed.append("socratic")
 
         # ── Stage 1: Deep Comprehension + Recursive Constraints ─
         if "dce" not in skip:
@@ -162,6 +216,31 @@ class LaevateinnPipeline:
                 )
 
             trace.stages_executed.append("epistemic")
+
+        # ── Stage 1.75: Question Quality Audit ─────────────────
+        # Meta-Level 3: audits whether our questions are the RIGHT ones.
+        # Can loop back to DCE if question quality is too low.
+        if "question_audit" not in skip and trace.comprehension:
+            logger.info("laev_stage_1_75_question_audit")
+            trace.question_audit = self._question_auditor.audit(
+                trace.comprehension,
+                epistemic=trace.epistemic_state,
+                socratic=trace.socratic_inversion,
+            )
+            # If audit says questions are bad, loop back to DCE
+            if trace.question_audit and trace.question_audit.loops_back:
+                logger.warning(
+                    "laev_question_audit_loop_back",
+                    quality=trace.question_audit.overall_question_quality,
+                    meta_level=trace.question_audit.meta_level_reached,
+                )
+                # Re-run DCE with upgraded questions from audit
+                if trace.question_audit.upgraded_questions:
+                    upgraded_q = trace.question_audit.upgraded_questions[0]
+                    trace.comprehension = await self._dce.comprehend(
+                        upgraded_q, use_llm=True, context=context,
+                    )
+            trace.stages_executed.append("question_audit")
 
         # ── Stage 2: Dynamic Compute Scaling ────────────────────
         if "dcs" not in skip:
@@ -282,6 +361,41 @@ class LaevateinnPipeline:
                 trace.depth = retry
             trace.stages_executed.append("validation")
 
+        # ── Stage 5.25: Cognitive Separation ───────────────────
+        # Independent falsification vs construction tracks.
+        # Track A (Popper/Taleb): find bugs WITHOUT suggesting fixes.
+        # Track B (Polya/Feynman): improve answer WITHOUT finding bugs.
+        # Prevents verification from biasing toward confirming fixable bugs.
+        if "cognitive_sep" not in skip and compute.difficulty in (
+            Difficulty.HARD, Difficulty.BRUTAL,
+        ):
+            logger.info("laev_stage_5_25_cognitive_sep")
+            trace.cognitive_separation = await self._cognitive_sep.separate(
+                query, answer, compute,
+                model_id=primary_model,
+                validation=trace.validation,
+            )
+            # If falsification found load-bearing flaws, loop back to RDE
+            if (
+                trace.cognitive_separation
+                and trace.cognitive_separation.falsification
+                and trace.cognitive_separation.falsification.load_bearing_flaws
+                and trace.depth
+                and trace.depth.depth_used < compute.recursion_depth
+            ):
+                logger.warning(
+                    "laev_cognitive_sep_loop_back",
+                    flaws=len(
+                        trace.cognitive_separation.falsification.load_bearing_flaws
+                    ),
+                )
+                retry = await self._rde.recursive_solve(
+                    query, answer, compute, model_id=primary_model,
+                )
+                answer = retry.final_answer
+                trace.depth = retry
+            trace.stages_executed.append("cognitive_sep")
+
         # ── Stage 5.5: Counterfactual Engine ────────────────────
         if "counterfactual" not in skip and compute.difficulty in (
             Difficulty.HARD, Difficulty.BRUTAL,
@@ -350,6 +464,27 @@ class LaevateinnPipeline:
             )
             trace.stages_executed.append("consensus_gradient")
 
+        # ── Stage 7.5: Perspective Oscillation ─────────────────
+        # Dimensional thinking: zoom-in/zoom-out/rotate/re-enter.
+        # Uses consensus gradient to focus on weak sections.
+        if "oscillation" not in skip and compute.difficulty in (
+            Difficulty.HARD, Difficulty.BRUTAL,
+        ):
+            logger.info("laev_stage_7_5_oscillation")
+            trace.metadata["oscillation"] = await self._oscillator.oscillate(
+                query, answer, compute,
+                model_id=primary_model,
+                consensus=trace.consensus_gradient,
+            )
+            osc = trace.metadata["oscillation"]
+            if osc.blind_spots_found:
+                logger.info(
+                    "laev_oscillation_blind_spots",
+                    count=len(osc.blind_spots_found),
+                    contradictions=len(osc.contradictions_found),
+                )
+            trace.stages_executed.append("oscillation")
+
         # ── Stage 8: Confidence Calibration ─────────────────────
         # Runs at delivery to adjust final confidence
 
@@ -410,6 +545,10 @@ class LaevateinnPipeline:
             adv_gate=trace.adversarial_gate.passed if trace.adversarial_gate else "skipped",
             crg_valid=trace.causal_graph.composition_valid if trace.causal_graph else "skipped",
             catastrophic=trace.metadata.get("catastrophic_risk", False),
+            socratic_depth=trace.socratic_inversion.depth_reached.value if trace.socratic_inversion else "skipped",
+            question_quality=trace.question_audit.overall_question_quality if trace.question_audit else "skipped",
+            meta_level=trace.question_audit.meta_level_reached if trace.question_audit else 0,
+            cog_sep_agreed=trace.cognitive_separation.tracks_agreed if trace.cognitive_separation else "skipped",
             latency_ms=trace.total_latency_ms,
         )
 

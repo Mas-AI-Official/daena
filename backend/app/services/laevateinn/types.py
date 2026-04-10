@@ -395,3 +395,162 @@ class LaevateinnTrace:
     stages_executed: list[str] = field(default_factory=list)
     timestamp: float = field(default_factory=time.time)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    # ── Meta-Questioning engines (Level 3 cognition) ───────────
+    socratic_inversion: SocraticInversionResult | None = None
+    question_audit: QuestionAuditResult | None = None
+    cognitive_separation: CognitiveSeparationResult | None = None
+
+
+# ─── Socratic Inversion Engine types ──────────────────────────
+
+
+class QuestionLevel(str, enum.Enum):
+    """Socratic depth level of a question."""
+    SURFACE = "SURFACE"            # What the user literally typed
+    IMPLICIT = "IMPLICIT"          # What they actually mean
+    STRUCTURAL = "STRUCTURAL"      # The structural problem behind the question
+    GENERATIVE = "GENERATIVE"      # The question that, if answered, unlocks 10 others
+    PARADIGMATIC = "PARADIGMATIC"  # The paradigm-level question (reframes the domain)
+
+
+@dataclass(slots=True)
+class QuestionUpgrade:
+    """A single upgrade of a question to a deeper level."""
+    original: str
+    upgraded: str
+    level: QuestionLevel
+    technique_used: str            # Which thinker's method was applied
+    information_gain: float        # Shannon: how much this reduces uncertainty (0-1)
+    reasoning: str                 # Why this upgrade matters
+
+
+@dataclass(slots=True)
+class SocraticInversionResult:
+    """Output of Socratic Inversion Engine (Stage 0.5).
+
+    Instead of: question -> answer -> verify answer
+    Does: question -> generate BETTER questions -> answer the better question
+
+    Combines: Socrates (elenchus), Musk (first principles), Polya (decomposition),
+    Shannon (information gain), Kahneman (substitution detection).
+    """
+    original_question: str
+    upgraded_question: str          # The best question to actually answer
+    upgrade_chain: list[QuestionUpgrade] = field(default_factory=list)
+    depth_reached: QuestionLevel = QuestionLevel.SURFACE
+    substitution_detected: bool = False  # Kahneman: was user asking easier question?
+    substitution_explanation: str = ""
+    inverted_form: str = ""        # Munger: "What would guarantee failure?"
+    eliminated_questions: list[str] = field(default_factory=list)  # Taleb: via negativa
+    anchor_detected: bool = False  # Kahneman: was there an anchoring bias?
+    total_latency_ms: int = 0
+
+
+# ─── Question Quality Auditor types ──────────────────────────
+
+
+class QuestionDefect(str, enum.Enum):
+    """Types of defects in a question or verification question."""
+    DERIVATIVE = "DERIVATIVE"          # Question is derivative of the answer, not independent
+    UNFALSIFIABLE = "UNFALSIFIABLE"    # No possible observation could show it wrong
+    REDUNDANT = "REDUNDANT"            # Same question reworded
+    LOW_INFORMATION = "LOW_INFORMATION"  # Answer won't change beliefs
+    WRONG_LEVEL = "WRONG_LEVEL"        # Asks about symptoms, not causes
+    SUBSTITUTED = "SUBSTITUTED"        # Answering an easier question instead
+    MISSING_FRAME = "MISSING_FRAME"    # Entire perspective/frame not represented
+
+
+@dataclass(slots=True)
+class QuestionAssessment:
+    """Assessment of a single question's quality."""
+    question: str
+    information_gain: float        # Shannon: expected uncertainty reduction (0-1)
+    falsifiability: float          # Popper: how sharply it distinguishes hypotheses (0-1)
+    independence: float            # Is it independent of the answer being checked? (0-1)
+    defects: list[QuestionDefect] = field(default_factory=list)
+    missing_perspectives: list[str] = field(default_factory=list)  # de Bono hats not covered
+    suggested_replacement: str = ""  # A better question if defects found
+
+
+@dataclass(slots=True)
+class QuestionAuditResult:
+    """Output of Question Quality Auditor (Stage 1.75).
+
+    Meta-Level 3: Asks "Are we asking the RIGHT questions to check
+    if we're asking the right question?"
+
+    Combines: Shannon (information gain), Popper (falsifiability),
+    de Bono (frame coverage), Hofstadter (meta-cognitive levels),
+    Taleb (via negativa / question fragility).
+    """
+    questions_audited: int
+    assessments: list[QuestionAssessment] = field(default_factory=list)
+    overall_question_quality: float = 0.5  # Aggregate score (0-1)
+    missing_question_types: list[str] = field(default_factory=list)  # Gaps in questioning
+    frame_coverage: dict[str, bool] = field(default_factory=dict)  # de Bono hat coverage
+    meta_level_reached: int = 0      # Hofstadter: highest meta-level achieved (0-3)
+    via_negativa_eliminations: int = 0  # Taleb: how many bad questions removed
+    upgraded_questions: list[str] = field(default_factory=list)  # Replacement questions
+    loops_back: bool = False         # Should pipeline re-comprehend?
+    total_latency_ms: int = 0
+
+
+# ─── Cognitive Separation Engine types ────────────────────────
+
+
+class CognitiveMode(str, enum.Enum):
+    """Two fundamentally different cognitive operations."""
+    FALSIFICATION = "FALSIFICATION"  # Bug-finding: what's WRONG?
+    CONSTRUCTION = "CONSTRUCTION"    # Solution-finding: what's the FIX?
+
+
+@dataclass(slots=True)
+class FalsificationResult:
+    """Result of the falsification (bug-finding) track.
+
+    Pure Popper/Taleb: find what's wrong, don't fix it.
+    Via negativa: eliminate wrong answers to constrain the space.
+    """
+    bugs_found: list[str] = field(default_factory=list)
+    wrong_answers_eliminated: list[str] = field(default_factory=list)
+    load_bearing_flaws: list[str] = field(default_factory=list)  # Flaws that break the conclusion
+    non_load_bearing_flaws: list[str] = field(default_factory=list)  # Cosmetic issues
+    strongest_counterargument: str = ""
+    falsification_confidence: float = 0.5  # How confident are we in the bugs found?
+
+
+@dataclass(slots=True)
+class ConstructionResult:
+    """Result of the construction (solution-finding) track.
+
+    Pure Polya/Feynman: build the fix, don't re-diagnose.
+    Uses decomposition, analogy, simplification.
+    """
+    proposed_fixes: list[str] = field(default_factory=list)
+    technique_used: str = ""       # Polya heuristic or method applied
+    simplified_version: str = ""   # Polya: solve the simpler case first
+    construction_confidence: float = 0.5
+
+
+@dataclass(slots=True)
+class CognitiveSeparationResult:
+    """Output of Cognitive Separation Engine (Stage 5.25).
+
+    Splits verification into two INDEPENDENT parallel tracks:
+    Track A (Falsification): Popper/Taleb/Munger -- find what's wrong
+    Track B (Construction): Polya/Feynman/Boyd -- improve the solution
+
+    These run INDEPENDENTLY. Track A cannot see Track B's output and vice versa.
+    Only after both complete does a synthesis step merge findings.
+
+    This prevents the common failure where verification biases toward
+    confirming the existing answer rather than genuinely trying to break it.
+    """
+    falsification: FalsificationResult | None = None
+    construction: ConstructionResult | None = None
+    tracks_agreed: bool = True     # Did both tracks reach compatible conclusions?
+    synthesis: str = ""            # Merged finding from both tracks
+    answer_improved: bool = False  # Was the answer actually changed?
+    improved_answer: str = ""      # The improved answer (if changed)
+    total_latency_ms: int = 0
