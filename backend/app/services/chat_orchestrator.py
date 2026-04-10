@@ -602,9 +602,22 @@ class ChatOrchestrator:
 
         cost_guard = CostGuard(self._db)
         _quota_fallback_model: str | None = None
+
+        # Estimate cost from model pricing instead of hardcoding
+        _estimated_cost = 0.0
+        if preferred_model and self._registry:
+            _model_info = self._registry.get_model_info(preferred_model)
+            if _model_info:
+                _estimated_cost = (
+                    (1000 / 1_000_000) * _model_info.cost_per_1m_input
+                    + (500 / 1_000_000) * _model_info.cost_per_1m_output
+                )
+        if _estimated_cost == 0.0:
+            _estimated_cost = 0.01  # Conservative fallback for unknown models
+
         try:
             await cost_guard.preflight_check(
-                tenant_id=tenant_id, user_id=user_id, estimated_cost=0.05
+                tenant_id=tenant_id, user_id=user_id, estimated_cost=_estimated_cost
             )
         except UserQuotaExhaustedError as uqe:
             # Graceful degradation: route to free local model
@@ -1480,7 +1493,7 @@ class ChatOrchestrator:
                 # Step C: ToolUseLoop -- the agentic brain (like OpenClaw/Claude Code)
                 # If regex and planner both missed, let the LLM decide what tools to call.
                 # This is THE difference between a chatbot and an AI operating system.
-                if daenabot_result is None and action_mode == "EXE":
+                if daenabot_result is None and chat_mode == ChatMode.EXE:
                     try:
                         from app.services.tool_use_loop import ToolUseLoop
 
@@ -1488,7 +1501,7 @@ class ChatOrchestrator:
                             db=self._db,
                             user_id=user_id,
                             tenant_id=tenant_id,
-                            agi_mode=(continuation_mode == "ON"),
+                            agi_mode=autopilot,
                             session_id=session_id,
                         )
 

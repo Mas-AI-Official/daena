@@ -31,6 +31,7 @@ Dispatch coverage:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
@@ -146,7 +147,32 @@ class ToolUseLoop:
             agi_mode=self.agi_mode,
         )
         tool_prompt = build_tool_prompt(tool_schema)
-        enhanced_prompt = f"{system_prompt}\n\n{tool_prompt}"
+
+        # Inject cognitive reasoning DNA -- the LLM thinks with frameworks,
+        # not just with tools. This is what makes Daena intelligent.
+        cognitive_prompt = (
+            "COGNITIVE PROTOCOL (apply to EVERY decision):\n"
+            "Before each action, THINK using these lenses:\n"
+            "- FIRST PRINCIPLES: What is actually true? Strip assumptions.\n"
+            "- DECOMPOSE: Break complex tasks into atomic steps. Do the hardest first.\n"
+            "- INVERSION: What would cause this to fail? Prevent those failure modes.\n"
+            "- MAP vs TERRITORY: Verify actual state, don't assume. Read before write.\n"
+            "- CONSTRAINT PROBE: If blocked, decompose the constraint. The stated limit\n"
+            "  is rarely the actual limit. Find the gap and use it.\n"
+            "\n"
+            "PROBLEM-SOLVING LOOP:\n"
+            "1. OBSERVE: What do I actually know? (Read files, check state, verify)\n"
+            "2. ORIENT: Which approach fits? (Decompose, search, ask)\n"
+            "3. DECIDE: Pick the simplest path that works.\n"
+            "4. ACT: Execute one step. Check the result.\n"
+            "5. REFLECT: Did it work? If not, WHY? (5 Whys -- dig to root cause)\n"
+            "   Then adapt: try a different tool, search for answers, install what\n"
+            "   is missing, or build a custom tool. NEVER repeat the same failed approach.\n"
+            "\n"
+            "You are not a chatbot following instructions. You are an autonomous operator.\n"
+            "You THINK about what you are doing. You verify before and after. You adapt.\n"
+        )
+        enhanced_prompt = f"{system_prompt}\n\n{cognitive_prompt}\n{tool_prompt}"
 
         # Tool-use loop
         iteration = 0
@@ -261,12 +287,35 @@ class ToolUseLoop:
                     LLMMessage(role="assistant", content=clean_response)
                 )
 
-            # Add tool results as a system message
-            results_text = self._format_tool_results(tool_calls, self._tool_results[-len(tool_calls):])
+            # Add tool results with cognitive scaffolding
+            recent_results = self._tool_results[-len(tool_calls):]
+            results_text = self._format_tool_results(tool_calls, recent_results)
+            has_failures = any(not r.get("result", {}).get("success", True) for r in recent_results)
+
             from app.services.llm_service import LLMMessage
-            tool_context_messages.append(
-                LLMMessage(role="user", content=f"[TOOL RESULTS]\n{results_text}\n\nContinue with your response based on these results.")
-            )
+            if has_failures:
+                # Failure: trigger cognitive reasoning, not blind retry
+                tool_context_messages.append(
+                    LLMMessage(role="user", content=(
+                        f"[TOOL RESULTS]\n{results_text}\n\n"
+                        "One or more tools failed. Apply your cognitive protocol:\n"
+                        "1. ROOT CAUSE: Why did it fail? (Not the symptom -- the actual cause)\n"
+                        "2. CONSTRAINT PROBE: Is this a real limit or can you work around it?\n"
+                        "3. NEXT MOVE: Search online, install something, try a different tool,\n"
+                        "   build a custom tool, or decompose into smaller steps.\n"
+                        "DO NOT repeat the same approach. Adapt and try something different."
+                    ))
+                )
+            else:
+                # Success: check if the goal is achieved or more steps needed
+                tool_context_messages.append(
+                    LLMMessage(role="user", content=(
+                        f"[TOOL RESULTS]\n{results_text}\n\n"
+                        "Tools succeeded. VERIFY: Does this achieve the goal?\n"
+                        "If yes, present the final result.\n"
+                        "If more steps remain, continue with the next step."
+                    ))
+                )
 
         # Report completion
         yield {
@@ -520,6 +569,30 @@ class ToolUseLoop:
             elif prefix == "vuln_scanner":
                 return await self._exec_vuln_scanner(operation, resolved_params)
 
+            # ── Power tools (git, clipboard, process, project, db, media, archive, pdf) ──
+            elif prefix == "git":
+                return await self._exec_git(operation, resolved_params)
+            elif prefix == "clipboard":
+                return await self._exec_clipboard(operation, resolved_params)
+            elif prefix in ("list_processes", "kill_process", "start_process"):
+                return await self._exec_process(prefix, resolved_params)
+            elif prefix == "create_project":
+                return await self._exec_create_project(resolved_params)
+            elif prefix == "system_info":
+                return await self._exec_system_info()
+            elif prefix == "db":
+                return await self._exec_db(operation, resolved_params)
+            elif prefix in ("generate_audio", "generate_image", "generate_pdf"):
+                return await self._exec_media(prefix, resolved_params)
+            elif prefix in ("archive_create", "archive_extract"):
+                return await self._exec_archive(prefix, resolved_params)
+            elif prefix == "edit_file":
+                return await self._exec_edit_file(resolved_params)
+            elif prefix == "create_tool":
+                return await self._exec_create_tool(resolved_params)
+            elif prefix == "install_system_tool":
+                return await self._exec_install_system_tool(resolved_params)
+
             return {"success": False, "error": f"Unknown tool dispatch: {prefix}.{operation}"}
 
         except Exception as exc:
@@ -528,42 +601,15 @@ class ToolUseLoop:
                 tool=tool_name,
                 error=str(exc),
             )
-
-            error_text = str(exc).lower()
-
-            # AGI auto-install: if something is not found/installed, install it
-            if self.agi_mode and any(
-                kw in error_text
-                for kw in ["not found", "not installed", "no module named",
-                            "command not found", "is not recognized"]
-            ):
-                try:
-                    # Extract what needs installing from the error
-                    install_result = await self._auto_install(str(exc), tool_name, params)
-                    if install_result.get("success"):
-                        logger.info("tool_loop.auto_install_success", tool=tool_name)
-                        # Retry the original tool call
-                        return await self._execute_tool(tool_name, params)
-                except Exception as install_exc:
-                    logger.debug("tool_loop.auto_install_failed", error=str(install_exc))
-
-            # Self-repair: if this looks like a code error, try to fix it
-            if self.agi_mode and any(
-                kw in error_text
-                for kw in ["error", "traceback", "exception", "failed"]
-            ):
-                try:
-                    from app.services.self_repair import attempt_self_repair
-                    repair = await attempt_self_repair(
-                        str(exc),
-                        context=f"Tool {tool_name} failed with params {params}",
-                    )
-                    if repair.success:
-                        logger.info("tool_loop.self_repair_success", file=repair.file_fixed)
-                        return {"success": True, "message": f"Self-repaired: {repair.description}", "repaired": True}
-                except Exception:
-                    pass  # Self-repair failed -- return original error
-
+            # Let the error flow back to the LLM. The LLM has access to
+            # web_search, install_package, install_system_tool, create_tool,
+            # and run_command. It will DECIDE the right recovery strategy:
+            #   - Search online for how to fix it
+            #   - Install a missing package
+            #   - Try a different tool
+            #   - Build a custom tool
+            #   - Ask the user
+            # This is intelligence through DECISION, not hardcoded keyword matching.
             return {"success": False, "error": str(exc)}
 
     # ── Dispatch Handlers ────────────────────────────────────────
@@ -943,6 +989,309 @@ class ToolUseLoop:
         from app.services.daenabot.vuln_scanner_agent import VulnScannerAgent
         agent = VulnScannerAgent()
         return await agent.execute(operation, params)
+
+    # ── Power Tool Handlers ──────────────────────────────────────
+
+    async def _exec_edit_file(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Surgical file edit -- find and replace specific text."""
+        import pathlib
+        path = pathlib.Path(params["path"])
+        if not path.exists():
+            return {"success": False, "error": f"File not found: {path}"}
+        content = path.read_text(encoding="utf-8")
+        old_text = params["old_text"]
+        if old_text not in content:
+            return {"success": False, "error": "old_text not found in file"}
+        if content.count(old_text) > 1:
+            return {"success": False, "error": "old_text matches multiple locations -- make it more specific"}
+        new_content = content.replace(old_text, params["new_text"], 1)
+        path.write_text(new_content, encoding="utf-8")
+        return {"success": True, "message": f"Edited {path.name}", "lines_changed": params["new_text"].count("\n") + 1}
+
+    async def _exec_git(self, operation: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Git operations: status, commit, diff."""
+        import asyncio
+        cwd = params.get("path", ".")
+        if operation == "status":
+            cmd = "git status --short"
+        elif operation == "commit":
+            msg = params.get("message", "Auto-commit by Daena")
+            cmd = f'git add -A && git commit -m "{msg}"'
+        elif operation == "diff":
+            cmd = "git diff --stat" if not params.get("staged") else "git diff --cached --stat"
+        else:
+            return {"success": False, "error": f"Unknown git operation: {operation}"}
+        proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd)
+        stdout, stderr = await proc.communicate()
+        output = stdout.decode("utf-8", errors="replace")[:4000]
+        if proc.returncode != 0:
+            return {"success": False, "error": stderr.decode("utf-8", errors="replace")[:2000], "output": output}
+        return {"success": True, "output": output}
+
+    async def _exec_clipboard(self, operation: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Clipboard read/write via pyperclip or PowerShell fallback."""
+        import asyncio
+        if operation == "read":
+            proc = await asyncio.create_subprocess_shell(
+                'powershell.exe -Command "Get-Clipboard"',
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+            return {"success": True, "content": stdout.decode("utf-8", errors="replace")}
+        elif operation == "write":
+            text = params.get("text", "")
+            proc = await asyncio.create_subprocess_shell(
+                f'powershell.exe -Command "Set-Clipboard -Value \'{text[:10000]}\'"',
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            await proc.communicate()
+            return {"success": True, "message": f"Copied {len(text)} chars to clipboard"}
+        return {"success": False, "error": f"Unknown clipboard operation: {operation}"}
+
+    async def _exec_process(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Process management: list, kill, start."""
+        import asyncio
+        if tool_name == "list_processes":
+            filt = params.get("filter", "")
+            cmd = f'powershell.exe -Command "Get-Process {filt} | Select-Object -First 30 Id, ProcessName, CPU, WorkingSet | Format-Table -AutoSize"' if filt else 'powershell.exe -Command "Get-Process | Sort-Object CPU -Descending | Select-Object -First 30 Id, ProcessName, CPU, WorkingSet | Format-Table -AutoSize"'
+            proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, _ = await proc.communicate()
+            return {"success": True, "processes": stdout.decode("utf-8", errors="replace")[:4000]}
+        elif tool_name == "kill_process":
+            target = params.get("target", "")
+            cmd = f'powershell.exe -Command "Stop-Process -Name {target} -Force -ErrorAction SilentlyContinue; Stop-Process -Id {target} -Force -ErrorAction SilentlyContinue"'
+            proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            await proc.communicate()
+            return {"success": True, "message": f"Killed {target}"}
+        elif tool_name == "start_process":
+            cmd = params.get("command", "")
+            cwd = params.get("working_directory")
+            proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd)
+            return {"success": True, "pid": proc.pid, "message": f"Started: {cmd[:100]}"}
+        return {"success": False, "error": f"Unknown process tool: {tool_name}"}
+
+    async def _exec_create_project(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Scaffold a new project from templates."""
+        import asyncio, pathlib
+        name = params["name"]
+        template = params.get("template", "python")
+        parent = params.get("path", ".")
+        project_dir = pathlib.Path(parent) / name
+
+        scaffolds = {
+            "react": f'npx create-react-app "{project_dir}" --template typescript',
+            "nextjs": f'npx create-next-app@latest "{project_dir}" --typescript --eslint --app --src-dir --no-tailwind',
+            "python": f'mkdir -p "{project_dir}/src" "{project_dir}/tests" && cd "{project_dir}" && python -m venv .venv && echo "# {name}" > README.md',
+            "fastapi": f'mkdir -p "{project_dir}/app" "{project_dir}/tests" && cd "{project_dir}" && python -m venv .venv && .venv/Scripts/pip install fastapi uvicorn',
+            "flask": f'mkdir -p "{project_dir}/app" "{project_dir}/tests" && cd "{project_dir}" && python -m venv .venv && .venv/Scripts/pip install flask',
+            "express": f'mkdir -p "{project_dir}" && cd "{project_dir}" && npm init -y && npm install express typescript @types/express ts-node',
+            "vue": f'npm create vue@latest "{project_dir}" -- --typescript',
+            "svelte": f'npm create svelte@latest "{project_dir}"',
+            "rust": f'cargo new "{project_dir}"',
+            "go": f'mkdir -p "{project_dir}" && cd "{project_dir}" && go mod init {name}',
+        }
+        cmd = scaffolds.get(template)
+        if not cmd:
+            return {"success": False, "error": f"Unknown template: {template}. Available: {', '.join(scaffolds.keys())}"}
+
+        proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await proc.communicate()
+        # Init git
+        await asyncio.create_subprocess_shell(f'cd "{project_dir}" && git init', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        return {"success": proc.returncode == 0, "path": str(project_dir), "output": stdout.decode("utf-8", errors="replace")[:2000]}
+
+    async def _exec_system_info(self) -> dict[str, Any]:
+        """Gather system information."""
+        import platform, shutil, os
+        info = {
+            "os": platform.system(),
+            "os_version": platform.version(),
+            "arch": platform.machine(),
+            "python": platform.python_version(),
+            "node": shutil.which("node") is not None,
+            "npm": shutil.which("npm") is not None,
+            "rust": shutil.which("cargo") is not None,
+            "go": shutil.which("go") is not None,
+            "docker": shutil.which("docker") is not None,
+            "git": shutil.which("git") is not None,
+            "wsl": shutil.which("wsl") is not None,
+            "ffmpeg": shutil.which("ffmpeg") is not None,
+            "cpu_count": os.cpu_count(),
+        }
+        return {"success": True, **info}
+
+    async def _exec_db(self, operation: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Execute a SQL query."""
+        import asyncio
+        query = params.get("query", "")
+        db_url = params.get("database_url", "")
+        if "sqlite" in db_url:
+            db_path = db_url.replace("sqlite:///", "")
+            cmd = f'python -c "import sqlite3; c=sqlite3.connect(\'{db_path}\'); r=c.execute(\'\'\'{query}\'\'\'); print([dict(zip([d[0] for d in r.description], row)) for row in r.fetchmany(50)] if r.description else \'OK\')"'
+        else:
+            return {"success": False, "error": "Only SQLite supported in this handler. Use run_command with psql for PostgreSQL."}
+        proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            return {"success": False, "error": stderr.decode("utf-8", errors="replace")[:2000]}
+        return {"success": True, "result": stdout.decode("utf-8", errors="replace")[:4000]}
+
+    async def _exec_media(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Media generation: audio, image, PDF."""
+        import asyncio
+        output_path = params.get("output_path", "")
+        if tool_name == "generate_audio":
+            text = params.get("text", "")
+            cmd = f'python -c "import pyttsx3; e=pyttsx3.init(); e.save_to_file(\'{text[:500]}\', \'{output_path}\'); e.runAndWait()"'
+            proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                # Fallback: use PowerShell TTS
+                cmd = f'powershell.exe -Command "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.SetOutputToWaveFile(\'{output_path}\'); $s.Speak(\'{text[:500]}\'); $s.Dispose()"'
+                proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                await proc.communicate()
+            return {"success": True, "path": output_path}
+        elif tool_name == "generate_image":
+            desc = params.get("description", "")
+            w = params.get("width", 800)
+            h = params.get("height", 600)
+            # Use matplotlib to generate
+            code = f"""
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=({w/100}, {h/100}))
+ax.text(0.5, 0.5, '''{desc[:200]}''', ha='center', va='center', fontsize=14, wrap=True)
+ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
+plt.savefig('{output_path}', dpi=100, bbox_inches='tight')
+plt.close()
+"""
+            proc = await asyncio.create_subprocess_shell(f'python -c "{code}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            await proc.communicate()
+            return {"success": True, "path": output_path}
+        elif tool_name == "generate_pdf":
+            content = params.get("content", "")
+            title = params.get("title", "Document")
+            # Use weasyprint or reportlab fallback
+            code = f"""
+try:
+    from weasyprint import HTML
+    HTML(string='<h1>{title}</h1>{content}').write_pdf('{output_path}')
+except ImportError:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+    c = canvas.Canvas('{output_path}', pagesize=letter)
+    c.drawString(72, 750, '{title}')
+    y = 720
+    for line in '''{content[:3000]}'''.split('\\n'):
+        c.drawString(72, y, line[:90])
+        y -= 14
+        if y < 72: c.showPage(); y = 750
+    c.save()
+"""
+            proc = await asyncio.create_subprocess_shell(f'python -c "{code}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            await proc.communicate()
+            return {"success": True, "path": output_path}
+        return {"success": False, "error": f"Unknown media tool: {tool_name}"}
+
+    async def _exec_archive(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Archive operations: create/extract zip and tar."""
+        import shutil, pathlib
+        if tool_name == "archive_create":
+            source = params["source"]
+            output = params["output_path"]
+            if output.endswith(".zip"):
+                shutil.make_archive(output.replace(".zip", ""), "zip", source)
+            else:
+                shutil.make_archive(output.replace(".tar.gz", ""), "gztar", source)
+            return {"success": True, "path": output}
+        elif tool_name == "archive_extract":
+            archive = params["archive_path"]
+            dest = params.get("destination", ".")
+            shutil.unpack_archive(archive, dest)
+            return {"success": True, "extracted_to": dest}
+        return {"success": False, "error": f"Unknown archive tool: {tool_name}"}
+
+    async def _exec_create_tool(self, params: dict[str, Any]) -> dict[str, Any]:
+        """AGI: Create a new tool at runtime from Python code.
+
+        This is the power move -- if Daena needs a capability that does not
+        exist, she writes the tool herself and registers it for the session.
+        """
+        tool_name = params["tool_name"]
+        description = params["description"]
+        python_code = params["python_code"]
+        schema = params.get("parameters_schema", {})
+
+        # Compile and validate the code
+        try:
+            compile(python_code, f"<dynamic_tool:{tool_name}>", "exec")
+        except SyntaxError as e:
+            return {"success": False, "error": f"Syntax error in tool code: {e}"}
+
+        # Create the async function
+        namespace: dict = {}
+        exec(python_code, namespace)
+
+        # Find the async function in the namespace
+        func = None
+        for v in namespace.values():
+            if callable(v) and asyncio.iscoroutinefunction(v):
+                func = v
+                break
+
+        if func is None:
+            return {"success": False, "error": "Tool code must contain an async function"}
+
+        # Register it as a dynamic tool
+        if not hasattr(self, "_dynamic_tools"):
+            self._dynamic_tools = {}
+        self._dynamic_tools[tool_name] = func
+
+        logger.info("tool_loop.dynamic_tool_created", tool=tool_name, description=description[:100])
+        return {"success": True, "tool_name": tool_name, "message": f"Tool '{tool_name}' created and available for this session"}
+
+    async def _exec_install_system_tool(self, params: dict[str, Any]) -> dict[str, Any]:
+        """AGI: Install a system tool using the best available package manager."""
+        import asyncio, platform, shutil
+        tool_name = params["tool_name"]
+        manager = params.get("manager")
+
+        if not manager:
+            # Auto-detect
+            if shutil.which("pip"):
+                manager = "pip"
+            elif shutil.which("npm"):
+                manager = "npm"
+            elif platform.system() == "Windows" and shutil.which("winget"):
+                manager = "winget"
+            elif platform.system() == "Windows" and shutil.which("choco"):
+                manager = "choco"
+            elif platform.system() == "Linux" and shutil.which("apt"):
+                manager = "apt"
+            elif platform.system() == "Darwin" and shutil.which("brew"):
+                manager = "brew"
+            elif shutil.which("cargo"):
+                manager = "cargo"
+            else:
+                return {"success": False, "error": "No package manager found"}
+
+        cmds = {
+            "pip": f"pip install {tool_name}",
+            "npm": f"npm install -g {tool_name}",
+            "winget": f"winget install {tool_name}",
+            "choco": f"choco install {tool_name} -y",
+            "apt": f"sudo apt-get install -y {tool_name}",
+            "brew": f"brew install {tool_name}",
+            "cargo": f"cargo install {tool_name}",
+        }
+        cmd = cmds.get(manager, f"pip install {tool_name}")
+        proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await proc.communicate()
+        return {
+            "success": proc.returncode == 0,
+            "manager": manager,
+            "output": stdout.decode("utf-8", errors="replace")[:2000],
+            "error": stderr.decode("utf-8", errors="replace")[:1000] if proc.returncode != 0 else None,
+        }
 
     # ── Utility Methods ──────────────────────────────────────────
 

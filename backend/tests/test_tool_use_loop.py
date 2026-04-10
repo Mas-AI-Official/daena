@@ -116,7 +116,7 @@ class TestBuildToolSchema:
         names = {t["name"] for t in schema}
         assert "mcp_custom_tool" in names
         assert "mcp_other_tool" in names
-        assert len(schema) == 2
+        assert len(schema) >= 2  # MCP tools + power tools always included
 
     def test_mcp_no_registry_no_crash(self):
         """Verify no crash when mcp_registry is None."""

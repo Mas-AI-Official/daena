@@ -205,6 +205,10 @@ class SelfUpgrader:
                 # Persist to NBMF T3 (institutional memory)
                 await self._persist_to_memory(candidate)
 
+                # Push to Skill Refinery so it becomes available at Stage 6.5
+                # This completes the loop: learn -> refine -> retrieve -> use
+                await self._push_to_skill_refinery(candidate)
+
                 logger.info(
                     "self_upgrader.adopted",
                     name=candidate.name,
@@ -286,3 +290,46 @@ class SelfUpgrader:
             logger.info("self_upgrader.persisted", name=candidate.name)
         except Exception as exc:
             logger.debug("self_upgrader.persist_failed", error=str(exc))
+
+    async def _push_to_skill_refinery(self, candidate: CognitiveSkillCandidate) -> None:
+        """Push adopted cognitive skill to the Skill Refinery (Department 9).
+
+        This completes the learning loop:
+            OODA Reflect -> SelfUpgrader discovers pattern -> Skill Refinery stores it
+            -> Stage 6.5 retrieves it -> future tasks benefit from it
+
+        Skills start at T1 (working). The refinement pipeline (gap finder,
+        improver, critic) promotes them through T2 (refined) -> T3 (production).
+        """
+        if not self.db or not self.tenant_id:
+            return
+
+        try:
+            from app.services.skill_refinery.skill_store import SkillStore
+            store = SkillStore(self.db)
+
+            # Convert cognitive skill candidate to Skill Refinery format
+            skill_content = (
+                f"Cognitive pattern: {candidate.description}\n"
+                f"When to apply: {', '.join(candidate.when_to_use)}\n"
+                f"Steps:\n" + "\n".join(f"  {i+1}. {s}" for i, s in enumerate(candidate.steps))
+            )
+            if candidate.examples:
+                skill_content += "\nExamples:\n" + "\n".join(f"  - {e}" for e in candidate.examples[:5])
+
+            await store.create(
+                tenant_id=self.tenant_id,
+                title=candidate.name,
+                domain=candidate.when_to_use[0] if candidate.when_to_use else "general",
+                content=skill_content,
+                source=candidate.source,
+                confidence=candidate.backtest_score,
+                maturity=1,  # T1 Working -- refinement pipeline promotes it
+            )
+            logger.info(
+                "self_upgrader.skill_refinery_push",
+                name=candidate.name,
+                domain=candidate.when_to_use[0] if candidate.when_to_use else "general",
+            )
+        except Exception as exc:
+            logger.debug("self_upgrader.skill_push_failed", error=str(exc))

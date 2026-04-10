@@ -75,6 +75,10 @@ def build_tool_schema(
     if include_mcp and mcp_registry is not None:
         tools.extend(_mcp_tools(mcp_registry))
 
+    # Power tools: always included -- git, clipboard, process, scaffolding,
+    # audio/video, self-tool-creation. These make Daena a real operator.
+    tools.extend(_power_tools(agi_mode=agi_mode))
+
     return tools
 
 
@@ -98,6 +102,17 @@ def build_tool_prompt(tools: list[dict[str, Any]]) -> str:
         "Call tools when you need real data -- do not guess or make up answers.",
         "When a task requires multiple steps, call tools one at a time and use results to inform next steps.",
         "",
+        "WHEN A TOOL FAILS:",
+        "You will see the error in the results. DO NOT give up. Think about WHY it failed and choose your next move:",
+        "  1. SEARCH: Use web_search to find how to solve the problem",
+        "  2. INSTALL: Use install_package or install_system_tool to install what is missing",
+        "  3. ALTERNATIVE: Try a different tool or approach that achieves the same goal",
+        "  4. BUILD: Use create_tool to write a custom tool if nothing else exists",
+        "  5. DECOMPOSE: Break the task into smaller steps using run_command or run_python",
+        "  6. ASK: Only if you truly cannot proceed after trying alternatives, explain what you need from the user",
+        "The goal is to COMPLETE the task, not to report why it cannot be done.",
+        "Every failure is information. Use it to find the path that works.",
+        "",
     ]
 
     for tool in tools:
@@ -116,6 +131,248 @@ def build_tool_prompt(tools: list[dict[str, Any]]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _power_tools(*, agi_mode: bool = False) -> list[dict[str, Any]]:
+    """Power tools that make Daena a real autonomous operator.
+
+    These go beyond basic file/terminal to enable full system control,
+    project scaffolding, media creation, and self-tool-building.
+    """
+    tools = [
+        # ── Surgical file editing (not full rewrite) ──
+        {
+            "name": "edit_file",
+            "description": "Make a surgical edit to a file -- replace specific text with new text. Much better than rewriting entire files. Use this for code changes, config tweaks, and targeted modifications.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path to edit"},
+                    "old_text": {"type": "string", "description": "Exact text to find and replace (must be unique in the file)"},
+                    "new_text": {"type": "string", "description": "Replacement text"},
+                },
+                "required": ["path", "old_text", "new_text"],
+            },
+        },
+        # ── Git operations ──
+        {
+            "name": "git_status",
+            "description": "Show git status of the working directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Repository path (default: current directory)"},
+                },
+            },
+        },
+        {
+            "name": "git_commit",
+            "description": "Stage all changes and create a git commit.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string", "description": "Commit message"},
+                    "path": {"type": "string", "description": "Repository path"},
+                },
+                "required": ["message"],
+            },
+        },
+        {
+            "name": "git_diff",
+            "description": "Show uncommitted changes in the repository.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Repository path"},
+                    "staged": {"type": "boolean", "description": "Show only staged changes"},
+                },
+            },
+        },
+        # ── Clipboard ──
+        {
+            "name": "clipboard_read",
+            "description": "Read current clipboard content.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "clipboard_write",
+            "description": "Write text to the clipboard.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to copy to clipboard"},
+                },
+                "required": ["text"],
+            },
+        },
+        # ── Process management ──
+        {
+            "name": "list_processes",
+            "description": "List running processes, optionally filtered by name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filter": {"type": "string", "description": "Process name filter (optional)"},
+                },
+            },
+        },
+        {
+            "name": "kill_process",
+            "description": "Kill a running process by name or PID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "Process name or PID"},
+                },
+                "required": ["target"],
+            },
+        },
+        {
+            "name": "start_process",
+            "description": "Start a process or application in the background.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "Command to run"},
+                    "working_directory": {"type": "string", "description": "Working directory"},
+                },
+                "required": ["command"],
+            },
+        },
+        # ── Project scaffolding ──
+        {
+            "name": "create_project",
+            "description": "Scaffold a new project with the right structure. Supports: react, nextjs, python, fastapi, flask, express, vue, svelte, rust, go. Creates directory, initializes git, installs dependencies.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Project name"},
+                    "template": {"type": "string", "description": "Project type: react, nextjs, python, fastapi, flask, express, vue, svelte, rust, go"},
+                    "path": {"type": "string", "description": "Parent directory (default: current)"},
+                },
+                "required": ["name", "template"],
+            },
+        },
+        # ── Environment / OS detection ──
+        {
+            "name": "system_info",
+            "description": "Get system information: OS, architecture, available runtimes (Python, Node, Rust, Go, Docker, WSL), disk space, memory.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        # ── Database operations ──
+        {
+            "name": "db_query",
+            "description": "Execute a SQL query on a database. Supports: SQLite, PostgreSQL. Use for data inspection, migrations, and reports.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "SQL query to execute"},
+                    "database_url": {"type": "string", "description": "Database URL (e.g., sqlite:///path/to/db or postgresql://...)"},
+                },
+                "required": ["query", "database_url"],
+            },
+        },
+        # ── Audio/Video generation ──
+        {
+            "name": "generate_audio",
+            "description": "Generate audio from text (TTS) or create audio files. Uses system TTS or installed tools (ffmpeg, espeak, pyttsx3).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to convert to speech"},
+                    "output_path": {"type": "string", "description": "Output audio file path"},
+                    "voice": {"type": "string", "description": "Voice name or ID (optional)"},
+                },
+                "required": ["text", "output_path"],
+            },
+        },
+        {
+            "name": "generate_image",
+            "description": "Generate an image using Python libraries (matplotlib, PIL, SVG). For charts, diagrams, UI mockups, or programmatic art.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string", "description": "What to generate"},
+                    "output_path": {"type": "string", "description": "Output image file path"},
+                    "width": {"type": "integer", "description": "Image width in pixels"},
+                    "height": {"type": "integer", "description": "Image height in pixels"},
+                },
+                "required": ["description", "output_path"],
+            },
+        },
+        # ── Archive/compression ──
+        {
+            "name": "archive_create",
+            "description": "Create a zip/tar archive from files or directories.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "File or directory to archive"},
+                    "output_path": {"type": "string", "description": "Output archive path (.zip or .tar.gz)"},
+                },
+                "required": ["source", "output_path"],
+            },
+        },
+        {
+            "name": "archive_extract",
+            "description": "Extract a zip/tar archive.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "archive_path": {"type": "string", "description": "Archive file to extract"},
+                    "destination": {"type": "string", "description": "Destination directory"},
+                },
+                "required": ["archive_path"],
+            },
+        },
+        # ── PDF generation ──
+        {
+            "name": "generate_pdf",
+            "description": "Generate a PDF document from text, markdown, or HTML content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "Content (markdown, HTML, or plain text)"},
+                    "output_path": {"type": "string", "description": "Output PDF file path"},
+                    "title": {"type": "string", "description": "Document title"},
+                },
+                "required": ["content", "output_path"],
+            },
+        },
+    ]
+
+    # AGI-only tools: self-tool-creation and system modification
+    if agi_mode:
+        tools.extend([
+            {
+                "name": "create_tool",
+                "description": "Create a NEW tool at runtime when no existing tool can accomplish the task. Writes a Python function that becomes callable as a tool. Use this when you need a capability that does not exist yet. The tool persists for the session.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "tool_name": {"type": "string", "description": "Name for the new tool (snake_case)"},
+                        "description": {"type": "string", "description": "What the tool does"},
+                        "python_code": {"type": "string", "description": "Python async function body. Must be an async def that takes a dict of params and returns a dict with 'success' and 'result' keys."},
+                        "parameters_schema": {"type": "object", "description": "JSON Schema for the tool's parameters"},
+                    },
+                    "required": ["tool_name", "description", "python_code"],
+                },
+            },
+            {
+                "name": "install_system_tool",
+                "description": "Install a system tool or package that Daena needs. Detects OS and uses the right package manager (pip, npm, apt, brew, choco, winget, cargo).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "tool_name": {"type": "string", "description": "Tool or package to install"},
+                        "manager": {"type": "string", "description": "Package manager override (optional, auto-detected)"},
+                    },
+                    "required": ["tool_name"],
+                },
+            },
+        ])
+
+    return tools
 
 
 def parse_tool_calls(llm_response: str) -> list[dict[str, Any]]:
@@ -793,6 +1050,27 @@ TOOL_DISPATCH_MAP: dict[str, tuple[str, str]] = {
     "notion_create_page": ("notion", "create_page"),
     # Workflows
     "run_workflow": ("workflow", "run"),
+    # Power tools
+    "edit_file": ("edit_file", "edit"),
+    "git_status": ("git", "status"),
+    "git_commit": ("git", "commit"),
+    "git_diff": ("git", "diff"),
+    "clipboard_read": ("clipboard", "read"),
+    "clipboard_write": ("clipboard", "write"),
+    "list_processes": ("list_processes", "list"),
+    "kill_process": ("kill_process", "kill"),
+    "start_process": ("start_process", "start"),
+    "create_project": ("create_project", "scaffold"),
+    "system_info": ("system_info", "get"),
+    "db_query": ("db", "query"),
+    "generate_audio": ("generate_audio", "tts"),
+    "generate_image": ("generate_image", "create"),
+    "generate_pdf": ("generate_pdf", "create"),
+    "archive_create": ("archive_create", "create"),
+    "archive_extract": ("archive_extract", "extract"),
+    # AGI-only power tools
+    "create_tool": ("create_tool", "create"),
+    "install_system_tool": ("install_system_tool", "install"),
 }
 
 

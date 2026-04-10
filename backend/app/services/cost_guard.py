@@ -17,7 +17,7 @@ Budget hierarchy:
 Usage::
 
     guard = CostGuard(db)
-    await guard.preflight_check(tenant_id, estimated_cost=0.05)
+    await guard.preflight_check(tenant_id, estimated_cost=estimated)
     # ... LLM call ...
     await guard.record_usage(tenant_id, user_id, response)
 """

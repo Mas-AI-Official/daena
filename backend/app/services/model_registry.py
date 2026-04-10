@@ -102,7 +102,7 @@ class ModelRegistry:
         for provider_enum, (module_path, class_name, config_key) in _PROVIDER_MAP.items():
             config_value = getattr(settings, config_key, "")
             if not config_value:
-                logger.info("provider.skipped", provider=provider_enum.value, reason="no_key")
+                logger.debug("provider.skipped", provider=provider_enum.value, reason="no_key")
                 continue
 
             try:

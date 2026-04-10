@@ -372,6 +372,33 @@ class OODAEngine:
                 for s in state.attempted_strategies
             ]
 
+        # ResourceFinder (Einstein): When Daena doesn't know something,
+        # she searches for it -- memory, workspace, web -- then saves it.
+        try:
+            from app.services.cognition.resource_finder import ResourceFinder
+            finder = ResourceFinder(self.db, self.user_id, self.tenant_id)
+            knowledge = await finder.find(
+                state.task,
+                context=ctx,
+                workspace_root=self.workspace_root,
+            )
+            if knowledge and knowledge.answer:
+                observation.system_state["resource_knowledge"] = {
+                    "answer": knowledge.answer[:500],
+                    "source": knowledge.source,
+                    "confidence": knowledge.confidence,
+                }
+                # Persist knowledge to NBMF so we never search for this again
+                if knowledge.should_persist:
+                    await finder.persist_knowledge(knowledge)
+                logger.info(
+                    "ooda.resource_found",
+                    source=knowledge.source,
+                    confidence=knowledge.confidence,
+                )
+        except Exception as exc:
+            logger.debug("ooda.resource_finder_skipped", error=str(exc))
+
         state.observation = observation
         return state
 
@@ -402,11 +429,30 @@ class OODAEngine:
             prior_failures=[s.name for s in state.attempted_strategies],
         )
 
+        # WeaknessTracker (Ericsson): Check if this problem type is a known
+        # weakness. If so, adjust strategy -- practice what we're bad at.
+        weakness_note = ""
+        try:
+            from app.services.cognition.weakness_tracker import WeaknessTracker
+            tracker = WeaknessTracker()
+            weaknesses = await tracker.identify_weaknesses(state.problem_type)
+            if weaknesses:
+                weak_names = [w.name for w in weaknesses[:3]]
+                weakness_note = f" KNOWN WEAKNESSES in this area: {', '.join(weak_names)}. Adjust approach accordingly."
+                # If we have a specific improvement suggestion, add it
+                for w in weaknesses:
+                    if w.improvement_suggestion:
+                        weakness_note += f" Suggestion: {w.improvement_suggestion}"
+                        break
+        except Exception as exc:
+            logger.debug("ooda.weakness_tracker_skipped", error=str(exc))
+
         # Build orientation analysis
         state.orientation_analysis = (
             f"Problem type: {state.problem_type}. "
             f"Frameworks: {', '.join(state.selected_frameworks)}. "
             f"Prior attempts: {len(state.attempted_strategies)}."
+            f"{weakness_note}"
         )
 
         logger.info(
@@ -492,7 +538,7 @@ class OODAEngine:
         """
         from app.services.tool_use_loop import ToolUseLoop
 
-        # Inject strategy context into system prompt
+        # Inject strategy + cognitive context into system prompt
         strategy_context = ""
         if state.current_strategy and state.current_strategy.name != "direct_execution":
             strategy_context = (
@@ -505,6 +551,21 @@ class OODAEngine:
                 strategy_context += (
                     f"Risks to watch: {'; '.join(state.current_strategy.pre_mortem_risks)}\n"
                 )
+
+        # Inject the specific reasoning frameworks selected by MetaReasoner
+        if state.selected_frameworks:
+            from app.services.cognition.cognitive_reasoner import FRAMEWORK_PROMPTS
+            strategy_context += "\n[ACTIVE REASONING LENSES]\n"
+            for fw_name in state.selected_frameworks[:5]:
+                if fw_name in FRAMEWORK_PROMPTS:
+                    strategy_context += f"- {FRAMEWORK_PROMPTS[fw_name]}\n"
+            strategy_context += "Apply these lenses to every decision in this task.\n"
+
+        # Include orientation analysis if available
+        if state.orientation_analysis:
+            strategy_context += (
+                f"\n[SITUATION ANALYSIS]\n{state.orientation_analysis[:500]}\n"
+            )
 
         # Include failure context if we're retrying
         failure_context = ""
@@ -665,6 +726,92 @@ class OODAEngine:
                 root_causes=state.failure_root_causes,
                 alternatives=alternatives,
             )
+
+        # KnowledgeHunter: On failure, actively search for solutions
+        # This is Einstein's razor: "I don't need to know everything,
+        # I just need to know where to find it."
+        if not success and state.failure_root_causes:
+            try:
+                from app.services.cognition.knowledge_hunter import KnowledgeHunter
+                hunter = KnowledgeHunter(self.db, self.user_id, self.tenant_id)
+                hunt_result = await hunter.hunt_for_failure(
+                    task=state.task,
+                    error=state.failure_root_causes[-1],
+                    strategy_tried=state.current_strategy.name if state.current_strategy else "",
+                    domain=state.problem_type,
+                )
+                if hunt_result.found:
+                    state.lessons_learned.append(
+                        f"Knowledge found online: {hunt_result.knowledge[:300]}"
+                    )
+                    reflection_parts.append(
+                        f"Web research found solution (confidence {hunt_result.confidence:.0%}): "
+                        f"{hunt_result.knowledge[:200]}"
+                    )
+                    logger.info(
+                        "ooda.knowledge_hunt_success",
+                        depth=hunt_result.search_depth,
+                        sources=len(hunt_result.sources),
+                        skill_saved=hunt_result.skill_extracted,
+                    )
+            except Exception as exc:
+                logger.debug("ooda.knowledge_hunt_skipped", error=str(exc))
+
+        # WeaknessTracker: Record this outcome for deliberate practice tracking
+        try:
+            from app.services.cognition.weakness_tracker import WeaknessTracker
+            tracker = WeaknessTracker()
+            await tracker.record_outcome(
+                category="problem_type",
+                name=state.problem_type,
+                success=success,
+                error=state.failure_root_causes[-1] if state.failure_root_causes else "",
+            )
+            if state.current_strategy:
+                await tracker.record_outcome(
+                    category="strategy",
+                    name=state.current_strategy.name,
+                    success=success,
+                )
+        except Exception as exc:
+            logger.debug("ooda.weakness_record_skipped", error=str(exc))
+
+        # SelfUpgrader (Taleb Anti-Fragility): Check if this experience
+        # reveals a new cognitive pattern worth adopting.
+        # Only run periodically (every 5 cycles) to avoid overhead.
+        if state.cycle >= 3 or (success and state.cycle > 1):
+            try:
+                from app.services.cognition.self_upgrader import SelfUpgrader
+                upgrader = SelfUpgrader(self.db, self.user_id, self.tenant_id)
+                history = [
+                    {
+                        "strategy": s.name,
+                        "success": s.status == StrategyStatus.SUCCEEDED,
+                        "frameworks": s.frameworks_used,
+                        "problem_type": state.problem_type,
+                    }
+                    for s in state.attempted_strategies
+                ]
+                if state.current_strategy:
+                    history.append({
+                        "strategy": state.current_strategy.name,
+                        "success": success,
+                        "frameworks": state.current_strategy.frameworks_used,
+                        "problem_type": state.problem_type,
+                    })
+                candidates = await upgrader.discover_from_history(history)
+                if candidates:
+                    for c in candidates:
+                        state.lessons_learned.append(
+                            f"New cognitive skill discovered: '{c.name}' -- {c.description}"
+                        )
+                    logger.info(
+                        "ooda.self_upgrade_candidates",
+                        count=len(candidates),
+                        names=[c.name for c in candidates],
+                    )
+            except Exception as exc:
+                logger.debug("ooda.self_upgrader_skipped", error=str(exc))
 
         return state
 

@@ -3,7 +3,7 @@
  * message list, thinking display, and input composer.
  * Sidebar is collapsible via toggle button.
  */
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { PanelLeftClose, PanelLeftOpen, Keyboard, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -87,6 +87,32 @@ export function ChatPage() {
       if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [chatMode, fetchActiveTasks])
+
+  // Merge SSE tool_call events (real-time) with polled subtasks (background)
+  // SSE events appear instantly during streaming; polling catches background tasks
+  const mergedSubtasks = useMemo<SubTaskResponse[]>(() => {
+    const sseEntries: SubTaskResponse[] = stream.toolCalls.map((tc, i) => ({
+      id: `sse-${tc.tool}-${tc.iteration}-${i}`,
+      description: tc.tool.replace(/_/g, ' '),
+      task_type: 'tool_call',
+      assigned_runtime: 'daenabot',
+      fallback_runtime: null,
+      depends_on: [],
+      estimated_tokens: 0,
+      estimated_cost_usd: 0,
+      status: tc.status === 'calling' ? 'running' as const
+        : tc.status === 'done' ? 'complete' as const
+        : 'failed' as const,
+      result_data: tc.result ?? null,
+      duration_ms: null,
+      actual_cost_usd: null,
+    }))
+    // SSE events first (most recent activity), then polled tasks
+    // Deduplicate: if a polled task has same tool name as SSE, keep SSE version
+    const sseToolNames = new Set(sseEntries.map((e) => e.description))
+    const polledOnly = subtasks.filter((s) => !sseToolNames.has(s.description))
+    return [...sseEntries, ...polledOnly]
+  }, [stream.toolCalls, subtasks])
 
   useEffect(() => {
     void fetchRegistry(true)
@@ -310,10 +336,10 @@ export function ChatPage() {
         />
 
         {/* Execution Panel (visible in EXE mode or when subtasks exist) */}
-        {(chatMode === 'EXE' || subtasks.length > 0) && (
+        {(chatMode === 'EXE' || mergedSubtasks.length > 0) && (
           <div className="shrink-0 px-4 py-2">
             <ExecutionPanel
-              subtasks={subtasks}
+              subtasks={mergedSubtasks}
               visible={executionViewVisible}
               onToggle={toggleExecutionView}
             />
