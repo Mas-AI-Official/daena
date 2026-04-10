@@ -179,7 +179,7 @@ class TestEvidenceCapture:
         assert any(t["type"] == "github_token" for t in tokens)
 
     def test_token_detection_stripe(self):
-        content = 'STRIPE_TEST_PLACEHOLDER_1234567890abcdefghijklmn'
+        content = 'STRIPE_TEST_PLACEHOLDER_FAKE1234567890abcdefghij'
         tokens = EvidenceCapture.detect_tokens(content)
         assert any(t["type"] == "stripe_key" for t in tokens)
 
