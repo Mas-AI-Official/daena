@@ -1477,6 +1477,89 @@ class ChatOrchestrator:
                             error=str(plan_exc),
                         )
 
+                # Step C: ToolUseLoop -- the agentic brain (like OpenClaw/Claude Code)
+                # If regex and planner both missed, let the LLM decide what tools to call.
+                # This is THE difference between a chatbot and an AI operating system.
+                if daenabot_result is None and action_mode == "EXE":
+                    try:
+                        from app.services.tool_use_loop import ToolUseLoop
+
+                        tool_loop = ToolUseLoop(
+                            db=self._db,
+                            user_id=user_id,
+                            tenant_id=tenant_id,
+                            agi_mode=(continuation_mode == "ON"),
+                            session_id=session_id,
+                        )
+
+                        tool_loop_events: list[dict] = []
+                        tool_loop_response = ""
+
+                        async for event in tool_loop.run(
+                            messages=llm_messages,
+                            system_prompt=request.system_prompt if hasattr(request, "system_prompt") else "",
+                            model_id=decision.primary.model_id,
+                            provider=decision.primary.provider.value,
+                        ):
+                            if event.get("type") == "tool_call":
+                                yield {
+                                    "type": "daenabot_activity",
+                                    "agent": event["tool"].split(".")[0].capitalize() + "Agent",
+                                    "operation": event["tool"],
+                                    "status": "executing",
+                                    "description": f"Calling {event['tool']}",
+                                    "step": event.get("iteration", 1),
+                                }
+                                _last_tool_name = event["tool"]
+
+                            elif event.get("type") == "tool_result":
+                                yield {
+                                    "type": "daenabot_activity",
+                                    "agent": event["tool"].split(".")[0].capitalize() + "Agent",
+                                    "operation": event["tool"],
+                                    "status": "completed" if event.get("success") else "failed",
+                                    "description": str(event.get("result", {}))[:200],
+                                }
+
+                            elif event.get("type") == "tool_use_response":
+                                tool_loop_response = event.get("content", "")
+
+                            elif event.get("type") == "tool_loop_complete":
+                                logger.info(
+                                    "orchestrator.tool_loop_complete",
+                                    total_calls=event.get("total_calls", 0),
+                                    tools_used=event.get("tools_used", []),
+                                )
+
+                            elif event.get("type") == "loop_detected":
+                                yield {
+                                    "type": "daenabot_activity",
+                                    "agent": "ToolLoop",
+                                    "operation": "loop_detection",
+                                    "status": "warning",
+                                    "description": event.get("message", "Loop detected"),
+                                }
+
+                            tool_loop_events.append(event)
+
+                        if tool_loop_response:
+                            # The tool loop produced a final response -- stream it directly
+                            for i in range(0, len(tool_loop_response), 20):
+                                yield {"type": "chunk", "content": tool_loop_response[i:i + 20]}
+                            collected_content = tool_loop_response
+                            # Skip the normal LLM streaming stage
+                            daenabot_result = {
+                                "status": "COMPLETED",
+                                "result": {"success": True, "source": "tool_use_loop"},
+                            }
+                            _last_tool_desc = "Autonomous tool-use loop"
+
+                    except Exception as tul_exc:
+                        logger.debug(
+                            "orchestrator.tool_loop_skipped",
+                            error=str(tul_exc),
+                        )
+
         # Inject DaenaBot result into LLM context if we executed a tool
         if daenabot_result is not None:
             import json as _json
@@ -1495,10 +1578,17 @@ class ChatOrchestrator:
             ))
 
         # ── Stage 8: LLM stream ──────────────────────────────
+        # Skip if tool_use_loop already produced the response
+        _tool_loop_handled = bool(
+            daenabot_result
+            and daenabot_result.get("result", {}).get("source") == "tool_use_loop"
+        )
+
         from app.services.llm_service import LLMService
 
         llm = LLMService(self._registry)
-        collected_content = ""
+        if not _tool_loop_handled:
+            collected_content = ""
         model_id = decision.primary.model_id
         provider_name = decision.primary.provider.value
         token_count = 0
@@ -1508,7 +1598,10 @@ class ChatOrchestrator:
             model_id = _quota_fallback_model
 
         # For COUNCIL/QUINTESSENCE: multi-model parallel + synthesis
-        if decision.mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE):
+        if _tool_loop_handled:
+            # Tool-use loop already streamed the response -- skip LLM generation
+            pass
+        elif decision.mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE):
             council_models_used: list[str] = []
             dcp_experts_used: list[str] = []
 
