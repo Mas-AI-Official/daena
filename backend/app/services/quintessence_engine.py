@@ -174,18 +174,32 @@ class QuintessenceEngine:
         query_intent: str = "AMBIGUOUS",
         synthesizer_model_id: str = "claude-sonnet-4-20250514",
         depth: str = "standard",
+        judge_model_id: str | None = None,
     ) -> QuintessenceResult:
         """Run full Quintessence deliberation.
+
+        The judge (Primary Mind) performs the meta-synthesis across all
+        expert perspectives. It does NOT participate as a debater. This
+        ensures the user's chosen brain is the final arbiter in the
+        highest-fidelity mode.
 
         Args:
             query: The user's original question.
             responses: LLM responses from the fan-out (5+ models).
             query_intent: Intent string for expert selection.
-            synthesizer_model_id: Model for meta-synthesis.
+            synthesizer_model_id: Fallback model for meta-synthesis.
+            depth: Expert count depth (light/standard/deep/council).
+            judge_model_id: Primary Mind model ID (overrides synthesizer_model_id).
+                            When set, this model judges all expert perspectives.
 
         Returns:
             QuintessenceResult with meta-synthesis and expert details.
         """
+        # Primary Mind overrides default synthesizer for meta-synthesis
+        if judge_model_id:
+            synthesizer_model_id = judge_model_id
+        # Store for per-expert synthesis calls
+        self._judge_model_id = judge_model_id
         start = time.monotonic()
 
         if not responses:
@@ -310,6 +324,7 @@ class QuintessenceEngine:
                 council_result = await self._council.synthesize(
                     original_query=lensed_query,
                     responses=responses,
+                    judge_model_id=getattr(self, '_judge_model_id', None),
                 )
 
                 return ExpertSynthesis(

@@ -93,11 +93,27 @@ class RoutingMode(str, enum.Enum):
     QUINTESSENCE = "QUINTESSENCE"  # Expert × LLM matrix
 
 
+class ModelTier(str, enum.Enum):
+    """Model capability tier for routing and debate selection.
+
+    SOVEREIGN: Subscription-grade flagship models (Claude Opus 4.6, Gemini 3.1 Pro,
+               Codex 5.4, Perplexity Pro). Used exclusively in Council/Quintessence
+               debates. These are the "combined brains" of the system.
+    TACTICAL:  Mid-tier cloud models (Groq, OpenRouter, Together). Good for
+               standard routing when local models are insufficient.
+    LOCAL:     Free local models (Ollama, vLLM). Default for Standard mode.
+               Zero cost, always available, privacy-preserving.
+    """
+    SOVEREIGN = "SOVEREIGN"
+    TACTICAL = "TACTICAL"
+    LOCAL = "LOCAL"
+
+
 class GovernanceSlider(str, enum.Enum):
     """Governance strictness level (user-facing slider)."""
     YOLO = "YOLO"          # Minimal governance
     LIGHT = "LIGHT"        # Log only
-    STANDARD = "STANDARD"  # Default — balanced
+    STANDARD = "STANDARD"  # Default -- balanced
     STRICT = "STRICT"      # Require approvals
     PARANOID = "PARANOID"  # Council + approve everything
 

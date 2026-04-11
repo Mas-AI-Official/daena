@@ -87,12 +87,12 @@ CODEX_SPEC = CliRuntimeSpec(
     binary_name="codex",
     model_id=CODEX_CLI_MODEL_ID,
     provider=ModelProvider.OPENAI,
-    display_name="Codex (ChatGPT Plus/Pro)",
+    display_name="Codex GPT-5 (ChatGPT Pro subscription)",
     cmd_template=["{bin}", "exec", "{prompt}"],
     stdin_template=["{bin}", "exec", "-"],
     json_output=False,
     context_window=128_000,
-    tags=["coding", "refactoring", "bulk", "analysis", "reasoning"],
+    tags=["coding", "code", "refactoring", "bulk", "analysis", "reasoning", "large"],
 )
 
 GEMINI_SPEC = CliRuntimeSpec(
@@ -100,12 +100,12 @@ GEMINI_SPEC = CliRuntimeSpec(
     binary_name="gemini",
     model_id=GEMINI_CLI_MODEL_ID,
     provider=ModelProvider.GEMINI,
-    display_name="Gemini CLI (Google One AI Pro)",
+    display_name="Gemini 3.1 Pro (CLI subscription)",
     cmd_template=["{bin}", "-p", "{prompt}"],
     stdin_template=["{bin}", "-p", "-"],
     json_output=False,
     context_window=1_000_000,
-    tags=["research", "analysis", "large", "web_search", "reasoning"],
+    tags=["reasoning", "analysis", "large", "vision", "long-context", "web_search"],
 )
 
 ALL_CLI_SPECS = [CLAUDE_SPEC, CODEX_SPEC, GEMINI_SPEC]

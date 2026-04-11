@@ -109,7 +109,7 @@ class TestSubscriptionService:
         service = SubscriptionService()
         service.initialize_defaults()
         all_subs = service.get_all()
-        assert len(all_subs) == 5  # 5 default runtimes
+        assert len(all_subs) == 7  # 7 default runtimes (added perplexity, vllm)
 
     def test_get_existing(self):
         service = SubscriptionService()
@@ -136,9 +136,11 @@ class TestSubscriptionService:
         service = SubscriptionService()
         service.initialize_defaults()
         available = service.get_available()
-        # Only ollama is authenticated by default
-        assert len(available) == 1
-        assert available[0].runtime_id == "ollama"
+        # ollama and vllm are authenticated by default (local, no auth needed)
+        assert len(available) == 2
+        runtime_ids = {s.runtime_id for s in available}
+        assert "ollama" in runtime_ids
+        assert "vllm" in runtime_ids
 
     def test_set_authenticated(self):
         service = SubscriptionService()
@@ -217,9 +219,9 @@ class TestSubscriptionService:
     def test_suggest_alternative_none_available(self):
         service = SubscriptionService()
         service.initialize_defaults()
-        # Ollama is the only available one; if we request alternative to ollama
+        # Ollama and vllm are both available (free local). Requesting alt to ollama returns vllm.
         alt = service.suggest_alternative("ollama")
-        assert alt is None
+        assert alt == "vllm"
 
     def test_suggest_alternative_prefers_free(self):
         service = SubscriptionService()
@@ -234,8 +236,8 @@ class TestSubscriptionService:
         service = SubscriptionService()
         service.initialize_defaults()
         summary = service.get_summary()
-        assert summary["total"] == 5
-        assert summary["authenticated"] == 1  # ollama
-        assert summary["available"] == 1
+        assert summary["total"] == 7
+        assert summary["authenticated"] == 2  # ollama + vllm
+        assert summary["available"] == 2
         assert summary["rate_limited"] == 0
-        assert len(summary["runtimes"]) == 5
+        assert len(summary["runtimes"]) == 7

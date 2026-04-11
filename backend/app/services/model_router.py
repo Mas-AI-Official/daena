@@ -28,6 +28,7 @@ from typing import Any
 from app.core.constants import (
     HealthStatus,
     ModelProvider,
+    ModelTier,
     RoutingMode,
 )
 from app.core.logging import get_logger
@@ -118,6 +119,89 @@ _MODE_MODEL_COUNTS: dict[RoutingMode, int] = {
     RoutingMode.STANDARD: 1,
     RoutingMode.COUNCIL: 3,
     RoutingMode.QUINTESSENCE: 5,
+}
+
+# ── Model Tier Classification ────────────────────────────────
+# Maps model ID patterns to their capability tier.
+# SOVEREIGN: flagship subscription models (used in Council/Quintessence debates)
+# TACTICAL: mid-tier cloud models
+# LOCAL: free local models (Ollama, vLLM)
+#
+# Provider-level defaults: entire providers default to a tier.
+# Model-level overrides take precedence.
+
+_PROVIDER_TIER: dict[ModelProvider, ModelTier] = {
+    ModelProvider.ANTHROPIC: ModelTier.SOVEREIGN,
+    ModelProvider.OPENAI: ModelTier.SOVEREIGN,
+    ModelProvider.GEMINI: ModelTier.SOVEREIGN,
+    ModelProvider.PERPLEXITY: ModelTier.SOVEREIGN,
+    ModelProvider.GROQ: ModelTier.TACTICAL,
+    ModelProvider.OPENROUTER: ModelTier.TACTICAL,
+    ModelProvider.TOGETHER: ModelTier.TACTICAL,
+    ModelProvider.OLLAMA: ModelTier.LOCAL,
+    ModelProvider.VLLM: ModelTier.LOCAL,
+}
+
+# Specific model overrides (some Ollama models are cloud-proxied sovereign-class)
+_MODEL_TIER_OVERRIDE: dict[str, ModelTier] = {
+    # Small/fast models from sovereign providers are tactical, not sovereign
+    "claude-3-haiku": ModelTier.TACTICAL,
+    "claude-haiku": ModelTier.TACTICAL,
+    "gemini-flash": ModelTier.TACTICAL,
+    "gpt-4o-mini": ModelTier.TACTICAL,
+    # Cloud-proxied Ollama models are tactical
+    # (caught by _CLOUD_SUFFIXES check in classify_tier)
+}
+
+# ── Task-Aware Debate Roster ─────────────────────────────────
+# For Council/Quintessence: which models are best for each intent.
+# These are PROVIDER preferences, not exact model IDs, because
+# the actual model available depends on what's registered.
+#
+# Order matters: first = strongest for this task type.
+# The Primary Mind is EXCLUDED from this roster (it's the judge).
+
+_DEBATE_ROSTER: dict[IntentType, list[ModelProvider]] = {
+    # Code: Codex (execution) + Claude (reasoning) + Gemini (multimodal)
+    IntentType.CODING: [
+        ModelProvider.OPENAI, ModelProvider.ANTHROPIC,
+        ModelProvider.GEMINI, ModelProvider.PERPLEXITY,
+    ],
+    # Analysis: Claude (deep reasoning) + Gemini (multimodal) + Perplexity (grounded)
+    IntentType.ANALYSIS: [
+        ModelProvider.ANTHROPIC, ModelProvider.GEMINI,
+        ModelProvider.PERPLEXITY, ModelProvider.OPENAI,
+    ],
+    # Creative: Claude (creative writing) + Gemini (diverse) + Codex (structured)
+    IntentType.CREATIVE: [
+        ModelProvider.ANTHROPIC, ModelProvider.GEMINI,
+        ModelProvider.OPENAI, ModelProvider.PERPLEXITY,
+    ],
+    # Multi-step: Claude (planning) + Codex (execution) + Gemini (verification)
+    IntentType.MULTI_STEP: [
+        ModelProvider.ANTHROPIC, ModelProvider.OPENAI,
+        ModelProvider.GEMINI, ModelProvider.PERPLEXITY,
+    ],
+    # Search/knowledge: Perplexity (grounded search) + Claude (verify) + Gemini (ground)
+    IntentType.SEARCH: [
+        ModelProvider.PERPLEXITY, ModelProvider.ANTHROPIC,
+        ModelProvider.GEMINI, ModelProvider.OPENAI,
+    ],
+    # Dangerous/sensitive: Claude (safety) + Gemini (ethics) + Codex (precision)
+    IntentType.DANGEROUS: [
+        ModelProvider.ANTHROPIC, ModelProvider.GEMINI,
+        ModelProvider.OPENAI, ModelProvider.PERPLEXITY,
+    ],
+    # Simple: Claude (quality) + Perplexity (speed)
+    IntentType.SIMPLE: [
+        ModelProvider.ANTHROPIC, ModelProvider.PERPLEXITY,
+        ModelProvider.GEMINI, ModelProvider.OPENAI,
+    ],
+    # Ambiguous: same as analysis
+    IntentType.AMBIGUOUS: [
+        ModelProvider.ANTHROPIC, ModelProvider.GEMINI,
+        ModelProvider.PERPLEXITY, ModelProvider.OPENAI,
+    ],
 }
 
 
@@ -362,10 +446,32 @@ class ModelRouter:
         primary = scored[0]
         fallbacks = scored[1:]
 
+        # Resolve Primary Mind provider for debate exclusion
+        _primary_mind_provider: ModelProvider | None = None
+        if primary_mind:
+            _RUNTIME_TO_PROVIDER_DEBATE: dict[str, ModelProvider] = {
+                "claude_code": ModelProvider.ANTHROPIC,
+                "codex": ModelProvider.OPENAI,
+                "gemini_cli": ModelProvider.GEMINI,
+                "grok_cli": ModelProvider.GROQ,
+                "ollama": ModelProvider.OLLAMA,
+            }
+            _primary_mind_provider = _RUNTIME_TO_PROVIDER_DEBATE.get(primary_mind)
+            # Also check if primary_mind is a provider value directly
+            if not _primary_mind_provider:
+                for prov in ModelProvider:
+                    if prov.value == primary_mind:
+                        _primary_mind_provider = prov
+                        break
+
         council: list[ModelCandidate] = []
         mode_reason: str | None = None
         if requested_mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE):
-            council = self._select_diverse(scored, needed)
+            council = self._select_diverse(
+                scored, needed,
+                intent=qu.intent,
+                primary_mind_provider=_primary_mind_provider,
+            )
             if len(council) < 2:
                 if requested_mode == RoutingMode.QUINTESSENCE:
                     # Quintessence works with 1 model via sequential DCP lenses.
@@ -716,18 +822,23 @@ class ModelRouter:
 
     @staticmethod
     def _score_locality(c: ModelCandidate) -> float:
-        """Score 1.0 for truly local models, 0.3 for cloud-proxied Ollama.
+        """Score models by deployment preference.
 
-        Ollama models with cloud suffixes (e.g. qwen3.5:397b-cloud,
-        kimi-k2.5:cloud) are routed through remote APIs and cost money.
-        Local models (llama3.1:latest, mistral:latest, deepseek-r1:14b)
-        run on-device for free and should be strongly preferred.
+        CLI subscription models (claude-code-cli, codex-cli, gemini-cli)
+        get 0.9 -- they use Pro/Max subscriptions and are the strongest
+        available models per provider. They cost $0 per token (included
+        in subscription) so they should be preferred over API-key models.
 
-        Non-Ollama providers (OpenAI, Anthropic, etc.) get 0.2 — they
-        are always cloud and always cost money.
+        Truly local Ollama models get 1.0 (free, on-device).
+        Cloud-proxied Ollama gets 0.3.
+        API-key cloud providers get 0.2.
         """
+        # CLI subscription models: sovereign tier, $0/token
+        if c.model_id.endswith("-cli"):
+            return 0.9
+
         if c.provider != ModelProvider.OLLAMA:
-            return 0.2  # external cloud provider
+            return 0.2  # external cloud provider (API key, costs money)
 
         model_lower = c.model_id.lower()
         for suffix in _CLOUD_SUFFIXES:
@@ -735,34 +846,128 @@ class ModelRouter:
                 return 0.3  # Ollama cloud-proxied model
         return 1.0  # truly local Ollama model
 
-    # ── Internal: diverse selection for COUNCIL/QUINTESSENCE ───
+    # ── Model tier classification ────────────────────────────────
 
     @staticmethod
-    def _select_diverse(
-        scored: list[ModelCandidate], count: int,
-    ) -> list[ModelCandidate]:
-        """Pick up to ``count`` models from *different* providers.
+    def classify_tier(candidate: ModelCandidate) -> ModelTier:
+        """Classify a model candidate into its capability tier.
 
-        COUNCIL/QUINTESSENCE modes need diverse perspectives, so
-        we avoid picking multiple models from the same provider.
+        Priority: model-level override > cloud-suffix check > provider default.
         """
+        model_lower = candidate.model_id.lower()
+
+        # Check model-level overrides first
+        for pattern, tier in _MODEL_TIER_OVERRIDE.items():
+            if pattern in model_lower:
+                return tier
+
+        # Cloud-proxied Ollama models are tactical (they cost money)
+        if candidate.provider == ModelProvider.OLLAMA:
+            for suffix in _CLOUD_SUFFIXES:
+                if suffix in model_lower:
+                    return ModelTier.TACTICAL
+
+        # Provider-level default
+        return _PROVIDER_TIER.get(candidate.provider, ModelTier.LOCAL)
+
+    # ── Internal: diverse selection for COUNCIL/QUINTESSENCE ───
+
+    def _select_diverse(
+        self,
+        scored: list[ModelCandidate],
+        count: int,
+        intent: IntentType | None = None,
+        primary_mind_provider: ModelProvider | None = None,
+    ) -> list[ModelCandidate]:
+        """Pick up to ``count`` models for Council/Quintessence debate.
+
+        Task-aware selection strategy:
+        1. Only SOVEREIGN-tier models participate in debates
+        2. Prefer providers from the debate roster for this intent
+        3. Exclude the Primary Mind's provider (it's the judge, not a debater)
+        4. Diverse providers: avoid picking 2 models from same provider
+        5. Fallback: if not enough sovereign models, include tactical tier
+        """
+        # Phase 1: filter to sovereign-tier candidates
+        sovereign = [
+            c for c in scored
+            if self.classify_tier(c) == ModelTier.SOVEREIGN
+        ]
+
+        # Exclude Primary Mind's provider (it will be the judge/synthesizer)
+        if primary_mind_provider:
+            sovereign = [
+                c for c in sovereign
+                if c.provider != primary_mind_provider
+            ]
+
+        # Phase 2: sort by debate roster priority for this intent.
+        # Within each provider, prefer CLI subscription models (-cli suffix)
+        # over API-key models because CLI = Pro/Max subscription = strongest.
+        roster = _DEBATE_ROSTER.get(intent, []) if intent else []
+        if roster:
+            def _roster_priority(c: ModelCandidate) -> int:
+                try:
+                    return roster.index(c.provider)
+                except ValueError:
+                    return len(roster)
+
+            def _strength_score(c: ModelCandidate) -> float:
+                """Higher = stronger model. CLI subscription > API Pro > API Flash."""
+                s = c.score
+                mid = c.model_id.lower()
+                if mid.endswith("-cli"):
+                    s += 10.0  # CLI subscription = strongest per provider
+                if "pro" in mid or "opus" in mid or "max" in mid:
+                    s += 5.0
+                if "flash" in mid or "mini" in mid or "instant" in mid:
+                    s -= 10.0  # Never pick cheap models for debates
+                return s
+
+            sovereign.sort(key=lambda c: (_roster_priority(c), -_strength_score(c)))
+
+        # Phase 3: pick diverse providers
         selected: list[ModelCandidate] = []
         seen_providers: set[ModelProvider] = set()
 
-        for c in scored:
+        for c in sovereign:
             if c.provider not in seen_providers:
                 selected.append(c)
                 seen_providers.add(c.provider)
             if len(selected) >= count:
                 break
 
-        # If we still need more, allow duplicates from highest-scored
+        # Phase 4: if not enough sovereign, include tactical tier
+        if len(selected) < count:
+            tactical = [
+                c for c in scored
+                if self.classify_tier(c) == ModelTier.TACTICAL
+                and c.provider not in seen_providers
+                and c.provider != primary_mind_provider
+            ]
+            for c in tactical:
+                if c.provider not in seen_providers:
+                    selected.append(c)
+                    seen_providers.add(c.provider)
+                if len(selected) >= count:
+                    break
+
+        # Phase 5: last resort, allow any remaining model
         if len(selected) < count:
             for c in scored:
-                if c not in selected:
+                if c not in selected and c.provider != primary_mind_provider:
                     selected.append(c)
                 if len(selected) >= count:
                     break
+
+        logger.info(
+            "router.debate_roster_selected",
+            intent=intent.value if intent else "none",
+            count=len(selected),
+            models=[c.model_id for c in selected],
+            tiers=[self.classify_tier(c).value for c in selected],
+            primary_mind_excluded=primary_mind_provider.value if primary_mind_provider else "none",
+        )
 
         return selected
 

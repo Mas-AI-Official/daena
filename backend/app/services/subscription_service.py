@@ -133,29 +133,59 @@ class RuntimeSubscription:
 _DEFAULT_SUBSCRIPTIONS: dict[str, dict[str, Any]] = {
     "claude_code": {
         "auth_method": AuthMethod.CLI_LOGIN,
-        "subscription_tier": SubscriptionTier.PRO,
+        "subscription_tier": SubscriptionTier.MAX,
         "setup_instructions": (
-            "Claude Code requires an Anthropic account with Pro or Max subscription."
+            "Claude Code requires an Anthropic account with Max subscription. "
+            "Model: Claude Opus 4.6 (1M context). Subscription includes unlimited "
+            "Opus usage with extended thinking."
         ),
         "setup_command": "claude login",
+        "model_tier": "SOVEREIGN",
+        "model_id": "claude-opus-4-6",
+        "debate_role": "judge",
     },
     "codex": {
         "auth_method": AuthMethod.API_KEY,
         "subscription_tier": SubscriptionTier.PRO,
-        "setup_instructions": "OpenAI Codex requires an API key with billing enabled.",
+        "setup_instructions": (
+            "OpenAI Codex 5.4 requires an API key with billing enabled. "
+            "Strong at code generation, execution, and multi-step reasoning."
+        ),
         "setup_command": "export OPENAI_API_KEY=<your-key>",
+        "model_tier": "SOVEREIGN",
+        "model_id": "codex-5.4",
+        "debate_role": "debater",
     },
     "gemini_cli": {
         "auth_method": AuthMethod.CLI_LOGIN,
-        "subscription_tier": SubscriptionTier.FREE,
-        "setup_instructions": "Gemini CLI requires a Google account.",
+        "subscription_tier": SubscriptionTier.PRO,
+        "setup_instructions": (
+            "Gemini CLI requires a Google AI subscription. "
+            "Model: Gemini 3.1 Pro. Strong at multimodal, analysis, and verification."
+        ),
         "setup_command": "gemini login",
+        "model_tier": "SOVEREIGN",
+        "model_id": "gemini-3.1-pro",
+        "debate_role": "debater",
+    },
+    "perplexity": {
+        "auth_method": AuthMethod.API_KEY,
+        "subscription_tier": SubscriptionTier.PRO,
+        "setup_instructions": (
+            "Perplexity Pro API for grounded, citation-backed answers. "
+            "Model: sonar-pro. Strongest at search, knowledge retrieval, and fact verification."
+        ),
+        "setup_command": "export PERPLEXITY_API_KEY=<your-key>",
+        "model_tier": "SOVEREIGN",
+        "model_id": "sonar-pro",
+        "debate_role": "debater",
     },
     "grok_cli": {
         "auth_method": AuthMethod.API_KEY,
         "subscription_tier": SubscriptionTier.PRO,
         "setup_instructions": "Grok CLI requires an xAI API key.",
         "setup_command": "export GROK_API_KEY=<your-key>",
+        "model_tier": "TACTICAL",
     },
     "ollama": {
         "auth_method": AuthMethod.NONE,
@@ -163,6 +193,15 @@ _DEFAULT_SUBSCRIPTIONS: dict[str, dict[str, Any]] = {
         "is_authenticated": True,
         "setup_instructions": "Ollama runs locally. Install from ollama.com.",
         "setup_command": "ollama serve",
+        "model_tier": "LOCAL",
+    },
+    "vllm": {
+        "auth_method": AuthMethod.NONE,
+        "subscription_tier": SubscriptionTier.FREE,
+        "is_authenticated": True,
+        "setup_instructions": "vLLM runs locally on Linux. Requires CUDA GPU.",
+        "setup_command": "vllm serve <model>",
+        "model_tier": "LOCAL",
     },
 }
 

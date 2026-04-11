@@ -33,12 +33,12 @@ _DEFAULT_MODEL = "gemini-2.0-flash"
 
 _MODELS: list[dict[str, Any]] = [
     {
-        "id": "gemini-2.0-flash",
-        "name": "Gemini 2.0 Flash",
+        "id": "gemini-3.1-pro-preview",
+        "name": "Gemini 3.1 Pro",
         "ctx": 1_000_000,
-        "in": 0.10,
-        "out": 0.40,
-        "tags": ["fast", "cheap", "vision"],
+        "in": 2.50,
+        "out": 15.0,
+        "tags": ["reasoning", "analysis", "vision", "large", "long-context"],
     },
     {
         "id": "gemini-2.5-pro-preview-06-05",
@@ -47,6 +47,14 @@ _MODELS: list[dict[str, Any]] = [
         "in": 1.25,
         "out": 10.0,
         "tags": ["reasoning", "vision", "long-context"],
+    },
+    {
+        "id": "gemini-2.0-flash",
+        "name": "Gemini 2.0 Flash",
+        "ctx": 1_000_000,
+        "in": 0.10,
+        "out": 0.40,
+        "tags": ["fast", "cheap", "vision"],
     },
 ]
 

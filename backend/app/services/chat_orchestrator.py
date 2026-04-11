@@ -767,19 +767,24 @@ class ChatOrchestrator:
                     "Routing mode preserved for Council/QE synthesis.",
                 }
 
-                # For Council/QE: populate council_models from router
-                # so multi-model synthesis has models to work with.
+                # For Council/QE: populate council_models from router.
+                # Primary Mind as Judge: the override model (Primary Mind) is the
+                # JUDGE/SYNTHESIZER, NOT a debater. Council models are the debaters
+                # picked from other sovereign-tier providers via task-aware roster.
                 _council = []
                 if _applied_mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE):
-                    # Get diverse models from the router, add primary as first
                     _router_decision = router.route(
                         qu_result, requested_mode=_applied_mode,
+                        founder_policy=founder_policy,
+                        primary_mind=primary_mind,
                     )
-                    _council = [override_candidate]
+                    # Debaters only: exclude Primary Mind from council_models
                     for cm in _router_decision.council_models:
                         if cm.model_id != override_candidate.model_id and len(_council) < 5:
                             _council.append(cm)
                     override_metadata["council_count"] = len(_council)
+                    override_metadata["judge_model"] = override_candidate.model_id
+                    override_metadata["debate_strategy"] = "primary_mind_as_judge"
 
                 decision = RoutingDecision(
                     mode=_applied_mode,
@@ -1680,7 +1685,9 @@ class ChatOrchestrator:
                 "type": "thinking",
                 "stage": "council_synthesizing",
                 "mode": decision.mode.value,
-                "models": [c.model_id for c in decision.council_models],
+                "judge": decision.primary.model_id,
+                "debaters": [c.model_id for c in decision.council_models],
+                "strategy": decision.metadata.get("debate_strategy", "standard"),
             }
 
             try:
@@ -1871,7 +1878,11 @@ class ChatOrchestrator:
                         synthesis_parts.append(f"=== {label} ===\n{content}")
 
                     mode_label = decision.mode.value.lower()
+                    _is_judge_mode = decision.metadata.get("debate_strategy") == "primary_mind_as_judge"
                     synthesis_instruction = (
+                        "You are the Judge in a multi-model deliberation. "
+                        if _is_judge_mode else ""
+                    ) + (
                         "You received independent analyses from multiple models"
                         + (" with different expert perspectives" if dcp_experts_used else "")
                         + f". Synthesize the best answer as the {mode_label} synthesis. "
@@ -2202,6 +2213,63 @@ class ChatOrchestrator:
                     "orchestrator.tool_use_loop_complete",
                     iterations=_tool_loop_iteration,
                 )
+
+        # ── Stage 8.7: Internet Search Enhancement ──────────────
+        # For SEARCH/knowledge intents: if the response seems uncertain,
+        # use Perplexity to ground the answer with real-world evidence.
+        # This ensures Daena never gives a confident-sounding wrong answer
+        # when a quick search would have found the truth.
+        if (
+            collected_content
+            and qu_result.intent in (IntentType.SEARCH, IntentType.ANALYSIS)
+            and not _tool_loop_handled
+            and self._registry
+        ):
+            _needs_grounding = any(
+                marker in collected_content.lower()
+                for marker in [
+                    "i'm not sure", "i think", "might be", "possibly",
+                    "i don't have", "as of my", "i cannot verify",
+                    "i don't know", "uncertain",
+                ]
+            )
+            if _needs_grounding:
+                try:
+                    from app.core.constants import ModelProvider as _MP
+                    _perplexity = self._registry.get_provider(_MP.PERPLEXITY)
+                    if _perplexity:
+                        yield {
+                            "type": "thinking",
+                            "stage": "search_grounding",
+                            "reason": "Response contains uncertainty markers, grounding with search",
+                        }
+                        _search_req = GenerateRequest(
+                            messages=[LLMMessage(
+                                role="user",
+                                content=(
+                                    f"Provide accurate, up-to-date information for this question: "
+                                    f"{user_content}"
+                                ),
+                            )],
+                            model_id="sonar-pro",
+                            temperature=0.0,
+                            max_tokens=1024,
+                        )
+                        _search_resp = await _perplexity.generate(_search_req)
+                        if _search_resp and _search_resp.content:
+                            # Append search-grounded info to the response
+                            collected_content += (
+                                "\n\n[Verified with web search]\n"
+                                + _search_resp.content
+                            )
+                            logger.info(
+                                "orchestrator.search_grounding_applied",
+                                intent=qu_result.intent.value,
+                                search_len=len(_search_resp.content),
+                            )
+                            yield {"type": "chunk", "content": "\n\n[Verified with web search]\n" + _search_resp.content}
+                except Exception as _search_exc:
+                    logger.debug("orchestrator.search_grounding_failed", error=str(_search_exc))
 
         # ── Stage 9: Persist assistant message ────────────────
         latency_ms = int((time.perf_counter() - start_time) * 1000)

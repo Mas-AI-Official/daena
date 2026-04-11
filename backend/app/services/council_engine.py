@@ -119,17 +119,28 @@ class CouncilEngine:
         original_query: str,
         responses: list[LLMResponse],
         synthesizer_model_id: str = "claude-sonnet-4-20250514",
+        judge_model_id: str | None = None,
     ) -> CouncilResult:
         """Merge multiple model responses into one synthesis.
+
+        The judge (Primary Mind) synthesizes the debate. It does NOT
+        participate as a debater. This ensures the user's chosen brain
+        always has the final word on Council decisions.
 
         Args:
             original_query: The user's original question.
             responses: Independent responses from council members.
-            synthesizer_model_id: Which model to use for synthesis.
+            synthesizer_model_id: Fallback model for synthesis.
+            judge_model_id: Primary Mind model ID (overrides synthesizer_model_id).
+                            When set, this model acts as the judge who weighs
+                            all debater perspectives and produces the final answer.
 
         Returns:
             CouncilResult with the synthesized answer.
         """
+        # Primary Mind overrides default synthesizer
+        if judge_model_id:
+            synthesizer_model_id = judge_model_id
         start = time.monotonic()
 
         if not responses:

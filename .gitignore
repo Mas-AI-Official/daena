@@ -45,6 +45,14 @@ Thumbs.db
 .mypy_cache/
 .serena/
 
+# Graphify knowledge graph outputs
+graphify-out/
+backend/app/services/graphify-out/
+.graphify_*
+
+# Codebase memory
+.codebase-memory/
+
 # Node
 node_modules/
 frontend/dist/
@@ -156,3 +164,4 @@ Variations
 Default/
 *.pma
 .axon/
+.gitnexus

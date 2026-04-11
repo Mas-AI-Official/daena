@@ -125,12 +125,30 @@ class ModelRegistry:
             from app.services.providers.claude_cli import ALL_CLI_SPECS, CliProvider
 
             for spec in ALL_CLI_SPECS:
-                if spec.provider in self._providers:
-                    continue  # API-key provider already registered
                 try:
                     cli_provider = CliProvider(spec)
                     health = await cli_provider.health_check()
-                    if health == HealthStatus.HEALTHY:
+                    if health != HealthStatus.HEALTHY:
+                        continue
+
+                    if spec.provider in self._providers:
+                        # API-key provider already has this slot.
+                        # Store CLI provider as secondary source so
+                        # Quintessence debates can use the CLI subscription
+                        # model (Pro/Max tier) alongside the API-key model.
+                        if not hasattr(self, "_cli_providers"):
+                            self._cli_providers: dict = {}
+                        self._cli_providers[spec.runtime_id] = cli_provider
+                        # NOTE: CLI model is added to _model_cache AFTER
+                        # list_all_models() runs (see below). Adding it here
+                        # would cause list_all_models() to return early.
+                        logger.info(
+                            "provider.cli_coregistered",
+                            provider=spec.provider.value,
+                            via=f"{spec.runtime_id}_cli",
+                            note="CLI subscription model registered as secondary",
+                        )
+                    else:
                         self._providers[spec.provider] = cli_provider
                         logger.info(
                             "provider.registered",
@@ -160,12 +178,46 @@ class ModelRegistry:
             await self.list_all_models()
             await self.refresh_health()
 
+        # Add CLI subscription models to cache AFTER list_all_models().
+        # These are sovereign-tier models (Opus 4.6, Gemini 3.1 Pro, Codex 5.4)
+        # that should participate in Quintessence debates alongside API models.
+        if hasattr(self, "_cli_providers"):
+            from app.services.providers.base import ModelInfo
+            from app.services.providers.claude_cli import ALL_CLI_SPECS
+            for spec in ALL_CLI_SPECS:
+                if spec.runtime_id in self._cli_providers:
+                    self._model_cache[spec.model_id] = ModelInfo(
+                        model_id=spec.model_id,
+                        provider=spec.provider,
+                        display_name=spec.display_name,
+                        context_window=spec.context_window,
+                        tags=list(spec.tags),
+                        cost_per_1m_input=0.0,
+                        cost_per_1m_output=0.0,
+                    )
+                    logger.info(
+                        "registry.cli_model_cached",
+                        model_id=spec.model_id,
+                        provider=spec.provider.value,
+                    )
+
     def get_provider(self, provider: ModelProvider) -> BaseProvider | None:
         """Get an instantiated provider, or None if unavailable."""
         return self._providers.get(provider)
 
     def get_provider_for_model(self, model_id: str) -> BaseProvider | None:
-        """Find which provider serves a given model_id."""
+        """Find which provider serves a given model_id.
+
+        CLI models (claude-code-cli, codex-cli, gemini-cli) resolve to
+        their CLI provider even when an API-key provider holds the same
+        provider slot. This ensures subscription models use subscription auth.
+        """
+        # Check CLI providers first for CLI model IDs
+        if hasattr(self, "_cli_providers") and model_id.endswith("-cli"):
+            for _rt_id, _cli_prov in self._cli_providers.items():
+                if hasattr(_cli_prov, "_spec") and _cli_prov._spec.model_id == model_id:
+                    return _cli_prov
+
         info = self._model_cache.get(model_id)
         if info:
             return self._providers.get(info.provider)
