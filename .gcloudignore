@@ -2,6 +2,12 @@
 .git
 .gitignore
 .claude
+.axon
+.codebase-memory
+.gitnexus
+.serena
+graphify-out
+backend/app/services/graphify-out
 .pytest_cache
 node_modules
 frontend/node_modules
@@ -11,6 +17,7 @@ __pycache__
 .venv
 venv_daena
 venv_daena_main_py310
+venv_daena_audio_py310
 Doc
 Doc.zip
 .archive
@@ -53,3 +60,6 @@ data
 vault
 uploads
 skills
+var
+run_full_power_benchmark.py
+AGENTS.md
