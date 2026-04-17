@@ -111,7 +111,16 @@ class AgentLoop:
     # Show progress prompt every N steps (unless in AGI mode)
     PROGRESS_CHECK_INTERVAL = 3
 
-    def __init__(self, autopilot: bool = False) -> None:
+    def __init__(
+        self,
+        autopilot: bool = False,
+        *,
+        tenant_id: Any = None,
+        user_id: Any = None,
+        agent_id: Any = None,
+        memory_service: Any = None,
+        department: str = "",
+    ) -> None:
         self._running = False
         self._receipt: ExecutionReceipt | None = None
 
@@ -121,6 +130,18 @@ class AgentLoop:
 
         self._prompt_manager = InteractivePromptManager.get_instance()
         self.prompts = GovernedPromptManager(self._prompt_manager, autopilot=autopilot)
+
+        # Learning hook: NBMF write-through. When all four are provided,
+        # each StepResult is recorded as SKILL_OUTCOME (success) or
+        # APPROACH_FAILED (failure after retries). APPROACH_FAILED is the
+        # cross-department broadcast -- tenant-scoped NBMF ensures the
+        # lesson is visible to all 10 departments. When any credential is
+        # missing the hook is a no-op so existing callers keep working.
+        self._tenant_id = tenant_id
+        self._user_id = user_id
+        self._agent_id = agent_id
+        self._memory_service = memory_service
+        self._department = department
 
     async def execute(
         self,
@@ -242,6 +263,12 @@ class AgentLoop:
 
                 # Add result to context for subsequent steps
                 context[f"step_{step.step_id}_result"] = result.output
+                # Learning hook -- SKILL_OUTCOME on success
+                await self._record_experience(
+                    step=step,
+                    result=result,
+                    content_type="SKILL_OUTCOME",
+                )
                 return
 
             # REFLECT: Can we fix the error?
@@ -264,6 +291,12 @@ class AgentLoop:
                 "step_id": step.step_id,
                 "error": result.error,
             }
+            # Learning hook -- APPROACH_FAILED broadcast across departments
+            await self._record_experience(
+                step=step,
+                result=result,
+                content_type="APPROACH_FAILED",
+            )
             return
 
     async def _act(self, step: AgentStep, context: dict[str, Any]) -> StepResult:
@@ -468,3 +501,74 @@ class AgentLoop:
     def get_receipt(self) -> dict[str, Any] | None:
         """Get the current execution receipt."""
         return self._receipt.to_dict() if self._receipt else None
+
+    async def _record_experience(
+        self,
+        *,
+        step: AgentStep,
+        result: StepResult,
+        content_type: str,
+    ) -> None:
+        """Write an experience to tenant-scoped NBMF.
+
+        Fire-and-forget: any exception is logged and swallowed so the
+        loop never stalls on a memory failure. No-op when any of
+        tenant_id / user_id / agent_id / memory_service is missing,
+        which keeps the existing test fixtures working unchanged.
+
+        SKILL_OUTCOME entries record what worked; APPROACH_FAILED
+        entries are the cross-department 'do not repeat' broadcast.
+        Both write to the same tenant-scoped NBMF so all 10
+        departments see each other's lessons.
+        """
+        if (
+            self._memory_service is None
+            or self._tenant_id is None
+            or self._user_id is None
+            or self._agent_id is None
+        ):
+            return
+
+        summary = step.description[:200]
+        detail_parts = [
+            f"step {step.step_id}: {step.description}",
+            f"runtime: {result.runtime_used}",
+            f"duration_ms: {result.duration_ms}",
+            f"iteration: {result.iteration}",
+        ]
+        if result.error:
+            detail_parts.append(f"error: {result.error[:500]}")
+        if result.output:
+            detail_parts.append(f"output: {result.output[:500]}")
+        detail = "\n".join(detail_parts)
+
+        tags = [
+            content_type.lower(),
+            f"runtime:{result.runtime_used or 'unknown'}",
+        ]
+        if self._department:
+            tags.append(f"dept:{self._department.lower().replace(' ', '_')}")
+
+        try:
+            await self._memory_service.store_experience(
+                tenant_id=self._tenant_id,
+                user_id=self._user_id,
+                agent_id=self._agent_id,
+                content=detail,
+                content_type=content_type,
+                summary=summary,
+                success_flag=result.success,
+                confidence=0.7 if result.success else 0.6,
+                tags=tags,
+                metadata={
+                    "task": (self._receipt.task if self._receipt else "")[:200],
+                    "step_id": step.step_id,
+                    "department": self._department,
+                },
+            )
+        except Exception:
+            logger.exception(
+                "agent_loop.record_experience_failed",
+                step_id=step.step_id,
+                content_type=content_type,
+            )

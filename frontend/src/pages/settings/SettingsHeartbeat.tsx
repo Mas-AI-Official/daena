@@ -83,13 +83,29 @@ const INTERVAL_OPTIONS = [
   { label: '2 hr', value: 120 },
 ]
 
+// Must match backend app/services/heartbeat/heartbeat_config.CheckType.
+// Aligned 2026-04-16 after audit showed the old list missed 8 check
+// types (autonomous_work, department_workflows, test_suite, github_issues,
+// failed_tasks, git_status, queue, ollama_health, ollama_model_updates,
+// daily_report) and had two legacy keys (self_audit, email) that no
+// longer map to any backend check. If you add a new CheckType enum
+// value on the backend, mirror it here or the toggle stays invisible
+// in the settings UI.
 const CHECK_LABELS: Record<string, string> = {
-  inbox: 'Inbox (inbox.md)',
-  tasks: 'Task queue (tasks.md)',
-  project_state: 'Project state (STATE.md)',
   runtime_health: 'Runtime health (all CLIs)',
-  self_audit: 'Self-audit (every 4th cycle)',
-  email: 'Email check (requires Gmail MCP)',
+  tasks: 'Task queue (tasks.md)',
+  inbox: 'Inbox (inbox.md)',
+  project_state: 'Project state (STATE.md)',
+  git_status: 'Git status (uncommitted / unpushed)',
+  queue: 'Autonomous work queue',
+  test_suite: 'Test suite health',
+  github_issues: 'GitHub issues (assigned / mentions)',
+  failed_tasks: 'Failed-task retry sweep',
+  ollama_health: 'Ollama daemon health',
+  ollama_model_updates: 'Ollama model update check',
+  department_workflows: 'Department workflow ticks',
+  autonomous_work: 'Autonomous work scanner',
+  daily_report: 'Daily digest generator',
 }
 
 export function SettingsHeartbeat() {
