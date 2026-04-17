@@ -757,21 +757,42 @@ class ModelRouter:
                 + w_ctx * context_score
             )
 
-            # Tier-first policy (2026-04-16): cloud sovereign tier outranks
-            # local unconditionally, because local models (Ollama, vLLM) are
-            # weaker and should only be used when no sovereign is available.
-            # Founder policy can still override via enforce_local_only, which
-            # is applied downstream in _apply_founder_policy. The raw-score
-            # multipliers below only set the preference ordering; they do
-            # not change which candidates are selectable.
+            # Complexity-aware tier bias (2026-04-16, refined).
+            # - SIMPLE: no bias. Let cost + locality dominate. A greeting
+            #   should not fan out to Claude Sonnet.
+            # - MODERATE: mild sovereign preference.
+            # - COMPLEX / VERY_COMPLEX: strong sovereign preference, strong
+            #   local penalty. This is the "cloud-first for high-level
+            #   tasks" policy the operator requested: local models
+            #   (Ollama, vLLM) are weaker and serve as fallback, not
+            #   cost-optimized default for hard questions.
+            # Subscription CLIs (claude-code-cli, codex-cli, gemini-cli)
+            # and their API twins share the same provider enum and
+            # therefore the same tier -- they are treated as equal
+            # sources of the same brain, ranked only by the per-candidate
+            # cost/context/tag score that the router already computed.
+            # Founder policy enforce_local_only still wins downstream.
             from app.core.constants import ModelTier
+            from app.services.query_understanding import ComplexityLabel
             tier = self.classify_tier(c)
+            _sov_mult = {
+                ComplexityLabel.SIMPLE:       1.0,
+                ComplexityLabel.MODERATE:     1.15,
+                ComplexityLabel.COMPLEX:      1.5,
+                ComplexityLabel.VERY_COMPLEX: 1.75,
+            }
+            _loc_mult = {
+                ComplexityLabel.SIMPLE:       1.0,
+                ComplexityLabel.MODERATE:     0.8,
+                ComplexityLabel.COMPLEX:      0.4,
+                ComplexityLabel.VERY_COMPLEX: 0.25,
+            }
             if tier == ModelTier.SOVEREIGN:
-                tier_mult = 1.5
+                tier_mult = _sov_mult.get(qu.complexity_label, 1.15)
             elif tier == ModelTier.TACTICAL:
                 tier_mult = 1.0
-            else:  # LOCAL (Ollama, vLLM)
-                tier_mult = 0.35
+            else:  # LOCAL
+                tier_mult = _loc_mult.get(qu.complexity_label, 0.8)
             composite = composite * tier_mult
 
             scored.append(

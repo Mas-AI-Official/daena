@@ -95,6 +95,14 @@ class QueryUnderstanding:
     clarifying_question: str | None
     processing_time_ms: int
     exe_suggestion: str | None = None  # Suggestion to switch to EXE mode
+    # When True, the chat orchestrator flips chat_mode from CMD to EXE for
+    # this turn so the agent actually ACTS instead of only suggesting.
+    # See chat_orchestrator.py Stage 2.7. Only set when the intent is
+    # clearly a TOOL_USE/DANGEROUS-with-action-verb AND the risk is not
+    # HIGH/CRITICAL AND the governance mode is not GOVERNED. Respects the
+    # Daena identity: shield always on, but the default experience is an
+    # agent that does the work, not a chat bot that describes it.
+    auto_escalate_exe: bool = False
     intent_scores: dict[str, float] = field(default_factory=dict)
 
 
@@ -407,16 +415,40 @@ class QueryUnderstandingService:
                 msg, ambiguity_signals,
             )
 
-        # Stage 7: EXE suggestion (TOOL_USE in CMD mode)
+        # Stage 7: EXE suggestion + auto-escalation (TOOL_USE in CMD mode).
+        # exe_suggestion surfaces a user-facing hint in the UI when we
+        # choose NOT to auto-escalate. auto_escalate_exe is the stronger
+        # signal that tells chat_orchestrator to flip the turn's chat_mode
+        # to EXE. Auto-escalation is the fix for the "Daena feels like a
+        # chat bot" operator complaint: when the user clearly asks for an
+        # action, the agent should ACT, not suggest.
         exe_suggestion: str | None = None
+        auto_escalate_exe = False
         if (
             intent == IntentType.TOOL_USE
             and query_input.execution_mode == ChatMode.CMD
         ):
-            exe_suggestion = (
-                "I can execute this for you. "
-                "Switch to EXE mode or say 'do it'."
+            # Auto-escalate when risk is manageable and governance allows.
+            # GOVERNED mode always requires explicit user toggle because
+            # enterprise governance cannot be bypassed. UNLEASHED and
+            # BALANCED modes trust the intent classifier.
+            governance_blocks_auto = (
+                query_input.governance_mode == GovernanceMode.GOVERNED
             )
+            risk_blocks_auto = risk_level in (
+                RiskLevel.HIGH,
+                RiskLevel.CRITICAL,
+            )
+            if not governance_blocks_auto and not risk_blocks_auto:
+                auto_escalate_exe = True
+                exe_suggestion = (
+                    "Taking action on this -- auto-escalated to EXE mode."
+                )
+            else:
+                exe_suggestion = (
+                    "I can execute this for you. "
+                    "Switch to EXE mode or say 'do it'."
+                )
 
         elapsed = int((time.monotonic() - start) * 1000)
 
@@ -433,6 +465,7 @@ class QueryUnderstandingService:
             clarifying_question=clarifying_question,
             processing_time_ms=elapsed,
             exe_suggestion=exe_suggestion,
+            auto_escalate_exe=auto_escalate_exe,
             intent_scores={k.value: round(v, 4) for k, v in scores.items()},
         )
 

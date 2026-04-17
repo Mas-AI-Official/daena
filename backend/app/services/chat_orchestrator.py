@@ -577,6 +577,35 @@ class ChatOrchestrator:
             time_ms=amplified.processing_time_ms,
         )
 
+        # ── Stage 2.7: Auto-escalate to EXE for action intents ─────
+        # The "Daena feels like a chat bot" fix. When the user clearly
+        # asks for an action ("check my gmail", "deploy this", "open
+        # chrome and do X"), the intent classifier flags it as
+        # TOOL_USE. Previously the system only *suggested* toggling
+        # EXE; now it flips the mode for this turn and dispatches
+        # the DaenaBot chain automatically. Respects governance:
+        # GOVERNED mode and HIGH/CRITICAL risk require explicit toggle
+        # (both already gated in query_understanding.Stage 7).
+        if (
+            qu_result.auto_escalate_exe
+            and chat_mode == ChatMode.CMD
+        ):
+            chat_mode = ChatMode.EXE
+            logger.info(
+                "orchestrator.auto_escalated_to_exe",
+                intent=qu_result.intent.value,
+                risk=qu_result.risk_level.value,
+                governance=governance_mode.value,
+            )
+            yield {
+                "type": "auto_escalation",
+                "from": "CMD",
+                "to": "EXE",
+                "reason": "TOOL_USE intent detected -- acting rather than describing",
+                "intent": qu_result.intent.value,
+                "risk": qu_result.risk_level.value,
+            }
+
         # ── Stage 3: Governance pre-check ─────────────────────
         # governance_mode was resolved in Stage 0b above.
 
