@@ -62,7 +62,7 @@ HARD RULES (violations invalidate your verdict):
    is correct and cite the specific step that decides it. Never pick by \
    popularity or tone.
 
-YOUR DELIVERABLE has three parts, in this order:
+YOUR DELIVERABLE has four parts, in this order:
 
 ## DISAGREEMENT ANALYSIS
 What do the responses agree on? Where do they diverge? For each divergence, \
@@ -77,18 +77,41 @@ verification is impossible from the information given, say so and label \
 the remaining uncertainty.
 
 ## VERDICT
-The final answer for the user. Cite which response(s) your verdict comes \
-from using their anonymous labels (A, B, C, ...). Example: \
-"Verdict draws from Response B's derivation (verified correct in step 2 \
-above) with A's context framing." If no response is correct, say the answer \
-is unknown and explain what additional evidence would resolve it.
+The answer you would give the user if you had to stop here. Cite which \
+response(s) your verdict comes from using their anonymous labels \
+(A, B, C, ...). Example: "Verdict draws from Response B's derivation \
+(verified correct in step 2 above) with A's context framing." If no \
+response is correct, say the answer is unknown and explain what additional \
+evidence would resolve it.
 
-End with: Confidence: N/10. Below 7 means something is unverified -- name \
-it in one sentence.
+## SELF-CRITIQUE
+You are NOT done when the VERDICT is written. Now critique it adversarially:
+- Where could this verdict be WRONG? Name at least one concrete way it \
+  could fail (wrong assumption, missing case, arithmetic slip, \
+  outdated fact, ambiguity I papered over).
+- Does my VERIFICATION step ACTUALLY prove the answer, or does it just \
+  show the answer is consistent with the response I picked? If the latter, \
+  flag it.
+- Did I favor a response because its reasoning was clearer rather than \
+  because its answer was correct? Style beauty is not evidence.
+- What is the strongest counter-argument to my verdict, and can I refute \
+  it? If I cannot refute it, the verdict needs revision.
+
+If the self-critique reveals a real flaw, WRITE A REVISED VERDICT labeled \
+"## REVISED VERDICT" and explain what changed. If the self-critique reveals \
+only minor uncertainty, leave the verdict as-is and lower the confidence.
+
+End with: Confidence: N/10. Below 7 means something is unverified or the \
+self-critique surfaced a real flaw -- name it in one sentence. Treat a \
+confidence above 9 as a red flag -- real problems rarely resolve that \
+cleanly, and overconfidence is a failure mode of judges who skip self-critique.
 
 Do NOT write prose that hides the disagreement. Do NOT pretend consensus. \
-Do NOT default to your own prior answer. Your job is to find the correct \
-answer inside the council, not to replace it with yours."""
+Do NOT default to your own prior answer. Do NOT skip the SELF-CRITIQUE \
+section -- it exists because judges without adversarial self-review have \
+been observed discarding correct council answers in favor of their own \
+priors (see AIME 2025 I Q15, 2026-04-12). Your job is to find the correct \
+answer inside the council, then prove to yourself it's correct."""
 
 _SYNTHESIS_USER_TEMPLATE = """\
 Original user query:
@@ -100,9 +123,12 @@ Original user query:
 
 ---
 
-Produce your DISAGREEMENT ANALYSIS, VERIFICATION, and VERDICT in that order. \
-Anonymous labels only (A/B/C/...). Your verdict must be supported by at least \
-one of the council responses; if none are correct, say so explicitly."""
+Produce your DISAGREEMENT ANALYSIS, VERIFICATION, VERDICT, and SELF-CRITIQUE \
+in that order. Anonymous labels only (A/B/C/...). Your verdict must be \
+supported by at least one of the council responses; if none are correct, \
+say so explicitly. The SELF-CRITIQUE is mandatory -- even a confident \
+verdict must be adversarially reviewed before you finalize. Revise the \
+verdict (## REVISED VERDICT) if the self-critique surfaces a real flaw."""
 
 
 # ── Data structures ───────────────────────────────────────────
@@ -169,6 +195,10 @@ class CouncilEngine:
              the judge may combine compatible reasoning but may not introduce
              new claims. If every response is wrong, the judge must say so
              rather than paper over the gap with its own prior answer.
+          4. The judge must then self-critique the verdict and may issue a
+             "## REVISED VERDICT" if the critique surfaces a real flaw. This
+             is Session 5 (2026-04-16) and is the output-side counterpart to
+             the Stage 6.7 cognitive lens router that hardens the input side.
 
         Replaces the pre-2026-04-16 pattern where the judge had "the final
         word" by silently generating a fresh answer, which caused the AIME

@@ -403,12 +403,12 @@ class ModelRouter:
             for c in scored:
                 # Direct model_id or provider.value match
                 if c.model_id == primary_mind or c.provider.value == primary_mind:
-                    c.score += 2.0  # Hard preference: always wins
+                    object.__setattr__(c, 'score', c.score + 2.0)
                     boosted = True
                     break
                 # Runtime-to-provider match: boost best candidate from provider
                 if target_provider and c.provider == target_provider:
-                    c.score += 2.0  # Hard preference: always wins
+                    object.__setattr__(c, 'score', c.score + 2.0)
                     boosted = True
                     break
 
@@ -656,6 +656,19 @@ class ModelRouter:
     ) -> list[ModelCandidate]:
         candidates: list[ModelCandidate] = []
         for provider_enum in providers:
+            # Circuit breaker: skip providers the health tracker marks as dead
+            try:
+                from app.services.runtimes.health_tracker import get_health_tracker
+                _ht = get_health_tracker()
+                if not _ht.is_available(provider_enum.value):
+                    logger.info(
+                        "router.skipping_circuit_open",
+                        provider=provider_enum.value,
+                    )
+                    continue
+            except Exception:
+                pass  # health tracker not initialized yet, proceed normally
+
             # Check health — treat UNKNOWN (never checked) same as HEALTHY
             # so newly registered providers aren't silently skipped.
             health = self._registry.get_health(provider_enum)
@@ -743,6 +756,23 @@ class ModelRouter:
                 + w_cost * cost_score
                 + w_ctx * context_score
             )
+
+            # Tier-first policy (2026-04-16): cloud sovereign tier outranks
+            # local unconditionally, because local models (Ollama, vLLM) are
+            # weaker and should only be used when no sovereign is available.
+            # Founder policy can still override via enforce_local_only, which
+            # is applied downstream in _apply_founder_policy. The raw-score
+            # multipliers below only set the preference ordering; they do
+            # not change which candidates are selectable.
+            from app.core.constants import ModelTier
+            tier = self.classify_tier(c)
+            if tier == ModelTier.SOVEREIGN:
+                tier_mult = 1.5
+            elif tier == ModelTier.TACTICAL:
+                tier_mult = 1.0
+            else:  # LOCAL (Ollama, vLLM)
+                tier_mult = 0.35
+            composite = composite * tier_mult
 
             scored.append(
                 ModelCandidate(
@@ -901,30 +931,35 @@ class ModelRouter:
                 if c.provider != primary_mind_provider
             ]
 
-        # Phase 2: sort by debate roster priority for this intent.
+        # Phase 2: sort by debate roster priority for this intent,
+        # then by model strength within each provider.
         # Within each provider, prefer CLI subscription models (-cli suffix)
         # over API-key models because CLI = Pro/Max subscription = strongest.
         roster = _DEBATE_ROSTER.get(intent, []) if intent else []
-        if roster:
-            def _roster_priority(c: ModelCandidate) -> int:
-                try:
-                    return roster.index(c.provider)
-                except ValueError:
-                    return len(roster)
 
-            def _strength_score(c: ModelCandidate) -> float:
-                """Higher = stronger model. CLI subscription > API Pro > API Flash."""
-                s = c.score
-                mid = c.model_id.lower()
-                if mid.endswith("-cli"):
-                    s += 10.0  # CLI subscription = strongest per provider
-                if "pro" in mid or "opus" in mid or "max" in mid:
-                    s += 5.0
-                if "flash" in mid or "mini" in mid or "instant" in mid:
-                    s -= 10.0  # Never pick cheap models for debates
-                return s
+        def _roster_priority(c: ModelCandidate) -> int:
+            if not roster:
+                return 0  # No preference -- all equal
+            try:
+                return roster.index(c.provider)
+            except ValueError:
+                return len(roster)
 
-            sovereign.sort(key=lambda c: (_roster_priority(c), -_strength_score(c)))
+        def _strength_score(c: ModelCandidate) -> float:
+            """Higher = stronger model. CLI subscription > API Pro > API Flash."""
+            s = c.score
+            mid = c.model_id.lower()
+            if mid.endswith("-cli"):
+                s += 10.0  # CLI subscription = strongest per provider
+            if "pro" in mid or "opus" in mid or "max" in mid:
+                s += 5.0
+            if "claude" in mid:
+                s += 3.0  # Claude = strong general reasoner
+            if "flash" in mid or "mini" in mid or "instant" in mid:
+                s -= 10.0  # Never pick cheap models for debates
+            return s
+
+        sovereign.sort(key=lambda c: (_roster_priority(c), -_strength_score(c)))
 
         # Phase 3: pick diverse providers
         selected: list[ModelCandidate] = []
@@ -1028,6 +1063,124 @@ class ModelRouter:
     @staticmethod
     def _elapsed(start: float) -> int:
         return int((time.monotonic() - start) * 1000)
+
+    # ── Public: model selection for CognitiveReasoner ──────────
+
+    def select_best_single(
+        self,
+        *,
+        offensive: bool = False,
+    ) -> ModelCandidate | None:
+        """Pick the single best model for cognitive reasoning.
+
+        Used by CognitiveReasoner to select its working model.
+        Tier hierarchy: SOVEREIGN > STRATEGIC > TACTICAL > LOCAL.
+        Within tier: CLI subscription > Pro/Opus > standard > Flash/Mini.
+
+        In offensive mode, local models are elevated (no guardrails).
+        """
+        all_providers = list(self._registry.available_providers)
+        candidates = self._collect_from_providers(all_providers)
+
+        if not candidates:
+            return None
+
+        # Filter out embedding models
+        candidates = [
+            c for c in candidates
+            if "embed" not in c.model_id.lower()
+            and "nomic" not in c.model_id.lower()
+        ]
+
+        if not candidates:
+            return None
+
+        def _strength(c: ModelCandidate) -> tuple[int, float]:
+            """(tier_rank, strength_score). Lower tier_rank = better tier."""
+            tier = self.classify_tier(c)
+            mid = c.model_id.lower()
+
+            # Tier ranking (lower = better)
+            if offensive:
+                # Offensive: local first (no guardrails), then sovereign
+                tier_order = {
+                    ModelTier.LOCAL: 0,
+                    ModelTier.SOVEREIGN: 1,
+                    ModelTier.TACTICAL: 2,
+                }
+            else:
+                tier_order = {
+                    ModelTier.SOVEREIGN: 0,
+                    ModelTier.TACTICAL: 1,
+                    ModelTier.LOCAL: 2,
+                }
+
+            tier_rank = tier_order.get(tier, 99)
+
+            # Strength within tier
+            strength = 0.0
+            if mid.endswith("-cli"):
+                strength += 200.0  # CLI subscription = strongest
+            if "opus" in mid or "pro" in mid or "max" in mid:
+                strength += 100.0
+            if "claude" in mid:
+                strength += 120.0  # Claude = best general reasoner (judge)
+            if "sonnet" in mid:
+                strength += 50.0
+            if "4.6" in mid or "4-6" in mid:
+                strength += 30.0
+            if "sonar-pro" in mid:
+                strength += 90.0
+            if "codex" in mid:
+                strength += 80.0
+            # Penalties for cheap/fast models
+            if "flash" in mid or "mini" in mid or "instant" in mid or "nano" in mid:
+                strength -= 200.0
+            if "8b" in mid or "3b" in mid or "7b" in mid:
+                strength -= 50.0
+            # Context window bonus
+            strength += c.context_window / 100_000
+
+            return (tier_rank, -strength)  # negate strength for sort
+
+        candidates.sort(key=_strength)
+        best = candidates[0]
+
+        logger.info(
+            "router.select_best_single",
+            model=best.model_id,
+            provider=best.provider.value,
+            tier=self.classify_tier(best).value,
+            offensive=offensive,
+            candidates_evaluated=len(candidates),
+        )
+        return best
+
+    def select_debate_roster(
+        self,
+        intent: IntentType | None = None,
+        count: int = 3,
+        *,
+        primary_mind_provider: ModelProvider | None = None,
+    ) -> list[ModelCandidate]:
+        """Select models for Council/Quintessence debate.
+
+        Public wrapper around _select_diverse. Used by CognitiveReasoner
+        and benchmark runner to get task-aware debate participants.
+        """
+        all_providers = list(self._registry.available_providers)
+        candidates = self._collect_from_providers(all_providers)
+        # Filter embedding models
+        candidates = [
+            c for c in candidates
+            if "embed" not in c.model_id.lower()
+            and "nomic" not in c.model_id.lower()
+        ]
+        return self._select_diverse(
+            candidates, count,
+            intent=intent,
+            primary_mind_provider=primary_mind_provider,
+        )
 
     # ── V2: Runtime routing for EXE mode ──────────────────────────
 

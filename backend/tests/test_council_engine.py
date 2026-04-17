@@ -162,6 +162,27 @@ def test_agreement_partial_overlap() -> None:
 
 # ── Tests: response formatting ───────────────────────────────
 
+def test_system_prompt_has_four_required_sections() -> None:
+    """Council judge must output DISAGREEMENT + VERIFICATION + VERDICT + SELF-CRITIQUE.
+
+    Regression test for the Session 5 (2026-04-16) post-verdict self-critique
+    pass. The SELF-CRITIQUE section is the output-side counterpart to the
+    Stage 6.7 input-side lens router -- it hardens the judge against its
+    own priors AFTER it commits to a verdict, allowing a revised verdict
+    if the adversarial review surfaces a real flaw.
+    """
+    from app.services.council_engine import _SYNTHESIS_SYSTEM_PROMPT
+    # All four structural sections must be named in the prompt.
+    assert "## DISAGREEMENT ANALYSIS" in _SYNTHESIS_SYSTEM_PROMPT
+    assert "## VERIFICATION" in _SYNTHESIS_SYSTEM_PROMPT
+    assert "## VERDICT" in _SYNTHESIS_SYSTEM_PROMPT
+    assert "## SELF-CRITIQUE" in _SYNTHESIS_SYSTEM_PROMPT
+    # The revision escape hatch must exist.
+    assert "REVISED VERDICT" in _SYNTHESIS_SYSTEM_PROMPT
+    # AIME Q15 anchor for future debuggers.
+    assert "Q15" in _SYNTHESIS_SYSTEM_PROMPT or "2026-04-12" in _SYNTHESIS_SYSTEM_PROMPT
+
+
 def test_format_responses_anonymized() -> None:
     """Responses are anonymized (A/B/C) before the judge sees them.
 

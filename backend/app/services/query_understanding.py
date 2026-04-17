@@ -7,7 +7,7 @@ to pick the best provider, model, and governance tier.
 Pipeline stages (total budget <200ms):
     1. Intent classification  — keyword heuristic (<5ms)
     2. Complexity scoring      — 8 weighted factors (<30ms)
-    3. Risk assessment         — decision tree + governance slider (<20ms)
+    3. Risk assessment         — decision tree + governance mode (<20ms)
     4. Ambiguity detection     — confidence + signal checks (<5ms)
 
 No ML dependency — the keyword heuristic is always available.
@@ -24,10 +24,12 @@ from typing import Any
 
 from app.core.constants import (
     ChatMode,
+    GovernanceMode,
     GovernanceSlider,
     ModelProvider,
     RiskLevel,
     RoutingMode,
+    resolve_governance_tier,
 )
 from app.core.logging import get_logger
 
@@ -73,7 +75,7 @@ class QueryInput:
     user_id: str | None = None
     tenant_id: str | None = None
     execution_mode: ChatMode = ChatMode.CMD
-    governance_slider: GovernanceSlider = GovernanceSlider.STANDARD
+    governance_mode: GovernanceMode = GovernanceMode.BALANCED
     available_tools: list[str] = field(default_factory=list)
 
 
@@ -238,22 +240,12 @@ _DANGEROUS_PATTERNS: dict[str, list[re.Pattern[str]]] = {
     ],
 }
 
-# ── Governance Slider Minimums ───────────────────────────────
+# ── Governance Mode Minimums ─────────────────────────────────
 
-_SLIDER_MINIMUMS: dict[GovernanceSlider, int] = {
-    GovernanceSlider.YOLO: 0,
-    GovernanceSlider.LIGHT: 0,
-    GovernanceSlider.STANDARD: 0,
-    GovernanceSlider.STRICT: 2,
-    GovernanceSlider.PARANOID: 3,
-}
-
-_RISK_TO_TIER: dict[RiskLevel, int] = {
-    RiskLevel.NONE: 0,
-    RiskLevel.LOW: 1,
-    RiskLevel.MEDIUM: 2,
-    RiskLevel.HIGH: 3,
-    RiskLevel.CRITICAL: 4,
+_MODE_MINIMUMS: dict[GovernanceMode, int] = {
+    GovernanceMode.UNLEASHED: 0,
+    GovernanceMode.BALANCED: 0,
+    GovernanceMode.GOVERNED: 2,
 }
 
 # ── Default Routing Suggestions ──────────────────────────────
@@ -395,11 +387,11 @@ class QueryUnderstandingService:
 
         # Stage 4: Risk assessment
         risk_level = self._assess_inherent_risk(intent, msg, query_input.execution_mode)
-        inherent_tier = _RISK_TO_TIER[risk_level]
-        slider_min = _SLIDER_MINIMUMS[query_input.governance_slider]
-        governance_tier = max(inherent_tier, slider_min)
+        governance_tier = resolve_governance_tier(query_input.governance_mode, risk_level)
+        mode_min = _MODE_MINIMUMS[query_input.governance_mode]
+        governance_tier = max(governance_tier, mode_min)
         # Hard Law #4: Tier 4 actions can NEVER be downgraded
-        if inherent_tier == 4:
+        if risk_level == RiskLevel.CRITICAL and query_input.governance_mode == GovernanceMode.GOVERNED:
             governance_tier = 4
 
         # Stage 5: Mode suggestion
@@ -741,11 +733,18 @@ class QueryUnderstandingService:
 
     @staticmethod
     def _suggest_mode(intent: IntentType, complexity: float) -> RoutingMode:
-        """Suggest STANDARD, COUNCIL, or QUINTESSENCE based on complexity."""
-        if complexity >= 0.80:
-            return RoutingMode.QUINTESSENCE
+        """Suggest STANDARD or QUINTESSENCE based on complexity.
+
+        Frontend only exposes STANDARD and QUINTESSENCE; COUNCIL was
+        retired as a user-facing mode on 2026-04-16 because QUINTESSENCE
+        is strictly better (Council + DCP expert lenses). We keep the
+        COUNCIL enum value for internal machinery and for the backward-
+        compat upgrade shim in ``chat_orchestrator.py``, but the
+        auto-suggestion path now only ever returns STANDARD or
+        QUINTESSENCE so the backend matches the frontend contract.
+        """
         if complexity >= 0.60:
-            return RoutingMode.COUNCIL
+            return RoutingMode.QUINTESSENCE
         return RoutingMode.STANDARD
 
     # ── Stage 6: Clarifying Question ─────────────────────────
