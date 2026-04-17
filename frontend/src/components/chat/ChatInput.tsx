@@ -47,7 +47,7 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
   const modelDropdownRef = useRef<HTMLDivElement>(null)
   const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null)
   const [isOverQuota, setIsOverQuota] = useState(false)
-  const { chatMode, governanceSlider, selectedModel, setSelectedModel } = useUiStore()
+  const { chatMode, governanceMode, selectedModel, setSelectedModel } = useUiStore()
   const registry = useModelRegistryStore((s) => s.registry)
   const registryLoading = useModelRegistryStore((s) => s.loading)
   const registryError = useModelRegistryStore((s) => s.error)
@@ -151,19 +151,65 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
 
   // Long paste detection: when user pastes >10 lines, collapse into a file-like chip
   // (ChatGPT-style "Pasted text" attachment pattern)
-  const LONG_PASTE_LINE_THRESHOLD = 10
+  const LONG_PASTE_LINE_THRESHOLD = 25
   const [pastedChip, setPastedChip] = useState<{ text: string; lineCount: number; preview: string } | null>(null)
 
-  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const handlePaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    // Image paste: check clipboard for image data BEFORE text fallback
+    const items = e.clipboardData.items
+    const imageFiles: File[] = []
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) imageFiles.push(file)
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      e.preventDefault()
+      setUploading(true)
+      try {
+        for (const file of imageFiles) {
+          // Give pasted images a sensible filename (Chrome names them "image.png")
+          const renamed = file.name === 'image.png'
+            ? new File([file], `pasted-${Date.now()}.png`, { type: file.type })
+            : file
+          const form = new FormData()
+          form.append('file', renamed)
+          const token = localStorage.getItem('daena_token')
+          const res = await fetch('/api/v1/files/upload', {
+            method: 'POST',
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            body: form,
+          })
+          if (!res.ok) {
+            toast.error('Image upload failed')
+            continue
+          }
+          const json = await res.json()
+          if (json.data) {
+            setAttachedFiles((prev) => [...prev, json.data])
+          }
+        }
+      } catch {
+        toast.error('Image paste failed')
+      } finally {
+        setUploading(false)
+      }
+      return
+    }
+
+    // Text paste: collapse long pastes into a chip
     const pasted = e.clipboardData.getData('text')
     if (!pasted) return
 
     const lines = pasted.split('\n')
     if (lines.length > LONG_PASTE_LINE_THRESHOLD) {
       e.preventDefault()
-      // Collapse into chip, keep the textarea for the user's actual question
       const preview = lines.slice(0, 3).join('\n') + (lines.length > 3 ? '\n...' : '')
       setPastedChip({ text: pasted, lineCount: lines.length, preview })
+      requestAnimationFrame(() => textareaRef.current?.focus())
     }
   }, [])
 
@@ -258,7 +304,11 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
             {chatMode}
           </span>
           <span className="text-starlight-600/50">·</span>
-          <span className="text-starlight-500/70">Gov: {governanceSlider}</span>
+          <span className={`font-mono ${
+            governanceMode === 'UNLEASHED' ? 'text-status-error/80' :
+            governanceMode === 'BALANCED' ? 'text-accent-cyan/80' :
+            'text-starlight-500/70'
+          }`}>{governanceMode}</span>
           {quotaRemaining != null && typeof quotaRemaining === 'number' && (
             <>
               <span className="text-starlight-600/50">·</span>
@@ -275,13 +325,22 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
           )}
           <span className="text-starlight-600/50">·</span>
 
-          {/* Model selector */}
+          {/* Model selector.
+             2026-04-16: "Model:" prefix added to disambiguate this
+             per-message model override from the header's Primary
+             Mind (RuntimeSwapper). The header picks the RUNTIME
+             (Claude Code CLI / Codex / Gemini / Ollama); this
+             dropdown picks the SPECIFIC MODEL within the resolved
+             runtime. Both used to show "Auto" which confused
+             operators. */}
           <div className="relative" ref={modelDropdownRef}>
             <button
               onClick={() => { setModelOpen(!modelOpen); setActiveProvider(null) }}
               className="flex items-center gap-1 px-1.5 py-0.5 rounded
                          hover:bg-white/5 transition-colors cursor-pointer"
+              title="Per-message model override (the header picks the runtime)"
             >
+              <span className="text-starlight-500 mr-0.5">Model:</span>
               <span className={selectedModel ? 'text-primary-300' : 'text-starlight-400'}>
                 {currentModelLabel}
               </span>
@@ -530,7 +589,7 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={pastedChip ? 'Add a question about the pasted text...' : (customPlaceholder || 'Message Daena...')}
+              placeholder={pastedChip ? 'Press Enter to send, or add a question...' : (customPlaceholder || 'Message Daena...')}
               aria-label="Message input"
               disabled={disabled}
               maxLength={MAX_MESSAGE_LENGTH}

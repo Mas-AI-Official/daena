@@ -144,16 +144,26 @@ export const RuntimeSwapper = memo(function RuntimeSwapper({
 
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
-      {/* Trigger button */}
+      {/* Trigger button.
+         Label prefix "Mind:" was added 2026-04-16 to disambiguate
+         this control (which picks the Primary Mind runtime -- Claude
+         Code / Codex / Gemini CLI / Ollama) from the per-message
+         model dropdown in ChatInput (which picks a specific model
+         within the selected runtime). Two separate controls, two
+         separate uiStore fields (selectedRuntime vs selectedModel).
+         Before this label, both showed "Auto" and operators confused
+         them. */}
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-midnight-300/60 border border-white/5 hover:border-white/10 hover:bg-midnight-400/60 transition-all text-sm"
+        title="Primary Mind: which runtime orchestrates the answer"
       >
         {isAuto ? (
           <Sparkles size={14} className="text-accent-amber" />
         ) : (
           <Cpu size={14} className="text-primary-400" />
         )}
+        <span className="text-starlight-500 text-xs mr-0.5">Mind:</span>
         <span className="text-starlight-200">{displayName}</span>
         {active && (
           <span className={`runtime-dot ${STATUS_DOT_CLASS[active.status]}`} />

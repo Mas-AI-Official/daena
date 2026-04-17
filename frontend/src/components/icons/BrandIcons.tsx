@@ -430,27 +430,103 @@ export const RUNTIME_ICONS: Record<string, React.ComponentType<BrandIconProps>> 
   'grok_cli': XAIIcon,
 }
 
+// Additional CdnIcon-backed extensions added 2026-04-16 for the
+// Extensions modal which previously showed generic puzzle pieces
+// for every popular MCP. Each entry below is a SimpleIcons slug
+// + the brand's primary hex color. CdnIcon handles fallback to
+// a branded letter avatar if the CDN is unreachable.
+const GoogleSheetsExtIcon = memo(() => <CdnIcon name="googlesheets" color="34A853" size={24} />)
+const GoogleDocsExtIcon = memo(() => <CdnIcon name="googledocs" color="4285F4" size={24} />)
+const ObsidianExtIcon = memo(() => <CdnIcon name="obsidian" color="7C3AED" size={24} />)
+const TodoistExtIcon = memo(() => <CdnIcon name="todoist" color="E44332" size={24} />)
+const RaycastExtIcon = memo(() => <CdnIcon name="raycast" color="FF6363" size={24} />)
+const JupyterExtIcon = memo(() => <CdnIcon name="jupyter" color="F37626" size={24} />)
+const SalesforceExtIcon = memo(() => <CdnIcon name="salesforce" color="00A1E0" size={24} />)
+const HubSpotExtIcon = memo(() => <CdnIcon name="hubspot" color="FF7A59" size={24} />)
+const ApolloExtIcon = memo(() => <CdnIcon name="apollographql" color="311C87" size={24} />)
+const DbtExtIcon = memo(() => <CdnIcon name="dbt" color="FF694A" size={24} />)
+const AmplitudeExtIcon = memo(() => <CdnIcon name="amplitude" color="1E61F0" size={24} />)
+const MixpanelExtIcon = memo(() => <CdnIcon name="mixpanel" color="7856FF" size={24} />)
+const LinearExtIcon = memo(() => <CdnIcon name="linear" color="5E6AD2" size={24} />)
+const IntercomExtIcon = memo(() => <CdnIcon name="intercom" color="1F8DED" size={24} />)
+const AsanaExtIcon = memo(() => <CdnIcon name="asana" color="F06A6A" size={24} />)
+const AirtableExtIcon = memo(() => <CdnIcon name="airtable" color="18BFFF" size={24} />)
+const ZapierExtIcon = memo(() => <CdnIcon name="zapier" color="FF4A00" size={24} />)
+const StripeExtIcon = memo(() => <CdnIcon name="stripe" color="635BFF" size={24} />)
+const VercelExtIcon = memo(() => <CdnIcon name="vercel" color="ffffff" size={24} />)
+const SupabaseExtIcon = memo(() => <CdnIcon name="supabase" color="3ECF8E" size={24} />)
+const FirebaseExtIcon = memo(() => <CdnIcon name="firebase" color="FFCA28" size={24} />)
+const MongoDBExtIcon = memo(() => <CdnIcon name="mongodb" color="47A248" size={24} />)
+const OpenAIExtIcon = memo(() => <CdnIcon name="openai" color="ffffff" size={24} />)
+const AnthropicExtIcon = memo(() => <CdnIcon name="anthropic" color="D97757" size={24} />)
+const HuggingFaceExtIcon = memo(() => <CdnIcon name="huggingface" color="FFD21E" size={24} />)
+const PineconeExtIcon = memo(() => <CdnIcon name="pinecone" color="1C7ED6" size={24} />)
+
 export const EXTENSION_ICONS: Record<string, React.ComponentType<BrandIconProps>> = {
+  // --- File & infra ---
   'filesystem': FilesystemIcon,
-  'figma': FigmaIcon,
-  'figma-mcp': FigmaIcon,
-  'windows-mcp': WindowsMCPIcon,
-  'elevenlabs': ElevenLabsIcon,
-  'elevenlabs-agents-mcp-app': ElevenLabsIcon,
-  'pdf-tools': PDFToolsIcon,
-  'pdf-tools---fill-analyze-extract-view': PDFToolsIcon,
-  'desktop-commander': DesktopCommanderIcon,
-  'brave-search': BraveSearchIcon,
-  'puppeteer': PuppeteerIcon,
-  'playwright': PlaywrightIcon,
+  'memory': MemoryIcon,
+  'git': GitIcon,
   'postgres': PostgresIcon,
   'postgresql': PostgresIcon,
   'sqlite': SQLiteIcon,
   'redis': RedisIcon,
+  'mongodb-mcp': MongoDBExtIcon,
+  // --- Browser / automation ---
+  'puppeteer': PuppeteerIcon,
+  'playwright': PlaywrightIcon,
+  'brave-search': BraveSearchIcon,
+  'desktop-commander': DesktopCommanderIcon,
+  'windows-mcp': WindowsMCPIcon,
+  // --- Design ---
+  'figma': FigmaIcon,
+  'figma-mcp': FigmaIcon,
+  // --- Voice / media ---
+  'elevenlabs': ElevenLabsIcon,
+  'elevenlabs-agents-mcp-app': ElevenLabsIcon,
+  'pdf-tools': PDFToolsIcon,
+  'pdf-tools---fill-analyze-extract-view': PDFToolsIcon,
+  // --- Monitoring ---
   'sentry': SentryIcon,
   'sentry-mcp': SentryIcon,
-  'memory': MemoryIcon,
-  'git': GitIcon,
+  // --- Google Workspace ---
+  'google-drive-mcp': GoogleDriveIcon,
+  'google-calendar-mcp': GoogleCalendarIcon,
+  'google-sheets-mcp': GoogleSheetsExtIcon,
+  'google-docs-mcp': GoogleDocsExtIcon,
+  'gmail-mcp': GmailIcon,
+  // --- Productivity ---
+  'notion-mcp': NotionIcon,
+  'obsidian-mcp': ObsidianExtIcon,
+  'todoist-mcp': TodoistExtIcon,
+  'raycast-mcp': RaycastExtIcon,
+  'linear-mcp': LinearExtIcon,
+  'asana-mcp': AsanaExtIcon,
+  'airtable-mcp': AirtableExtIcon,
+  // --- Data / analytics ---
+  'jupyter-mcp': JupyterExtIcon,
+  'dbt-mcp': DbtExtIcon,
+  'amplitude-mcp': AmplitudeExtIcon,
+  'mixpanel-mcp': MixpanelExtIcon,
+  // --- CRM / sales ---
+  'salesforce-mcp': SalesforceExtIcon,
+  'hubspot-mcp': HubSpotExtIcon,
+  'apollo-mcp': ApolloExtIcon,
+  'intercom-mcp': IntercomExtIcon,
+  // --- Comms ---
+  'slack-mcp': SlackIcon,
+  // --- Dev platforms ---
+  'github-mcp': GitHubIcon,
+  'vercel-mcp': VercelExtIcon,
+  'supabase-mcp': SupabaseExtIcon,
+  'firebase-mcp': FirebaseExtIcon,
+  'stripe-mcp': StripeExtIcon,
+  'zapier-mcp': ZapierExtIcon,
+  // --- AI / ML ---
+  'openai-mcp': OpenAIExtIcon,
+  'anthropic-mcp': AnthropicExtIcon,
+  'huggingface-mcp': HuggingFaceExtIcon,
+  'pinecone-mcp': PineconeExtIcon,
 }
 
 /** Get the right icon for a connector/runtime/extension by name. */

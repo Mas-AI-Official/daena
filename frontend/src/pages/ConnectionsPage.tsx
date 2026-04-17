@@ -622,7 +622,7 @@ function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpa
       // Attempt to create a connection instance with the provided key
       await api.post('/connections/instances', {
         connector_id: connector.id,
-        config: { api_key: apiKeyValue.trim() },
+        credentials: { api_key: apiKeyValue.trim() },
       })
       toast.success(`${connector.name} connected successfully`)
       setApiKeyValue('')
@@ -638,7 +638,20 @@ function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpa
       const res = await api.get(`/connectors/${connector.id}/oauth/authorize`)
       const data = res.data
       if (data?.error_type === 'oauth_not_configured') {
-        toast.error(`${connector.name} OAuth not configured. ${data.help || 'Contact admin.'}`)
+        // Upgraded 2026-04-16: previous error toast left the operator
+        // stuck ("OAuth not configured. Set the env variable") with no
+        // obvious next step. Now we name the missing field, open the
+        // Developer settings tab immediately so the operator lands on
+        // the right page, and leave the toast up for 15s so the
+        // missing-field name is readable while they fill it in.
+        const missing = data.missing_field || 'OAuth credentials'
+        toast.error(
+          `${connector.name} OAuth not configured. Missing: ${missing}. Opening Settings > Developer...`,
+          15_000,
+        )
+        setTimeout(() => {
+          window.location.href = '/settings?tab=developer'
+        }, 600)
         return
       }
       const authUrl = data?.authorization_url
@@ -670,9 +683,16 @@ function ConnectorRow({ connector, connected, instanceId, expanded, onToggleExpa
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       // Check if it's the config error
-      const axiosErr = err as { response?: { data?: { error_type?: string; help?: string } } }
+      const axiosErr = err as { response?: { data?: { error_type?: string; help?: string; missing_field?: string } } }
       if (axiosErr?.response?.data?.error_type === 'oauth_not_configured') {
-        toast.error(`${connector.name} OAuth not configured. ${axiosErr.response.data.help || 'Set credentials in .env file.'}`)
+        const missing = axiosErr.response.data.missing_field || 'OAuth credentials'
+        toast.error(
+          `${connector.name} OAuth not configured. Missing: ${missing}. Opening Settings > Developer...`,
+          15_000,
+        )
+        setTimeout(() => {
+          window.location.href = '/settings?tab=developer'
+        }, 600)
       } else {
         toast.error(`Failed to start OAuth: ${msg}`)
       }
