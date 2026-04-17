@@ -162,18 +162,45 @@ def test_agreement_partial_overlap() -> None:
 
 # ── Tests: response formatting ───────────────────────────────
 
-def test_format_responses() -> None:
-    """Responses are formatted with model info headers."""
+def test_format_responses_anonymized() -> None:
+    """Responses are anonymized (A/B/C) before the judge sees them.
+
+    Prevents the dictator-judge pattern where the judge anchors on its own
+    brand or a preferred debater. Regression test for the 2026-04-12 AIME
+    Q15 bug.
+    """
     responses = [
         _make_response("Answer A", "gpt-4", ModelProvider.OPENAI),
         _make_response("Answer B", "claude-3", ModelProvider.ANTHROPIC),
     ]
     formatted = CouncilEngine._format_responses(responses)
 
-    assert "Response 1 (from OPENAI/gpt-4)" in formatted
-    assert "Response 2 (from ANTHROPIC/claude-3)" in formatted
+    # Anonymous labels used
+    assert "Response A:" in formatted
+    assert "Response B:" in formatted
+    # Content preserved
     assert "Answer A" in formatted
     assert "Answer B" in formatted
+    # Model identities are HIDDEN -- judge must not know who said what
+    assert "gpt-4" not in formatted
+    assert "claude-3" not in formatted
+    assert "OPENAI" not in formatted
+    assert "ANTHROPIC" not in formatted
+
+
+def test_format_responses_anonymized_many() -> None:
+    """Anonymization scales past 3 responses (A..Z)."""
+    responses = [
+        _make_response(f"content-{i}", f"model-{i}", ModelProvider.OLLAMA)
+        for i in range(5)
+    ]
+    formatted = CouncilEngine._format_responses(responses)
+
+    for label in ["A", "B", "C", "D", "E"]:
+        assert f"Response {label}:" in formatted
+    # No model-N leakage
+    for i in range(5):
+        assert f"model-{i}" not in formatted
 
 
 def test_member_response_dataclass() -> None:

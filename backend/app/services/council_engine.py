@@ -43,19 +43,52 @@ logger = get_logger(__name__)
 # ── Synthesis prompt template ─────────────────────────────────
 
 _SYNTHESIS_SYSTEM_PROMPT = """\
-You are a synthesis expert. You have received responses from multiple \
-independent AI models to the same user query. Your task:
+You are the Council Judge. The responses below come from independent AI \
+models who do NOT know each other's answers. Your identity is NOT privileged: \
+you are a judge, not a debater. You did NOT produce these answers.
 
-1. Identify the key insights, facts, and reasoning from each response.
-2. Resolve any contradictions by choosing the most well-supported answer.
-3. Combine the best elements into a single, coherent, comprehensive response.
-4. If the models strongly disagree, note the disagreement and present \
-   the strongest position with caveats.
-5. Do NOT mention that you are synthesizing multiple responses. \
-   Write as if you are directly answering the user.
+HARD RULES (violations invalidate your verdict):
+1. Anonymity: responses are labeled A, B, C, ... -- identities are hidden on \
+   purpose. Do not guess which model wrote which response. Do not favor a \
+   response because it sounds like your style.
+2. PICK, don't INVENT: your verdict must be supported by at least one \
+   council response. You may combine compatible reasoning from multiple \
+   responses, but you may NOT introduce a new claim, number, name, or \
+   fact that no response contains. If every response is wrong, say so \
+   and explain the gap -- do not paper over it.
+3. Verify before you pick: for any claim that is verifiable (math, code \
+   correctness, cited facts), re-derive it briefly. If two responses give \
+   different numeric or factual answers, you MUST identify which derivation \
+   is correct and cite the specific step that decides it. Never pick by \
+   popularity or tone.
 
-Provide a clear, well-structured answer that represents the best \
-collective intelligence of all models."""
+YOUR DELIVERABLE has three parts, in this order:
+
+## DISAGREEMENT ANALYSIS
+What do the responses agree on? Where do they diverge? For each divergence, \
+state WHY they diverge (different assumption? different method? arithmetic \
+error? different interpretation of the prompt?). If they agree on everything \
+material, say so explicitly.
+
+## VERIFICATION
+For each divergent claim that matters, show a one-line verification: \
+re-derive the math, sanity-check the code, cross-reference the fact. If \
+verification is impossible from the information given, say so and label \
+the remaining uncertainty.
+
+## VERDICT
+The final answer for the user. Cite which response(s) your verdict comes \
+from using their anonymous labels (A, B, C, ...). Example: \
+"Verdict draws from Response B's derivation (verified correct in step 2 \
+above) with A's context framing." If no response is correct, say the answer \
+is unknown and explain what additional evidence would resolve it.
+
+End with: Confidence: N/10. Below 7 means something is unverified -- name \
+it in one sentence.
+
+Do NOT write prose that hides the disagreement. Do NOT pretend consensus. \
+Do NOT default to your own prior answer. Your job is to find the correct \
+answer inside the council, not to replace it with yours."""
 
 _SYNTHESIS_USER_TEMPLATE = """\
 Original user query:
@@ -67,7 +100,9 @@ Original user query:
 
 ---
 
-Synthesize these responses into one high-quality answer."""
+Produce your DISAGREEMENT ANALYSIS, VERIFICATION, and VERDICT in that order. \
+Anonymous labels only (A/B/C/...). Your verdict must be supported by at least \
+one of the council responses; if none are correct, say so explicitly."""
 
 
 # ── Data structures ───────────────────────────────────────────
@@ -95,6 +130,7 @@ class CouncilResult:
     members: list[MemberResponse] = field(default_factory=list)
     synthesizer_model: str = ""
     agreement_score: float = 0.0  # 0.0 = full disagreement, 1.0 = consensus
+    disagreement_value: float = 0.0  # How valuable the disagreement is (high = rich insight)
     total_cost_usd: float = 0.0
     total_latency_ms: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -123,9 +159,20 @@ class CouncilEngine:
     ) -> CouncilResult:
         """Merge multiple model responses into one synthesis.
 
-        The judge (Primary Mind) synthesizes the debate. It does NOT
-        participate as a debater. This ensures the user's chosen brain
-        always has the final word on Council decisions.
+        The judge (Primary Mind) is a CONSTRAINED SYNTHESIZER, not a dictator:
+          1. Responses are anonymized to A/B/C/... before the judge sees them
+             (see ``_format_responses``), so it cannot favor its own brand.
+          2. The judge must produce DISAGREEMENT ANALYSIS + VERIFICATION
+             before the VERDICT (see ``_SYNTHESIS_SYSTEM_PROMPT``), forcing
+             it to understand why members differ instead of replacing them.
+          3. The verdict must be grounded in at least one council response;
+             the judge may combine compatible reasoning but may not introduce
+             new claims. If every response is wrong, the judge must say so
+             rather than paper over the gap with its own prior answer.
+
+        Replaces the pre-2026-04-16 pattern where the judge had "the final
+        word" by silently generating a fresh answer, which caused the AIME
+        Q15 regression (Gemini's correct answer was discarded).
 
         Args:
             original_query: The user's original question.
@@ -229,17 +276,23 @@ class CouncilEngine:
         total_cost = member_cost + synthesis_cost
         elapsed = int((time.monotonic() - start) * 1000)
 
+        # Disagreement value: inverse of agreement, scaled by council size.
+        # Low agreement with many models = highly valuable disagreement.
+        disagreement_value = (1.0 - agreement) * min(len(responses) / 3.0, 1.0)
+
         result = CouncilResult(
             synthesis=synthesis_text,
             members=members,
             synthesizer_model=synthesizer_model_id,
             agreement_score=agreement,
+            disagreement_value=round(disagreement_value, 3),
             total_cost_usd=total_cost,
             total_latency_ms=elapsed,
             metadata={
                 "council_size": len(responses),
                 "synthesis_cost": synthesis_cost,
                 "member_cost": member_cost,
+                "disagreement_exploited": disagreement_value > 0.5,
             },
         )
 
@@ -257,11 +310,20 @@ class CouncilEngine:
 
     @staticmethod
     def _format_responses(responses: list[LLMResponse]) -> str:
-        """Format council responses for the synthesis prompt."""
+        """Format council responses for the synthesis prompt.
+
+        Responses are ANONYMIZED (A, B, C, ...) so the judge cannot anchor
+        on its own brand or a preferred debater. This is the first of three
+        defenses against the dictator-judge pattern that caused the 2026-04-12
+        AIME Q15 regression (where Gemini's correct answer was discarded
+        because the judge silently preferred its own derivation). The judge
+        sees no model_id or provider until after the verdict is committed.
+        """
         blocks: list[str] = []
-        for i, r in enumerate(responses, 1):
+        for i, r in enumerate(responses):
+            label = chr(ord("A") + i)  # A, B, C, ...
             blocks.append(
-                f"Response {i} (from {r.provider.value}/{r.model_id}):\n"
+                f"Response {label}:\n"
                 f"{r.content}"
             )
         return "\n\n---\n\n".join(blocks)
