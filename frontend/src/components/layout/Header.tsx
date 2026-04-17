@@ -8,7 +8,12 @@ import { useChatStore } from '@/stores/chatStore'
 import { useModelRegistryStore } from '@/stores/modelRegistryStore'
 import { CommandPalette } from '@/components/common/CommandPalette'
 import { useVoice } from '@/providers/VoiceProvider'
-import { RuntimeSwapper } from '@/components/chat/RuntimeSwapper'
+// RuntimeSwapper was re-mounted here in Session 2 (2026-04-16) and
+// removed in Session 9 (2026-04-17) after operator audit: it duplicated
+// the Mind Control tab on /connections + the per-message Model dropdown
+// in ChatInput. Primary Mind selection now lives in Connections > Mind
+// Control for setup, and ChatInput "Model:" handles per-message picks.
+// The RuntimeSwapper component file stays -- Mind Control may reuse it.
 import type { ChatMode, RoutingMode, GovernanceMode } from '@/types/api'
 
 /** Fire a PATCH to sync a session-level field to the backend (fire-and-forget). */
@@ -32,8 +37,6 @@ export const Header = memo(function Header() {
     autopilotActive,
     toggleAutopilot,
     notifications,
-    selectedRuntime,
-    setSelectedRuntime,
   } = useUiStore()
   const { user, logout } = useAuthStore()
   const registry = useModelRegistryStore((s) => s.registry)
@@ -203,19 +206,6 @@ export const Header = memo(function Header() {
           }`}>
             {governanceMode}
           </button>
-        </div>
-
-        {/* Primary Mind selector (reinstated): live runtime swap */}
-        <div className="hidden md:block w-px h-6 bg-white/10" />
-        <div className="hidden md:block">
-          <RuntimeSwapper
-            selectedRuntime={selectedRuntime}
-            onSelectRuntime={(runtimeId) => {
-              setSelectedRuntime(runtimeId)
-              syncSession({ default_runtime: runtimeId ?? 'auto' })
-              persistUiPref('default_runtime', runtimeId ?? 'auto')
-            }}
-          />
         </div>
       </div>
 
