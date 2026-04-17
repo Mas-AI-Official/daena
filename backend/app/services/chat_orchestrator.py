@@ -39,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 class _AgentLoopHandled(Exception):
     """Sentinel: AgentLoop already handled the task, skip single-shot runtime."""
 
-from app.core.constants import ChatMode, GovernanceSlider, RoutingMode
+from app.core.constants import ChatMode, GovernanceMode, GovernanceSlider, RoutingMode
 from app.core.logging import get_logger
 from app.models.chat import ChatMessage, ChatSession
 from app.services.chat import ChatService
@@ -183,7 +183,8 @@ class ChatOrchestrator:
         user_id: UUID,
         user_role: str = "OPERATOR",
         preferred_model: str | None = None,
-        governance_slider: str = "STANDARD",
+        governance_mode_str: str = "BALANCED",
+        governance_mode_override: str | None = None,
         routing_mode_override: str | None = None,
         action_mode_override: str | None = None,
     ) -> AsyncIterator[dict]:
@@ -217,6 +218,11 @@ class ChatOrchestrator:
             return
 
         user_content = last_user_msg.content
+
+        # Benchmark detection is consolidated at Stage 8. No early
+        # intercepts -- all messages go through security, governance,
+        # and routing first. Benchmark triggers are explicit commands
+        # detected by regex, handled alongside Council/QE synthesis.
 
         # ── Stage 0a: BehaviorGuard (session-aware, strategic defense) ──
         from app.services.security.behavior_guard import DefenseAction
@@ -265,15 +271,47 @@ class ChatOrchestrator:
         # ── Stage 0b: SecurityGate (stateless regex defense) ─────
         from app.services.security_gate import SecurityGate
 
-        scan = SecurityGate.scan(user_content)
-        if not scan.safe:
+        # Shield scan: ALWAYS runs (protects our IP/data in ALL modes)
+        shield_scan = SecurityGate.shield_scan(user_content)
+        if not shield_scan.safe:
             logger.warning(
-                "security_gate.blocked",
+                "security_gate.shield_blocked",
                 session_id=str(session_id),
-                pattern=scan.matched_pattern,
+                pattern=shield_scan.matched_pattern,
             )
             yield {"type": "error", "message": "Message blocked by security policy."}
             return
+
+        # Injection scan: only in BALANCED/GOVERNED modes
+        # Resolve governance mode: override > explicit param > app config > default
+        from app.core.config import get_settings as _get_settings
+        _gov_settings = _get_settings()
+        _gov_mode_raw = (
+            governance_mode_override
+            or governance_mode_str
+            or getattr(_gov_settings, "governance_mode", "BALANCED")
+        )
+        # Accept both GovernanceMode values (UNLEASHED/BALANCED/GOVERNED) and
+        # legacy GovernanceSlider values (YOLO/LIGHT/STANDARD/STRICT/PARANOID)
+        try:
+            governance_mode = GovernanceMode(_gov_mode_raw)
+        except ValueError:
+            # Legacy slider value -- convert via GovernanceSlider
+            try:
+                governance_mode = GovernanceSlider(_gov_mode_raw).to_governance_mode()
+            except ValueError:
+                governance_mode = GovernanceMode.BALANCED
+
+        if governance_mode != GovernanceMode.UNLEASHED:
+            scan = SecurityGate.scan(user_content)
+            if not scan.safe:
+                logger.warning(
+                    "security_gate.blocked",
+                    session_id=str(session_id),
+                    pattern=scan.matched_pattern,
+                )
+                yield {"type": "error", "message": "Message blocked by security policy."}
+                return
 
         # ── Stage 1: Load session + context ───────────────────
         session_stmt = select(ChatSession).where(ChatSession.id == session_id)
@@ -297,10 +335,11 @@ class ChatOrchestrator:
         )
         routing_mode = requested_routing_mode
 
-        # Council/Quintessence: require minimum 2 selectable models.
-        # Council requires 2+ models (multi-model debate).
-        # Quintessence works with 1 model (sequential DCP expert lenses).
+        # Council requires 2+ selectable models for multi-model debate.
+        # If fewer than 2, downgrade to STANDARD with governance notice.
+        # Quintessence works with 1+ (sequential DCP lenses on single model).
         _mode_downgraded = False
+        _original_mode = routing_mode.value
         if routing_mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE):
             selectable_count = 0
             if self._registry:
@@ -321,8 +360,13 @@ class ChatOrchestrator:
                 )
                 routing_mode = RoutingMode.STANDARD
                 _mode_downgraded = True
-            # Quintessence: if only 1 model, keep QUINTESSENCE mode.
-            # Stage 8 will apply DCP expert prompts sequentially to the single model.
+
+        # Council is now aliased to Quintessence (Council removed from UI,
+        # Quintessence is strictly better: Council + DCP expert injection).
+        # Keep the alias for backward compatibility with stored sessions.
+        # Only applies if Council was NOT downgraded to Standard above.
+        if routing_mode == RoutingMode.COUNCIL:
+            routing_mode = RoutingMode.QUINTESSENCE
 
         autopilot = getattr(session_obj, "autopilot", False) or False
         think_mode = getattr(session_obj, "think_mode", False) or False
@@ -339,8 +383,13 @@ class ChatOrchestrator:
         except Exception:
             logger.debug("orchestrator.primary_mind_lookup_failed", exc_info=True)
 
-        # Build system prompt
-        system_prompt = _SYSTEM_PROMPT_DEFAULT
+        # Build system prompt -- soul first (highest LLM attention priority)
+        from app.services.soul_engine import SoulEngine
+
+        _soul_prefix = SoulEngine.get_soul_prompt(governance_mode.value)
+        system_prompt = (
+            (_soul_prefix + "\n\n") if _soul_prefix else ""
+        ) + _SYSTEM_PROMPT_DEFAULT
         if session_obj.department_id:
             dept_name = None
             with contextlib.suppress(Exception):
@@ -360,39 +409,16 @@ class ChatOrchestrator:
                 "Never say you cannot do something; say it requires EXE mode."
             )
         elif chat_mode == ChatMode.EXE:
-            # Check if DaenaBot bridge is connected (gives access to user's machine)
-            _bridge_connected = False
-            try:
-                from app.api.v1.bridge import get_bridge_manager
-                _bridge_connected = get_bridge_manager().is_connected(user_id)
-            except Exception:
-                pass
-
-            if _bridge_connected:
-                system_prompt += (
-                    "\n\nMODE: EXE (execution enabled, DaenaBot connected). "
-                    "You have FULL access to the user's computer via DaenaBot. "
-                    "You can read/write files, run terminal commands, control their desktop, "
-                    "use their browser, and access any CLI tool installed on their machine. "
-                    "When you need to do something, call the appropriate tool immediately. "
-                    "Do NOT guess, do NOT ask for permission. USE YOUR TOOLS.\n\n"
-                )
-            else:
-                system_prompt += (
-                    "\n\nMODE: EXE (execution enabled, cloud-only). "
-                    "You can use cloud tools: web search, HTTP requests, email (Gmail), "
-                    "calendar, Notion, and other API-based integrations. "
-                    "IMPORTANT: You do NOT currently have access to the user's computer "
-                    "(their files, terminal, desktop, local CLI tools). "
-                    "If the user asks you to do something that requires their computer "
-                    "(read local files, run commands, control desktop, use Gemini CLI, etc.), "
-                    "tell them warmly: 'I would love to do that! To access your computer, "
-                    "I need my hands installed locally. Go to **Connections** in the sidebar "
-                    "and install **DaenaBot**. It takes 30 seconds, and then I can do everything "
-                    "on your machine.' "
-                    "Do NOT pretend you can access their computer. Do NOT ask for file paths "
-                    "you cannot reach. Be honest about what you can and cannot do right now.\n\n"
-                )
+            system_prompt += (
+                "\n\nMODE: EXE (execution enabled). "
+                "You have FULL execution capabilities via DaenaBot. "
+                "You can read/write files, run terminal commands, execute scripts, "
+                "control the browser, send emails, manage calendar, search the web, "
+                "make HTTP requests, run Python code, and use any CLI tool. "
+                "When the user asks you to DO something, DO IT IMMEDIATELY. "
+                "Call the appropriate tool. Do NOT explain what you would do. "
+                "Do NOT ask for permission. Do NOT say you cannot. EXECUTE.\n\n"
+            )
 
             system_prompt += (
                 "TOOL CALLING FORMAT: To call a tool, output a JSON block like this:\n"
@@ -497,7 +523,7 @@ class ChatOrchestrator:
             user_id=str(user_id),
             tenant_id=str(tenant_id),
             execution_mode=chat_mode,
-            governance_slider=GovernanceSlider(governance_slider),
+            governance_mode=governance_mode,
         )
         qu_result = qu_service.analyze(qu_input)
 
@@ -552,70 +578,113 @@ class ChatOrchestrator:
         )
 
         # ── Stage 3: Governance pre-check ─────────────────────
-        yield {"type": "thinking", "stage": "governance"}
+        # governance_mode was resolved in Stage 0b above.
 
-        from app.services.governance import GovernanceEngine
+        if governance_mode == GovernanceMode.UNLEASHED:
+            # UNLEASHED: Skip governance entirely. Shield handles protection.
+            # Only shield hard laws (5+7) checked. Everything else: raw power.
+            governance_tier = 0
+            gov_result = {
+                "allowed": True,
+                "governance_tier": 0,
+                "message": "UNLEASHED mode -- governance bypassed, shield active",
+            }
+            logger.info(
+                "orchestrator.governance_unleashed",
+                session_id=str(session_id),
+            )
 
-        gov = GovernanceEngine(self._db)
-        gov_result = await gov.evaluate(
-            action_type="LLM_CALL",
-            action_params={
-                "intent": qu_result.intent.value,
-                "risk": qu_result.risk_level.value,
-                "model": preferred_model,
-                "routing_mode": routing_mode.value,
-            },
-            governance_slider=governance_slider,
-            actor_type="USER",
-            actor_role=user_role,
-            tenant_id=tenant_id,
-            user_id=user_id,
-            session_id=session_id,
-            autopilot=autopilot,
-        )
+        elif governance_mode == GovernanceMode.BALANCED:
+            # BALANCED: Run governance but auto-approve tiers 0-2.
+            yield {"type": "thinking", "stage": "governance"}
 
-        if not gov_result.get("allowed", True):
-            reason = gov_result.get("message", "Action not permitted by governance policy.")
+            from app.services.governance import GovernanceEngine
 
-            # When requires_approval=True (tier 3+), persist an approval record
-            # so the approvals page shows the blocked task waiting for human review.
-            if gov_result.get("requires_approval", False):
-                try:
-                    from app.services.approval import ApprovalService
+            gov = GovernanceEngine(self._db)
+            gov_result = await gov.evaluate(
+                action_type="LLM_CALL",
+                action_params={
+                    "intent": qu_result.intent.value,
+                    "risk": qu_result.risk_level.value,
+                    "model": preferred_model,
+                    "routing_mode": routing_mode.value,
+                },
+                governance_slider=governance_mode.value,
+                actor_type="USER",
+                actor_role=user_role,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                session_id=session_id,
+                autopilot=True,  # Force auto-approve in BALANCED
+            )
+            governance_tier = gov_result.get("governance_tier", 0)
 
-                    approval_svc = ApprovalService(self._db)
-                    approval_record = await approval_svc.request_approval(
-                        tenant_id=tenant_id,
-                        user_id=user_id,
-                        action_type=gov_result.get("action_type", "LLM_CALL"),
-                        action_params=gov_result.get("action_params"),
-                        risk_level=gov_result.get("risk_level", "HIGH"),
-                        governance_tier=gov_result.get("governance_tier", 3),
-                        session_id=session_id,
-                        context={
-                            "intent": qu_result.intent.value,
-                            "message_preview": user_content[:200],
-                            "governance_message": reason,
-                        },
-                    )
-                    await self._db.commit()
-                    yield {
-                        "type": "approval_required",
-                        "approval_id": approval_record["id"],
-                        "message": reason,
-                        "governance_tier": gov_result.get("governance_tier", 3),
-                    }
-                except Exception as _approval_exc:
-                    logger.error(
-                        "orchestrator.approval_record_failed",
-                        exc_info=True,
-                    )
+        else:
+            # GOVERNED: Full 10-stage pipeline (enterprise mode, unchanged)
+            yield {"type": "thinking", "stage": "governance"}
+
+            from app.services.governance import GovernanceEngine
+
+            gov = GovernanceEngine(self._db)
+            gov_result = await gov.evaluate(
+                action_type="LLM_CALL",
+                action_params={
+                    "intent": qu_result.intent.value,
+                    "risk": qu_result.risk_level.value,
+                    "model": preferred_model,
+                    "routing_mode": routing_mode.value,
+                },
+                governance_slider=governance_mode.value,
+                actor_type="USER",
+                actor_role=user_role,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                session_id=session_id,
+                autopilot=autopilot,
+            )
+
+            if not gov_result.get("allowed", True):
+                reason = gov_result.get("message", "Action not permitted by governance policy.")
+
+                # When requires_approval=True (tier 3+), persist an approval record
+                # so the approvals page shows the blocked task waiting for human review.
+                if gov_result.get("requires_approval", False):
+                    try:
+                        from app.services.approval import ApprovalService
+
+                        approval_svc = ApprovalService(self._db)
+                        approval_record = await approval_svc.request_approval(
+                            tenant_id=tenant_id,
+                            user_id=user_id,
+                            action_type=gov_result.get("action_type", "LLM_CALL"),
+                            action_params=gov_result.get("action_params"),
+                            risk_level=gov_result.get("risk_level", "HIGH"),
+                            governance_tier=gov_result.get("governance_tier", 3),
+                            session_id=session_id,
+                            context={
+                                "intent": qu_result.intent.value,
+                                "message_preview": user_content[:200],
+                                "governance_message": reason,
+                            },
+                        )
+                        await self._db.commit()
+                        yield {
+                            "type": "approval_required",
+                            "approval_id": approval_record["id"],
+                            "message": reason,
+                            "governance_tier": gov_result.get("governance_tier", 3),
+                        }
+                    except Exception as _approval_exc:
+                        logger.error(
+                            "orchestrator.approval_record_failed",
+                            exc_info=True,
+                        )
+                        yield {"type": "error", "message": reason}
+                else:
                     yield {"type": "error", "message": reason}
-            else:
-                yield {"type": "error", "message": reason}
-            return
+                return
 
-        governance_tier = gov_result.get("governance_tier", 0)
+            governance_tier = gov_result.get("governance_tier", 0)
 
         # Emit governance notification for visibility
         gov_message = gov_result.get("message", "")
@@ -629,16 +698,16 @@ class ChatOrchestrator:
         elif autopilot_override:
             gov_message = (
                 f"AGI auto-approved (tier {governance_tier}, "
-                f"slider: {governance_slider})"
+                f"mode: {governance_mode.value})"
             )
         elif autopilot and governance_tier >= 3:
             gov_message = (
                 f"AGI mode ON but tier {governance_tier} requires human approval "
-                f"(slider: {governance_slider}, risk: {gov_result.get('risk_level', 'unknown')})"
+                f"(mode: {governance_mode.value}, risk: {gov_result.get('risk_level', 'unknown')})"
             )
 
-        # In AGI ON mode, governance is invisible — only emit notices for
-        # mode downgrades or genuinely blocked actions (hard laws).
+        # In AGI ON mode, governance is invisible -- only emit notices for
+        # mode downgrades or genuinely blocked actions (hard laws / tier 2+).
         # The audit log still records everything, but the user isn't interrupted.
         _should_notify = (
             _mode_downgraded
@@ -649,7 +718,7 @@ class ChatOrchestrator:
                 "type": "governance_notice",
                 "tier": governance_tier,
                 "message": gov_message,
-                "slider": governance_slider,
+                "governance_mode": governance_mode.value,
                 "autopilot": autopilot,
                 "autopilot_override": autopilot_override,
             }
@@ -993,6 +1062,19 @@ class ChatOrchestrator:
         except Exception:
             logger.debug("orchestrator.skill_retrieval_failed", exc_info=True)
 
+        # ── Stage 6.6: Filesystem skills (OpenClaw pattern) ─────
+        # Inject a compact manifest of SKILL.md-based skills so the
+        # LLM knows what actionable skills are available.  These
+        # complement the DB-backed Skill Refinery skills above.
+        try:
+            from app.services.skills.skill_loader import get_skill_manifest
+            fs_manifest = get_skill_manifest()
+            if fs_manifest:
+                system_prompt += fs_manifest
+                logger.info("orchestrator.fs_skills_injected", chars=len(fs_manifest))
+        except Exception:
+            logger.debug("orchestrator.fs_skill_loader_failed", exc_info=True)
+
         # ── Stage 6.5: TLM Phase-Aware Tool Optimization ────────
         # Detect conversation phase from user message (zero LLM cost),
         # activate/deactivate tools to minimize schema tokens loaded.
@@ -1001,6 +1083,37 @@ class ChatOrchestrator:
             _tlm_context = optimize_tools_for_turn(str(session_id), user_content)
         except Exception:
             _tlm_context = None  # TLM is non-critical
+
+        # ── Stage 6.7: Cognitive Lens router ──────────────────
+        # Fire complexity-adaptive cognitive lenses (first-principles,
+        # inversion, consequence-chain) and inject their prompt
+        # fragments as "Cognitive Notes" in the system prompt so every
+        # Council debater and every Quintessence expert sees the same
+        # framing. Zero LLM cost; <150ms budget; skipped entirely for
+        # simple conversational turns. Closes the Mythos gap documented
+        # in docs/ARCHITECTURE.md Section 11.
+        try:
+            from app.services.cognition.lens_router import (
+                apply_lenses,
+                format_cognitive_notes,
+            )
+            _lens_results = await apply_lenses(
+                query=user_content,
+                intent=qu_result.intent.value,
+                complexity=qu_result.complexity_label.value,
+                risk=qu_result.risk_level.value,
+            )
+            if _lens_results:
+                _notes = format_cognitive_notes(_lens_results)
+                if _notes:
+                    system_prompt += _notes
+                    logger.info(
+                        "orchestrator.cognitive_lens_injected",
+                        lenses=[r.name for r in _lens_results],
+                        chars=len(_notes),
+                    )
+        except Exception:
+            logger.debug("orchestrator.cognitive_lens_failed", exc_info=True)
 
         # ── Stage 7: Build LLM request ────────────────────────
         llm_messages = []
@@ -1049,11 +1162,65 @@ class ChatOrchestrator:
         daenabot_result = None
         _last_tool_name: str | None = None
         _last_tool_desc: str | None = None
-        _skip_agent_loop = decision.mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE)
-        if chat_mode == ChatMode.EXE and not _skip_agent_loop:
+
+        # DaenaBot dispatch runs in EXE mode regardless of routing mode.
+        # Council/Quintessence handle REASONING synthesis; DaenaBot handles EXECUTION.
+        # They are complementary, not competing. Benchmark detection is handled
+        # at Stage 8 (consolidated), so no bypass flag is needed here.
+        if chat_mode == ChatMode.EXE:
             from app.core.config import get_settings
 
             settings = get_settings()
+
+            # ── FAST-PATH: Direct DaenaBot patterns that must bypass OODA ──
+            # Certain exact-match patterns (/3vilbob toggle, slash-prefixed commands)
+            # should route directly to DaenaBot to avoid the cognitive engine
+            # handing them off to runtimes that don't understand them.
+            _fast_path_tool = None
+            try:
+                import re as _re
+                _user_lower = user_content.strip()
+                # /3vilbob toggle/status patterns short-circuit to DaenaBot router
+                if _re.match(r"^/3vilbob\s+(on|off|status)\s*$", _user_lower, _re.IGNORECASE):
+                    from app.services.daenabot.router import DaenaBotRouter
+                    _fast_path_tool = DaenaBotRouter.match(user_content)
+                # Bare /3vilbob <domain> also short-circuits to offensive scan
+                elif _re.match(r"^/3vilbob\s+[\w.\-]+\.\w+", _user_lower, _re.IGNORECASE):
+                    from app.services.daenabot.router import DaenaBotRouter
+                    _fast_path_tool = DaenaBotRouter.match(user_content)
+            except Exception:
+                _fast_path_tool = None
+
+            # If fast-path matched, dispatch directly and skip cognitive engine
+            if _fast_path_tool is not None:
+                try:
+                    from app.services.execution_service import ExecutionService
+                    _exec_svc = ExecutionService(self._db)
+                    _fp_result = await _exec_svc.execute_tool(
+                        tool_name=_fast_path_tool.tool_name,
+                        params=_fast_path_tool.params,
+                        session_id=session_id,
+                        user_id=user_id,
+                        tenant_id=tenant_id,
+                        governance_mode="UNLEASHED",
+                        actor_role="FOUNDER",
+                    )
+                    daenabot_result = {
+                        "status": "COMPLETED" if _fp_result.get("success") else "FAILED",
+                        "result": _fp_result,
+                    }
+                    _last_tool_name = _fast_path_tool.tool_name
+                    _last_tool_desc = _fast_path_tool.description
+                    # Yield a visible event so the chat shows the result
+                    yield {
+                        "type": "tool_use_response",
+                        "tool_name": _fast_path_tool.tool_name,
+                        "content": str(_fp_result.get("output", _fp_result.get("error", "Done."))),
+                    }
+                    logger.info("orchestrator.fast_path_dispatched", tool=_fast_path_tool.tool_name)
+                except Exception as fp_exc:
+                    logger.warning("orchestrator.fast_path_failed", error=str(fp_exc))
+                    # Fall through to cognitive engine if fast-path dispatch fails
 
             # ── PRIMARY: Cognitive Engine (OODA-R Loop) ──
             # Uses the 25-framework brain with loop detection, tool classification,
@@ -1061,7 +1228,10 @@ class ChatOrchestrator:
             try:
                 from app.services.cognition.ooda_engine import OODAEngine
 
-                _agi_on = getattr(settings, "autopilot_enabled", False)
+                # Read autopilot from the session (set by user toggle), NOT app config.
+                # Previous code used getattr(settings, "autopilot_enabled", False)
+                # which always returned False because app config has no such field.
+                _agi_on = autopilot  # from session_obj.autopilot (line ~353)
                 cognitive = OODAEngine(
                     db=self._db,
                     user_id=user_id,
@@ -1077,7 +1247,7 @@ class ChatOrchestrator:
                     task=user_content,
                     context={"governance_tier": governance_tier},
                     messages=llm_messages,
-                    system_prompt=final_system_prompt,
+                    system_prompt=system_prompt,
                     model_id=decision.primary.model_id,
                     provider=decision.primary.provider.value,
                 ):
@@ -1111,15 +1281,24 @@ class ChatOrchestrator:
                 # Fall through to legacy cascade
 
             # ── FALLBACK: Legacy cascade (only if cognitive engine didn't handle it) ──
-            # Check if task is complex enough for multi-step execution
+            # In EXE mode, ALWAYS attempt agentic execution.  The previous
+            # threshold (>2 action verbs or >50 words) was too restrictive --
+            # simple commands like "read my files" or "send email" were skipped
+            # entirely, leaving the user with zero execution.
             _use_agent_loop = False
             if daenabot_result is None:
                 _multi_step_verbs = ("create", "write", "read", "search", "find", "fix",
                                      "test", "run", "deploy", "build", "update", "delete",
                                      "draft", "save", "generate", "analyze", "audit",
-                                     "email", "schedule", "research", "review", "check")
+                                     "email", "schedule", "research", "review", "check",
+                                     "open", "close", "send", "download", "upload", "install",
+                                     "scan", "browse", "navigate", "click", "type", "move",
+                                     "copy", "rename", "list", "show", "get", "set", "make",
+                                     "help", "do", "execute", "start", "stop", "restart")
                 _verb_count = sum(1 for w in user_content.lower().split() if w in _multi_step_verbs)
-                if _verb_count > 2 or len(user_content.split()) > 50:
+                # EXE mode: always attempt execution when ANY action verb is detected
+                # (or if the message is long enough to contain implicit instructions)
+                if _verb_count >= 1 or len(user_content.split()) > 15:
                     _use_agent_loop = True
 
             if _use_agent_loop and daenabot_result is None:
@@ -1141,7 +1320,7 @@ class ChatOrchestrator:
                         # Auto-detect if a new department is needed
                         try:
                             from app.services.dynamic_departments import auto_detect_and_create
-                            new_dept = await auto_detect_and_create(user_content, self.db, tenant_id)
+                            new_dept = await auto_detect_and_create(user_content, self._db, tenant_id)
                             if new_dept:
                                 yield {
                                     "type": "thinking",
@@ -1153,7 +1332,7 @@ class ChatOrchestrator:
                             pass  # Non-critical: dynamic dept creation is best-effort
 
                         # Route subtasks to department agents
-                        dept_router = DepartmentRouter(self.db, tenant_id)
+                        dept_router = DepartmentRouter(self._db, tenant_id)
                         await dept_router.load_agents()
                         await dept_router.route_subtasks(subtasks)
 
@@ -1167,16 +1346,18 @@ class ChatOrchestrator:
                         # Execute subtasks in parallel via SwarmExecutor
                         executor = SwarmExecutor(_rt_reg)
                         exec_output_lines: list[str] = []
-                        async for receipt in executor.execute_plan(subtasks):
+                        _receipts = await executor.execute_plan(subtasks)
+                        for receipt in _receipts:
+                            _r = receipt if isinstance(receipt, dict) else vars(receipt) if hasattr(receipt, "__dict__") else {"status": str(receipt)}
                             yield {
                                 "type": "daenabot_activity",
-                                "agent": receipt.get("runtime_id", "swarm"),
-                                "operation": receipt.get("subtask_id", ""),
-                                "status": receipt.get("status", "running"),
-                                "description": receipt.get("description", "")[:200],
+                                "agent": _r.get("runtime_id", "swarm"),
+                                "operation": _r.get("subtask_id", ""),
+                                "status": _r.get("status", "running"),
+                                "description": str(_r.get("description", ""))[:200],
                             }
-                            if receipt.get("output"):
-                                exec_output_lines.append(str(receipt["output"])[:1000])
+                            if _r.get("output"):
+                                exec_output_lines.append(str(_r["output"])[:1000])
 
                         completed = sum(1 for st in subtasks if st.status == "complete")
                         failed = sum(1 for st in subtasks if st.status == "failed")
@@ -1394,7 +1575,7 @@ class ChatOrchestrator:
                             session_id=session_id,
                             user_id=user_id,
                             tenant_id=tenant_id,
-                            governance_slider=governance_slider,
+                            governance_mode=governance_mode.value,
                             actor_role=user_role,
                         )
 
@@ -1443,7 +1624,91 @@ class ChatOrchestrator:
                             "result": {"success": False, "error": str(exc)},
                         }
 
-                # Step B: no single-step match, try multi-step planner
+                # Step B: ToolUseLoop -- THE autonomous brain (like OpenClaw/Claude Code)
+                # This is the PRIMARY execution path. Let the LLM decide what tools
+                # to call via its tool-calling protocol. Moved BEFORE the regex planner
+                # because this is the most capable and flexible executor.
+                if daenabot_result is None and chat_mode == ChatMode.EXE:
+                    try:
+                        from app.services.tool_use_loop import ToolUseLoop
+
+                        tool_loop = ToolUseLoop(
+                            db=self._db,
+                            user_id=user_id,
+                            tenant_id=tenant_id,
+                            agi_mode=autopilot,
+                            session_id=session_id,
+                        )
+
+                        tool_loop_events: list[dict] = []
+                        tool_loop_response = ""
+
+                        async for event in tool_loop.run(
+                            messages=llm_messages,
+                            system_prompt=request.system_prompt if hasattr(request, "system_prompt") else "",
+                            model_id=decision.primary.model_id,
+                            provider=decision.primary.provider.value,
+                        ):
+                            if event.get("type") == "tool_call":
+                                yield {
+                                    "type": "daenabot_activity",
+                                    "agent": event["tool"].split(".")[0].capitalize() + "Agent",
+                                    "operation": event["tool"],
+                                    "status": "executing",
+                                    "description": f"Calling {event['tool']}",
+                                    "step": event.get("iteration", 1),
+                                }
+                                _last_tool_name = event["tool"]
+
+                            elif event.get("type") == "tool_result":
+                                yield {
+                                    "type": "daenabot_activity",
+                                    "agent": event["tool"].split(".")[0].capitalize() + "Agent",
+                                    "operation": event["tool"],
+                                    "status": "completed" if event.get("success") else "failed",
+                                    "description": str(event.get("result", {}))[:200],
+                                }
+
+                            elif event.get("type") == "tool_use_response":
+                                tool_loop_response = event.get("content", "")
+
+                            elif event.get("type") == "tool_loop_complete":
+                                logger.info(
+                                    "orchestrator.tool_loop_complete",
+                                    total_calls=event.get("total_calls", 0),
+                                    tools_used=event.get("tools_used", []),
+                                )
+
+                            elif event.get("type") == "loop_detected":
+                                yield {
+                                    "type": "daenabot_activity",
+                                    "agent": "ToolLoop",
+                                    "operation": "loop_detection",
+                                    "status": "warning",
+                                    "description": event.get("message", "Loop detected"),
+                                }
+
+                            tool_loop_events.append(event)
+
+                        if tool_loop_response:
+                            # The tool loop produced a final response -- stream it directly
+                            for i in range(0, len(tool_loop_response), 20):
+                                yield {"type": "chunk", "content": tool_loop_response[i:i + 20]}
+                            collected_content = tool_loop_response
+                            daenabot_result = {
+                                "status": "COMPLETED",
+                                "result": {"success": True, "source": "tool_use_loop"},
+                            }
+                            _last_tool_desc = "Autonomous tool-use loop"
+
+                    except Exception as tul_exc:
+                        logger.warning(
+                            "orchestrator.tool_loop_failed",
+                            error=str(tul_exc),
+                        )
+                        # Fall through to legacy planner
+
+                # Step C: Legacy multi-step regex planner (fallback if ToolUseLoop failed)
                 if daenabot_result is None:
                     try:
                         from app.services.daenabot.planner import ActionPlanner
@@ -1484,7 +1749,7 @@ class ChatOrchestrator:
                                         session_id=session_id,
                                         user_id=user_id,
                                         tenant_id=tenant_id,
-                                        governance_slider=governance_slider,
+                                        governance_mode=governance_mode.value,
                                         actor_role=user_role,
                                     )
 
@@ -1553,88 +1818,7 @@ class ChatOrchestrator:
                             error=str(plan_exc),
                         )
 
-                # Step C: ToolUseLoop -- the agentic brain (like OpenClaw/Claude Code)
-                # If regex and planner both missed, let the LLM decide what tools to call.
-                # This is THE difference between a chatbot and an AI operating system.
-                if daenabot_result is None and chat_mode == ChatMode.EXE:
-                    try:
-                        from app.services.tool_use_loop import ToolUseLoop
-
-                        tool_loop = ToolUseLoop(
-                            db=self._db,
-                            user_id=user_id,
-                            tenant_id=tenant_id,
-                            agi_mode=autopilot,
-                            session_id=session_id,
-                        )
-
-                        tool_loop_events: list[dict] = []
-                        tool_loop_response = ""
-
-                        async for event in tool_loop.run(
-                            messages=llm_messages,
-                            system_prompt=request.system_prompt if hasattr(request, "system_prompt") else "",
-                            model_id=decision.primary.model_id,
-                            provider=decision.primary.provider.value,
-                        ):
-                            if event.get("type") == "tool_call":
-                                yield {
-                                    "type": "daenabot_activity",
-                                    "agent": event["tool"].split(".")[0].capitalize() + "Agent",
-                                    "operation": event["tool"],
-                                    "status": "executing",
-                                    "description": f"Calling {event['tool']}",
-                                    "step": event.get("iteration", 1),
-                                }
-                                _last_tool_name = event["tool"]
-
-                            elif event.get("type") == "tool_result":
-                                yield {
-                                    "type": "daenabot_activity",
-                                    "agent": event["tool"].split(".")[0].capitalize() + "Agent",
-                                    "operation": event["tool"],
-                                    "status": "completed" if event.get("success") else "failed",
-                                    "description": str(event.get("result", {}))[:200],
-                                }
-
-                            elif event.get("type") == "tool_use_response":
-                                tool_loop_response = event.get("content", "")
-
-                            elif event.get("type") == "tool_loop_complete":
-                                logger.info(
-                                    "orchestrator.tool_loop_complete",
-                                    total_calls=event.get("total_calls", 0),
-                                    tools_used=event.get("tools_used", []),
-                                )
-
-                            elif event.get("type") == "loop_detected":
-                                yield {
-                                    "type": "daenabot_activity",
-                                    "agent": "ToolLoop",
-                                    "operation": "loop_detection",
-                                    "status": "warning",
-                                    "description": event.get("message", "Loop detected"),
-                                }
-
-                            tool_loop_events.append(event)
-
-                        if tool_loop_response:
-                            # The tool loop produced a final response -- stream it directly
-                            for i in range(0, len(tool_loop_response), 20):
-                                yield {"type": "chunk", "content": tool_loop_response[i:i + 20]}
-                            collected_content = tool_loop_response
-                            # Skip the normal LLM streaming stage
-                            daenabot_result = {
-                                "status": "COMPLETED",
-                                "result": {"success": True, "source": "tool_use_loop"},
-                            }
-                            _last_tool_desc = "Autonomous tool-use loop"
-
-                    except Exception as tul_exc:
-                        logger.debug(
-                            "orchestrator.tool_loop_skipped",
-                            error=str(tul_exc),
-                        )
+                # (ToolUseLoop moved to Step B above -- runs BEFORE regex planner)
 
         # Inject DaenaBot result into LLM context if we executed a tool
         if daenabot_result is not None:
@@ -1674,10 +1858,138 @@ class ChatOrchestrator:
             model_id = _quota_fallback_model
 
         # For COUNCIL/QUINTESSENCE: multi-model parallel + synthesis
+        # CLI Benchmark: ONLY when user explicitly requests a benchmark
+        # (not for normal QE messages). Benchmark triggers are explicit
+        # commands like "run the benchmark suite" or "run intelligence
+        # benchmark", detected by regex in cli_benchmark.py.
+        _cli_benchmark_used = False
         if _tool_loop_handled:
             # Tool-use loop already streamed the response -- skip LLM generation
             pass
-        elif decision.mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE):
+        elif decision.mode == RoutingMode.QUINTESSENCE:
+            # Check if this is a benchmark trigger (explicit command only)
+            try:
+                from app.services.benchmarks.cli_benchmark import (
+                    CLIBenchmarkService,
+                    is_benchmark_suite_trigger,
+                    is_intelligence_benchmark_trigger,
+                )
+
+                _is_suite = is_benchmark_suite_trigger(user_content)
+                _is_intelligence = is_intelligence_benchmark_trigger(user_content)
+
+                if _is_suite or _is_intelligence:
+                    import shutil as _sh2
+
+                    _available_clis = [
+                        rid for rid, cmd in [
+                            ("claude_code", "claude"),
+                            ("codex", "codex"),
+                            ("gemini_cli", "gemini"),
+                        ]
+                        if _sh2.which(cmd)
+                    ]
+
+                    if len(_available_clis) >= 2:
+                        _cli_bench = CLIBenchmarkService()
+                        _cli_benchmark_used = True
+
+                        logger.info(
+                            "orchestrator.cli_benchmark_active",
+                            clis=_available_clis,
+                            prompt=user_content[:100],
+                            suite=_is_suite,
+                            intelligence=_is_intelligence,
+                        )
+
+                        if _is_intelligence:
+                            # Intelligence benchmark (pipeline ON vs OFF) -- background
+                            import json as _json_bench
+                            from pathlib import Path as _Path_bench
+
+                            from app.services.benchmarks.cli_benchmark import (
+                                run_intelligence_benchmark_streaming,
+                            )
+                            from app.services.model_registry import ModelRegistry
+
+                            _bench_registry = ModelRegistry()
+                            await _bench_registry.initialize()
+
+                            _results_file = _Path_bench("D:/Ideas/Daena/backend/intelligence_benchmark_results.json")
+
+                            async def _run_benchmark_bg():
+                                _report = ""
+                                _event_count = 0
+                                try:
+                                    async for event in run_intelligence_benchmark_streaming(
+                                        _bench_registry, think_mode=True, full_power=True,
+                                    ):
+                                        _event_count += 1
+                                        if event.get("type") == "chunk":
+                                            _report += event.get("content", "")
+                                except Exception as exc:
+                                    logger.error("benchmark.bg_failed", error=str(exc))
+                                finally:
+                                    _results_file.write_text(
+                                        _json_bench.dumps({
+                                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                            "status": "complete" if _report else "failed",
+                                            "events": _event_count,
+                                            "report": _report,
+                                        }, indent=2, ensure_ascii=False),
+                                        encoding="utf-8",
+                                    )
+                                    if _report:
+                                        try:
+                                            from app.core.database import async_session_factory
+                                            async with async_session_factory() as _bg_db:
+                                                _bg_svc = ChatService(_bg_db)
+                                                await _bg_svc.add_message(
+                                                    session_id=session_id,
+                                                    role="ASSISTANT",
+                                                    content=_report,
+                                                    model="quintessence-pipeline",
+                                                    provider="daena-intelligence",
+                                                )
+                                                await _bg_db.commit()
+                                        except Exception as save_exc:
+                                            logger.warning("benchmark.bg_save_msg_failed", error=str(save_exc))
+
+                            asyncio.create_task(_run_benchmark_bg())
+
+                            _launch_msg = (
+                                "## Intelligence Benchmark Launched\n\n"
+                                "The benchmark is now running **in the background** with:\n"
+                                "- **Judge**: Claude Opus 4.6 (claude-code-cli)\n"
+                                "- **Pipeline**: Full Laevateinn 13-stage + Quintessence\n"
+                                "- **Suites**: AIME, TruthfulQA, GSM-Symbolic, GPQA-Diamond, HaluEval, MMLU-Pro\n"
+                                "- **Questions**: 125 (sampled from 6,141 total)\n\n"
+                                "You can close this tab. Results will be saved to:\n"
+                                "`intelligence_benchmark_results.json`\n\n"
+                                "Check progress in the backend logs."
+                            )
+                            for i in range(0, len(_launch_msg), 12):
+                                yield {"type": "chunk", "content": _launch_msg[i:i + 12]}
+                            collected_content = _launch_msg
+
+                        elif _is_suite:
+                            # Full CLI comparison benchmark suite
+                            async for event in _cli_bench.run_suite_streaming(
+                                timeout=120.0,
+                            ):
+                                if event.get("type") == "chunk":
+                                    collected_content += event.get("content", "")
+                                    token_count += 1
+                                yield event
+
+            except Exception as exc:
+                logger.warning(
+                    "orchestrator.cli_benchmark_fallback",
+                    error=str(exc),
+                )
+                _cli_benchmark_used = False
+
+        if not _cli_benchmark_used and not _tool_loop_handled and decision.mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE):
             council_models_used: list[str] = []
             dcp_experts_used: list[str] = []
 
@@ -1709,16 +2021,18 @@ class ChatOrchestrator:
                     # MODERATE -> QE-Standard (3 experts)
                     # COMPLEX/MULTI_STEP -> QE-Deep (5 experts + cross-validation)
                     # Architecture/critical -> QE-Council (all experts)
-                    _complexity = qu_result.complexity.value if qu_result and qu_result.complexity else "MODERATE"
+                    _complexity = qu_result.complexity_label.value if qu_result and qu_result.complexity_label else "MODERATE"
                     _qe_depth_map = {
-                        "SIMPLE": 2,
-                        "MODERATE": 3,
-                        "COMPLEX": 5,
+                        "SIMPLE": 0,  # Simple queries: skip QE debate, use primary response
+                        "MODERATE": 2,
+                        "COMPLEX": 3,
                         "MULTI_STEP": 5,
                     }
                     _expert_count = _qe_depth_map.get(_complexity, 3)
-                    # Override: if user explicitly set QE mode, use at least 3
-                    _expert_count = max(_expert_count, len(decision.council_models))
+                    # For SIMPLE queries, respect the 0 -- skip QE debate entirely
+                    # For others, ensure at least as many experts as council models
+                    if _expert_count > 0:
+                        _expert_count = max(_expert_count, len(decision.council_models))
 
                     _all_experts = dcp_loader.get_experts_for_intent(
                         intent_str, count=_expert_count,
@@ -1735,20 +2049,14 @@ class ChatOrchestrator:
                     decision.mode == RoutingMode.QUINTESSENCE
                     and len(_all_experts) < 2
                 ):
-                    logger.warning(
-                        "orchestrator.qe_insufficient_experts",
+                    logger.info(
+                        "orchestrator.qe_skip_simple",
                         expert_count=len(_all_experts),
+                        complexity=_complexity,
                         intent=qu_result.intent.value if qu_result else "unknown",
                     )
-                    yield {
-                        "type": "governance_notice",
-                        "tier": 2,
-                        "message": (
-                            f"Quintessence mode: only {len(_all_experts)} DCP expert(s) "
-                            f"available for this intent. Falling back to Standard mode. "
-                            f"Check dcps.json has experts for all domains."
-                        ),
-                    }
+                    # Skip QE debate for simple queries -- use standard streaming
+                    raise RuntimeError("QE_SKIP_TO_STANDARD")
 
                 if _single_model_qe:
                     sole = decision.council_models[0]
@@ -1781,7 +2089,7 @@ class ChatOrchestrator:
                             metadata={"stage": "quintessence_lens", "expert": expert.id},
                         )
                         t = asyncio.create_task(
-                            asyncio.wait_for(provider_inst.generate(expert_request), timeout=120.0)
+                            asyncio.wait_for(provider_inst.generate(expert_request), timeout=45.0)
                         )
                         expert_tasks.append((expert, t))
 
@@ -1839,7 +2147,7 @@ class ChatOrchestrator:
 
                     # Parallel gather -- all models run concurrently
                     wrapped_tasks = [
-                        asyncio.wait_for(task, timeout=120.0)
+                        asyncio.wait_for(task, timeout=45.0)
                         for _, task in tasks_list
                     ]
                     gather_results = await asyncio.gather(
@@ -1939,18 +2247,29 @@ class ChatOrchestrator:
                         }
 
             except Exception as exc:
-                logger.error(
-                    "orchestrator.council_failed",
-                    error=str(exc),
-                    mode=decision.mode.value,
-                )
-                # Fall back to direct streaming
+                _is_simple_skip = "QE_SKIP_TO_STANDARD" in str(exc)
+                if not _is_simple_skip:
+                    logger.error(
+                        "orchestrator.council_failed",
+                        error=str(exc),
+                        mode=decision.mode.value,
+                    )
+                # Fall back to primary model streaming (not Ollama fallback)
                 yield {"type": "thinking", "stage": "fallback_streaming"}
-                async for chunk in self._fallback_stream(request):
-                    collected_content += chunk.content
-                    token_count += 1
-                    yield {"type": "chunk", "content": chunk.content}
-        else:
+                try:
+                    async for chunk in llm.stream(request, decision):
+                        if getattr(chunk, "finish_reason", None) == "error":
+                            break
+                        collected_content += chunk.content
+                        token_count += 1
+                        yield {"type": "chunk", "content": chunk.content}
+                except Exception:
+                    # Last resort: Ollama fallback
+                    async for chunk in self._fallback_stream(request):
+                        collected_content += chunk.content
+                        token_count += 1
+                        yield {"type": "chunk", "content": chunk.content}
+        elif not _cli_benchmark_used:
             # Standard streaming (with error-chunk detection)
             _stream_error: str | None = None
             try:
@@ -2138,7 +2457,7 @@ class ChatOrchestrator:
                         from app.services.tool_use_loop import ToolUseLoop as _TUL
                         _tul = _TUL(
                             self._db, user_id, tenant_id,
-                            agi_mode=(governance_slider == "YOLO"),
+                            agi_mode=(governance_mode == GovernanceMode.UNLEASHED),
                             session_id=session_id,
                         )
                         _tool_result = await _tul._execute_tool(_tc_name, _tc_params)
