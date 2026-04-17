@@ -1,16 +1,15 @@
 import { memo, useCallback, useState, useEffect, useRef } from 'react'
-import { Bell, Search, Brain, BrainCircuit, Zap, X, Menu, Heart, Mic, MicOff, AudioLines, AudioWaveform, Telescope } from 'lucide-react'
+import { Bell, Search, Brain, BrainCircuit, Zap, X, Menu, Heart, Mic, MicOff, AudioLines, AudioWaveform } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useUiStore, persistUiPref } from '@/stores/uiStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useModelRegistryStore } from '@/stores/modelRegistryStore'
-import { GovernanceSlider } from '@/components/common/GovernanceSlider'
 import { CommandPalette } from '@/components/common/CommandPalette'
 import { useVoice } from '@/providers/VoiceProvider'
-// RuntimeSwapper removed from header per Phase 2 design
-import type { ChatMode, RoutingMode, GovernanceSlider as GSlider } from '@/types/api'
+import { RuntimeSwapper } from '@/components/chat/RuntimeSwapper'
+import type { ChatMode, RoutingMode, GovernanceMode } from '@/types/api'
 
 /** Fire a PATCH to sync a session-level field to the backend (fire-and-forget). */
 function syncSession(fields: Record<string, unknown>) {
@@ -28,13 +27,13 @@ export const Header = memo(function Header() {
     setRoutingMode,
     thinkingVisible,
     toggleThinking,
-    deepResearch,
-    toggleDeepResearch,
-    governanceSlider,
-    setGovernanceSlider,
+    governanceMode,
+    setGovernanceMode,
     autopilotActive,
     toggleAutopilot,
     notifications,
+    selectedRuntime,
+    setSelectedRuntime,
   } = useUiStore()
   const { user, logout } = useAuthStore()
   const registry = useModelRegistryStore((s) => s.registry)
@@ -100,11 +99,14 @@ export const Header = memo(function Header() {
     )
   }, [toggleAutopilot])
 
-  const handleGovernanceSlider = useCallback((slider: GSlider) => {
-    setGovernanceSlider(slider)
-    syncSession({ governance_slider: slider })
-    persistUiPref('default_governance_slider', slider)
-  }, [setGovernanceSlider])
+  const handleGovernanceCycle = useCallback(() => {
+    const modes: GovernanceMode[] = ['UNLEASHED', 'BALANCED', 'GOVERNED']
+    const idx = modes.indexOf(governanceMode)
+    const next = modes[(idx + 1) % modes.length]
+    setGovernanceMode(next)
+    syncSession({ governance_mode: next })
+    persistUiPref('default_governance_mode', next)
+  }, [governanceMode, setGovernanceMode])
 
   return (
     <header className="h-16 bg-midnight-200/95 border-b border-white/5 flex items-center justify-between px-2 sm:px-4 shrink-0 z-40"
@@ -145,36 +147,25 @@ export const Header = memo(function Header() {
           </button>
         </div>
 
-        {/* Routing Mode: STA / COU / QE pills */}
+        {/* Routing Mode: STD / QE pills (Council removed -- Quintessence is strictly better) */}
         <div className="hidden md:flex items-center gap-1 bg-midnight-400/50 rounded-lg p-0.5">
-          {(['STANDARD', 'COUNCIL', 'QUINTESSENCE'] as const).map((mode) => {
-            const modeTruth = registry?.routing_modes?.[mode]
-            const isAvailable = mode === 'STANDARD' || modeTruth?.truthful
-            const tooltip = !isAvailable
-              ? `${mode === 'COUNCIL' ? 'Council' : 'Quintessence'}: requires 2+ selectable models`
-              : mode === 'COUNCIL'
-                ? '3-model parallel synthesis'
-                : mode === 'QUINTESSENCE'
-                  ? 'Expert council with DCP-guided synthesis'
-                  : 'Single best model'
+          {(['STANDARD', 'QUINTESSENCE'] as const).map((mode) => {
+            const tooltip = mode === 'QUINTESSENCE'
+              ? 'Expert-guided multi-model synthesis (DCP experts always active)'
+              : 'Single best model, fast routing'
             return (
               <div key={mode} className="relative group">
                 <button
-                  onClick={() => isAvailable && handleRoutingMode(mode)}
-                  disabled={!isAvailable}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    !isAvailable
-                      ? 'text-starlight-600 cursor-not-allowed opacity-50'
-                      : routingMode === mode
-                        ? mode === 'QUINTESSENCE'
-                          ? 'bg-accent-purple/20 text-accent-purple border border-accent-purple/30'
-                          : mode === 'COUNCIL'
-                            ? 'bg-accent-amber/20 text-accent-amber border border-accent-amber/30'
-                            : 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
-                        : 'text-starlight-400 hover:text-starlight-200 cursor-pointer'
+                  onClick={() => handleRoutingMode(mode)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                    routingMode === mode
+                      ? mode === 'QUINTESSENCE'
+                        ? 'bg-accent-purple/20 text-accent-purple border border-accent-purple/30'
+                        : 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
+                      : 'text-starlight-400 hover:text-starlight-200'
                   }`}
                 >
-                  {mode === 'QUINTESSENCE' ? 'QE' : mode.slice(0, 3)}
+                  {mode === 'QUINTESSENCE' ? 'QE' : 'STD'}
                 </button>
                 <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 rounded bg-midnight-100 text-[10px] text-starlight-300 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-white/10 shadow-lg z-50">
                   {tooltip}
@@ -197,24 +188,34 @@ export const Header = memo(function Header() {
           Think
         </button>
 
-        {/* Deep Research toggle */}
-        <button
-          onClick={() => { toggleDeepResearch(); persistUiPref('deep_research', !deepResearch) }}
-          className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-            deepResearch
-              ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30'
-              : 'text-starlight-400 hover:text-starlight-200 border border-transparent'
-          }`}
-          title="Deep research: thorough multi-source analysis across all tiers"
-        >
-          <Telescope size={14} />
-          Deep Research
-        </button>
-
-        {/* Governance slider */}
+        {/* Governance mode badge (clickable: cycle UNLEASHED > BALANCED > GOVERNED) + slider */}
         <div className="hidden lg:block w-px h-6 bg-white/10" />
-        <div className="hidden lg:block">
-          <GovernanceSlider value={governanceSlider} onChange={handleGovernanceSlider} compact />
+        <div className="hidden lg:flex items-center gap-2">
+          <button
+            onClick={handleGovernanceCycle}
+            title="Click to cycle governance mode"
+            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider cursor-pointer transition-all ${
+            governanceMode === 'UNLEASHED'
+              ? 'bg-status-error/20 text-status-error border border-status-error/30 hover:bg-status-error/30 shadow-[0_0_12px_rgba(255,71,87,0.15)]'
+              : governanceMode === 'BALANCED'
+              ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30 hover:bg-accent-cyan/30'
+              : 'bg-starlight-400/10 text-starlight-400 border border-white/10 hover:bg-white/10'
+          }`}>
+            {governanceMode}
+          </button>
+        </div>
+
+        {/* Primary Mind selector (reinstated): live runtime swap */}
+        <div className="hidden md:block w-px h-6 bg-white/10" />
+        <div className="hidden md:block">
+          <RuntimeSwapper
+            selectedRuntime={selectedRuntime}
+            onSelectRuntime={(runtimeId) => {
+              setSelectedRuntime(runtimeId)
+              syncSession({ default_runtime: runtimeId ?? 'auto' })
+              persistUiPref('default_runtime', runtimeId ?? 'auto')
+            }}
+          />
         </div>
       </div>
 
@@ -371,6 +372,8 @@ function HeartbeatIndicator() {
 
   useEffect(() => {
     let mounted = true
+    let delay = 30000
+    let timer: ReturnType<typeof setTimeout>
     const check = async () => {
       try {
         const token = useAuthStore.getState().token
@@ -382,16 +385,14 @@ function HeartbeatIndicator() {
           const data = await res.json()
           setStatus(data.data?.state || 'stopped')
         }
+        delay = 30000 // Reset on success
       } catch {
-        // Graceful degradation
+        delay = Math.min(delay * 2, 120000) // Backoff to 2min max
       }
+      if (mounted) timer = setTimeout(check, delay)
     }
-    check()
-    const interval = setInterval(check, 30000)
-    return () => {
-      mounted = false
-      clearInterval(interval)
-    }
+    void check()
+    return () => { mounted = false; clearTimeout(timer) }
   }, [])
 
   if (status === 'stopped') return null

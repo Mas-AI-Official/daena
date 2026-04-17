@@ -399,6 +399,90 @@ async def download_scan_report_pdf(job_id: str) -> FileResponse:
 
 
 # ---------------------------------------------------------------------------
+# OPSEC stealth status
+# ---------------------------------------------------------------------------
+
+# Singleton OpsecManager for status reporting. The live scan path creates its
+# own per-engagement instance; this singleton only exposes aggregate state to
+# the UI so the founder can see stealth-stack health at a glance.
+_opsec_manager = None
+
+
+def _get_opsec_manager():
+    """Lazy-init the OpsecManager singleton.
+
+    OPSEC MODULE IS BACKGROUND PATH ONLY. This wrapper is safe because the
+    status endpoint only reads counters; it never initiates requests.
+    """
+    global _opsec_manager
+    if _opsec_manager is None:
+        from app.services.security.opsec import OpsecManager
+        _opsec_manager = OpsecManager()
+    return _opsec_manager
+
+
+@router.get("/opsec/status")
+async def get_opsec_status() -> dict[str, Any]:
+    """Stealth-stack status for the /security page OPSEC panel.
+
+    Exposes: fingerprint rotation count, active browser profile name,
+    total requests with jitter applied, cumulative delay, evidence-vault
+    count, whether we've detected being fingerprinted ourselves,
+    and module availability of tor / proxychains from the tool catalog.
+    """
+    try:
+        from app.services.security.evilbob_mode import is_active
+        evilbob_active = is_active()
+    except Exception:
+        evilbob_active = False
+
+    # OPSEC manager status. Read-only -- never triggers network activity.
+    profile_name = ""
+    rotation_count = 0
+    request_count = 0
+    total_delay_ms = 0
+    evidence_count = 0
+    fingerprinting_seen = False
+    try:
+        opsec = _get_opsec_manager()
+        profile = opsec.fingerprints.get_profile()
+        profile_name = profile.get("name", "") or profile.get("user_agent", "")[:40]
+        rotation_count = opsec.fingerprints.rotation_count
+        request_count = opsec.timing.request_count
+        total_delay_ms = opsec.timing.total_delay_ms
+        evidence_count = opsec.vault.evidence_count
+        fingerprinting_seen = opsec._fingerprinting_detected  # noqa: SLF001
+    except Exception as exc:
+        logger.error("security_dashboard.opsec_status_failed", error=str(exc))
+
+    # Stealth-adjacent tools from the catalog: do we actually have tor + proxychains?
+    stealth_tools: dict[str, bool] = {}
+    try:
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        for tool_name in ("tor", "proxychains", "playwright", "mitmproxy"):
+            stealth_tools[tool_name] = catalog.is_installed(tool_name)
+    except Exception:
+        pass
+
+    return {
+        "gated": not evilbob_active,
+        "evilbob_active": evilbob_active,
+        "fingerprint_profile": profile_name,
+        "fingerprint_rotations": rotation_count,
+        "request_count": request_count,
+        "timing_delay_ms": total_delay_ms,
+        "evidence_vault_count": evidence_count,
+        "fingerprinting_detected": fingerprinting_seen,
+        "stealth_tools_installed": stealth_tools,
+        "note": (
+            "OPSEC is background-path only. This endpoint exposes status; "
+            "it never initiates network requests."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

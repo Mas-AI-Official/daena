@@ -90,6 +90,19 @@ interface ToolInfo {
   offensive_only: boolean
 }
 
+interface OpsecStatus {
+  gated: boolean
+  evilbob_active: boolean
+  fingerprint_profile: string
+  fingerprint_rotations: number
+  request_count: number
+  timing_delay_ms: number
+  evidence_vault_count: number
+  fingerprinting_detected: boolean
+  stealth_tools_installed: Record<string, boolean>
+  note: string
+}
+
 interface ShieldDetails {
   evilbob_active: boolean
   departments: Record<string, {
@@ -125,6 +138,7 @@ export function SecurityDashboardPage() {
   const [status, setStatus] = useState<DashboardStatus | null>(null)
   const [tools, setTools] = useState<ToolInfo[]>([])
   const [shields, setShields] = useState<ShieldDetails | null>(null)
+  const [opsec, setOpsec] = useState<OpsecStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -142,14 +156,16 @@ export function SecurityDashboardPage() {
     setLoading(true)
     setError('')
     try {
-      const [statusRes, toolsRes, shieldsRes] = await Promise.all([
+      const [statusRes, toolsRes, shieldsRes, opsecRes] = await Promise.all([
         api.get('/security/status'),
         api.get('/security/tools'),
         api.get('/security/shields'),
+        api.get('/security/opsec/status').catch(() => ({ data: null })),
       ])
       setStatus(statusRes.data)
       setTools(toolsRes.data)
       setShields(shieldsRes.data)
+      setOpsec(opsecRes.data)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load security dashboard'
       setError(msg)
@@ -306,7 +322,7 @@ export function SecurityDashboardPage() {
             transition={{ duration: 0.15 }}
           >
             {activeTab === 'overview' && (
-              <OverviewTab status={s} shields={shields} />
+              <OverviewTab status={s} shields={shields} opsec={opsec} />
             )}
             {activeTab === 'tools' && (
               <ToolsTab
@@ -344,7 +360,7 @@ export function SecurityDashboardPage() {
 
 // ── Overview Tab ──
 
-function OverviewTab({ status, shields }: { status: DashboardStatus; shields: ShieldDetails | null }) {
+function OverviewTab({ status, shields, opsec }: { status: DashboardStatus; shields: ShieldDetails | null; opsec: OpsecStatus | null }) {
   const ts = status.tool_stats
   const si = status.self_improvement
 
@@ -458,6 +474,72 @@ function OverviewTab({ status, shields }: { status: DashboardStatus; shields: Sh
                 <div className="opacity-70">{info.mode}</div>
               </div>
             ))}
+          </div>
+        </Card>
+      )}
+
+      {/* OPSEC (no-trace) stealth stack */}
+      {opsec && (
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            {opsec.gated ? (
+              <Lock className="text-starlight-500" size={18} />
+            ) : (
+              <Unlock className="text-accent-amber" size={18} />
+            )}
+            <span className="text-sm font-medium text-starlight-200">
+              OPSEC Stealth Stack
+            </span>
+            <span className="text-xs text-starlight-500 ml-auto">
+              {opsec.gated ? 'GATED (3vilbob off)' : 'READY'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div>
+              <div className="text-xs text-starlight-500">Active profile</div>
+              <div className="text-starlight-200 truncate" title={opsec.fingerprint_profile}>
+                {opsec.fingerprint_profile || '--'}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-starlight-500">Rotations</div>
+              <div className="text-starlight-200">{opsec.fingerprint_rotations}</div>
+            </div>
+            <div>
+              <div className="text-xs text-starlight-500">Requests</div>
+              <div className="text-starlight-200">{opsec.request_count}</div>
+            </div>
+            <div>
+              <div className="text-xs text-starlight-500">Evidence vault</div>
+              <div className="text-starlight-200">{opsec.evidence_vault_count}</div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {Object.entries(opsec.stealth_tools_installed).map(([tool, installed]) => (
+              <span
+                key={tool}
+                className={`px-2 py-0.5 text-xs rounded border ${
+                  installed
+                    ? 'bg-status-success/10 border-status-success/30 text-status-success'
+                    : 'bg-starlight-800/50 border-starlight-700 text-starlight-500'
+                }`}
+              >
+                {tool} {installed ? 'installed' : 'missing'}
+              </span>
+            ))}
+          </div>
+
+          {opsec.fingerprinting_detected && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-status-warning">
+              <AlertTriangle size={14} />
+              <span>Target fingerprinted us on a prior request -- consider rotating profile or switching to Playwright-with-stealth.</span>
+            </div>
+          )}
+
+          <div className="mt-3 text-xs text-starlight-500 italic">
+            {opsec.note}
           </div>
         </Card>
       )}
