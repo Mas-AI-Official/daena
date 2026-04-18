@@ -33,13 +33,19 @@ logger = get_logger(__name__)
 # and in Docker (/app/app/soul). No hardcoded absolute paths.
 _SOUL_VAULT_PATH = Path(__file__).resolve().parent.parent / "soul"
 
-# Files loaded in order (priority order for prompt construction)
+# Files loaded in order (priority order for prompt construction).
+# vp_mode.md was added 2026-04-18 when Masoud promoted Daena from
+# assistant-identity to active AI VP of MAS-AI Technologies. It loads
+# LAST so it composes on top of the foundation / reasoning / personality
+# / loyalty / shield layers (VP is how the soul expresses itself, not
+# a replacement for the soul).
 _SOUL_FILES = [
     "foundation.md",
     "reasoning.md",
     "personality.md",
     "loyalty.md",
     "shield.md",
+    "vp_mode.md",
 ]
 
 # ── Mode-specific addenda ────────────────────────────────────
