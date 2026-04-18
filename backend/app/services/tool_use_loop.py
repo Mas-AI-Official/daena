@@ -842,6 +842,83 @@ class ToolUseLoop:
         if not package:
             return {"success": False, "error": "Could not determine what to install"}
 
+        # ── Pre-ingestion security + intelligence filter ────────────
+        # Before ANY autonomous install, route through the scan-first
+        # gate. Rejects typosquats, known-malicious names, non-existent
+        # PyPI packages, and redundant installs. WARN signals escalate
+        # to REFUSE on the auto-heal path because silent install on
+        # ambiguity defeats the point of governance.
+        try:
+            from app.services.security.pre_ingestion_filter import (
+                ArtifactType,
+                IngestionContext,
+                PreIngestionFilter,
+                TriggerSource,
+            )
+
+            filter_ = PreIngestionFilter()
+            verdict = await filter_.evaluate(IngestionContext(
+                artifact_type=ArtifactType.PIP_PACKAGE,
+                identifier=package,
+                source="pypi",
+                triggered_by=TriggerSource.AUTO_HEAL,
+                reason=error_text[:200],
+                agi_mode=self.agi_mode,
+            ))
+            logger.info(
+                "tool_loop.auto_install_filter",
+                package=package,
+                decision=verdict.decision,
+                confidence=verdict.confidence,
+                signals=[s.check for s in verdict.signals],
+                latency_ms=round(verdict.total_latency_ms, 1),
+            )
+            if verdict.decision == "REFUSE":
+                return {
+                    "success": False,
+                    "error": f"Pre-ingestion filter refused {package}: {verdict.reason}",
+                    "filter_verdict": {
+                        "decision": verdict.decision,
+                        "reason": verdict.reason,
+                        "need_analysis": verdict.need_analysis,
+                        "signals": [
+                            {"check": s.check, "verdict": s.verdict, "detail": s.detail}
+                            for s in verdict.signals
+                        ],
+                    },
+                }
+            if verdict.decision == "WARN":
+                # WARN on non-auto-heal paths surfaces as a pending
+                # approval. Since _auto_install only runs in the
+                # auto-heal path (which escalates WARN to REFUSE),
+                # this branch is defensive; it matters if _auto_install
+                # is later called from other trigger sources.
+                return {
+                    "success": False,
+                    "error": f"Pre-ingestion filter warned on {package}: {verdict.reason}",
+                    "filter_verdict": {
+                        "decision": verdict.decision,
+                        "reason": verdict.reason,
+                        "need_analysis": verdict.need_analysis,
+                        "signals": [
+                            {"check": s.check, "verdict": s.verdict, "detail": s.detail}
+                            for s in verdict.signals
+                        ],
+                    },
+                }
+            # PASS -- fall through to the install commands below.
+        except Exception as filter_exc:
+            # Filter must never break the install path entirely; log
+            # and continue with the historical behavior. If the filter
+            # is down we fall back to the pre-filter trust model, which
+            # is still safer than OpenClaw because the heal-trigger
+            # patterns are narrow.
+            logger.warning(
+                "tool_loop.pre_ingestion_filter_error",
+                error=str(filter_exc),
+                package=package,
+            )
+
         logger.info("tool_loop.auto_install_attempting", package=package)
 
         def _ok(r: dict[str, Any]) -> bool:

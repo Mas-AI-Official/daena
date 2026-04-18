@@ -81,6 +81,41 @@ Works. Daena wrote a function she didn't have and called it.
 
 ## Where Daena is BETTER than OpenClaw
 
+### 0. Pre-Ingestion Security + Intelligence Filter (NEW 2026-04-18)
+
+OpenClaw's auto-install runs `pip install <whatever>` with no pre-check. If a prompt-injection or poisoned error message steers the agent at `colourama` (malicious typosquat of `colorama`) or `totally-nonexistent-pkg`, OpenClaw runs the install.
+
+Daena now routes every autonomous install through `PreIngestionFilter.evaluate()` — a tiered security + intelligence gate:
+
+| Tier | Checks | Cost |
+|---|---|---|
+| 1. Static (no network) | name-shape validation, known-malicious list, typosquat edit-distance vs top-PyPI, allowlist | microseconds |
+| 2. Network-backed | PyPI existence check, package age, publisher metadata | ~300ms |
+| 3. Intelligence | need-analysis (already installed?), redundancy detection | <10ms |
+
+Synthesis rules:
+- Any REFUSE → REFUSE
+- Any WARN on `AUTO_HEAL` path → **escalated to REFUSE** (silent install on ambiguity is never safe)
+- Any WARN on `LLM_REQUEST` path → `WARN` (approval card surfaces, operator decides)
+- All PASS → PASS
+
+Live verified:
+
+```
+scenario                            | decision | reason
+-----------------------------------|----------|--------------------------------------
+legit known-good (httpx already)    | REFUSE   | already installed; install redundant
+typosquat of requests (reqests)     | REFUSE   | on known-malicious list
+known malicious (colourama)         | REFUSE   | on known-malicious list
+nonsense name (zzzzzzzz-no-such)    | REFUSE   | not found on PyPI
+already-installed (openai)          | REFUSE   | install would be redundant
+invalid name (DROP_TABLE_users!)    | REFUSE   | invalid PEP 503 shape
+allowlisted (cowsay)                | PASS     | on Daena's internal allowlist
+legit new package (asciimatics)     | PASS     | 4020 days old, passes all checks
+```
+
+**One filter, extensible to every ingestion surface.** The same `IngestionContext` shape handles pip packages, npm packages, files, email attachments, skill documents, and MCP servers. Adding a new surface means extending one enum and one check function, not building a separate filter.
+
 ### 1. Auto-install: LLM intent ≠ self-heal
 
 OpenClaw has one path: LLM says "install X", engine runs `pip install X`. This is vulnerable to prompt injection — if the LLM gets tricked by a poisoned web page or tool output, it can be induced to install malicious packages.
