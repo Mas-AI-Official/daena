@@ -32,8 +32,12 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent.parent  # backend/
 _PROJECT_ROOT = _BACKEND_DIR.parent  # Daena/
 _SKILLS_DIR = _PROJECT_ROOT / "skills"
 
-# Limits to prevent excessive prompt injection
-_MAX_SKILLS = 100
+# Limits to prevent excessive prompt injection.
+# _MAX_SKILLS raised 100 -> 200 in TICKET-S15 to fit the sales +
+# support + Hormozi frameworks without alphabetic-cutoff. The real
+# prompt-budget gate is _MAX_MANIFEST_CHARS (12k) which trims the
+# rendered manifest regardless of skill count.
+_MAX_SKILLS = 200
 _MAX_SKILL_FILE_BYTES = 256_000
 _MAX_MANIFEST_CHARS = 12_000
 
