@@ -12,9 +12,17 @@ const portFile = path.resolve(__dirname, '../backend/.daena-port')
  * startup path is start-daena.bat or start-backend.bat -> backend/run.py.
  */
 function getBackendUrl(): string {
+  // We always use 127.0.0.1 rather than "localhost". Node 17+ resolves
+  // ``localhost`` to ``::1`` (IPv6) first, and the WSL port-relay
+  // (``wslrelay.exe`` on Windows hosts) only binds IPv4. That mismatch
+  // produced ECONNREFUSED errors in the Vite proxy even though ``curl
+  // http://127.0.0.1:<port>/api/v1/health`` returned 200. Forcing IPv4
+  // loopback eliminates the dual-stack race entirely.
+  const HOST = '127.0.0.1'
+
   // Environment variable override takes priority (useful when port file is stale)
   if (process.env.DAENA_BACKEND_PORT) {
-    const url = `http://localhost:${process.env.DAENA_BACKEND_PORT}`
+    const url = `http://${HOST}:${process.env.DAENA_BACKEND_PORT}`
     console.info(`[Daena frontend] Using env override: ${url}`)
     return url
   }
@@ -30,13 +38,13 @@ function getBackendUrl(): string {
             `Using port ${port} anyway. Restart backend if proxy fails.`,
         )
       }
-      console.info(`[Daena frontend] Proxy -> http://localhost:${port} (from ${portFile})`)
-      return `http://localhost:${port}`
+      console.info(`[Daena frontend] Proxy -> http://${HOST}:${port} (from ${portFile})`)
+      return `http://${HOST}:${port}`
     }
   } catch {
     // The canonical start path writes the port file before Vite starts.
   }
-  const fallbackUrl = 'http://localhost:8000'
+  const fallbackUrl = `http://${HOST}:8000`
   console.warn(
     `[Daena frontend] Missing backend port file at ${portFile}. ` +
       `Falling back to ${fallbackUrl}. Start the backend with backend/run.py to restore the canonical contract.`,
