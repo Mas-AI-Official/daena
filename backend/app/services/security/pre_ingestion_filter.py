@@ -93,6 +93,13 @@ class IngestionContext:
 
     Carries enough provenance that the filter can make a risk-aware
     decision without calling back to the orchestrator for more data.
+
+    For content-based artifacts (FILE, EMAIL_ATTACHMENT, SKILL, BOOK),
+    set ``content`` to the text being ingested so the prompt-injection
+    scanner can run. The filter returns ``cleaned_content`` in
+    ``FilterVerdict.extra["cleaned_content"]`` when the scanner
+    quarantines injection payloads -- the caller uses the cleaned
+    version instead of the original.
     """
 
     artifact_type: ArtifactType
@@ -102,6 +109,10 @@ class IngestionContext:
     reason: str = ""             # human-readable "why we need this"
     agi_mode: bool = False       # UNLEASHED + autopilot
     user_intent: str = ""        # original user prompt, if known
+    # ``content`` is the text payload for content artifacts. Empty for
+    # package-only artifacts (pip/npm) where the filter only needs the
+    # identifier.
+    content: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -121,7 +132,15 @@ class SecuritySignal:
 
 @dataclass
 class FilterVerdict:
-    """Aggregate decision across all signals."""
+    """Aggregate decision across all signals.
+
+    For content-bearing artifacts, ``content_scan`` holds the
+    prompt-injection scanner's output: the scanner's own verdict
+    (CLEAN / CONTAMINATED / HOSTILE), the recommended decision
+    (USE_CLEAN / USE_ORIGINAL_WITH_WARNING / REFUSE_ENTIRELY), and
+    ``cleaned_content`` -- the quarantine-stripped text the caller
+    should use when the decision says USE_CLEAN.
+    """
 
     decision: Verdict
     confidence: float             # weighted average of signal confidences
@@ -129,6 +148,8 @@ class FilterVerdict:
     reason: str                   # one-line operator-facing summary
     need_analysis: str = ""       # "do we need this?" output
     total_latency_ms: float = 0.0
+    # Populated for content-bearing artifacts; None for package-only.
+    content_scan: dict[str, Any] | None = None
 
 
 # ── Static data ──────────────────────────────────────────────────────
@@ -261,8 +282,19 @@ class PreIngestionFilter:
         need_signal, need_text = await self._need_analysis(context)
         signals.append(need_signal)
 
+        # Tier 4: prompt-injection scan for content-bearing artifacts.
+        # Runs on FILE / EMAIL_ATTACHMENT / SKILL / BOOK / MCP_TOOL_OUTPUT
+        # so a file on disk or an email attachment that carries hidden
+        # instructions gets quarantined (or the whole artifact refused)
+        # before the content reaches Daena's memory or reasoning loop.
+        content_scan_data: dict[str, Any] | None = None
+        if context.content:
+            scan_signal, content_scan_data = self._content_scan(context)
+            signals.append(scan_signal)
+
         verdict = self._synthesize(context, signals, t0)
         verdict.need_analysis = need_text
+        verdict.content_scan = content_scan_data
         return verdict
 
     # ── Static checks ───────────────────────────────────────────────
@@ -507,6 +539,87 @@ class PreIngestionFilter:
                 f"reason {context.reason[:140] or '<no reason>'}"
             ),
         )
+
+    # ── Content scan (prompt-injection defense) ─────────────────────
+
+    def _content_scan(
+        self, context: IngestionContext,
+    ) -> tuple[SecuritySignal, dict[str, Any]]:
+        """Run the prompt-injection scanner against ``context.content``.
+
+        Maps the artifact type to the appropriate ``ScanContext`` so
+        skill ingestion is strict (memory contamination is expensive
+        to reverse) and chat-input-like surfaces are lenient (LLM sees
+        the content at Stage 8 anyway and can reason about it).
+
+        Returns ``(SecuritySignal, content_scan_dict)`` where the dict
+        carries the scanner's verdict + decision + cleaned_content +
+        quarantined fragments for the caller to act on.
+        """
+        from app.services.security.prompt_injection_scanner import (
+            PromptInjectionScanner,
+            ScanContext as _SC,
+        )
+
+        # Map artifact type -> scanner trust context.
+        artifact_to_scan_ctx = {
+            ArtifactType.SKILL: _SC.SKILL_INGESTION,
+            ArtifactType.BOOK: _SC.BOOK_INGESTION,
+            ArtifactType.FILE: _SC.FILE_CONTENT,
+            ArtifactType.EMAIL_ATTACHMENT: _SC.EMAIL_ATTACHMENT,
+        }
+        scan_ctx = artifact_to_scan_ctx.get(context.artifact_type, _SC.CHAT_INPUT)
+
+        scanner = PromptInjectionScanner()
+        result = scanner.scan(context.content, scan_ctx)
+
+        # Map scanner verdict -> filter signal.
+        signal_verdict: Verdict
+        if result.decision == "REFUSE_ENTIRELY":
+            signal_verdict = "REFUSE"
+        elif result.decision == "USE_CLEAN" and result.verdict != "CLEAN":
+            signal_verdict = "WARN"
+        elif result.decision == "USE_ORIGINAL_WITH_WARNING":
+            signal_verdict = "WARN"
+        else:
+            signal_verdict = "PASS"
+
+        signal = SecuritySignal(
+            check="prompt_injection_scan",
+            verdict=signal_verdict,
+            detail=(
+                f"scan_verdict={result.verdict} "
+                f"decision={result.decision} "
+                f"findings={len(result.findings)} "
+                f"quarantined={len(result.quarantined)} "
+                f"-- {result.reason}"
+            ),
+            confidence=0.85,
+            latency_ms=result.total_ms,
+        )
+        scan_payload = {
+            "verdict": result.verdict,
+            "decision": result.decision,
+            "findings": [
+                {
+                    "category": f.category,
+                    "severity": f.severity.value,
+                    "pattern": f.pattern,
+                    "start": f.start,
+                    "end": f.end,
+                    "confidence": f.confidence,
+                    "matched_text": f.matched_text[:120],
+                }
+                for f in result.findings
+            ],
+            "cleaned_content": result.cleaned_content,
+            "quarantined": result.quarantined,
+            "reason": result.reason,
+            "total_ms": result.total_ms,
+            "original_length": result.original_length,
+            "cleaned_length": result.cleaned_length,
+        }
+        return signal, scan_payload
 
     @staticmethod
     def _already_installed(package: str) -> bool:

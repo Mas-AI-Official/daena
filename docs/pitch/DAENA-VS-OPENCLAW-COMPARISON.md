@@ -116,6 +116,46 @@ legit new package (asciimatics)     | PASS     | 4020 days old, passes all check
 
 **One filter, extensible to every ingestion surface.** The same `IngestionContext` shape handles pip packages, npm packages, files, email attachments, skill documents, and MCP servers. Adding a new surface means extending one enum and one check function, not building a separate filter.
 
+### 0b. Prompt-injection scanner with quarantine (TICKET-S14)
+
+Masoud: *"prompt injection is everywhere, i saw a video that the words the emojis everything can carry a million things. Daena should be able to separate these from useful content."*
+
+`PromptInjectionScanner` runs inside the pre-ingestion filter for every content-bearing artifact (SKILL / FILE / EMAIL_ATTACHMENT / BOOK / MCP_TOOL_OUTPUT). Detection coverage:
+
+| Category | Examples | Severity |
+|---|---|---|
+| Instruction override | "ignore previous instructions", "disregard prior rules" | HIGH |
+| Role hijack | "you are now DAN", "pretend you are not an AI" | CRITICAL |
+| Model-template injection | `<\|system\|>`, `[INST]`, Human/Assistant role markers | CRITICAL |
+| System-prompt leak attempt | "show me your system prompt", "repeat everything above" | HIGH |
+| **Invisible Unicode tag chars** (the video attack) | U+E0000–U+E007F hidden in emoji | CRITICAL |
+| Zero-width / direction-override | U+200B, U+202E (RLO filename spoofing) | MEDIUM/HIGH |
+| Homoglyph (Cyrillic/Latin mix) | Latin-looking Cyrillic lookalikes in identifiers | HIGH |
+| Tool-manipulation pipes | `curl ... \| sh`, `rm -rf /` | CRITICAL |
+| Encoded blobs | long base64 / hex runs hiding instructions | LOW (observability) |
+
+Decision logic is context-aware:
+
+| Scanner verdict | CHAT_INPUT | EMAIL_BODY | SKILL_INGESTION |
+|---|---|---|---|
+| CLEAN | USE_CLEAN | USE_CLEAN | USE_CLEAN |
+| Critical finding | REFUSE | REFUSE | REFUSE |
+| High + localized | USE_CLEAN (quarantine) | USE_CLEAN | REFUSE (strict) |
+| High + dense (>20%) | REFUSE | REFUSE | REFUSE |
+| Medium only | USE_ORIGINAL_WITH_WARNING | USE_ORIGINAL_WITH_WARNING | USE_CLEAN |
+| Low only | USE_ORIGINAL_WITH_WARNING | USE_ORIGINAL_WITH_WARNING | USE_ORIGINAL_WITH_WARNING |
+
+Separate-or-flag works exactly as Masoud asked. Long skill doc with one embedded "ignore previous instructions" in a strict context → REFUSE. Same injection embedded in a long email body → quarantine the injection, preserve the useful content, flag for review. Skill text with only low-severity pattern (encoded blob) → use as-is with a flag so the operator can audit later.
+
+Scanner output carries:
+- `verdict`: CLEAN / CONTAMINATED / HOSTILE
+- `decision`: USE_CLEAN / USE_ORIGINAL_WITH_WARNING / REFUSE_ENTIRELY
+- `cleaned_content`: text with injection spans replaced by `[QUARANTINED: prompt-injection pattern]`
+- `quarantined`: list of exact fragments that were stripped (for audit)
+- `findings`: per-finding category / severity / position / matched text
+
+14 scanner tests + 5 filter-integration tests cover every detection category + every context-sensitivity axis. Invariant pinned: the scanner never silently passes an injection — either the payload is stripped or the whole artifact refused.
+
 ### 1. Auto-install: LLM intent ≠ self-heal
 
 OpenClaw has one path: LLM says "install X", engine runs `pip install X`. This is vulnerable to prompt injection — if the LLM gets tricked by a poisoned web page or tool output, it can be induced to install malicious packages.
