@@ -38,6 +38,10 @@ import {
   Unplug,
   Download,
   AlertTriangle,
+  Wrench,
+  Server,
+  Activity,
+  UserCircle,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { api } from '@/lib/api'
@@ -1670,6 +1674,11 @@ function ConnectorRow({ connector, connected, instanceId, accountIdentity, expan
   const [menuOpen, setMenuOpen] = useState(false)
   const [apiKeyValue, setApiKeyValue] = useState('')
   const [saving, setSaving] = useState(false)
+  // Advanced mode = expose per-tool Allow/Ask/Block controls inside
+  // the capabilities list. Off by default (per TICKET-S16 UX rework)
+  // because account-level auth already gates tool access; per-tool
+  // controls are defense-in-depth for power users only.
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [toolPermissions, setToolPermissions] = useState<Record<string, Permission>>(() => {
     const init: Record<string, Permission> = {}
     for (const t of connector.tools) init[t] = 'ASK_EACH_TIME'
@@ -1760,15 +1769,26 @@ function ConnectorRow({ connector, connected, instanceId, accountIdentity, expan
               </span>
             )}
           </div>
-          {/* Session 11: subtitle falls back to the connector description
-              when connected WITHOUT an identity we could fetch, or shows
-              the actual signed-in account when we did fetch it. This is
-              what answers "which Google account is Daena linked to?" */}
-          <p className="text-xs text-starlight-500 truncate mt-0.5">
-            {connected && accountIdentity
-              ? <>Connected as <span className="text-accent-green">{accountIdentity}</span></>
-              : connector.subtitle}
-          </p>
+          {/* Connected-account identity strip. Answers the "which
+              Google account is Daena linked to?" question at a glance.
+              Shows email + avatar-glyph when we have it, falls back to
+              the connector subtitle otherwise. TICKET-S16 promoted
+              this from a muted subtitle line to a dedicated pill so
+              the identity is the FIRST thing the operator sees after
+              connecting -- matches Slack / Notion / Zapier norm. */}
+          {connected && accountIdentity ? (
+            <div className="flex items-center gap-1.5 mt-1">
+              <UserCircle size={12} className="text-accent-green shrink-0" />
+              <span className="text-[11px] text-starlight-300 truncate">
+                <span className="text-starlight-500">Signed in as </span>
+                <span className="text-accent-green font-medium">{accountIdentity}</span>
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-starlight-500 truncate mt-0.5">
+              {connector.subtitle}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
           {connected ? (
@@ -1891,17 +1911,38 @@ function ConnectorRow({ connector, connected, instanceId, accountIdentity, expan
           )}
         </div>
 
-        {/* Skills (Codex plugin style) -- each tool is presented as
-            a skill with a name, "Skill" pill label, description, and
-            permission control. Matches the Plugins > Hugging Face
-            layout from Codex Desktop: each row is a self-contained
-            skill the user can read and permission individually. */}
+        {/* Capabilities -- informational list of tools the connector
+            brings. NOT per-tool CTAs. The 2026-04-18 UX rework
+            (TICKET-S16) demoted these from "Skill with Ask dropdown"
+            to read-only capability entries: the connector-level
+            Connect / Disconnect / Switch-account action above is the
+            primary contract. Once connected, the whole capability
+            surface is available to Daena and the agents in scope --
+            per-tool gating on a connected app is redundant with
+            account-level auth and adds clutter.
+            For users who still want fine-grained per-tool control,
+            the "Advanced" disclosure below reveals the legacy
+            Allow/Ask/Block controls on demand. */}
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Puzzle size={12} className="text-starlight-400" />
-            <span className="text-[10px] text-starlight-400 uppercase tracking-wider font-semibold">
-              Skills ({connector.tools.length})
-            </span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Puzzle size={12} className="text-starlight-400" />
+              <span className="text-[10px] text-starlight-400 uppercase tracking-wider font-semibold">
+                Capabilities ({connector.tools.length})
+              </span>
+              {connected && (
+                <span className="text-[10px] text-starlight-500">
+                  available to Daena + agents in scope
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="text-[10px] text-starlight-500 hover:text-starlight-300 flex items-center gap-1 cursor-pointer"
+              title="Per-tool Allow / Ask / Block controls (rarely needed)"
+            >
+              <Wrench size={10} /> {showAdvanced ? 'Hide advanced' : 'Advanced'}
+            </button>
           </div>
           <div className="rounded-lg border border-white/5 divide-y divide-white/5 bg-midnight-400/20">
             {connector.tools.map((tool) => {
@@ -1926,8 +1967,8 @@ function ConnectorRow({ connector, connected, instanceId, accountIdentity, expan
                         <span className="text-xs text-starlight-200 font-medium">
                           {skillName}
                         </span>
-                        <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary-500/10 text-primary-400 font-semibold">
-                          Skill
+                        <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-starlight-400 font-semibold">
+                          Tool
                         </span>
                       </div>
                       <p className="text-[11px] text-starlight-500 mt-0.5 leading-relaxed">
@@ -1938,14 +1979,20 @@ function ConnectorRow({ connector, connected, instanceId, accountIdentity, expan
                       </code>
                     </div>
                   </div>
-                  <div className="shrink-0">
-                    <PermissionSelect
-                      value={toolPermissions[tool] || 'ASK_EACH_TIME'}
-                      onChange={(v) =>
-                        setToolPermissions((prev) => ({ ...prev, [tool]: v }))
-                      }
-                    />
-                  </div>
+                  {/* Advanced: per-tool permission controls, hidden by
+                      default. Defense-in-depth pattern -- connector
+                      auth is the primary gate; these are the
+                      secondary override for power users. */}
+                  {showAdvanced && (
+                    <div className="shrink-0">
+                      <PermissionSelect
+                        value={toolPermissions[tool] || 'ASK_EACH_TIME'}
+                        onChange={(v) =>
+                          setToolPermissions((prev) => ({ ...prev, [tool]: v }))
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -2393,7 +2440,7 @@ function CLIBridgeCard() {
 
 // ── Main Page ──
 
-type TabKey = 'runtimes' | 'extensions' | 'connectors'
+type TabKey = 'runtimes' | 'extensions' | 'connectors' | 'mcp'
 
 export function ConnectionsPage() {
   usePageTitle('Connections')
@@ -2608,8 +2655,14 @@ export function ConnectionsPage() {
 
   const tabs: { key: TabKey; label: string; icon: React.ReactNode; count?: number }[] = [
     { key: 'runtimes', label: 'Mind Control', icon: <Cpu size={16} />, count: runtimes.filter(r => r.status === 'online').length },
-    { key: 'extensions', label: 'MCP Servers', icon: <Puzzle size={16} />, count: extensions.length },
-    { key: 'connectors', label: 'Plugins', icon: <Puzzle size={16} />, count: CONNECTORS.length },
+    { key: 'extensions', label: 'Extensions', icon: <Puzzle size={16} />, count: extensions.length },
+    { key: 'connectors', label: 'Plugins', icon: <Plug size={16} />, count: CONNECTORS.length },
+    // MCP Servers (2026-04-18 TICKET-S16): shows MCPs imported from
+    // claude_desktop_config.json + any Daena-native MCP plus health
+    // status. Separates the "MCP runtime registry" from the local
+    // "Extensions" (filesystem/terminal/browser primitives) and cloud
+    // "Plugins" which were all being conflated.
+    { key: 'mcp', label: 'MCP Servers', icon: <Server size={16} />, count: mcpRegistry.entries.length },
   ]
 
   const totalTools = extensions.reduce((acc, e) => acc + 1, 0) + CONNECTORS.reduce((acc, c) => acc + c.tools.length, 0)
@@ -3111,6 +3164,117 @@ export function ConnectionsPage() {
                     </div>
                   )
                 })()}
+              </div>
+            )}
+
+            {/* ── MCP Servers tab ── TICKET-S16 2026-04-18 ──
+                Surfaces the ``mcp-registry`` endpoint (live stdio-bootstrap
+                entries) directly so operators can see which MCPs
+                Daena imported from ``claude_desktop_config.json`` and
+                which are spawnable right now vs need a restart.
+                This is the "Restore MCP servers previously in Claude
+                Desktop" deliverable from the connections brief. */}
+            {activeTab === 'mcp' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-starlight-100">MCP Servers</h2>
+                    <p className="text-xs text-starlight-500 mt-1">
+                      Model Context Protocol servers Daena has imported. Each
+                      one extends Daena&apos;s tool surface -- chat, automations,
+                      and agents can all call into these.
+                      {mcpRegistry.entries.length > 0 && (
+                        <> <span className="text-accent-green">{mcpRegistry.entries.length}</span> loaded and callable now.</>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { void mcpRegistry.refresh() }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-white/5 text-starlight-300 hover:bg-white/10 cursor-pointer"
+                    title="Re-scan claude_desktop_config.json + rebuild the live registry"
+                  >
+                    <RefreshCw size={12} /> Refresh
+                  </button>
+                </div>
+
+                {/* Legacy MCP import hint (scans Claude Code / Codex / Gemini
+                    CLI configs) -- reuses the existing mcpSync infra. */}
+                {mcpSync.detections.length > 0 && (
+                  <div className="p-3 rounded-lg border border-accent-amber/30 bg-accent-amber/5">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-accent-amber" />
+                      <span className="text-xs text-starlight-200 font-medium">
+                        {mcpSync.detections.length} MCP{mcpSync.detections.length === 1 ? '' : 's'} found in other CLI configs
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-starlight-400 mt-1">
+                      These MCP servers are configured in other tools on this machine.
+                      Import them to make their tools available to Daena.
+                    </p>
+                  </div>
+                )}
+
+                {mcpRegistry.loading && (
+                  <div className="flex items-center gap-2 px-4 py-6 text-xs text-starlight-500">
+                    <Loader2 size={14} className="animate-spin" /> Loading registry...
+                  </div>
+                )}
+
+                {!mcpRegistry.loading && mcpRegistry.entries.length === 0 && (
+                  <div className="p-6 rounded-lg border border-dashed border-white/10 text-center">
+                    <Server size={28} className="mx-auto text-starlight-500 mb-2" />
+                    <p className="text-sm text-starlight-300">No MCP servers imported yet</p>
+                    <p className="text-[11px] text-starlight-500 mt-1">
+                      Install a plugin from the <span className="text-primary-400 cursor-pointer" onClick={() => handleTabChange('connectors')}>Plugins</span> tab
+                      or add an MCP config to <code className="font-mono bg-white/5 px-1 py-0.5 rounded">~/AppData/Roaming/Claude/claude_desktop_config.json</code>
+                      and hit Refresh.
+                    </p>
+                  </div>
+                )}
+
+                {mcpRegistry.entries.length > 0 && (
+                  <div className="rounded-xl border border-white/5 divide-y divide-white/5 bg-midnight-400/20">
+                    {mcpRegistry.entries.map((entry) => (
+                      <div key={entry.server_key} className="px-4 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors">
+                        <div className="w-9 h-9 rounded-lg bg-midnight-400/60 flex items-center justify-center shrink-0">
+                          <Server size={18} className="text-accent-cyan" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-starlight-100">{entry.display_name || entry.server_key}</span>
+                            <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-accent-green/10 text-accent-green font-medium">
+                              <Activity size={9} /> Live
+                            </span>
+                            {entry.package && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/5 text-starlight-400 font-mono">
+                                {entry.package}
+                              </span>
+                            )}
+                          </div>
+                          {entry.description && (
+                            <p className="text-[11px] text-starlight-500 mt-1 leading-relaxed">{entry.description}</p>
+                          )}
+                          <div className="flex items-center gap-2 mt-1.5 text-[10px] text-starlight-600 font-mono">
+                            <code className="bg-white/[0.03] px-1.5 py-0.5 rounded">
+                              {entry.command} {(entry.args || []).slice(0, 3).join(' ')}{(entry.args || []).length > 3 ? ' ...' : ''}
+                            </code>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Host config hint */}
+                <div className="p-3 rounded-lg border border-white/5 bg-midnight-400/20">
+                  <div className="flex items-start gap-2 text-[11px] text-starlight-400 leading-relaxed">
+                    <Shield size={12} className="shrink-0 mt-0.5 text-starlight-500" />
+                    <span>
+                      Daena reads from <code className="font-mono bg-white/5 px-1 rounded">~/AppData/Roaming/Claude/claude_desktop_config.json</code>
+                      on startup and after every Refresh. Per-tenant MCP config paths are planned for multi-tenant prod.
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
           </motion.div>
