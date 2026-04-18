@@ -88,8 +88,10 @@ interface MessageListProps {
   modelUsed?: string | null
   /** DaenaBot agent activity during streaming */
   daenabotActivity?: DaenaBotActivity | null
-  /** Pipeline stages for ThinkingProcess display */
-  pipelineStages?: { label: string; detail?: string; status: 'done' | 'active' | 'pending' }[]
+  /** Pipeline stages for ThinkingProcess display. The 'error' status
+   * surfaces loop-detector / cognitive-engine failures alongside the
+   * normal done/active/pending lifecycle. */
+  pipelineStages?: { label: string; detail?: string; status: 'done' | 'active' | 'pending' | 'error' }[]
   /** Active tool calls from the agentic loop */
   toolCalls?: { tool: string; params: Record<string, unknown>; result?: Record<string, unknown>; success?: boolean; iteration: number; status: 'calling' | 'done' | 'error' }[]
   /** Called when user edits a message — triggers truncate + regenerate */

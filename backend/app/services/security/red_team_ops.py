@@ -112,7 +112,7 @@ class LiveTargetMonitor:
             async with httpx.AsyncClient(
                 timeout=15.0,
                 follow_redirects=True,
-                verify=False,
+                verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
             ) as client:
                 # Capture main page
                 for scheme in ["https", "http"]:
@@ -222,7 +222,7 @@ class LiveTargetMonitor:
             async with httpx.AsyncClient(
                 timeout=15.0,
                 follow_redirects=True,
-                verify=False,
+                verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
             ) as client:
                 # Check headers for changes
                 for url, old_headers in self._baseline.get("headers", {}).items():

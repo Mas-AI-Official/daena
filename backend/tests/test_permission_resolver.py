@@ -55,20 +55,27 @@ def test_unleashed_autoproceeds_even_when_user_set_ask() -> None:
     assert result == EffectivePermission.AUTO_PROCEED
 
 
-def test_unleashed_autoproceeds_even_on_critical() -> None:
-    """UNLEASHED is intentionally hands-off. CRITICAL actions are
-    tier-2 notified (post-hoc), not tier-3 approval-gated. Hard
-    Laws 5/7 (data exfiltration, tenant isolation) are enforced at
-    the Shield layer which REFUSES outright -- not at the
-    REQUEST_INPUT prompting layer. So per the existing tier map,
-    UNLEASHED + CRITICAL auto-proceeds."""
+def test_unleashed_requests_input_on_critical() -> None:
+    """UNLEASHED is hands-off for everything EXCEPT CRITICAL risk.
+
+    The 2026-04-18 self-audit closed a governance bypass: the
+    GOVERNANCE_TIER_MAP had UNLEASHED + CRITICAL = tier 2, which is
+    BELOW the resolver's ``tier >= 3 -> REQUEST_INPUT`` threshold.
+    So CRITICAL tools like ``create_tool`` (which execs LLM-generated
+    Python) silently auto-proceeded in UNLEASHED mode -- a prompt-
+    injection attack vector for arbitrary code execution.
+
+    Fix: CRITICAL now maps to tier 4 in every mode including
+    UNLEASHED. This matches the resolver's docstring intent: "UNLEASHED
+    only pauses on tier 4, reached for CRITICAL risk."
+    """
     result = resolve_permission(
         governance_mode=GovernanceMode.UNLEASHED,
         autopilot_active=True,
         tool_risk=RiskLevel.CRITICAL,
         user_pref=ToolPermission.ALLOW,
     )
-    assert result == EffectivePermission.AUTO_PROCEED
+    assert result == EffectivePermission.REQUEST_INPUT
 
 
 # ── BALANCED behavior ───────────────────────────────────────────

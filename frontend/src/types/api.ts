@@ -52,6 +52,14 @@ export interface UserResponse {
   role: UserRole
   tenant_id: string
   created_at: string
+  // Optional fields populated by /auth/me + /settings/profile endpoints.
+  // Kept optional so the type stays compatible with anywhere a minimal
+  // user response is returned (register, list endpoints that only need
+  // identity).
+  tenant_name?: string
+  email_verified?: boolean
+  oauth_provider?: string | null
+  id?: string  // alias for user_id returned by some endpoints
 }
 
 export interface TokenData {

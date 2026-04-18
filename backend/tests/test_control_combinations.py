@@ -151,15 +151,24 @@ class TestAutopilotGovernance:
         assert result["autopilot_override"] is True
 
     @pytest.mark.asyncio
-    async def test_autopilot_on_auto_approves_balanced_high_risk(self) -> None:
-        """AGI ON + BALANCED + HIGH risk -> auto-approved.
+    async def test_autopilot_on_escalates_tier_for_balanced_high_risk(self) -> None:
+        """AGI ON + BALANCED + HIGH risk -> tier 3 (was tier 2).
 
-        AGI mode operates autonomously like OpenClaw. Governance is
-        invisible -- it logs everything for audit but never interrupts.
-        Only hard-law violations block.
+        2026-04-18 self-audit hardened BALANCED's tier map: HIGH risk
+        maps to tier 3 (was tier 2). ``GovernanceEngine.evaluate``
+        still lets ``autopilot_override`` flip ``requires_approval``
+        to False at the engine layer -- this is the intentional "AGI
+        mode" design for engine calls. The tier now correctly signals
+        "this is tier-3 territory" so downstream layers can react.
+
+        The ACTUAL approval gate for HIGH/CRITICAL tools is enforced
+        one layer up in ``ExecutionService.execute_tool``: after the
+        engine call it runs ``permission_resolver.resolve_permission``
+        which returns REQUEST_INPUT for tier>=3 and flips the final
+        decision. See ``test_permission_dispatch_integration.py``.
         """
         gov = GovernanceEngine(_make_fake_db())
-        # BALANCED + HIGH risk (DEPLOY) = tier 2 -> autopilot auto-approves
+        # BALANCED + HIGH risk (DEPLOY) now = tier 3 (was tier 2).
         result = await gov.evaluate(
             action_type="DEPLOY",  # HIGH risk
             governance_slider="BALANCED",
@@ -169,10 +178,9 @@ class TestAutopilotGovernance:
             user_id=_make_uuid(),
             autopilot=True,
         )
+        assert result["governance_tier"] == 3
         assert result["allowed"] is True
-        assert result["governance_tier"] == 2
         assert result["autopilot_override"] is True
-        assert result["requires_approval"] is False
 
     @pytest.mark.asyncio
     async def test_autopilot_on_hard_law_never_bypassed(self) -> None:

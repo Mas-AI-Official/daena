@@ -137,7 +137,7 @@ class TargetInteractionAgent(BaseAgent):
             async with httpx.AsyncClient(
                 timeout=30.0,
                 follow_redirects=follow_redirects,
-                verify=False,
+                verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
                 proxy=proxy_url or None,
             ) as client:
                 resp = await client.request(

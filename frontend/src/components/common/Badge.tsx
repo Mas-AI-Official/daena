@@ -1,6 +1,13 @@
 import type { ReactNode } from 'react'
 
-type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'purple' | 'cyan' | 'amber'
+// BadgeVariant accepts both semantic names (danger/success/warning/info)
+// and alias forms used by various pages (error is an alias for danger,
+// outline is an unstyled/bordered variant used by ScanPage).
+type BadgeVariant =
+  | 'default' | 'success' | 'warning' | 'danger' | 'info'
+  | 'purple' | 'cyan' | 'amber'
+  | 'error'   // alias for danger, used by SecurityDashboardPage
+  | 'outline' // bordered-only variant used by ScanPage
 
 interface BadgeProps {
   variant?: BadgeVariant
@@ -19,6 +26,8 @@ const variantStyles: Record<BadgeVariant, string> = {
   purple: 'bg-accent-purple/20 text-accent-purple border-accent-purple/30',
   cyan: 'bg-accent-cyan/20 text-accent-cyan border-accent-cyan/30',
   amber: 'bg-accent-amber/20 text-accent-amber border-accent-amber/30',
+  error: 'bg-status-error/20 text-status-error border-status-error/30',
+  outline: 'bg-transparent text-starlight-300 border-white/15',
 }
 
 const dotColors: Record<BadgeVariant, string> = {
@@ -30,6 +39,8 @@ const dotColors: Record<BadgeVariant, string> = {
   purple: 'bg-accent-purple',
   cyan: 'bg-accent-cyan',
   amber: 'bg-accent-amber',
+  error: 'bg-status-error',
+  outline: 'bg-starlight-400',
 }
 
 export function Badge({ variant = 'default', children, size = 'sm', dot, className = '' }: BadgeProps) {

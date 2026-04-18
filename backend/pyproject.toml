@@ -85,6 +85,21 @@ plugins = ["pydantic.mypy"]
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
+# ── Bandit: static security analyzer config ──
+#
+# Offensive security scanner modules deliberately disable SSL verification
+# when probing targets (self-signed certs, expired certs, misconfigured
+# hosts are exactly the signals a pen-tester wants to capture). Excluding
+# B501 in those directories silences the false positives without
+# weakening the gate for the rest of the codebase.
+#
+# ``create_tool`` uses ``exec()`` on LLM-generated Python by design -- this
+# is the high-blast-radius capability now gated via ``permission_resolver``
+# CRITICAL classification (see ``tool_call_classifier._CODE_EXEC_TOOLS``).
+# B102 is intentional there and governed, not suppressed.
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "venv_daena"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

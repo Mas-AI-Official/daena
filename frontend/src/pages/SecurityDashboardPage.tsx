@@ -1137,22 +1137,26 @@ function MissionsTab() {
       )}
 
       {/* Mission detail */}
-      {selectedMission && missionDetail && (
+      {selectedMission && missionDetail ? (
         <Card className="p-4">
           <h3 className="text-sm font-medium text-starlight-300 mb-3">
             Mission Detail: {selectedMission}
           </h3>
-          {/* Status */}
-          {missionDetail.status && typeof missionDetail.status === 'object' && (
+          {Boolean(missionDetail.status) && typeof missionDetail.status === 'object' && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-              {['paths_total', 'paths_completed', 'paths_failed', 'nodes_discovered'].map(key => (
-                <div key={key} className="bg-starlight-900 rounded-lg p-3">
-                  <div className="text-xs text-starlight-500 capitalize">{key.replace(/_/g, ' ')}</div>
-                  <div className="text-lg font-semibold text-starlight-200 mt-1">
-                    {(missionDetail.status as Record<string, unknown>)[key] as number ?? 0}
+              {['paths_total', 'paths_completed', 'paths_failed', 'nodes_discovered'].map(key => {
+                // Narrow to number so React accepts the child. Unknown
+                // values fall back to 0 so the tile still renders rather
+                // than producing a TS2322 at build time.
+                const raw = (missionDetail.status as Record<string, unknown>)[key]
+                const value = typeof raw === 'number' ? raw : 0
+                return (
+                  <div key={key} className="bg-starlight-900 rounded-lg p-3">
+                    <div className="text-xs text-starlight-500 capitalize">{key.replace(/_/g, ' ')}</div>
+                    <div className="text-lg font-semibold text-starlight-200 mt-1">{value}</div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
           {/* Attack paths */}
@@ -1187,7 +1191,7 @@ function MissionsTab() {
             </div>
           ))}
         </Card>
-      )}
+      ) : null}
 
       {/* Empty state */}
       {missions.length === 0 && !loading && (

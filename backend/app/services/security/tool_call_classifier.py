@@ -83,6 +83,18 @@ _EXEC_TOOLS = {
     "vuln_scanner.vuln_scan",
 }
 
+# Tools that execute ARBITRARY code or install arbitrary system
+# software. These escalate to CRITICAL risk so the governance pipeline
+# always triggers the approval gate (tier 4 in every mode per
+# GOVERNANCE_TIER_MAP). ``create_tool`` in particular uses ``exec()`` on
+# LLM-generated Python and is the highest-blast-radius primitive in
+# the dispatcher. Closes bandit B102 finding via governance, not code
+# removal -- the feature is a deliberate Daena capability.
+_CODE_EXEC_TOOLS = {
+    "create_tool.create",
+    "install_system_tool.install",
+}
+
 _CONTROL_PLANE_TOOLS = {
     "workflow.execute", "workflow.create", "workflow.delete",
     "mcp.call_tool", "mcp.connect", "mcp.disconnect",
@@ -193,6 +205,24 @@ class ToolCallClassifier:
                 auto_approve=False,  # Always needs governance for writes
                 risk_level="medium" if scoped else "high",
                 reason="File mutation" + (" within workspace" if scoped else " outside workspace"),
+            )
+
+        # Arbitrary-code tools. ``create_tool`` execs LLM-generated
+        # Python, ``install_system_tool`` runs package-manager commands
+        # with LLM-chosen args. These must ALWAYS require a human
+        # decision regardless of mode, so we mark CRITICAL -- that
+        # maps to tier 4 in every GOVERNANCE_TIER_MAP row and fires
+        # REQUEST_INPUT in all modes including UNLEASHED+AGI.
+        if normalized in _CODE_EXEC_TOOLS:
+            return ToolClassification(
+                tool_name=normalized,
+                approval_class=ApprovalClass.EXEC_CAPABLE,
+                auto_approve=False,
+                risk_level="critical",
+                reason=(
+                    "Arbitrary code execution / package install -- "
+                    "requires human approval in every governance mode"
+                ),
             )
 
         # Exec capable tools

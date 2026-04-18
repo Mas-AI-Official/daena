@@ -1139,7 +1139,7 @@ class CognitiveScanEngine:
                     async with _httpx.AsyncClient(
                         timeout=5.0,
                         follow_redirects=False,
-                        verify=False,
+                        verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
                         proxy=deception_proxy or None,
                     ) as decoy_client:
                         for decoy in deception_plan.decoy_actions:
@@ -1254,7 +1254,7 @@ class CognitiveScanEngine:
                             import httpx as _hx
                             req_h = self._get_request_headers()
                             async with _hx.AsyncClient(
-                                timeout=10.0, verify=False,
+                                timeout=10.0, verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
                                 proxy=self._resolve_proxy() or None,
                             ) as _client:
                                 resp = await _client.get(cf_url, headers=req_h)
@@ -1491,7 +1491,7 @@ class CognitiveScanEngine:
                         _proxy2 = self._resolve_proxy()
                         try:
                             async with _hx2.AsyncClient(
-                                timeout=8.0, verify=False,
+                                timeout=8.0, verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
                                 follow_redirects=False,
                                 proxy=_proxy2 or None,
                             ) as hyp_client:
@@ -2978,7 +2978,7 @@ class CognitiveScanEngine:
             async with httpx.AsyncClient(
                 timeout=10.0,
                 follow_redirects=False,
-                verify=False,
+                verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
             ) as client:
                 for path in interesting_paths:
                     try:
@@ -3036,7 +3036,7 @@ class CognitiveScanEngine:
             async with httpx.AsyncClient(
                 timeout=8.0,
                 follow_redirects=False,
-                verify=False,
+                verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
                 proxy=proxy or None,
             ) as client:
                 for probe in probes:
@@ -3166,7 +3166,7 @@ class CognitiveScanEngine:
             async with httpx.AsyncClient(
                 timeout=10.0,
                 follow_redirects=True,
-                verify=False,
+                verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
                 proxy=self._resolve_proxy() or None,
             ) as client:
                 await self._opsec_wait()
@@ -3370,7 +3370,7 @@ class CognitiveScanEngine:
             async with httpx.AsyncClient(
                 timeout=8.0,
                 follow_redirects=False,
-                verify=False,
+                verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
                 proxy=proxy or None,
             ) as client:
                 for probe in probes:
@@ -3440,7 +3440,7 @@ class CognitiveScanEngine:
             async with httpx.AsyncClient(
                 timeout=10.0,
                 follow_redirects=False,
-                verify=False,
+                verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
                 proxy=proxy or None,
             ) as client:
                 for sequence in sequences:
@@ -3503,7 +3503,7 @@ class CognitiveScanEngine:
             async with httpx.AsyncClient(
                 timeout=15.0,
                 follow_redirects=False,
-                verify=False,
+                verify=False,  # nosec: B501 (offensive probe must accept invalid certs)
                 proxy=proxy or None,
             ) as client:
                 # Establish baseline timing with a simple GET

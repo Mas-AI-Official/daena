@@ -797,7 +797,12 @@ class ToolCatalog:
         logger.info("tool_catalog.installing", tool=name, cmd=tool.install_cmd)
 
         try:
-            result = subprocess.run(
+            # tool.install_cmd is a hardcoded string literal defined in
+            # _DEFAULT_TOOLS above; never derived from user input. shell=True
+            # is needed so multi-step chains like
+            # ``choco install X -y && npm install Y`` work. Bandit B602
+            # is therefore a false positive at this site.
+            result = subprocess.run(  # nosec B602
                 tool.install_cmd,
                 shell=True,
                 capture_output=True,

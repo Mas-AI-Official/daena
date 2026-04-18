@@ -206,7 +206,11 @@ class StayAwakeService:
                     '[System.Runtime.InteropServices.Marshal]::'
                     'SetThreadExecutionState(0x80000000)"'
                 )
-            subprocess.Popen(
+            # cmd is a hardcoded static PowerShell string (lines above),
+            # not user input. shell=True is required here so we can pipe
+            # the Add-Type / Marshal call through powershell.exe on
+            # Windows. Bandit B602 false positive.
+            subprocess.Popen(  # nosec B602
                 cmd, shell=True,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )

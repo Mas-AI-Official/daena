@@ -56,6 +56,10 @@ backend/intelligence_benchmark_results.json
 backend/truthfulqa_results.json
 backend/data/benchmarks/
 
+# Bandit scan outputs (re-generated on each run; canonical fingerprint
+# is in docs/pitch/SECURITY-SELF-AUDIT-*.md)
+backend/bandit_*.json
+
 # Generated vault reports (canonical vault is D:\Ideas\Daena-Mind\)
 backend/data/mind/
 

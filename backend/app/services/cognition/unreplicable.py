@@ -184,7 +184,13 @@ class ResponseTopologyMapper:
         for resp in responses:
             headers = resp.get("headers", {})
             header_keys = sorted(k.lower() for k in headers.keys()) if isinstance(headers, dict) else []
-            header_sig = hashlib.md5(",".join(header_keys).encode()).hexdigest()[:8]
+            # MD5 used as a non-cryptographic fingerprint for HTTP header
+            # ordering -- never for auth or integrity. usedforsecurity=False
+            # tells hashlib to allow MD5 on FIPS-restricted systems and
+            # silences bandit B324.
+            header_sig = hashlib.md5(  # nosec B324
+                ",".join(header_keys).encode(), usedforsecurity=False,
+            ).hexdigest()[:8]
 
             point = TopologyPoint(
                 input_variation=resp.get("variation", ""),

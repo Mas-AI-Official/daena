@@ -581,15 +581,22 @@ DEFAULT_SKILLS: list[dict] = [
 
 GOVERNANCE_TIER_MAP: dict[GovernanceMode, dict[RiskLevel, int]] = {
     # UNLEASHED: Shield only. Everything is tier 0 (logged) except
-    # CRITICAL actions which still get tier 2 (notified).
+    # CRITICAL actions which escalate to tier 4 so the approval gate
+    # still fires. Matches permission_resolver's intent ("We only
+    # pause on tier 4, reached for CRITICAL risk") and closes the
+    # self-audit finding that CRITICAL=2 in UNLEASHED was below the
+    # tier>=3 REQUEST_INPUT threshold, leaving arbitrary-code tools
+    # like ``create_tool`` auto-proceeding.
     GovernanceMode.UNLEASHED: {
         RiskLevel.NONE: 0, RiskLevel.LOW: 0, RiskLevel.MEDIUM: 0,
-        RiskLevel.HIGH: 0, RiskLevel.CRITICAL: 2,
+        RiskLevel.HIGH: 0, RiskLevel.CRITICAL: 4,
     },
-    # BALANCED: Auto-approve most. HIGH gets notified, CRITICAL needs approval.
+    # BALANCED: Auto-approve most. HIGH needs approval (tier 3),
+    # CRITICAL strict approval (tier 4). Previous HIGH=2 meant HIGH
+    # tools auto-proceeded unless per-tool ASK was set.
     GovernanceMode.BALANCED: {
         RiskLevel.NONE: 0, RiskLevel.LOW: 0, RiskLevel.MEDIUM: 1,
-        RiskLevel.HIGH: 2, RiskLevel.CRITICAL: 3,
+        RiskLevel.HIGH: 3, RiskLevel.CRITICAL: 4,
     },
     # GOVERNED: Full pipeline. MEDIUM+ escalates. HIGH/CRITICAL need approval.
     GovernanceMode.GOVERNED: {
