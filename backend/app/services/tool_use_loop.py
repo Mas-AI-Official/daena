@@ -488,7 +488,74 @@ class ToolUseLoop:
 
         yield "[No LLM available for tool-use loop]"
 
+    # Error patterns that trigger OpenClaw-parity auto-heal.
+    _HEAL_TRIGGERS = (
+        "no module named",
+        "modulenotfounderror",
+        "command not found",
+        "is not recognized",
+        "cannot find module",
+    )
+
     async def _execute_tool(
+        self, tool_name: str, params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Public tool entry: dispatch + OpenClaw-parity auto-heal.
+
+        Thin wrapper around ``_dispatch_once``. On failure (either a
+        raised exception or a returned ``{success: False, stderr: ...}``
+        carrying a heal-trigger pattern), ``_auto_install`` runs and
+        the dispatch retries ONCE. Only in ``agi_mode`` -- explicit
+        operator opt-in -- because autonomous install is the capability
+        that makes Daena feel alive but also widens the trust boundary.
+
+        Guard-rails that stay intact:
+        * Single retry max (``_heal_in_progress`` guard).
+        * ``_auto_install`` only runs the pattern-extracted package
+          name against pip/npm; no arbitrary code path.
+        * LLM-initiated ``install_system_tool`` calls are still gated
+          CRITICAL by the permission resolver -- prompt-injection
+          defense is preserved.
+        """
+        result = await self._dispatch_once(tool_name, params)
+
+        if (
+            self.agi_mode
+            and not result.get("success")
+            and not getattr(self, "_heal_in_progress", False)
+        ):
+            combined_err = (
+                f"{result.get('error','')} {result.get('stderr','')}"
+            ).lower()
+            if any(t in combined_err for t in self._HEAL_TRIGGERS):
+                self._heal_in_progress = True
+                try:
+                    heal = await self._auto_install(
+                        error_text=combined_err,
+                        tool_name=tool_name,
+                        params=params,
+                    )
+                    if heal.get("success"):
+                        logger.info(
+                            "tool_loop.auto_healed",
+                            tool=tool_name,
+                            installed=heal.get("installed"),
+                            method=heal.get("method"),
+                            trigger="result_dict",
+                        )
+                        retry = await self._dispatch_once(tool_name, params)
+                        if retry.get("success"):
+                            retry["auto_healed"] = {
+                                "installed": heal.get("installed"),
+                                "method": heal.get("method"),
+                            }
+                        return retry
+                finally:
+                    self._heal_in_progress = False
+
+        return result
+
+    async def _dispatch_once(
         self, tool_name: str, params: dict[str, Any],
     ) -> dict[str, Any]:
         """Execute a single tool call through the appropriate dispatch path.
@@ -726,15 +793,13 @@ class ToolUseLoop:
                 tool=tool_name,
                 error=str(exc),
             )
-            # Let the error flow back to the LLM. The LLM has access to
-            # web_search, install_package, install_system_tool, create_tool,
-            # and run_command. It will DECIDE the right recovery strategy:
-            #   - Search online for how to fix it
-            #   - Install a missing package
-            #   - Try a different tool
-            #   - Build a custom tool
-            #   - Ask the user
-            # This is intelligence through DECISION, not hardcoded keyword matching.
+            # Returning ``error`` rather than raising so the public
+            # ``_execute_tool`` wrapper can inspect it for the
+            # auto-heal trigger patterns. That keeps the heal path
+            # uniform whether the dispatch raised or returned a
+            # non-success dict (subprocess-based tools typically do
+            # the latter). The LLM gets the error back unchanged if
+            # the heal path can't help it.
             return {"success": False, "error": str(exc)}
 
     # ── Dispatch Handlers ────────────────────────────────────────
@@ -744,10 +809,21 @@ class ToolUseLoop:
     ) -> dict[str, Any]:
         """Auto-install missing dependencies when AGI mode is on.
 
-        Daena installs what she needs: if a tool/command/package isn't found,
-        she figures out what to install and does it.
+        Daena installs what she needs: if a tool/command/package isn't
+        found, she figures out what to install and does it. This is the
+        OpenClaw-equivalent adaptive primitive -- error triggers a
+        self-heal attempt before the LLM loop reports failure.
+
+        Bug history (2026-04-18 self-audit): earlier versions shelled out
+        to bare ``pip install`` which resolves from PATH, so packages
+        landed in the wrong Python env when Daena runs in a venv. Fixed
+        by pinning to ``sys.executable -m pip`` so installs always go to
+        the interpreter actually running Daena. Success detection also
+        accepts both ``return_code`` and ``exit_code`` + ``returncode``
+        keys, since ``TerminalAgent.execute_command`` varies per OS.
         """
         import re
+        import sys
 
         # Extract package name from common error patterns
         package = None
@@ -768,31 +844,50 @@ class ToolUseLoop:
 
         logger.info("tool_loop.auto_install_attempting", package=package)
 
-        # Try pip install first
+        def _ok(r: dict[str, Any]) -> bool:
+            """Accept any exit-code-zero flavor the shell might report."""
+            for key in ("return_code", "returncode", "exit_code"):
+                if key in r:
+                    return r.get(key) == 0
+            return bool(r.get("success"))
+
+        # Try pip install using the ACTIVE interpreter (fixes venv miss).
+        # Shelling out to bare ``pip`` would hit whatever pip is first on
+        # PATH, which almost never matches ``sys.executable`` in a venv.
         try:
             from app.services.daenabot.terminal_agent import TerminalAgent
             agent = TerminalAgent()
+            py = sys.executable
             result = await agent.execute_command(
-                command=f"pip install {package}",
-                timeout=60,
+                command=f'"{py}" -m pip install {package}',
+                timeout=120,
             )
-            if result.get("return_code", 1) == 0:
-                return {"success": True, "installed": package, "method": "pip"}
-        except Exception:
-            pass
+            if _ok(result):
+                # Bust importlib cache so the newly-installed module is
+                # callable in the SAME process without a restart.
+                import importlib
+                importlib.invalidate_caches()
+                return {
+                    "success": True,
+                    "installed": package,
+                    "method": "pip",
+                    "python": py,
+                }
+        except Exception as exc:
+            logger.debug("auto_install.pip_failed", error=str(exc))
 
-        # Try npm install
+        # Fallback: npm global install for CLI-style packages.
         try:
             from app.services.daenabot.terminal_agent import TerminalAgent
             agent = TerminalAgent()
             result = await agent.execute_command(
                 command=f"npm install -g {package}",
-                timeout=60,
+                timeout=120,
             )
-            if result.get("return_code", 1) == 0:
+            if _ok(result):
                 return {"success": True, "installed": package, "method": "npm"}
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("auto_install.npm_failed", error=str(exc))
 
         return {"success": False, "error": f"Failed to install {package}"}
 
@@ -1375,8 +1470,21 @@ except ImportError:
         return {"success": True, "tool_name": tool_name, "message": f"Tool '{tool_name}' created and available for this session"}
 
     async def _exec_install_system_tool(self, params: dict[str, Any]) -> dict[str, Any]:
-        """AGI: Install a system tool using the best available package manager."""
-        import asyncio, platform, shutil
+        """AGI: Install a system tool using the best available package
+        manager.
+
+        Manager preference order tuned for autonomous install:
+        1. ``pip`` when the target looks like a Python package (most
+           common path for Daena's self-extension).
+        2. ``npm`` for CLI-style tools + MCP servers.
+        3. OS-native managers as fallback.
+
+        pip is invoked via ``sys.executable -m pip`` so installs go to
+        the interpreter actually running Daena (fixes venv miss that
+        earlier versions had when pip on PATH differed from the venv
+        pip).
+        """
+        import asyncio, platform, shutil, sys
         tool_name = params["tool_name"]
         manager = params.get("manager")
 
@@ -1400,7 +1508,7 @@ except ImportError:
                 return {"success": False, "error": "No package manager found"}
 
         cmds = {
-            "pip": f"pip install {tool_name}",
+            "pip": f'"{sys.executable}" -m pip install {tool_name}',
             "npm": f"npm install -g {tool_name}",
             "winget": f"winget install {tool_name}",
             "choco": f"choco install {tool_name} -y",

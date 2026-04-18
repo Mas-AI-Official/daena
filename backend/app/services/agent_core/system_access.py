@@ -112,9 +112,18 @@ class SystemAccess:
         }
 
     async def run_python(self, code: str) -> dict[str, Any]:
-        """Run Python code."""
+        """Run Python code.
+
+        Uses ``sys.executable`` so the subprocess inherits the same
+        interpreter (venv or system) that Daena is running on. The
+        prior version shelled out to bare ``python`` which resolved
+        from PATH and routinely mismatched the running env -- making
+        ``_auto_install`` appear broken because packages landed in the
+        venv but the subprocess ran against a different Python.
+        """
+        import sys
         result = await asyncio.to_thread(
-            _run_sync, ["python", "-c", code], timeout=60.0,
+            _run_sync, [sys.executable, "-c", code], timeout=60.0,
         )
         return {
             "returncode": result.returncode,
@@ -124,9 +133,15 @@ class SystemAccess:
         }
 
     async def install_package(self, package: str, manager: str = "pip") -> bool:
-        """Install a package."""
+        """Install a package.
+
+        For pip, uses ``sys.executable -m pip`` so installs always
+        target the interpreter actually running Daena (matches the
+        fix in ``run_python``).
+        """
+        import sys
         if manager == "pip":
-            cmd = ["pip", "install", package, "--quiet"]
+            cmd = [sys.executable, "-m", "pip", "install", package, "--quiet"]
         elif manager == "npm":
             cmd = ["npm", "install", package]
         else:
