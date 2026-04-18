@@ -58,7 +58,7 @@ async def test_create_session(client: AsyncClient) -> None:
     assert body["data"]["title"] == "Test Session"
     assert body["data"]["mode"] == "CMD"
     assert body["data"]["routing_mode"] == "STANDARD"
-    assert body["data"]["governance_slider"] == "STANDARD"
+    assert body["data"]["governance_slider"] == "BALANCED"
     assert body["data"]["is_archived"] is False
     assert body["data"]["message_count"] == 0
 
@@ -74,7 +74,7 @@ async def test_create_session_with_custom_mode(client: AsyncClient) -> None:
             "title": "EXE Session",
             "mode": "EXE",
             "routing_mode": "COUNCIL",
-            "governance_slider": "STRICT",
+            "governance_mode": "GOVERNED",
         },
         headers=auth["headers"],
     )
@@ -82,7 +82,7 @@ async def test_create_session_with_custom_mode(client: AsyncClient) -> None:
     data = response.json()["data"]
     assert data["mode"] == "EXE"
     assert data["routing_mode"] == "COUNCIL"
-    assert data["governance_slider"] == "STRICT"
+    assert data["governance_slider"] == "GOVERNED"
 
 
 @pytest.mark.asyncio

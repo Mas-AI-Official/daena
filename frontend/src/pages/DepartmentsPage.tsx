@@ -22,7 +22,18 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Shimmer } from '@/components/common'
 import { api } from '@/lib/api'
+import { useDepartmentStates, type DepartmentState } from '@/hooks/useDepartmentStates'
 import type { DepartmentResponse, ApiResponse } from '@/types/api'
+
+// Map the per-department live-status -> Badge variant. Absorbed from
+// the deleted CompanyDashboard so this page is the single source of
+// truth for department presence + activity.
+const STATUS_VARIANT: Record<string, 'default' | 'info' | 'warning' | 'success' | 'danger'> = {
+  IDLE:       'success',
+  WORKING:    'info',
+  OVERLOADED: 'warning',
+  OFFLINE:    'danger',
+}
 
 // Department icons + Tailwind color classes
 const DEPT_META: Record<
@@ -55,6 +66,13 @@ export function DepartmentsPage() {
   const navigate = useNavigate()
   const [departments, setDepartments] = useState<DepartmentResponse[]>([])
   const [loading, setLoading] = useState(true)
+  // Live status polled every 5s from /api/v1/department-states. Merged
+  // in from the deleted CompanyDashboard so operators do not need a
+  // separate page to see who is WORKING vs IDLE.
+  const { states } = useDepartmentStates()
+  const stateByName: Record<string, DepartmentState | undefined> = Object.fromEntries(
+    states.map((s) => [s.department_name, s]),
+  )
 
   useEffect(() => {
     const fetchDepts = async () => {
@@ -132,9 +150,16 @@ export function DepartmentsPage() {
                       <div className={`p-2.5 rounded-lg ${meta.bgColor} ${meta.color}`}>
                         {meta.icon}
                       </div>
-                      <Badge variant={dept.is_active ? 'success' : 'default'} size="sm">
-                        {dept.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
+                      {(() => {
+                        const live = stateByName[dept.name]
+                        const label = live?.status ?? (dept.is_active ? 'IDLE' : 'OFFLINE')
+                        return (
+                          <Badge variant={STATUS_VARIANT[label] ?? 'default'} size="sm">
+                            {label}
+                            {live && live.queue_depth > 0 ? ` -- ${live.queue_depth}` : ''}
+                          </Badge>
+                        )
+                      })()}
                     </div>
                     <h3 className="text-sm font-display font-semibold text-starlight-100 mb-1">
                       {dept.name}
@@ -162,6 +187,15 @@ export function DepartmentsPage() {
                         <ChevronRight size={12} />
                       </span>
                     </div>
+                    {(() => {
+                      const live = stateByName[dept.name]
+                      if (!live?.current_task_summary) return null
+                      return (
+                        <p className="mt-2 text-[10px] text-starlight-400 truncate" title={live.current_task_summary}>
+                          Now: {live.current_task_summary}
+                        </p>
+                      )
+                    })()}
                   </Card>
                 </motion.div>
               )

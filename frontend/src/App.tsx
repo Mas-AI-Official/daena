@@ -21,6 +21,13 @@ import { CompleteProfilePage } from '@/pages/CompleteProfilePage'
 const ChatPage = lazy(() => import('@/pages/ChatPage'))
 const DepartmentChatPage = lazy(() => import('@/pages/DepartmentChatPage'))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
+// CompanyDashboard + DepartmentInbox deleted 2026-04-17. The /departments
+// route is now the single source of truth for the 10-department model --
+// live status merged into the existing department cards. Inter-department
+// messages surface inside each department's chat room, not in a separate
+// inbox page. Backend services (DepartmentStateService,
+// DepartmentMessageService) preserved for agent programmatic use.
+const PoliciesPage = lazy(() => import('@/pages/PoliciesPage'))
 const GovernanceApprovalsPage = lazy(() => import('@/pages/GovernanceApprovalsPage'))
 const GovernanceAuditPage = lazy(() => import('@/pages/GovernanceAuditPage'))
 const DepartmentsPage = lazy(() => import('@/pages/DepartmentsPage'))
@@ -33,6 +40,12 @@ const FounderPage = lazy(() => import('@/pages/FounderPage'))
 const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
 const ProjectDetailPage = lazy(() => import('@/pages/ProjectDetailPage'))
 const PipelinePage = lazy(() => import('@/pages/PipelinePage'))
+const EngagementConsolePage = lazy(() => import('@/pages/EngagementConsolePage'))
+// CrmPage and VoiceConsolePage were removed 2026-04-17 -- the department
+// model (/departments/{id}) is the canonical UX. CRM lives inside the
+// Sales department room; voice is an agent capability in Customer
+// Service, not a user-facing page. Backend endpoints remain so the
+// department rooms can consume them.
 
 // New pages (Perplexity-level redesign)
 const AccountPage = lazy(() => import('@/pages/AccountPage'))
@@ -40,7 +53,6 @@ const FilesPage = lazy(() => import('@/pages/FilesPage'))
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
 const SecurityDashboardPage = lazy(() => import('@/pages/SecurityDashboardPage'))
 const ScanPage = lazy(() => import('@/pages/ScanPage'))
-const BenchmarkPage = lazy(() => import('@/pages/BenchmarkPage'))
 
 /** Skeleton loading fallback with shimmer animation for polished load perception */
 function PageLoader() {
@@ -90,13 +102,22 @@ function AppRoutes() {
                   <Route path="/chat" element={<ChatPage />} />
                   <Route path="/chat/:sessionId" element={<ChatPage />} />
                   <Route path="/dashboard" element={<DashboardPage />} />
+                  {/* Legacy URLs redirect to /departments (unified department model).
+                      /crm lived as a standalone page; now Sales owns CRM from its room.
+                      /voice lived as a standalone page; voice is agent infra -- Customer
+                      Service owns inbound calls from its room. */}
+                  <Route path="/company" element={<Navigate to="/departments" replace />} />
+                  <Route path="/inbox" element={<Navigate to="/departments" replace />} />
+                  <Route path="/crm" element={<Navigate to="/departments" replace />} />
+                  <Route path="/voice" element={<Navigate to="/departments" replace />} />
+                  <Route path="/policies" element={<PoliciesPage />} />
 
                   {/* Governance + Security */}
                   <Route path="/governance/approvals" element={<GovernanceApprovalsPage />} />
                   <Route path="/governance/audit" element={<GovernanceAuditPage />} />
                   <Route path="/security" element={<SecurityDashboardPage />} />
                   <Route path="/scan" element={<ScanPage />} />
-                  <Route path="/benchmark" element={<BenchmarkPage />} />
+                  <Route path="/engagements" element={<EngagementConsolePage />} />
 
                   {/* Intelligence */}
                   <Route path="/departments" element={<DepartmentsPage />} />
@@ -114,26 +135,13 @@ function AppRoutes() {
                   <Route path="/files" element={<FilesPage />} />
                   <Route path="/analytics" element={<AnalyticsPage />} />
 
-                  {/* Account (replaces old Settings) */}
+                  {/* Account -- profile management only */}
                   <Route path="/account" element={<AccountPage />} />
                   <Route path="/account/:category" element={<AccountPage />} />
-                  <Route path="/account/org/:category" element={<AccountPage />} />
 
-                  {/* Settings redirects (backward compat) */}
-                  <Route path="/settings" element={<Navigate to="/account" replace />} />
-                  <Route path="/settings/general" element={<Navigate to="/account/preferences" replace />} />
-                  <Route path="/settings/llm" element={<Navigate to="/account/assistant" replace />} />
-                  <Route path="/settings/billing" element={<Navigate to="/account/usage" replace />} />
-                  <Route path="/settings/voice" element={<Navigate to="/account/voice" replace />} />
-                  <Route path="/settings/notifications" element={<Navigate to="/account/notifications" replace />} />
-                  <Route path="/settings/shortcuts" element={<Navigate to="/account/shortcuts" replace />} />
-                  <Route path="/settings/about" element={<Navigate to="/account/details" replace />} />
-                  <Route path="/settings/governance" element={<Navigate to="/account/org/permissions" replace />} />
-                  <Route path="/settings/models" element={<Navigate to="/account/org/models" replace />} />
-                  <Route path="/settings/memory" element={<Navigate to="/account/org/memory" replace />} />
-                  <Route path="/settings/privacy" element={<Navigate to="/account/org/privacy" replace />} />
-                  <Route path="/settings/heartbeat" element={<Navigate to="/account/org/heartbeat" replace />} />
-                  <Route path="/settings/developer" element={<Navigate to="/account/org/developer" replace />} />
+                  {/* Settings -- 13 real Daena settings tabs */}
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/settings/:category" element={<SettingsPage />} />
 
                   {/* Projects */}
                   <Route path="/projects" element={<ProjectsPage />} />
@@ -141,7 +149,7 @@ function AppRoutes() {
                   <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
 
                   {/* Legacy redirects */}
-                  <Route path="/founder" element={<Navigate to="/account/org/permissions" replace />} />
+                  <Route path="/founder" element={<Navigate to="/settings/governance" replace />} />
 
                   {/* Catch-all -> chat */}
                   <Route path="*" element={<Navigate to="/chat" replace />} />

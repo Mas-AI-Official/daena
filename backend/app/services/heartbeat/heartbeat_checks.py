@@ -933,7 +933,7 @@ async def check_autonomous_work() -> HeartbeatCheckResult:
                         context = {
                             "session_id": str(task.session_id) if hasattr(task, "session_id") else "heartbeat",
                             "tenant_id": str(task.tenant_id) if hasattr(task, "tenant_id") else "",
-                            "governance_slider": "STANDARD",
+                            "governance_mode": "BALANCED",
                         }
                         receipts = await executor.execute_plan(subtasks, context)
 

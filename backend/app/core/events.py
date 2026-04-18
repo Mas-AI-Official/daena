@@ -129,6 +129,7 @@ async def initialize_runtime_registry() -> dict[str, bool]:
 
     Called during app startup after model registry init.
     Returns dict of {runtime_id: is_installed}.
+    Also starts the recovery monitor for automatic failover recovery.
     """
     registry = get_runtime_registry()
     installed = await registry.discover_all()
@@ -136,4 +137,15 @@ async def initialize_runtime_registry() -> dict[str, bool]:
     # Probe subscription status for all installed runtimes
     # so the registry can prioritize subscription-authenticated CLIs
     await registry.check_subscriptions_all()
+
+    # Start the recovery monitor (probes dead providers in background)
+    try:
+        from app.services.runtimes.recovery_monitor import get_recovery_monitor
+
+        monitor = get_recovery_monitor()
+        await monitor.start()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("recovery_monitor.start_failed", exc_info=True)
+
     return installed

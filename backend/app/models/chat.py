@@ -71,8 +71,8 @@ class ChatSession(Base, TenantMixin, TimestampMixin):
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     mode: Mapped[str] = mapped_column(String(10), nullable=False, server_default="CMD")
     routing_mode: Mapped[str] = mapped_column(String(20), nullable=False, server_default="STANDARD")
-    governance_slider: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default="STANDARD"
+    governance_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="BALANCED"
     )
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(), ForeignKey("chat_categories.id", ondelete="SET NULL"),

@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Daena | Sovereign Governed Security | MAS-AI Technologies</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.min.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/theme/black.min.css" id="theme" />
+<style>
+  :root {
+    --daena-slate: #0F1419;
+    --daena-slate-2: #151B23;
+    --daena-slate-3: #1E2630;
+    --daena-gold: #D4A843;
+    --daena-gold-soft: rgba(212, 168, 67, 0.15);
+    --daena-teal: #2DD4BF;
+    --daena-teal-soft: rgba(45, 212, 191, 0.12);
+    --daena-text: #E6EDF3;
+    --daena-muted: #8B98A8;
+    --daena-danger: #EF4444;
+    --daena-warning: #F59E0B;
+  }
+  html, body, .reveal .slides { background: var(--daena-slate); }
+  .reveal { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--daena-text); }
+  .reveal .slides section { text-align: left; padding: 1.6rem 2.6rem; }
+  .reveal h1, .reveal h2, .reveal h3, .reveal h4 { color: var(--daena-text); font-weight: 700; letter-spacing: -0.02em; text-transform: none; }
+  .reveal h1 { font-size: 3.2rem; margin-bottom: 0.4rem; }
+  .reveal h2 { font-size: 2.2rem; color: var(--daena-gold); margin-bottom: 0.8rem; }
+  .reveal h3 { font-size: 1.35rem; color: var(--daena-teal); margin-bottom: 0.5rem; }
+  .reveal h4 { font-size: 1.05rem; color: var(--daena-gold); margin-bottom: 0.4rem; }
+  .reveal p, .reveal li { font-size: 1.15rem; line-height: 1.5; color: var(--daena-text); }
+  .reveal strong { color: var(--daena-gold); font-weight: 700; }
+  .reveal em { color: var(--daena-teal); font-style: normal; font-weight: 600; }
+  .reveal .eyebrow { color: var(--daena-teal); font-family: "JetBrains Mono", monospace; font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.3rem; }
+  .reveal table { width: 100%; border-collapse: collapse; margin-top: 0.6rem; font-size: 0.95rem; }
+  .reveal th { background: var(--daena-gold-soft); color: var(--daena-gold); padding: 0.55rem 0.8rem; text-align: left; border-bottom: 1px solid rgba(212, 168, 67, 0.4); font-weight: 700; }
+  .reveal td { padding: 0.5rem 0.8rem; border-bottom: 1px solid rgba(139, 152, 168, 0.15); color: var(--daena-text); vertical-align: top; }
+  .reveal tr:hover td { background: rgba(45, 212, 191, 0.04); }
+  .reveal .card { background: var(--daena-slate-2); border: 1px solid rgba(212, 168, 67, 0.22); border-radius: 8px; padding: 0.85rem 1.1rem; margin: 0.35rem 0; }
+  .reveal .card-teal { background: var(--daena-slate-2); border: 1px solid rgba(45, 212, 191, 0.32); border-radius: 8px; padding: 0.85rem 1.1rem; margin: 0.35rem 0; }
+  .reveal .card-dark { background: var(--daena-slate-3); border: 1px solid rgba(139, 152, 168, 0.2); border-radius: 8px; padding: 0.85rem 1.1rem; margin: 0.35rem 0; }
+  .reveal .pill { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; margin-right: 0.3rem; margin-bottom: 0.25rem; }
+  .reveal .pill-gold { background: rgba(212, 168, 67, 0.18); color: var(--daena-gold); border: 1px solid rgba(212, 168, 67, 0.4); }
+  .reveal .pill-teal { background: rgba(45, 212, 191, 0.16); color: var(--daena-teal); border: 1px solid rgba(45, 212, 191, 0.36); }
+  .reveal .pill-danger { background: rgba(239, 68, 68, 0.14); color: var(--daena-danger); border: 1px solid rgba(239, 68, 68, 0.36); }
+  .reveal .pill-warn { background: rgba(245, 158, 11, 0.14); color: var(--daena-warning); border: 1px solid rgba(245, 158, 11, 0.36); }
+  .reveal .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+  .reveal .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.7rem; }
+  .reveal .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.5rem; }
+  .reveal .title-slide { text-align: center; padding-top: 3rem; }
+  .reveal .title-slide h1 { font-size: 5rem; background: linear-gradient(135deg, var(--daena-gold) 0%, var(--daena-teal) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: -0.03em; }
+  .reveal .title-slide .tagline { color: var(--daena-text); font-size: 1.55rem; font-weight: 400; margin-top: 0.4rem; }
+  .reveal .title-slide .meta { color: var(--daena-muted); font-size: 0.95rem; margin-top: 1.6rem; }
+  .reveal .metric { display: inline-block; text-align: center; padding: 0.7rem 1.1rem; background: var(--daena-slate-2); border-radius: 8px; border-top: 3px solid var(--daena-gold); margin: 0.3rem; min-width: 160px; }
+  .reveal .metric .num { display: block; font-size: 1.9rem; font-weight: 700; color: var(--daena-gold); font-family: "JetBrains Mono", monospace; }
+  .reveal .metric .label { display: block; color: var(--daena-muted); font-size: 0.78rem; margin-top: 0.1rem; }
+  .reveal .check { color: var(--daena-teal); font-weight: 700; }
+  .reveal .cross { color: var(--daena-danger); font-weight: 700; }
+  .reveal section::after { content: "Daena | MAS-AI Technologies | Confidential"; position: absolute; bottom: 0.4rem; right: 1.8rem; color: var(--daena-muted); font-size: 0.65rem; }
+  .reveal .progress { color: var(--daena-gold); }
+  .reveal .controls path { fill: var(--daena-gold); }
+  .reveal figure { margin: 0.4rem 0; text-align: center; }
+  .reveal figcaption { color: var(--daena-muted); font-size: 0.75rem; margin-top: 0.3rem; font-style: italic; }
+  .reveal .flow-svg text { font-family: "Inter", sans-serif; }
+  .reveal .footnote { color: var(--daena-muted); font-size: 0.82rem; margin-top: 0.6rem; }
+</style>
+</head>
+<body>
+<div class="reveal">
+  <div class="slides">
+
+    <!-- 01 TITLE -->
+    <section class="title-slide">
+      <h1>Daena</h1>
+      <p class="tagline">Sovereign governed AI security,<br/>with agents that <em>run the business itself.</em></p>
+      <p class="meta">MAS-AI Technologies Inc. | Masoud Masoori, Founder<br/>Ontario, Canada | masoud@mas-ai.co | app.daena.mas-ai.co<br/>April 2026 | Pre-Seed</p>
+    </section>
+
+    <!-- 02 THE WEDGE -->
+    <section>
+      <p class="eyebrow">The wedge</p>
+      <h2>Governments are buying AI. Nobody ships governed offensive AI.</h2>
+      <div class="grid-2" style="margin-top: 0.8rem;">
+        <div class="card">
+          <h4>The gap in the market</h4>
+          <p>Every G7 agency now has a line item for sovereign AI. They cannot run classified work on Anthropic, OpenAI, or Google clouds. They need on-prem, audit trails, governance as architecture.</p>
+        </div>
+        <div class="card">
+          <h4>What exists today</h4>
+          <p>Legacy pen-test firms (slow, human-driven). Automated scanners (no thinking). OpenClaw and NemoClaw (zero governance, <span class="accent-gold">9 CVEs in 2 months</span>). No vendor ships both governed <em>and</em> offensive.</p>
+        </div>
+        <div class="card-teal">
+          <h4>Daena has already built it</h4>
+          <p>7-layer full-spectrum security operator. OODA-R cognitive scan. 17 offensive lenses. 80+ tools. Apollo + Hunter + supply-chain OSINT. Cognitive Knowledge Graph that compounds every engagement. Local-only activation behind HMAC gate.</p>
+        </div>
+        <div class="card-teal">
+          <h4>The compounding move</h4>
+          <p>The same OSINT stack Daena uses to find vulnerabilities is the <em>same stack a world-class outbound sales team uses</em>. Daena runs her own sales. Every outbound touch is audit-chained, same as every security finding.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 WORKFLOW DIAGRAM -->
+    <section>
+      <p class="eyebrow">What actually happens</p>
+      <h2>From message to audited action in 10 stages</h2>
+      <figure>
+        <svg class="flow-svg" width="100%" viewBox="0 0 1200 460" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrowHead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L9,3 z" fill="#D4A843" />
+            </marker>
+            <linearGradient id="pipelineGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#D4A843" stop-opacity="0.8"/>
+              <stop offset="100%" stop-color="#2DD4BF" stop-opacity="0.8"/>
+            </linearGradient>
+          </defs>
+          <!-- Input -->
+          <g>
+            <rect x="20" y="200" width="110" height="60" rx="8" fill="#151B23" stroke="#2DD4BF" stroke-width="2"/>
+            <text x="75" y="228" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">User message</text>
+            <text x="75" y="245" text-anchor="middle" fill="#8B98A8" font-size="10">or agent task</text>
+          </g>
+          <path d="M130 230 L160 230" stroke="#D4A843" stroke-width="2" marker-end="url(#arrowHead)"/>
+          <!-- Stages 1-5 row -->
+          <g font-family="Inter, sans-serif">
+            <rect x="165" y="60" width="155" height="60" rx="6" fill="#151B23" stroke="#D4A843" stroke-width="1.5"/>
+            <text x="242" y="82" text-anchor="middle" fill="#D4A843" font-size="10" font-family="JetBrains Mono">STAGE 1</text>
+            <text x="242" y="100" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">SecurityGate</text>
+            <text x="242" y="115" text-anchor="middle" fill="#8B98A8" font-size="10">Prompt injection scan</text>
+
+            <rect x="335" y="60" width="155" height="60" rx="6" fill="#151B23" stroke="#D4A843" stroke-width="1.5"/>
+            <text x="412" y="82" text-anchor="middle" fill="#D4A843" font-size="10" font-family="JetBrains Mono">STAGE 2</text>
+            <text x="412" y="100" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">LoadSession</text>
+            <text x="412" y="115" text-anchor="middle" fill="#8B98A8" font-size="10">Context hydration</text>
+
+            <rect x="505" y="60" width="155" height="60" rx="6" fill="#151B23" stroke="#D4A843" stroke-width="1.5"/>
+            <text x="582" y="82" text-anchor="middle" fill="#D4A843" font-size="10" font-family="JetBrains Mono">STAGE 3</text>
+            <text x="582" y="100" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">QueryUnderstand</text>
+            <text x="582" y="115" text-anchor="middle" fill="#8B98A8" font-size="10">Intent, risk, complexity</text>
+
+            <rect x="675" y="60" width="155" height="60" rx="6" fill="#151B23" stroke="#D4A843" stroke-width="1.5"/>
+            <text x="752" y="82" text-anchor="middle" fill="#D4A843" font-size="10" font-family="JetBrains Mono">STAGE 4</text>
+            <text x="752" y="100" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">Governance</text>
+            <text x="752" y="115" text-anchor="middle" fill="#8B98A8" font-size="10">Tier 0-4, approval?</text>
+
+            <rect x="845" y="60" width="155" height="60" rx="6" fill="#151B23" stroke="#D4A843" stroke-width="1.5"/>
+            <text x="922" y="82" text-anchor="middle" fill="#D4A843" font-size="10" font-family="JetBrains Mono">STAGE 5</text>
+            <text x="922" y="100" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">CostPreflight</text>
+            <text x="922" y="115" text-anchor="middle" fill="#8B98A8" font-size="10">Budget check</text>
+          </g>
+          <!-- connectors 1-5 -->
+          <path d="M320 90 L335 90" stroke="#D4A843" stroke-width="2" marker-end="url(#arrowHead)"/>
+          <path d="M490 90 L505 90" stroke="#D4A843" stroke-width="2" marker-end="url(#arrowHead)"/>
+          <path d="M660 90 L675 90" stroke="#D4A843" stroke-width="2" marker-end="url(#arrowHead)"/>
+          <path d="M830 90 L845 90" stroke="#D4A843" stroke-width="2" marker-end="url(#arrowHead)"/>
+          <!-- input to stage 1 -->
+          <path d="M160 230 Q 242 230 242 120" stroke="#D4A843" stroke-width="2" marker-end="url(#arrowHead)" fill="none"/>
+          <!-- drop from 5 to 6 -->
+          <path d="M1000 90 Q 1080 90 1080 230 Q 1080 330 1000 330" stroke="#D4A843" stroke-width="2" marker-end="url(#arrowHead)" fill="none"/>
+          <!-- Stages 6-10 row -->
+          <g font-family="Inter, sans-serif">
+            <rect x="845" y="300" width="155" height="60" rx="6" fill="#151B23" stroke="#2DD4BF" stroke-width="1.5"/>
+            <text x="922" y="322" text-anchor="middle" fill="#2DD4BF" font-size="10" font-family="JetBrains Mono">STAGE 6</text>
+            <text x="922" y="340" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">ModelRouter</text>
+            <text x="922" y="355" text-anchor="middle" fill="#8B98A8" font-size="10">tag 0.40, local 0.25</text>
+
+            <rect x="675" y="300" width="155" height="60" rx="6" fill="#151B23" stroke="#2DD4BF" stroke-width="1.5"/>
+            <text x="752" y="322" text-anchor="middle" fill="#2DD4BF" font-size="10" font-family="JetBrains Mono">STAGE 7</text>
+            <text x="752" y="340" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">MemoryRecall</text>
+            <text x="752" y="355" text-anchor="middle" fill="#8B98A8" font-size="10">NBMF T0-T4</text>
+
+            <rect x="505" y="300" width="155" height="60" rx="6" fill="#151B23" stroke="#2DD4BF" stroke-width="1.5"/>
+            <text x="582" y="322" text-anchor="middle" fill="#2DD4BF" font-size="10" font-family="JetBrains Mono">STAGE 8</text>
+            <text x="582" y="340" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">BuildRequest</text>
+            <text x="582" y="355" text-anchor="middle" fill="#8B98A8" font-size="10">Soul Engine first</text>
+
+            <rect x="335" y="300" width="155" height="60" rx="6" fill="#151B23" stroke="#2DD4BF" stroke-width="1.5"/>
+            <text x="412" y="322" text-anchor="middle" fill="#2DD4BF" font-size="10" font-family="JetBrains Mono">STAGE 9</text>
+            <text x="412" y="340" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">Stream + EXE</text>
+            <text x="412" y="355" text-anchor="middle" fill="#8B98A8" font-size="10">LLM + DaenaBot</text>
+
+            <rect x="165" y="300" width="155" height="60" rx="6" fill="#151B23" stroke="#2DD4BF" stroke-width="1.5"/>
+            <text x="242" y="322" text-anchor="middle" fill="#2DD4BF" font-size="10" font-family="JetBrains Mono">STAGE 10</text>
+            <text x="242" y="340" text-anchor="middle" fill="#E6EDF3" font-size="13" font-weight="600">Persist + Audit</text>
+            <text x="242" y="355" text-anchor="middle" fill="#8B98A8" font-size="10">SHA-256 chain</text>
+          </g>
+          <!-- connectors 6-10 (reverse order) -->
+          <path d="M845 330 L830 330" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead)"/>
+          <path d="M675 330 L660 330" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead)"/>
+          <path d="M505 330 L490 330" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead)"/>
+          <path d="M335 330 L320 330" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead)"/>
+          <!-- Output -->
+          <path d="M165 330 L 75 330 L 75 260" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead)" fill="none"/>
+          <!-- Approval gate annotation -->
+          <g>
+            <rect x="690" y="160" width="130" height="40" rx="4" fill="#1E2630" stroke="#F59E0B" stroke-width="1"/>
+            <text x="755" y="178" text-anchor="middle" fill="#F59E0B" font-size="10" font-weight="600">IF TIER 3+</text>
+            <text x="755" y="192" text-anchor="middle" fill="#E6EDF3" font-size="9">approval row persisted</text>
+          </g>
+          <path d="M755 120 L 755 160" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 3"/>
+          <!-- Evidence annotation -->
+          <g>
+            <rect x="400" y="400" width="420" height="40" rx="4" fill="#1E2630" stroke="#D4A843" stroke-width="1"/>
+            <text x="610" y="420" text-anchor="middle" fill="#D4A843" font-size="11" font-weight="600">Every stage writes to tamper-evident audit chain</text>
+            <text x="610" y="433" text-anchor="middle" fill="#8B98A8" font-size="9">SHA-256 hash linked, AES-256 vault, replayable</text>
+          </g>
+        </svg>
+        <figcaption>Every chat message, agent task, and voice utterance takes this exact path. Same pipeline for a pen-test action, a sales email, a voice call, a contract redline.</figcaption>
+      </figure>
+    </section>
+
+    <!-- 04 AGENT LIFECYCLE -->
+    <section>
+      <p class="eyebrow">How Daena runs her own business</p>
+      <h2>Each department compounds the audit chain</h2>
+      <figure>
+        <svg width="100%" viewBox="0 0 1200 320" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrowHead2" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#2DD4BF" />
+            </marker>
+          </defs>
+          <g font-family="Inter, sans-serif">
+            <!-- stages -->
+            <rect x="20" y="130" width="130" height="70" rx="6" fill="#151B23" stroke="#D4A843" stroke-width="2"/>
+            <text x="85" y="155" text-anchor="middle" fill="#D4A843" font-size="10" font-family="JetBrains Mono">PROSPECT</text>
+            <text x="85" y="172" text-anchor="middle" fill="#E6EDF3" font-size="12" font-weight="600">SecOps + Research</text>
+            <text x="85" y="188" text-anchor="middle" fill="#8B98A8" font-size="10">OSINT + breach intel</text>
+
+            <rect x="170" y="130" width="130" height="70" rx="6" fill="#151B23" stroke="#D4A843" stroke-width="2"/>
+            <text x="235" y="155" text-anchor="middle" fill="#D4A843" font-size="10" font-family="JetBrains Mono">QUALIFY</text>
+            <text x="235" y="172" text-anchor="middle" fill="#E6EDF3" font-size="12" font-weight="600">Sales + Research</text>
+            <text x="235" y="188" text-anchor="middle" fill="#8B98A8" font-size="10">Council debate</text>
+
+            <rect x="320" y="130" width="130" height="70" rx="6" fill="#151B23" stroke="#D4A843" stroke-width="2"/>
+            <text x="385" y="155" text-anchor="middle" fill="#D4A843" font-size="10" font-family="JetBrains Mono">OUTREACH</text>
+            <text x="385" y="172" text-anchor="middle" fill="#E6EDF3" font-size="12" font-weight="600">Marketing + Voice</text>
+            <text x="385" y="188" text-anchor="middle" fill="#8B98A8" font-size="10">Email + call + DM</text>
+
+            <rect x="470" y="130" width="130" height="70" rx="6" fill="#151B23" stroke="#D4A843" stroke-width="2"/>
+            <text x="535" y="155" text-anchor="middle" fill="#D4A843" font-size="10" font-family="JetBrains Mono">MEETING</text>
+            <text x="535" y="172" text-anchor="middle" fill="#E6EDF3" font-size="12" font-weight="600">Sales + Engineering</text>
+            <text x="535" y="188" text-anchor="middle" fill="#8B98A8" font-size="10">Briefing + demo</text>
+
+            <rect x="620" y="130" width="130" height="70" rx="6" fill="#151B23" stroke="#D4A843" stroke-width="2"/>
+            <text x="685" y="155" text-anchor="middle" fill="#D4A843" font-size="10" font-family="JetBrains Mono">PROPOSAL</text>
+            <text x="685" y="172" text-anchor="middle" fill="#E6EDF3" font-size="12" font-weight="600">Sales + Legal + Finance</text>
+            <text x="685" y="188" text-anchor="middle" fill="#8B98A8" font-size="10">Quote + redline</text>
+
+            <rect x="770" y="130" width="130" height="70" rx="6" fill="#151B23" stroke="#2DD4BF" stroke-width="2"/>
+            <text x="835" y="155" text-anchor="middle" fill="#2DD4BF" font-size="10" font-family="JetBrains Mono">CLOSE</text>
+            <text x="835" y="172" text-anchor="middle" fill="#E6EDF3" font-size="12" font-weight="600">Sales + Legal</text>
+            <text x="835" y="188" text-anchor="middle" fill="#8B98A8" font-size="10">Sign + onboard</text>
+
+            <rect x="920" y="130" width="130" height="70" rx="6" fill="#151B23" stroke="#2DD4BF" stroke-width="2"/>
+            <text x="985" y="155" text-anchor="middle" fill="#2DD4BF" font-size="10" font-family="JetBrains Mono">DELIVER</text>
+            <text x="985" y="172" text-anchor="middle" fill="#E6EDF3" font-size="12" font-weight="600">SecOps + Engineering</text>
+            <text x="985" y="188" text-anchor="middle" fill="#8B98A8" font-size="10">Engagement + report</text>
+
+            <rect x="1070" y="130" width="130" height="70" rx="6" fill="#151B23" stroke="#2DD4BF" stroke-width="2"/>
+            <text x="1135" y="155" text-anchor="middle" fill="#2DD4BF" font-size="10" font-family="JetBrains Mono">EXPAND</text>
+            <text x="1135" y="172" text-anchor="middle" fill="#E6EDF3" font-size="12" font-weight="600">Support + Skills</text>
+            <text x="1135" y="188" text-anchor="middle" fill="#8B98A8" font-size="10">Retention + upsell</text>
+          </g>
+          <!-- arrows -->
+          <path d="M150 165 L170 165" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead2)"/>
+          <path d="M300 165 L320 165" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead2)"/>
+          <path d="M450 165 L470 165" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead2)"/>
+          <path d="M600 165 L620 165" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead2)"/>
+          <path d="M750 165 L770 165" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead2)"/>
+          <path d="M900 165 L920 165" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead2)"/>
+          <path d="M1050 165 L1070 165" stroke="#2DD4BF" stroke-width="2" marker-end="url(#arrowHead2)"/>
+          <!-- Governance underline -->
+          <rect x="20" y="250" width="1180" height="40" rx="4" fill="#1E2630" stroke="#D4A843" stroke-width="1"/>
+          <text x="610" y="273" text-anchor="middle" fill="#D4A843" font-size="12" font-weight="600">Every arrow is a governed inter-department message. Every action is auditable. Every won deal compounds into NBMF T3 institutional memory.</text>
+          <!-- Skill governance loop -->
+          <path d="M1200 200 Q 1220 230 1200 260 L 20 260 Q 0 230 20 200" stroke="#2DD4BF" stroke-width="1" stroke-dasharray="4 4" fill="none"/>
+          <text x="610" y="25" text-anchor="middle" fill="#8B98A8" font-size="11" font-style="italic">Same OSINT stack that finds vulnerabilities finds customers</text>
+          <path d="M85 80 L 85 130" stroke="#D4A843" stroke-width="1" stroke-dasharray="3 3"/>
+          <rect x="20" y="50" width="130" height="30" rx="4" fill="#1E2630" stroke="#D4A843" stroke-width="1"/>
+          <text x="85" y="70" text-anchor="middle" fill="#D4A843" font-size="10" font-weight="600">Apollo + Hunter</text>
+        </svg>
+        <figcaption>10 departments, 60 sub-capabilities, single audit chain. Each arrow is a governed message handoff (Session C <code>department_messages</code>). See <code>AGENT-OPS-PLAYBOOK.md</code>.</figcaption>
+      </figure>
+    </section>
+
+    <!-- 05 THE 7 SECURITY LAYERS -->
+    <section>
+      <p class="eyebrow">The asset nobody else has</p>
+      <h2>7-layer governed security operator</h2>
+      <table>
+        <thead><tr><th>Layer</th><th>Capability</th><th>Why it matters</th></tr></thead>
+        <tbody>
+          <tr><td><strong>1. Cognitive Scan</strong></td><td>OODA-R with 17 offensive lenses</td><td>Thinks + adapts. Not a CVE scanner.</td></tr>
+          <tr><td><strong>2. Post-Exploitation</strong></td><td>SSH / HTTP / DB / TCP interaction, credential chains</td><td>Proves impact. Ships deliverables auditors accept.</td></tr>
+          <tr><td><strong>3. OSINT</strong></td><td>Apollo + Hunter + people intel + supply chain + breach intel</td><td><em>Also runs the sales pipeline.</em></td></tr>
+          <tr><td><strong>4. Cognition</strong></td><td>ErrorOracle, AdversarialSimulator, 7 attack-chain patterns</td><td>Catches what chain-of-tool scanners miss.</td></tr>
+          <tr><td><strong>5. OPSEC</strong></td><td>5 browser fingerprints, timing controller, AES-256 evidence vault</td><td>Client-grade, not academic.</td></tr>
+          <tr><td><strong>6. Intelligence Infra</strong></td><td>80+ tools, Cognitive Knowledge Graph, SelfUpgrader</td><td>Compounds every engagement. Moat grows with usage.</td></tr>
+          <tr><td><strong>7. Evidence + Reporting</strong></td><td>SHA-256 rolling chain, PDF report generator</td><td>What gets procured. What auditors sign.</td></tr>
+        </tbody>
+      </table>
+      <p class="footnote">Layer 8 Hidden Shield overlays the security capability onto all 10 departments. Engineering gets vuln-aware code review; Legal gets compliance-gap analysis; Sales gets social-engineering-vector identification.</p>
+    </section>
+
+    <!-- 06 SOVEREIGNTY -->
+    <section>
+      <p class="eyebrow">Why this wins procurement</p>
+      <h2>Sovereign by default, not by accident</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h4>Local-only security activation</h4>
+          <p>The offensive subsystem cannot activate in cloud (K_SERVICE blocked). HMAC-gated key distribution. Every government evaluator gets a signed key; every deployment is traceable.</p>
+        </div>
+        <div class="card">
+          <h4>Air-gap reference deployment</h4>
+          <p>Phase J Sovereign Edition ships an offline USB-deliverable bundle with local Ollama + vLLM. Runs on a disconnected workstation. FedRAMP and IL2/IL4 pathway.</p>
+        </div>
+        <div class="card-teal">
+          <h4>What competitors cannot do</h4>
+          <p>Perplexity, Manus, NemoClaw, OpenClaw were born cloud. Retrofitting air-gap is months of rebuild. Daena started sovereign; adding cloud was the optional part.</p>
+        </div>
+        <div class="card-teal">
+          <h4>Governance is architecture</h4>
+          <p>10-stage pipeline. 9 immutable Hard Laws. 3-mode slider (UNLEASHED / BALANCED / GOVERNED). Cannot be bypassed. Cannot be wrapped-away. The audit chain is hash-linked.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 07 UNIT ECONOMICS -->
+    <section>
+      <p class="eyebrow">Real revenue math</p>
+      <h2>Security services, not per-seat SaaS</h2>
+      <table>
+        <thead><tr><th>SKU</th><th>Price</th><th>Gross margin</th><th>Comparable</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Pen-test engagement</strong> (1-2 weeks, fixed)</td><td>$25K to $150K</td><td>78% after comp</td><td>Bishop Fox $80K avg; NCC $120K avg</td></tr>
+          <tr><td><strong>Continuous SOC</strong> (monthly retainer)</td><td>$5K to $50K / mo</td><td>72% after infra</td><td>Arctic Wolf $8K/mo avg; Red Canary $12K/mo</td></tr>
+          <tr><td><strong>Compliance audit support</strong> (SOC 2, HIPAA, ISO)</td><td>$30K to $200K</td><td>80%+ (mostly audit chain + report)</td><td>Drata + auditor $60K combined; Daena one vendor</td></tr>
+          <tr><td><strong>Sovereign Edition</strong> (per-site / year)</td><td>$80K to $400K</td><td>85%+ (license fee)</td><td>Palantir Foundry $500K+; Daena 60% less</td></tr>
+          <tr><td><strong>Voice-enabled agent tier</strong></td><td>$500 / seat / mo</td><td>68% (platform + carrier)</td><td>Cresta $300/seat; Regal $500/seat</td></tr>
+          <tr><td><strong>PRO self-serve</strong> (top of funnel feeder)</td><td>$29 to $99 / mo</td><td>67%</td><td>Stays, but not the growth engine</td></tr>
+        </tbody>
+      </table>
+      <p class="footnote">A single government pilot ($50K/mo SOC + $150K entry engagement) = $750K ARR. Three pilots = $2.25M ARR. Cost base at 2 FTE = $330K. Remains cash-flow positive by month 14 in the base scenario.</p>
+    </section>
+
+    <!-- 08 WHY NOW -->
+    <section>
+      <p class="eyebrow">Why now</p>
+      <h2>Three forces, one window</h2>
+      <div class="grid-3">
+        <div class="card">
+          <h4>Governments buying AI</h4>
+          <p>UK AISI, US AI Action Plan, Canada CATAIR, EU AI Act budgets. Every agency has a sovereign-AI line item. Nobody ships governed offensive AI for them.</p>
+        </div>
+        <div class="card">
+          <h4>Security re-tooling</h4>
+          <p>NemoClaw is a wrapper. OpenClaw is ungoverned. Every pen-test firm is racing to automate without an audit answer. The audit answer is the product.</p>
+        </div>
+        <div class="card-teal">
+          <h4>Solo-founder leverage</h4>
+          <p>Tony Dinh $2M ARR solo. Pieter Levels $3M. Marc Lou $1M+. The archetype wins in narrow verticals where depth compounds. Masoud already built the depth.</p>
+        </div>
+      </div>
+      <p class="footnote">The durable wedge: <strong>sovereign governed offensive AI</strong>. No competitor has all three. The founders who do are either at scale labs who will not sell per-site licenses or VC-backed startups without audit-first architecture.</p>
+    </section>
+
+    <!-- 09 TRACTION -->
+    <section>
+      <p class="eyebrow">Already shipped</p>
+      <h2>Production-ready out of solo build</h2>
+      <div style="text-align: center; margin-top: 0.4rem;">
+        <div class="metric"><span class="num">3,048</span><span class="label">Backend tests passing</span></div>
+        <div class="metric"><span class="num">0</span><span class="label">TS errors / warnings</span></div>
+        <div class="metric"><span class="num">v3.6.0</span><span class="label">Live on GCP Cloud Run</span></div>
+        <div class="metric"><span class="num">26</span><span class="label">Frontend pages, lazy-loaded</span></div>
+        <div class="metric"><span class="num">10 / 10</span><span class="label">Departments active</span></div>
+        <div class="metric"><span class="num">9</span><span class="label">LLM providers integrated</span></div>
+        <div class="metric"><span class="num">80+</span><span class="label">Security tools cataloged</span></div>
+        <div class="metric"><span class="num">2</span><span class="label">USPTO provisionals filed</span></div>
+      </div>
+      <p class="footnote">Under 18 months solo. Tamper-evident audit chain shipping. Governance pipeline green end-to-end. April 2026 session: permission resolver wired at BOTH tool-dispatch chokepoints (ExecutionService + agent loop), VP Stage 2.85 materializes multi-dept plans as live Task + Approval rows, frontend shows live inline approval cards driven by SSE. Full regression suite passing.</p>
+    </section>
+
+    <!-- 10 GTM -->
+    <section>
+      <p class="eyebrow">Go-to-market, next 4 quarters</p>
+      <h2>Phase-gated execution</h2>
+      <table>
+        <thead><tr><th>Quarter</th><th>Phase</th><th>Outcome</th><th>Revenue gate</th></tr></thead>
+        <tbody>
+          <tr><td>Q2 2026</td><td>G: Shield Activation + Demo Kit</td><td>Reproducible $25K pen-test in 48h</td><td>1 paid pilot</td></tr>
+          <tr><td>Q2 2026</td><td>H: Agent Ops Activation</td><td>Daena's own agents book 5+ meetings/week</td><td>Self-sourced pipeline</td></tr>
+          <tr><td>Q3 2026</td><td>I: Voice Operator</td><td>Outbound + inbound call stack, audit-chained</td><td>Voice-tier SKU live</td></tr>
+          <tr><td>Q3 2026</td><td>J: Sovereign Deployment Kit</td><td>Air-gapped USB installer</td><td>First agency eval under Sovereign</td></tr>
+          <tr><td>Q4 2026</td><td>K: SOC-as-a-Service</td><td>3 monthly retainers, SOC 2 Type 1</td><td>$40K+ MRR</td></tr>
+          <tr><td>Q1 2027</td><td>L: Federal ramp</td><td>FedRAMP moderate path, first gov pilot renewed</td><td>Series A readiness</td></tr>
+        </tbody>
+      </table>
+      <p class="footnote">Full plan: <code>docs/pitch/ROADMAP-V2.md</code>. Each phase has a demo, a codebase deliverable, and a revenue mechanism.</p>
+    </section>
+
+    <!-- 11 COMPETITIVE -->
+    <section>
+      <p class="eyebrow">Competitive posture</p>
+      <h2>Nobody combines all four</h2>
+      <table>
+        <thead><tr><th></th><th>Sovereign / air-gap</th><th>Governed</th><th>Offensive depth</th><th>Agents run ops</th></tr></thead>
+        <tbody>
+          <tr><td>Bishop Fox / NCC</td><td class="cross">NO</td><td>Manual</td><td class="check">YES</td><td class="cross">NO</td></tr>
+          <tr><td>Tenable / Qualys</td><td>Partial</td><td>Partial</td><td class="cross">No (scanner)</td><td class="cross">NO</td></tr>
+          <tr><td>XBOW / Ethiack</td><td class="cross">NO</td><td class="cross">NO</td><td>Partial</td><td class="cross">NO</td></tr>
+          <tr><td>NemoClaw / OpenClaw</td><td class="cross">NO</td><td class="cross">NO</td><td>Partial</td><td class="cross">NO</td></tr>
+          <tr><td>Microsoft Defender</td><td class="cross">NO</td><td>Partial</td><td class="cross">No (defensive)</td><td class="cross">NO</td></tr>
+          <tr><td><strong>Daena</strong></td><td class="check"><strong>YES</strong></td><td class="check"><strong>YES</strong></td><td class="check"><strong>YES</strong></td><td class="check"><strong>YES</strong></td></tr>
+        </tbody>
+      </table>
+      <p class="footnote">The combination is the moat. Any one of these is a product. Four together is a category.</p>
+    </section>
+
+    <!-- 12 ASK -->
+    <section>
+      <p class="eyebrow">The ask</p>
+      <h2>$630K pre-seed for 18 months</h2>
+      <table>
+        <thead><tr><th>Line</th><th>Amount</th><th>Outcome</th></tr></thead>
+        <tbody>
+          <tr><td>Founder runway, 18 mo</td><td><strong>$150K</strong></td><td>Masoud full-time through first enterprise close</td></tr>
+          <tr><td>Senior security engineer, 12 mo</td><td><strong>$180K</strong></td><td>Layer 9 continuous SOC, FedRAMP moderate readiness</td></tr>
+          <tr><td>Sales + partnerships lead, 12 mo</td><td><strong>$160K</strong></td><td>Agency pilot closes, 3 channel partners signed</td></tr>
+          <tr><td>GPU + infra (on-prem showcase + dev cloud)</td><td><strong>$60K</strong></td><td>DGX-class showcase for government demos</td></tr>
+          <tr><td>Legal / IP / SOC 2 Type 1</td><td><strong>$50K</strong></td><td>Audit-ready status required to sell to regulated buyers</td></tr>
+          <tr><td>GTM (Black Hat Arsenal, Federal Forum, ref deployment)</td><td><strong>$30K</strong></td><td>Reference customer case study published</td></tr>
+        </tbody>
+      </table>
+      <p class="footnote">Structure: SAFE post-money. Lead check $300K+ preferred; first check welcomed. Milestones pin the raise: 3 government conversations by month 3, 1 paid pilot by month 6, $1M ARR by month 18.</p>
+    </section>
+
+    <!-- 13 RISKS -->
+    <section>
+      <p class="eyebrow">Risks + how we defuse</p>
+      <h2>What can kill this and what we do about it</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h4>Government procurement slow</h4>
+          <p>Defuse: two regulated-enterprise logos in parallel (banks, critical infra) while agencies move. Revenue does not wait on FedRAMP.</p>
+        </div>
+        <div class="card">
+          <h4>Competitor ships "governed OpenClaw"</h4>
+          <p>Defuse: move fast on sovereignty + air-gap reference. Cloud-born competitors cannot ship air-gapped without months of rebuild.</p>
+        </div>
+        <div class="card">
+          <h4>Agent misstep burns a prospect</h4>
+          <p>Defuse: all outbound in GOVERNED mode for 90 days. Every email and call waits for approval. Loosen once precision is measured.</p>
+        </div>
+        <div class="card">
+          <h4>Single-founder risk</h4>
+          <p>Defuse: first senior hire within 90 days of round close. Senior engineer with security depth. Board observer seat for lead investor.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 14 CLOSE -->
+    <section class="title-slide">
+      <h2 style="color: var(--daena-gold); margin-bottom: 1.2rem;">Governed offensive AI, shipped sovereign.</h2>
+      <p style="font-size: 1.6rem; color: var(--daena-text);">Daena is the only platform that <em>thinks, exploits, audits, and sells itself.</em></p>
+      <p class="tagline" style="margin-top: 1.6rem;">Let's build the first governed-AI procurement vehicle.</p>
+      <p class="meta" style="margin-top: 1.4rem;">
+        <strong>Masoud Masoori</strong><br/>
+        Founder &amp; CEO, MAS-AI Technologies Inc.<br/>
+        masoud@mas-ai.co<br/>
+        <a href="https://app.daena.mas-ai.co" style="color: var(--daena-teal);">app.daena.mas-ai.co</a><br/><br/>
+        <span class="muted">Supporting docs: STRATEGY-2026-SOVEREIGN-SECURITY.md | ROADMAP-V2.md | AGENT-OPS-PLAYBOOK.md | VOICE-STACK-PLAN.md</span>
+      </p>
+    </section>
+
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.min.js"></script>
+<script>
+  Reveal.initialize({
+    controls: true,
+    progress: true,
+    history: true,
+    center: false,
+    slideNumber: 'c/t',
+    transition: 'slide',
+    width: 1280,
+    height: 820,
+    margin: 0.03
+  });
+</script>
+</body>
+</html>

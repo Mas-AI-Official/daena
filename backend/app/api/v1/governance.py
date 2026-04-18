@@ -68,7 +68,7 @@ async def evaluate_action(
     decision = await engine.evaluate(
         action_type=body.action_type,
         action_params=body.action_params,
-        governance_slider=body.governance_slider,
+        governance_slider=body.governance_mode,
         actor_type=body.actor_type,
         actor_role=user.role,
         tenant_id=user.tenant_id,
@@ -253,3 +253,39 @@ async def verify_audit_integrity(
     """
     result = await service.verify_chain_integrity(tenant_id=user.tenant_id)
     return {"success": True, "data": result}
+
+
+# ── Session 11: permission state endpoint ──
+#
+# Frontend asks this endpoint on the Connections page to decide:
+#   - Whether to dim per-tool Allow/Ask pills (UNLEASHED dims them)
+#   - Which banner copy to show above the MCP Servers list
+#
+# Takes governance_mode + autopilot as query params because they are
+# per-session runtime state; the frontend already holds them in the
+# uiStore. Returns the resolver's UI hints directly so the frontend
+# doesn't reimplement the logic.
+
+
+@router.get("/permission-state")
+async def get_permission_state(
+    governance_mode: str = Query("BALANCED"),
+    autopilot: bool = Query(False),
+    _user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return UI state describing how per-tool permissions interact
+    with the current governance mode + autopilot combination.
+
+    Session 11: unifies the two permission layers that evolved
+    separately (per-tool Allow/Ask/Block vs UNLEASHED/BALANCED/GOVERNED).
+    """
+    from app.core.constants import GovernanceMode
+    from app.services.permission_resolver import explain_permission_ui_state
+
+    try:
+        mode = GovernanceMode(governance_mode)
+    except ValueError:
+        mode = GovernanceMode.BALANCED
+
+    state = explain_permission_ui_state(mode, autopilot_active=autopilot)
+    return {"success": True, "data": {**state, "governance_mode": mode.value, "autopilot": autopilot}}

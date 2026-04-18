@@ -371,8 +371,13 @@ class ChatOrchestrator:
         autopilot = getattr(session_obj, "autopilot", False) or False
         think_mode = getattr(session_obj, "think_mode", False) or False
 
-        # ── Load user's Primary Mind preference ──
+        # ── Load user's Primary Mind preference + per-tool permissions ──
+        # Both come from ``User.settings`` JSONB. We fetch once here so
+        # later stages (Stage 8.5 agentic tool loop, Stage 7.5 dispatch)
+        # don't re-query for every tool invocation. ``extension_permissions``
+        # shape is documented in ``ExecutionService._get_user_tool_pref``.
         primary_mind: str | None = None
+        ext_perms_for_session: dict[str, Any] = {}
         try:
             from app.models.identity import User
             user_stmt = select(User).where(User.id == user_id)
@@ -380,6 +385,9 @@ class ChatOrchestrator:
             user_obj = user_result.scalar_one_or_none()
             if user_obj and user_obj.settings:
                 primary_mind = user_obj.settings.get("primary_runtime")
+                _ep = user_obj.settings.get("extension_permissions")
+                if isinstance(_ep, dict):
+                    ext_perms_for_session = _ep
         except Exception:
             logger.debug("orchestrator.primary_mind_lookup_failed", exc_info=True)
 
@@ -390,8 +398,12 @@ class ChatOrchestrator:
         system_prompt = (
             (_soul_prefix + "\n\n") if _soul_prefix else ""
         ) + _SYSTEM_PROMPT_DEFAULT
+        # Hoisted default so later stages (CKG insights, peer-signal
+        # injection) can reference `dept_name` without triggering
+        # UnboundLocalError when the session isn't pinned to a
+        # department (e.g. the Daena chat).
+        dept_name: str | None = None
         if session_obj.department_id:
-            dept_name = None
             with contextlib.suppress(Exception):
                 dept_name = session_obj.department.name if session_obj.department else None
             if dept_name:
@@ -605,6 +617,175 @@ class ChatOrchestrator:
                 "intent": qu_result.intent.value,
                 "risk": qu_result.risk_level.value,
             }
+
+        # ── Stage 2.8: Daena VP plan (Session B, feature-flagged) ─
+        # The VP decomposes the request into department-owned subtasks
+        # BEFORE governance evaluates, so governance can reason about
+        # the whole plan instead of the raw text. Gated by the
+        # `daena_vp_enabled` setting -- off by default for first deploy.
+        #
+        # The plan is attached to the session state but does not yet
+        # drive execution (that's Session D + the cross-dept
+        # messaging in Session C). For now it's recorded for audit
+        # + streamed to the UI so the user can see "Daena VP routed
+        # this to Marketing + Finance + Legal".
+        from app.core.config import get_settings as _get_settings
+        _vp_settings = _get_settings()
+        vp_plan = None
+        if getattr(_vp_settings, "daena_vp_enabled", False):
+            try:
+                from app.services.daena_vp import DaenaVP
+                from app.services.department_state_service import (
+                    DepartmentStateService,
+                )
+
+                _vp_state = DepartmentStateService(self._db)
+                _vp = DaenaVP(state_service=_vp_state)
+                vp_plan = await _vp.plan(
+                    user_request=user_content,
+                    tenant_id=tenant_id,
+                )
+                vp_plan = await _vp.route(vp_plan, tenant_id=tenant_id)
+                logger.info(
+                    "orchestrator.daena_vp_plan",
+                    session_id=str(session_id),
+                    routing_mode=vp_plan.routing_mode,
+                    departments=vp_plan.involved_departments,
+                    subtask_count=len(vp_plan.subtasks),
+                )
+                yield {
+                    "type": "daena_vp_plan",
+                    "routing_mode": vp_plan.routing_mode,
+                    "departments": vp_plan.involved_departments,
+                    "notes": vp_plan.notes,
+                }
+
+                # ── Stage 2.85: Materialize VP subtasks as Task rows ──
+                # Any multi-department plan produces visible Task rows
+                # so the founder can see work in flight on /tasks. Single-
+                # department plans skip this to keep the single-shot
+                # chat experience lightweight (regression guarantee in
+                # the plan spec: "single-dept plan still routes directly
+                # (no VP overhead)").
+                #
+                # When a subtask carries ``metadata.required_approvers``
+                # (populated by ``DaenaVP.apply_policies`` via
+                # ``DepartmentPolicyService``) we also write a
+                # ``GoaRequest`` + ``PendingApproval`` pair so the
+                # /governance/approvals page lights up. The actual
+                # inter-department solicitation runs in
+                # ``SwarmExecutor._solicit_required_approvers`` during
+                # execution; here we only surface the gate so the
+                # operator sees it immediately.
+                _created_task_ids: list[str] = []
+                if (
+                    vp_plan.subtasks
+                    and len(vp_plan.involved_departments) > 1
+                ):
+                    try:
+                        from app.models.execution import Task
+                        from app.services.approval import ApprovalService
+
+                        _approval_svc_for_vp = ApprovalService(self._db)
+                        for _vp_st in vp_plan.subtasks:
+                            _task = Task(
+                                tenant_id=tenant_id,
+                                user_id=user_id,
+                                session_id=session_id,
+                                name=(_vp_st.description or "")[:200],
+                                description=(
+                                    f"[{_vp_st.department}] "
+                                    f"{_vp_st.description}"
+                                )[:4000],
+                                status="PENDING",
+                                checkpoint_data={
+                                    "source": "daena_vp",
+                                    "department": _vp_st.department,
+                                    "task_type": _vp_st.task_type,
+                                    "routing_mode": vp_plan.routing_mode,
+                                    "required_approvers": (
+                                        _vp_st.metadata.get(
+                                            "required_approvers"
+                                        )
+                                        if _vp_st.metadata else None
+                                    ),
+                                    "reason": _vp_st.reason or None,
+                                },
+                            )
+                            self._db.add(_task)
+                            await self._db.flush()
+                            _created_task_ids.append(str(_task.id))
+
+                            # Surface required_approvers as a pending
+                            # approval so the founder sees a row on
+                            # /governance/approvals without waiting for
+                            # SwarmExecutor to start the inter-dept
+                            # solicitation.
+                            _req_app = (
+                                _vp_st.metadata.get("required_approvers")
+                                if _vp_st.metadata else None
+                            )
+                            if _req_app:
+                                try:
+                                    await _approval_svc_for_vp.request_approval(
+                                        tenant_id=tenant_id,
+                                        user_id=user_id,
+                                        action_type=(
+                                            f"department_task:"
+                                            f"{_vp_st.department}"
+                                        ),
+                                        action_params={
+                                            "description": _vp_st.description,
+                                            "department": _vp_st.department,
+                                            "task_id": str(_task.id),
+                                            "required_approvers": list(_req_app),
+                                        },
+                                        risk_level="MEDIUM",
+                                        governance_tier=3,
+                                        session_id=session_id,
+                                        context={
+                                            "source": "daena_vp_policy",
+                                            "task_id": str(_task.id),
+                                        },
+                                    )
+                                except Exception as _app_exc:
+                                    logger.warning(
+                                        "orchestrator.vp_approval_failed",
+                                        task_id=str(_task.id),
+                                        error=str(_app_exc),
+                                    )
+                        # One commit at the end so a partial failure
+                        # doesn't leave orphan rows. The outer session
+                        # will flush again on its own lifecycle.
+                        await self._db.flush()
+                        if _created_task_ids:
+                            yield {
+                                "type": "vp_subtasks_created",
+                                "task_ids": _created_task_ids,
+                                "count": len(_created_task_ids),
+                                "departments": vp_plan.involved_departments,
+                            }
+                            logger.info(
+                                "orchestrator.vp_subtasks_materialized",
+                                session_id=str(session_id),
+                                task_count=len(_created_task_ids),
+                                departments=vp_plan.involved_departments,
+                            )
+                    except Exception as _mat_exc:
+                        logger.warning(
+                            "orchestrator.vp_subtasks_materialize_failed",
+                            session_id=str(session_id),
+                            error=str(_mat_exc),
+                            exc_info=True,
+                        )
+            except Exception as exc:
+                # Fail-safe: VP must never block chat. Log and move on.
+                logger.warning(
+                    "orchestrator.daena_vp_failed",
+                    session_id=str(session_id),
+                    error=str(exc),
+                )
+                vp_plan = None
 
         # ── Stage 3: Governance pre-check ─────────────────────
         # governance_mode was resolved in Stage 0b above.
@@ -1104,7 +1285,7 @@ class ChatOrchestrator:
         except Exception:
             logger.debug("orchestrator.fs_skill_loader_failed", exc_info=True)
 
-        # ── Stage 6.5: TLM Phase-Aware Tool Optimization ────────
+        # ── Stage 6.65: TLM Phase-Aware Tool Optimization ───────
         # Detect conversation phase from user message (zero LLM cost),
         # activate/deactivate tools to minimize schema tokens loaded.
         try:
@@ -1143,6 +1324,158 @@ class ChatOrchestrator:
                     )
         except Exception:
             logger.debug("orchestrator.cognitive_lens_failed", exc_info=True)
+
+        # ── Stage 6.4: Peer signal injection ───────────────────
+        # Pull recent BorderAgent peer signals and inject them into the
+        # system prompt. This is the "departments aware of each other
+        # without meetings" vision: a Sales turn starts with Marketing
+        # / Legal / Finance signals already in context, without the
+        # human having to open a separate pane.
+        #
+        # Source selection:
+        #   - department-pinned chat -> that department's BorderAgent
+        #   - no department pin (Daena chat) -> Daena's wildcard
+        #     BorderAgent, which listens for "*" and sees everything
+        #     cross-department. That's the founder's VP lens as a
+        #     direct prompt enrichment.
+        #
+        # Cap at 5 signals (most recent) to avoid prompt bloat.
+        # Fail-safe: any error drops silently, never blocks the turn.
+        try:
+            from app.services.departments.border_agent import (
+                format_signals_for_prompt,
+                get_border_agent,
+            )
+
+            _signal_dept = dept_name or "Daena"
+            _lens_label = dept_name if dept_name else "Daena VP / company-wide"
+            peer_ba = await get_border_agent(
+                tenant_id=tenant_id, department=_signal_dept
+            )
+            peer_signals = peer_ba.recent_signals(limit=5)
+            rendered = format_signals_for_prompt(peer_signals)
+            if rendered:
+                system_prompt += (
+                    "\n\nRecent peer-department activity "
+                    f"({_lens_label} lens):\n" + rendered
+                )
+                logger.info(
+                    "orchestrator.peer_signals_injected",
+                    department=_signal_dept,
+                    count=len(peer_signals),
+                )
+        except Exception:
+            logger.debug(
+                "orchestrator.peer_signals_failed", exc_info=True
+            )
+
+        # ── Stage 6.45: Installed-plugin awareness ─────────────
+        # Inject a concise list of currently-installed MCPs + their
+        # headline skills into the system prompt. The LLM now knows
+        # what ``plugin.call_tool`` can dispatch to -- it doesn't
+        # have to guess, hallucinate, or decline a capability that
+        # IS actually installed. Fail-safe: if the bootstrap registry
+        # is unreachable, the turn continues without the hint.
+        try:
+            from app.services.mcp_bootstrap import list_installed_mcps
+
+            _installed = list_installed_mcps()
+            if _installed:
+                _lines: list[str] = []
+                for entry in _installed[:10]:
+                    _label = entry.display_name or entry.server_key
+                    _pkg = f" ({entry.package})" if entry.package else ""
+                    _lines.append(f"- {_label}{_pkg}")
+                system_prompt += (
+                    "\n\nInstalled plugins available to you via "
+                    "``plugin.call_tool``:\n" + "\n".join(_lines)
+                    + "\n\nUse ``plugin.list_tools({plugin_id})`` to see "
+                    "each plugin's exposed tools before calling."
+                )
+                logger.info(
+                    "orchestrator.plugin_awareness_injected",
+                    count=len(_installed),
+                )
+        except Exception:
+            logger.debug(
+                "orchestrator.plugin_awareness_failed", exc_info=True
+            )
+
+        # ── Stage 6.9: Meta-command short-circuit ──────────────
+        # ``/3vilbob`` toggles the T5 shield mode. It's a Daena meta-
+        # command, not a runtime slash command, so it MUST be
+        # intercepted here before the message reaches any runtime
+        # (Claude Code will otherwise reply "Unknown skill: 3vilbob").
+        # This runs in both CMD and EXE modes -- toggling a
+        # governance tier is not an execution, so gating it on EXE
+        # (as the old fast-path did) was a bug the founder hit in
+        # a CMD-mode chat.
+        # NOTE: renamed from 6.5 -> 6.9 to resolve duplicate label
+        # with Stage 6.5 skill retrieval (L1118). Runs last in the
+        # 6.x pre-LLM preparation band, right before Stage 7.
+        try:
+            import re as _re
+
+            _msg_trim = user_content.strip()
+            _is_meta = bool(
+                _re.match(
+                    r"^/3vilbob\s+(on|off|status)\s*$",
+                    _msg_trim,
+                    _re.IGNORECASE,
+                )
+                or _re.match(
+                    r"^/3vilbob\s+[\w.\-]+\.\w+",
+                    _msg_trim,
+                    _re.IGNORECASE,
+                )
+            )
+            if _is_meta:
+                from app.services.daenabot.router import DaenaBotRouter
+                from app.services.execution_service import ExecutionService
+
+                _meta_tool = DaenaBotRouter.match(user_content)
+                if _meta_tool is not None:
+                    _exec_svc = ExecutionService(self._db)
+                    _meta_result = await _exec_svc.execute_tool(
+                        tool_name=_meta_tool.tool_name,
+                        params=_meta_tool.params,
+                        session_id=session_id,
+                        user_id=user_id,
+                        tenant_id=tenant_id,
+                        governance_mode="UNLEASHED",
+                        actor_role="FOUNDER",
+                    )
+                    # Surface the result in the chat so the founder
+                    # sees the toggle took effect.
+                    _payload = (
+                        _meta_result.get("output")
+                        or _meta_result.get("error")
+                        or "Done."
+                    )
+                    yield {
+                        "type": "tool_use_response",
+                        "tool_name": _meta_tool.tool_name,
+                        "content": str(_payload),
+                    }
+                    yield {
+                        "type": "complete",
+                        "content": str(_payload),
+                        "model_used": "daena_meta",
+                        "pipeline_stages": ["meta_command"],
+                    }
+                    logger.info(
+                        "orchestrator.meta_command_dispatched",
+                        tool=_meta_tool.tool_name,
+                    )
+                    return
+        except Exception as meta_exc:
+            logger.debug(
+                "orchestrator.meta_command_failed",
+                error=str(meta_exc),
+                exc_info=True,
+            )
+            # Fall through -- if the meta-command dispatcher blew up,
+            # let the normal pipeline try to handle the message.
 
         # ── Stage 7: Build LLM request ────────────────────────
         llm_messages = []
@@ -2488,8 +2821,31 @@ class ChatOrchestrator:
                             self._db, user_id, tenant_id,
                             agi_mode=(governance_mode == GovernanceMode.UNLEASHED),
                             session_id=session_id,
+                            governance_mode=governance_mode,
+                            extension_permissions=ext_perms_for_session,
                         )
                         _tool_result = await _tul._execute_tool(_tc_name, _tc_params)
+
+                        # Surface governance outcomes to the frontend so
+                        # the approval card / block notice renders inline
+                        # in the chat stream (Package 3 UI).
+                        _gov_flag = _tool_result.get("governance") if isinstance(_tool_result, dict) else None
+                        if _gov_flag == "REQUEST_INPUT":
+                            _pending = _tool_result.get("pending_approval", {}) or {}
+                            yield {
+                                "type": "governance_approval_pending",
+                                "tool": _tc_name,
+                                "approval_id": _pending.get("approval_id"),
+                                "reason": _pending.get("reason"),
+                                "risk_tier": _tool_result.get("risk_tier"),
+                            }
+                        elif _gov_flag == "REFUSE":
+                            yield {
+                                "type": "tool_blocked",
+                                "tool": _tc_name,
+                                "reason": _tool_result.get("error"),
+                                "risk_tier": _tool_result.get("risk_tier"),
+                            }
 
                         yield {
                             "type": "daenabot_activity",

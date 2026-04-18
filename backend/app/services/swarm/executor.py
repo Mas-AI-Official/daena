@@ -73,6 +73,188 @@ class SwarmExecutor:
         """Signal cancellation to stop processing new subtasks."""
         self._cancelled = True
 
+    # ── Session A: department state tracking helpers ─────────────
+    #
+    # Each call opens a short-lived DB session so SwarmExecutor stays
+    # independent of FastAPI request scope (it also runs from the
+    # AutopilotController continuation loop which has no request).
+    # Failures are swallowed because a state-tracking error must not
+    # prevent a subtask from running.
+
+    async def _state_mark_working(
+        self,
+        *,
+        tenant_id: Any,
+        department: str,
+        task_id: str,
+        task_summary: str,
+    ) -> None:
+        try:
+            from app.core.database import async_session_factory
+            from app.services.department_state_service import (
+                DepartmentStateService,
+            )
+
+            async with async_session_factory() as session:
+                svc = DepartmentStateService(session)
+                await svc.mark_working(
+                    tenant_id=tenant_id,
+                    department=department,
+                    task_id=task_id,
+                    task_summary=task_summary,
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.warning(
+                "swarm.state_mark_working_failed",
+                department=department, error=str(exc),
+            )
+
+    # ── Phase 2: required_approvers gate ──────────────────────────
+    #
+    # DaenaVP (Session B) + DepartmentPolicyService (Session D) can tag
+    # a subtask's metadata with ``required_approvers: [dept, ...]``.
+    # Before the subtask runs, SwarmExecutor must ask each listed
+    # department for permission via the inter-department message bus
+    # and wait for all to answer. A single "no" blocks the subtask.
+    #
+    # Opens its own DB session (same pattern as state tracking). Runs
+    # sends in parallel and waits in parallel so N approvers do not
+    # serialize. Swallows errors around the inter-department channel
+    # to fail-safe: if the channel is degraded, the subtask proceeds
+    # (governance engine remains the hard gate for true high-risk
+    # actions).
+
+    async def _solicit_required_approvers(
+        self,
+        *,
+        subtask_id: str,
+        subtask_description: str,
+        from_department: str,
+        required_approvers: list[str],
+        tenant_id: Any,
+        timeout_seconds: int = 30,
+    ) -> tuple[bool, str]:
+        """Ask each listed department for permission. Return (approved, reason).
+
+        Protocol: send one ASK message per approver, wait up to
+        ``timeout_seconds`` for all answers. Answers whose body begins
+        with 'NO' (case-insensitive) count as denials. Missing answers
+        (timeout) count as provisional-approve because DepartmentPolicy
+        already resolved who must approve; if those departments are
+        unstaffed we do not want to block forever.
+        """
+        if not required_approvers:
+            return True, "no approvers required"
+
+        try:
+            import asyncio
+            from app.core.database import async_session_factory
+            from app.services.department_message_service import (
+                DepartmentMessageService,
+            )
+        except Exception as exc:
+            logger.warning(
+                "swarm.required_approvers.import_failed", error=str(exc),
+            )
+            return True, "approver channel unavailable (fail-safe)"
+
+        async with async_session_factory() as session:
+            svc = DepartmentMessageService(session)
+            message_ids: list[tuple[str, Any]] = []
+            for approver_dept in required_approvers:
+                if approver_dept == from_department:
+                    # Self-approval filter. DaenaVP's apply_policies
+                    # already strips these, but double-guard.
+                    continue
+                try:
+                    msg = await svc.send(
+                        tenant_id=tenant_id,
+                        from_department=from_department,
+                        to_department=approver_dept,
+                        subject=f"Approval needed: {subtask_description[:80]}",
+                        body=(
+                            f"Subtask {subtask_id} requires your approval.\n\n"
+                            f"Description: {subtask_description[:500]}\n\n"
+                            "Reply with ACK + body text to approve, or body "
+                            "text beginning with 'NO' to deny."
+                        ),
+                        context_ref=f"subtask:{subtask_id}",
+                        ttl_seconds=timeout_seconds,
+                    )
+                    message_ids.append((approver_dept, msg.id))
+                except Exception as exc:
+                    logger.warning(
+                        "swarm.required_approvers.send_failed",
+                        approver=approver_dept,
+                        error=str(exc),
+                    )
+            await session.commit()
+
+        if not message_ids:
+            return True, "no approvers after self-filter"
+
+        # Parallel wait across all approvers. Uses fresh DB sessions
+        # per approver so the pool does not deadlock.
+        async def _await_one(dept: str, mid: Any) -> tuple[str, str | None]:
+            try:
+                async with async_session_factory() as session:
+                    svc = DepartmentMessageService(session)
+                    final = await svc.wait_for_answer(
+                        message_id=mid,
+                        timeout_seconds=timeout_seconds,
+                        poll_interval_seconds=1.0,
+                    )
+                    return dept, (final.body if final and final.status == "ANSWERED" else None)
+            except Exception as exc:
+                logger.warning(
+                    "swarm.required_approvers.wait_failed",
+                    approver=dept, error=str(exc),
+                )
+                return dept, None
+
+        answers = await asyncio.gather(
+            *[_await_one(dept, mid) for dept, mid in message_ids],
+            return_exceptions=False,
+        )
+
+        denials: list[str] = []
+        for dept, body in answers:
+            if body is None:
+                # Timeout / missing. Fail-safe: treat as provisional approve.
+                continue
+            if body.strip().upper().startswith("NO"):
+                denials.append(f"{dept}: {body.strip()[:80]}")
+
+        if denials:
+            return False, "Denied by " + "; ".join(denials)
+        return True, "all approvers green or provisionally approved"
+
+    async def _state_mark_idle(
+        self,
+        *,
+        tenant_id: Any,
+        department: str,
+    ) -> None:
+        try:
+            from app.core.database import async_session_factory
+            from app.services.department_state_service import (
+                DepartmentStateService,
+            )
+
+            async with async_session_factory() as session:
+                svc = DepartmentStateService(session)
+                await svc.mark_idle(
+                    tenant_id=tenant_id,
+                    department=department,
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.warning(
+                "swarm.state_mark_idle_failed",
+                department=department, error=str(exc),
+            )
+
     async def execute_plan(
         self,
         subtasks: list[SubTask],
@@ -82,7 +264,7 @@ class SwarmExecutor:
 
         Args:
             subtasks: List of SubTask objects from SwarmPlanner.
-            context: Execution context (governance_slider, user_id, etc.).
+            context: Execution context (governance_mode, user_id, etc.).
 
         Returns:
             List of ExecutionReceipts for all executed subtasks.
@@ -226,75 +408,189 @@ class SwarmExecutor:
 
         Steps:
             1. Optional governance check
-            2. Execute on assigned runtime
-            3. On failure, try fallback runtime
-            4. Return receipt
+            2. Mark the assigned department WORKING in state registry
+            3. Execute on assigned runtime
+            4. On failure, try fallback runtime
+            5. Mark department IDLE (success or failure path)
+            6. Return receipt
+
+        Session A wire-in: department state registry tracks live
+        availability so Daena VP (Session B) can route based on
+        current load.
         """
         subtask.status = "running"
         start = time.perf_counter()
 
-        # Optional governance check
-        if self._governance:
+        # Session A: grab the department for state tracking. Missing
+        # metadata or tenant_id = skip silently so this never breaks
+        # non-company execution paths.
+        department = subtask.metadata.get("department") if subtask.metadata else None
+        tenant_id = context.get("tenant_id")
+        state_tracked = bool(department and tenant_id)
+        if state_tracked:
+            await self._state_mark_working(
+                tenant_id=tenant_id,
+                department=department,
+                task_id=subtask.id,
+                task_summary=subtask.description,
+            )
+            # Emit a peer-visible lifecycle event via the BorderAgent so
+            # every subscribing department sees that this dept just
+            # picked up work. Fail-safe: never block the subtask if the
+            # bus is unavailable.
             try:
-                gov_result = await self._governance.evaluate(
-                    action_type="RUNTIME_EXECUTION",
-                    action_params={
-                        "task_type": subtask.task_type,
-                        "runtime": subtask.assigned_runtime,
-                        "description": subtask.description[:200],
-                    },
-                    governance_slider=context.get("governance_slider", "STANDARD"),
-                    actor_type="SYSTEM",
-                    actor_role=context.get("user_role", "OPERATOR"),
-                    tenant_id=context.get("tenant_id"),
-                    user_id=context.get("user_id"),
-                    session_id=context.get("session_id"),
+                from app.services.departments.border_agent import (
+                    DepartmentEvent,
+                    get_border_agent,
                 )
-                if not gov_result.get("allowed", True):
+                ba = await get_border_agent(tenant_id=tenant_id, department=department)
+                await ba.emit(
+                    DepartmentEvent.TASK_STARTED,
+                    payload={
+                        "task_id": subtask.id,
+                        "task_summary": subtask.description[:200],
+                        "task_type": subtask.task_type,
+                    },
+                )
+            except Exception as exc:
+                logger.debug(
+                    "swarm.border_emit_task_started_failed",
+                    department=department, error=str(exc),
+                )
+
+        try:
+            # Optional governance check
+            if self._governance:
+                try:
+                    gov_result = await self._governance.evaluate(
+                        action_type="RUNTIME_EXECUTION",
+                        action_params={
+                            "task_type": subtask.task_type,
+                            "runtime": subtask.assigned_runtime,
+                            "description": subtask.description[:200],
+                        },
+                        governance_slider=context.get("governance_mode", "BALANCED"),
+                        actor_type="SYSTEM",
+                        actor_role=context.get("user_role", "OPERATOR"),
+                        tenant_id=context.get("tenant_id"),
+                        user_id=context.get("user_id"),
+                        session_id=context.get("session_id"),
+                    )
+                    if not gov_result.get("allowed", True):
+                        subtask.status = "rejected"
+                        duration = int((time.perf_counter() - start) * 1000)
+                        receipt = self._make_receipt(
+                            subtask, "rejected",
+                            error=gov_result.get("message", "Governance rejected"),
+                            duration_ms=duration,
+                        )
+                        subtask.receipt = receipt
+                        return receipt
+                except Exception as exc:
+                    logger.warning(
+                        "swarm.governance_check_failed",
+                        subtask_id=subtask.id,
+                        error=str(exc),
+                    )
+                    # Fail-safe: proceed without governance if engine errors
+
+            # Phase 2: required_approvers gate (inter-department ask).
+            # DaenaVP + DepartmentPolicyService populate
+            # subtask.metadata["required_approvers"] when policy demands
+            # sign-off from other departments (e.g. Finance must approve
+            # expenses > $500 before Marketing executes an ad buy).
+            required_approvers = (
+                subtask.metadata.get("required_approvers") if subtask.metadata else None
+            ) or []
+            if required_approvers and tenant_id:
+                approved, reason = await self._solicit_required_approvers(
+                    subtask_id=subtask.id,
+                    subtask_description=subtask.description,
+                    from_department=department or "Daena",
+                    required_approvers=list(required_approvers),
+                    tenant_id=tenant_id,
+                    timeout_seconds=int(context.get("approver_timeout_seconds", 30)),
+                )
+                if not approved:
                     subtask.status = "rejected"
                     duration = int((time.perf_counter() - start) * 1000)
                     receipt = self._make_receipt(
                         subtask, "rejected",
-                        error=gov_result.get("message", "Governance rejected"),
+                        error=f"Required approvers blocked: {reason}",
                         duration_ms=duration,
                     )
                     subtask.receipt = receipt
+                    logger.info(
+                        "swarm.required_approvers.blocked",
+                        subtask_id=subtask.id,
+                        reason=reason,
+                    )
                     return receipt
-            except Exception as exc:
-                logger.warning(
-                    "swarm.governance_check_failed",
-                    subtask_id=subtask.id,
-                    error=str(exc),
-                )
-                # Fail-safe: proceed without governance if engine errors
 
-        # Execute on primary runtime
-        result = await self._try_runtime(subtask, subtask.assigned_runtime, context)
-        if result.status == "success":
-            subtask.status = "complete"
-            subtask.receipt = result
-            return result
-
-        # Try fallback runtime
-        if subtask.fallback_runtime:
-            logger.info(
-                "swarm.trying_fallback",
-                subtask_id=subtask.id,
-                primary=subtask.assigned_runtime,
-                fallback=subtask.fallback_runtime,
-            )
-            result = await self._try_runtime(
-                subtask, subtask.fallback_runtime, context,
-            )
+            # Execute on primary runtime
+            result = await self._try_runtime(subtask, subtask.assigned_runtime, context)
             if result.status == "success":
                 subtask.status = "complete"
                 subtask.receipt = result
                 return result
 
-        # Both failed
-        subtask.status = "failed"
-        subtask.receipt = result
-        return result
+            # Try fallback runtime
+            if subtask.fallback_runtime:
+                logger.info(
+                    "swarm.trying_fallback",
+                    subtask_id=subtask.id,
+                    primary=subtask.assigned_runtime,
+                    fallback=subtask.fallback_runtime,
+                )
+                result = await self._try_runtime(
+                    subtask, subtask.fallback_runtime, context,
+                )
+                if result.status == "success":
+                    subtask.status = "complete"
+                    subtask.receipt = result
+                    return result
+
+            # Both failed
+            subtask.status = "failed"
+            subtask.receipt = result
+            return result
+        finally:
+            # Session A: always mark idle, regardless of outcome. Without
+            # this, a crashed subtask would leave queue_depth incremented
+            # forever and eventually flip the dept to OVERLOADED.
+            if state_tracked:
+                await self._state_mark_idle(
+                    tenant_id=tenant_id,
+                    department=department,
+                )
+                # Emit the matching completion event. Status reflects how
+                # the subtask actually ended so peers can react
+                # differently to complete vs failed vs rejected.
+                try:
+                    from app.services.departments.border_agent import (
+                        DepartmentEvent,
+                        get_border_agent,
+                    )
+                    ba = await get_border_agent(tenant_id=tenant_id, department=department)
+                    status = getattr(subtask, "status", "unknown")
+                    evt_type = {
+                        "complete": DepartmentEvent.TASK_COMPLETED,
+                        "rejected": DepartmentEvent.TASK_REJECTED,
+                        "failed": DepartmentEvent.TASK_FAILED,
+                    }.get(status, DepartmentEvent.TASK_COMPLETED)
+                    await ba.emit(
+                        evt_type,
+                        payload={
+                            "task_id": subtask.id,
+                            "task_summary": subtask.description[:200],
+                            "status": status,
+                        },
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "swarm.border_emit_completion_failed",
+                        department=department, error=str(exc),
+                    )
 
     async def _try_runtime(
         self,

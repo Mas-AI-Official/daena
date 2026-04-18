@@ -21,8 +21,9 @@ class CreateSessionRequest(BaseModel):
     title: str | None = Field(None, max_length=500)
     mode: str = Field("CMD", pattern="^(CMD|EXE)$")
     routing_mode: str = Field("STANDARD", pattern="^(STANDARD|COUNCIL|QUINTESSENCE)$")
-    governance_slider: str = Field(
-        "STANDARD", pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID)$"
+    governance_mode: str = Field(
+        "BALANCED",
+        pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID|UNLEASHED|BALANCED|GOVERNED)$",
     )
     autopilot: bool = False
     think_mode: bool = False
@@ -38,8 +39,9 @@ class UpdateSessionRequest(BaseModel):
     routing_mode: str | None = Field(
         None, pattern="^(STANDARD|COUNCIL|QUINTESSENCE)$"
     )
-    governance_slider: str | None = Field(
-        None, pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID)$"
+    governance_mode: str | None = Field(
+        None,
+        pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID|UNLEASHED|BALANCED|GOVERNED)$",
     )
     autopilot: bool | None = None
     think_mode: bool | None = None
@@ -52,8 +54,9 @@ class SendMessageRequest(BaseModel):
     role: str = Field("USER", pattern="^(USER|SYSTEM)$")
     content: str = Field(..., min_length=1, max_length=100_000)
     preferred_model: str | None = Field(None, max_length=200)
-    governance_slider: str | None = Field(
-        None, pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID)$"
+    governance_mode: str | None = Field(
+        None,
+        pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID|UNLEASHED|BALANCED|GOVERNED)$",
     )
 
 
@@ -64,6 +67,10 @@ class StreamMessageRequest(SendMessageRequest):
     title: str | None = Field(None, max_length=500)
     mode: str | None = Field(None, pattern="^(CMD|EXE)$")
     routing_mode: str | None = Field(None, pattern="^(STANDARD|COUNCIL|QUINTESSENCE)$")
+    governance_mode: str | None = Field(
+        None,
+        pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID|UNLEASHED|BALANCED|GOVERNED)$",
+    )
     autopilot: bool = False
     think_mode: bool = False
     category_id: UUID | None = None
@@ -88,7 +95,7 @@ class SessionResponse(DaenaSchema):
     title: str | None = None
     mode: str
     routing_mode: str
-    governance_slider: str
+    governance_mode: str
     autopilot: bool = False
     think_mode: bool = False
     category_id: UUID | None = None

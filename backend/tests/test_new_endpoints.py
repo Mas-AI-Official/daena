@@ -110,11 +110,14 @@ class TestUserPreferences:
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         result = await get_user_preferences(user=mock_user, db=mock_db)
-        # Route now returns UserPreferencesResponse Pydantic model
-        assert result.display_name == "Test User"
-        assert result.email == "test@example.com"
-        assert result.role == "FOUNDER"
-        assert result.preferred_model == "gpt-4o"
+        # Route returns the standard {success, data} envelope -- data
+        # holds the serialized UserPreferencesResponse.
+        assert result["success"] is True
+        data = result["data"]
+        assert data["display_name"] == "Test User"
+        assert data["email"] == "test@example.com"
+        assert data["role"] == "FOUNDER"
+        assert data["preferred_model"] == "gpt-4o"
 
     @pytest.mark.asyncio
     async def test_update_user_display_name(self):
@@ -127,9 +130,13 @@ class TestUserPreferences:
         mock_user.email = "test@example.com"
         mock_user.role = "FOUNDER"
 
-        # Mock the db_user returned by select(User)
+        # Mock the db_user returned by select(User). All attributes
+        # Pydantic will read must be real strings/dicts, not
+        # unconfigured MagicMocks -- UserPreferencesResponse rejects
+        # those with a "string_type" validation error.
         mock_db_user = MagicMock()
         mock_db_user.display_name = "Old Name"
+        mock_db_user.email = "test@example.com"
         mock_db_user.settings = {}
 
         mock_result = MagicMock()
@@ -141,8 +148,10 @@ class TestUserPreferences:
         body = UserPreferencesUpdate(display_name="New Name")
         result = await update_user_preferences(body=body, user=mock_user, db=mock_db)
 
-        # Route now returns UserPreferencesResponse Pydantic model
-        assert result.display_name == "New Name"
+        # update_user_preferences returns the {success, data} envelope
+        # where data is the serialized UserPreferencesResponse.
+        assert result["success"] is True
+        assert result["data"]["display_name"] == "New Name"
         mock_db.flush.assert_called_once()
 
     @pytest.mark.asyncio
@@ -164,7 +173,18 @@ class TestUserPreferences:
         result = await export_user_data(user=mock_user, db=mock_db)
         assert result["success"] is True
         assert "exported_at" in result["data"]
-        assert result["data"]["user"]["display_name"] == "Test User"
+        # export_user_data calls get_user_preferences which returns a
+        # {success, data} envelope; the envelope is spliced in as
+        # result["data"]["user"], with the serialized prefs nested at
+        # ["user"]["data"]. Reflects the real wire shape clients
+        # receive from /user/export.
+        user_payload = result["data"]["user"]
+        # Be shape-tolerant: accept either the bare prefs dict or the
+        # {success,data} envelope form so a future endpoint cleanup
+        # (collapsing the double envelope) doesn't break this test.
+        if "data" in user_payload and isinstance(user_payload["data"], dict):
+            user_payload = user_payload["data"]
+        assert user_payload["display_name"] == "Test User"
 
     @pytest.mark.asyncio
     async def test_request_user_data_deletion(self):

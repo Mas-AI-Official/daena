@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    agent_ops,
     agents,
     analytics,
     api_keys,
@@ -21,7 +22,12 @@ from app.api.v1 import (
     connections,
     connector_oauth,
     daenabot,
+    department_budget,
+    department_messages,
+    department_policies,
+    department_states,
     dynamic_models,
+    engagements,
     execution,
     files,
     founder,
@@ -30,6 +36,7 @@ from app.api.v1 import (
     heartbeat,
     integrations,
     mcp_server,
+    mcp_sync,
     memory,
     missions,
     mobile,
@@ -43,6 +50,7 @@ from app.api.v1 import (
     settings,
     skill_refinery,
     skills,
+    voice_ws,
     waitlist,
     ws,
 )
@@ -61,6 +69,10 @@ router.include_router(founder.router, prefix="/founder", tags=["founder"])
 router.include_router(memory.router, prefix="/memory", tags=["memory"])
 router.include_router(execution.router, prefix="/execution", tags=["execution"])
 router.include_router(daenabot.router, prefix="/daenabot", tags=["daenabot"])
+router.include_router(department_budget.router, prefix="/department-budget", tags=["department-budget"])
+router.include_router(department_states.router, prefix="/department-states", tags=["department-states"])
+router.include_router(department_messages.router, prefix="/department-messages", tags=["department-messages"])
+router.include_router(department_policies.router, prefix="/department-policies", tags=["department-policies"])
 router.include_router(skills.router, prefix="/skills", tags=["skills"])
 router.include_router(skill_refinery.router, prefix="/skills/refinery", tags=["skill-refinery"])
 router.include_router(connections.router, prefix="/connections", tags=["connections"])
@@ -68,6 +80,7 @@ router.include_router(dynamic_models.router, prefix="/dynamic-models", tags=["dy
 router.include_router(settings.router, prefix="/settings", tags=["settings"])
 router.include_router(autopilot.router, prefix="/autopilot", tags=["autopilot"])
 router.include_router(mcp_server.router, prefix="/mcp", tags=["mcp"])
+router.include_router(mcp_sync.router, prefix="/mcp-sync", tags=["mcp-sync"])
 # approval_dashboard removed -- dead code (in-memory duplicate of governance/approvals).
 # Archived to .archive/dead_approval_queue/. Real approvals live at /governance/approvals.
 router.include_router(pipeline.router, prefix="/pipeline", tags=["pipeline"])
@@ -86,5 +99,10 @@ router.include_router(files.router, prefix="/files", tags=["files"])
 router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])
 router.include_router(org.router, prefix="/org", tags=["org"])
 router.include_router(security_dashboard.router, prefix="/security", tags=["security-dashboard"])
+router.include_router(engagements.router, prefix="/engagements", tags=["engagements"])
+router.include_router(agent_ops.sales_router, prefix="/sales", tags=["sales"])
+router.include_router(agent_ops.marketing_router, prefix="/marketing", tags=["marketing"])
+router.include_router(agent_ops.crm_router, prefix="/crm", tags=["crm"])
 router.include_router(missions.router, prefix="/missions", tags=["missions"])
 router.include_router(ws.router, tags=["websocket"])
+router.include_router(voice_ws.router, tags=["voice-websocket"])

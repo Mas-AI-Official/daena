@@ -6,14 +6,16 @@ and maturity tier promotion/demotion.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_role
 from app.core.database import get_db
+from app.core.logging import get_logger
 from app.services.skill_refinery.extraction_service import (
     build_embedding_text,
     build_extraction_prompt,
@@ -22,6 +24,8 @@ from app.services.skill_refinery.extraction_service import (
 )
 from app.services.skill_refinery.news_monitor import scan_for_updates
 from app.services.skill_refinery.skill_store import SkillStore
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -37,6 +41,66 @@ class ExtractSkillRequest(BaseModel):
         None,
         description="Source info: platform, creator, url, etc.",
     )
+
+
+# ── Batch ingest (ContentOps scraper feed) ──────────────────────
+#
+# External ContentOps pipeline (YouTube -> Grabit -> NotebookLM ->
+# transcript) POSTs batches here. Each item becomes one T1 draft
+# skill via the same extraction path as /extract, but wrapped so 20+
+# transcripts from one scrape session land in a single request.
+#
+# See docs/pitch/CONTENTOPS-INGEST-CONTRACT.md for the wire contract
+# the external scraper writes against.
+
+_ALLOWED_SOURCE_TYPES = {
+    "youtube",      # YouTube video transcript (Grabit output)
+    "podcast",      # Podcast transcript (Whisper output)
+    "rss",          # Blog / substack / newsletter article
+    "book",         # Book chapter or section
+    "search",       # Google search result set
+    "notebooklm",   # NotebookLM structured summary
+    "manual",       # Human-pasted text
+    "other",
+}
+
+
+class ContentOpsItem(BaseModel):
+    """One transcript / article / chapter staged for skill extraction."""
+
+    source_type: str = Field(
+        ...,
+        description=(
+            "Origin category. One of: " + ", ".join(sorted(_ALLOWED_SOURCE_TYPES))
+        ),
+    )
+    source_url: str | None = Field(None, max_length=2048)
+    creator: str | None = Field(
+        None,
+        max_length=200,
+        description="Author / channel / speaker identifier (e.g. 'Alex Hormozi').",
+    )
+    title: str | None = Field(None, max_length=500)
+    published_at: str | None = Field(
+        None,
+        description="ISO-8601 publish date if known. Used for staleness scoring.",
+    )
+    content: str = Field(..., min_length=10, max_length=200_000)
+    extras: dict | None = Field(
+        None,
+        description="Free-form payload the external pipeline preserves (chapter marks, tags, etc.).",
+    )
+
+
+class ContentOpsBatchRequest(BaseModel):
+    """Body for POST /skills/refinery/ingest-batch."""
+
+    batch_label: str | None = Field(
+        None,
+        max_length=120,
+        description="Label for the scrape run (e.g. 'hormozi-2026-Q1').",
+    )
+    items: list[ContentOpsItem] = Field(..., min_length=1, max_length=50)
 
 
 class PromoteRequest(BaseModel):
@@ -323,6 +387,159 @@ async def extract_skill(
     )
 
     return {"success": True, "data": skill}
+
+
+@router.post("/ingest-batch", status_code=201)
+async def ingest_batch(
+    body: ContentOpsBatchRequest,
+    user: CurrentUser = Depends(get_current_user),
+    store: SkillStore = Depends(get_skill_store),
+) -> dict[str, Any]:
+    """Accept a batch of ContentOps items for skill extraction.
+
+    Contract
+    --------
+    External scraper (YouTube -> Grabit -> NotebookLM) POSTs a list of
+    items. Each item becomes one T1 draft skill via the existing
+    extraction pipeline, tagged with source metadata so staleness
+    monitoring and source-provenance checks can reference it later.
+
+    Returns per-item status -- ``ok`` with the created skill_id, or
+    ``error`` with the failure reason. A partial success is still a
+    201 (atomic failure per batch is too brittle for a scraper). The
+    scraper reads the response and retries only the error items.
+
+    Governance
+    ----------
+    All items persist scoped to the caller's tenant. The extraction
+    LLM prompt already treats ingested content as untrusted, so
+    prompt-injection attempts in a scraped transcript cannot alter
+    the skill schema.
+    """
+    # Validate source_type values up front so a typo in the scraper
+    # is caught with a clean 422 rather than a partial write.
+    for idx, item in enumerate(body.items):
+        if item.source_type.lower() not in _ALLOWED_SOURCE_TYPES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"items[{idx}].source_type={item.source_type!r} not allowed. "
+                    f"Valid: {sorted(_ALLOWED_SOURCE_TYPES)}"
+                ),
+            )
+
+    import httpx
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    ollama_url = settings.ollama_base_url
+    model = settings.ollama_default_model
+
+    batch_label = body.batch_label or f"batch-{datetime.now(UTC).isoformat()}"
+    results: list[dict[str, Any]] = []
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        for idx, item in enumerate(body.items):
+            # Compose source_metadata. The external scraper may have
+            # preserved a much richer payload in ``extras``; keep it
+            # intact so staleness + provenance can consult it later.
+            source_metadata = {
+                "source_type": item.source_type.lower(),
+                "source_url": item.source_url,
+                "creator": item.creator,
+                "title": item.title,
+                "published_at": item.published_at,
+                "batch_label": batch_label,
+                "batch_index": idx,
+                "ingested_via": "contentops.ingest_batch",
+                **(item.extras or {}),
+            }
+
+            prompt = build_extraction_prompt(item.content, source_metadata)
+            try:
+                resp = await client.post(
+                    f"{ollama_url}/api/chat",
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "stream": False,
+                        "options": {"temperature": 0.3},
+                    },
+                )
+                resp.raise_for_status()
+                llm_response = resp.json().get("message", {}).get("content", "")
+            except Exception as exc:
+                results.append({
+                    "index": idx,
+                    "status": "error",
+                    "reason": f"LLM extraction failed: {exc}",
+                    "source_url": item.source_url,
+                })
+                continue
+
+            extracted = parse_extraction_response(llm_response)
+            if not extracted.get("title"):
+                results.append({
+                    "index": idx,
+                    "status": "error",
+                    "reason": "No extractable skill found in content.",
+                    "source_url": item.source_url,
+                })
+                continue
+
+            sid = generate_skill_id(extracted["domain"], extracted["title"])
+            emb = build_embedding_text(extracted)
+            try:
+                skill = await store.create_skill(
+                    tenant_id=user.tenant_id,
+                    skill_id=sid,
+                    title=extracted["title"],
+                    domain=extracted["domain"],
+                    subdomains=extracted.get("subdomains", []),
+                    maturity=1,  # T1_DRAFT
+                    source_metadata=source_metadata,
+                    steps=extracted.get("steps", []),
+                    patterns=extracted.get("patterns", []),
+                    anti_patterns=extracted.get("anti_patterns", []),
+                    failure_modes=extracted.get("failure_modes", []),
+                    confidence=extracted.get("confidence", 0.0),
+                    embedding_text=emb,
+                )
+            except Exception as exc:
+                results.append({
+                    "index": idx,
+                    "status": "error",
+                    "reason": f"Persist failed: {exc}",
+                    "source_url": item.source_url,
+                })
+                continue
+
+            results.append({
+                "index": idx,
+                "status": "ok",
+                "skill_id": skill.get("skill_id") or sid,
+                "source_url": item.source_url,
+                "creator": item.creator,
+            })
+
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    error_count = len(results) - ok_count
+    logger.info(
+        "skill_refinery.contentops_ingest",
+        batch_label=batch_label,
+        tenant_id=str(user.tenant_id),
+        ok=ok_count,
+        err=error_count,
+    )
+    return {
+        "success": True,
+        "data": {
+            "batch_label": batch_label,
+            "ok": ok_count,
+            "errors": error_count,
+            "results": results,
+        },
+    }
 
 
 @router.post("/{skill_id}/refine")

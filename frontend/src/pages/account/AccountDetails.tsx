@@ -1,6 +1,5 @@
 /**
  * AccountDetails -- Profile management: display name, email, avatar, password, OAuth connections.
- * Equivalent to Perplexity's /account/details
  */
 import { useState } from 'react'
 import { useAuthStore } from '@/stores/authStore'
@@ -16,10 +15,10 @@ export function AccountDetails() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await api.patch('/settings/preferences', { display_name: displayName })
-      toast({ type: 'success', message: 'Profile updated' })
+      await api.put('/settings/user', { display_name: displayName })
+      toast.success('Profile updated')
     } catch {
-      toast({ type: 'error', message: 'Failed to update profile' })
+      toast.error('Failed to update profile')
     } finally {
       setSaving(false)
     }

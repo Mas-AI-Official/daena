@@ -14,7 +14,6 @@ import {
   Zap,
   Shield,
   Heart,
-  BarChart3,
   Trash2,
   Download,
   Minimize2,
@@ -35,7 +34,7 @@ interface SlashCommand {
 
 export function useSlashCommands() {
   const navigate = useNavigate()
-  const { setChatMode, setGovernanceSlider } = useUiStore()
+  const { setChatMode } = useUiStore()
 
   const commands: SlashCommand[] = useMemo(
     () => [
@@ -123,14 +122,8 @@ export function useSlashCommands() {
         icon: Database,
         action: () => navigate('/settings/memory'),
       },
-      {
-        command: '/benchmark',
-        description: 'Run platform benchmark suite',
-        icon: BarChart3,
-        action: () => toast.info('Benchmark suite: coming in next release'),
-      },
     ],
-    [navigate, setChatMode, setGovernanceSlider],
+    [navigate, setChatMode],
   )
 
   return commands

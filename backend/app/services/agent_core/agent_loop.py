@@ -189,9 +189,20 @@ class AgentLoop:
                     break
                 if decision == "pause":
                     yield {"type": "agent_paused", "message": "Paused at user request"}
-                    # Wait for resume via prompt
+                    # Wait for resume via prompt. Pass tenant + department
+                    # context so InteractivePromptManager fires a
+                    # department.needs_input BorderAgent signal -- peer
+                    # rooms (Product, Security Operations) see the
+                    # agent is blocked waiting on the founder.
+                    _emit_ctx: dict[str, Any] = {}
+                    if self._tenant_id is not None:
+                        _emit_ctx["_tenant_id"] = str(self._tenant_id)
+                    if self._department:
+                        _emit_ctx["_department"] = self._department
                     resumed = await self.prompts.ask_confirm(
-                        "Resume Execution?", f"{len(steps) - i} steps remaining."
+                        "Resume Execution?",
+                        f"{len(steps) - i} steps remaining.",
+                        context=_emit_ctx or None,
                     )
                     if not resumed:
                         self._running = False

@@ -33,8 +33,8 @@ RUN echo "8000" > /tmp/.daena-port && \
 RUN npm run build
 
 
-# --- Stage 2: Backend + Serve Frontend ---
-FROM python:3.12-slim AS production
+# --- Stage 2: Backend + Serve Frontend (Kali Linux) ---
+FROM kalilinux/kali-rolling AS production
 
 ARG DAENA_VERSION=2.0.1
 ARG BUILD_DATE=unknown
@@ -42,7 +42,7 @@ ARG GIT_SHA=unknown
 
 # OCI image labels
 LABEL org.opencontainers.image.title="Daena" \
-      org.opencontainers.image.description="Governed Multi-Agent LLM Orchestration Platform" \
+      org.opencontainers.image.description="Power-First AI Operating System" \
       org.opencontainers.image.version="${DAENA_VERSION}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.revision="${GIT_SHA}" \
@@ -54,24 +54,38 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     APP_ENV=production \
     DEBUG=false \
-    DAENA_VERSION=${DAENA_VERSION}
+    DAENA_VERSION=${DAENA_VERSION} \
+    DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# System dependencies (curl for healthcheck, pg libs for asyncpg)
+# System dependencies: Python 3.12, curl, pg libs, Kali tools
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        python3 \
+        python3-pip \
+        python3-venv \
+        python3-dev \
         curl \
         libpq5 \
+        libpq-dev \
+        gcc \
+        nmap \
+        whois \
+        dnsutils \
+        net-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies (cache-friendly: pyproject.toml first)
 COPY backend/pyproject.toml backend/README.md ./
 COPY backend/app/ ./app/
-RUN pip install --no-cache-dir "."
+RUN pip install --no-cache-dir --break-system-packages "."
 
 # Copy remaining backend files (migrations, run.py, etc.)
 COPY backend/ ./
+
+# Copy soul vault (Daena's character foundation -- gitignored, built into image)
+COPY backend/app/soul/ ./app/soul/
 
 # Copy compiled frontend into backend static directory
 COPY --from=frontend-build /frontend/dist /app/static

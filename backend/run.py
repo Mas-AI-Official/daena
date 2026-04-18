@@ -50,7 +50,16 @@ def main() -> None:
 
     # Write port file so other processes (bat files, frontend) can discover it
     port_file = Path(__file__).parent / ".daena-port"
-    port_file.write_text(str(port))
+    try:
+        port_file.write_text(str(port))
+    except PermissionError:
+        # WSL2 mount may block writes -- try /tmp fallback
+        fallback = Path("/tmp/.daena-port")
+        try:
+            fallback.write_text(str(port))
+        except Exception:
+            pass
+        print(f"[Daena] Port file write failed (permission), using port {port}")
     diagnostics = settings.runtime_diagnostics()
     print(f"[Daena] Backend starting on http://localhost:{port}")
     print(

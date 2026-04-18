@@ -6,10 +6,10 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.constants import GovernanceSlider, RiskLevel
+from app.core.constants import GovernanceMode, RiskLevel
 from app.services.governance import (
     ROLE_DEFAULT_PRESETS,
-    ROLE_SLIDER_CONSTRAINTS,
+    ROLE_MODE_CONSTRAINTS,
     GovernanceEngine,
 )
 
@@ -27,82 +27,76 @@ def _engine() -> GovernanceEngine:
 # ── get_effective_preset ──────────────────────────────────────────
 
 class TestGetEffectivePreset:
-    """Tests for role × team × org slider inheritance chain."""
+    """Tests for role x team x org mode inheritance chain."""
 
-    def test_founder_gets_requested_yolo(self) -> None:
-        """Founder can request YOLO — no constraints block it."""
+    def test_founder_gets_requested_unleashed(self) -> None:
+        """Founder can request UNLEASHED -- no constraints block it."""
         result = GovernanceEngine.get_effective_preset(
             user_role="FOUNDER",
-            requested_preset="YOLO",
+            requested_preset="UNLEASHED",
         )
-        assert result == GovernanceSlider.YOLO
+        assert result == GovernanceMode.UNLEASHED
 
-    def test_founder_gets_requested_paranoid(self) -> None:
+    def test_founder_gets_requested_governed(self) -> None:
         result = GovernanceEngine.get_effective_preset(
             user_role="FOUNDER",
-            requested_preset="PARANOID",
+            requested_preset="GOVERNED",
         )
-        assert result == GovernanceSlider.PARANOID
+        assert result == GovernanceMode.GOVERNED
 
-    def test_admin_clamped_to_light_minimum(self) -> None:
-        """Admin requests YOLO but gets clamped to LIGHT (role minimum)."""
+    def test_admin_clamped_to_balanced_minimum(self) -> None:
+        """Admin requests UNLEASHED but gets clamped to BALANCED (role minimum)."""
         result = GovernanceEngine.get_effective_preset(
             user_role="ADMIN",
-            requested_preset="YOLO",
+            requested_preset="UNLEASHED",
         )
-        assert result == GovernanceSlider.LIGHT
+        assert result == GovernanceMode.BALANCED
 
-    def test_operator_default_is_strict(self) -> None:
-        """Operator with no explicit request gets STRICT (role default)."""
+    def test_operator_default_is_governed(self) -> None:
+        """Operator with no explicit request gets GOVERNED (role default)."""
         result = GovernanceEngine.get_effective_preset(
             user_role="OPERATOR",
         )
-        assert result == GovernanceSlider.STRICT
+        assert result == GovernanceMode.GOVERNED
 
-    def test_viewer_locked_to_paranoid(self) -> None:
-        """Viewer is locked to PARANOID regardless of request."""
+    def test_viewer_locked_to_governed(self) -> None:
+        """Viewer is locked to GOVERNED regardless of request."""
         result = GovernanceEngine.get_effective_preset(
             user_role="VIEWER",
-            requested_preset="YOLO",
+            requested_preset="UNLEASHED",
         )
-        assert result == GovernanceSlider.PARANOID
+        assert result == GovernanceMode.GOVERNED
 
     def test_team_minimum_raises_floor(self) -> None:
-        """Team minimum STRICT overrides Admin's LIGHT request."""
+        """Team minimum GOVERNED overrides Admin's BALANCED request."""
         result = GovernanceEngine.get_effective_preset(
             user_role="ADMIN",
-            requested_preset="LIGHT",
-            team_minimum="STRICT",
+            requested_preset="BALANCED",
+            team_minimum="GOVERNED",
         )
-        assert result == GovernanceSlider.STRICT
+        assert result == GovernanceMode.GOVERNED
 
     def test_org_minimum_raises_floor(self) -> None:
-        """Org minimum STANDARD overrides Founder's YOLO request."""
-        # Founder CAN override org — but the spec says founder is unrestricted.
-        # Actually spec Section 7 Rule 1: "No team or org minimum can constrain the founder."
-        # BUT our implementation applies max(role_min, team, org) then clamps.
-        # Founder role_min is YOLO, so max(YOLO, -, STANDARD) = STANDARD.
-        # Then clamp requested=YOLO within [STANDARD, PARANOID] → STANDARD.
-        # This is a design choice — if Founder should bypass org, needs special handling.
+        """Org minimum BALANCED overrides Founder's UNLEASHED request."""
         result = GovernanceEngine.get_effective_preset(
             user_role="FOUNDER",
-            requested_preset="YOLO",
-            org_minimum="STANDARD",
+            requested_preset="UNLEASHED",
+            org_minimum="BALANCED",
         )
-        assert result == GovernanceSlider.STANDARD
+        assert result == GovernanceMode.BALANCED
 
     def test_team_and_org_combined(self) -> None:
         """Effective min = max(role_min, team_min, org_min)."""
         result = GovernanceEngine.get_effective_preset(
             user_role="MANAGER",
-            requested_preset="STANDARD",
-            team_minimum="STRICT",
-            org_minimum="STANDARD",
+            requested_preset="BALANCED",
+            team_minimum="GOVERNED",
+            org_minimum="BALANCED",
         )
-        # Manager role_min=STANDARD, team=STRICT, org=STANDARD
-        # effective_min = max(2, 3, 2) = 3 → STRICT
-        # Requested STANDARD (2) < STRICT (3) → clamped to STRICT
-        assert result == GovernanceSlider.STRICT
+        # Manager role_min=BALANCED, team=GOVERNED, org=BALANCED
+        # effective_min = max(1, 2, 1) = 2 -> GOVERNED
+        # Requested BALANCED (1) < GOVERNED (2) -> clamped to GOVERNED
+        assert result == GovernanceMode.GOVERNED
 
     def test_default_preset_per_role(self) -> None:
         """Each role gets its correct default when no preset requested."""
@@ -111,7 +105,7 @@ class TestGetEffectivePreset:
                 user_role=role.value,
             )
             # Default must be >= role minimum
-            role_min, _ = ROLE_SLIDER_CONSTRAINTS[role]
+            role_min, _ = ROLE_MODE_CONSTRAINTS[role]
             assert result == expected, f"Role {role.value}: expected {expected}, got {result}"
 
 
@@ -120,25 +114,25 @@ class TestGetEffectivePreset:
 class TestGetAllowedRange:
     def test_founder_full_range(self) -> None:
         low, high = GovernanceEngine.get_allowed_range("FOUNDER")
-        assert low == GovernanceSlider.YOLO
-        assert high == GovernanceSlider.PARANOID
+        assert low == GovernanceMode.UNLEASHED
+        assert high == GovernanceMode.GOVERNED
 
     def test_admin_range(self) -> None:
         low, high = GovernanceEngine.get_allowed_range("ADMIN")
-        assert low == GovernanceSlider.LIGHT
-        assert high == GovernanceSlider.PARANOID
+        assert low == GovernanceMode.BALANCED
+        assert high == GovernanceMode.GOVERNED
 
     def test_team_minimum_raises_low(self) -> None:
         low, high = GovernanceEngine.get_allowed_range(
-            "ADMIN", team_minimum="STRICT",
+            "ADMIN", team_minimum="GOVERNED",
         )
-        assert low == GovernanceSlider.STRICT
-        assert high == GovernanceSlider.PARANOID
+        assert low == GovernanceMode.GOVERNED
+        assert high == GovernanceMode.GOVERNED
 
     def test_auditor_locked(self) -> None:
         low, high = GovernanceEngine.get_allowed_range("AUDITOR")
-        assert low == GovernanceSlider.PARANOID
-        assert high == GovernanceSlider.PARANOID
+        assert low == GovernanceMode.GOVERNED
+        assert high == GovernanceMode.GOVERNED
 
 
 # ── evaluate (single action) ─────────────────────────────────────
@@ -354,37 +348,37 @@ class TestValidateOverride:
     def test_valid_override_accepted(self) -> None:
         """Override within allowed range is accepted."""
         result = GovernanceEngine.validate_override(
-            requested_preset="STRICT",
+            requested_preset="GOVERNED",
             user_role="ADMIN",
         )
-        assert result["effective_preset"] == "STRICT"
+        assert result["effective_preset"] == "GOVERNED"
         assert result["was_clamped"] is False
 
     def test_override_clamped_to_floor(self) -> None:
         """Override below floor is clamped up."""
         result = GovernanceEngine.validate_override(
-            requested_preset="YOLO",
+            requested_preset="UNLEASHED",
             user_role="ADMIN",
         )
-        assert result["effective_preset"] == "LIGHT"
+        assert result["effective_preset"] == "BALANCED"
         assert result["was_clamped"] is True
 
     def test_override_with_team_minimum(self) -> None:
         """Team minimum raises the floor for override."""
         result = GovernanceEngine.validate_override(
-            requested_preset="LIGHT",
+            requested_preset="BALANCED",
             user_role="ADMIN",
-            team_minimum="STRICT",
+            team_minimum="GOVERNED",
         )
-        assert result["effective_preset"] == "STRICT"
+        assert result["effective_preset"] == "GOVERNED"
         assert result["was_clamped"] is True
-        assert result["effective_minimum"] == "STRICT"
+        assert result["effective_minimum"] == "GOVERNED"
 
-    def test_viewer_override_always_paranoid(self) -> None:
-        """Viewer trying to override always gets PARANOID."""
+    def test_viewer_override_always_governed(self) -> None:
+        """Viewer trying to override always gets GOVERNED."""
         result = GovernanceEngine.validate_override(
-            requested_preset="YOLO",
+            requested_preset="UNLEASHED",
             user_role="VIEWER",
         )
-        assert result["effective_preset"] == "PARANOID"
+        assert result["effective_preset"] == "GOVERNED"
         assert result["was_clamped"] is True

@@ -94,6 +94,8 @@ class ToolUseLoop:
         agi_mode: bool = False,
         session_id: UUID | None = None,
         workspace_root: str | None = None,
+        governance_mode: Any | None = None,
+        extension_permissions: dict[str, Any] | None = None,
     ) -> None:
         self.db = db
         self.user_id = user_id
@@ -104,6 +106,29 @@ class ToolUseLoop:
         self._tool_results: list[dict[str, Any]] = []
         self._total_tool_calls = 0
         self._total_cost = 0.0
+
+        # Permission-resolver context. Callers can inject governance mode
+        # and the user's per-tool prefs so every tool dispatch runs
+        # through the same gate. Defaults to a safe BALANCED mode with
+        # no overrides so callers that forget these kwargs still respect
+        # governance (just without the user's tool-level overrides).
+        from app.core.constants import GovernanceMode as _GM
+        if governance_mode is None:
+            self.governance_mode = (
+                _GM.UNLEASHED if agi_mode else _GM.BALANCED
+            )
+        elif isinstance(governance_mode, str):
+            try:
+                self.governance_mode = _GM(governance_mode.upper())
+            except ValueError:
+                self.governance_mode = _GM.BALANCED
+        else:
+            self.governance_mode = governance_mode
+        self.extension_permissions = extension_permissions or {}
+        # Last guard decision (populated by _execute_tool). The run()
+        # loop reads this to emit SSE events; orchestrator callers can
+        # read it to decide whether to surface an inline approval card.
+        self._last_guard_decision: Any = None
 
         # Cognitive security layer (OpenClaw ports)
         LoopDetectorCls = _get_loop_detector()
@@ -282,7 +307,7 @@ class ToolUseLoop:
             # Remove the tool_call blocks from the response
             clean_response = self._strip_tool_calls(full_response)
             if clean_response.strip():
-                from app.services.llm_service import LLMMessage
+                from app.services.providers.base import LLMMessage
                 tool_context_messages.append(
                     LLMMessage(role="assistant", content=clean_response)
                 )
@@ -292,7 +317,7 @@ class ToolUseLoop:
             results_text = self._format_tool_results(tool_calls, recent_results)
             has_failures = any(not r.get("result", {}).get("success", True) for r in recent_results)
 
-            from app.services.llm_service import LLMMessage
+            from app.services.providers.base import LLMMessage
             if has_failures:
                 # Failure: trigger cognitive reasoning, not blind retry
                 tool_context_messages.append(
@@ -477,6 +502,12 @@ class ToolUseLoop:
         - mcp.*       -> MCPAgent
         - gmail/calendar/notion -> IntegrationRouter
         - workflow.*  -> DepartmentWorkflowEngine
+
+        BEFORE any dispatch path runs, the call is routed through
+        ``permission_dispatch.guard_tool_dispatch()`` so governance
+        mode, autopilot, and per-tool Allow/Ask/Block prefs are all
+        respected. This is the single choke-point that every agentic
+        tool invocation must pass.
         """
         qualified_name, resolved_params = resolve_tool_call(tool_name, params)
         parts = qualified_name.split(".", 1)
@@ -485,6 +516,100 @@ class ToolUseLoop:
             return {"success": False, "error": f"Invalid tool: {tool_name}"}
 
         prefix, operation = parts
+
+        # ── Permission guard (runs BEFORE any dispatch or bridge call) ──
+        # Classify → resolve → either proceed, refuse, or write an
+        # ApprovalQueue row and surface the approval id to the caller.
+        # Exceptions bubble up only for truly unexpected failures; the
+        # guard itself fails closed to REFUSE on approval-system errors.
+        try:
+            from app.services.permission_dispatch import (
+                GuardDecision,
+                guard_tool_dispatch,
+            )
+            from app.services.permission_resolver import EffectivePermission
+
+            # Classify this specific call so the resolver sees the real
+            # risk level, not just the connector-level default.
+            if self.agi_mode:
+                _clf = self._classifier.classify_for_agi_mode(
+                    qualified_name, resolved_params,
+                )
+            else:
+                _clf = self._classifier.classify(
+                    qualified_name, resolved_params,
+                )
+
+            guard = await guard_tool_dispatch(
+                db=self.db,
+                user_id=self.user_id,
+                tenant_id=self.tenant_id,
+                session_id=self.session_id,
+                tool_name=qualified_name,
+                params=resolved_params,
+                risk_level_str=_clf.risk_level,
+                governance_mode=self.governance_mode,
+                autopilot_active=self.agi_mode,
+                extension_permissions=self.extension_permissions,
+            )
+            self._last_guard_decision = guard
+
+            if guard.outcome == EffectivePermission.REFUSE:
+                logger.info(
+                    "tool_loop.dispatch_refused",
+                    tool=qualified_name,
+                    reason=guard.reason,
+                )
+                return {
+                    "success": False,
+                    "error": guard.reason,
+                    "governance": "REFUSE",
+                    "risk_tier": guard.risk_tier,
+                }
+
+            if guard.outcome == EffectivePermission.REQUEST_INPUT:
+                logger.info(
+                    "tool_loop.dispatch_pending_approval",
+                    tool=qualified_name,
+                    approval_id=(
+                        str(guard.approval_id) if guard.approval_id else None
+                    ),
+                    tier=guard.risk_tier,
+                )
+                return {
+                    "success": False,
+                    "error": guard.reason,
+                    "governance": "REQUEST_INPUT",
+                    "risk_tier": guard.risk_tier,
+                    "pending_approval": {
+                        "approval_id": (
+                            str(guard.approval_id)
+                            if guard.approval_id
+                            else None
+                        ),
+                        "tool": qualified_name,
+                        "reason": guard.reason,
+                    },
+                }
+            # AUTO_PROCEED falls through to normal dispatch.
+        except Exception as guard_exc:
+            # Guard machinery itself crashed (not a refuse decision --
+            # those are returned, not raised). Fail closed so we don't
+            # silently bypass governance.
+            logger.error(
+                "tool_loop.guard_exception",
+                tool=qualified_name,
+                error=str(guard_exc),
+                exc_info=True,
+            )
+            return {
+                "success": False,
+                "error": (
+                    f"Permission guard failed: {guard_exc}. "
+                    "Execution blocked for safety."
+                ),
+                "governance": "REFUSE",
+            }
 
         # ── Cloud mode: check if local tools need DaenaBot bridge ──
         _local_prefixes = {"file", "terminal", "browser", "desktop", "vision"}

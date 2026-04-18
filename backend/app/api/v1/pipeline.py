@@ -45,6 +45,10 @@ class AdvanceStageRequest(BaseModel):
     notes: str | None = None
 
 
+class MarkLostRequest(BaseModel):
+    reason: str | None = Field(None, max_length=200)
+
+
 class UpdateScoringRequest(BaseModel):
     ai_doability_score: int | None = Field(None, ge=1, le=10)
     competition_level: int | None = Field(None, ge=1, le=10)
@@ -147,6 +151,30 @@ async def advance_project(
         return {"success": True, "data": result}
     except ValueError as e:
         return {"success": False, "error": {"code": "INVALID_TRANSITION", "message": str(e)}}
+
+
+@router.post("/projects/{project_id}/mark-lost")
+async def mark_project_lost(
+    project_id: UUID,
+    body: MarkLostRequest,
+    user: CurrentUser = Depends(require_role("MANAGER")),
+    service: PipelineService = Depends(get_pipeline_service),
+):
+    """Mark a project as lost at its current stage.
+
+    Emits ``Sales.lost_deal`` to peer departments. Cannot re-mark an
+    already-lost or CLOSED project.
+    """
+    try:
+        result = await service.mark_lost(
+            project_id, user.tenant_id, reason=body.reason,
+        )
+        return {"success": True, "data": result}
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": {"code": "INVALID_LOSS", "message": str(e)},
+        }
 
 
 @router.put("/projects/{project_id}/scoring")

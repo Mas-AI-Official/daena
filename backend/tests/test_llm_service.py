@@ -385,3 +385,96 @@ async def test_quintessence_engine_failure_degrades_to_council() -> None:
     # Should degrade to COUNCIL result
     assert result.mode == RoutingMode.COUNCIL
     assert result.primary.content in ("A", "B")
+
+
+# ── Tests: generate_direct failover model_id remap ────────────
+
+@pytest.mark.asyncio
+async def test_generate_direct_resets_model_id_on_cross_provider_failover() -> None:
+    """Regression for the Session 11 benchmark crash.
+
+    When the primary provider fails, the fallback provider must receive a
+    request with model_id=None (so it picks its own default) rather than
+    the primary's model_id. Without this, Groq asking for
+    "moonshotai/kimi-k2-instruct" that then fails-over to Gemini causes
+    Gemini to build /v1beta/models/moonshotai/kimi-k2-instruct:generateContent
+    and 404.
+    """
+    # Primary = "kimi-k2" on GROQ, which will fail.
+    # Fallback = GEMINI, which must NOT receive model_id="kimi-k2".
+    primary_error = RuntimeError("groq 404: moonshotai/kimi-k2-instruct")
+    fallback_response = _make_response("Fallback OK", "gemini-2.0-flash", ModelProvider.GEMINI)
+
+    groq_mock = AsyncMock()
+    groq_mock.generate.side_effect = primary_error
+
+    gemini_mock = AsyncMock()
+    gemini_mock.generate.return_value = fallback_response
+
+    registry = MagicMock()
+
+    def get_provider(mp: ModelProvider) -> AsyncMock | None:
+        return {ModelProvider.GROQ: groq_mock, ModelProvider.GEMINI: gemini_mock}.get(mp)
+
+    def get_provider_for_model(model_id: str) -> AsyncMock | None:
+        if "kimi" in model_id:
+            return groq_mock
+        return None
+
+    registry.get_provider = get_provider
+    registry.get_provider_for_model = get_provider_for_model
+    registry.available_providers = [ModelProvider.GROQ, ModelProvider.GEMINI]
+
+    svc = LLMService(registry)
+
+    request = GenerateRequest(
+        messages=[LLMMessage(role="user", content="hi")],
+        model_id="moonshotai/kimi-k2-instruct",
+    )
+
+    # Reset health tracker so GEMINI is available
+    from app.services.runtimes.health_tracker import get_health_tracker
+    get_health_tracker()._states.clear()
+
+    result = await svc.generate_direct(request)
+
+    # Gemini received the call (failover used).
+    assert gemini_mock.generate.await_count == 1
+    # The critical assertion: the request sent to Gemini had model_id=None,
+    # NOT "moonshotai/kimi-k2-instruct".
+    forwarded_req = gemini_mock.generate.await_args.args[0]
+    assert forwarded_req.model_id is None, (
+        f"Failover must reset model_id to None, got {forwarded_req.model_id!r}. "
+        "This was the root cause of Session 11's Gemini 404."
+    )
+    # Original request object is unchanged.
+    assert request.model_id == "moonshotai/kimi-k2-instruct"
+    # Response returned.
+    assert result.content == "Fallback OK"
+
+
+@pytest.mark.asyncio
+async def test_generate_direct_keeps_model_id_on_primary_success() -> None:
+    """Non-failover case: primary keeps its own model_id."""
+    primary_response = _make_response("Primary OK", "my-model", ModelProvider.ANTHROPIC)
+    mock_primary = AsyncMock()
+    mock_primary.generate.return_value = primary_response
+
+    registry = MagicMock()
+    registry.get_provider = lambda mp: mock_primary if mp == ModelProvider.ANTHROPIC else None
+    registry.get_provider_for_model = lambda mid: mock_primary
+    registry.available_providers = [ModelProvider.ANTHROPIC]
+
+    svc = LLMService(registry)
+    request = GenerateRequest(
+        messages=[LLMMessage(role="user", content="hi")],
+        model_id="my-model",
+    )
+
+    from app.services.runtimes.health_tracker import get_health_tracker
+    get_health_tracker()._states.clear()
+
+    await svc.generate_direct(request)
+
+    forwarded_req = mock_primary.generate.await_args.args[0]
+    assert forwarded_req.model_id == "my-model"

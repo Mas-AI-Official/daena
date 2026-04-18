@@ -82,11 +82,12 @@ HARD_LAWS: tuple[HardLaw, ...] = (
     ),
     HardLaw(
         id=8,
-        name="Governance Cannot Be Disabled",
-        description="The governance engine cannot be fully disabled. Even YOLO mode still enforces "
-                    "Hard Laws and logs CRITICAL-risk actions at Tier 2+.",
-        enforcement="Governance engine startup validates minimum "
-                    "enforcement levels for all slider positions.",
+        name="Shield Always Active",
+        description="The governance engine can be toggled by the Founder (UNLEASHED/BALANCED/GOVERNED). "
+                    "Regardless of mode, the Shield (Laws 5+7: data exfiltration and tenant isolation) "
+                    "is always enforced. Audit logging (Law 1) runs in all modes.",
+        enforcement="Shield laws checked in all governance modes. "
+                    "Governance mode toggle requires FOUNDER role.",
     ),
     HardLaw(
         id=9,
@@ -99,16 +100,80 @@ HARD_LAWS: tuple[HardLaw, ...] = (
 )
 
 
-def check_hard_laws(action_type: str, params: dict) -> list[HardLaw]:
-    """Check if an action would violate any Hard Laws.
+# ── Law classification by governance mode ────────────────────
+# SHIELD laws: enforced in ALL modes (UNLEASHED/BALANCED/GOVERNED)
+# These protect OUR data, IP, and system integrity.
+SHIELD_LAW_IDS: frozenset[int] = frozenset({1, 5, 7, 9})
+# Law 1: Audit logging (always record what happened)
+# Law 5: No data exfiltration (protect client/founder data)
+# Law 7: Tenant isolation (never leak cross-tenant)
+# Law 9: Audit trail integrity (tamper-evident chain)
+
+# BALANCED laws: enforced in BALANCED + GOVERNED modes
+BALANCED_LAW_IDS: frozenset[int] = frozenset({1, 3, 5, 7, 9})
+# Adds Law 3: No unbounded execution (safety bounds)
+
+# ALL laws: enforced in GOVERNED mode only (full enterprise)
+ALL_LAW_IDS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9})
+
+
+def check_hard_laws(
+    action_type: str,
+    params: dict,
+    governance_mode: str = "GOVERNED",
+) -> list[HardLaw]:
+    """Check if an action would violate Hard Laws for the given governance mode.
 
     Args:
         action_type: The type of action being attempted.
         params: Parameters of the action.
+        governance_mode: UNLEASHED, BALANCED, or GOVERNED.
 
     Returns:
         List of violated Hard Laws (empty if all pass).
     """
+    if governance_mode == "UNLEASHED":
+        return _check_shield_laws(action_type, params)
+    if governance_mode == "BALANCED":
+        return _check_balanced_laws(action_type, params)
+    return _check_all_laws(action_type, params)
+
+
+def _check_shield_laws(action_type: str, params: dict) -> list[HardLaw]:
+    """UNLEASHED mode: only enforce shield (Laws 1, 5, 7, 9).
+
+    Reuses the proven check_hard_laws_agi() logic for data protection.
+    Everything else gets creative options via get_creative_options().
+    """
+    violations: list[HardLaw] = []
+
+    # Law 5: No data exfiltration
+    _outbound_keywords = [
+        "exfiltrate", "leak", "send_external", "transmit_data",
+        "upload_user_data", "export_to_external",
+    ]
+    action_lower = action_type.lower()
+    param_str = str(params).lower()
+    if any(kw in action_lower or kw in param_str for kw in _outbound_keywords):
+        violations.append(HARD_LAWS[4])  # Law 5
+
+    # Laws 1, 7, 9 enforced at middleware/DB/audit level, not here.
+    return violations
+
+
+def _check_balanced_laws(action_type: str, params: dict) -> list[HardLaw]:
+    """BALANCED mode: shield + execution bounds (Laws 1, 3, 5, 7, 9)."""
+    violations = _check_shield_laws(action_type, params)
+
+    # Law 3: No unbounded execution
+    if action_type == "EXECUTE" and not params.get("timeout"):
+        violations.append(HARD_LAWS[2])
+
+    return violations
+
+
+def _check_all_laws(action_type: str, params: dict) -> list[HardLaw]:
+    """GOVERNED mode: enforce all 9 laws (original behavior)."""
     violations: list[HardLaw] = []
 
     # Law 6: No permanent deletion
@@ -119,13 +184,8 @@ def check_hard_laws(action_type: str, params: dict) -> list[HardLaw]:
     if action_type == "EXECUTE" and not params.get("timeout"):
         violations.append(HARD_LAWS[2])
 
-    # Law 5: No data exfiltration (always checked, even in AGI mode)
-    # Enforced at outbound request interceptor level.
-
-    # Law 7: Tenant isolation -- enforced at middleware/DB level,
-    # not at governance evaluation level. The evaluate() method already
-    # receives tenant_id as a separate parameter; action_params don't
-    # carry it. Checking here would cause false positives.
+    # Law 5: No data exfiltration -- enforced at outbound interceptor level.
+    # Law 7: Tenant isolation -- enforced at middleware/DB level.
 
     return violations
 
@@ -241,7 +301,11 @@ def apply_creative_resolution(action_type: str, params: dict, choice: str) -> di
     return result
 
 
-def enforce_hard_laws(action_type: str, params: dict) -> None:
+def enforce_hard_laws(
+    action_type: str,
+    params: dict,
+    governance_mode: str = "GOVERNED",
+) -> None:
     """Check hard laws and raise HardLawViolationError if any are violated.
 
     Convenience wrapper around check_hard_laws() for callers that prefer
@@ -250,13 +314,14 @@ def enforce_hard_laws(action_type: str, params: dict) -> None:
     Args:
         action_type: The type of action being attempted.
         params: Parameters of the action.
+        governance_mode: UNLEASHED, BALANCED, or GOVERNED.
 
     Raises:
         HardLawViolationError: If any hard law is violated.
     """
     from app.core.exceptions import HardLawViolationError
 
-    violations = check_hard_laws(action_type, params)
+    violations = check_hard_laws(action_type, params, governance_mode)
     if violations:
         names = ", ".join(str(v) for v in violations)
         raise HardLawViolationError(f"Blocked by {names}")

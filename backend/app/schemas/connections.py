@@ -80,6 +80,12 @@ class ConnectorInstanceResponse(DaenaSchema):
     connector_name: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # Session 11: the email / handle of the external account the user
+    # authenticated. Populated after Google consent picks e.g.
+    # masoud.masoori@mas-ai.co. Never includes tokens. Empty string
+    # when we could not fetch userinfo (OAuth succeeded but /userinfo
+    # returned non-200).
+    account_identity: str | None = None
 
 
 class ConnectorPermissionResponse(DaenaSchema):

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, get_current_user
@@ -19,6 +19,7 @@ router = APIRouter()
 
 @router.get("")
 async def list_runtimes(
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """List all registered runtimes with status and subscription info.
@@ -64,23 +65,60 @@ async def list_runtimes(
     no_local_runtimes = not any(registry._installed_cache.values())
     data["cloud_mode"] = not bool(ollama_url) or no_local_runtimes
 
-    # API providers with configured keys
+    # API providers with configured keys + their available models.
+    # Session 10 (wire audit): include models so the frontend can render
+    # the per-provider expansion. Previously we only returned provider
+    # names which left users unable to see that e.g. Groq exposes 8
+    # models and Gemini API exposes 3. This is the data the Connections
+    # UI needs to stop hiding sub-models.
+    from app.core.constants import ModelProvider
+
     provider_map = [
-        ("groq_api_key", "Groq", "Groq Cloud"),
-        ("gemini_api_key", "Gemini", "Google Gemini"),
-        ("anthropic_api_key", "Anthropic", "Anthropic Claude"),
-        ("openai_api_key", "OpenAI", "OpenAI"),
-        ("openrouter_api_key", "OpenRouter", "OpenRouter"),
-        ("together_api_key", "Together", "Together AI"),
-        ("perplexity_api_key", "Perplexity", "Perplexity AI"),
+        ("groq_api_key", "Groq", "Groq Cloud", ModelProvider.GROQ),
+        ("gemini_api_key", "Gemini", "Google Gemini", ModelProvider.GEMINI),
+        ("anthropic_api_key", "Anthropic", "Anthropic Claude", ModelProvider.ANTHROPIC),
+        ("openai_api_key", "OpenAI", "OpenAI", ModelProvider.OPENAI),
+        ("openrouter_api_key", "OpenRouter", "OpenRouter", ModelProvider.OPENROUTER),
+        ("together_api_key", "Together", "Together AI", ModelProvider.TOGETHER),
+        ("perplexity_api_key", "Perplexity", "Perplexity AI", ModelProvider.PERPLEXITY),
     ]
+    model_registry = getattr(request.app.state, "model_registry", None)
     api_providers = []
-    for attr, provider, display_name in provider_map:
+    for attr, provider, display_name, p_enum in provider_map:
         key_value = (getattr(settings, attr, "") or "").strip()
-        if key_value:
-            api_providers.append(
-                {"provider": provider, "status": "connected", "display_name": display_name}
+        if not key_value:
+            continue
+        # Best-effort model enumeration. If a provider isn't registered
+        # yet (e.g. lazy init skipped it), we report an empty model list
+        # rather than failing the whole endpoint.
+        models_payload: list[dict] = []
+        try:
+            prov = model_registry.get_provider(p_enum) if model_registry else None
+            if prov is not None:
+                for m in await prov.list_models():
+                    models_payload.append({
+                        "model_id": m.model_id,
+                        "display_name": m.display_name,
+                        "context_window": m.context_window,
+                        "supports_vision": m.supports_vision,
+                        "supports_tools": m.supports_tools,
+                        "tags": list(m.tags),
+                        "cost_per_1m_input": m.cost_per_1m_input,
+                        "cost_per_1m_output": m.cost_per_1m_output,
+                    })
+        except Exception as exc:
+            logger.warning(
+                "runtimes.models_enum_failed",
+                provider=provider,
+                error=str(exc),
             )
+        api_providers.append({
+            "provider": provider,
+            "status": "connected",
+            "display_name": display_name,
+            "models": models_payload,
+            "model_count": len(models_payload),
+        })
     data["api_providers"] = api_providers
 
     return {"success": True, "data": data}

@@ -521,51 +521,10 @@ class LearnedLesson:
 
 # Priority order: highest capability first.
 # Reasoning models (deepseek-r1, qwq) are SLOWER due to internal chain-of-thought.
-# Prefer standard models for general cognitive reasoning. Reasoning models are
-# better suited for explicit "think" mode, not as default auto-selection.
-_MODEL_PRIORITY = [
-    # API models (strongest reasoning)
-    # NOTE: provider values MUST match ModelProvider enum .value (UPPERCASE)
-    ("ANTHROPIC", "claude-sonnet-4-20250514"),
-    ("ANTHROPIC", "claude-3-5-sonnet-20241022"),
-    ("OPENAI", "gpt-4o"),
-    ("OPENAI", "o3-mini"),
-    ("GEMINI", "gemini-2.5-pro"),
-    ("GEMINI", "gemini-2.0-flash"),
-    ("GROQ", "llama-3.3-70b-versatile"),
-    # Local models (free, private) -- prefer fast standard models over slow reasoning
-    ("OLLAMA", "qwen3.5:27b"),
-    ("OLLAMA", "qwen3-coder:30b"),
-    ("OLLAMA", "gemma4:26b"),
-    ("OLLAMA", "qwen2.5-coder:14b"),
-    ("OLLAMA", "llama3.1:8b"),
-    ("OLLAMA", "mistral:7b"),
-    ("OLLAMA", "qwen3.5:9b"),
-    # Reasoning models last -- they work but are 5-10x slower
-    ("OLLAMA", "deepseek-r1:14b"),
-    ("OLLAMA", "deepseek-r1:8b"),
-]
-
-# Model priority for /3vilbob mode: prefer models that don't refuse
-# security reasoning. Cloud models with guardrails are deprioritized.
-# Local models (no guardrails) are elevated. Claude is kept high because
-# it cooperates well with authorized pentest framing.
-_OFFENSIVE_MODEL_PRIORITY: list[tuple[str, str]] = [
-    # Claude cooperates with proper authorization framing
-    ("ANTHROPIC", "claude-3-5-sonnet-20241022"),
-    # Local models: zero guardrails, full offensive reasoning
-    ("OLLAMA", "qwen3.5:27b"),
-    ("OLLAMA", "qwen3-coder:30b"),
-    ("OLLAMA", "gemma4:26b"),
-    ("OLLAMA", "qwen2.5-coder:14b"),
-    ("OLLAMA", "llama3.1:8b"),
-    ("OLLAMA", "deepseek-r1:14b"),
-    # Groq (hosted but less restrictive)
-    ("GROQ", "llama-3.3-70b-versatile"),
-    # OpenAI/Gemini last -- most restrictive on offensive security
-    ("OPENAI", "gpt-4o"),
-    ("GEMINI", "gemini-2.0-flash"),
-]
+# Model selection now delegated to ModelRouter.select_best_single().
+# The router uses tier-aware scoring (SOVEREIGN > STRATEGIC > TACTICAL > LOCAL)
+# with CLI subscription preference, debate roster, and intent-aware selection.
+# No hardcoded priority lists needed here.
 
 
 # ---------------------------------------------------------------------------
@@ -681,37 +640,36 @@ def _is_refusal(response: str) -> bool:
 
 
 async def auto_select_model(offensive_mode: bool = False) -> tuple[str, str] | None:
-    """Auto-select the best available model.
+    """Auto-select the best available model via ModelRouter.
 
-    Tries models from highest capability to lowest.
-    In offensive mode (/3vilbob), prefers models that don't refuse
-    security reasoning (local models elevated, restrictive models last).
+    Delegates to ModelRouter.select_best_single() which uses the tier
+    system (SOVEREIGN > STRATEGIC > TACTICAL > LOCAL) and prefers CLI
+    subscription models over API-key models.
+
+    In offensive mode (/3vilbob), local models are elevated (no guardrails).
     Returns (provider_enum_value, model_id) or None if nothing available.
     """
     try:
-        from app.core.constants import ModelProvider
         from app.services.model_registry import ModelRegistry
+        from app.services.model_router import ModelRouter
 
         registry = ModelRegistry()
-
-        # Initialize if needed (discovers providers + models)
         await registry.initialize()
 
-        # Get all available models
+        router = ModelRouter(registry)
+        best = router.select_best_single(offensive=offensive_mode)
+
+        if best:
+            logger.info(
+                "cognitive_reasoner.model_selected",
+                provider=best.provider.value,
+                model=best.model_id,
+                source="model_router",
+            )
+            return (best.provider.value, best.model_id)
+
+        # Absolute fallback: any non-embedding model
         available = await registry.list_all_models()
-        available_set = {(m.provider.value, m.model_id) for m in available}
-
-        priority = _OFFENSIVE_MODEL_PRIORITY if offensive_mode else _MODEL_PRIORITY
-        for provider_str, model_id in priority:
-            if (provider_str, model_id) in available_set:
-                logger.info(
-                    "cognitive_reasoner.model_selected",
-                    provider=provider_str,
-                    model=model_id,
-                )
-                return (provider_str, model_id)
-
-        # Fallback: try any available model (prefer non-embed models)
         for m in available:
             if "embed" not in m.model_id.lower() and "nomic" not in m.model_id.lower():
                 return (m.provider.value, m.model_id)
@@ -1315,10 +1273,29 @@ class CognitiveReasoner:
                 provider=self._provider,
                 snippet=response_content[:200],
             )
-            # Try alternative models from the offensive priority list
+            # Try alternative models via ModelRouter (offensive = local first)
             tried = {(self._provider, self._model_id)}
-            for alt_provider, alt_model in _OFFENSIVE_MODEL_PRIORITY:
+            try:
+                from app.services.model_registry import ModelRegistry
+                from app.services.model_router import ModelRouter
+                _registry = ModelRegistry()
+                await _registry.initialize()
+                _router = ModelRouter(_registry)
+                _all = list(_registry.available_providers)
+                _alts = _router._collect_from_providers(_all)
+                # Sort by offensive strength (local models first)
+                _alts.sort(key=lambda c: (
+                    0 if c.provider.value == "OLLAMA" else 1,
+                    -c.context_window,
+                ))
+            except Exception:
+                _alts = []
+            for alt_candidate in _alts:
+                alt_provider = alt_candidate.provider.value
+                alt_model = alt_candidate.model_id
                 if (alt_provider, alt_model) in tried:
+                    continue
+                if "embed" in alt_model.lower() or "nomic" in alt_model.lower():
                     continue
                 tried.add((alt_provider, alt_model))
                 alt_response = await self._call_single_model(

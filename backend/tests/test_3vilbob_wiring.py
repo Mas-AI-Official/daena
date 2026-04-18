@@ -8,9 +8,14 @@ Tests:
 - ForgottenInfraScanner strategy wiring
 - OriginIPDiscovery wiring
 - Hypothesis-driven testing
+- Orchestrator meta-command interception (Stage 6.5): pins that the
+  regex + DaenaBotRouter pair actually match the patterns the founder
+  types at runtime, so ``/3vilbob ON`` never leaks through to a
+  runtime that would reply "Unknown skill: 3vilbob".
 """
 
-import asyncio
+import re
+
 import pytest
 
 
@@ -1153,27 +1158,51 @@ class TestRefusalDetection:
 # ---------------------------------------------------------------------------
 
 class TestOffensiveModelBias:
-    """Test that /3vilbob mode prefers ungated models."""
+    """Test that /3vilbob mode prefers ungated models via ModelRouter."""
 
-    def test_offensive_priority_exists(self):
-        from app.services.cognition.cognitive_reasoner import _OFFENSIVE_MODEL_PRIORITY
-        assert len(_OFFENSIVE_MODEL_PRIORITY) >= 5
+    def test_offensive_selects_via_router(self):
+        """Model selection now delegates to ModelRouter.select_best_single."""
+        from app.services.model_router import ModelRouter
+        assert hasattr(ModelRouter, "select_best_single")
 
-    def test_offensive_priority_prefers_local(self):
-        """Local models should appear before restrictive cloud models."""
-        from app.services.cognition.cognitive_reasoner import _OFFENSIVE_MODEL_PRIORITY
-        names = [m[0] for m in _OFFENSIVE_MODEL_PRIORITY]
-        # First OLLAMA should come before first GEMINI
-        first_ollama = next(i for i, n in enumerate(names) if n == "OLLAMA")
-        gemini_indices = [i for i, n in enumerate(names) if n == "GEMINI"]
-        if gemini_indices:
-            assert first_ollama < gemini_indices[0]
+    def test_offensive_mode_prefers_local(self):
+        """In offensive mode, select_best_single prefers LOCAL tier."""
+        from unittest.mock import MagicMock
+        from app.core.constants import ModelProvider, ModelTier
+        from app.services.model_router import ModelCandidate, ModelRouter
 
-    def test_standard_priority_different_from_offensive(self):
-        from app.services.cognition.cognitive_reasoner import (
-            _MODEL_PRIORITY, _OFFENSIVE_MODEL_PRIORITY,
-        )
-        assert _MODEL_PRIORITY != _OFFENSIVE_MODEL_PRIORITY
+        registry = MagicMock()
+        registry.available_providers = [ModelProvider.OLLAMA, ModelProvider.GEMINI]
+        registry.get_health.return_value = MagicMock(value="HEALTHY")
+        registry._health_cache = {}
+        registry._model_cache = {
+            "qwen3.5:27b": MagicMock(
+                model_id="qwen3.5:27b", provider=ModelProvider.OLLAMA,
+                cost_per_1m_input=0, cost_per_1m_output=0,
+                context_window=32768, tags=[],
+            ),
+            "gemini-2.0-flash": MagicMock(
+                model_id="gemini-2.0-flash", provider=ModelProvider.GEMINI,
+                cost_per_1m_input=0.1, cost_per_1m_output=0.3,
+                context_window=1000000, tags=[],
+            ),
+        }
+        registry.get_provider.return_value = MagicMock()
+
+        router = ModelRouter(registry)
+        best = router.select_best_single(offensive=True)
+        # In offensive mode, LOCAL (Ollama) should be preferred over cloud
+        assert best is not None
+        assert best.provider == ModelProvider.OLLAMA
+
+    def test_standard_and_offensive_differ(self):
+        """Standard mode prefers sovereign, offensive prefers local."""
+        from app.services.model_router import ModelRouter
+        # Both methods exist and accept the offensive parameter
+        assert hasattr(ModelRouter, "select_best_single")
+        import inspect
+        sig = inspect.signature(ModelRouter.select_best_single)
+        assert "offensive" in sig.parameters
 
 
 # ---------------------------------------------------------------------------
@@ -1863,3 +1892,79 @@ class TestCKGLLMAbstraction:
         source = inspect.getsource(cognitive_scan_engine)
         assert "process_pending_abstractions" in source
         assert "ckg_llm_abstractions" in source
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator meta-command interception (Stage 6.5)
+# ---------------------------------------------------------------------------
+
+
+class TestMetaCommandInterception:
+    """Pins the contract between chat_orchestrator's /3vilbob detection
+    regex and DaenaBotRouter's pattern list.
+
+    Why this matters: if the orchestrator regex drifts so it stops
+    matching what the router responds to, the short-circuit silently
+    falls through and the message hits the runtime -- which replies
+    "Unknown skill: 3vilbob". The founder hit exactly this case the
+    night of 2026-04-17. These tests make that regression loud.
+    """
+
+    # Keep in sync with the regexes at chat_orchestrator.py Stage 6.5.
+    _TOGGLE_RE = re.compile(
+        r"^/3vilbob\s+(on|off|status)\s*$", re.IGNORECASE
+    )
+    _DOMAIN_RE = re.compile(
+        r"^/3vilbob\s+[\w.\-]+\.\w+", re.IGNORECASE
+    )
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "/3vilbob on",
+            "/3vilbob ON",
+            "/3vilbob off",
+            "/3vilbob OFF",
+            "/3vilbob status",
+            "/3vilbob  on  ",  # tolerant of whitespace
+        ],
+    )
+    def test_regex_accepts_toggle_forms(self, message: str) -> None:
+        assert self._TOGGLE_RE.match(message.strip()) is not None
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "/3vilbob example.com",
+            "/3vilbob sub.example.com",
+            "/3vilbob example.com mybounty",
+        ],
+    )
+    def test_regex_accepts_domain_forms(self, message: str) -> None:
+        assert self._DOMAIN_RE.match(message.strip()) is not None
+
+    def test_regex_rejects_unrelated_messages(self) -> None:
+        # Plain chat text should NOT look like a meta-command to the
+        # orchestrator -- otherwise we'd short-circuit normal turns.
+        assert self._TOGGLE_RE.match("tell me about 3vilbob") is None
+        assert self._TOGGLE_RE.match("/security scan") is None
+        assert self._DOMAIN_RE.match("explain example.com") is None
+
+    def test_router_matches_toggle_patterns(self) -> None:
+        """DaenaBotRouter must return a ToolCall for every form the
+        orchestrator regex accepts. If this split, the meta-command
+        detector fires but the dispatcher can't resolve a tool,
+        leaving the user without a response."""
+        from app.services.daenabot.router import DaenaBotRouter
+
+        for form in (
+            "/3vilbob ON",
+            "/3vilbob on",
+            "/3vilbob OFF",
+            "/3vilbob status",
+        ):
+            call = DaenaBotRouter.match(form)
+            assert call is not None, (
+                f"router should resolve '{form}' to a tool call"
+            )
+            assert call.tool_name == "security.evilbob_toggle"

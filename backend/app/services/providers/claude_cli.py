@@ -194,31 +194,47 @@ class CliProvider(BaseProvider):
                 timeout=600.0,
             )
         except subprocess.TimeoutExpired:
+            # RAISE so the failover chain catches it and tries next provider
+            from app.core.exceptions import ProviderError
+
             logger.error(
                 "cli_provider.timeout",
                 runtime=self._spec.runtime_id,
                 prompt_size=len(prompt),
             )
-            return LLMResponse(
-                content=f"[{self._spec.display_name} is still processing. The task may need to be broken into steps.]",
-                model_id=self._spec.model_id,
-                provider=self._spec.provider,
-                latency_ms=self._elapsed_ms(start),
-                finish_reason="timeout",
+            raise ProviderError(
+                f"{self._spec.display_name} timed out after 600s"
             )
         except Exception as exc:
+            from app.core.exceptions import ProviderError
+
+            # Classify the error to help the health tracker
+            error_msg = str(exc)
             logger.error(
                 "cli_provider.error",
                 runtime=self._spec.runtime_id,
-                error=str(exc),
+                error=error_msg,
             )
-            return LLMResponse(
-                content=f"[{self._spec.display_name} error: {exc}]",
-                model_id=self._spec.model_id,
-                provider=self._spec.provider,
-                latency_ms=self._elapsed_ms(start),
-                finish_reason="error",
+            raise ProviderError(
+                f"{self._spec.display_name} error: {error_msg}"
             )
+
+        # Check for CLI-level errors in the output (non-zero exit, error stderr)
+        if result.returncode != 0:
+            from app.core.exceptions import ProviderError
+
+            stderr = (result.stderr or "").strip()[:500]
+            _err_msg = f"{self._spec.display_name} CLI exit code {result.returncode}: {stderr}"
+            logger.warning(
+                "cli_provider.cli_error",
+                runtime=self._spec.runtime_id,
+                returncode=result.returncode,
+                stderr=stderr[:200],
+            )
+            # If there IS stdout content despite error exit code, use it
+            # (some CLIs return useful output with non-zero exit)
+            if not result.stdout.strip():
+                raise ProviderError(_err_msg)
 
         # Parse output
         if self._spec.json_output:

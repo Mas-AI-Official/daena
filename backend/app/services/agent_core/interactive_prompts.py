@@ -255,8 +255,19 @@ class InteractivePromptManager:
         response = await self._send_and_wait(prompt)
         return response.get("text", "")
 
-    async def ask_confirm(self, title: str, message: str) -> bool:
-        """Simple yes/no confirmation."""
+    async def ask_confirm(
+        self,
+        title: str,
+        message: str,
+        context: dict[str, Any] | None = None,
+    ) -> bool:
+        """Simple yes/no confirmation.
+
+        The optional ``context`` dict follows the same opt-in convention
+        as the other ask_* helpers: reserved keys ``_tenant_id`` and
+        ``_department`` trigger a ``department.needs_input`` BorderAgent
+        emit in ``_send_and_wait`` so peer rooms see the block.
+        """
         prompt = InteractivePrompt(
             id=self._generate_id(),
             type=PromptType.CONFIRM,
@@ -266,6 +277,7 @@ class InteractivePromptManager:
                 PromptOption(id="yes", label="Yes", style="success"),
                 PromptOption(id="no", label="No", style="danger"),
             ],
+            context=context or {},
         )
         response = await self._send_and_wait(prompt)
         return response.get("selected") == "yes"
@@ -287,6 +299,14 @@ class InteractivePromptManager:
         # Broadcast via SSE
         await self._broadcast_prompt(prompt)
 
+        # Border Agent emit: when a prompt carries tenant / department
+        # context, surface it as a department.needs_input signal so
+        # peer rooms (Product, Security Operations) see that an agent
+        # is waiting on the user. Opt-in via existing context dict so
+        # prompts without tenant info stay tenant-agnostic. Fail-safe
+        # -- emit errors never block the prompt delivery.
+        await self._maybe_emit_needs_input(prompt)
+
         # Wait for response
         try:
             await asyncio.wait_for(
@@ -303,6 +323,61 @@ class InteractivePromptManager:
         finally:
             self._pending.pop(prompt.id, None)
             self._events.pop(prompt.id, None)
+
+    async def _maybe_emit_needs_input(
+        self, prompt: InteractivePrompt
+    ) -> None:
+        """Emit a BorderAgent signal when the prompt carries tenant /
+        department context.
+
+        Expected context keys (all optional):
+          * ``_tenant_id``: stringified UUID of the tenant
+          * ``_department``: name of the emitting department
+            (Sales, Marketing, Security Operations, Daena, ...)
+
+        When both are present, a ``department.needs_input`` event is
+        published so peer rooms (Product and Security Operations are
+        the main listeners per DEPARTMENT_RELEVANCE) know that an
+        agent is currently blocked waiting on the founder. Absent
+        context -> no emit; the prompt still sends normally.
+
+        Fail-safe: any parse / emit error is logged at debug and the
+        prompt delivery continues untouched.
+        """
+        try:
+            ctx = prompt.context or {}
+            tenant_raw = ctx.get("_tenant_id")
+            dept = ctx.get("_department")
+            if not tenant_raw or not dept:
+                return
+
+            from uuid import UUID as _UUID
+
+            from app.services.departments.border_agent import (
+                DepartmentEvent,
+                get_border_agent,
+            )
+
+            ba = await get_border_agent(
+                tenant_id=_UUID(str(tenant_raw)), department=str(dept)
+            )
+            await ba.emit(
+                DepartmentEvent.NEEDS_INPUT,
+                payload={
+                    "task_summary": (
+                        f"Agent needs user input: {prompt.title}"
+                    ),
+                    "prompt_id": prompt.id,
+                    "prompt_type": prompt.type.value,
+                    "title": prompt.title,
+                },
+            )
+        except Exception as exc:  # pragma: no cover - fail-safe
+            logger.debug(
+                "prompt.needs_input.emit_failed",
+                prompt_id=getattr(prompt, "id", None),
+                error=str(exc),
+            )
 
     def respond(self, prompt_id: str, response: dict[str, Any]) -> bool:
         """Called by API when user responds to a prompt."""

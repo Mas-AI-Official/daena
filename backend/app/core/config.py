@@ -110,6 +110,18 @@ class Settings(BaseSettings):
     debug: bool = True
     log_level: str = "INFO"
 
+    # --- Feature flags ---
+    # Session B (2026-04-17): Daena VP Stage 2.8 plans cross-department
+    # routing for chat requests. The plan stage is fail-safe (VP never
+    # blocks chat) and integration tests confirmed no regression on the
+    # hot path. Flipped ON 2026-04-17: multi-department chat requests
+    # now emit `daena_vp_plan` SSE events showing involved_departments
+    # and required_approvers so the Company Dashboard + chat view can
+    # render the routing. Execution wiring of subtask.required_approvers
+    # to ask_department calls still lives in SwarmExecutor (next session).
+    # Set DAENA_VP_ENABLED=false in .env to roll back.
+    daena_vp_enabled: bool = True
+
     # --- Database ---
     database_url: str = "sqlite+aiosqlite:///./daena_dev2.db"
     database_echo: bool = False
@@ -126,6 +138,16 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 1440  # 24hr for dev; tighten to 30min for production
     jwt_refresh_token_expire_days: int = 7
+
+    # --- Founder seed (auto-creates on startup if all three set) ---
+    # The founder authored the terms so terms_accepted_at is set on
+    # seed; no T&C interstitial is shown to these accounts. Other
+    # Gmail OAuth users still have to accept T&C before profile is
+    # marked complete.
+    founder_email: str = ""
+    founder_personal_email: str = ""
+    founder_default_password: str = ""
+    founder_tenant_name: str = "MAS-AI Technologies"
 
     # --- OAuth (multi-provider) ---
     google_client_id: str = ""
@@ -170,8 +192,14 @@ class Settings(BaseSettings):
 
     # --- Feature Flags ---
     enable_web3: bool = False
-    enable_daenabot: bool = False
+    enable_daenabot: bool = True
     disable_auth: bool = False
+
+    # --- Governance Mode ---
+    # UNLEASHED = No governance pipeline. Shield only. Raw power.
+    # BALANCED  = Light governance (SecurityGate + auto-proceed most actions)
+    # GOVERNED  = Full 10-stage pipeline (enterprise mode, default)
+    governance_mode: str = "GOVERNED"
 
     # --- DaenaBot ---
     daenabot_allowed_paths: list[str] = []          # Sandbox dirs for FileAgent

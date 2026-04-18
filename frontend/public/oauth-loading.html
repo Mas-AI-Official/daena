@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Connecting… | Daena</title>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; background: #0F1419; color: #E8EAED; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      .wrap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+      .spinner { width: 28px; height: 28px; border: 3px solid rgba(212,168,67,0.25); border-top-color: #D4A843; border-radius: 50%; animation: s 0.8s linear infinite; }
+      @keyframes s { to { transform: rotate(360deg); } }
+      p { font-size: 14px; color: #9AA0A6; margin: 0; }
+      .brand { color: #D4A843; font-weight: 600; letter-spacing: 0.02em; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="spinner"></div>
+      <p class="brand">Daena</p>
+      <p>Preparing secure sign-in…</p>
+    </div>
+  </body>
+</html>

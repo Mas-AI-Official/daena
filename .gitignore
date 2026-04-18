@@ -5,11 +5,23 @@ CLAUDE.md
 # Daena-Mind vault (user data, generated reports, memory tiers)
 data/mind/
 
+# Soul vault (IP-protected, never pushed to GitHub)
+backend/app/soul/
+
+# Runtime OAuth overrides (user-pasted OAuth client IDs/secrets)
+# Written by POST /settings/oauth-credentials, chmod 0600 on POSIX.
+# Contains plaintext client secrets -- never commit.
+backend/.daena_oauth_overrides.json
+
 # docs/ directory -- internal docs live in Doc/ (gitignored)
 # Only README.md, CHANGELOG.md, LICENSE.md, CONTRIBUTING.md at root
 # docs/assets/ is un-ignored so README images render on GitHub
+# docs/pitch/ is un-ignored so investor-facing materials live in repo
+# docs/SESSION-LOG.md is un-ignored so the session history is shared
 docs/*
 !docs/assets/
+!docs/pitch/
+!docs/SESSION-LOG.md
 
 # Internal prompts and session logs (dev-only)
 Doc/
@@ -29,6 +41,35 @@ venv_daena_main_py310/
 venv_daena_audio_py310/
 .venv/
 venv*/
+backend/.venv_linux/
+backend/.venv*/
+
+# Benchmark dumps + logs (per-run outputs, not source)
+backend/aime_*.json
+backend/aime_*.txt
+backend/aime_session*.json
+backend/benchmark_live_log.txt
+backend/council_test_log.txt
+backend/council_test_results.json
+backend/gsm_symbolic_results.json
+backend/intelligence_benchmark_results.json
+backend/truthfulqa_results.json
+backend/data/benchmarks/
+
+# Generated vault reports (canonical vault is D:\Ideas\Daena-Mind\)
+backend/data/mind/
+
+# Runtime var directory (scan traces, laevateinn logs, ckg cache)
+var/
+
+# Archived older pitch versions
+docs/pitch/old/
+
+# Ad-hoc benchmark/investigation scripts (one-off, not part of suite)
+backend/run_aime_*.py
+backend/run_council_test.py
+backend/run_truthfulqa.py
+backend/run_gsm_symbolic.py
 
 # IDE
 .vscode/
@@ -165,3 +206,5 @@ Default/
 *.pma
 .axon/
 .gitnexus
+# Added by code-review-graph
+.code-review-graph/

@@ -48,77 +48,34 @@ async def main():
     providers = registry.available_providers
     print(f"Available providers: {[p.value for p in providers]}")
 
-    # Configure sovereign-tier models for Quintessence debate.
-    # Pick the BEST (largest/strongest) model from each provider.
-    # Judge: Claude Opus 4.6
-    # Debaters: Gemini Pro, Perplexity Pro, Codex
-    #
-    # Model selection logic:
-    # - Prefer "pro", "opus", "max" in model name
-    # - Prefer larger context window
-    # - Exclude "flash", "mini", "instant" (cheap/fast variants)
-    # - NO Ollama, NO Groq -- sovereign subscription/API only
+    # Use ModelRouter for sovereign-tier model selection.
+    # The router uses the tier system + debate roster + CLI preference.
+    # Judge: best single model (Primary Mind)
+    # Debaters: task-aware debate roster from router
+    from app.services.model_router import ModelRouter
 
-    from app.core.constants import ModelProvider
+    router = ModelRouter(registry)
 
-    _SOVEREIGN_PROVIDERS = [
-        ModelProvider.ANTHROPIC, ModelProvider.GEMINI,
-        ModelProvider.PERPLEXITY, ModelProvider.OPENAI,
-    ]
-
-    # Score models: higher = better
-    def _model_score(model_id: str, info) -> float:
-        mid = model_id.lower()
-        score = 0.0
-        # CLI subscription models = highest tier (they use Pro/Max plans)
-        if mid.endswith("-cli"):
-            score += 200  # CLI subscription = sovereign tier
-        # Strong positive signals
-        if "opus" in mid or "pro" in mid or "max" in mid:
-            score += 100
-        if "4.6" in mid or "4-6" in mid or "3.1" in mid:
-            score += 50
-        if "sonar-pro" in mid:
-            score += 100
-        if "codex" in mid:
-            score += 80
-        # Negative signals (cheap models -- never pick these for Quintessence)
-        if "flash" in mid or "mini" in mid or "instant" in mid or "nano" in mid:
-            score -= 200
-        if "8b" in mid or "3b" in mid or "7b" in mid:
-            score -= 100
-        if "preview" in mid and "pro" not in mid:
-            score -= 50  # preview without pro = experimental
-        # Context window bonus
-        score += info.context_window / 100_000
-        return score
-
-    quintessence_models = []
-    for provider in _SOVEREIGN_PROVIDERS:
-        # Get ALL models from this provider, pick the best
-        candidates = [
-            (model_id, info)
-            for model_id, info in registry._model_cache.items()
-            if info.provider == provider
-        ]
-        if not candidates:
-            print(f"  WARNING: No models from {provider.value}")
-            continue
-
-        # Sort by score (best first)
-        candidates.sort(key=lambda x: _model_score(x[0], x[1]), reverse=True)
-        best_id, best_info = candidates[0]
-        quintessence_models.append(best_id)
-        print(f"  {provider.value:12s} -> {best_id} (score={_model_score(best_id, best_info):.0f}, ctx={best_info.context_window})")
-
-    if not quintessence_models:
-        print("ERROR: No sovereign-tier models available. Check API keys.")
+    # Judge = best single model (sovereign tier, CLI preferred)
+    judge_candidate = router.select_best_single()
+    if not judge_candidate:
+        print("ERROR: No models available. Check API keys and providers.")
         return
 
-    print()
-    judge = quintessence_models[0]  # Claude as judge (highest priority)
-    print(f"Judge (Primary Mind): {judge}")
-    print(f"Debaters: {quintessence_models[1:]}")
+    judge = judge_candidate.model_id
+    judge_provider = judge_candidate.provider
+    print(f"Judge (Primary Mind): {judge} [{judge_provider.value}]")
+
+    # Debaters = sovereign-tier models excluding judge's provider
+    debaters = router.select_debate_roster(
+        intent=None,  # General -- will be overridden per-benchmark
+        count=4,
+        primary_mind_provider=judge_provider,
+    )
+    quintessence_models = [judge] + [d.model_id for d in debaters]
+
+    print(f"Debaters: {[d.model_id + ' [' + d.provider.value + ']' for d in debaters]}")
+    print(f"Total Quintessence roster: {len(quintessence_models)} models")
     print()
 
     # Create runner
@@ -126,9 +83,9 @@ async def main():
 
     # Run benchmarks
     benchmarks = [
+        (BenchmarkType.AIME, "AIME 2025 I (15 official MAA problems)"),
         (BenchmarkType.TRUTHFULQA, "TruthfulQA (20 questions)"),
         (BenchmarkType.GSM_SYMBOLIC, "GSM-Symbolic (20 questions)"),
-        (BenchmarkType.AIME, "AIME 2025 (20 questions)"),
     ]
 
     results = {}

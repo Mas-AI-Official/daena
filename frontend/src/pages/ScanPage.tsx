@@ -176,7 +176,20 @@ export function ScanPage() {
   const [report, setReport] = useState<ScanReport | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [history, setHistory] = useState<any[]>([])
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Load scan history on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await api.get('/security/scans', { params: { limit: 20 } })
+        if (Array.isArray(data)) setHistory(data)
+      } catch {
+        // Silent -- history is optional
+      }
+    })()
+  }, [])
 
   // Poll active jobs
   const pollJobs = useCallback(async () => {
@@ -200,6 +213,15 @@ export function ScanPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [activeJobs, pollJobs])
 
+  // Map display tier IDs (T1-T4) to backend enum values (SCOUT/ANALYST/...)
+  const TIER_ID_TO_ENUM: Record<string, string> = {
+    T1: 'SCOUT',
+    T2: 'ANALYST',
+    T3: 'OPERATOR',
+    T4: 'ARCHITECT',
+    T5: 'EVILBOB',
+  }
+
   // Start scan
   const startScan = async () => {
     if (!target.trim()) return
@@ -208,7 +230,7 @@ export function ScanPage() {
     try {
       const { data } = await api.post('/security/scans/start', {
         target: target.trim(),
-        tier: selectedTier,
+        tier: TIER_ID_TO_ENUM[selectedTier] || selectedTier,
       })
       setActiveJobs(prev => [data, ...prev])
       setTarget('')
@@ -437,10 +459,10 @@ export function ScanPage() {
               Scan Report -- {report.tier}
             </h2>
             <div className="flex items-center gap-4 text-[10px] text-starlight-500">
-              <span><Clock size={10} className="inline mr-1" />{report.duration_secs}s</span>
-              <span><Layers size={10} className="inline mr-1" />{report.pipeline_stages_used} stages</span>
-              <span><DollarSign size={10} className="inline mr-1" />${report.cost_usd.toFixed(2)}</span>
-              <span><Brain size={10} className="inline mr-1" />{report.models_used.join(', ')}</span>
+              <span><Clock size={10} className="inline mr-1" />{report.duration_secs ?? 0}s</span>
+              <span><Layers size={10} className="inline mr-1" />{report.pipeline_stages_used ?? 0} stages</span>
+              <span><DollarSign size={10} className="inline mr-1" />${(report.cost_usd ?? 0).toFixed(2)}</span>
+              <span><Brain size={10} className="inline mr-1" />{(report.models_used ?? []).join(', ') || 'n/a'}</span>
             </div>
           </div>
 
@@ -451,7 +473,7 @@ export function ScanPage() {
 
           {/* Findings */}
           <div className="space-y-2">
-            {report.findings.map((finding, i) => (
+            {(report.findings ?? []).map((finding, i) => (
               <motion.div
                 key={i}
                 initial={{ opacity: 0, y: 4 }}
@@ -502,8 +524,43 @@ export function ScanPage() {
         </div>
       )}
 
+      {/* Scan History */}
+      {history.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-medium text-starlight-300 flex items-center gap-2">
+            <Clock size={14} className="text-starlight-400" />
+            Recent Scans
+          </h2>
+          <div className="space-y-2">
+            {history.map((trace: any) => (
+              <button
+                key={trace.scan_id || trace.id}
+                onClick={() => trace.scan_id && loadReport(trace.scan_id)}
+                className="w-full text-left bg-midnight-200/40 border border-white/5 rounded-xl p-3 hover:border-white/15 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-starlight-200 truncate font-mono">{trace.target || 'unknown target'}</p>
+                    <p className="text-[10px] text-starlight-500 mt-0.5">
+                      {trace.tier || 'SCOUT'} · {trace.finding_count ?? 0} findings · {trace.timestamp || trace.created_at || ''}
+                    </p>
+                  </div>
+                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                    trace.status === 'complete' ? 'bg-status-success/10 text-status-success' :
+                    trace.status === 'failed' ? 'bg-status-error/10 text-status-error' :
+                    'bg-starlight-500/10 text-starlight-400'
+                  }`}>
+                    {trace.status || 'complete'}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Empty state */}
-      {activeJobs.length === 0 && !report && (
+      {activeJobs.length === 0 && !report && history.length === 0 && (
         <EmptyState
           icon={<Crosshair size={40} className="text-starlight-500" />}
           title="No scans yet"

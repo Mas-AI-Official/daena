@@ -9,9 +9,9 @@ class RoutingPreviewRequest(BaseModel):
     """Non-executing routing preview for founder diagnostics."""
 
     message: str = Field(..., min_length=1, max_length=100_000)
-    governance_slider: str = Field(
-        "STANDARD",
-        pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID)$",
+    governance_mode: str = Field(
+        "BALANCED",
+        pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID|UNLEASHED|BALANCED|GOVERNED)$",
     )
     chat_mode: str = Field("CMD", pattern="^(CMD|EXE)$")
     routing_mode: str | None = Field(

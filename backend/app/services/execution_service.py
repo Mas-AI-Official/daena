@@ -19,7 +19,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from app.core.constants import ChatMode, ExecutionStatus, TaskStatus
+from app.core.constants import ChatMode, ExecutionStatus, GovernanceMode, RiskLevel, TaskStatus
 from app.core.exceptions import (
     GovernanceBlockedError,
     ValidationError,
@@ -27,8 +27,15 @@ from app.core.exceptions import (
 from app.core.logging import get_logger
 from app.models.chat import ChatSession
 from app.models.execution import Task, ToolExecution
+from app.models.identity import User
 from app.services._base import BaseService
+from app.services.approval import ApprovalService
 from app.services.governance import GovernanceEngine
+from app.services.permission_resolver import (
+    EffectivePermission,
+    ToolPermission,
+    resolve_permission,
+)
 
 logger = get_logger(__name__)
 
@@ -51,7 +58,7 @@ class ExecutionService(BaseService):
             session_id=session_id,
             user_id=user_id,
             tenant_id=tenant_id,
-            governance_slider="STANDARD",
+            governance_mode="BALANCED",
             actor_role="OPERATOR",
         )
 
@@ -112,7 +119,7 @@ class ExecutionService(BaseService):
         session_id: UUID,
         user_id: UUID,
         tenant_id: UUID,
-        governance_slider: str = "STANDARD",
+        governance_mode: str = "BALANCED",
         actor_role: str = "OPERATOR",
         plan_approval_id: UUID | None = None,
     ) -> dict[str, Any]:
@@ -126,7 +133,7 @@ class ExecutionService(BaseService):
         decision = await engine.evaluate(
             action_type=resolved_action,
             action_params=params,
-            governance_slider=governance_slider,
+            governance_slider=governance_mode,
             actor_type="USER",
             actor_role=actor_role,
             tenant_id=tenant_id,
@@ -136,6 +143,70 @@ class ExecutionService(BaseService):
         )
         decision["action_type"] = resolved_action
         return decision
+
+    # ── Per-Tool User Preference Resolution ─────────────────
+
+    async def _get_user_tool_pref(
+        self,
+        *,
+        user_id: UUID,
+        tool_name: str,
+    ) -> ToolPermission | None:
+        """Fetch the user's per-tool ALLOW / ASK / BLOCK override.
+
+        Reads ``User.settings.extension_permissions``. Shape (see
+        ``api.v1.connections``):
+
+            {
+                "<ext_slug>": {
+                    "default": "ALLOW" | "ASK_EACH_TIME" | "BLOCK",
+                    "tools": { "<tool_name>": "ALLOW" | ... },
+                },
+                ...
+            }
+
+        Returns ``None`` when no explicit preference exists so the
+        resolver falls back to pure governance-mode semantics.
+        """
+        try:
+            result = await self.db.execute(select(User).where(User.id == user_id))
+            db_user = result.scalar_one_or_none()
+            if not db_user or not db_user.settings:
+                return None
+            ext_perms = db_user.settings.get("extension_permissions", {}) or {}
+            # Scan all extensions for a direct tool override, then fall
+            # back to any extension default that claims this tool.
+            for _ext_slug, cfg in ext_perms.items():
+                if not isinstance(cfg, dict):
+                    continue
+                tools = cfg.get("tools") or {}
+                if tool_name in tools:
+                    raw = tools[tool_name]
+                    try:
+                        return ToolPermission(raw)
+                    except ValueError:
+                        continue
+            return None
+        except Exception:
+            # Permission lookup must never break tool execution. Fall
+            # back to governance-mode defaults when storage hiccups.
+            return None
+
+    @staticmethod
+    def _infer_tool_risk(resolved_action: str, decision: dict) -> RiskLevel:
+        """Pick a RiskLevel for the permission resolver.
+
+        Prefers the risk already computed by ``GovernanceEngine`` when
+        available, otherwise falls back to MEDIUM so BALANCED mode
+        treats unknown tools conservatively.
+        """
+        raw = decision.get("risk_level")
+        if raw:
+            try:
+                return RiskLevel(raw)
+            except ValueError:
+                pass
+        return RiskLevel.MEDIUM
 
     # ── Tool Execution ────────────────────────────────────────
 
@@ -147,7 +218,7 @@ class ExecutionService(BaseService):
         session_id: UUID,
         user_id: UUID,
         tenant_id: UUID,
-        governance_slider: str = "STANDARD",
+        governance_mode: str = "BALANCED",
         actor_role: str = "OPERATOR",
         plan_approval_id: UUID | None = None,
     ) -> dict[str, Any]:
@@ -159,7 +230,7 @@ class ExecutionService(BaseService):
             session_id: Chat session context.
             user_id: Executing user.
             tenant_id: Tenant scope.
-            governance_slider: Current governance preset.
+            governance_mode: Current governance mode (UNLEASHED/BALANCED/GOVERNED).
             actor_role: RBAC role of the user.
             plan_approval_id: If set, tool runs under pre-approved plan.
 
@@ -185,7 +256,7 @@ class ExecutionService(BaseService):
         decision = await engine.evaluate(
             action_type=resolved_action,
             action_params=params,
-            governance_slider=governance_slider,
+            governance_slider=governance_mode,
             actor_type="USER",
             actor_role=actor_role,
             tenant_id=tenant_id,
@@ -193,6 +264,39 @@ class ExecutionService(BaseService):
             session_id=session_id,
             plan_approval_id=plan_approval_id,
         )
+
+        # Step 2b: Per-tool user override via permission_resolver.
+        # Governance mode stays the source of truth; an explicit BLOCK
+        # from the user always wins, and an explicit ASK promotes the
+        # action to requires_approval regardless of tier. AUTO_PROCEED
+        # (default) leaves the engine decision untouched.
+        user_pref = await self._get_user_tool_pref(
+            user_id=user_id, tool_name=tool_name
+        )
+        try:
+            gov_mode_enum = GovernanceMode(governance_mode)
+        except ValueError:
+            gov_mode_enum = GovernanceMode.BALANCED
+        tool_risk = self._infer_tool_risk(resolved_action, decision)
+        effective = resolve_permission(
+            governance_mode=gov_mode_enum,
+            autopilot_active=bool(decision.get("autopilot_override")),
+            tool_risk=tool_risk,
+            user_pref=user_pref,
+        )
+        if effective == EffectivePermission.REFUSE:
+            decision["allowed"] = False
+            decision["requires_approval"] = False
+            decision["message"] = (
+                f"User blocked tool '{tool_name}' via per-tool permission"
+            )
+            decision["user_override"] = "BLOCK"
+        elif effective == EffectivePermission.REQUEST_INPUT:
+            # Force the approval path even if engine tier was below 3.
+            if decision.get("allowed"):
+                decision["allowed"] = False
+            decision["requires_approval"] = True
+            decision["user_override"] = "ASK_EACH_TIME"
 
         # Step 3: Record execution attempt
         execution = ToolExecution(
@@ -206,14 +310,65 @@ class ExecutionService(BaseService):
         self.db.add(execution)
         await self.db.flush()
 
-        # Step 4: Check governance decision
+        # Step 4: Check governance decision.
+        #
+        # Previously this raised GovernanceBlockedError without persisting
+        # anything visible to the user. That meant the frontend's
+        # /governance/approvals page stayed empty even when tools were
+        # gated on tier 3+, which is why Masoud never saw approvals
+        # surface in the UI. Now any action flagged requires_approval
+        # creates a PendingApproval row via ApprovalService so the
+        # Approvals page and Sidebar badge light up immediately.
         if not decision["allowed"]:
             execution.status = ExecutionStatus.BLOCKED.value
             execution.error = decision["message"]
+
+            approval_request_id: str | None = None
+            if decision.get("requires_approval"):
+                try:
+                    approval_svc = ApprovalService(self.db)
+                    approval = await approval_svc.request_approval(
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        action_type=resolved_action,
+                        action_params=params,
+                        risk_level=decision.get(
+                            "risk_level", RiskLevel.MEDIUM.value
+                        ),
+                        governance_tier=decision["governance_tier"],
+                        session_id=session_id,
+                        context={
+                            "tool_name": tool_name,
+                            "execution_id": str(execution.id),
+                            "user_override": decision.get("user_override"),
+                        },
+                    )
+                    approval_request_id = approval["id"]
+                    decision["request_id"] = approval_request_id
+                    logger.info(
+                        "execution.approval_persisted",
+                        tool=tool_name,
+                        request_id=approval_request_id,
+                        tier=decision["governance_tier"],
+                    )
+                except Exception as approval_exc:
+                    # Never let approval persistence failure swallow the
+                    # underlying governance block. Log and continue to raise.
+                    logger.warning(
+                        "execution.approval_persist_failed",
+                        tool=tool_name,
+                        error=str(approval_exc),
+                    )
+
             await self.db.commit()
 
+            suffix = (
+                f" (approval {approval_request_id})"
+                if approval_request_id
+                else ""
+            )
             raise GovernanceBlockedError(
-                f"Tool '{tool_name}' blocked: {decision['message']}"
+                f"Tool '{tool_name}' blocked: {decision['message']}{suffix}"
             )
 
         # Step 5: Execute the tool
@@ -680,6 +835,19 @@ class ExecutionService(BaseService):
                     "output": None,
                     "error": f"Unknown security operation: {operation}",
                 }
+
+        elif agent_prefix == "plugin":
+            # Plugin self-service: Daena can install / diagnose / fix
+            # / list her own plugins via this surface. Routes through
+            # governance like every other DaenaBot agent -- the
+            # PluginAdminAgent.OPERATION_ACTION_MAP controls the
+            # tier classification.
+            from app.services.daenabot.plugin_admin_agent import (
+                PluginAdminAgent,
+            )
+
+            agent = PluginAdminAgent()
+            return await agent.execute(operation, params)
 
         elif agent_prefix in ("gmail", "calendar", "google-calendar", "notion"):
             # External integration -- route through IntegrationRouter

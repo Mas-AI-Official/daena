@@ -418,3 +418,67 @@ class TestSimulatedFileScan:
                 assert "location" in finding
                 return
         # If none had findings in 20 files, that is still valid (probabilistic)
+
+
+# ---- Border Agent emit (Session J) ----
+
+
+class TestBorderAgentEmitOnComplete:
+    """When a scan finishes, the Security Operations BorderAgent must see
+    a TASK_COMPLETED signal (always) and a THREAT_DETECTED signal (only
+    when critical/high findings exist). This protects the
+    cross-department notification contract from silent regressions.
+    """
+
+    @pytest.mark.asyncio
+    async def test_task_completed_always_emitted(
+        self, workflow: ScanWorkflow
+    ) -> None:
+        from uuid import uuid4
+        from app.services.departments.border_agent import (
+            DepartmentEvent,
+            get_border_agent,
+            reset_registry,
+        )
+
+        # Wipe process registry so this test starts with a deterministic
+        # event-bus subscription state. Without this, test order could
+        # leak emits from earlier runs into the ring buffers.
+        await reset_registry()
+
+        tenant_id = uuid4()
+
+        # Pre-create listeners BEFORE firing the scan so they subscribe
+        # to the bus before any emit happens. The scan_workflow will
+        # call get_border_agent for Security Operations (reused via the
+        # idempotent registry), and Daena's wildcard lens receives all
+        # peer events from this tenant.
+        sec_ops = await get_border_agent(
+            tenant_id=tenant_id, department="Security Operations"
+        )
+        daena = await get_border_agent(
+            tenant_id=tenant_id, department="Daena"
+        )
+        sec_ops.clear()
+        daena.clear()
+
+        job = await workflow.start_scan(
+            target="src/a.py,src/b.py,src/c.py",
+            tier="SCOUT",
+            user_id="user-j1",
+            tenant_id=str(tenant_id),
+        )
+
+        for _ in range(50):
+            await asyncio.sleep(0.1)
+            status = await workflow.get_scan_status(job.id)
+            if status.status == ScanJobStatus.COMPLETE:
+                break
+
+        # Give the event loop a tick to drain any last-minute handler
+        # coroutines spawned inside the scan emit block.
+        await asyncio.sleep(0.05)
+        types = [s.get("event_type") for s in daena.recent_signals(limit=20)]
+        assert DepartmentEvent.TASK_COMPLETED in types, (
+            f"expected TASK_COMPLETED in Daena VP inbox, got: {types}"
+        )

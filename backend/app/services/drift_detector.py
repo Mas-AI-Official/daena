@@ -1,20 +1,20 @@
 """Drift Detector — anti-drift system for agent execution monitoring.
 
 Detects when an autopilot or multi-step execution has deviated from
-the original goal.  Integrates directly with the governance slider.
+the original goal.  Integrates directly with the governance mode.
 
 Four-dimension weighted drift scoring:
 
-    drift = (goal_alignment_loss  × 0.40
-           + plan_deviation_ratio × 0.30
-           + resource_overrun     × 0.15
-           + side_effect_ratio    × 0.15)
+    drift = (goal_alignment_loss  x 0.40
+           + plan_deviation_ratio x 0.30
+           + resource_overrun     x 0.15
+           + side_effect_ratio    x 0.15)
 
 Drift is assessed at checkpoint intervals determined by the governance
-preset (YOLO=10, LIGHT=7, STANDARD=5, STRICT=3, PARANOID=1).
+mode (UNLEASHED=10, BALANCED=5, GOVERNED=3).
 
-Anti-drift is MANDATORY in Autopilot mode regardless of slider position.
-In non-Autopilot modes it is advisory — logs but does not block unless
+Anti-drift is MANDATORY in Autopilot mode regardless of mode setting.
+In non-Autopilot modes it is advisory -- logs but does not block unless
 the drift score exceeds the escalation threshold.
 
 Patent-pending: Sunflower-Honeycomb governance architecture.
@@ -27,20 +27,18 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from app.core.constants import GovernanceSlider
+from app.core.constants import GovernanceMode, GovernanceSlider
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-# ── Checkpoint intervals per preset (from governance.py) ──────────
+# ── Checkpoint intervals per governance mode (from governance.py) ──
 
-CHECKPOINT_INTERVALS: dict[GovernanceSlider, int] = {
-    GovernanceSlider.YOLO: 10,
-    GovernanceSlider.LIGHT: 7,
-    GovernanceSlider.STANDARD: 5,
-    GovernanceSlider.STRICT: 3,
-    GovernanceSlider.PARANOID: 1,
+CHECKPOINT_INTERVALS: dict[GovernanceMode, int] = {
+    GovernanceMode.UNLEASHED: 10,
+    GovernanceMode.BALANCED: 5,
+    GovernanceMode.GOVERNED: 3,
 }
 
 
@@ -151,36 +149,26 @@ class DriftResponse:
 
 
 # ── Drift response matrix ────────────────────────────────────────
-# Maps (GovernanceSlider, DriftSeverity) → DriftAction
+# Maps (GovernanceMode, DriftSeverity) -> DriftAction
 # Per spec Section 6.3
 
 _DRIFT_RESPONSE_MATRIX: dict[
-    GovernanceSlider, dict[DriftSeverity, DriftAction]
+    GovernanceMode, dict[DriftSeverity, DriftAction]
 ] = {
-    GovernanceSlider.YOLO: {
+    GovernanceMode.UNLEASHED: {
         DriftSeverity.ON_TRACK: DriftAction.CONTINUE,
         DriftSeverity.DRIFTING: DriftAction.PAUSE_AUTO_REALIGN,
         DriftSeverity.LOST: DriftAction.ESCALATE_TOAST,
     },
-    GovernanceSlider.LIGHT: {
-        DriftSeverity.ON_TRACK: DriftAction.CONTINUE_LOG,
-        DriftSeverity.DRIFTING: DriftAction.PAUSE_AUTO_REALIGN,
-        DriftSeverity.LOST: DriftAction.ESCALATE_PAUSE_WAIT,
-    },
-    GovernanceSlider.STANDARD: {
+    GovernanceMode.BALANCED: {
         DriftSeverity.ON_TRACK: DriftAction.CONTINUE_LOG,
         DriftSeverity.DRIFTING: DriftAction.PAUSE_NOTIFY_REALIGN,
         DriftSeverity.LOST: DriftAction.ESCALATE_COUNCIL_REVIEW,
     },
-    GovernanceSlider.STRICT: {
+    GovernanceMode.GOVERNED: {
         DriftSeverity.ON_TRACK: DriftAction.CONTINUE_NOTIFY,
         DriftSeverity.DRIFTING: DriftAction.PAUSE_ALERT_WAIT,
         DriftSeverity.LOST: DriftAction.ESCALATE_FULL_STOP_ADMIN,
-    },
-    GovernanceSlider.PARANOID: {
-        DriftSeverity.ON_TRACK: DriftAction.CONTINUE_ACKNOWLEDGE,
-        DriftSeverity.DRIFTING: DriftAction.PAUSE_ALERT_WAIT,
-        DriftSeverity.LOST: DriftAction.ESCALATE_FULL_STOP_FOUNDER,
     },
 }
 
@@ -225,7 +213,7 @@ class DriftDetector:
             state=current_state,
             original_goal="Deploy user auth to staging",
             budget=resource_budget,
-            governance_slider="STANDARD",
+            governance_mode="BALANCED",
             step_number=7,
         )
 
@@ -247,7 +235,7 @@ class DriftDetector:
     @staticmethod
     def should_checkpoint(
         step_number: int,
-        governance_slider: str,
+        governance_mode: str,
         *,
         is_autopilot: bool = False,
     ) -> bool:
@@ -255,9 +243,12 @@ class DriftDetector:
 
         Args:
             step_number: Current step number (1-based).
-            governance_slider: Active governance preset string.
+            governance_mode: Active governance mode string
+                (UNLEASHED/BALANCED/GOVERNED). Legacy slider values
+                (YOLO/LIGHT/STANDARD/STRICT/PARANOID) are converted
+                automatically.
             is_autopilot: If True, forces checkpoint per preset
-                interval even if slider would not normally require it.
+                interval even if mode would not normally require it.
 
         Returns:
             True if a drift checkpoint should be performed.
@@ -265,8 +256,12 @@ class DriftDetector:
         if step_number < 1:
             return False
 
-        slider = GovernanceSlider(governance_slider)
-        interval = CHECKPOINT_INTERVALS[slider]
+        try:
+            mode = GovernanceMode(governance_mode)
+        except ValueError:
+            # Legacy slider value -- convert via GovernanceSlider
+            mode = GovernanceSlider(governance_mode).to_governance_mode()
+        interval = CHECKPOINT_INTERVALS[mode]
 
         return step_number % interval == 0
 
@@ -278,7 +273,7 @@ class DriftDetector:
         state: ExecutionState,
         original_goal: str,
         budget: ResourceBudget,
-        governance_slider: str = "STANDARD",
+        governance_mode: str = "BALANCED",
         step_number: int = 0,
         goal_similarity: float | None = None,
     ) -> DriftResponse:
@@ -288,7 +283,9 @@ class DriftDetector:
             state: Current execution state snapshot.
             original_goal: The user's original goal/instruction.
             budget: Resource budget for the execution.
-            governance_slider: Active governance preset.
+            governance_mode: Active governance mode
+                (UNLEASHED/BALANCED/GOVERNED). Legacy slider values
+                are converted automatically.
             step_number: Current step number.
             goal_similarity: Pre-computed semantic similarity (0-1)
                 between state summary and original goal.  If None,
@@ -307,8 +304,11 @@ class DriftDetector:
         severity = self._classify(drift_score)
 
         # Look up action from matrix
-        slider = GovernanceSlider(governance_slider)
-        action = _DRIFT_RESPONSE_MATRIX[slider][severity]
+        try:
+            mode = GovernanceMode(governance_mode)
+        except ValueError:
+            mode = GovernanceSlider(governance_mode).to_governance_mode()
+        action = _DRIFT_RESPONSE_MATRIX[mode][severity]
 
         # Build checkpoint record
         checkpoint = DriftCheckpoint(
@@ -338,7 +338,7 @@ class DriftDetector:
             score=round(drift_score, 4),
             severity=severity.value,
             action=action.value,
-            slider=slider.value,
+            mode=mode.value,
             continue_=should_continue,
         )
 

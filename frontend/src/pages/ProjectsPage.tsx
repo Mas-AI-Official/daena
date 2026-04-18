@@ -1,6 +1,5 @@
 /**
- * ProjectsPage (Phase 6): persistent project workspaces.
- * Like Perplexity Computer's project view. Lists all projects,
+ * ProjectsPage -- Persistent project workspaces. Lists all projects,
  * allows CRUD, and each project scopes tasks/files/chat/departments.
  */
 import { useEffect, useState, useCallback } from 'react'

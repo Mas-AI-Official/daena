@@ -14,11 +14,23 @@ const portFile = path.resolve(__dirname, '../backend/.daena-port')
 function getBackendUrl(): string {
   // Environment variable override takes priority (useful when port file is stale)
   if (process.env.DAENA_BACKEND_PORT) {
-    return `http://localhost:${process.env.DAENA_BACKEND_PORT}`
+    const url = `http://localhost:${process.env.DAENA_BACKEND_PORT}`
+    console.info(`[Daena frontend] Using env override: ${url}`)
+    return url
   }
   try {
     const port = Number.parseInt(fs.readFileSync(portFile, 'utf-8').trim(), 10)
     if (port > 0 && port < 65536) {
+      // Validate the port file isn't stale by checking file age
+      const stat = fs.statSync(portFile)
+      const ageMinutes = (Date.now() - stat.mtimeMs) / 60_000
+      if (ageMinutes > 60) {
+        console.warn(
+          `[Daena frontend] Port file is ${Math.round(ageMinutes)}min old (possibly stale). ` +
+            `Using port ${port} anyway. Restart backend if proxy fails.`,
+        )
+      }
+      console.info(`[Daena frontend] Proxy -> http://localhost:${port} (from ${portFile})`)
       return `http://localhost:${port}`
     }
   } catch {

@@ -156,7 +156,17 @@ class ConnectorOAuthService:
         return provider
 
     def _get_credential(self, setting_name: str) -> str:
-        """Get a credential from settings, raising clear error if missing."""
+        """Get a credential from settings, raising clear error if missing.
+
+        Session 10: checks the runtime override store first so operators
+        can paste OAuth creds via the Connections > Setup modal without
+        restarting the backend.
+        """
+        from app.services.integrations.oauth_credentials_store import get_override
+
+        override = get_override(setting_name)
+        if override:
+            return override
         value = getattr(self._settings, setting_name, "")
         if not value:
             raise OAuthConfigError(setting_name.split("_")[0], setting_name)
@@ -164,9 +174,13 @@ class ConnectorOAuthService:
 
     def get_supported_providers(self) -> list[dict[str, Any]]:
         """Return list of supported OAuth providers with configuration status."""
+        from app.services.integrations.oauth_credentials_store import get_override
+
         result = []
         for provider_id, config in OAUTH_PROVIDERS.items():
-            client_id = getattr(self._settings, config.client_id_setting, "")
+            client_id = get_override(config.client_id_setting) or getattr(
+                self._settings, config.client_id_setting, "",
+            )
             result.append({
                 "provider_id": provider_id,
                 "configured": bool(client_id),
@@ -291,6 +305,86 @@ class ConnectorOAuthService:
                 "scope": data.get("scope", ""),
                 "provider": provider,
             }
+
+    async def fetch_account_identity(
+        self,
+        access_token: str,
+        provider: str,
+    ) -> str:
+        """Fetch the email / handle of the account that just authorized.
+
+        Session 11: answers the "which Google account did I pick?" UX
+        question by hitting each provider's userinfo endpoint after
+        token exchange. Failures are swallowed (empty string) because
+        the OAuth connection itself succeeded -- we'd rather show
+        "Connected" than fail because we couldn't fetch the email.
+
+        Mapping:
+          - Google (gmail/google-drive/google-calendar)
+              GET https://www.googleapis.com/oauth2/v3/userinfo -> email
+          - GitHub
+              GET https://api.github.com/user -> login (email optional, requires scope)
+          - Figma
+              GET https://api.figma.com/v1/me -> email
+          - Slack
+              GET https://slack.com/api/auth.test -> user + team
+          - Canva
+              GET https://api.canva.com/rest/v1/users/me/profile -> email (best-effort)
+        """
+        is_google = provider in ("gmail", "google-drive", "google-calendar")
+        url: str
+        headers: dict[str, str] = {"Authorization": f"Bearer {access_token}"}
+        if is_google:
+            url = "https://www.googleapis.com/oauth2/v3/userinfo"
+        elif provider == "github":
+            url = "https://api.github.com/user"
+            headers["Accept"] = "application/vnd.github+json"
+        elif provider == "figma":
+            url = "https://api.figma.com/v1/me"
+        elif provider == "slack":
+            url = "https://slack.com/api/auth.test"
+        elif provider == "canva":
+            url = "https://api.canva.com/rest/v1/users/me/profile"
+        else:
+            return ""
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code != 200:
+                    logger.warning(
+                        "connector_oauth.userinfo_non_200",
+                        provider=provider, status=resp.status_code,
+                    )
+                    return ""
+                data = resp.json()
+        except Exception as exc:
+            logger.warning(
+                "connector_oauth.userinfo_failed",
+                provider=provider, error=str(exc),
+            )
+            return ""
+
+        # Provider-specific extraction. Prefer email when available, fall
+        # back to handle/login/username so the UI always has something.
+        if is_google:
+            return str(data.get("email") or data.get("name") or "")
+        if provider == "github":
+            login = data.get("login") or ""
+            email = data.get("email") or ""
+            return f"{login} ({email})" if email else str(login)
+        if provider == "figma":
+            return str(data.get("email") or data.get("handle") or "")
+        if provider == "slack":
+            if not data.get("ok"):
+                return ""
+            user = data.get("user") or ""
+            team = data.get("team") or ""
+            return f"{user} @ {team}" if team else str(user)
+        if provider == "canva":
+            profile = data.get("profile") or data
+            return str(profile.get("email") or profile.get("display_name") or "")
+        return ""
 
     async def refresh_token(
         self,

@@ -45,8 +45,25 @@ def test_runtime_diagnostics_can_opt_into_process_env_first(
     assert diagnostics["debug"]["source"] == "process_env"
 
 
-def test_production_guardrails_flag_placeholder_secrets() -> None:
-    """Production config should reject placeholder secrets."""
+def test_production_guardrails_flag_placeholder_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production config should reject placeholder secrets.
+
+    Pydantic Settings reads from os.environ even when ``_env_file=None``,
+    so a developer who has a real JWT_SECRET_KEY exported locally would
+    see the placeholder guard pass and the test fail. Strip the
+    relevant env vars so the Settings instance genuinely defaults to
+    the placeholder values.
+    """
+    for name in (
+        "JWT_SECRET_KEY",
+        "VAULT_ENCRYPTION_KEY",
+        "DAENA_JWT_SECRET_KEY",
+        "DAENA_VAULT_ENCRYPTION_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
     settings = Settings(
         _env_file=None,
         app_env="production",

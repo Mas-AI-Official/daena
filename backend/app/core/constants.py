@@ -110,12 +110,38 @@ class ModelTier(str, enum.Enum):
 
 
 class GovernanceSlider(str, enum.Enum):
-    """Governance strictness level (user-facing slider)."""
-    YOLO = "YOLO"          # Minimal governance
-    LIGHT = "LIGHT"        # Log only
-    STANDARD = "STANDARD"  # Default -- balanced
-    STRICT = "STRICT"      # Require approvals
-    PARANOID = "PARANOID"  # Council + approve everything
+    """DEPRECATED: aliased to GovernanceMode for backward compatibility.
+
+    Old 5-level slider collapsed into 3-mode system:
+        YOLO        -> UNLEASHED
+        LIGHT       -> BALANCED
+        STANDARD    -> BALANCED
+        STRICT      -> GOVERNED
+        PARANOID    -> GOVERNED
+    """
+    YOLO = "YOLO"
+    LIGHT = "LIGHT"
+    STANDARD = "STANDARD"
+    STRICT = "STRICT"
+    PARANOID = "PARANOID"
+    # New canonical values (accepted by the enum for forward compat)
+    UNLEASHED = "UNLEASHED"
+    BALANCED = "BALANCED"
+    GOVERNED = "GOVERNED"
+
+    def to_governance_mode(self) -> "GovernanceMode":
+        """Convert legacy slider value to canonical GovernanceMode."""
+        _MAP = {
+            "YOLO": GovernanceMode.UNLEASHED,
+            "LIGHT": GovernanceMode.BALANCED,
+            "STANDARD": GovernanceMode.BALANCED,
+            "STRICT": GovernanceMode.GOVERNED,
+            "PARANOID": GovernanceMode.GOVERNED,
+            "UNLEASHED": GovernanceMode.UNLEASHED,
+            "BALANCED": GovernanceMode.BALANCED,
+            "GOVERNED": GovernanceMode.GOVERNED,
+        }
+        return _MAP.get(self.value, GovernanceMode.BALANCED)
 
 
 class MessageRole(str, enum.Enum):
@@ -129,6 +155,20 @@ class MessageRole(str, enum.Enum):
 # ============================================================
 # Governance Enums
 # ============================================================
+
+class GovernanceMode(str, enum.Enum):
+    """Controls WHETHER governance runs (not how strict it is).
+
+    UNLEASHED: No governance pipeline. Shield only (IP/data protection).
+               Raw power. Daena finds a way. Only Laws 5+7 enforced.
+    BALANCED:  Light governance -- SecurityGate + auto-proceed for most
+               actions. Approval only for truly dangerous operations.
+    GOVERNED:  Full 10-stage pipeline with all Hard Laws (enterprise mode).
+    """
+    UNLEASHED = "UNLEASHED"
+    BALANCED = "BALANCED"
+    GOVERNED = "GOVERNED"
+
 
 class RiskLevel(str, enum.Enum):
     """Risk classification for actions."""
@@ -539,25 +579,42 @@ DEFAULT_SKILLS: list[dict] = [
 # Governance Tier Mapping
 # ============================================================
 
-GOVERNANCE_TIER_MAP: dict[GovernanceSlider, dict[RiskLevel, int]] = {
-    GovernanceSlider.YOLO: {
+GOVERNANCE_TIER_MAP: dict[GovernanceMode, dict[RiskLevel, int]] = {
+    # UNLEASHED: Shield only. Everything is tier 0 (logged) except
+    # CRITICAL actions which still get tier 2 (notified).
+    GovernanceMode.UNLEASHED: {
         RiskLevel.NONE: 0, RiskLevel.LOW: 0, RiskLevel.MEDIUM: 0,
-        RiskLevel.HIGH: 1, RiskLevel.CRITICAL: 2,
+        RiskLevel.HIGH: 0, RiskLevel.CRITICAL: 2,
     },
-    GovernanceSlider.LIGHT: {
+    # BALANCED: Auto-approve most. HIGH gets notified, CRITICAL needs approval.
+    GovernanceMode.BALANCED: {
         RiskLevel.NONE: 0, RiskLevel.LOW: 0, RiskLevel.MEDIUM: 1,
         RiskLevel.HIGH: 2, RiskLevel.CRITICAL: 3,
     },
-    GovernanceSlider.STANDARD: {
+    # GOVERNED: Full pipeline. MEDIUM+ escalates. HIGH/CRITICAL need approval.
+    GovernanceMode.GOVERNED: {
         RiskLevel.NONE: 0, RiskLevel.LOW: 1, RiskLevel.MEDIUM: 2,
         RiskLevel.HIGH: 3, RiskLevel.CRITICAL: 4,
     },
-    GovernanceSlider.STRICT: {
-        RiskLevel.NONE: 0, RiskLevel.LOW: 2, RiskLevel.MEDIUM: 3,
-        RiskLevel.HIGH: 3, RiskLevel.CRITICAL: 4,
-    },
-    GovernanceSlider.PARANOID: {
-        RiskLevel.NONE: 1, RiskLevel.LOW: 2, RiskLevel.MEDIUM: 3,
-        RiskLevel.HIGH: 4, RiskLevel.CRITICAL: 4,
-    },
 }
+
+
+def resolve_governance_tier(
+    governance_mode: GovernanceMode,
+    risk: RiskLevel,
+    *,
+    legacy_slider: str | None = None,
+) -> int:
+    """Compute governance tier from mode + risk.
+
+    Accepts optional legacy_slider for backward compatibility with
+    stored sessions that still have YOLO/LIGHT/STANDARD/STRICT/PARANOID.
+    Converts to GovernanceMode before lookup.
+    """
+    if legacy_slider and legacy_slider not in ("UNLEASHED", "BALANCED", "GOVERNED"):
+        try:
+            governance_mode = GovernanceSlider(legacy_slider).to_governance_mode()
+        except ValueError:
+            pass  # Unknown value, use governance_mode as-is
+    tier_map = GOVERNANCE_TIER_MAP.get(governance_mode, GOVERNANCE_TIER_MAP[GovernanceMode.BALANCED])
+    return tier_map.get(risk, 0)

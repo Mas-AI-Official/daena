@@ -53,10 +53,27 @@ class ClaudeCodeAdapter(BaseRuntimeAdapter):
             runtime_id="claude_code",
             display_name="Claude Code",
         )
-        # Resolve claude binary path once at init time
+        # Resolve claude binary path -- handle WSL where Windows binaries need full path
+        import os
         import shutil
 
-        self._claude_bin = shutil.which("claude") or "claude"
+        self._claude_bin = shutil.which("claude") or ""
+        if not self._claude_bin:
+            # WSL fallback: try well-known Windows paths via /mnt/c/
+            _wsl_candidates = [
+                "/mnt/c/Users/masou/.local/bin/claude",
+                "/mnt/c/Users/masou/.local/bin/claude.exe",
+            ]
+            # Also try Windows native paths (when running as native Windows Python)
+            _win_candidates = [
+                os.path.expandvars(r"%USERPROFILE%\.local\bin\claude.exe"),
+            ]
+            for candidate in _wsl_candidates + _win_candidates:
+                if os.path.isfile(candidate):
+                    self._claude_bin = candidate
+                    break
+            if not self._claude_bin:
+                self._claude_bin = "claude"  # last resort fallback
         logger.info("claude_code.init", binary=self._claude_bin)
 
         # Persistent session manager for stateful multi-turn execution

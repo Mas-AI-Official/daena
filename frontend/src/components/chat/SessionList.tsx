@@ -139,7 +139,6 @@ export function SessionList({ departmentId }: SessionListProps = {}) {
       const session = await createSession({
         mode: ui.chatMode,
         routingMode: ui.routingMode,
-        governanceSlider: ui.governanceSlider,
         departmentId,
         autopilot: ui.autopilotActive,
         thinkMode: ui.thinkingVisible,

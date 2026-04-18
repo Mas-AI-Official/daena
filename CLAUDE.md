@@ -1,4 +1,7 @@
-# DAENA -- Project Context
+# DAENA -- Project Context (Claude Code Extension)
+# This file extends DAENA.md with Claude Code-specific instructions.
+# DAENA.md contains the runtime-agnostic identity that works with ANY AI tool.
+# If switching to Cursor, Codex, or another tool: read DAENA.md instead.
 
 ## SESSION STARTUP: LOAD KNOWLEDGE GRAPH
 At session start, run these MCP calls to load codebase context:
@@ -27,11 +30,11 @@ Daena is GOVERNED-FIRST AI, not local-first.
 - "Local-first" is a pricing tier (FREE), not the product category
 
 One-line positioning:
-"Daena is the governed AI operating system where you choose the brain,
-and every decision is transparent, auditable, and overridable."
+"Daena is the most intelligent AI -- multiple minds, one answer.
+Power-first, governance-ready. Choose your brain, unleash the full system."
 
 Do not position Daena as "Ollama wrapper" or "local AI tool."
-Position Daena as "governed orchestration over any runtime."
+Position Daena as "power-first intelligence with governance when you need it."
 
 ### Primary Mind verification
 - The Primary Mind setting (in Connections or Settings) must persist on reload
@@ -127,20 +130,33 @@ Tool execution agents wired to EXE mode pipeline:
 - **Workspace** -- Persistent action context chaining within a session
 - **Router** -- Matches user intent to tool patterns, executes with governance
 
-## GOVERNANCE (2 Layers)
+## GOVERNANCE (Power-First, Governance-Ready)
 
-### Layer 1: Internal (ALWAYS ON, invisible, never blocks routine queries)
-- Security scanning (prompt injection, every message)
-- Anti-drift checkpoints (long tasks, drift score 0-1)
-- NBMF memory governance (tier promotion gates)
-- Cost guard (budget enforcement)
-- Audit logging (every decision, tamper-evident)
-- 9 immutable hard-coded laws
+### Governance Modes (GovernanceMode enum)
+- **UNLEASHED**: No governance pipeline. Shield only (IP/data protection). Raw power.
+  Only Hard Laws 5 (data exfiltration) + 7 (tenant isolation) enforced.
+  Audit logging still runs. Everything else: Daena finds a way.
+- **BALANCED**: Light governance. SecurityGate + auto-proceed for most actions.
+  Approval only for truly dangerous operations.
+- **GOVERNED**: Full 10-stage pipeline (enterprise mode). All 9 Hard Laws enforced.
+  Approval queues for tier 3+ actions.
 
-### Layer 2: External (user-controlled, only for connections)
+### Shield (ALWAYS ON in all modes)
+- SecurityGate.shield_scan() protects source code, API keys, founder info
+- BehaviorGuard protects against reverse-engineering attempts
+- Tenant isolation enforced at DB middleware level
+- Audit logging records every decision (tamper-evident chain)
+
+### External (user-controlled, only for connections)
 - App connection permissions: Allow / Ask each time / Block (per tool)
 - Critical actions (~2-5%): irreversible, high-cost, security -- ask user
-- Everything else: internal governance handles silently
+- Everything else: handled by current governance mode
+
+### Soul Engine
+- Soul vault at D:\Ideas\Daena-Mind\soul\ (6 files: foundation, reasoning, personality, loyalty, shield, evolution)
+- Loaded by SoulEngine (backend/app/services/soul_engine.py), cached at process startup
+- Injected FIRST in system prompt (highest LLM attention priority)
+- Mode-aware: UNLEASHED gets power addendum, GOVERNED gets enterprise overlay
 
 ### Governance Tiers
 - Tier 0-1: "Logged" (gray badge) -- routine, no user interaction
@@ -335,14 +351,14 @@ Three patterns worth studying for future Daena features:
 5. Flag unique IP for patent documentation.
 6. Production-ready (no TODOs, no demo data, no hardcoded secrets).
 7. Every module: docstring + type hints + async + smoke test.
-8. Internal governance never turns off. It IS Daena's brain.
+8. Governance is TOGGLEABLE (UNLEASHED/BALANCED/GOVERNED). Shield (IP/data protection) always enforced.
 9. Multi-user ready from day one (multi-tenant).
 10. Run pytest + npm run build after every change batch. Zero tolerance for broken builds.
 11. Never rename sunflower-honeycomb in code.
 12. Never use em dash in any output or file content.
 13. Council/Quintessence are active with minimum 2 selectable models required. If fewer than 2 models are available, graceful fallback to STANDARD with governance notice. Council: parallel 3-model synthesis. Quintessence: Council + DCP expert lens injection (3 domains, 15 experts in Phase 1).
 14. When modifying chat_orchestrator.py memory enrichment, keep the pattern extendable. Future skill retrieval will hook in at the same point.
-15. Daena-Mind vault at D:\Ideas\Daena-Mind\ is OUTSIDE the codebase. Do not create memory files inside D:\Ideas\Daena\.
+15. Soul vault lives at backend/app/soul/ (inside codebase, gitignored). Memory tiers (T0-T4) stay at D:\Ideas\Daena-Mind\ (outside codebase). Soul deploys with Docker. Memory is runtime data.
 16. Always Parallel, Serial Fallback: All multi-model calls (Council, Quintessence) MUST use asyncio.gather() for parallel execution. Sequential await is fallback only when gather fails. Code never breaks -- always shoot for highest performance.
 
 ## SESSION MANAGEMENT
@@ -354,3 +370,105 @@ After completing each PHASE, write a summary to docs/SESSION-LOG.md with:
 - next task
 
 Then tell Masoud: "Phase X complete. Context is getting heavy. Consider starting a fresh session for Phase Y."
+
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
+
+This project is indexed by GitNexus as **Daena** (15301 symbols, 47874 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+
+> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+
+## Always Do
+
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+
+## When Debugging
+
+1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
+2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
+3. `READ gitnexus://repo/Daena/process/{processName}` — trace the full execution flow step by step
+4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
+
+## When Refactoring
+
+- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
+- **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
+- After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
+
+## Never Do
+
+- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
+- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+
+## Tools Quick Reference
+
+| Tool | When to use | Command |
+|------|-------------|---------|
+| `query` | Find code by concept | `gitnexus_query({query: "auth validation"})` |
+| `context` | 360-degree view of one symbol | `gitnexus_context({name: "validateUser"})` |
+| `impact` | Blast radius before editing | `gitnexus_impact({target: "X", direction: "upstream"})` |
+| `detect_changes` | Pre-commit scope check | `gitnexus_detect_changes({scope: "staged"})` |
+| `rename` | Safe multi-file rename | `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` |
+| `cypher` | Custom graph queries | `gitnexus_cypher({query: "MATCH ..."})` |
+
+## Impact Risk Levels
+
+| Depth | Meaning | Action |
+|-------|---------|--------|
+| d=1 | WILL BREAK — direct callers/importers | MUST update these |
+| d=2 | LIKELY AFFECTED — indirect deps | Should test |
+| d=3 | MAY NEED TESTING — transitive | Test if critical path |
+
+## Resources
+
+| Resource | Use for |
+|----------|---------|
+| `gitnexus://repo/Daena/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/Daena/clusters` | All functional areas |
+| `gitnexus://repo/Daena/processes` | All execution flows |
+| `gitnexus://repo/Daena/process/{name}` | Step-by-step execution trace |
+
+## Self-Check Before Finishing
+
+Before completing any code modification task, verify:
+1. `gitnexus_impact` was run for all modified symbols
+2. No HIGH/CRITICAL risk warnings were ignored
+3. `gitnexus_detect_changes()` confirms changes match expected scope
+4. All d=1 (WILL BREAK) dependents were updated
+
+## Keeping the Index Fresh
+
+After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
+
+```bash
+npx gitnexus analyze
+```
+
+If the index previously included embeddings, preserve them by adding `--embeddings`:
+
+```bash
+npx gitnexus analyze --embeddings
+```
+
+To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.embeddings` field shows the count (0 means no embeddings). **Running analyze without `--embeddings` will delete any previously generated embeddings.**
+
+> Claude Code users: A PostToolUse hook handles this automatically after `git commit` and `git merge`.
+
+## CLI
+
+| Task | Read this skill file |
+|------|---------------------|
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+
+<!-- gitnexus:end -->

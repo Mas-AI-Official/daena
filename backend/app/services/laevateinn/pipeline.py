@@ -58,6 +58,7 @@ from app.services.laevateinn.comprehension import DeepComprehensionEngine
 from app.services.laevateinn.compute_scaler import DynamicComputeScaler
 from app.services.laevateinn.consensus_gradient import ConsensusGradientEngine
 from app.services.laevateinn.counterfactual import CounterfactualEngine
+from app.services.laevateinn.cognitive_forcing import CognitiveForcingEngine
 from app.services.laevateinn.debate import AdversarialModelDebate
 from app.services.laevateinn.delivery import JobsDeliveryEngine
 from app.services.laevateinn.depth_engine import RecursiveDepthEngine
@@ -69,6 +70,7 @@ from app.services.laevateinn.question_auditor import QuestionQualityAuditor
 from app.services.laevateinn.socratic_inversion import SocraticInversionEngine
 from app.services.laevateinn.types import (
     ComputeProfile,
+    DebateResult,
     DeliveryResult,
     Difficulty,
     LaevateinnTrace,
@@ -109,6 +111,7 @@ class LaevateinnPipeline:
         self._dce = DeepComprehensionEngine(llm_service)
         self._dcs = DynamicComputeScaler()
         self._epistemic = EpistemicStateTracker()
+        self._cognitive_forcing = CognitiveForcingEngine(llm_service)
         self._amd = AdversarialModelDebate(llm_service)
         self._rde = RecursiveDepthEngine(llm_service)
         self._crg = CausalReasoningGraph(llm_service)
@@ -134,8 +137,15 @@ class LaevateinnPipeline:
         context: str = "",
         force_difficulty: Difficulty | None = None,
         skip_stages: set[str] | None = None,
+        use_cognitive_forcing: bool = False,
     ) -> LaevateinnTrace:
-        """Run the full Laevateinn v3 pipeline."""
+        """Run the full Laevateinn v3 pipeline.
+
+        Args:
+            use_cognitive_forcing: When True, forces LLMs through structured
+                cognitive stages (DECOMPOSE -> EXECUTE -> VERIFY) instead of
+                bare LLM calls. This is the core intelligence amplification.
+        """
         start = time.perf_counter_ns()
         trace = LaevateinnTrace(query=query)
         skip = skip_stages or set()
@@ -268,9 +278,13 @@ class LaevateinnPipeline:
 
         compute = trace.compute_profile
 
-        # ── Stage 3: Adversarial Model Debate ───────────────────
+        # ── Stage 3: Adversarial Model Debate (with cognitive forcing) ──
         if "amd" not in skip and model_ids:
-            logger.info("laev_stage_3_amd", models=len(model_ids))
+            logger.info(
+                "laev_stage_3_amd",
+                models=len(model_ids),
+                cognitive_forcing=use_cognitive_forcing,
+            )
             enriched_query = query
             if trace.comprehension:
                 enriched_query = trace.comprehension.real_question or query
@@ -278,6 +292,7 @@ class LaevateinnPipeline:
             trace.debate = await self._amd.debate(
                 enriched_query, model_ids, compute,
                 system_prompt=system_prompt,
+                use_cognitive_forcing=use_cognitive_forcing,
             )
             if trace.debate and hasattr(trace.debate, "disagreement_points"):
                 trace.disagreement_points = trace.debate.disagreement_points
@@ -552,6 +567,85 @@ class LaevateinnPipeline:
             latency_ms=trace.total_latency_ms,
         )
 
+        return trace
+
+    # ── Single-model cognitive forcing mode ──────────────────────
+
+    async def process_cognitive(
+        self,
+        query: str,
+        model_id: str,
+        *,
+        system_prompt: str = "",
+        full_mode: bool = True,
+    ) -> LaevateinnTrace:
+        """Run pipeline with cognitive forcing on a SINGLE model.
+
+        This is the key test: can the pipeline alone (without council/debate)
+        make a single LLM produce better answers?
+
+        Flow: Comprehension -> Cognitive Forcing (3 stages) -> Verify -> Deliver
+
+        No debate, no council. The intelligence comes from forcing the model
+        through DECOMPOSE -> EXECUTE -> VERIFY stages.
+
+        Args:
+            query: The question to solve.
+            model_id: Single model to use.
+            system_prompt: Additional context.
+            full_mode: True = 3 stages, False = 2 stages (compact).
+        """
+        start = time.perf_counter_ns()
+        trace = LaevateinnTrace(query=query)
+
+        # ── Stage 1: Comprehension ────────────────────────────
+        trace.comprehension = await self._dce.comprehend(
+            query, use_llm=False, context="",
+        )
+        enriched_query = query
+        if trace.comprehension:
+            enriched_query = trace.comprehension.real_question or query
+        trace.stages_executed.append("dce")
+
+        # ── Stage 2: Cognitive Forcing (THE CORE) ─────────────
+        logger.info(
+            "laev_cognitive_forcing",
+            model=model_id,
+            mode="full" if full_mode else "compact",
+        )
+        cf_result = await self._cognitive_forcing.solve(
+            enriched_query, model_id,
+            system_prompt=system_prompt,
+            full_mode=full_mode,
+        )
+        trace.stages_executed.extend(cf_result.stages_completed)
+
+        # Create a minimal DebateResult to carry the answer through pipeline
+        trace.debate = DebateResult(
+            winner_model=model_id,
+            winner_answer=cf_result.full_response,
+            winner_reasoning=f"Cognitive forcing ({cf_result.mode}): {len(cf_result.stages_completed)} stages",
+            confidence=0.7,
+            all_answers={model_id: cf_result.full_response},
+        )
+
+        answer = cf_result.full_response
+
+        # ── Stage 3: Delivery ─────────────────────────────────
+        trace.delivery = self._delivery.deliver(
+            answer, query, comprehension=trace.comprehension,
+        )
+        trace.stages_executed.append("delivery")
+
+        trace.total_latency_ms = int(
+            (time.perf_counter_ns() - start) / 1_000_000
+        )
+        logger.info(
+            "laev_cognitive_forcing_complete",
+            model=model_id,
+            stages=trace.stages_executed,
+            latency_ms=trace.total_latency_ms,
+        )
         return trace
 
     # ── Quick mode ──────────────────────────────────────────────

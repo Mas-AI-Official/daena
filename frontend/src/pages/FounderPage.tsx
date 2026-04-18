@@ -47,7 +47,7 @@ const HARD_LAWS = [
 
 const PREVIEW_SEED = 'Review a backend latency regression and propose the best local model path.'
 
-const routingModeOptions: RoutingMode[] = ['STANDARD', 'COUNCIL', 'QUINTESSENCE']
+const routingModeOptions: RoutingMode[] = ['STANDARD', 'QUINTESSENCE']
 
 function truthVariant(value: boolean): 'success' | 'danger' {
   return value ? 'success' : 'danger'
@@ -164,7 +164,6 @@ export function FounderPage() {
         {
           message: previewMessage,
           routing_mode: previewRoutingMode,
-          governance_slider: 'STANDARD',
           chat_mode: 'CMD',
           think_mode: previewThinkMode,
         },

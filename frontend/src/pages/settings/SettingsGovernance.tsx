@@ -1,45 +1,88 @@
 /**
- * Governance settings — default slider, tier overrides, hard laws.
+ * Governance settings -- mode selector, slider, tier info, shield laws.
  */
 import { Card, Badge } from '@/components/common'
-import { GovernanceSlider } from '@/components/common'
 import { persistUiPref } from '@/stores/uiStore'
 import { useUiStore } from '@/stores/uiStore'
-import { Shield, Lock, AlertTriangle } from 'lucide-react'
+import { Shield, Lock, AlertTriangle, Zap, Scale, Building2 } from 'lucide-react'
+import type { GovernanceMode } from '@/types/api'
 
-const HARD_LAWS = [
-  'Never bypass human approval for Tier 3+ actions',
-  'Never expose credentials or secrets in outputs',
-  'Never modify governance rules without FOUNDER role',
-  'Never delete data without explicit user consent',
-  'Never impersonate a human identity',
-  'Never execute recursive self-modification',
-  'Never bypass DaenaBot governance layer',
-  'Never share user data between tenants',
-  'Never override hard-coded safety limits',
+const GOVERNANCE_MODES: { value: GovernanceMode; label: string; icon: typeof Zap; desc: string; color: string }[] = [
+  {
+    value: 'UNLEASHED',
+    label: 'Unleashed',
+    icon: Zap,
+    desc: 'No governance pipeline. Shield only. Raw power. Daena finds a way.',
+    color: 'bg-status-error/20 text-status-error border-status-error/30',
+  },
+  {
+    value: 'BALANCED',
+    label: 'Balanced',
+    icon: Scale,
+    desc: 'Light governance. Auto-proceed most actions. Approval for dangerous ops only.',
+    color: 'bg-accent-cyan/20 text-accent-cyan border-accent-cyan/30',
+  },
+  {
+    value: 'GOVERNED',
+    label: 'Governed',
+    icon: Building2,
+    desc: 'Full 10-stage pipeline. All Hard Laws enforced. Enterprise mode.',
+    color: 'bg-starlight-400/20 text-starlight-300 border-starlight-400/30',
+  },
+]
+
+const SHIELD_LAWS = [
+  'Audit logging runs in ALL modes (tamper-evident chain)',
+  'Never exfiltrate client or founder data without consent',
+  'Tenant isolation enforced at database level (never cross-tenant)',
+  'Audit trail integrity (append-only, hash-chained)',
+]
+
+const SOFT_LAWS = [
+  'No self-modification of governance laws',
+  'No unbounded execution (timeout + resource limits)',
+  'Founder override (logged but never blocked)',
+  'No permanent deletion (archive pattern)',
+  'Governance mode toggled by Founder only',
 ]
 
 export function SettingsGovernance() {
-  const { governanceSlider, setGovernanceSlider } = useUiStore()
-  const handleSliderChange = (value: typeof governanceSlider) => {
-    setGovernanceSlider(value)
-    persistUiPref('default_governance_slider', value)
+  const { governanceMode, setGovernanceMode } = useUiStore()
+
+  const handleModeChange = (mode: GovernanceMode) => {
+    setGovernanceMode(mode)
+    persistUiPref('default_governance_mode', mode)
   }
 
   return (
     <div className="space-y-6">
+      {/* Governance Mode Selector */}
       <Card variant="glass" padding="lg">
         <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
-          <Shield size={14} /> Default Governance Level
+          <Zap size={14} /> Governance Mode
         </h3>
-        <div className="max-w-md">
-          <GovernanceSlider value={governanceSlider} onChange={handleSliderChange} />
-          <p className="text-xs text-starlight-500 mt-3">
-            This sets the default for new sessions. Users can adjust per-session.
-          </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {GOVERNANCE_MODES.map(({ value, label, icon: Icon, desc, color }) => (
+            <button
+              key={value}
+              onClick={() => handleModeChange(value)}
+              className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                governanceMode === value
+                  ? `${color} border shadow-lg`
+                  : 'bg-midnight-800/40 border-white/5 hover:border-white/15 text-starlight-400'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Icon size={16} />
+                <span className="font-display font-semibold text-sm">{label}</span>
+              </div>
+              <p className="text-xs opacity-80 leading-relaxed">{desc}</p>
+            </button>
+          ))}
         </div>
       </Card>
 
+      {/* Tier Breakdown */}
       <Card variant="glass" padding="lg">
         <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
           <AlertTriangle size={14} /> Tier Breakdown
@@ -64,21 +107,37 @@ export function SettingsGovernance() {
         </div>
       </Card>
 
+      {/* Shield Laws (always active) */}
       <Card variant="glass" padding="lg">
         <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
-          <Lock size={14} /> 9 Immutable Hard Laws
+          <Shield size={14} className="text-accent-gold" /> Shield Laws (Always Active)
         </h3>
         <div className="space-y-2">
-          {HARD_LAWS.map((law, i) => (
+          {SHIELD_LAWS.map((law, i) => (
             <div key={i} className="flex items-start gap-2 text-xs">
-              <span className="text-accent-red font-bold mt-0.5">{i + 1}.</span>
+              <span className="text-accent-gold font-bold mt-0.5">{i + 1}.</span>
               <span className="text-starlight-300">{law}</span>
             </div>
           ))}
         </div>
         <p className="text-[10px] text-starlight-500 mt-3">
-          These laws are hard-coded and cannot be modified from the UI.
+          Shield laws are enforced in ALL modes including Unleashed. They protect your data and IP.
         </p>
+      </Card>
+
+      {/* Soft Laws (GOVERNED only) */}
+      <Card variant="glass" padding="lg" className={governanceMode !== 'GOVERNED' ? 'opacity-40' : ''}>
+        <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
+          <Lock size={14} /> Governance Laws (Governed Mode Only)
+        </h3>
+        <div className="space-y-2">
+          {SOFT_LAWS.map((law, i) => (
+            <div key={i} className="flex items-start gap-2 text-xs">
+              <span className="text-accent-red font-bold mt-0.5">{i + 5}.</span>
+              <span className="text-starlight-300">{law}</span>
+            </div>
+          ))}
+        </div>
       </Card>
     </div>
   )

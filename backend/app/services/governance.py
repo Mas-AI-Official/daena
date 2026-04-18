@@ -22,9 +22,11 @@ from uuid import UUID
 
 from app.core.constants import (
     GOVERNANCE_TIER_MAP,
+    GovernanceMode,
     GovernanceSlider,
     RiskLevel,
     UserRole,
+    resolve_governance_tier,
 )
 from app.core.exceptions import ApprovalRequiredError, HardLawViolationError
 from app.core.hard_laws import check_hard_laws
@@ -33,52 +35,52 @@ from app.services._base import BaseService
 
 logger = get_logger(__name__)
 
-# ── Slider ordering (lower index = less restrictive) ──────────
+# ── Mode ordering (lower index = less restrictive) ───────────
 
-_SLIDER_ORDER: dict[GovernanceSlider, int] = {
-    GovernanceSlider.YOLO: 0,
-    GovernanceSlider.LIGHT: 1,
-    GovernanceSlider.STANDARD: 2,
-    GovernanceSlider.STRICT: 3,
-    GovernanceSlider.PARANOID: 4,
+_MODE_ORDER: dict[GovernanceMode, int] = {
+    GovernanceMode.UNLEASHED: 0,
+    GovernanceMode.BALANCED: 1,
+    GovernanceMode.GOVERNED: 2,
 }
 
-_ORDER_TO_SLIDER: dict[int, GovernanceSlider] = {
-    v: k for k, v in _SLIDER_ORDER.items()
+_ORDER_TO_MODE: dict[int, GovernanceMode] = {
+    v: k for k, v in _MODE_ORDER.items()
 }
 
-# ── Role-based slider constraints ─────────────────────────────
-# Maps UserRole → (minimum_slider, maximum_slider)
-# Per spec Section 7: "Governance Per Role"
+# Legacy aliases for backward compat with code that references old names
+_SLIDER_ORDER = _MODE_ORDER
+_ORDER_TO_SLIDER = _ORDER_TO_MODE
 
-ROLE_SLIDER_CONSTRAINTS: dict[UserRole, tuple[GovernanceSlider, GovernanceSlider]] = {
-    UserRole.FOUNDER: (GovernanceSlider.YOLO, GovernanceSlider.PARANOID),
-    UserRole.ADMIN: (GovernanceSlider.LIGHT, GovernanceSlider.PARANOID),
-    UserRole.MANAGER: (GovernanceSlider.STANDARD, GovernanceSlider.PARANOID),
-    UserRole.OPERATOR: (GovernanceSlider.STANDARD, GovernanceSlider.PARANOID),
-    UserRole.VIEWER: (GovernanceSlider.PARANOID, GovernanceSlider.PARANOID),
-    UserRole.AUDITOR: (GovernanceSlider.PARANOID, GovernanceSlider.PARANOID),
+# ── Role-based governance mode constraints ────────────────────
+# Maps UserRole -> (minimum_mode, maximum_mode)
+
+ROLE_MODE_CONSTRAINTS: dict[UserRole, tuple[GovernanceMode, GovernanceMode]] = {
+    UserRole.FOUNDER: (GovernanceMode.UNLEASHED, GovernanceMode.GOVERNED),
+    UserRole.ADMIN: (GovernanceMode.BALANCED, GovernanceMode.GOVERNED),
+    UserRole.MANAGER: (GovernanceMode.BALANCED, GovernanceMode.GOVERNED),
+    UserRole.OPERATOR: (GovernanceMode.BALANCED, GovernanceMode.GOVERNED),
+    UserRole.VIEWER: (GovernanceMode.GOVERNED, GovernanceMode.GOVERNED),
+    UserRole.AUDITOR: (GovernanceMode.GOVERNED, GovernanceMode.GOVERNED),
 }
+ROLE_SLIDER_CONSTRAINTS = ROLE_MODE_CONSTRAINTS  # backward compat alias
 
 # ── Role default presets ──────────────────────────────────────
 
-ROLE_DEFAULT_PRESETS: dict[UserRole, GovernanceSlider] = {
-    UserRole.FOUNDER: GovernanceSlider.STANDARD,
-    UserRole.ADMIN: GovernanceSlider.STANDARD,
-    UserRole.MANAGER: GovernanceSlider.STANDARD,
-    UserRole.OPERATOR: GovernanceSlider.STRICT,
-    UserRole.VIEWER: GovernanceSlider.PARANOID,
-    UserRole.AUDITOR: GovernanceSlider.PARANOID,
+ROLE_DEFAULT_PRESETS: dict[UserRole, GovernanceMode] = {
+    UserRole.FOUNDER: GovernanceMode.BALANCED,
+    UserRole.ADMIN: GovernanceMode.BALANCED,
+    UserRole.MANAGER: GovernanceMode.BALANCED,
+    UserRole.OPERATOR: GovernanceMode.GOVERNED,
+    UserRole.VIEWER: GovernanceMode.GOVERNED,
+    UserRole.AUDITOR: GovernanceMode.GOVERNED,
 }
 
-# ── Checkpoint intervals per preset (anti-drift) ─────────────
+# ── Checkpoint intervals per mode (anti-drift) ───────────────
 
-CHECKPOINT_INTERVALS: dict[GovernanceSlider, int] = {
-    GovernanceSlider.YOLO: 10,
-    GovernanceSlider.LIGHT: 7,
-    GovernanceSlider.STANDARD: 5,
-    GovernanceSlider.STRICT: 3,
-    GovernanceSlider.PARANOID: 1,
+CHECKPOINT_INTERVALS: dict[GovernanceMode, int] = {
+    GovernanceMode.UNLEASHED: 10,
+    GovernanceMode.BALANCED: 5,
+    GovernanceMode.GOVERNED: 3,
 }
 
 # ── Action risk classification ────────────────────────────────
@@ -147,57 +149,51 @@ class GovernanceEngine(BaseService):
     # ── Public: resolve effective slider ──────────────────────
 
     @staticmethod
+    def _to_mode(value: str) -> GovernanceMode:
+        """Convert any governance value (legacy or new) to GovernanceMode."""
+        try:
+            return GovernanceMode(value)
+        except ValueError:
+            return GovernanceSlider(value).to_governance_mode()
+
+    @staticmethod
     def get_effective_preset(
         user_role: str,
         requested_preset: str | None = None,
         *,
         team_minimum: str | None = None,
         org_minimum: str | None = None,
-    ) -> GovernanceSlider:
-        """Resolve the effective governance slider for a user.
+    ) -> GovernanceMode:
+        """Resolve the effective governance mode for a user.
 
         Applies the inheritance chain::
 
             effective_minimum = max(role_minimum, team_minimum, org_minimum)
 
-        Then clamps the requested preset within the user's allowed range.
-
-        Args:
-            user_role: UserRole string (e.g. "OPERATOR", "FOUNDER").
-            requested_preset: The preset the user wants. Falls back to
-                role default if None.
-            team_minimum: Minimum slider enforced by team admin.
-            org_minimum: Minimum slider enforced by org policy.
-
-        Returns:
-            The effective GovernanceSlider preset.
+        Then clamps the requested mode within the user's allowed range.
+        Accepts both legacy slider values and new mode values.
         """
         role = UserRole(user_role)
-        role_min, role_max = ROLE_SLIDER_CONSTRAINTS[role]
+        role_min, role_max = ROLE_MODE_CONSTRAINTS[role]
 
-        # Resolve request or default
         if requested_preset is not None:
-            requested = GovernanceSlider(requested_preset)
+            requested = GovernanceEngine._to_mode(requested_preset)
         else:
             requested = ROLE_DEFAULT_PRESETS[role]
 
-        # Compute effective minimum from inheritance chain
-        effective_min_ord = _SLIDER_ORDER[role_min]
+        effective_min_ord = _MODE_ORDER[role_min]
         if team_minimum is not None:
-            team_ord = _SLIDER_ORDER[GovernanceSlider(team_minimum)]
-            effective_min_ord = max(effective_min_ord, team_ord)
+            effective_min_ord = max(effective_min_ord, _MODE_ORDER[GovernanceEngine._to_mode(team_minimum)])
         if org_minimum is not None:
-            org_ord = _SLIDER_ORDER[GovernanceSlider(org_minimum)]
-            effective_min_ord = max(effective_min_ord, org_ord)
+            effective_min_ord = max(effective_min_ord, _MODE_ORDER[GovernanceEngine._to_mode(org_minimum)])
 
-        effective_min = _ORDER_TO_SLIDER[effective_min_ord]
+        effective_min = _ORDER_TO_MODE[effective_min_ord]
 
-        # Clamp requested within [effective_min, role_max]
-        req_ord = _SLIDER_ORDER[requested]
-        clamped_ord = max(req_ord, _SLIDER_ORDER[effective_min])
-        clamped_ord = min(clamped_ord, _SLIDER_ORDER[role_max])
+        req_ord = _MODE_ORDER[requested]
+        clamped_ord = max(req_ord, _MODE_ORDER[effective_min])
+        clamped_ord = min(clamped_ord, _MODE_ORDER[role_max])
 
-        return _ORDER_TO_SLIDER[clamped_ord]
+        return _ORDER_TO_MODE[clamped_ord]
 
     @staticmethod
     def get_allowed_range(
@@ -205,27 +201,27 @@ class GovernanceEngine(BaseService):
         *,
         team_minimum: str | None = None,
         org_minimum: str | None = None,
-    ) -> tuple[GovernanceSlider, GovernanceSlider]:
-        """Get the allowed slider range for a user role.
+    ) -> tuple[GovernanceMode, GovernanceMode]:
+        """Get the allowed governance mode range for a user role.
 
         Returns (effective_min, max) accounting for role, team, and org.
         """
         role = UserRole(user_role)
-        role_min, role_max = ROLE_SLIDER_CONSTRAINTS[role]
+        role_min, role_max = ROLE_MODE_CONSTRAINTS[role]
 
-        effective_min_ord = _SLIDER_ORDER[role_min]
+        effective_min_ord = _MODE_ORDER[role_min]
         if team_minimum is not None:
             effective_min_ord = max(
                 effective_min_ord,
-                _SLIDER_ORDER[GovernanceSlider(team_minimum)],
+                _MODE_ORDER[GovernanceEngine._to_mode(team_minimum)],
             )
         if org_minimum is not None:
             effective_min_ord = max(
                 effective_min_ord,
-                _SLIDER_ORDER[GovernanceSlider(org_minimum)],
+                _MODE_ORDER[GovernanceEngine._to_mode(org_minimum)],
             )
 
-        effective_min = _ORDER_TO_SLIDER[effective_min_ord]
+        effective_min = _ORDER_TO_MODE[effective_min_ord]
         return effective_min, role_max
 
     # ── Public: single-action evaluation ──────────────────────
@@ -338,9 +334,17 @@ class GovernanceEngine(BaseService):
         risk_level = self._assess_risk(action_type, params)
 
         # ── Step 4: Tier lookup ──
-        slider = GovernanceSlider(governance_slider)
+        # governance_slider accepts both legacy (YOLO..PARANOID) and
+        # canonical (UNLEASHED/BALANCED/GOVERNED) values. Convert to
+        # GovernanceMode for the tier map lookup.
+        from app.core.constants import GovernanceMode, resolve_governance_tier
         risk = RiskLevel(risk_level)
-        governance_tier = GOVERNANCE_TIER_MAP[slider][risk]
+        try:
+            gov_mode = GovernanceMode(governance_slider)
+        except ValueError:
+            # Legacy slider value -- convert via alias
+            gov_mode = GovernanceSlider(governance_slider).to_governance_mode()
+        governance_tier = resolve_governance_tier(gov_mode, risk)
 
         # ── Step 5: Plan coverage check ──
         plan_covered = False
@@ -421,6 +425,41 @@ class GovernanceEngine(BaseService):
         }
         if requires_approval:
             result["error_code"] = ApprovalRequiredError.error_code
+
+        # Border Agent emit: broadcast department.flagged_risk whenever
+        # governance decides something is tier >= 3 (approval-worthy).
+        # The emit is issued on behalf of "Skill Governance" -- it's the
+        # entity making the call -- so peer departments (SecOps, Legal,
+        # Finance) see the risk surface in their PeerSignalsPane feed.
+        # Fail-safe: any emit error is logged debug and never changes
+        # the governance decision.
+        if governance_tier >= 3:
+            try:
+                from app.services.departments.border_agent import (
+                    DepartmentEvent,
+                    get_border_agent,
+                )
+
+                ba = await get_border_agent(
+                    tenant_id=tenant_id, department="Skill Governance"
+                )
+                await ba.emit(
+                    DepartmentEvent.FLAGGED_RISK,
+                    payload={
+                        "task_summary": (
+                            f"Risk flagged: {action_type} "
+                            f"(tier {governance_tier}, {risk_level})"
+                        ),
+                        "action_type": action_type,
+                        "governance_tier": governance_tier,
+                        "risk_level": risk_level,
+                        "autopilot_override": autopilot_override,
+                        "requires_approval": requires_approval,
+                    },
+                )
+            except Exception as exc:  # pragma: no cover - fail-safe
+                logger.debug("governance.evaluate.emit_failed", error=str(exc))
+
         return result
 
     # ── Public: workflow plan evaluation ───────────────────────
@@ -457,7 +496,12 @@ class GovernanceEngine(BaseService):
                 "message": "Empty plan — nothing to approve",
             }
 
-        slider = GovernanceSlider(governance_slider)
+        from app.core.constants import GovernanceMode, resolve_governance_tier
+
+        try:
+            gov_mode = GovernanceMode(governance_slider)
+        except ValueError:
+            gov_mode = GovernanceSlider(governance_slider).to_governance_mode()
         is_founder = actor_type == "FOUNDER"
 
         step_tiers: list[dict[str, Any]] = []
@@ -469,7 +513,7 @@ class GovernanceEngine(BaseService):
 
             risk_level = GovernanceEngine._assess_risk(action_type, params)
             risk = RiskLevel(risk_level)
-            tier = GOVERNANCE_TIER_MAP[slider][risk]
+            tier = resolve_governance_tier(gov_mode, risk)
 
             step_tiers.append({
                 "action_type": action_type,
@@ -478,12 +522,11 @@ class GovernanceEngine(BaseService):
             })
             max_tier = max(max_tier, tier)
 
-        # Plan approval rules per slider (spec Section 5.3):
-        # YOLO: auto-approve unless contains Tier 4
-        # LIGHT/STANDARD: Tier 3+ requires approval
-        # STRICT: ALL multi-step plans require approval
-        # PARANOID: ALL plans require approval + per-step checkpoints
-        if slider in (GovernanceSlider.STRICT, GovernanceSlider.PARANOID):
+        # Plan approval rules per governance mode:
+        # UNLEASHED: auto-approve unless contains Tier 4
+        # BALANCED: Tier 3+ requires approval
+        # GOVERNED: ALL multi-step plans require approval
+        if gov_mode == GovernanceMode.GOVERNED:
             requires_approval = True
         else:
             requires_approval = max_tier >= 3

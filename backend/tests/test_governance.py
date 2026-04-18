@@ -65,7 +65,7 @@ async def test_evaluate_low_risk_read_action(client: AsyncClient) -> None:
         headers=auth["headers"],
         json={
             "action_type": "READ",
-            "governance_slider": "STANDARD",
+            "governance_mode": "STANDARD",
         },
     )
     assert response.status_code == 200
@@ -90,7 +90,7 @@ async def test_evaluate_delete_blocked_by_hard_law(client: AsyncClient) -> None:
         headers=auth["headers"],
         json={
             "action_type": "DELETE",
-            "governance_slider": "STANDARD",
+            "governance_mode": "STANDARD",
         },
     )
     assert response.status_code == 200
@@ -117,7 +117,7 @@ async def test_evaluate_execute_without_timeout_violates_law3(
         json={
             "action_type": "EXECUTE",
             "action_params": {},
-            "governance_slider": "STANDARD",
+            "governance_mode": "STANDARD",
         },
     )
     assert response.status_code == 200
@@ -137,20 +137,20 @@ async def test_evaluate_execute_with_timeout_passes(client: AsyncClient) -> None
         json={
             "action_type": "EXECUTE",
             "action_params": {"timeout": 30},
-            "governance_slider": "STANDARD",
+            "governance_mode": "STANDARD",
         },
     )
     assert response.status_code == 200
     decision = response.json()["data"]
     assert decision["hard_law_violations"] == []
-    # EXECUTE is MEDIUM risk, STANDARD slider → tier 2 (NOTIFY)
+    # EXECUTE is MEDIUM risk, BALANCED -> tier 1
     assert decision["risk_level"] == "MEDIUM"
-    assert decision["governance_tier"] == 2
+    assert decision["governance_tier"] == 1
 
 
 @pytest.mark.asyncio
 async def test_evaluate_founder_bypasses_approval(client: AsyncClient) -> None:
-    """Founder with HIGH risk action + STRICT slider → tier 3 but bypassed."""
+    """Founder with HIGH risk action + GOVERNED -> tier 3 but bypassed."""
     auth = await _register_and_login(client)
 
     response = await client.post(
@@ -159,13 +159,13 @@ async def test_evaluate_founder_bypasses_approval(client: AsyncClient) -> None:
         json={
             "action_type": "DEPLOY",
             "action_params": {"timeout": 30},
-            "governance_slider": "STRICT",
+            "governance_mode": "GOVERNED",
             "actor_type": "FOUNDER",
         },
     )
     assert response.status_code == 200
     decision = response.json()["data"]
-    # DEPLOY is HIGH risk, STRICT → tier 3 (APPROVE required)
+    # DEPLOY is HIGH risk, GOVERNED -> tier 3 (APPROVE required)
     # But Founder bypasses
     assert decision["allowed"] is True
     assert decision["governance_tier"] == 3
@@ -174,10 +174,10 @@ async def test_evaluate_founder_bypasses_approval(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_evaluate_paranoid_high_risk_needs_council(
+async def test_evaluate_governed_high_risk_needs_approval(
     client: AsyncClient,
 ) -> None:
-    """HIGH risk + PARANOID slider → tier 4 (Council + Approve)."""
+    """HIGH risk + GOVERNED -> tier 3 (Approval required)."""
     auth = await _register_and_login(client)
 
     response = await client.post(
@@ -186,21 +186,20 @@ async def test_evaluate_paranoid_high_risk_needs_council(
         json={
             "action_type": "DEPLOY",
             "action_params": {"timeout": 60},
-            "governance_slider": "PARANOID",
+            "governance_mode": "GOVERNED",
             "actor_type": "AGENT",
         },
     )
     assert response.status_code == 200
     decision = response.json()["data"]
     assert decision["allowed"] is False
-    assert decision["governance_tier"] == 4
+    assert decision["governance_tier"] == 3
     assert decision["requires_approval"] is True
-    assert "Council" in decision["message"]
 
 
 @pytest.mark.asyncio
-async def test_evaluate_yolo_medium_risk_passes(client: AsyncClient) -> None:
-    """YOLO slider + MEDIUM risk → tier 0 (silent pass)."""
+async def test_evaluate_unleashed_medium_risk_passes(client: AsyncClient) -> None:
+    """UNLEASHED + MEDIUM risk -> tier 0 (silent pass)."""
     auth = await _register_and_login(client)
 
     response = await client.post(
@@ -209,7 +208,7 @@ async def test_evaluate_yolo_medium_risk_passes(client: AsyncClient) -> None:
         json={
             "action_type": "WRITE_FILE",
             "action_params": {"timeout": 10},
-            "governance_slider": "YOLO",
+            "governance_mode": "UNLEASHED",
         },
     )
     assert response.status_code == 200
@@ -233,7 +232,7 @@ async def test_evaluate_creates_audit_entry(client: AsyncClient) -> None:
     await client.post(
         "/api/v1/governance/evaluate",
         headers=auth["headers"],
-        json={"action_type": "READ", "governance_slider": "STANDARD"},
+        json={"action_type": "READ", "governance_mode": "STANDARD"},
     )
 
     # Check audit trail
@@ -262,7 +261,7 @@ async def test_audit_chain_integrity_valid(client: AsyncClient) -> None:
         await client.post(
             "/api/v1/governance/evaluate",
             headers=auth["headers"],
-            json={"action_type": action, "governance_slider": "STANDARD"},
+            json={"action_type": action, "governance_mode": "STANDARD"},
         )
 
     # Verify integrity
@@ -287,7 +286,7 @@ async def test_audit_trail_pagination(client: AsyncClient) -> None:
         await client.post(
             "/api/v1/governance/evaluate",
             headers=auth["headers"],
-            json={"action_type": action, "governance_slider": "STANDARD"},
+            json={"action_type": action, "governance_mode": "STANDARD"},
         )
 
     # Get page 1 with page_size=2
@@ -312,12 +311,12 @@ async def test_audit_trail_filter_by_action_type(client: AsyncClient) -> None:
     await client.post(
         "/api/v1/governance/evaluate",
         headers=auth["headers"],
-        json={"action_type": "READ", "governance_slider": "STANDARD"},
+        json={"action_type": "READ", "governance_mode": "STANDARD"},
     )
     await client.post(
         "/api/v1/governance/evaluate",
         headers=auth["headers"],
-        json={"action_type": "SEARCH", "governance_slider": "STANDARD"},
+        json={"action_type": "SEARCH", "governance_mode": "STANDARD"},
     )
 
     # Filter by READ only
@@ -387,6 +386,6 @@ async def test_evaluate_without_auth_returns_401(client: AsyncClient) -> None:
     """Evaluation without authentication returns 401."""
     response = await client.post(
         "/api/v1/governance/evaluate",
-        json={"action_type": "READ", "governance_slider": "STANDARD"},
+        json={"action_type": "READ", "governance_mode": "STANDARD"},
     )
     assert response.status_code == 401

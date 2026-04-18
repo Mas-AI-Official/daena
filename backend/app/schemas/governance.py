@@ -20,8 +20,9 @@ class EvaluateRequest(BaseModel):
 
     action_type: str = Field(..., min_length=1, max_length=100)
     action_params: dict | None = None
-    governance_slider: str = Field(
-        "STANDARD", pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID)$"
+    governance_mode: str = Field(
+        "BALANCED",
+        pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID|UNLEASHED|BALANCED|GOVERNED)$",
     )
     actor_type: str = Field("USER", pattern="^(USER|AGENT|COUNCIL|SYSTEM|FOUNDER)$")
     session_id: UUID | None = None

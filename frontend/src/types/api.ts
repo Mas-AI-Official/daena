@@ -7,7 +7,7 @@ export type ChatMode = 'CMD' | 'EXE'
 export type RoutingMode = 'STANDARD' | 'COUNCIL' | 'QUINTESSENCE'
 export type ModelProvider = 'OLLAMA' | 'PERPLEXITY' | 'ANTHROPIC' | 'OPENAI' | 'GEMINI' | 'OPENROUTER' | 'TOGETHER' | 'GROQ'
 export type HealthStatus = 'HEALTHY' | 'DEGRADED' | 'UNAVAILABLE'
-export type GovernanceSlider = 'YOLO' | 'LIGHT' | 'STANDARD' | 'STRICT' | 'PARANOID'
+export type GovernanceMode = 'UNLEASHED' | 'BALANCED' | 'GOVERNED'
 export type RiskLevel = 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 export type GovernanceTier = 0 | 1 | 2 | 3 | 4
 export type SubCapability = 'MIND' | 'EYES' | 'HANDS' | 'VOICE' | 'SHIELD' | 'MEMORY'
@@ -83,7 +83,7 @@ export interface SessionResponse {
   title: string
   mode: ChatMode
   routing_mode: RoutingMode
-  governance_slider: GovernanceSlider
+
   autopilot: boolean
   think_mode: boolean
   category_id: string | null
@@ -114,7 +114,7 @@ export interface CreateSessionRequest {
   title?: string
   mode: ChatMode
   routing_mode?: RoutingMode
-  governance_slider?: GovernanceSlider
+
   category_id?: string
   department_id?: string
   autopilot?: boolean
@@ -125,7 +125,7 @@ export interface UpdateSessionRequest {
   title?: string
   mode?: ChatMode
   routing_mode?: RoutingMode
-  governance_slider?: GovernanceSlider
+
   is_archived?: boolean
   autopilot?: boolean
   think_mode?: boolean
@@ -135,7 +135,7 @@ export interface SendMessageRequest {
   content: string
   role?: 'USER'
   preferred_model?: string | null
-  governance_slider?: GovernanceSlider | null
+
 }
 
 export interface ModelRegistryProviderResponse {

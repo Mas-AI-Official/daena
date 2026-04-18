@@ -2,7 +2,7 @@
  * UI store — sidebar state, mode switches, notifications, theme.
  */
 import { create } from 'zustand'
-import type { ChatMode, RoutingMode, GovernanceSlider } from '@/types/api'
+import type { ChatMode, RoutingMode, GovernanceMode } from '@/types/api'
 import type { InteractivePromptData } from '@/components/chat/InteractivePrompt'
 
 export interface Notification {
@@ -18,18 +18,21 @@ interface UiState {
   sidebarOpen: boolean
   sidebarWidth: number
   historySidebarOpen: boolean
+  // Company-wide / peer-signals pane on the right of ChatPage &
+  // DepartmentChatPage. Collapsed by default so the chat stays big;
+  // toggle lives next to the message composer.
+  peerSignalsPaneOpen: boolean
   mobileSidebarOpen: boolean
 
   // Mode switches
   chatMode: ChatMode
   routingMode: RoutingMode
-  governanceSlider: GovernanceSlider
+  governanceMode: GovernanceMode
 
   // Toggles
   darkMode: boolean
   thinkingVisible: boolean
   persistThinking: boolean
-  deepResearch: boolean
   conversationalMode: boolean
   speechEnabled: boolean
   voiceListening: boolean
@@ -75,13 +78,13 @@ interface UiState {
   toggleSidebar: () => void
   setSidebarOpen: (open: boolean) => void
   toggleHistorySidebar: () => void
+  togglePeerSignalsPane: () => void
   setChatMode: (mode: ChatMode) => void
+  setGovernanceMode: (mode: GovernanceMode) => void
   setRoutingMode: (mode: RoutingMode) => void
-  setGovernanceSlider: (slider: GovernanceSlider) => void
   toggleDarkMode: () => void
   toggleThinking: () => void
   togglePersistThinking: () => void
-  toggleDeepResearch: () => void
   toggleConversational: () => void
   toggleSpeech: () => void
   setVoiceListening: (listening: boolean) => void
@@ -108,14 +111,14 @@ export const useUiStore = create<UiState>((set) => ({
   sidebarOpen: true,
   sidebarWidth: 256,
   historySidebarOpen: false, // starts collapsed (Perplexity-style)
+  peerSignalsPaneOpen: false, // starts collapsed so chat stays big
   mobileSidebarOpen: false,
   chatMode: (localStorage.getItem('daena:chatMode') as ChatMode) || 'CMD',
+  governanceMode: (localStorage.getItem('daena:governanceMode') as GovernanceMode) || 'GOVERNED',
   routingMode: (localStorage.getItem('daena:routingMode') as RoutingMode) || 'STANDARD',
-  governanceSlider: (localStorage.getItem('daena:governanceSlider') as GovernanceSlider) || 'STANDARD',
   darkMode: localStorage.getItem('daena:darkMode') !== 'false',
   thinkingVisible: localStorage.getItem('daena:thinkingVisible') !== 'false',
   persistThinking: localStorage.getItem('daena:persistThinking') !== 'false',
-  deepResearch: localStorage.getItem('daena:deepResearch') === 'true',
   conversationalMode: false,
   speechEnabled: false,
   voiceListening: false,
@@ -138,9 +141,10 @@ export const useUiStore = create<UiState>((set) => ({
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleHistorySidebar: () => set((s) => ({ historySidebarOpen: !s.historySidebarOpen })),
+  togglePeerSignalsPane: () => set((s) => ({ peerSignalsPaneOpen: !s.peerSignalsPaneOpen })),
   setChatMode: (mode) => { localStorage.setItem('daena:chatMode', mode); set({ chatMode: mode }) },
+  setGovernanceMode: (mode) => { localStorage.setItem('daena:governanceMode', mode); set({ governanceMode: mode }) },
   setRoutingMode: (mode) => { localStorage.setItem('daena:routingMode', mode); set({ routingMode: mode }) },
-  setGovernanceSlider: (slider) => { localStorage.setItem('daena:governanceSlider', slider); set({ governanceSlider: slider }) },
   toggleDarkMode: () => set((s) => {
     const next = !s.darkMode
     localStorage.setItem('daena:darkMode', String(next))
@@ -160,7 +164,6 @@ export const useUiStore = create<UiState>((set) => ({
     return { thinkingVisible: next }
   }),
   togglePersistThinking: () => set((s) => { const next = !s.persistThinking; localStorage.setItem('daena:persistThinking', String(next)); return { persistThinking: next } }),
-  toggleDeepResearch: () => set((s) => { const next = !s.deepResearch; localStorage.setItem('daena:deepResearch', String(next)); return { deepResearch: next } }),
   toggleConversational: () => set((s) => ({ conversationalMode: !s.conversationalMode })),
   toggleSpeech: () => set((s) => ({ speechEnabled: !s.speechEnabled })),
   setVoiceListening: (listening) => set({ voiceListening: listening }),
@@ -259,14 +262,13 @@ export async function hydrateUiFromBackend(): Promise<void> {
     if (data.sidebar_collapsed != null) updates.sidebarOpen = !data.sidebar_collapsed
     if (data.default_chat_mode) { updates.chatMode = data.default_chat_mode; localStorage.setItem('daena:chatMode', data.default_chat_mode) }
     if (data.default_routing_mode) { updates.routingMode = data.default_routing_mode; localStorage.setItem('daena:routingMode', data.default_routing_mode) }
-    if (data.default_governance_slider) { updates.governanceSlider = data.default_governance_slider; localStorage.setItem('daena:governanceSlider', data.default_governance_slider) }
+    if (data.default_governance_mode) { updates.governanceMode = data.default_governance_mode; localStorage.setItem('daena:governanceMode', data.default_governance_mode) }
     if (data.local_first_routing != null) updates.localFirstRouting = data.local_first_routing
     if (data.cost_aware_routing != null) updates.costAwareRouting = data.cost_aware_routing
     if (data.debug_mode != null) updates.debugMode = data.debug_mode
     if (data.verbose_logging != null) updates.verboseLogging = data.verbose_logging
     if (data.autopilot_active != null) { updates.autopilotActive = data.autopilot_active; localStorage.setItem('daena:autopilotActive', String(data.autopilot_active)) }
     if (data.persist_thinking != null) { updates.persistThinking = data.persist_thinking; localStorage.setItem('daena:persistThinking', String(data.persist_thinking)) }
-    if (data.deep_research != null) { updates.deepResearch = data.deep_research; localStorage.setItem('daena:deepResearch', String(data.deep_research)) }
     // conversationalMode excluded: see comment above
     if (data.auto_read_responses != null) updates.autoReadResponses = data.auto_read_responses
     if (data.default_runtime && data.default_runtime !== 'auto') updates.selectedRuntime = data.default_runtime

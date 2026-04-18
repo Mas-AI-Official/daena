@@ -1,6 +1,7 @@
 import { useLocation, Link, useNavigate } from 'react-router-dom'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+// Sidebar cleaned: Perplexity menu items removed 2026-04-13
 import {
   MessageSquare,
   LayoutDashboard,
@@ -21,14 +22,7 @@ import {
   Building,
   User,
   Settings,
-  Keyboard,
-  CreditCard,
-  Sparkles,
-  Palette,
-  Globe,
-  HelpCircle,
   LogOut,
-  ChevronRight as ChevronRightSm,
 } from 'lucide-react'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -55,6 +49,9 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Chat', path: '/chat', icon: <MessageSquare size={18} /> },
       { label: 'Dashboard', path: '/dashboard', icon: <LayoutDashboard size={18} /> },
+      // Company + Inbox removed 2026-04-17 -- /departments is the single
+      // source of truth for the 10-department model. Inter-department
+      // messaging happens through each department's chat room.
     ],
   },
   {
@@ -62,7 +59,6 @@ const navGroups: NavGroup[] = [
     color: 'text-accent-cyan',
     items: [
       { label: 'Security Scan', path: '/scan', icon: <Crosshair size={18} /> },
-      { label: 'Benchmark', path: '/benchmark', icon: <BarChart3 size={18} /> },
       { label: 'Departments', path: '/departments', icon: <Brain size={18} /> },
       { label: 'Skills', path: '/skills', icon: <Zap size={18} /> },
     ],
@@ -71,7 +67,7 @@ const navGroups: NavGroup[] = [
     title: 'Execution',
     color: 'text-status-success',
     items: [
-      { label: 'Tasks', path: '/tasks', icon: <ListTodo size={18} /> },
+      { label: 'Tasks', path: '/tasks', icon: <ListTodo size={18} />, badgeKey: 'tasks' },
       { label: 'Projects', path: '/projects', icon: <FolderKanban size={18} /> },
       { label: 'Pipeline', path: '/pipeline', icon: <Kanban size={18} /> },
       { label: 'Files', path: '/files', icon: <FileText size={18} /> },
@@ -89,7 +85,9 @@ const navGroups: NavGroup[] = [
     color: 'text-accent-amber',
     items: [
       { label: 'Security Ops', path: '/security', icon: <Shield size={18} /> },
+      { label: 'Engagements', path: '/engagements', icon: <Crosshair size={18} /> },
       { label: 'Approvals', path: '/governance/approvals', icon: <Shield size={18} />, badgeKey: 'approvals' },
+      { label: 'Policy Rules', path: '/policies', icon: <Shield size={18} /> },
       { label: 'Audit Log', path: '/governance/audit', icon: <Shield size={18} /> },
       { label: 'Analytics', path: '/analytics', icon: <BarChart3 size={18} /> },
     ],
@@ -107,31 +105,53 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
   const navigate = useNavigate()
   const isAdmin = user?.role === 'FOUNDER' || user?.role === 'ADMIN'
   const [pendingApprovals, setPendingApprovals] = useState(0)
+  const [activeTasks, setActiveTasks] = useState(0)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [appearanceOpen, setAppearanceOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const fetchPendingCount = useCallback(async () => {
+  const pollDelayRef = useRef(30_000)
+  const fetchNotificationCounts = useCallback(async () => {
+    // Parallel-fetch approvals (PENDING) and tasks (RUNNING + PENDING).
+    // Keeps the sidebar badge source-of-truth in sync so Masoud sees
+    // the full pipeline state without opening individual pages.
     try {
-      const { data } = await api.get('/governance/approvals?status=PENDING&page_size=1')
-      setPendingApprovals(data?.pagination?.total ?? 0)
+      const [approvalsRes, runningRes, pendingRes] = await Promise.all([
+        api.get('/governance/approvals?status=PENDING&page_size=1'),
+        api.get('/execution/tasks?status=RUNNING&page_size=1'),
+        api.get('/execution/tasks?status=PENDING&page_size=1'),
+      ])
+      setPendingApprovals(approvalsRes.data?.pagination?.total ?? 0)
+      const running = runningRes.data?.pagination?.total ?? 0
+      const pending = pendingRes.data?.pagination?.total ?? 0
+      setActiveTasks(running + pending)
+      pollDelayRef.current = 30_000 // Reset on success
     } catch {
-      // Graceful: no badge if endpoint fails
+      pollDelayRef.current = Math.min(pollDelayRef.current * 2, 120_000) // Backoff to 2min max
     }
   }, [])
 
   useEffect(() => {
-    fetchPendingCount()
-    const interval = setInterval(fetchPendingCount, 30_000)
-    return () => clearInterval(interval)
-  }, [fetchPendingCount])
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      await fetchNotificationCounts()
+      if (!cancelled) timer = setTimeout(poll, pollDelayRef.current)
+    }
+    void poll()
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [fetchNotificationCounts])
+
+  // Map badgeKey → count for the nav render loop below.
+  const badgeCounts: Record<string, number> = {
+    approvals: pendingApprovals,
+    tasks: activeTasks,
+  }
 
   // Close user menu on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setUserMenuOpen(false)
-        setAppearanceOpen(false)
       }
     }
     if (userMenuOpen) document.addEventListener('mousedown', handleClick)
@@ -141,7 +161,6 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
   // Close menu on route change
   useEffect(() => {
     setUserMenuOpen(false)
-    setAppearanceOpen(false)
   }, [location.pathname])
 
   const effectiveOpen = mobile ? true : sidebarOpen
@@ -207,6 +226,14 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
             <div className="space-y-0.5">
               {group.items.map((item) => {
                 const isActive = location.pathname.startsWith(item.path)
+                const badgeCount = item.badgeKey ? badgeCounts[item.badgeKey] ?? 0 : 0
+                const showBadge = badgeCount > 0
+                // Task badge uses info (teal), approval badge uses warning (amber).
+                const badgeTone = item.badgeKey === 'tasks' ? 'info' : 'warning'
+                const dotClass = badgeTone === 'info' ? 'bg-status-info' : 'bg-status-warning'
+                const pillClass = badgeTone === 'info'
+                  ? 'bg-status-info/20 text-status-info'
+                  : 'bg-status-warning/20 text-status-warning'
                 return (
                   <Link
                     key={item.path}
@@ -222,8 +249,8 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
                   >
                     <span className="shrink-0 relative">
                       {item.icon}
-                      {!effectiveOpen && item.badgeKey === 'approvals' && pendingApprovals > 0 && (
-                        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-status-warning animate-pulse" />
+                      {!effectiveOpen && showBadge && (
+                        <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${dotClass} animate-pulse`} />
                       )}
                     </span>
                     <AnimatePresence>
@@ -239,9 +266,9 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
                         </motion.span>
                       )}
                     </AnimatePresence>
-                    {effectiveOpen && item.badgeKey === 'approvals' && pendingApprovals > 0 && (
-                      <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-status-warning/20 text-status-warning min-w-[20px] text-center">
-                        {pendingApprovals}
+                    {effectiveOpen && showBadge && (
+                      <span className={`ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-medium min-w-[20px] text-center ${pillClass}`}>
+                        {badgeCount}
                       </span>
                     )}
                   </Link>
@@ -272,45 +299,9 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
 
               {/* Menu items */}
               <div className="py-1">
-                <MenuButton icon={<User size={14} />} label="Account" onClick={() => menuNavigate('/account/details')} />
-                <MenuButton icon={<Settings size={14} />} label="Preferences" onClick={() => menuNavigate('/account/preferences')} />
-                <MenuButton icon={<Sparkles size={14} />} label="Personalization" onClick={() => menuNavigate('/account/personalize')} />
-                <MenuButton icon={<Keyboard size={14} />} label="Shortcuts" onClick={() => menuNavigate('/account/shortcuts')} />
-                <MenuButton icon={<CreditCard size={14} />} label="Usage and credits" onClick={() => menuNavigate('/account/usage')} />
-                <MenuButton icon={<Plug size={14} />} label="Connectors" onClick={() => menuNavigate('/connections')} />
-                <MenuButton icon={<Settings size={14} />} label="All settings" onClick={() => menuNavigate('/account/details')} />
-              </div>
-
-              <div className="border-t border-white/5 py-1">
-                <MenuButton icon={<CreditCard size={14} />} label="Upgrade plan" onClick={() => menuNavigate('/account/usage')} />
-              </div>
-
-              <div className="border-t border-white/5 py-1">
-                {/* Appearance submenu */}
-                <button
-                  onClick={() => setAppearanceOpen(!appearanceOpen)}
-                  className="w-full flex items-center gap-3 px-4 py-2 text-xs text-starlight-300 hover:text-starlight-100 hover:bg-white/[0.03] transition-colors cursor-pointer"
-                >
-                  <Palette size={14} />
-                  <span className="flex-1 text-left">Appearance</span>
-                  <span className="text-[10px] text-starlight-500">System (Dark)</span>
-                  <ChevronRightSm size={12} className="text-starlight-500" />
-                </button>
-                {appearanceOpen && (
-                  <div className="ml-8 py-1">
-                    {['System (Dark)', 'Light', 'Dark'].map((theme) => (
-                      <button
-                        key={theme}
-                        className="w-full text-left px-3 py-1.5 text-[11px] text-starlight-400 hover:text-starlight-100 hover:bg-white/[0.03] rounded transition-colors cursor-pointer"
-                        onClick={() => setAppearanceOpen(false)}
-                      >
-                        {theme}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <MenuButton icon={<Globe size={14} />} label="Language" onClick={() => {}} suffix="Default" />
-                <MenuButton icon={<HelpCircle size={14} />} label="Help" onClick={() => {}} />
+                <MenuButton icon={<User size={14} />} label="Profile" onClick={() => menuNavigate('/account')} />
+                <MenuButton icon={<Settings size={14} />} label="Settings" onClick={() => menuNavigate('/settings')} />
+                <MenuButton icon={<Plug size={14} />} label="Connections" onClick={() => menuNavigate('/connections')} />
               </div>
 
               <div className="border-t border-white/5 py-1">

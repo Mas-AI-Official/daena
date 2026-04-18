@@ -94,7 +94,7 @@ async def execute_command(
             "params": tool_call.params,
             "description": tool_call.description,
         },
-        governance_slider="STANDARD",
+        governance_slider="BALANCED",
         actor_type="USER",
         actor_role=user.role,
         tenant_id=user.tenant_id,
@@ -140,7 +140,7 @@ async def execute_command(
             session_id=UUID(body.session_id) if body.session_id else None,
             user_id=user.id,
             tenant_id=user.tenant_id,
-            governance_slider="STANDARD",
+            governance_mode="BALANCED",
             actor_role=user.role,
         )
 

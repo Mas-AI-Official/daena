@@ -217,10 +217,7 @@ export function SettingsLLM() {
               Default Ollama model: <code>{registry.default_model}</code>
             </p>
             <p className="text-[10px] text-starlight-500">
-              Council: <span className={registry.routing_modes.COUNCIL.truthful ? 'text-status-success' : 'text-starlight-500'}>{registry.routing_modes.COUNCIL.truthful ? 'active' : 'inactive'}</span> · {registry.routing_modes.COUNCIL.reason}
-            </p>
-            <p className="text-[10px] text-starlight-500">
-              Quintessence: <span className={registry.routing_modes.QUINTESSENCE.truthful ? 'text-status-success' : 'text-starlight-500'}>{registry.routing_modes.QUINTESSENCE.truthful ? 'active' : 'inactive'}</span> · {registry.routing_modes.QUINTESSENCE.reason}
+              Quintessence: <span className={registry.routing_modes?.QUINTESSENCE?.truthful ? 'text-status-success' : 'text-starlight-500'}>{registry.routing_modes?.QUINTESSENCE?.truthful ? 'active' : 'inactive'}</span> · {registry.routing_modes?.QUINTESSENCE?.reason || 'Expert-guided synthesis'}
             </p>
           </div>
         )}

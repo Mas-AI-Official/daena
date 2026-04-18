@@ -150,6 +150,8 @@ class DCPLoader:
         Returns:
             List of DCPExpert instances with complementary perspectives.
         """
+        if count <= 0:
+            return []
         self.load()
         domain_names = self.get_domains_for_intent(intent)
 

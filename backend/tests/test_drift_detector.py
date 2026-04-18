@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.core.constants import GovernanceSlider
+from app.core.constants import GovernanceMode
 from app.services.drift_detector import (
     CHECKPOINT_INTERVALS,
     DriftAction,
@@ -57,35 +57,40 @@ def _budget() -> ResourceBudget:
 # ── should_checkpoint ─────────────────────────────────────────────
 
 class TestShouldCheckpoint:
-    def test_yolo_every_10(self) -> None:
-        assert not DriftDetector.should_checkpoint(5, "YOLO")
+    def test_unleashed_every_10(self) -> None:
+        assert not DriftDetector.should_checkpoint(5, "UNLEASHED")
+        assert DriftDetector.should_checkpoint(10, "UNLEASHED")
+        assert DriftDetector.should_checkpoint(20, "UNLEASHED")
+
+    def test_balanced_every_5(self) -> None:
+        assert not DriftDetector.should_checkpoint(3, "BALANCED")
+        assert DriftDetector.should_checkpoint(5, "BALANCED")
+        assert DriftDetector.should_checkpoint(15, "BALANCED")
+
+    def test_governed_every_3(self) -> None:
+        assert not DriftDetector.should_checkpoint(2, "GOVERNED")
+        assert DriftDetector.should_checkpoint(3, "GOVERNED")
+        assert DriftDetector.should_checkpoint(6, "GOVERNED")
+
+    def test_legacy_slider_values_still_work(self) -> None:
+        """Legacy GovernanceSlider values are converted automatically."""
+        # YOLO -> UNLEASHED (interval=10)
         assert DriftDetector.should_checkpoint(10, "YOLO")
-        assert DriftDetector.should_checkpoint(20, "YOLO")
-
-    def test_standard_every_5(self) -> None:
-        assert not DriftDetector.should_checkpoint(3, "STANDARD")
+        # STANDARD -> BALANCED (interval=5)
         assert DriftDetector.should_checkpoint(5, "STANDARD")
-        assert DriftDetector.should_checkpoint(15, "STANDARD")
-
-    def test_paranoid_every_step(self) -> None:
-        for step in range(1, 11):
-            assert DriftDetector.should_checkpoint(step, "PARANOID")
-
-    def test_strict_every_3(self) -> None:
-        assert not DriftDetector.should_checkpoint(2, "STRICT")
-        assert DriftDetector.should_checkpoint(3, "STRICT")
-        assert DriftDetector.should_checkpoint(6, "STRICT")
+        # PARANOID -> GOVERNED (interval=3)
+        assert DriftDetector.should_checkpoint(3, "PARANOID")
 
     def test_step_zero_never_checkpoints(self) -> None:
-        assert not DriftDetector.should_checkpoint(0, "PARANOID")
+        assert not DriftDetector.should_checkpoint(0, "GOVERNED")
 
     def test_negative_step_never_checkpoints(self) -> None:
-        assert not DriftDetector.should_checkpoint(-1, "PARANOID")
+        assert not DriftDetector.should_checkpoint(-1, "GOVERNED")
 
-    def test_all_presets_have_intervals(self) -> None:
-        """Every GovernanceSlider has a checkpoint interval defined."""
-        for slider in GovernanceSlider:
-            assert slider in CHECKPOINT_INTERVALS
+    def test_all_modes_have_intervals(self) -> None:
+        """Every GovernanceMode has a checkpoint interval defined."""
+        for mode in GovernanceMode:
+            assert mode in CHECKPOINT_INTERVALS
 
 
 # ── Drift score computation ───────────────────────────────────────
@@ -163,13 +168,13 @@ class TestDriftScore:
 # ── Drift response actions ────────────────────────────────────────
 
 class TestDriftResponseActions:
-    def test_yolo_on_track_continues(self) -> None:
+    def test_unleashed_on_track_continues(self) -> None:
         detector = DriftDetector()
         resp = detector.evaluate(
             state=_perfect_state(),
             original_goal="deploy auth",
             budget=_budget(),
-            governance_slider="YOLO",
+            governance_mode="UNLEASHED",
             goal_similarity=1.0,
             step_number=10,
         )
@@ -177,13 +182,13 @@ class TestDriftResponseActions:
         assert resp.action == DriftAction.CONTINUE
         assert resp.requires_human is False
 
-    def test_standard_drifting_pauses_and_notifies(self) -> None:
+    def test_balanced_drifting_pauses_and_notifies(self) -> None:
         detector = DriftDetector()
         resp = detector.evaluate(
             state=_drifting_state(),
             original_goal="deploy auth",
             budget=_budget(),
-            governance_slider="STANDARD",
+            governance_mode="BALANCED",
             goal_similarity=0.3,
             step_number=5,
         )
@@ -191,13 +196,13 @@ class TestDriftResponseActions:
         assert resp.action == DriftAction.PAUSE_NOTIFY_REALIGN
         assert resp.requires_human is False
 
-    def test_strict_drifting_waits_for_human(self) -> None:
+    def test_governed_drifting_waits_for_human(self) -> None:
         detector = DriftDetector()
         resp = detector.evaluate(
             state=_drifting_state(),
             original_goal="deploy auth",
             budget=_budget(),
-            governance_slider="STRICT",
+            governance_mode="GOVERNED",
             goal_similarity=0.3,
             step_number=3,
         )
@@ -205,27 +210,27 @@ class TestDriftResponseActions:
         assert resp.action == DriftAction.PAUSE_ALERT_WAIT
         assert resp.requires_human is True
 
-    def test_paranoid_on_track_needs_acknowledgment(self) -> None:
+    def test_governed_on_track_notifies(self) -> None:
         detector = DriftDetector()
         resp = detector.evaluate(
             state=_perfect_state(),
             original_goal="deploy auth",
             budget=_budget(),
-            governance_slider="PARANOID",
+            governance_mode="GOVERNED",
             goal_similarity=1.0,
             step_number=1,
         )
         assert resp.should_continue is True
-        assert resp.action == DriftAction.CONTINUE_ACKNOWLEDGE
-        assert resp.requires_human is True
+        assert resp.action == DriftAction.CONTINUE_NOTIFY
+        assert resp.requires_human is False
 
-    def test_lost_on_standard_escalates_to_council(self) -> None:
+    def test_lost_on_balanced_escalates_to_council(self) -> None:
         detector = DriftDetector()
         resp = detector.evaluate(
             state=_lost_state(),
             original_goal="deploy auth",
             budget=_budget(),
-            governance_slider="STANDARD",
+            governance_mode="BALANCED",
             goal_similarity=0.0,
             step_number=5,
         )
@@ -235,20 +240,33 @@ class TestDriftResponseActions:
         assert resp.requires_new_plan is True
         assert resp.should_continue is False
 
-    def test_lost_on_paranoid_escalates_to_founder(self) -> None:
+    def test_lost_on_governed_full_stop_admin(self) -> None:
         detector = DriftDetector()
         resp = detector.evaluate(
             state=_lost_state(),
             original_goal="deploy auth",
             budget=_budget(),
-            governance_slider="PARANOID",
+            governance_mode="GOVERNED",
             goal_similarity=0.0,
             step_number=1,
         )
-        assert resp.action == DriftAction.ESCALATE_FULL_STOP_FOUNDER
+        assert resp.action == DriftAction.ESCALATE_FULL_STOP_ADMIN
         assert resp.requires_human is True
         assert resp.requires_council is True
-        assert resp.requires_new_plan is True
+
+    def test_legacy_slider_in_evaluate(self) -> None:
+        """Legacy slider values are converted automatically in evaluate()."""
+        detector = DriftDetector()
+        resp = detector.evaluate(
+            state=_perfect_state(),
+            original_goal="deploy auth",
+            budget=_budget(),
+            governance_mode="YOLO",  # Legacy value -> UNLEASHED
+            goal_similarity=1.0,
+            step_number=10,
+        )
+        assert resp.should_continue is True
+        assert resp.action == DriftAction.CONTINUE
 
 
 # ── Checkpoint history & trend ────────────────────────────────────

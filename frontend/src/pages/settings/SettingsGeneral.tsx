@@ -52,7 +52,7 @@ export function SettingsGeneral() {
     persistUiPref('default_chat_mode', mode)
   }
 
-  const handleRoutingChange = (mode: 'STANDARD' | 'COUNCIL' | 'QUINTESSENCE') => {
+  const handleRoutingChange = (mode: 'STANDARD' | 'QUINTESSENCE') => {
     setRoutingMode(mode)
     persistUiPref('default_routing_mode', mode)
   }
@@ -113,17 +113,19 @@ export function SettingsGeneral() {
               <p className="text-xs text-starlight-500">Standard, Council, or Quintessence</p>
             </div>
             <div className="flex items-center gap-1 bg-midnight-400/50 rounded-lg p-0.5">
-              {(['STANDARD', 'COUNCIL', 'QUINTESSENCE'] as const).map((mode) => (
+              {(['STANDARD', 'QUINTESSENCE'] as const).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => handleRoutingChange(mode)}
                   className={`px-2 py-1 rounded-md text-[10px] font-medium transition-all cursor-pointer ${
                     routingMode === mode
-                      ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
+                      ? mode === 'QUINTESSENCE'
+                        ? 'bg-accent-purple/20 text-accent-purple border border-accent-purple/30'
+                        : 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
                       : 'text-starlight-400 hover:text-starlight-200'
                   }`}
                 >
-                  {mode === 'QUINTESSENCE' ? 'QE' : mode.slice(0, 3)}
+                  {mode === 'QUINTESSENCE' ? 'QE' : 'STD'}
                 </button>
               ))}
             </div>

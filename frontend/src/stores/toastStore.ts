@@ -11,7 +11,15 @@
  */
 import { create } from 'zustand'
 
-export type ToastType = 'success' | 'error' | 'warning' | 'info'
+/**
+ * ToastType --
+ * - success/error/warning/info: standard UX.
+ * - governance: pipeline event that needs an action or review (pending
+ *   approvals, blocked tools, VP plan routed to multiple departments).
+ *   Rendered with a shield icon so Masoud can scan for governance-
+ *   related activity in one glance.
+ */
+export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'governance'
 
 export interface Toast {
   id: string
@@ -65,4 +73,11 @@ export const toast = {
     useToastStore.getState().addToast({ type: 'warning', message, duration }),
   info: (message: string, duration?: number) =>
     useToastStore.getState().addToast({ type: 'info', message, duration }),
+  // Governance: pipeline events that warrant attention (pending
+  // approvals, blocked tools, VP routing). Longer default duration
+  // (8s) so the operator has time to see and click through.
+  governance: (message: string, duration?: number) =>
+    useToastStore
+      .getState()
+      .addToast({ type: 'governance', message, duration: duration ?? 8000 }),
 }

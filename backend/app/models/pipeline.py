@@ -101,6 +101,11 @@ class ProjectPipeline(Base, TenantMixin, TimestampMixin):
     billed_at = Column(DateTime, nullable=True)
     closed_at = Column(DateTime, nullable=True)
 
+    # Loss tracking (orthogonal to the 8-stage flow: a deal can be lost
+    # from any stage). lost_at is the marker; lost_reason categorizes.
+    lost_at = Column(DateTime, nullable=True, index=True)
+    lost_reason = Column(String(200), nullable=True)
+
     # Financial
     quoted_amount_usd = Column(Float, nullable=True)
     actual_cost_usd = Column(Float, default=0.0)
@@ -164,6 +169,8 @@ class ProjectPipeline(Base, TenantMixin, TimestampMixin):
             "delivered_at": str(self.delivered_at) if self.delivered_at else None,
             "billed_at": str(self.billed_at) if self.billed_at else None,
             "closed_at": str(self.closed_at) if self.closed_at else None,
+            "lost_at": str(self.lost_at) if self.lost_at else None,
+            "lost_reason": self.lost_reason,
             "founder_approved_proposal": str(self.founder_approved_proposal) if self.founder_approved_proposal else None,
             "founder_approved_contract": str(self.founder_approved_contract) if self.founder_approved_contract else None,
             "founder_approved_delivery": str(self.founder_approved_delivery) if self.founder_approved_delivery else None,

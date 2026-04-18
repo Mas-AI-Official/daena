@@ -1,6 +1,6 @@
 /**
  * FilesPage -- Full file management with drag-drop upload, sortable table,
- * search, and file type icons. Matches Perplexity's /computer/files pattern.
+ * search, and file type icons.
  */
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'

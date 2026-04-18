@@ -160,7 +160,7 @@ function shortenDeptName(name: string): string {
 export function DashboardPage() {
   usePageTitle('Dashboard')
   const navigate = useNavigate()
-  const { autopilotActive, governanceSlider } = useUiStore()
+  const { autopilotActive } = useUiStore()
   const [stats, setStats] = useState({
     sessions: 0,
     pendingApprovals: 0,
@@ -209,7 +209,7 @@ export function DashboardPage() {
           ? pipelineRes.value.data?.data?.total ?? 0
           : 0
         const runtimesOnline = runtimesRes.status === 'fulfilled'
-          ? runtimesRes.value.data?.data?.online_count ?? 0
+          ? (runtimesRes.value.data?.data?.runtimes?.filter((r: { status: string }) => r.status === 'online')?.length ?? 0)
           : 0
 
         setStats({
@@ -460,10 +460,6 @@ export function DashboardPage() {
               </h3>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-starlight-300">Slider</span>
-                  <span className="text-xs font-mono text-primary-400">{governanceSlider}</span>
-                </div>
-                <div className="flex items-center justify-between">
                   <span className="text-xs text-starlight-300">Autopilot</span>
                   <span className={`text-xs font-mono ${autopilotActive ? 'text-status-success' : 'text-starlight-500'}`}>
                     {autopilotActive ? 'ON' : 'OFF'}
@@ -494,7 +490,6 @@ export function DashboardPage() {
               <div className="p-2 space-y-0.5">
                 {[
                   { label: 'Security Scan', path: '/scan', icon: <Shield size={14} /> },
-                  { label: 'Intelligence Benchmark', path: '/benchmark', icon: <BarChart3 size={14} /> },
                   { label: 'New Chat', path: '/chat', icon: <MessageSquare size={14} /> },
                   { label: 'Review Approvals', path: '/governance/approvals', icon: <ShieldCheck size={14} /> },
                   { label: 'View Departments', path: '/departments', icon: <Bot size={14} /> },

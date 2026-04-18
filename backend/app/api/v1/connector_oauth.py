@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import CurrentUser, get_current_user, get_db
 from app.core.logging import get_logger
 from app.services.integrations.oauth_service import (
     ConnectorOAuthService,
@@ -35,7 +35,7 @@ _oauth_states: dict[str, dict] = {}
 @router.get("/oauth/providers")
 async def list_providers(
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
 ) -> JSONResponse:
     """List all supported OAuth providers and their configuration status."""
     service = ConnectorOAuthService(db)
@@ -47,7 +47,7 @@ async def authorize(
     connector_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
 ) -> JSONResponse:
     """Generate OAuth consent URL for a connector.
 
@@ -88,8 +88,8 @@ async def authorize(
     # Store state for validation on callback
     _oauth_states[state] = {
         "connector_id": connector_id,
-        "user_id": str(user["id"]),
-        "tenant_id": str(user["tenant_id"]),
+        "user_id": str(user.id),
+        "tenant_id": str(user.tenant_id),
         "redirect_uri": redirect_uri,
     }
 
@@ -130,6 +130,27 @@ async def oauth_callback(
         # Exchange code for tokens (pass provider for endpoint resolution)
         tokens = await service.exchange_code(code, redirect_uri, provider=connector_id)
 
+        # Session 11: fetch the identity (email / handle) of the account
+        # the user JUST picked on the provider's consent screen. Stored
+        # alongside tokens in credentials JSONB so the UI can display
+        # "Connected as masoud.masoori@mas-ai.co" instead of opaque
+        # "Connected". Fire-and-forget: if userinfo fails we still save
+        # the connection since OAuth itself succeeded.
+        access_token = tokens.get("access_token", "")
+        account_identity = ""
+        if access_token:
+            try:
+                account_identity = await service.fetch_account_identity(
+                    access_token, provider=connector_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "connector_oauth.identity_fetch_swallowed",
+                    error=str(exc), connector_id=connector_id,
+                )
+        if account_identity:
+            tokens = {**tokens, "account_identity": account_identity}
+
         # Find or create connector instance
         from sqlalchemy import select
         from app.models.connections import ConnectorInstance
@@ -160,6 +181,7 @@ async def oauth_callback(
             "connector_oauth.connected",
             connector_id=connector_id,
             user_id=str(user_id),
+            account_identity=account_identity or "(not fetched)",
         )
 
         # Display name for the success page
@@ -212,7 +234,7 @@ async def oauth_callback(
 async def refresh_tokens(
     instance_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
 ) -> JSONResponse:
     """Manually refresh OAuth tokens for a connector instance."""
     from sqlalchemy import select
@@ -220,7 +242,7 @@ async def refresh_tokens(
 
     stmt = select(ConnectorInstance).where(
         ConnectorInstance.id == instance_id,
-        ConnectorInstance.tenant_id == user["tenant_id"],
+        ConnectorInstance.tenant_id == user.tenant_id,
     )
     result = await db.execute(stmt)
     instance = result.scalar_one_or_none()

@@ -18,6 +18,7 @@ import {
   Star,
   ChevronRight,
   AlertCircle,
+  XCircle,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button, Shimmer, EmptyState } from '@/components/common'
@@ -64,6 +65,10 @@ interface PipelineProject {
   client_name: string | null
   source: string | null
   created_at: string
+  // Loss tracking -- orthogonal to the 8-stage flow.
+  // lost_at null = active project; populated = lost.
+  lost_at?: string | null
+  lost_reason?: string | null
 }
 
 interface PipelineSummary {
@@ -130,6 +135,29 @@ export function PipelinePage() {
       await fetchData()
     } catch (err: unknown) {
       const msg = (err as any)?.response?.data?.error?.message || 'Failed to advance'
+      toast.error(msg)
+    }
+  }
+
+  // Marking a deal lost is deliberately gated behind a reason prompt.
+  // The reason flows to the Sales.lost_deal BorderAgent signal so
+  // Marketing and Research can aggregate loss patterns without needing
+  // to ask the founder after the fact.
+  const handleMarkLost = async (projectId: string, title: string) => {
+    const reason = window.prompt(
+      `Mark "${title}" as lost. What was the reason? (optional, under 200 chars)`
+    )
+    // User cancelled the prompt -- do nothing.
+    if (reason === null) return
+    try {
+      await api.post(`/pipeline/projects/${projectId}/mark-lost`, {
+        reason: reason.trim() || null,
+      })
+      toast.success('Project marked as lost')
+      await fetchData()
+    } catch (err: unknown) {
+      const msg =
+        (err as any)?.response?.data?.error?.message || 'Failed to mark lost'
       toast.error(msg)
     }
   }
@@ -211,8 +239,26 @@ export function PipelinePage() {
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                     >
-                      <Card variant="glass" padding="sm" className="group cursor-pointer hover:border-white/10">
-                        <p className="text-xs font-medium text-starlight-200 truncate">{project.title}</p>
+                      <Card
+                        variant="glass"
+                        padding="sm"
+                        className={`group cursor-pointer hover:border-white/10 ${
+                          project.lost_at ? 'opacity-50' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-1.5">
+                          <p className={`flex-1 text-xs font-medium text-starlight-200 truncate ${
+                            project.lost_at ? 'line-through' : ''
+                          }`}>{project.title}</p>
+                          {project.lost_at && (
+                            <span
+                              title={project.lost_reason || 'Marked lost'}
+                              className="shrink-0 text-[8px] px-1 py-0.5 rounded bg-status-error/15 text-status-error"
+                            >
+                              LOST
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 mt-1 text-[9px] text-starlight-500">
                           {project.overall_score != null && (
                             <span className="flex items-center gap-0.5">
@@ -232,16 +278,34 @@ export function PipelinePage() {
                         </div>
                         <div className="flex items-center justify-between mt-1.5">
                           <span className="text-[9px] text-starlight-600">{project.owner_department}</span>
-                          {stage !== 'CLOSED' && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); void handleAdvance(project.id, stage) }}
-                              className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 transition-all cursor-pointer"
-                              title={isGate ? 'Approve and advance' : 'Advance to next stage'}
-                            >
-                              <ArrowRight size={8} />
-                              {isGate ? 'Approve' : 'Advance'}
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {/* Mark-lost is visible for any active project regardless of stage.
+                                Once a deal is lost, it stays at whatever stage it reached (for
+                                the historical record) but earns the LOST badge. */}
+                            {stage !== 'CLOSED' && !project.lost_at && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void handleMarkLost(project.id, project.title)
+                                }}
+                                className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-status-error/10 text-status-error hover:bg-status-error/20 transition-all cursor-pointer"
+                                title="Mark deal as lost"
+                              >
+                                <XCircle size={8} />
+                                Lost
+                              </button>
+                            )}
+                            {stage !== 'CLOSED' && !project.lost_at && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); void handleAdvance(project.id, stage) }}
+                                className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 transition-all cursor-pointer"
+                                title={isGate ? 'Approve and advance' : 'Advance to next stage'}
+                              >
+                                <ArrowRight size={8} />
+                                {isGate ? 'Approve' : 'Advance'}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </Card>
                     </motion.div>

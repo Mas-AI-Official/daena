@@ -27,7 +27,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dc_replace
 from typing import Any
 
 from app.core.constants import RoutingMode
@@ -97,28 +97,103 @@ class LLMService:
         self,
         request: GenerateRequest,
     ) -> LLMResponse:
-        """Call an LLM provider directly, bypassing routing decisions.
+        """Call an LLM provider directly with automatic failover.
 
         Used by Laevateinn pipeline stages that need a model call without
-        going through the full routing/governance stack. Picks the provider
-        from the request's model_id, or falls back to the first available.
+        going through the full routing/governance stack. If the primary
+        provider fails, walks the fallback chain (SOVEREIGN > TACTICAL > LOCAL)
+        until one succeeds.
+
+        The health tracker records successes and failures so repeated
+        failures trigger circuit breaking (skip the dead provider entirely).
         """
-        provider: BaseProvider | None = None
+        from app.services.runtimes.health_tracker import get_health_tracker
+
+        tracker = get_health_tracker()
+
+        # Build ordered provider list: requested first, then all others
+        providers_to_try: list[tuple[str, BaseProvider]] = []
 
         if request.model_id:
-            provider = self._registry.get_provider_for_model(request.model_id)
+            primary = self._registry.get_provider_for_model(request.model_id)
+            if primary is not None:
+                providers_to_try.append((request.model_id, primary))
 
-        # Fallback: use first available provider
-        if provider is None:
-            for p in self._registry.available_providers:
-                provider = self._registry.get_provider(p)
-                if provider is not None:
-                    break
+        # Add all other available providers as fallbacks
+        for p_enum in self._registry.available_providers:
+            prov = self._registry.get_provider(p_enum)
+            if prov is None:
+                continue
+            # Skip if already in the list
+            if any(prov is existing for _, existing in providers_to_try):
+                continue
+            providers_to_try.append((p_enum.value, prov))
 
-        if provider is None:
+        if not providers_to_try:
             raise ProviderUnavailableError("No LLM providers available for direct call")
 
-        return await provider.generate(request)
+        last_error: Exception | None = None
+
+        for provider_id, provider in providers_to_try:
+            # Skip providers with open circuit breaker
+            if not tracker.is_available(provider_id):
+                if tracker.should_probe(provider_id):
+                    # Cooldown expired -- allow one probe attempt
+                    tracker.enter_half_open(provider_id)
+                else:
+                    continue
+
+            try:
+                # On cross-provider failover, reset model_id so the fallback
+                # provider picks its OWN default instead of inheriting the
+                # primary's model string. Without this, e.g. a Groq failure
+                # on "moonshotai/kimi-k2-instruct" passes that exact model
+                # name to Gemini, which builds /v1beta/models/moonshotai/
+                # kimi-k2-instruct:generateContent and returns 404. The
+                # primary attempt (first entry in providers_to_try) keeps
+                # its originally-requested model_id.
+                is_failover = providers_to_try[0][0] != provider_id
+                if is_failover and request.model_id:
+                    # GenerateRequest is a frozen dataclass, use dataclasses.replace
+                    failover_request = _dc_replace(request, model_id=None)
+                else:
+                    failover_request = request
+
+                result = await provider.generate(failover_request)
+                tracker.record_success(provider_id)
+
+                # Log if this was a failover (not the first provider)
+                if is_failover:
+                    logger.info(
+                        "llm.failover_used",
+                        primary=providers_to_try[0][0],
+                        fallback=provider_id,
+                        original_model=request.model_id,
+                        fallback_model=result.model_id,
+                        reason=str(last_error)[:100] if last_error else "primary_unavailable",
+                    )
+
+                return result
+
+            except Exception as exc:
+                last_error = exc
+                error_msg = str(exc)
+                category = tracker.classify_error(error_msg)
+                tracker.record_failure(provider_id, error_msg, category)
+
+                logger.warning(
+                    "llm.direct_provider_failed",
+                    provider=provider_id,
+                    error=error_msg[:200],
+                    category=category.value,
+                    remaining=len(providers_to_try) - providers_to_try.index((provider_id, provider)) - 1,
+                )
+
+        # All providers failed
+        raise ProviderUnavailableError(
+            f"All {len(providers_to_try)} providers failed. "
+            f"Last error: {last_error}"
+        )
 
     # ── Public: single-shot generate ───────────────────────────
 

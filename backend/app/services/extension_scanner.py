@@ -10,7 +10,7 @@ Returns a unified list of extensions with name, source, enabled status.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,12 @@ class ExtensionInfo:
     category: str  # "lsp", "tool", "connector", "skill", "other"
     enabled: bool
     description: str
+    # Session 10: Claude Desktop parity -- surface the tool list and
+    # version so the per-tool permissions UI and the header "v0.2.1 --"
+    # can render without a second round-trip. Empty list is fine;
+    # frontend shows an informative placeholder when tools are unknown.
+    tools: list[str] = field(default_factory=list)
+    version: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -41,6 +47,8 @@ class ExtensionInfo:
             "category": self.category,
             "enabled": self.enabled,
             "description": self.description,
+            "tools": list(self.tools),
+            "version": self.version,
         }
 
 
@@ -132,6 +140,25 @@ def scan_extensions() -> list[ExtensionInfo]:
                     ext_version = manifest.get("version", "")
                     if ext_version:
                         ext_desc = f"v{ext_version} -- {ext_desc[:80]}"
+
+                    # Session 10: extract tool list where the manifest
+                    # declares it. Claude Desktop Extensions (DXT) put
+                    # tools under either `tools` (top-level) or
+                    # `mcp.tools`. Missing = empty; frontend shows a
+                    # placeholder so the user knows why.
+                    raw_tools = (
+                        manifest.get("tools")
+                        or manifest.get("mcp", {}).get("tools", [])
+                        or []
+                    )
+                    tool_names: list[str] = []
+                    if isinstance(raw_tools, list):
+                        for t in raw_tools:
+                            if isinstance(t, str):
+                                tool_names.append(t)
+                            elif isinstance(t, dict) and t.get("name"):
+                                tool_names.append(str(t["name"]))
+
                     extensions.append(ExtensionInfo(
                         id=f"dxt-{manifest.get('name', ext_dir.name)}",
                         name=ext_name,
@@ -139,6 +166,8 @@ def scan_extensions() -> list[ExtensionInfo]:
                         category="connector",
                         enabled=True,
                         description=ext_desc[:120],
+                        tools=tool_names,
+                        version=ext_version,
                     ))
                 except Exception:
                     pass  # Skip malformed manifests

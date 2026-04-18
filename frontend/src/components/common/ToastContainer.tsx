@@ -3,7 +3,7 @@
  * Mount once in App.tsx or PageLayout. Auto-dismisses after duration.
  */
 import { AnimatePresence, motion } from 'framer-motion'
-import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, Info, Shield, X } from 'lucide-react'
 import { useToastStore, type ToastType } from '@/stores/toastStore'
 
 const ICON_MAP: Record<ToastType, React.ReactNode> = {
@@ -11,6 +11,9 @@ const ICON_MAP: Record<ToastType, React.ReactNode> = {
   error: <XCircle size={16} className="text-status-error shrink-0" />,
   warning: <AlertTriangle size={16} className="text-status-warning shrink-0" />,
   info: <Info size={16} className="text-primary-400 shrink-0" />,
+  // Governance toast uses the accent-amber (gold) brand color so
+  // pipeline events are visually distinct from generic warnings.
+  governance: <Shield size={16} className="text-accent-amber shrink-0" />,
 }
 
 const BG_MAP: Record<ToastType, string> = {
@@ -18,6 +21,7 @@ const BG_MAP: Record<ToastType, string> = {
   error: 'border-status-error/30 bg-status-error/10',
   warning: 'border-status-warning/30 bg-status-warning/10',
   info: 'border-primary-500/30 bg-primary-500/10',
+  governance: 'border-accent-amber/30 bg-accent-amber/10',
 }
 
 export function ToastContainer() {

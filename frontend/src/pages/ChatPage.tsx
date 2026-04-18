@@ -5,7 +5,7 @@
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { PanelLeftClose, PanelLeftOpen, Keyboard, X } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Keyboard, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { useChatStore } from '@/stores/chatStore'
@@ -13,8 +13,14 @@ import { useModelRegistryStore } from '@/stores/modelRegistryStore'
 import { useUiStore } from '@/stores/uiStore'
 import { MessageList } from '@/components/chat/MessageList'
 import { ChatInput } from '@/components/chat/ChatInput'
+import { InlineApprovalBanner } from '@/components/chat/InlineApprovalBanner'
+import { GovernanceEventStrip } from '@/components/chat/GovernanceEventStrip'
 import { ExecutionPanel } from '@/components/execution/ExecutionPanel'
 import { InteractivePromptDisplay } from '@/components/chat/InteractivePrompt'
+// Daena's wildcard BorderAgent inbox surfaces here as the VP / company-
+// wide activity feed. Matches what Stage 6.4 injects into the prompt
+// context, giving the founder both visual + prompt-level awareness.
+import { PeerSignalsPane } from '@/components/chat/PeerSignalsPane'
 import { api } from '@/lib/api'
 import type { SubTaskResponse } from '@/types/api'
 
@@ -37,9 +43,10 @@ export function ChatPage() {
 
   const historySidebarOpen = useUiStore((s) => s.historySidebarOpen)
   const toggleHistorySidebar = useUiStore((s) => s.toggleHistorySidebar)
+  const peerSignalsPaneOpen = useUiStore((s) => s.peerSignalsPaneOpen)
+  const togglePeerSignalsPane = useUiStore((s) => s.togglePeerSignalsPane)
   const selectedModel = useUiStore((s) => s.selectedModel)
   const thinkingVisible = useUiStore((s) => s.thinkingVisible)
-  const governanceSlider = useUiStore((s) => s.governanceSlider)
   const chatMode = useUiStore((s) => s.chatMode)
   const executionViewVisible = useUiStore((s) => s.executionViewVisible)
   const toggleExecutionView = useUiStore((s) => s.toggleExecutionView)
@@ -52,13 +59,13 @@ export function ChatPage() {
 
   // Execution panel subtasks -- poll /execution/tasks?status=running in EXE mode
   const [subtasks, setSubtasks] = useState<SubTaskResponse[]>([])
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollDelayRef = useRef(5000)
 
   const fetchActiveTasks = useCallback(async () => {
     try {
       const res = await api.get('/execution/tasks', { params: { status: 'running', page_size: 20 } })
       const tasks = res.data?.data ?? []
-      // Map backend task objects to SubTaskResponse shape
       const mapped: SubTaskResponse[] = tasks.map((t: Record<string, unknown>) => ({
         id: String(t.id ?? ''),
         description: String(t.description ?? t.name ?? 'Task'),
@@ -70,22 +77,21 @@ export function ChatPage() {
         result_data: t.result_data ?? null,
       }))
       setSubtasks(mapped)
+      pollDelayRef.current = 5000 // Reset to normal on success
     } catch {
-      // Graceful -- don't spam errors when backend is unreachable
+      pollDelayRef.current = Math.min(pollDelayRef.current * 2, 60000) // Backoff to 60s max
     }
   }, [])
 
   useEffect(() => {
-    if (chatMode === 'EXE') {
-      // Immediate fetch + poll every 5s
-      void fetchActiveTasks()
-      pollRef.current = setInterval(() => void fetchActiveTasks(), 5000)
-    } else {
-      setSubtasks([])
+    if (chatMode !== 'EXE') { setSubtasks([]); return }
+    let cancelled = false
+    const poll = async () => {
+      await fetchActiveTasks()
+      if (!cancelled) pollRef.current = setTimeout(poll, pollDelayRef.current)
     }
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
-    }
+    void poll()
+    return () => { cancelled = true; if (pollRef.current) clearTimeout(pollRef.current) }
   }, [chatMode, fetchActiveTasks])
 
   // Merge SSE tool_call events (real-time) with polled subtasks (background)
@@ -184,11 +190,10 @@ export function ChatPage() {
       const store = useChatStore.getState()
       const ui = useUiStore.getState()
       // Explicit: general chat creates sessions with NO department
-      void store.sendMessageStream(content, effectiveModel, governanceSlider, {
+      void store.sendMessageStream(content, effectiveModel, {
         createSession: {
           mode: ui.chatMode,
           routingMode: ui.routingMode,
-          governanceSlider: ui.governanceSlider,
           autopilot: ui.autopilotActive,
           thinkMode: ui.thinkingVisible,
           departmentId: undefined, // force null — prevent department context leak
@@ -201,7 +206,7 @@ export function ChatPage() {
       })
       return
     }
-    void sendMessageStream(content, effectiveModel, governanceSlider)
+    void sendMessageStream(content, effectiveModel)
   }
 
   // Keyboard shortcuts overlay
@@ -290,7 +295,7 @@ export function ChatPage() {
         )}
       </div>
 
-      {/* Toggle button -- minimal, Perplexity-style */}
+      {/* Toggle button -- minimal sidebar toggle */}
       <button
         onClick={toggleHistorySidebar}
         className="absolute top-3 z-20 p-1 rounded-md text-starlight-500
@@ -318,6 +323,20 @@ export function ChatPage() {
             </button>
           </div>
         )}
+
+        {/* Inline approval banner -- surfaces any pending approvals in chat
+            so Masoud doesn't have to navigate to /governance/approvals */}
+        <InlineApprovalBanner />
+
+        {/* Live governance-event strip -- responds to SSE events during
+            the stream (governance_approval_pending, tool_blocked,
+            daena_vp_plan, vp_subtasks_created). Complements the poll-
+            based InlineApprovalBanner above: banner is eventually
+            consistent (5s poll), strip is instant. Both mounted so an
+            approval surfaced mid-stream is visible without waiting. */}
+        <div className="px-3">
+          <GovernanceEventStrip />
+        </div>
 
         {/* Messages */}
         <MessageList
@@ -358,6 +377,40 @@ export function ChatPage() {
           onCancel={cancelStream}
           isStreaming={stream.isStreaming}
         />
+      </div>
+
+      {/* Right-side toggle -- mirrors the history sidebar's pattern.
+          Collapsed by default so the chat column stays wide; one click
+          exposes Daena's company-wide feed without leaving the page. */}
+      <button
+        onClick={togglePeerSignalsPane}
+        className="absolute top-3 z-20 p-1 rounded-md text-starlight-500
+                   hover:text-starlight-200 hover:bg-white/5
+                   transition-all cursor-pointer"
+        style={{
+          right: peerSignalsPaneOpen ? 328 : 8,
+          transition: 'right 200ms ease',
+        }}
+        title={peerSignalsPaneOpen ? 'Collapse company-wide activity' : 'Show company-wide activity'}
+      >
+        {peerSignalsPaneOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+      </button>
+
+      {/* VP lens: Daena's wildcard inbox. Shows the same signals that
+          Stage 6.4 will inject into the prompt, but visible at a
+          glance without needing to send a message. Animated collapse
+          matches the left history sidebar so the chat canvas can
+          expand to fill the window. */}
+      <div
+        className="shrink-0 overflow-hidden"
+        style={{
+          width: peerSignalsPaneOpen ? 320 : 0,
+          transition: 'width 200ms ease',
+        }}
+      >
+        {peerSignalsPaneOpen && (
+          <PeerSignalsPane departmentName="Daena" title="Company-wide" />
+        )}
       </div>
     </div>
   )

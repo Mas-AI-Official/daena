@@ -122,7 +122,7 @@ class TestGovernanceGates:
         result = await engine.evaluate(
             action_type="READ_FILE",
             action_params={"path": "/tmp/test.txt"},
-            governance_slider="STANDARD",
+            governance_slider="BALANCED",
             actor_role="OPERATOR",
             tenant_id=uuid.uuid4(),
             user_id=uuid.uuid4(),
@@ -135,10 +135,11 @@ class TestGovernanceGates:
         from app.services.governance import GovernanceEngine
 
         engine = GovernanceEngine(db_session)
+        # DELETE is classified as CRITICAL risk -> tier 4 under GOVERNED
         result = await engine.evaluate(
-            action_type="DELETE_DATA",
+            action_type="DELETE",
             action_params={"target": "user_database"},
-            governance_slider="PARANOID",
+            governance_slider="GOVERNED",
             actor_role="OPERATOR",
             tenant_id=uuid.uuid4(),
             user_id=uuid.uuid4(),
@@ -153,7 +154,7 @@ class TestGovernanceGates:
         result = await engine.evaluate(
             action_type="EXECUTE_COMMAND",
             action_params={"command": "ls"},
-            governance_slider="YOLO",
+            governance_slider="UNLEASHED",
             actor_role="OPERATOR",
             tenant_id=uuid.uuid4(),
             user_id=uuid.uuid4(),
@@ -168,7 +169,7 @@ class TestGovernanceGates:
         result = await engine.evaluate(
             action_type="SEND_EMAIL",
             action_params={"to": "user@test.com"},
-            governance_slider="STANDARD",
+            governance_slider="BALANCED",
             actor_role="OPERATOR",
             tenant_id=uuid.uuid4(),
             user_id=uuid.uuid4(),

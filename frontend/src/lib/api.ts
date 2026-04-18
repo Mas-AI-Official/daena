@@ -95,12 +95,10 @@ api.interceptors.response.use(
         ? ((error.response?.data as Record<string, unknown>).error as Record<string, string>)?.code
         : ''
       console.warn(`[Daena 403] ${url} — ${code}`)
-      if (code === 'INSUFFICIENT_ROLE') {
-        // Stale token with wrong role -- force re-login
-        toast.error('Session expired. Logging out...')
-        localStorage.removeItem('daena_token')
-        setTimeout(() => { window.location.href = '/login' }, 1000)
-      } else {
+      // Suppress toasts for background/polling endpoints that fire without user action
+      const silentOn403 = ['/governance/approvals', '/heartbeat/', '/runtimes/']
+      const isSilent403 = silentOn403.some((p) => url.includes(p))
+      if (!isSilent403) {
         toast.error(`Permission denied${code ? ` (${code})` : ''}. Check your role or governance settings.`)
       }
     } else if (status === 404) {
@@ -110,16 +108,22 @@ api.interceptors.response.use(
         toast.error('Resource not found.')
       }
     } else if (status && status >= 500) {
-      // Suppress toasts for background polling endpoints
+      // Suppress toasts for background/polling endpoints that fire without user action
       const url = error.config?.url || ''
-      const isSilentPoll = url.includes('/execution/tasks') || url.includes('/heartbeat/')
-      if (!isSilentPoll) {
+      const silentPrefixes = [
+        '/execution/tasks', '/heartbeat/', '/governance/approvals',
+        '/settings/user', '/billing/', '/chat/model-registry',
+        '/chat/sessions', '/runtimes/', '/health', '/agents/',
+        '/memory/', '/connections/',
+      ]
+      const isSilent = silentPrefixes.some((p) => url.includes(p))
+      if (!isSilent) {
         toast.error('Server error. Please try again in a moment.')
       }
     } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       toast.error('Request timed out. Please check your connection.')
     } else if (!error.response && error.message === 'Network Error') {
-      toast.error('Connection lost. Please check your internet connection.')
+      // Backend unreachable -- don't spam toasts, components handle their own fallback
     }
 
     return Promise.reject(error)

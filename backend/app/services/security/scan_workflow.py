@@ -502,6 +502,67 @@ class ScanWorkflow:
                 tier=job.tier.value,
             )
 
+            # Border Agent emit (two-tier):
+            #   1. TASK_COMPLETED always -- operational signal that the
+            #      scan job finished. Ops / dashboards consume this.
+            #   2. THREAT_DETECTED only when critical or high findings
+            #      exist -- so listeners like Legal (for compliance
+            #      follow-up) and Daena (VP lens) see actual threats,
+            #      not empty-scan noise. Fail-safe wrap keeps the scan
+            #      status correct even if emit fails.
+            try:
+                from uuid import UUID as _UUID
+                from app.services.departments.border_agent import (
+                    DepartmentEvent,
+                    get_border_agent,
+                )
+
+                ba = await get_border_agent(
+                    tenant_id=_UUID(str(job.tenant_id)),
+                    department="Security Operations",
+                )
+                await ba.emit(
+                    DepartmentEvent.TASK_COMPLETED,
+                    payload={
+                        "task_summary": (
+                            f"Scan complete: {security_report.total_findings} "
+                            f"findings at tier {job.tier.value}"
+                        ),
+                        "job_id": job.id,
+                        "tier": job.tier.value,
+                        "severity_counts": severity_counts,
+                        "total_findings": security_report.total_findings,
+                        "cost_usd": cost,
+                    },
+                )
+
+                critical_or_high = (
+                    severity_counts.get("critical", 0)
+                    + severity_counts.get("high", 0)
+                )
+                if critical_or_high > 0:
+                    await ba.emit(
+                        DepartmentEvent.THREAT_DETECTED,
+                        payload={
+                            "task_summary": (
+                                f"{critical_or_high} critical/high findings "
+                                f"in {job.target}"
+                            ),
+                            "job_id": job.id,
+                            "target": job.target,
+                            "tier": job.tier.value,
+                            "critical": severity_counts.get("critical", 0),
+                            "high": severity_counts.get("high", 0),
+                            "total_findings": security_report.total_findings,
+                        },
+                    )
+            except Exception as emit_exc:  # pragma: no cover - fail-safe
+                logger.debug(
+                    "scan_workflow.emit_failed",
+                    job_id=job.id,
+                    error=str(emit_exc),
+                )
+
         except Exception as exc:
             job.status = ScanJobStatus.FAILED
             job.error = str(exc)

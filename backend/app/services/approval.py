@@ -123,6 +123,21 @@ class ApprovalService(BaseService):
         # Clean up pending approval
         await self._delete_pending(request_id)
         await self.db.flush()
+        # Refresh pulls server-generated values (e.g. updated_at via
+        # onupdate=func.now()) back into the ORM object while we are
+        # still in async context. Without this, the later emit work
+        # yields control, SQLAlchemy lazy-loads expired attributes,
+        # and the reload fails with MissingGreenlet outside the
+        # greenlet-spawned async session.
+        await self.db.refresh(request)
+
+        # Border Agent emit: let peer departments see approval decisions.
+        # Finance.expense_approved fires for expense-type actions so the
+        # relevant rooms (Finance, Operations) see the movement in real
+        # time; Governance.tier_high fires for any high-tier decision
+        # (t3+) so the governance room stays current. Fail-safe pattern
+        # so an emit error never rolls back the approval.
+        await self._emit_decision_event(request, approved=True)
 
         return self._request_to_dict(request)
 
@@ -158,6 +173,14 @@ class ApprovalService(BaseService):
         # Clean up pending approval
         await self._delete_pending(request_id)
         await self.db.flush()
+        # See approve() for why the refresh is load-bearing: eager
+        # server-default fetch keeps SQLAlchemy happy when emit work
+        # yields control.
+        await self.db.refresh(request)
+
+        # Border Agent emit (rejection path): peer departments get a
+        # negative-signal variant so they can unblock or escalate.
+        await self._emit_decision_event(request, approved=False)
 
         return self._request_to_dict(request)
 
@@ -260,6 +283,119 @@ class ApprovalService(BaseService):
         return len(expired_requests)
 
     # ── Private helpers ──
+
+    async def _emit_decision_event(
+        self, request: GoaRequest, *, approved: bool
+    ) -> None:
+        """Emit a BorderAgent signal for an approval decision.
+
+        Maps action_type and governance tier onto the DepartmentEvent
+        catalog so peer departments (Finance, Governance, Ops) see the
+        decision in their PeerSignalsPane feed. Fail-safe: any error is
+        swallowed with a debug log so approvals never roll back because
+        of a notification hiccup.
+        """
+        try:
+            from app.core.logging import get_logger
+            from app.services.departments.border_agent import (
+                DepartmentEvent,
+                get_border_agent,
+            )
+
+            log = get_logger(__name__)
+            action_type = (request.action_type or "").lower()
+            tier = int(request.governance_tier or 0)
+
+            # Finance.expense_* for expense-flavored approvals
+            if "expense" in action_type:
+                event = (
+                    DepartmentEvent.EXPENSE_APPROVED
+                    if approved
+                    else DepartmentEvent.EXPENSE_PROPOSAL
+                )
+                ba = await get_border_agent(
+                    tenant_id=request.tenant_id, department="Finance"
+                )
+                await ba.emit(
+                    event,
+                    payload={
+                        "task_summary": (
+                            f"Expense {'approved' if approved else 'rejected'}: "
+                            f"{request.action_type} (tier {tier})"
+                        ),
+                        "request_id": str(request.id),
+                        "risk_level": request.risk_level,
+                        "governance_tier": tier,
+                        "approved": approved,
+                    },
+                )
+
+            # Governance.tier_high whenever a high-tier decision is made
+            if tier >= 3:
+                ba_gov = await get_border_agent(
+                    tenant_id=request.tenant_id,
+                    department="Skill Governance",
+                )
+                await ba_gov.emit(
+                    DepartmentEvent.GOV_TIER_HIGH,
+                    payload={
+                        "task_summary": (
+                            f"Tier-{tier} {request.action_type} "
+                            f"{'approved' if approved else 'rejected'}"
+                        ),
+                        "request_id": str(request.id),
+                        "risk_level": request.risk_level,
+                        "governance_tier": tier,
+                        "approved": approved,
+                    },
+                )
+
+            # Legal.compliance_flag for legal-flavored action types OR
+            # CRITICAL risk rejections (these almost always have a legal
+            # follow-up). Heuristic keeps the lens narrow -- only the
+            # actual legal signal reaches the Legal room, not every
+            # tier-3 decision.
+            risk_str = (request.risk_level or "").upper()
+            is_legal_action = any(
+                token in action_type
+                for token in ("contract", "legal", "compliance", "nda", "license")
+            )
+            is_critical_reject = risk_str == "CRITICAL" and not approved
+            if is_legal_action or is_critical_reject:
+                # Emit as Skill Governance -- it's the entity making
+                # the call. Legal is the LISTENER via its
+                # *.compliance_* pattern. Emitting as Legal would
+                # trigger self-echo suppression and silence the signal.
+                ba_legal = await get_border_agent(
+                    tenant_id=request.tenant_id,
+                    department="Skill Governance",
+                )
+                await ba_legal.emit(
+                    DepartmentEvent.COMPLIANCE_FLAG,
+                    payload={
+                        "task_summary": (
+                            f"Compliance flag: {request.action_type} "
+                            f"({'approved' if approved else 'rejected'}, "
+                            f"risk={risk_str or 'UNKNOWN'})"
+                        ),
+                        "request_id": str(request.id),
+                        "risk_level": request.risk_level,
+                        "governance_tier": tier,
+                        "approved": approved,
+                        "trigger": (
+                            "legal_action" if is_legal_action else "critical_reject"
+                        ),
+                    },
+                )
+        except Exception as exc:  # pragma: no cover - fail-safe
+            try:
+                from app.core.logging import get_logger
+
+                get_logger(__name__).debug(
+                    "approval.decision.emit_failed", error=str(exc)
+                )
+            except Exception:
+                pass
 
     async def _get_request_or_404(
         self, request_id: UUID, tenant_id: UUID

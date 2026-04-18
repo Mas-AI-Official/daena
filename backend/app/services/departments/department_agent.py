@@ -300,6 +300,79 @@ class DepartmentAgent:
         from app.services.daenabot.browser_agent import BrowserAgent
         return await BrowserAgent().navigate(url=url)
 
+    # ── Inter-department messaging (Session C) ───────────────────
+
+    async def ask_department(
+        self,
+        *,
+        target_department: str,
+        subject: str,
+        body: str,
+        context_ref: str | None = None,
+        wait_seconds: int = 0,
+        ttl_seconds: int = 3600,
+    ) -> dict | None:
+        """Send an ASK message to another department.
+
+        * ``wait_seconds=0`` (default) -> async fire-and-forget; returns
+          the message dict immediately with ``status="SENT"``. Poll the
+          outbox later to read the answer.
+        * ``wait_seconds>0`` -> blocks up to that long for an ANSWERED
+          state and returns the completed message dict, or ``None`` on
+          timeout so the caller can decide to escalate.
+
+        Opens its own short-lived DB session so DepartmentAgent stays
+        independent of request scope (same pattern as the Swarm
+        executor state helpers).
+        """
+        if self.context.tenant_id is None:
+            logger.warning(
+                "dept_agent.ask_skipped_no_tenant",
+                from_dept=self.context.department,
+                target=target_department,
+            )
+            return None
+        try:
+            from app.core.database import async_session_factory
+            from app.services.department_message_service import (
+                DepartmentMessageService,
+            )
+
+            async with async_session_factory() as session:
+                svc = DepartmentMessageService(session)
+                msg = await svc.send(
+                    tenant_id=self.context.tenant_id,
+                    from_department=self.context.department,
+                    to_department=target_department,
+                    subject=subject,
+                    body=body,
+                    context_ref=context_ref,
+                    ttl_seconds=ttl_seconds,
+                )
+                await session.commit()
+                message_id = msg.id
+                initial_dict = msg.to_dict()
+
+            if wait_seconds <= 0:
+                return initial_dict
+
+            # Poll for an answer in a fresh session per poll cycle.
+            async with async_session_factory() as session:
+                svc = DepartmentMessageService(session)
+                resolved = await svc.wait_for_answer(
+                    message_id=message_id,
+                    timeout_seconds=wait_seconds,
+                )
+            return resolved.to_dict() if resolved else None
+        except Exception as exc:
+            logger.warning(
+                "dept_agent.ask_failed",
+                from_dept=self.context.department,
+                target=target_department,
+                error=str(exc),
+            )
+            return None
+
     # ── Learning (NBMF write-through) ────────────────────────────
 
     async def record_outcome(

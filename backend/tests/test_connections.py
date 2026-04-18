@@ -327,3 +327,225 @@ async def test_list_instances_hides_credentials(client: AsyncClient) -> None:
     # The list schema (ConnectorInstanceResponse) does not include credentials
     for inst in instances:
         assert "credentials" not in inst or inst.get("credentials") is None
+
+
+# ── /extensions/install ──
+
+
+@pytest.mark.asyncio
+async def test_extensions_install_forwards_command_and_args(
+    client: AsyncClient, tmp_path, monkeypatch
+) -> None:
+    """The new install endpoint writes the caller's real npm package
+    to claude_desktop_config.json.
+
+    Before the fix the endpoint wrote ``npx -y <internal-id>`` which
+    pointed at a non-existent npm package (e.g.
+    ``mcp-google-drive``), so the installed config was unusable.
+    Now, passing ``command`` + ``args`` forwards them verbatim so
+    real packages like ``@modelcontextprotocol/server-gdrive`` land
+    correctly.
+    """
+    import json
+    from pathlib import Path
+
+    # Redirect Path.home() to a temp dir so we don't pollute the
+    # developer's real Claude Desktop config.
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    auth = await _register_and_login(client)
+
+    resp = await client.post(
+        "/api/v1/connections/extensions/install",
+        headers=auth["headers"],
+        json={
+            "id": "mcp-google-drive",
+            "name": "Google Drive MCP",
+            "description": "Reference Drive MCP server",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    cfg_path = tmp_path / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json"
+    assert cfg_path.exists(), "install should write claude_desktop_config.json"
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+
+    servers = cfg.get("mcpServers") or {}
+    # Key is the sanitized id, command + args mirror what the caller sent.
+    assert "mcp-google-drive" in servers
+    entry = servers["mcp-google-drive"]
+    assert entry["command"] == "npx"
+    assert entry["args"] == ["-y", "@modelcontextprotocol/server-gdrive"]
+
+
+@pytest.mark.asyncio
+async def test_extensions_install_triggers_bootstrap_refresh(
+    client: AsyncClient, tmp_path, monkeypatch
+) -> None:
+    """After a successful install, the MCP should be in the live
+    bootstrap registry -- no server restart required. Pins the
+    end-to-end "UI install -> chat-callable" contract.
+    """
+    import importlib
+    from pathlib import Path
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    # Reload both modules so their module-level config paths resolve
+    # under the monkeypatched Path.home().
+    from app.services import mcp_bootstrap as boot_mod
+    importlib.reload(boot_mod)
+    # The connections module imports Path at call time, so no reload
+    # needed there.
+
+    auth = await _register_and_login(client)
+
+    resp = await client.post(
+        "/api/v1/connections/extensions/install",
+        headers=auth["headers"],
+        json={
+            "id": "mcp-test-e2e",
+            "name": "Test E2E MCP",
+            "description": "",
+            "command": "npx",
+            "args": ["-y", "@example/test-server"],
+        },
+    )
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert data["registry_refreshed"] is True
+    assert data["server_key"] == "mcp-test-e2e"
+
+    installed_keys = [m.server_key for m in boot_mod.list_installed_mcps()]
+    assert "mcp-test-e2e" in installed_keys
+
+
+@pytest.mark.asyncio
+async def test_extensions_uninstall_roundtrip(
+    client: AsyncClient, tmp_path, monkeypatch
+) -> None:
+    """Uninstall removes the entry and refreshes the registry."""
+    import importlib
+    from pathlib import Path
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    from app.services import mcp_bootstrap as boot_mod
+    importlib.reload(boot_mod)
+
+    auth = await _register_and_login(client)
+
+    # Install then uninstall.
+    await client.post(
+        "/api/v1/connections/extensions/install",
+        headers=auth["headers"],
+        json={
+            "id": "mcp-delete-me",
+            "name": "Delete Me",
+            "command": "npx",
+            "args": ["-y", "deleteme"],
+        },
+    )
+
+    resp = await client.post(
+        "/api/v1/connections/extensions/uninstall",
+        headers=auth["headers"],
+        json={"id": "delete-me"},  # accepts short form
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["removed"] is True
+
+    installed_keys = [m.server_key for m in boot_mod.list_installed_mcps()]
+    assert "mcp-delete-me" not in installed_keys
+
+
+@pytest.mark.asyncio
+async def test_mcp_registry_endpoint_returns_live_state(
+    client: AsyncClient, tmp_path, monkeypatch
+) -> None:
+    """``GET /mcp-registry`` reflects the live bootstrap state, not
+    the raw config file. Installing a plugin should make it appear
+    on the next call without a restart."""
+    import importlib
+    from pathlib import Path
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    from app.services import mcp_bootstrap as boot_mod
+    importlib.reload(boot_mod)
+
+    auth = await _register_and_login(client)
+
+    # Initially empty.
+    resp = await client.get(
+        "/api/v1/connections/mcp-registry", headers=auth["headers"]
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["count"] == 0
+
+    # Install; registry should reflect immediately.
+    await client.post(
+        "/api/v1/connections/extensions/install",
+        headers=auth["headers"],
+        json={
+            "id": "mcp-live-check",
+            "name": "Live Check",
+            "command": "npx",
+            "args": ["-y", "livecheck"],
+        },
+    )
+
+    resp2 = await client.get(
+        "/api/v1/connections/mcp-registry", headers=auth["headers"]
+    )
+    data = resp2.json()["data"]
+    assert data["count"] == 1
+    assert data["entries"][0]["server_key"] == "mcp-live-check"
+
+
+@pytest.mark.asyncio
+async def test_extensions_uninstall_missing_returns_removed_false(
+    client: AsyncClient, tmp_path, monkeypatch
+) -> None:
+    """Removing a non-existent entry is idempotent, not an error."""
+    from pathlib import Path
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    auth = await _register_and_login(client)
+
+    resp = await client.post(
+        "/api/v1/connections/extensions/uninstall",
+        headers=auth["headers"],
+        json={"id": "never-installed"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["removed"] is False
+
+
+@pytest.mark.asyncio
+async def test_extensions_install_legacy_fallback(
+    client: AsyncClient, tmp_path, monkeypatch
+) -> None:
+    """Legacy callers that only send ``id`` still work: the endpoint
+    falls back to ``npx -y <id>`` and records the entry. Ensures the
+    contract remains backward-compatible with older frontends."""
+    import json
+    from pathlib import Path
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    auth = await _register_and_login(client)
+    resp = await client.post(
+        "/api/v1/connections/extensions/install",
+        headers=auth["headers"],
+        json={
+            "id": "mcp-some-legacy",
+            "name": "Legacy MCP",
+        },
+    )
+    assert resp.status_code == 201
+
+    cfg_path = tmp_path / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json"
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    entry = cfg["mcpServers"]["mcp-some-legacy"]
+    assert entry["command"] == "npx"
+    assert entry["args"] == ["-y", "mcp-some-legacy"]

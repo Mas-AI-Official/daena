@@ -91,7 +91,7 @@ class ChatService(BaseService):
         title: str | None = None,
         mode: str = "CMD",
         routing_mode: str = "STANDARD",
-        governance_slider: str = "STANDARD",
+        governance_mode: str = "BALANCED",
         category_id: UUID | None = None,
         department_id: UUID | None = None,
         autopilot: bool = False,
@@ -105,7 +105,7 @@ class ChatService(BaseService):
             title: Optional session title.
             mode: CMD (no side effects) or EXE (tool execution).
             routing_mode: STANDARD, COUNCIL, or QUINTESSENCE.
-            governance_slider: Governance strictness level.
+            governance_mode: Governance mode (UNLEASHED/BALANCED/GOVERNED).
             category_id: Optional category for organization.
             department_id: Optional department scope for department chat.
             autopilot: Enable autonomous continuation mode.
@@ -120,7 +120,7 @@ class ChatService(BaseService):
             title=title,
             mode=mode,
             routing_mode=routing_mode,
-            governance_slider=governance_slider,
+            governance_mode=governance_mode,
             category_id=category_id,
             department_id=department_id,
             autopilot=autopilot,
@@ -241,7 +241,7 @@ class ChatService(BaseService):
         title: str | None = None,
         mode: str | None = None,
         routing_mode: str | None = None,
-        governance_slider: str | None = None,
+        governance_mode: str | None = None,
         is_archived: bool | None = None,
         autopilot: bool | None = None,
         think_mode: bool | None = None,
@@ -256,7 +256,7 @@ class ChatService(BaseService):
             title: New title.
             mode: New execution mode.
             routing_mode: New routing mode.
-            governance_slider: New slider level.
+            governance_mode: New governance mode.
             is_archived: Archive/unarchive.
             autopilot: Enable/disable autonomous continuation.
             think_mode: Enable/disable deep-reasoning routing.
@@ -275,8 +275,8 @@ class ChatService(BaseService):
             session.mode = mode
         if routing_mode is not None:
             session.routing_mode = routing_mode
-        if governance_slider is not None:
-            session.governance_slider = governance_slider
+        if governance_mode is not None:
+            session.governance_mode = governance_mode
         if is_archived is not None:
             session.is_archived = is_archived
         if autopilot is not None:
@@ -785,7 +785,7 @@ class ChatService(BaseService):
             "title": session.title,
             "mode": session.mode,
             "routing_mode": session.routing_mode,
-            "governance_slider": session.governance_slider,
+            "governance_slider": session.governance_mode,
             "autopilot": getattr(session, "autopilot", False) or False,
             "think_mode": getattr(session, "think_mode", False) or False,
             "category_id": str(session.category_id) if session.category_id else None,

@@ -9,6 +9,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   ArrowLeft,
   Wrench,
   Layers,
@@ -28,6 +30,8 @@ import { useModelRegistryStore } from '@/stores/modelRegistryStore'
 import { useUiStore } from '@/stores/uiStore'
 import { MessageList } from '@/components/chat/MessageList'
 import { ChatInput } from '@/components/chat/ChatInput'
+import { GovernanceEventStrip } from '@/components/chat/GovernanceEventStrip'
+import { PeerSignalsPane } from '@/components/chat/PeerSignalsPane'
 import { api } from '@/lib/api'
 import type { DepartmentResponse, ApiResponse } from '@/types/api'
 
@@ -76,9 +80,10 @@ export function DepartmentChatPage() {
 
   const historySidebarOpen = useUiStore((s) => s.historySidebarOpen)
   const toggleHistorySidebar = useUiStore((s) => s.toggleHistorySidebar)
+  const peerSignalsPaneOpen = useUiStore((s) => s.peerSignalsPaneOpen)
+  const togglePeerSignalsPane = useUiStore((s) => s.togglePeerSignalsPane)
   const selectedModel = useUiStore((s) => s.selectedModel)
   const thinkingVisible = useUiStore((s) => s.thinkingVisible)
-  const governanceSlider = useUiStore((s) => s.governanceSlider)
   const registry = useModelRegistryStore((s) => s.registry)
   const fetchRegistry = useModelRegistryStore((s) => s.fetchRegistry)
   const selectedModelAvailable = selectedModel
@@ -127,11 +132,10 @@ export function DepartmentChatPage() {
     if (!sessionId) {
       const store = useChatStore.getState()
       const ui = useUiStore.getState()
-      void store.sendMessageStream(content, effectiveModel, governanceSlider, {
+      void store.sendMessageStream(content, effectiveModel, {
         createSession: {
           mode: ui.chatMode,
           routingMode: ui.routingMode,
-          governanceSlider: ui.governanceSlider,
           departmentId,
           autopilot: ui.autopilotActive,
           thinkMode: ui.thinkingVisible,
@@ -142,7 +146,7 @@ export function DepartmentChatPage() {
       })
       return
     }
-    void sendMessageStream(content, effectiveModel, governanceSlider)
+    void sendMessageStream(content, effectiveModel)
   }
 
   return (
@@ -197,6 +201,13 @@ export function DepartmentChatPage() {
           </div>
         </div>
 
+        {/* Live governance-event strip (SSE-driven). Mirrors the
+            top-chat pattern so department chats also surface
+            approvals, blocks, and VP routing events instantly. */}
+        <div className="px-3 pt-2">
+          <GovernanceEventStrip />
+        </div>
+
         {/* Messages */}
         <MessageList
           messages={messages}
@@ -216,6 +227,36 @@ export function DepartmentChatPage() {
           isStreaming={stream.isStreaming}
           placeholder={`Message ${deptName} department...`}
         />
+      </div>
+
+      {/* Right-side toggle for the peer-signals pane. Matches the
+          history-sidebar collapse pattern so the chat column can
+          reclaim the width when the user isn't tracking peers. */}
+      <button
+        onClick={togglePeerSignalsPane}
+        className="absolute top-3 z-20 p-1 rounded-md text-starlight-500
+                   hover:text-starlight-200 hover:bg-white/5
+                   transition-all cursor-pointer"
+        style={{
+          right: peerSignalsPaneOpen ? 328 : 8,
+          transition: 'right 200ms ease',
+        }}
+        title={peerSignalsPaneOpen ? 'Collapse peer signals' : 'Show peer signals'}
+      >
+        {peerSignalsPaneOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+      </button>
+
+      {/* Peer Signals pane -- shows relevance-filtered events from other
+          departments via this department's BorderAgent. Replaces the
+          deleted DepartmentInbox page with a room-native feed. */}
+      <div
+        className="shrink-0 overflow-hidden"
+        style={{
+          width: peerSignalsPaneOpen ? 320 : 0,
+          transition: 'width 200ms ease',
+        }}
+      >
+        {peerSignalsPaneOpen && <PeerSignalsPane departmentName={deptName} />}
       </div>
     </div>
   )

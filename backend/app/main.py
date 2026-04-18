@@ -12,6 +12,18 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+# Load .env BEFORE any other imports so env vars are available to
+# os.environ.get() calls throughout the app (pydantic-settings only
+# populates declared Settings fields; custom vars like EVILBOB_KEY
+# need to be loaded into the process environment explicitly).
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    if _env_path.is_file():
+        load_dotenv(_env_path, override=False)
+except ImportError:
+    pass  # python-dotenv not installed; rely on process env only
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -20,6 +32,97 @@ from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
+
+
+async def _seed_founder_accounts() -> None:
+    """Ensure founder accounts exist so Masoud can log in.
+
+    Reads ``founder_email``, ``founder_personal_email``, and
+    ``founder_default_password`` from settings. For each configured
+    email, checks if a User row exists; if not, creates a Tenant
+    (if the configured tenant slug is new) + User with role=FOUNDER +
+    terms_accepted_at set (the founder authored the terms).
+
+    Idempotent. Skips silently when any required field is empty -- the
+    repo ships with only emails in .env, not passwords, so operators
+    must opt in by setting FOUNDER_DEFAULT_PASSWORD before restart.
+    """
+    import re
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from app.core.database import async_session_factory
+    from app.core.security import hash_password
+    from app.models.identity import Tenant, User
+
+    settings = get_settings()
+    emails = [e.strip() for e in (
+        settings.founder_email, settings.founder_personal_email,
+    ) if e and e.strip()]
+    if not emails or not settings.founder_default_password:
+        logger.debug(
+            "founder_seed_skipped",
+            reason="FOUNDER_EMAIL/FOUNDER_PERSONAL_EMAIL/FOUNDER_DEFAULT_PASSWORD not all set",
+        )
+        return
+
+    tenant_name = settings.founder_tenant_name
+    slug = re.sub(r"[^a-z0-9-]", "-", tenant_name.lower()).strip("-") or "mas-ai"
+
+    async with async_session_factory() as db:
+        try:
+            # Ensure tenant exists (shared across founder emails so both
+            # accounts land in the same workspace).
+            tenant_row = (await db.execute(
+                select(Tenant).where(Tenant.slug == slug)
+            )).scalar_one_or_none()
+            if tenant_row is None:
+                tenant_row = Tenant(name=tenant_name, slug=slug)
+                db.add(tenant_row)
+                await db.flush()
+
+                # Seed departments for the new founder tenant right away.
+                from app.services.agents import AgentService
+                svc = AgentService(db)
+                await svc.seed_defaults(tenant_id=tenant_row.id)
+
+            seeded_users: list[str] = []
+            for email in emails:
+                existing = (await db.execute(
+                    select(User).where(User.email == email)
+                )).scalar_one_or_none()
+                if existing is not None:
+                    continue
+                user = User(
+                    tenant_id=tenant_row.id,
+                    email=email,
+                    password_hash=hash_password(settings.founder_default_password),
+                    display_name="Masoud Masoori",
+                    role="FOUNDER",
+                    email_verified=True,
+                    is_active=True,
+                    terms_accepted_at=datetime.now(UTC),
+                    terms_version="2026-03-22",
+                )
+                db.add(user)
+                seeded_users.append(email)
+
+            if seeded_users:
+                await db.commit()
+                logger.info(
+                    "founder_accounts_seeded",
+                    tenant=tenant_name,
+                    emails=seeded_users,
+                )
+            else:
+                logger.debug(
+                    "founder_accounts_already_exist",
+                    emails=emails,
+                )
+        except Exception as exc:
+            await db.rollback()
+            logger.warning("founder_seed_failed", error=str(exc))
 
 
 async def _seed_departments_for_all_tenants() -> None:
@@ -167,7 +270,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 except Exception:
                     pass  # Column already exists
 
+            # Migrate chat_sessions: add columns added after initial schema
+            _chat_session_cols = {
+                "governance_mode": "VARCHAR(20) DEFAULT 'BALANCED'",
+            }
+            for col_name, col_type in _chat_session_cols.items():
+                try:
+                    await conn.execute(
+                        _text(f"ALTER TABLE chat_sessions ADD COLUMN {col_name} {col_type}")
+                    )
+                except Exception:
+                    pass  # Column already exists
+
         logger.info("dev_tables_created", ms=int((_time.perf_counter() - _ts) * 1000))
+
+        # Auto-seed founder accounts FIRST so they exist before dept
+        # seeding runs (dept seed touches tenants; founder seed may
+        # create the MAS-AI tenant). Idempotent + skips silently if
+        # FOUNDER_DEFAULT_PASSWORD is unset in .env.
+        _ts = _time.perf_counter()
+        await _seed_founder_accounts()
+        logger.info("founder_seed_complete", ms=int((_time.perf_counter() - _ts) * 1000))
 
         # Auto-seed 10 departments for any tenant missing them
         _ts = _time.perf_counter()
@@ -278,6 +401,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "runtime_registry_init_failed",
             error=str(rt_exc),
             impact="CLI runtimes unavailable until next health check",
+        )
+
+    # --- MCP Bootstrap (Option A): spawn-on-first-call adapters for
+    # every MCP entry in claude_desktop_config.json. This closes the
+    # gap between "install via Plugins tab" and "chat can actually
+    # invoke the MCP's tools". Fail-safe -- a broken entry never
+    # takes startup down. ---
+    _ts = _time.perf_counter()
+    try:
+        from app.services.mcp_bootstrap import bootstrap_installed_mcps
+
+        registry = await bootstrap_installed_mcps()
+        logger.info(
+            "mcp_bootstrap_ready",
+            count=len(registry),
+            ms=int((_time.perf_counter() - _ts) * 1000),
+        )
+    except Exception as mcp_exc:
+        logger.warning(
+            "mcp_bootstrap_failed",
+            error=str(mcp_exc),
+            impact="Installed MCPs invisible to chat until next startup",
         )
 
     # --- Dream Engine: autonomous memory consolidation ---
@@ -435,6 +580,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def generic_error_handler(request: Request, exc: Exception) -> JSONResponse:
         """Catch-all: never leak internal error messages to users."""
+        import traceback as _tb
         from app.core.logging import get_logger
         _log = get_logger("error_handler")
         _log.error(
@@ -443,6 +589,7 @@ def create_app() -> FastAPI:
             method=request.method,
             error_type=type(exc).__name__,
             error=str(exc),
+            traceback=_tb.format_exc(),
         )
         return JSONResponse(
             status_code=500,

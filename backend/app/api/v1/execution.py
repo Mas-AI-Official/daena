@@ -152,14 +152,20 @@ async def list_tasks(
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
     """List background tasks for the current user."""
-    result = await service.list_tasks(
-        user_id=user.id,
-        tenant_id=user.tenant_id,
-        status=status,
-        page=page,
-        page_size=page_size,
-    )
-    return {"success": True, "data": result.data, "pagination": result.pagination}
+    import logging as _logging
+    _log = _logging.getLogger("execution.debug")
+    try:
+        result = await service.list_tasks(
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            status=status,
+            page=page,
+            page_size=page_size,
+        )
+        return {"success": True, "data": result.data, "pagination": result.pagination}
+    except Exception as exc:
+        _log.exception("list_tasks failed: %s", exc)
+        raise
 
 
 @router.get("/tasks/{task_id}")

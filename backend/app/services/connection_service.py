@@ -287,7 +287,14 @@ class ConnectionService(BaseService):
         page: int = 1,
         page_size: int = 20,
     ):
-        """List a user's connector instances."""
+        """List a user's connector instances.
+
+        Session 11: post-processes each item to lift ``account_identity``
+        out of the credentials JSONB and onto the top-level response so
+        the UI can render "Connected as masoud.masoori@mas-ai.co"
+        without having to read credentials (which are encrypted + never
+        returned on list calls).
+        """
         from app.schemas.connections import ConnectorInstanceResponse
 
         stmt = (
@@ -299,10 +306,35 @@ class ConnectionService(BaseService):
             stmt = stmt.where(ConnectorInstance.status == status)
         stmt = stmt.order_by(ConnectorInstance.created_at.desc())
 
-        return await self._paginate(
+        result = await self._paginate(
             stmt, ConnectorInstance, page, page_size,
             response_schema=ConnectorInstanceResponse,
         )
+
+        # Post-process: extract account_identity from each instance's
+        # credentials JSONB. We look up the ORM rows again (cheap, same
+        # page size) so we can read the credentials field without
+        # re-running the whole query.
+        instance_ids = [UUID(item["id"]) for item in result.data if "id" in item]
+        if instance_ids:
+            id_stmt = select(ConnectorInstance).where(ConnectorInstance.id.in_(instance_ids))
+            rows = (await self.db.execute(id_stmt)).scalars().all()
+            identity_by_id = {}
+            for row in rows:
+                creds = row.credentials
+                if isinstance(creds, str):
+                    try:
+                        creds = decrypt_dict(creds)
+                    except Exception:
+                        creds = None
+                if isinstance(creds, dict):
+                    identity_by_id[str(row.id)] = creds.get("account_identity", "") or ""
+            for item in result.data:
+                item_id = item.get("id")
+                if item_id and item_id in identity_by_id:
+                    item["account_identity"] = identity_by_id[item_id]
+
+        return result
 
     async def get_credentials(
         self, instance_id: UUID, tenant_id: UUID

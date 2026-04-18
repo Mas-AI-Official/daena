@@ -1,7 +1,6 @@
 /**
  * AccountApiKeys -- API key management for external access to Daena.
  * Create, list (masked), copy, and revoke API keys.
- * Equivalent to console.perplexity.ai / API Platform.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Code, Plus, Key, ExternalLink, Copy, Trash2, Check, AlertTriangle, Eye, EyeOff } from 'lucide-react'

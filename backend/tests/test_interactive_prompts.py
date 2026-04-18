@@ -391,3 +391,152 @@ class TestPromptsAPI:
 
     def test_respond_to_nonexistent(self, manager):
         assert manager.respond("fake-id", {"selected": "yes"}) is False
+
+
+# ── Border Agent: department.needs_input emit ──
+
+
+class TestNeedsInputEmit:
+    """Opt-in emit path: when a prompt carries ``_tenant_id`` +
+    ``_department`` in context, InteractivePromptManager fires a
+    ``department.needs_input`` BorderAgent signal so peer rooms
+    (Product, Security Operations) see that an agent is blocked
+    waiting on the founder.
+
+    Protects two invariants:
+      1. With context -> signal reaches a peer listener
+      2. Without context -> no signal (zero-touch for legacy callers)
+    """
+
+    @pytest.mark.asyncio
+    async def test_emits_when_context_present(self, manager) -> None:
+        import uuid as _uuid
+
+        from app.services.departments.border_agent import (
+            DepartmentEvent,
+            get_border_agent,
+            reset_registry,
+        )
+
+        await reset_registry()
+        tenant_id = _uuid.uuid4()
+        # Product listens for department.needs_input per
+        # DEPARTMENT_RELEVANCE, so use it as the peer inspector.
+        product = await get_border_agent(
+            tenant_id=tenant_id, department="Product"
+        )
+        product.clear()
+
+        # Fire a prompt with the opt-in keys. Don't actually wait for
+        # a response (ask_choice would block on asyncio.Event); mimic
+        # by calling the chokepoint directly with a synthetic prompt.
+        from app.services.agent_core.interactive_prompts import (
+            InteractivePrompt,
+            PromptType,
+        )
+
+        prompt = InteractivePrompt(
+            id="test-emit-1",
+            type=PromptType.CHOICE,
+            title="Confirm destructive action",
+            message="ok?",
+            context={
+                "_tenant_id": str(tenant_id),
+                "_department": "Sales",
+            },
+        )
+        await manager._maybe_emit_needs_input(prompt)
+
+        types = [s.get("event_type") for s in product.recent_signals(5)]
+        assert DepartmentEvent.NEEDS_INPUT in types, (
+            f"Product should receive needs_input, got: {types}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_ask_confirm_threads_context(self, manager) -> None:
+        """ask_confirm now accepts a context kwarg -- AgentLoop's
+        pause-resume prompt relies on this to emit needs_input. Pin
+        the signature so a future "cleanup" doesn't silently drop it.
+        """
+        import uuid as _uuid
+
+        from app.services.departments.border_agent import (
+            DepartmentEvent,
+            get_border_agent,
+            reset_registry,
+        )
+
+        await reset_registry()
+        tenant_id = _uuid.uuid4()
+        product = await get_border_agent(
+            tenant_id=tenant_id, department="Product"
+        )
+        product.clear()
+
+        # Kick off ask_confirm in a background task; respond to it
+        # immediately so the outer coroutine returns. We only care
+        # about the emit side-effect, not the final yes/no value.
+        import asyncio
+
+        async def _runner() -> None:
+            await manager.ask_confirm(
+                "Resume?",
+                "1 step remaining",
+                context={
+                    "_tenant_id": str(tenant_id),
+                    "_department": "Sales",
+                },
+            )
+
+        task = asyncio.create_task(_runner())
+        # Give the emit path a tick to fire. get_pending returns
+        # serialized dicts, so extract IDs by key.
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            pending_ids = [p["id"] for p in manager.get_pending()]
+            if pending_ids:
+                manager.respond(pending_ids[0], {"selected": "yes"})
+                break
+        await task
+
+        types = [s.get("event_type") for s in product.recent_signals(5)]
+        assert DepartmentEvent.NEEDS_INPUT in types, (
+            f"ask_confirm with context should emit needs_input, got: "
+            f"{types}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_emit_when_context_missing(self, manager) -> None:
+        """Legacy callers without tenant/department context see zero
+        behavior change -- the existing prompts (vuln_scanner,
+        MCPAgent, etc.) keep working untouched."""
+        import uuid as _uuid
+
+        from app.services.departments.border_agent import (
+            get_border_agent,
+            reset_registry,
+        )
+
+        await reset_registry()
+        tenant_id = _uuid.uuid4()
+        product = await get_border_agent(
+            tenant_id=tenant_id, department="Product"
+        )
+        product.clear()
+
+        from app.services.agent_core.interactive_prompts import (
+            InteractivePrompt,
+            PromptType,
+        )
+
+        # No _tenant_id / _department keys -- classic call shape.
+        prompt = InteractivePrompt(
+            id="test-emit-2",
+            type=PromptType.CONFIRM,
+            title="untagged",
+            message="?",
+            context={"some_legacy_key": "value"},
+        )
+        await manager._maybe_emit_needs_input(prompt)
+
+        assert product.recent_signals(5) == []

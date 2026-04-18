@@ -45,6 +45,28 @@ class SettingsOverview(BaseModel):
     enable_daenabot: bool
 
 
+class OAuthCredentialsPayload(BaseModel):
+    """Body of POST /settings/oauth-credentials.
+
+    Accepted from the Connections > Setup modal so operators can paste
+    their own OAuth client IDs without editing .env or restarting.
+    Values are written to the runtime override store (gitignored JSON
+    at backend/.daena_oauth_overrides.json, chmod 0600 on POSIX).
+    """
+    connector_id: str = Field(..., description="Connector id, e.g. google, github, notion")
+    client_id_field: str = Field(..., description="Settings field name, e.g. google_client_id")
+    client_id: str = Field(..., min_length=4)
+    client_secret_field: str = Field(..., description="e.g. google_client_secret")
+    client_secret: str = Field(..., min_length=4)
+
+
+class OAuthCredentialsResult(BaseModel):
+    """Result after a successful credentials save."""
+    saved: bool
+    connector_id: str
+    fields_saved: list[str]
+
+
 # ── Endpoints ──────────────────────────────────────────────────────
 
 
@@ -105,16 +127,17 @@ class UserPreferencesResponse(BaseModel):
     sidebar_collapsed: bool = False
     default_chat_mode: str = "CMD"
     default_routing_mode: str = "STANDARD"
-    default_governance_slider: str = "STANDARD"
+    default_governance_mode: str = "GOVERNED"
+    default_governance_slider: str = "GOVERNED"  # Deprecated: mirrors default_governance_mode
     default_runtime: str = "auto"
 
 
 # Keys stored in User.settings JSONB for UI preferences
 _UI_PREF_KEYS = (
     "dark_mode", "conversational_mode", "sidebar_collapsed",
-    "default_chat_mode", "default_routing_mode", "default_governance_slider", "default_runtime",
+    "default_chat_mode", "default_routing_mode", "default_governance_mode", "default_governance_slider", "default_runtime",
     "local_first_routing", "cost_aware_routing",
-    "autopilot_active", "persist_thinking", "deep_research", "auto_read_responses",
+    "autopilot_active", "persist_thinking", "auto_read_responses",
     "debug_mode", "verbose_logging",
     "monthly_budget", "over_budget_action",
     # Privacy
@@ -136,13 +159,13 @@ _UI_PREF_DEFAULTS: dict[str, object] = {
     "sidebar_collapsed": False,
     "default_chat_mode": "CMD",
     "default_routing_mode": "STANDARD",
-    "default_governance_slider": "STANDARD",
+    "default_governance_mode": "GOVERNED",
+    "default_governance_slider": "GOVERNED",  # Deprecated: mirrors default_governance_mode
     "default_runtime": "auto",
     "local_first_routing": True,
     "cost_aware_routing": True,
     "autopilot_active": False,
     "persist_thinking": True,
-    "deep_research": False,
     "auto_read_responses": False,
     "debug_mode": False,
     "verbose_logging": False,
@@ -189,13 +212,17 @@ class UserPreferencesUpdate(BaseModel):
     sidebar_collapsed: bool | None = None
     default_chat_mode: str | None = Field(None, pattern="^(CMD|EXE)$")
     default_routing_mode: str | None = Field(None, pattern="^(STANDARD|COUNCIL|QUINTESSENCE)$")
-    default_governance_slider: str | None = Field(None, pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID)$")
+    default_governance_mode: str | None = Field(None, pattern="^(UNLEASHED|BALANCED|GOVERNED)$")
+    default_governance_slider: str | None = Field(
+        None,
+        pattern="^(YOLO|LIGHT|STANDARD|STRICT|PARANOID|UNLEASHED|BALANCED|GOVERNED)$",
+        description="Deprecated: use default_governance_mode instead. Accepts both old and new values.",
+    )
     default_runtime: str | None = None
     local_first_routing: bool | None = None
     cost_aware_routing: bool | None = None
     autopilot_active: bool | None = None
     persist_thinking: bool | None = None
-    deep_research: bool | None = None
     auto_read_responses: bool | None = None
     debug_mode: bool | None = None
     verbose_logging: bool | None = None
@@ -223,11 +250,11 @@ class UserPreferencesUpdate(BaseModel):
     budget_alert_threshold: int | None = Field(None, ge=0, le=100)
 
 
-@router.get("/user", response_model=UserPreferencesResponse)
+@router.get("/user")
 async def get_user_preferences(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> UserPreferencesResponse:
+) -> dict:
     """Return the current user's editable preferences."""
     # Fetch preferred_model from the User.settings JSONB column
     from sqlalchemy import select
@@ -254,23 +281,39 @@ async def get_user_preferences(
     # Extract UI preferences from settings JSONB
     ui_prefs = {k: user_settings.get(k, _UI_PREF_DEFAULTS[k]) if isinstance(user_settings, dict) else _UI_PREF_DEFAULTS[k] for k in _UI_PREF_KEYS}
 
-    return UserPreferencesResponse(
-        display_name=db_display_name,
-        email=db_email,
+    prefs = UserPreferencesResponse(
+        display_name=db_display_name or user.display_name or "",
+        email=db_email or user.email or "",
         role=user.role,
         preferred_model=preferred_model,
         anti_slop_mode=anti_slop_mode,
         **ui_prefs,
     )
+    return {"success": True, "data": prefs.model_dump()}
 
 
-@router.put("/user", response_model=UserPreferencesResponse)
+@router.put("/user")
 async def update_user_preferences(
     body: UserPreferencesUpdate,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> UserPreferencesResponse:
+) -> dict:
     """Update user preferences (display name, preferred model, etc.)."""
+    import logging as _logging
+    _log = _logging.getLogger("settings.debug")
+    try:
+        prefs = await _update_user_preferences_impl(body, user, db)
+        return {"success": True, "data": prefs.model_dump()}
+    except Exception as exc:
+        _log.exception("settings PUT failed: %s", exc)
+        raise
+
+
+async def _update_user_preferences_impl(
+    body: UserPreferencesUpdate,
+    user: CurrentUser,
+    db: AsyncSession,
+) -> UserPreferencesResponse:
     from sqlalchemy import select
 
     from app.models.identity import User
@@ -299,9 +342,13 @@ async def update_user_preferences(
                 current_settings[key] = val
 
         db_user.settings = current_settings
+        # Signal SQLAlchemy that JSONB column changed (SQLite doesn't
+        # auto-detect in-place JSONB mutations via change tracking)
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(db_user, "settings")
         await db.flush()
 
-        user_settings = db_user.settings or {}
+        user_settings = current_settings  # Use the dict we just wrote, not the ORM reload
         preferred_model = user_settings.get("preferred_model") if isinstance(user_settings, dict) else None
         anti_slop_mode = user_settings.get("anti_slop_mode", True) if isinstance(user_settings, dict) else True
     else:
@@ -312,9 +359,26 @@ async def update_user_preferences(
     # Extract UI preferences
     ui_prefs = {k: user_settings.get(k, _UI_PREF_DEFAULTS[k]) if isinstance(user_settings, dict) else _UI_PREF_DEFAULTS[k] for k in _UI_PREF_KEYS}
 
+    # Use db_user's display_name (updated or existing), falling back to
+    # the JWT token's value, then empty string.  Previous code used
+    # body.display_name which is None when the frontend only sends a
+    # single UI preference key -- causing a 500 because the response
+    # model requires a str, not None.
+    _display_name = (
+        (db_user.display_name if db_user is not None else None)
+        or body.display_name
+        or user.display_name
+        or ""
+    )
+    _email = (
+        (db_user.email if db_user is not None else None)
+        or user.email
+        or ""
+    )
+
     return UserPreferencesResponse(
-        display_name=body.display_name or user.display_name,
-        email=user.email,
+        display_name=_display_name,
+        email=_email,
         role=user.role,
         preferred_model=preferred_model,
         anti_slop_mode=anti_slop_mode,
@@ -329,11 +393,13 @@ async def export_user_data(
 ) -> dict:
     """Export user profile/settings payload as JSON data."""
     prefs = await get_user_preferences(user=user, db=db)
+    # get_user_preferences returns a plain dict (not a Pydantic
+    # model); pass it through directly.
     return {
         "success": True,
         "data": {
             "exported_at": datetime.now(timezone.utc).isoformat(),
-            "user": prefs.model_dump(),
+            "user": prefs,
         },
     }
 
@@ -366,3 +432,28 @@ async def request_user_data_deletion(
             "requested_at": requested_at,
         },
     }
+
+
+@router.post("/oauth-credentials", response_model=OAuthCredentialsResult)
+async def save_oauth_credentials(
+    payload: OAuthCredentialsPayload,
+    user: CurrentUser = Depends(get_current_user),
+) -> OAuthCredentialsResult:
+    """Persist OAuth client credentials for a connector.
+
+    Session 10: called by the inline setup modal on Connections when a
+    user clicks "Connect with Google" but the broker credentials are
+    missing. Writes to the runtime override store so the next call to
+    GET /connectors/{id}/oauth/authorize succeeds without a restart.
+    """
+    from app.services.integrations.oauth_credentials_store import set_overrides
+
+    await set_overrides({
+        payload.client_id_field: payload.client_id,
+        payload.client_secret_field: payload.client_secret,
+    })
+    return OAuthCredentialsResult(
+        saved=True,
+        connector_id=payload.connector_id,
+        fields_saved=[payload.client_id_field, payload.client_secret_field],
+    )

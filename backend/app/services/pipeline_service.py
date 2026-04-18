@@ -218,6 +218,140 @@ class PipelineService:
             owner=project.owner_department,
         )
 
+        # Border Agent emit: broadcast stage-transition events to peer
+        # departments. Mapping uses the fact that the stage the project
+        # JUST ENTERED tells us the semantic event -- entering CONTRACT
+        # means Legal.contract_signed, entering CLOSED means Sales closed
+        # the deal. Fail-safe: any emit error is logged debug and never
+        # blocks the originating operation.
+        try:
+            from app.services.departments.border_agent import (
+                DepartmentEvent,
+                get_border_agent,
+            )
+
+            _STAGE_TO_EVENT = {
+                PipelineStage.CONTRACT: (
+                    "Legal & Compliance",
+                    DepartmentEvent.CONTRACT_SIGNED,
+                ),
+                PipelineStage.CLOSED: ("Sales", DepartmentEvent.CLOSED_DEAL),
+            }
+            mapping = _STAGE_TO_EVENT.get(next_stage)
+            if mapping is not None:
+                emit_dept, event_type = mapping
+                ba = await get_border_agent(tenant_id=tenant_id, department=emit_dept)
+                await ba.emit(
+                    event_type,
+                    payload={
+                        "project_id": str(project_id),
+                        "task_summary": (
+                            f"{emit_dept} advanced project to {next_stage}"
+                        ),
+                        "from_stage": current,
+                        "to_stage": next_stage,
+                        "client": project.client_name,
+                        "budget_usd": project.budget_usd,
+                    },
+                )
+        except Exception as exc:  # pragma: no cover - fail-safe
+            logger.debug("pipeline.stage_advanced.emit_failed", error=str(exc))
+
+        return project.to_dict()
+
+    async def mark_lost(
+        self,
+        project_id: UUID,
+        tenant_id: UUID,
+        *,
+        reason: str | None = None,
+    ) -> dict:
+        """Mark a project as lost from its current stage.
+
+        Lost deals stay at whatever stage they reached (their stage
+        timestamp is the historical record), but get lost_at + optional
+        lost_reason stamped so downstream reporting can separate won
+        from lost. Emits ``Sales.lost_deal`` so Marketing (retention
+        lessons) and Research (pattern detection) see it in their
+        PeerSignalsPane feed.
+
+        Args:
+            project_id: Project UUID.
+            tenant_id: Tenant scope.
+            reason: Optional free-form loss reason (under 200 chars).
+
+        Returns:
+            Updated project dict.
+
+        Raises:
+            ValueError: If project not found or already CLOSED.
+        """
+        stmt = select(ProjectPipeline).where(
+            ProjectPipeline.id == project_id,
+            ProjectPipeline.tenant_id == tenant_id,
+        )
+        result = await self.db.execute(stmt)
+        project = result.scalar_one_or_none()
+        if not project:
+            raise ValueError(f"Project {project_id} not found")
+        if project.stage == PipelineStage.CLOSED:
+            raise ValueError("Project is already CLOSED; cannot mark as lost")
+        if project.lost_at is not None:
+            raise ValueError("Project is already marked as lost")
+
+        now = datetime.utcnow()
+        project.lost_at = now
+        if reason:
+            project.lost_reason = reason[:200]
+
+        # Breadcrumb on the notes field so the history is readable in
+        # the room room without pulling the lost_at column directly.
+        stage_at_loss = project.stage
+        existing = project.notes or ""
+        marker = f"[{now.isoformat()}] MARKED LOST at stage {stage_at_loss}"
+        if reason:
+            marker += f": {reason}"
+        project.notes = f"{existing}\n{marker}".strip()
+
+        await self.db.flush()
+        await self.db.refresh(project)
+
+        logger.info(
+            "pipeline.marked_lost",
+            project_id=str(project_id),
+            stage_at_loss=stage_at_loss,
+            reason=reason,
+        )
+
+        # Border Agent emit: Sales.lost_deal so peer departments
+        # (Marketing, Research) can pull retention insights. Fail-safe
+        # so an emit error never rolls back the loss record.
+        try:
+            from app.services.departments.border_agent import (
+                DepartmentEvent,
+                get_border_agent,
+            )
+
+            ba = await get_border_agent(
+                tenant_id=tenant_id, department="Sales"
+            )
+            await ba.emit(
+                DepartmentEvent.LOST_DEAL,
+                payload={
+                    "task_summary": (
+                        f"Lost deal at {stage_at_loss}"
+                        + (f": {reason}" if reason else "")
+                    ),
+                    "project_id": str(project_id),
+                    "stage_at_loss": stage_at_loss,
+                    "reason": reason,
+                    "client": project.client_name,
+                    "budget_usd": project.budget_usd,
+                },
+            )
+        except Exception as exc:  # pragma: no cover - fail-safe
+            logger.debug("pipeline.marked_lost.emit_failed", error=str(exc))
+
         return project.to_dict()
 
     async def update_scoring(

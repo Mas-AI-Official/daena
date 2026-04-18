@@ -101,7 +101,7 @@ export function ThinkingProcess({
   governanceTier,
   steps,
 }: ThinkingProcessProps) {
-  const [manualCollapse, setManualCollapse] = useState(false)
+  const [userExpanded, setUserExpanded] = useState(false)
   const stageTimers = useRef<Map<string, number>>(new Map())
 
   // Track when each stage becomes active
@@ -120,8 +120,8 @@ export function ThinkingProcess({
   const totalCount = steps?.length || 0
   const hasSteps = totalCount > 0
 
-  // Auto-expand while active, collapse when done (unless user manually toggled)
-  const expanded = manualCollapse ? false : isActive ? true : false
+  // Collapsed by default. User clicks to expand/collapse.
+  const expanded = userExpanded
 
   return (
     <motion.div
@@ -133,7 +133,7 @@ export function ThinkingProcess({
     >
       {/* Header line: click to toggle */}
       <button
-        onClick={() => setManualCollapse(!manualCollapse)}
+        onClick={() => setUserExpanded(!userExpanded)}
         className="group flex items-center gap-2 py-1 text-[11px] w-full text-left cursor-pointer"
       >
         {isActive ? (

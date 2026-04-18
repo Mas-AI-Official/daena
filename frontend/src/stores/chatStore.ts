@@ -12,7 +12,6 @@ import type {
   ApiResponse,
   ChatMode,
   RoutingMode,
-  GovernanceSlider,
   UpdateSessionRequest,
   DaenaBotActivityEvent,
 } from '@/types/api'
@@ -48,6 +47,51 @@ interface ToolCallEvent {
   status: 'calling' | 'done' | 'error'
 }
 
+/**
+ * Governance event surfaced during a stream.
+ *
+ * The orchestrator emits four kinds of governance events:
+ *
+ * - ``governance_approval_pending`` -- a tool wants to run but the
+ *   permission resolver said REQUEST_INPUT. The row is already in
+ *   ``/governance/approvals`` (backend writes it synchronously); the
+ *   inline card gives the operator a one-click approve/reject.
+ * - ``tool_blocked`` -- BLOCKed by per-tool pref or fail-closed guard.
+ *   Shown as a red notice with the reason, no action needed.
+ * - ``vp_plan`` / ``vp_subtasks_created`` -- informational. Surfaced
+ *   as a governance toast so the founder sees routing activity.
+ */
+export type GovernanceEvent =
+  | {
+      kind: 'approval_pending'
+      id: string          // unique event id (for dedupe + remove-after-decision)
+      tool: string
+      approvalId: string | null
+      reason?: string
+      riskTier?: number
+    }
+  | {
+      kind: 'tool_blocked'
+      id: string
+      tool: string
+      reason?: string
+      riskTier?: number
+    }
+  | {
+      kind: 'vp_plan'
+      id: string
+      routingMode: string
+      departments: string[]
+      notes?: string
+    }
+  | {
+      kind: 'vp_subtasks_created'
+      id: string
+      count: number
+      taskIds: string[]
+      departments: string[]
+    }
+
 interface StreamState {
   isStreaming: boolean
   thinkingContent: string
@@ -63,7 +107,6 @@ interface StreamState {
 interface StreamSessionInit {
   mode: ChatMode
   routingMode?: RoutingMode
-  governanceSlider?: GovernanceSlider
   departmentId?: string
   autopilot?: boolean
   thinkMode?: boolean
@@ -98,6 +141,14 @@ interface ChatState {
   // Retry -- stores last failed message content so user can re-send
   lastFailedMessage: string | null
 
+  /**
+   * Governance events surfaced during streams. Persists across stream
+   * lifecycle (unlike ``stream.*`` which resets on finalize/cancel)
+   * so an approval prompt or block notice stays visible until the
+   * operator acts on it.
+   */
+  governanceEvents: GovernanceEvent[]
+
   // Internal cache tracking (not for external use)
   _sessionsLastFetched: number
 
@@ -106,7 +157,6 @@ interface ChatState {
   createSession: (opts: {
     mode: ChatMode
     routingMode?: RoutingMode
-    governanceSlider?: GovernanceSlider
     departmentId?: string
     autopilot?: boolean
     thinkMode?: boolean
@@ -119,13 +169,21 @@ interface ChatState {
   sendMessageStream: (
     content: string,
     preferredModel?: string | null,
-    governanceSlider?: string | null,
     options?: SendMessageStreamOptions,
   ) => Promise<void>
   editAndRegenerate: (messageId: string, newContent: string) => Promise<void>
   regenerateLastResponse: (assistantMessageId: string) => Promise<void>
   retryLastMessage: () => Promise<void>
   clearError: () => void
+
+  // Governance event lifecycle
+  addGovernanceEvent: (event: GovernanceEvent) => void
+  dismissGovernanceEvent: (id: string) => void
+  resolveApproval: (
+    approvalId: string,
+    decision: 'APPROVED' | 'REJECTED',
+    reason?: string,
+  ) => Promise<void>
 
   // Streaming controls
   startStream: () => void
@@ -156,6 +214,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   error: null,
   lastFailedMessage: null,
+  governanceEvents: [],
 
   // ── Fetch all sessions (with 30s TTL cache to avoid re-fetch on route changes) ──
   _sessionsLastFetched: 0,
@@ -170,21 +229,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const { data } = await api.get<ApiResponse<SessionResponse[]>>('/chat/sessions?include_archived=true')
       set({ sessions: data.data, sessionsLoading: false, _sessionsLastFetched: now })
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to load sessions'
-      toast.error(msg)
+    } catch {
+      // Silent: background fetch -- global interceptor handles 500s
       set({ sessionsLoading: false })
     }
   },
 
   // ── Create new session ──
-  createSession: async ({ mode, routingMode = 'STANDARD', governanceSlider = 'STANDARD', departmentId, autopilot = false, thinkMode = false }) => {
+  createSession: async ({ mode, routingMode = 'STANDARD', departmentId, autopilot = false, thinkMode = false }) => {
     set({ error: null })
     try {
       const body: Record<string, unknown> = {
         mode,
         routing_mode: routingMode,
-        governance_slider: governanceSlider,
         autopilot,
         think_mode: thinkMode,
       }
@@ -257,9 +314,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         `/chat/sessions/${sessionId}/messages`,
       )
       set({ messages: data.data, messagesLoading: false })
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to load messages'
-      toast.error(msg)
+    } catch {
+      // Silent: background fetch
       set({ messagesLoading: false })
     }
   },
@@ -341,7 +397,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await sendMessageStream(
         newContent,
         ui.selectedModel,
-        ui.governanceSlider,
       )
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Edit failed')
@@ -380,7 +435,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   // ── Send a message (streaming — SSE, tokens appear in real-time) ──
-  sendMessageStream: async (content, preferredModel, governanceSlider, options) => {
+  sendMessageStream: async (content, preferredModel, options) => {
     const { activeSessionId, startStream, appendContent, finalizeStream, cancelStream } = get()
     const createSession = options?.createSession
     const creatingSession = !activeSessionId && Boolean(createSession)
@@ -421,12 +476,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const body: Record<string, unknown> = { content, role: 'USER' }
       if (activeSessionId) body.session_id = activeSessionId
       if (preferredModel) body.preferred_model = preferredModel
-      const resolvedGovernanceSlider =
-        governanceSlider ?? createSession?.governanceSlider ?? null
-      if (resolvedGovernanceSlider) body.governance_slider = resolvedGovernanceSlider
       // Always send current UI state on EVERY request so routing/action mode
       // changes mid-session are respected (not just on session creation).
       const uiState = useUiStore.getState()
+      body.governance_mode = uiState.governanceMode ?? 'GOVERNED'
       body.routing_mode = createSession?.routingMode ?? uiState.routingMode ?? 'STANDARD'
       body.mode = createSession?.mode ?? uiState.chatMode ?? 'CMD'
       body.autopilot = createSession?.autopilot ?? uiState.autopilotActive ?? false
@@ -832,6 +885,85 @@ export const useChatStore = create<ChatState>((set, get) => ({
               if (content) {
                 appendContent(content)
               }
+            } else if (event.type === 'governance_approval_pending') {
+              // Stage 8.5 guard routed a tool to REQUEST_INPUT. A
+              // GoaRequest + PendingApproval is already in the DB;
+              // surface the inline card so the operator can act
+              // without navigating away, and fire a governance toast
+              // so it's also visible from other pages.
+              const approvalId = event.approval_id || null
+              const toolName = event.tool || 'unknown tool'
+              const reason = event.reason || 'Approval required.'
+              get().addGovernanceEvent({
+                kind: 'approval_pending',
+                id: `approval-${approvalId || toolName}-${Date.now()}`,
+                tool: String(toolName),
+                approvalId: approvalId ? String(approvalId) : null,
+                reason: String(reason),
+                riskTier:
+                  typeof event.risk_tier === 'number'
+                    ? event.risk_tier
+                    : undefined,
+              })
+              toast.governance(`Approval needed: ${toolName}`)
+            } else if (event.type === 'tool_blocked') {
+              // Permission guard refused. Show the reason inline
+              // (red banner) so the operator knows WHY the tool
+              // didn't run -- silent failures break trust.
+              const toolName = event.tool || 'unknown tool'
+              const reason = event.reason || 'Tool blocked by governance.'
+              get().addGovernanceEvent({
+                kind: 'tool_blocked',
+                id: `blocked-${toolName}-${Date.now()}`,
+                tool: String(toolName),
+                reason: String(reason),
+                riskTier:
+                  typeof event.risk_tier === 'number'
+                    ? event.risk_tier
+                    : undefined,
+              })
+              toast.governance(`Tool blocked: ${toolName}`)
+            } else if (event.type === 'daena_vp_plan') {
+              // Multi-dept routing hint from the VP. Informational
+              // toast so Masoud can see Marketing + Finance + Legal
+              // light up when he asks "launch Q2 campaign."
+              const departments = Array.isArray(event.departments)
+                ? (event.departments as string[])
+                : []
+              if (departments.length > 1) {
+                get().addGovernanceEvent({
+                  kind: 'vp_plan',
+                  id: `vp-plan-${Date.now()}`,
+                  routingMode: String(event.routing_mode || 'rule'),
+                  departments,
+                  notes: event.notes ? String(event.notes) : undefined,
+                })
+                toast.governance(
+                  `VP routed to: ${departments.join(' + ')}`,
+                )
+              }
+            } else if (event.type === 'vp_subtasks_created') {
+              // Stage 2.85 materialized Task rows. Toast with "View
+              // tasks" so the founder can jump to /tasks directly.
+              const count = Number(event.count || 0)
+              const taskIds = Array.isArray(event.task_ids)
+                ? (event.task_ids as string[])
+                : []
+              const departments = Array.isArray(event.departments)
+                ? (event.departments as string[])
+                : []
+              if (count > 0) {
+                get().addGovernanceEvent({
+                  kind: 'vp_subtasks_created',
+                  id: `vp-tasks-${Date.now()}`,
+                  count,
+                  taskIds,
+                  departments,
+                })
+                toast.governance(
+                  `${count} task${count === 1 ? '' : 's'} created. Check /tasks.`,
+                )
+              }
             } else if (event.type === 'interactive_prompt') {
               // Agent is pausing for user input -- route to UI store
               const uiStore = await import('@/stores/uiStore')
@@ -870,6 +1002,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  // ── Governance events ────────────────────────────────────────
+  addGovernanceEvent: (event) =>
+    set((s) => {
+      // Dedupe by id so a re-emitted event doesn't double up.
+      if (s.governanceEvents.some((e) => e.id === event.id)) return s
+      // Cap at 8 most-recent events so the card list doesn't grow
+      // unbounded on a long streaming session.
+      const next = [...s.governanceEvents, event].slice(-8)
+      return { governanceEvents: next }
+    }),
+
+  dismissGovernanceEvent: (id) =>
+    set((s) => ({
+      governanceEvents: s.governanceEvents.filter((e) => e.id !== id),
+    })),
+
+  resolveApproval: async (approvalId, decision, reason) => {
+    // Optimistically remove the card so the UI feels responsive;
+    // on error we surface a toast and leave the row in the /approvals
+    // page (it wasn't resolved, so the card is gone but the row stays).
+    set((s) => ({
+      governanceEvents: s.governanceEvents.filter(
+        (e) => !(e.kind === 'approval_pending' && e.approvalId === approvalId),
+      ),
+    }))
+    try {
+      await api.post(`/governance/approvals/${approvalId}/decide`, {
+        decision,
+        reason: reason ?? null,
+      })
+      toast.success(
+        decision === 'APPROVED'
+          ? 'Approval granted.'
+          : 'Approval rejected.',
+      )
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : 'Approval request failed.'
+      toast.error(msg)
+    }
+  },
 
   // ── Streaming controls (driven by WebSocket or SSE events) ──
   startStream: () =>

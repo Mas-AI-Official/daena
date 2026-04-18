@@ -128,12 +128,18 @@ class GovernedPromptManager:
         title: str,
         message: str,
         critical: bool = False,
+        context: dict[str, Any] | None = None,
     ) -> bool:
-        """Confirm prompt -- auto-yes in AGI mode unless critical."""
+        """Confirm prompt -- auto-yes in AGI mode unless critical.
+
+        ``context`` is passed straight through so callers can opt into
+        the ``department.needs_input`` BorderAgent emit by supplying
+        reserved ``_tenant_id`` + ``_department`` keys.
+        """
         if self._autopilot and not critical:
             self._audit_auto("confirm", title, "auto: yes")
             return True
-        return await self._pm.ask_confirm(title, message)
+        return await self._pm.ask_confirm(title, message, context)
 
     async def ask_text(
         self,

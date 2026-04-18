@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, require_role
 from app.core.config import get_settings
-from app.core.constants import ChatMode, GovernanceSlider, RoutingMode
+from app.core.constants import ChatMode, GovernanceMode, GovernanceSlider, RoutingMode
 from app.core.database import get_db
 from app.models.governance import RoutingPolicy
 from app.schemas.founder import RoutingPolicyUpdate, RoutingPreviewRequest
@@ -178,13 +178,24 @@ async def preview_routing(
     """Preview query understanding and routing without calling any LLM."""
     registry = get_model_registry(request)
     qu_service = QueryUnderstandingService()
+    # Convert governance_mode (which may be a legacy slider value) to
+    # GovernanceSlider for the QueryInput -- the downstream QU service
+    # still accepts GovernanceSlider and converts internally.
+    _gov_raw = body.governance_mode or "BALANCED"
+    try:
+        _gov_mode = GovernanceMode(_gov_raw)
+    except ValueError:
+        try:
+            _gov_mode = GovernanceSlider(_gov_raw).to_governance_mode()
+        except ValueError:
+            _gov_mode = GovernanceMode.BALANCED
     qu_result = qu_service.analyze(
         QueryInput(
             raw_message=body.message,
             user_id=str(_user.id),
             tenant_id=str(_user.tenant_id),
             execution_mode=ChatMode(body.chat_mode),
-            governance_slider=GovernanceSlider(body.governance_slider),
+            governance_mode=_gov_mode,
         )
     )
 
