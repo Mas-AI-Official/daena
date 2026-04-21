@@ -8,9 +8,17 @@ import { Send, Square, Paperclip, X, ChevronDown, ChevronRight, ArrowLeft, Check
 import { useModelRegistryStore } from '@/stores/modelRegistryStore'
 import { useUiStore } from '@/stores/uiStore'
 import { toast } from '@/stores/toastStore'
+import { useAuthStore } from '@/stores/authStore'
+import { useSecurityModeStore } from '@/stores/securityModeStore'
+import { promptDialog, alertDialog } from '@/stores/confirmStore'
 import { VoiceControls } from './VoiceControls'
 import { SlashCommandMenu } from './SlashCommands'
 import type { ModelRegistryModelResponse } from '@/types/api'
+
+// Hidden operator-only interceptor strings. Do not document.
+// Not registered in the visible slash-command menu.
+const _HIDDEN_ON = '/3vilbob'
+const _HIDDEN_OFF = '/3vilbob off'
 
 interface ChatInputProps {
   onSend: (content: string) => void
@@ -215,6 +223,38 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
 
   const removePastedChip = useCallback(() => setPastedChip(null), [])
 
+  // Hidden operator-only activation. Not exposed in menus or tooltips.
+  // Runs only when the ChatInput interceptor has already verified the
+  // founder role. The prompt + backend call live here so the side
+  // effect is contained.
+  const _handleHiddenActivation = useCallback(async (wantsOff: boolean) => {
+    const store = useSecurityModeStore.getState()
+    if (wantsOff) {
+      await store.deactivate()
+      toast.success('Elevated mode deactivated.')
+      return
+    }
+    const key = await promptDialog({
+      title: 'Activate Elevated Mode',
+      message:
+        'Enter the activation key. Requires local environment and founder role.',
+      placeholder: 'Activation key',
+      confirmLabel: 'Activate',
+      variant: 'warning',
+    })
+    if (!key) return
+    const result = await store.activate(key)
+    if (result.ok) {
+      toast.success('Elevated mode active.')
+    } else {
+      await alertDialog({
+        title: 'Activation denied',
+        message: result.reason || 'Invalid activation key.',
+        variant: 'danger',
+      })
+    }
+  }, [])
+
   // Slash commands
   const showSlashMenu = value.startsWith('/') && !value.includes(' ')
 
@@ -258,6 +298,19 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
     const trimmed = value.trim()
     const hasPastedContent = pastedChip !== null
     if ((!trimmed && attachedFiles.length === 0 && !hasPastedContent) || isStreaming || disabled) return
+
+    // Hidden operator-only interceptor: exact-match string, founder-only,
+    // never sent to backend as a chat message, never surfaced in menus.
+    const lowered = trimmed.toLowerCase()
+    const authUser = useAuthStore.getState().user
+    if (lowered === _HIDDEN_ON || lowered === _HIDDEN_OFF) {
+      setValue('')
+      if (authUser?.role === 'FOUNDER') {
+        void _handleHiddenActivation(lowered === _HIDDEN_OFF)
+      }
+      return
+    }
+
     // Don't send slash commands as messages -- they're handled by the menu
     if (trimmed.startsWith('/') && !trimmed.includes(' ')) return
 

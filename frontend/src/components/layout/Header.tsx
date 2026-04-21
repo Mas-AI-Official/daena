@@ -6,6 +6,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useModelRegistryStore } from '@/stores/modelRegistryStore'
+import { useSecurityModeStore } from '@/stores/securityModeStore'
 import { CommandPalette } from '@/components/common/CommandPalette'
 import { useVoice } from '@/providers/VoiceProvider'
 // RuntimeSwapper was re-mounted here in Session 2 (2026-04-16) and
@@ -230,6 +231,9 @@ export const Header = memo(function Header() {
         {/* Heartbeat indicator */}
         <HeartbeatIndicator />
 
+        {/* Elevated mode indicator (discrete; no label; founder-only flow) */}
+        <ElevatedModeIndicator />
+
         <div className="w-px h-6 bg-white/10" />
 
         <button
@@ -401,6 +405,39 @@ function HeartbeatIndicator() {
       <span className={isActive ? 'text-starlight-300' : 'text-starlight-500'}>
         {isActive ? 'LIVE' : 'PAUSED'}
       </span>
+    </div>
+  )
+}
+
+/** Elevated mode indicator.
+ *
+ * Shows a small gold lightning icon when the elevated security mode
+ * singleton is active. No text label. Tooltip is the only user-facing
+ * hint. Polls /security/mode/state every 30s to keep in sync with
+ * server-side state (handles auto-activation at startup and manual
+ * deactivation from any tab).
+ */
+function ElevatedModeIndicator() {
+  const active = useSecurityModeStore((s) => s.state.active)
+  const fetchState = useSecurityModeStore((s) => s.fetchState)
+  const token = useAuthStore((s) => s.token)
+
+  useEffect(() => {
+    if (!token) return
+    void fetchState()
+    const id = setInterval(() => { void fetchState() }, 30000)
+    return () => clearInterval(id)
+  }, [token, fetchState])
+
+  if (!active) return null
+
+  return (
+    <div
+      className="flex items-center justify-center p-1.5 rounded-lg"
+      title="Elevated mode"
+      aria-label="Elevated mode active"
+    >
+      <Zap size={14} className="text-accent-amber animate-pulse" />
     </div>
   )
 }
