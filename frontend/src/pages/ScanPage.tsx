@@ -45,6 +45,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
+import { useSecurityModeStore } from '@/stores/securityModeStore'
 
 // ── Types ──
 
@@ -147,6 +148,29 @@ const TIERS: ScanTier[] = [
   },
 ]
 
+// T5 lives outside the public tier list and is only rendered when
+// the elevated security mode is active (FOUNDER + activation
+// command). Secrecy contract: never listed in autocomplete, never
+// in docs, never named by codename. Label here is intentionally
+// neutral ("Offensive").
+const T5_TIER: ScanTier = {
+  id: 'T5',
+  name: 'Offensive',
+  description: 'Adversarial exploitation walkthrough',
+  features: [
+    'Everything in Architect',
+    'Exploitation paths (proof of concept)',
+    'Chain-of-evidence vault',
+    'Proxy rotation + OPSEC',
+    'Zero-false-positive gate (PoC required)',
+  ],
+  price: 'Founder',
+  pipelineStages: 26,
+  color: 'text-accent-amber',
+  icon: <Crosshair size={20} />,
+  locked: false,
+}
+
 // ── Severity colors ──
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -168,6 +192,18 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 
 export function ScanPage() {
   usePageTitle('Security Scan')
+
+  // Elevated-mode store feeds the T5 tier. When the founder activates
+  // the hidden command, securityModeStore.state.active flips True and
+  // the tier list gains the Offensive tier. Mount effect triggers the
+  // first state fetch so tiers rehydrate on page load; downstream
+  // poll loops keep it fresh.
+  const elevatedActive = useSecurityModeStore((s) => s.state.active)
+  const fetchElevatedState = useSecurityModeStore((s) => s.fetchState)
+  useEffect(() => {
+    fetchElevatedState()
+  }, [fetchElevatedState])
+  const visibleTiers = elevatedActive ? [...TIERS, T5_TIER] : TIERS
 
   const [target, setTarget] = useState('')
   const [selectedTier, setSelectedTier] = useState('T1')
@@ -283,7 +319,7 @@ export function ScanPage() {
 
       {/* Tier Selector */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {TIERS.map(tier => (
+        {visibleTiers.map(tier => (
           <button
             key={tier.id}
             disabled={tier.locked}
