@@ -185,9 +185,14 @@ class TestModelRegistryListModels:
     @pytest.mark.asyncio
     async def test_list_all_models_cached(self):
         """Second call returns cache without re-querying providers."""
+        import time as _time
         registry = ModelRegistry()
         info = _make_model_info("cached-model", ModelProvider.OLLAMA)
         registry._model_cache["cached-model"] = info
+        # TTL invalidation added in 2026-04 requires the timestamp to
+        # be present for the cache to be considered fresh. Tests that
+        # pre-populate _model_cache must also bump the timestamp.
+        registry._model_cache_ts = _time.monotonic()
 
         models = await registry.list_all_models()
         assert len(models) == 1
@@ -258,6 +263,7 @@ class TestModelRegistrySnapshot:
 
     @pytest.mark.asyncio
     async def test_snapshot_basic(self):
+        import time as _time
         registry = ModelRegistry()
         info = _make_model_info("llama3.1:latest", ModelProvider.OLLAMA, "Llama 3.1")
 
@@ -266,6 +272,9 @@ class TestModelRegistrySnapshot:
         mock_settings.ollama_base_url = "http://localhost:11434"
 
         registry._model_cache["llama3.1:latest"] = info
+        # TTL invalidation requires timestamp to treat pre-populated
+        # cache as fresh (see list_all_models).
+        registry._model_cache_ts = _time.monotonic()
         registry._health_cache[ModelProvider.OLLAMA] = HealthStatus.HEALTHY
         mock_provider = MagicMock()
         registry._providers[ModelProvider.OLLAMA] = mock_provider
