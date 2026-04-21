@@ -1,3 +1,48 @@
+# Session Log -- Production Lock-In 2026-04-21
+
+Package 10 of the sleepy-shimmying-rivest plan. Scope: lock in Daena
+v3.7.0 working as production-reliable before any new feature work.
+Agent-payments exploration (Automaton / Conway / x402 / custom token)
+explicitly killed; Finance stays human-in-the-loop.
+
+## What was done
+
+1. P10.1: 129 uncommitted files from 4 days of local-only work landed
+   in 6 logical commits (P1, P2, P3-P7, P8-P9, UX, chore).
+2. P10.2: 58 new unit tests closed zero-coverage gaps on
+   governance_engine (22), audit_service (17), cognitive_scan_engine
+   (19). Running in milliseconds with no I/O.
+3. P10.4: Comment-only Stage label renumbering (Stage 6.4 -> 6.75,
+   Stage 6.45 -> 6.8) to match execution order. Verified 5 of 6
+   user-flagged UX papercuts resolved in prior commits; duplicate
+   Stage 6.5 was already fixed in an earlier session.
+4. P10.5: DB integrity check returns ok, journal_mode is delete,
+   82 chat sessions and 93 audit events intact. Removed 5.7 MB
+   corrupted-backup artifact. .gitignore hardened.
+5. P10.3: Explicitly descoped. Existing coverage already hit 4 of
+   the 5 proposed e2e flows with stronger isolation.
+6. P10.6: Delivery report + HANDS OFF in inbox.md + version bump to
+   v3.7.1-production-lock-in + this log entry.
+
+## Known follow-up (AUD-001)
+
+While writing audit_service unit tests, discovered that
+verify_chain_integrity + get_audit_trail order by created_at without
+a tie-breaker. On Windows, datetime.utcnow() has ~15.6ms resolution
+so rapid successive log_decision() calls land on identical timestamps
+and the chain walk becomes non-deterministic. Two tests got a 20ms
+sleep workaround; the real fix is a tie-breaker sort by id or
+entry_hash, estimated 30 min of future work.
+
+## Totals
+
+- 59 new tests added this session.
+- 293/293 passing in the focused Package 1-10 suite.
+- Frontend tsc clean, frontend build clean (21.91s).
+- 8 new commits on master.
+
+---
+
 # Session Log -- Security Supercharge 2026-04-19
 
 Plan: `C:\Users\masou\.claude\plans\sleepy-shimmying-rivest.md`

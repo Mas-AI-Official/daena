@@ -278,9 +278,18 @@ Hallucinations auto-expire. Only verified knowledge persists.
 - E2E: Playwright (6/6 passing)
 - Linting: ruff clean, zero warnings
 
-## CURRENT VERSION: v3.7.0-security-supercharge (2026-04-19)
+## CURRENT VERSION: v3.7.1-production-lock-in (2026-04-21)
 
-Tag: v3.7.0-security-supercharge
+Tag: v3.7.1-production-lock-in
+Package 10 shipped: 4 days of local-only work committed in 8 logical
+commits (TICKET-P1, P2, P3-P7, P8-P9, UX, chore, P10.2 tests, P10.4
+stage labels, P10.5 gitignore, audit timing fix). 58 new unit tests
+closing zero-coverage gaps on governance_engine, audit_service, and
+cognitive_scan_engine. DB integrity confirmed clean + 5.7 MB
+corrupted-backup artifact removed. v3.7.1 is v3.7.0 plus audit trail +
+test coverage + commit hygiene.
+
+Previous: v3.7.0-security-supercharge
 Tests: 2956 passed, 16 skipped, 0 failed (full fast-subset regression, 2026-04-19)
 Package-focused: 214/214 across the 8 new/modified test files for the Security Supercharge plan
 TS errors: 0
