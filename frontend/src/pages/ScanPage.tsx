@@ -76,15 +76,22 @@ interface ScanJob {
 }
 
 interface ScanFinding {
+  id?: string
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO'
   title: string
-  file_path: string
-  line_number: number
+  file_path?: string            // backend returns `location`; kept for legacy
+  location?: string             // backend field: "<path>:<line>" or URL
+  line_number?: number
   description: string
+  explanation?: string
   remediation?: string
   fix_code?: string
+  fix_verified?: boolean
+  exploit_path?: string         // T5 Offensive only
   verified?: boolean
   cve_id?: string
+  cve_references?: string[]     // backend field
+  confidence?: number           // 0.0 to 1.0
 }
 
 interface ScanReport {
@@ -95,7 +102,7 @@ interface ScanReport {
   report_pdf_path?: string
   cost_usd: number
   duration_secs: number
-  pipeline_stages_used: number
+  pipeline_stages_used: string[]   // backend sends list of stage names
   models_used: string[]
 }
 
@@ -394,13 +401,13 @@ export function ScanPage() {
           <span className="flex items-center gap-1">
             <Brain size={12} />
             Pipeline: <span className="text-starlight-300 font-medium">
-              {TIERS.find(t => t.id === selectedTier)?.pipelineStages} stages
+              {visibleTiers.find(t => t.id === selectedTier)?.pipelineStages} stages
             </span>
           </span>
           <span className="flex items-center gap-1">
             <DollarSign size={12} />
             <span className="text-accent-amber font-medium">
-              {TIERS.find(t => t.id === selectedTier)?.price}
+              {visibleTiers.find(t => t.id === selectedTier)?.price}
             </span>
           </span>
         </div>
@@ -496,7 +503,10 @@ export function ScanPage() {
             </h2>
             <div className="flex items-center gap-4 text-[10px] text-starlight-500">
               <span><Clock size={10} className="inline mr-1" />{report.duration_secs ?? 0}s</span>
-              <span><Layers size={10} className="inline mr-1" />{report.pipeline_stages_used ?? 0} stages</span>
+              <span>
+                <Layers size={10} className="inline mr-1" />
+                {(report.pipeline_stages_used ?? []).length} stages
+              </span>
               <span><DollarSign size={10} className="inline mr-1" />${(report.cost_usd ?? 0).toFixed(2)}</span>
               <span><Brain size={10} className="inline mr-1" />{(report.models_used ?? []).join(', ') || 'n/a'}</span>
             </div>
@@ -509,53 +519,92 @@ export function ScanPage() {
 
           {/* Findings */}
           <div className="space-y-2">
-            {(report.findings ?? []).map((finding, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="bg-midnight-200/60 border border-white/5 rounded-xl p-4"
-              >
-                <div className="flex items-start gap-3">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${SEVERITY_COLORS[finding.severity]}`}>
-                    {finding.severity}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-starlight-100">{finding.title}</p>
-                    <p className="text-xs text-starlight-500 mt-0.5 font-mono">
-                      {finding.file_path}:{finding.line_number}
-                      {finding.cve_id && (
-                        <span className="ml-2 text-status-warning">{finding.cve_id}</span>
+            {(report.findings ?? []).map((finding, i) => {
+              // Backend sends `location` as "<file>:<line>" or URL.
+              // Legacy field `file_path` kept as fallback. CVE refs
+              // come as an array on the backend.
+              const locStr = finding.location
+                ?? (finding.file_path
+                    ? `${finding.file_path}${finding.line_number ? `:${finding.line_number}` : ''}`
+                    : '')
+              const cves = (finding.cve_references && finding.cve_references.length)
+                ? finding.cve_references
+                : (finding.cve_id ? [finding.cve_id] : [])
+              const cvss = typeof finding.confidence === 'number'
+                ? (finding.confidence * 10).toFixed(1)
+                : ''
+              const isVerified = finding.fix_verified ?? finding.verified
+
+              return (
+                <motion.div
+                  key={finding.id ?? i}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  className="bg-midnight-200/60 border border-white/5 rounded-xl p-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${SEVERITY_COLORS[finding.severity]}`}>
+                      {finding.severity}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-starlight-100">{finding.title}</p>
+                      <p className="text-xs text-starlight-500 mt-0.5 font-mono">
+                        {locStr}
+                        {cves.map((cve) => (
+                          <span key={cve} className="ml-2 text-status-warning">{cve}</span>
+                        ))}
+                        {cvss && (
+                          <span className="ml-2 text-accent-amber">CVSS {cvss}</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-starlight-400 mt-2 leading-relaxed">
+                        {finding.description}
+                      </p>
+
+                      {finding.explanation && (
+                        <p className="text-xs text-starlight-400 mt-2 leading-relaxed italic">
+                          {finding.explanation}
+                        </p>
                       )}
-                    </p>
-                    <p className="text-xs text-starlight-400 mt-2 leading-relaxed">{finding.description}</p>
 
-                    {finding.remediation && (
-                      <div className="mt-3 p-3 bg-status-success/5 border border-status-success/20 rounded-lg">
-                        <p className="text-[10px] uppercase tracking-wider text-status-success font-semibold mb-1">Remediation</p>
-                        <p className="text-xs text-starlight-300">{finding.remediation}</p>
-                      </div>
-                    )}
+                      {finding.remediation && (
+                        <div className="mt-3 p-3 bg-status-success/5 border border-status-success/20 rounded-lg">
+                          <p className="text-[10px] uppercase tracking-wider text-status-success font-semibold mb-1">Remediation</p>
+                          <p className="text-xs text-starlight-300">{finding.remediation}</p>
+                        </div>
+                      )}
 
-                    {finding.fix_code && (
-                      <div className="mt-2">
-                        <p className="text-[10px] uppercase tracking-wider text-primary-400 font-semibold mb-1">Suggested Fix</p>
-                        <pre className="text-xs text-starlight-300 bg-midnight-400/60 p-3 rounded-lg overflow-x-auto font-mono">
-                          {finding.fix_code}
-                        </pre>
-                      </div>
-                    )}
+                      {finding.fix_code && (
+                        <div className="mt-2">
+                          <p className="text-[10px] uppercase tracking-wider text-primary-400 font-semibold mb-1">Suggested Fix</p>
+                          <pre className="text-xs text-starlight-300 bg-midnight-400/60 p-3 rounded-lg overflow-x-auto font-mono">
+                            {finding.fix_code}
+                          </pre>
+                        </div>
+                      )}
 
-                    {finding.verified && (
-                      <div className="mt-2 flex items-center gap-1 text-[10px] text-status-success">
-                        <CheckCircle2 size={10} /> Fix verified by pipeline retest
-                      </div>
-                    )}
+                      {finding.exploit_path && (
+                        <div className="mt-2 p-3 bg-accent-amber/5 border border-accent-amber/25 rounded-lg">
+                          <p className="text-[10px] uppercase tracking-wider text-accent-amber font-semibold mb-1">
+                            Exploit Path (T5 Offensive)
+                          </p>
+                          <pre className="text-xs text-starlight-300 overflow-x-auto font-mono whitespace-pre-wrap">
+                            {finding.exploit_path}
+                          </pre>
+                        </div>
+                      )}
+
+                      {isVerified && (
+                        <div className="mt-2 flex items-center gap-1 text-[10px] text-status-success">
+                          <CheckCircle2 size={10} /> Fix verified by pipeline retest
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              )
+            })}
           </div>
         </div>
       )}
