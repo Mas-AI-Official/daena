@@ -126,10 +126,19 @@ class AuditService(BaseService):
         Returns:
             Dict with data (list of entries), pagination metadata.
         """
+        # AUD-001 fix: ``id`` added as tie-breaker. datetime.utcnow()
+        # on Windows has ~15.6ms resolution; rapid inserts land on
+        # identical created_at values, which makes pagination ordering
+        # non-deterministic without a secondary key. UUIDs are not
+        # strictly monotonic but they ARE total-ordered, which is what
+        # the presentation layer needs for stable paginated output.
         stmt = (
             select(GoaAuditEvent)
             .where(GoaAuditEvent.tenant_id == tenant_id)
-            .order_by(GoaAuditEvent.created_at.desc())
+            .order_by(
+                GoaAuditEvent.created_at.desc(),
+                GoaAuditEvent.id.desc(),
+            )
         )
 
         if action_type is not None:
@@ -161,19 +170,27 @@ class AuditService(BaseService):
     async def verify_chain_integrity(self, *, tenant_id: UUID) -> dict:
         """Verify the hash chain integrity for a tenant's audit trail.
 
-        Walks the chain from oldest to newest, recomputing hashes.
-        Any mismatch indicates tampering.
+        AUD-001 fix: walks the chain by following ``prev_hash`` links
+        rather than by sorting on ``created_at``. This is correct by
+        construction because the chain IS defined by the prev_hash
+        pointers, and it removes the dependency on timestamp
+        monotonicity that broke tests on Windows (datetime.utcnow()
+        has ~15.6ms resolution, so rapid successive inserts can tie
+        on created_at and yield a non-deterministic walk order).
 
-        Args:
-            tenant_id: Tenant UUID.
+        Algorithm:
+            1. Load every event for the tenant (any order).
+            2. Index them by entry_hash.
+            3. Find the GENESIS entry (prev_hash=None).
+            4. Walk forward: next = events[last.entry_hash].
+            5. Break or succeed when the chain ends or loops.
 
         Returns:
-            Dict with valid (bool), total_entries, first_broken_id (if any).
+            Dict with valid (bool), total_entries, first_broken_id
+            (the id of the first structural defect, or None).
         """
-        stmt = (
-            select(GoaAuditEvent)
-            .where(GoaAuditEvent.tenant_id == tenant_id)
-            .order_by(GoaAuditEvent.created_at.asc())
+        stmt = select(GoaAuditEvent).where(
+            GoaAuditEvent.tenant_id == tenant_id
         )
         result = await self.db.execute(stmt)
         events = list(result.scalars().all())
@@ -181,18 +198,77 @@ class AuditService(BaseService):
         if not events:
             return {"valid": True, "total_entries": 0, "first_broken_id": None}
 
-        expected_prev_hash: str | None = None
-        for event in events:
-            # Check prev_hash linkage
-            if event.prev_hash != expected_prev_hash:
+        total = len(events)
+
+        # Index events by prev_hash: for each event, record it as the
+        # successor of its prev_hash. Multiple successors for one
+        # prev_hash = the chain forked, which is a tamper indicator.
+        successors_by_prev: dict[str | None, list[GoaAuditEvent]] = {}
+        for ev in events:
+            successors_by_prev.setdefault(ev.prev_hash, []).append(ev)
+
+        # Must be exactly one GENESIS entry (prev_hash=None).
+        genesis_list = successors_by_prev.get(None, [])
+        if len(genesis_list) == 0:
+            # No GENESIS means every entry expects a predecessor, so
+            # the oldest visible one is the broken link.
+            return {
+                "valid": False,
+                "total_entries": total,
+                "first_broken_id": str(events[0].id),
+            }
+        if len(genesis_list) > 1:
+            # Multiple GENESIS entries = chain forked at the root.
+            return {
+                "valid": False,
+                "total_entries": total,
+                "first_broken_id": str(genesis_list[0].id),
+            }
+
+        # Walk the chain from GENESIS following prev_hash links.
+        current = genesis_list[0]
+        visited = 1
+        while True:
+            next_list = successors_by_prev.get(current.entry_hash, [])
+            if len(next_list) == 0:
+                # End of chain.
+                break
+            if len(next_list) > 1:
+                # Fork: more than one entry claims current as its predecessor.
                 return {
                     "valid": False,
-                    "total_entries": len(events),
-                    "first_broken_id": str(event.id),
+                    "total_entries": total,
+                    "first_broken_id": str(next_list[0].id),
                 }
-            expected_prev_hash = event.entry_hash
+            current = next_list[0]
+            visited += 1
 
-        return {"valid": True, "total_entries": len(events), "first_broken_id": None}
+        # Walked entries must equal total: orphan entries (entries whose
+        # prev_hash points to nothing in this tenant's chain) are a
+        # tamper indicator.
+        if visited != total:
+            # Find the first orphan: any entry we did not visit.
+            walked_hashes: set[str] = set()
+            cur2 = genesis_list[0]
+            walked_hashes.add(cur2.entry_hash)
+            while True:
+                nxt = successors_by_prev.get(cur2.entry_hash, [])
+                if not nxt:
+                    break
+                cur2 = nxt[0]
+                walked_hashes.add(cur2.entry_hash)
+            orphans = [e for e in events if e.entry_hash not in walked_hashes]
+            return {
+                "valid": False,
+                "total_entries": total,
+                "first_broken_id": str(orphans[0].id),
+            }
+
+        return {
+            "valid": True,
+            "total_entries": total,
+            "first_broken_id": None,
+        }
 
     async def _get_last_hash(self, tenant_id: UUID) -> str | None:
         """Get the entry_hash of the most recent audit event for a tenant.

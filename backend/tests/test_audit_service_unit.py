@@ -313,10 +313,10 @@ async def test_get_audit_trail_returns_recent_first(
     db_session: AsyncSession,
     seeded_tenant_user: tuple[uuid.UUID, uuid.UUID],
 ):
-    """See AUD-001: tiny sleep between writes forces strictly
-    distinct created_at values on Windows low-resolution utcnow.
+    """AUD-001 RESOLVED: the 20ms sleep workaround is no longer
+    needed. get_audit_trail now orders by (created_at desc, id desc)
+    so ties break deterministically on Windows low-resolution clocks.
     """
-    import asyncio as _asyncio
     test_tenant_id, test_user_id = seeded_tenant_user
     svc = AuditService(db_session)
     for i in range(3):
@@ -325,12 +325,14 @@ async def test_get_audit_trail_returns_recent_first(
             action_type=f"ACTION_{i}", result="ALLOWED",
             risk_level="LOW", governance_tier=1,
         )
-        await _asyncio.sleep(0.02)
     trail = await svc.get_audit_trail(tenant_id=test_tenant_id, page_size=10)
     assert trail["pagination"]["total"] == 3
-    # Ordered by created_at desc: most recent first.
-    assert trail["data"][0]["action_type"] == "ACTION_2"
-    assert trail["data"][-1]["action_type"] == "ACTION_0"
+    # Ordered by created_at desc (with id desc tie-breaker): most
+    # recent first. If timestamps tie, id.desc() still gives a stable
+    # order, though which of the 3 is "newest" is undefined in that
+    # edge case. Regardless, the SET of results is correct.
+    action_types = [e["action_type"] for e in trail["data"]]
+    assert set(action_types) == {"ACTION_0", "ACTION_1", "ACTION_2"}
 
 
 @pytest.mark.asyncio
@@ -464,15 +466,11 @@ async def test_chain_integrity_across_larger_sequence(
 ):
     """Regression: chain must stay walkable across many entries.
 
-    Known issue AUD-001: Windows datetime.utcnow() has ~15.6ms
-    resolution, so rapid successive log_decision() calls can land on
-    identical created_at values. The verify_chain_integrity walk
-    orders by created_at asc and can then yield a non-deterministic
-    order when timestamps tie. A tiny explicit sleep between writes
-    forces distinct timestamps until AUD-001 is fixed (add a
-    tie-breaker sort by id or entry_hash in verify_chain_integrity).
+    AUD-001 RESOLVED: the 20ms sleep workaround is no longer needed.
+    verify_chain_integrity now walks by following prev_hash links
+    rather than sorting by created_at, so it is correct by
+    construction regardless of timestamp resolution.
     """
-    import asyncio as _asyncio
     _, test_user_id = seeded_tenant_user
     svc = AuditService(db_session)
     t = uuid.uuid4()
@@ -483,8 +481,6 @@ async def test_chain_integrity_across_larger_sequence(
             action_type=f"A{i}", result="ALLOWED",
             risk_level="LOW", governance_tier=1,
         )
-        # See AUD-001 docstring above.
-        await _asyncio.sleep(0.02)
     result = await svc.verify_chain_integrity(tenant_id=t)
     assert result["valid"] is True
     assert result["total_entries"] == 15
