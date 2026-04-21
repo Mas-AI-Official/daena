@@ -19,6 +19,14 @@ backend/app/soul/
 # Contains plaintext client secrets -- never commit.
 backend/.daena_oauth_overrides.json
 
+# SQLite dev DB + recovery artifacts.
+# The .db itself is ignored; repair-db*.sh can create timestamped
+# backup files that we also keep out of git.
+backend/daena_dev2.db
+backend/daena_dev2.db.*
+backend/*.corrupted-backup-*
+backend/.llama-server.pid
+
 # docs/ directory -- internal docs live in Doc/ (gitignored)
 # Only README.md, CHANGELOG.md, LICENSE.md, CONTRIBUTING.md at root
 # docs/assets/ is un-ignored so README images render on GitHub
