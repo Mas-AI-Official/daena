@@ -85,7 +85,12 @@ const navGroups: NavGroup[] = [
     color: 'text-accent-amber',
     items: [
       { label: 'Security Ops', path: '/security', icon: <Shield size={18} /> },
-      { label: 'Engagements', path: '/engagements', icon: <Crosshair size={18} /> },
+      // "Engagements" used to live here at /engagements. It was a
+      // duplicate of /scan (same T1-T5 launcher). Removed from the
+      // visible nav 2026-04-21 per founder feedback. The route still
+      // exists in App.tsx so bookmarks and deep-links resolve, but
+      // there is now ONE canonical scan entry point: Security Scan
+      // under Intelligence above.
       { label: 'Approvals', path: '/governance/approvals', icon: <Shield size={18} />, badgeKey: 'approvals' },
       { label: 'Policy Rules', path: '/policies', icon: <Shield size={18} /> },
       { label: 'Audit Log', path: '/governance/audit', icon: <Shield size={18} /> },
