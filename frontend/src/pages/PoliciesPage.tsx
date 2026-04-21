@@ -33,6 +33,7 @@ import {
   type PolicyType,
 } from '@/hooks/useDepartmentPolicies'
 import { toast } from '@/stores/toastStore'
+import { confirmDialog } from '@/stores/confirmStore'
 
 const DEPARTMENTS = [
   'Engineering',
@@ -355,9 +356,15 @@ export default function PoliciesPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this policy? Seeded policies can be recreated via Seed defaults.')) return
-    const ok = await deletePolicy(id)
-    if (ok) toast.success('Policy deleted')
+    const ok = await confirmDialog({
+      title: 'Delete this policy?',
+      message: 'Seeded policies can be recreated via Seed defaults.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    })
+    if (!ok) return
+    const deleted = await deletePolicy(id)
+    if (deleted) toast.success('Policy deleted')
   }
 
   const handleSeed = async () => {

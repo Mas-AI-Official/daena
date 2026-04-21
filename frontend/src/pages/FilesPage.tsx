@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { api } from '@/lib/api'
+import { deleteWithToast, batchDeleteWithToast } from '@/lib/mutations'
 import { toast } from '@/stores/toastStore'
 
 // ── Types ──
@@ -233,25 +234,28 @@ export function FilesPage() {
   }
 
   const handleDelete = async (fileId: string) => {
-    try {
-      await api.delete(`/files/${fileId}`)
+    const ok = await deleteWithToast(`/files/${fileId}`, { entity: 'File' })
+    if (ok) {
       setFiles((prev) => prev.filter((f) => f.id !== fileId))
       setSelectedFiles((prev) => { const n = new Set(prev); n.delete(fileId); return n })
-      toast.success('File deleted')
-    } catch {
-      toast.error('Failed to delete file')
     }
   }
 
   const handleBatchDelete = async () => {
     if (selectedFiles.size === 0) return
-    const count = selectedFiles.size
-    for (const id of selectedFiles) {
-      try { await api.delete(`/files/${id}`) } catch { /* continue */ }
+    // Snapshot IDs before the batch; the source-of-truth for "which
+    // survived" is the set of IDs that actually succeeded, returned
+    // in the result. We refetch afterwards for a consistent view.
+    const targetIds = new Set(selectedFiles)
+    const result = await batchDeleteWithToast(
+      targetIds,
+      (id) => `/files/${id}`,
+      { entity: 'file' },
+    )
+    if (result.succeeded > 0) {
+      setFiles((prev) => prev.filter((f) => !targetIds.has(f.id)))
+      setSelectedFiles(new Set())
     }
-    setFiles((prev) => prev.filter((f) => !selectedFiles.has(f.id)))
-    setSelectedFiles(new Set())
-    toast.success(`${count} file${count > 1 ? 's' : ''} deleted`)
   }
 
   const handleDrop = (e: React.DragEvent) => {

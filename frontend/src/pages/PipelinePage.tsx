@@ -24,6 +24,7 @@ import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button, Shimmer, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
+import { promptDialog } from '@/stores/confirmStore'
 import type { ApiResponse } from '@/types/api'
 
 const STAGES = [
@@ -144,10 +145,19 @@ export function PipelinePage() {
   // Marketing and Research can aggregate loss patterns without needing
   // to ask the founder after the fact.
   const handleMarkLost = async (projectId: string, title: string) => {
-    const reason = window.prompt(
-      `Mark "${title}" as lost. What was the reason? (optional, under 200 chars)`
-    )
-    // User cancelled the prompt -- do nothing.
+    const reason = await promptDialog({
+      title: `Mark "${title}" as lost?`,
+      message:
+        'Optional: what was the reason? Flows to the Sales.lost_deal signal ' +
+        'so Marketing and Research can aggregate loss patterns.',
+      placeholder: 'e.g. Budget reallocated, chose competitor, timing slipped...',
+      multiline: true,
+      maxLength: 200,
+      confirmLabel: 'Mark lost',
+      variant: 'warning',
+    })
+    // User cancelled -- do nothing. (promptDialog returns null on cancel
+    // to match native window.prompt semantics.)
     if (reason === null) return
     try {
       await api.post(`/pipeline/projects/${projectId}/mark-lost`, {

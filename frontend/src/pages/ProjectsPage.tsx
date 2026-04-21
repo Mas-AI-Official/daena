@@ -21,6 +21,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button, EmptyState, Shimmer, Input } from '@/components/common'
 import { api } from '@/lib/api'
+import { deleteWithToast } from '@/lib/mutations'
 import type { ProjectResponse } from '@/types/api'
 
 // ── Helpers ──
@@ -242,12 +243,8 @@ export function ProjectsPage() {
   }
 
   const handleDelete = async (projectId: string) => {
-    try {
-      await api.delete(`/projects/${projectId}`)
-      fetchProjects()
-    } catch {
-      // toast error handled by interceptor
-    }
+    const ok = await deleteWithToast(`/projects/${projectId}`, { entity: 'Project' })
+    if (ok) fetchProjects()
   }
 
   return (

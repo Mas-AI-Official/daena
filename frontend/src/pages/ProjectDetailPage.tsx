@@ -26,6 +26,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button, Shimmer, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
+import { deleteWithToast } from '@/lib/mutations'
 import { toast } from '@/stores/toastStore'
 import type { ProjectResponse } from '@/types/api'
 
@@ -103,13 +104,8 @@ export function ProjectDetailPage() {
 
   const handleDelete = async () => {
     if (!projectId) return
-    try {
-      await api.delete(`/projects/${projectId}`)
-      toast.success('Project deleted')
-      navigate('/projects')
-    } catch {
-      toast.error('Failed to delete project')
-    }
+    const ok = await deleteWithToast(`/projects/${projectId}`, { entity: 'Project' })
+    if (ok) navigate('/projects')
   }
 
   if (loading) {

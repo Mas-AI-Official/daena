@@ -46,6 +46,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
+import { confirmDialog } from '@/stores/confirmStore'
 import { useUiStore } from '@/stores/uiStore'
 import { CONNECTOR_ICONS, RUNTIME_ICONS, EXTENSION_ICONS } from '@/components/icons/BrandIcons'
 import { useMCPDetections } from '@/hooks/useMCPDetections'
@@ -1630,7 +1631,13 @@ function RuntimeRow({ runtime, isPrimary, expanded, onToggleExpand, onSetPrimary
           {runtime.subscription?.is_authenticated && (
             <button
               onClick={async () => {
-                if (!confirm(`Disconnect ${runtime.display_name}? You can reconnect anytime.`)) return
+                const ok = await confirmDialog({
+                  title: `Disconnect ${runtime.display_name}?`,
+                  message: 'You can reconnect anytime.',
+                  confirmLabel: 'Disconnect',
+                  variant: 'warning',
+                })
+                if (!ok) return
                 try {
                   await api.post(`/runtimes/${runtime.runtime_id}/disconnect`)
                   toast.success(`${runtime.display_name} disconnected`)

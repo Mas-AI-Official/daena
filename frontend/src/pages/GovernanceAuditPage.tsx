@@ -24,6 +24,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Shimmer, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
+import { confirmDialog } from '@/stores/confirmStore'
 import type { AuditEntryResponse, ApiResponse, RiskLevel } from '@/types/api'
 
 // Risk level color mapping
@@ -342,8 +343,15 @@ export function GovernanceAuditPage() {
     setEntries((prev) => prev.filter((e) => !selectedIds.has(e.id)))
     clearSelection()
   }
-  const handleDelete = () => {
-    if (!confirm(`Delete ${selectedIds.size} audit entries? This cannot be undone.`)) return
+  const handleDelete = async () => {
+    const count = selectedIds.size
+    const ok = await confirmDialog({
+      title: `Delete ${count} audit ${count === 1 ? 'entry' : 'entries'}?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    })
+    if (!ok) return
     setEntries((prev) => prev.filter((e) => !selectedIds.has(e.id)))
     clearSelection()
   }

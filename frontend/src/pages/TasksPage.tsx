@@ -23,6 +23,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button, Shimmer, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
+import { batchDeleteWithToast } from '@/lib/mutations'
 import type { TaskResponse, TaskStatus, ApiResponse } from '@/types/api'
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; variant: string; icon: React.ReactNode }> = {
@@ -96,13 +97,19 @@ export function TasksPage() {
   }
 
   // ── Batch delete ──
+  // Uses the centralized batchDeleteWithToast helper so the success/
+  // partial-failure/total-failure feedback matches FilesPage,
+  // ProjectsPage, and anywhere else that deletes in bulk.
   const handleBatchDelete = async () => {
-    if (!confirm(`Delete ${selectedIds.size} task(s)? This cannot be undone.`)) return
-    for (const id of selectedIds) {
-      try { await api.delete(`/execution/tasks/${id}`) } catch { /* skip */ }
+    const result = await batchDeleteWithToast(
+      selectedIds,
+      (id) => `/execution/tasks/${id}`,
+      { entity: 'task' },
+    )
+    if (result.succeeded > 0) {
+      setSelectedIds(new Set())
+      await fetchTasks()
     }
-    setSelectedIds(new Set())
-    await fetchTasks()
   }
 
   const filtered = tasks
@@ -280,17 +287,34 @@ export function TasksPage() {
                           )}
                         </div>
 
-                        {/* Retry button for failed tasks */}
-                        {task.status === 'FAILED' && (
+                        {/* Re-run: available on any terminal state
+                            (FAILED / COMPLETED / CANCELLED). Not
+                            shown on PENDING/RUNNING because those are
+                            already in flight. Re-submitting sets
+                            status back to PENDING; the swarm picks it
+                            up on the next cycle. */}
+                        {['FAILED', 'COMPLETED', 'CANCELLED'].includes(task.status) && (
                           <button
                             onClick={() => handleRetry(task.id)}
                             disabled={retryingId === task.id}
-                            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-amber/10 text-accent-amber hover:bg-accent-amber/20 transition-colors cursor-pointer disabled:opacity-50"
+                            title={
+                              task.status === 'FAILED'
+                                ? 'Retry this failed task'
+                                : task.status === 'COMPLETED'
+                                  ? 'Re-run with the same parameters'
+                                  : 'Re-submit this cancelled task'
+                            }
+                            className={
+                              'shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer disabled:opacity-50 ' +
+                              (task.status === 'FAILED'
+                                ? 'bg-accent-amber/10 text-accent-amber hover:bg-accent-amber/20'
+                                : 'bg-primary-500/10 text-primary-400 hover:bg-primary-500/20')
+                            }
                           >
                             {retryingId === task.id
                               ? <Loader2 size={12} className="animate-spin" />
                               : <RotateCcw size={12} />}
-                            Retry
+                            {task.status === 'FAILED' ? 'Retry' : 'Re-run'}
                           </button>
                         )}
                       </div>

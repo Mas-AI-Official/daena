@@ -108,20 +108,42 @@ api.interceptors.response.use(
         toast.error('Resource not found.')
       }
     } else if (status && status >= 500) {
-      // Suppress toasts for background/polling endpoints that fire without user action
+      // Suppress toasts for background/polling endpoints that fire
+      // without user action. Expanded 2026-04-18 after a backend
+      // restart produced transient 500s on several polling surfaces
+      // and the user saw 4 "Server error" toasts stack up even though
+      // no action they took had failed. Poll hooks catch their own
+      // errors; component-level fetchers should set their own inline
+      // error state instead of relying on the global toast.
       const url = error.config?.url || ''
       const silentPrefixes = [
         '/execution/tasks', '/heartbeat/', '/governance/approvals',
         '/settings/user', '/billing/', '/chat/model-registry',
         '/chat/sessions', '/runtimes/', '/health', '/agents/',
-        '/memory/', '/connections/',
+        '/memory/', '/connections/', '/department-states',
+        '/department-messages', '/department-signals',
+        '/department-policies', '/department-budget',
+        '/security/', '/pipeline/', '/projects/', '/autopilot/',
+        '/dynamic-models/', '/mcp/', '/mcp-sync/', '/skills/',
+        '/integrations/', '/prompts/',
       ]
       const isSilent = silentPrefixes.some((p) => url.includes(p))
       if (!isSilent) {
         toast.error('Server error. Please try again in a moment.')
       }
     } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      toast.error('Request timed out. Please check your connection.')
+      const url = error.config?.url || ''
+      // Timeouts on polling endpoints are also transient -- don't
+      // toast for those. A long-running LLM call timing out is not a
+      // "please try again" situation; the caller decides what to do.
+      const silentOnTimeout = [
+        '/heartbeat/', '/governance/approvals', '/execution/tasks',
+        '/runtimes/', '/department-', '/security/', '/pipeline/',
+        '/chat/sessions', '/chat/model-registry',
+      ]
+      if (!silentOnTimeout.some((p) => url.includes(p))) {
+        toast.error('Request timed out. Please check your connection.')
+      }
     } else if (!error.response && error.message === 'Network Error') {
       // Backend unreachable -- don't spam toasts, components handle their own fallback
     }

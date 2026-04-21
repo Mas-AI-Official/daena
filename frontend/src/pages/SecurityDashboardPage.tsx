@@ -42,6 +42,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Shimmer, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
+import { alertDialog } from '@/stores/confirmStore'
 
 // ── Types ──
 
@@ -1017,7 +1018,12 @@ function MissionsTab() {
       loadMissionDetail(res.data.mission_id)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to start mission'
-      alert(msg)
+      await alertDialog({
+        title: 'Mission failed to start',
+        message: msg,
+        confirmLabel: 'Dismiss',
+        variant: 'danger',
+      })
     } finally {
       setLoading(false)
     }

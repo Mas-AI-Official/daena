@@ -44,9 +44,26 @@ export const useToastStore = create<ToastState>((set) => ({
     const id = `toast-${++_counter}-${Date.now()}`
     const duration = toast.duration ?? 5000
 
-    set((s) => ({
-      toasts: [...s.toasts, { ...toast, id }].slice(-5), // keep max 5
-    }))
+    // De-duplicate: if the exact same message+type already exists in
+    // the visible queue, don't pile a second copy on top. This used
+    // to produce 4+ identical "Server error" toasts stacked when one
+    // page polled multiple endpoints that all 500'd in the same
+    // 100ms window.
+    let suppressed = false
+    set((s) => {
+      const already = s.toasts.some(
+        (t) => t.type === toast.type && t.message === toast.message,
+      )
+      if (already) {
+        suppressed = true
+        return s
+      }
+      return {
+        toasts: [...s.toasts, { ...toast, id }].slice(-5), // keep max 5
+      }
+    })
+
+    if (suppressed) return
 
     // Auto-dismiss
     if (duration > 0) {

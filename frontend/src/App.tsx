@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import '@/stores/authStore'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
-import { ToastContainer, ErrorBoundary, Shimmer, ShimmerBar } from '@/components/common'
+import { ToastContainer, ConfirmDialog, ErrorBoundary, Shimmer, ShimmerBar } from '@/components/common'
 import { VoiceProvider } from '@/providers/VoiceProvider'
 
 // Auth pages -- small, load eagerly
@@ -175,6 +175,10 @@ export default function App() {
         <VoiceProvider>
           <AppRoutes />
           <ToastContainer />
+          {/* Global themed confirm/alert dialog. Reads state from
+              confirmStore so any non-React code can call
+              confirmDialog({...}) and get a Promise<boolean>. */}
+          <ConfirmDialog />
         </VoiceProvider>
       </BrowserRouter>
     </ErrorBoundary>
