@@ -110,7 +110,12 @@ interface UiState {
 export const useUiStore = create<UiState>((set) => ({
   sidebarOpen: true,
   sidebarWidth: 256,
-  historySidebarOpen: false, // starts collapsed (Perplexity-style)
+  // History sidebar default is persisted per-user in localStorage.
+  // Default is OPEN so chat history (sessions list) is visible the
+  // moment you open /chat. The earlier Perplexity-style "start
+  // collapsed" hid 20+ sessions from founders by default. The
+  // toggle button still collapses it, and the choice persists.
+  historySidebarOpen: localStorage.getItem('daena:historySidebarOpen') === 'false' ? false : true,
   peerSignalsPaneOpen: false, // starts collapsed so chat stays big
   mobileSidebarOpen: false,
   chatMode: (localStorage.getItem('daena:chatMode') as ChatMode) || 'CMD',
@@ -140,7 +145,11 @@ export const useUiStore = create<UiState>((set) => ({
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
-  toggleHistorySidebar: () => set((s) => ({ historySidebarOpen: !s.historySidebarOpen })),
+  toggleHistorySidebar: () => set((s) => {
+    const next = !s.historySidebarOpen
+    try { localStorage.setItem('daena:historySidebarOpen', String(next)) } catch {}
+    return { historySidebarOpen: next }
+  }),
   togglePeerSignalsPane: () => set((s) => ({ peerSignalsPaneOpen: !s.peerSignalsPaneOpen })),
   setChatMode: (mode) => { localStorage.setItem('daena:chatMode', mode); set({ chatMode: mode }) },
   setGovernanceMode: (mode) => { localStorage.setItem('daena:governanceMode', mode); set({ governanceMode: mode }) },
