@@ -208,6 +208,14 @@ class Settings(BaseSettings):
     # .env key: LLAMA_SERVER_MANAGED (case-insensitive)
     llama_server_managed: str = "off"
 
+    # Klyntar phase-checkpoint system (Shannon Pattern 2 port). When
+    # true, each scan phase commits its deliverables workspace to a
+    # private git repo under var/security_reports/queues/<job_id>/.
+    # Crash-resume reads the last checkpoint and rolls back. Off by
+    # default because simulated dev scans complete in <1s and git
+    # overhead is pure noise; flip to true for production scans.
+    klyntar_checkpoints_enabled: bool = False
+
     # --- Feature Flags ---
     enable_web3: bool = False
     enable_daenabot: bool = True

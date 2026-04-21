@@ -44,6 +44,7 @@ type EventKind =
   | 'scan_observation'
   | 'scan_phase_change'
   | 'scan_queue_decision'
+  | 'scan_checkpoint'
   | 'scan_complete'
   | 'scan_failed'
 
@@ -125,6 +126,11 @@ export default function ScanWalkthroughPage() {
   // from scan_queue_decision SSE events. Rendered in the right
   // column above the findings list.
   const [queueDecisions, setQueueDecisions] = useState<Record<string, QueueDecisionState>>({})
+  // Per-phase git checkpoint commit hashes, keyed by phase name.
+  // Filled from scan_checkpoint SSE events (Shannon Pattern 2).
+  // Rendered as a monospace pill next to each phase in the left
+  // column so operators can see "phase sealed at <short hash>".
+  const [checkpoints, setCheckpoints] = useState<Record<string, string>>({})
   const [report, setReport] = useState<ScanReport | null>(null)
   const [status, setStatus] = useState<'connecting' | 'running' | 'complete' | 'failed'>('connecting')
   const [target, setTarget] = useState<string>('')
@@ -179,6 +185,16 @@ export default function ScanWalkthroughPage() {
             const d = parsed.data ?? {}
             setError(typeof d.reason === 'string' ? d.reason : 'Scan failed')
           }
+          if (name === 'scan_checkpoint') {
+            const d = parsed.data ?? {}
+            const ph = typeof d.phase === 'string' ? d.phase : ''
+            const h = typeof d.short_hash === 'string'
+              ? d.short_hash
+              : (typeof d.commit_hash === 'string' ? d.commit_hash.slice(0, 12) : '')
+            if (ph && h) {
+              setCheckpoints(prev => ({ ...prev, [ph]: h }))
+            }
+          }
           if (name === 'scan_queue_decision') {
             // Backend Phase 3.5 tells us whether each OWASP-class
             // exploit agent would dispatch or skip. Accumulate into
@@ -207,7 +223,7 @@ export default function ScanWalkthroughPage() {
 
     const kinds: EventKind[] = [
       'scan_started', 'scan_thinking', 'scan_observation',
-      'scan_phase_change', 'scan_queue_decision',
+      'scan_phase_change', 'scan_queue_decision', 'scan_checkpoint',
       'scan_complete', 'scan_failed',
     ]
     kinds.forEach(k => es.addEventListener(k, on(k)))
@@ -399,7 +415,15 @@ export default function ScanWalkthroughPage() {
                   <span className={active ? 'text-primary-400 animate-pulse' : 'text-starlight-500'}>
                     {info.icon}
                   </span>
-                  <span>{info.label}</span>
+                  <span className="flex-1 truncate">{info.label}</span>
+                  {checkpoints[phase] && (
+                    <span
+                      className="text-[9px] font-mono text-accent-amber/80"
+                      title={`phase sealed at commit ${checkpoints[phase]}`}
+                    >
+                      {checkpoints[phase].slice(0, 7)}
+                    </span>
+                  )}
                 </li>
               )
             })}
@@ -447,6 +471,15 @@ export default function ScanWalkthroughPage() {
                     <span className="text-primary-400">phase</span>
                     <span className="text-starlight-500">: </span>
                     <span className="text-starlight-300">{evt.phase ?? '(unknown)'}</span>
+                  </>
+                )}
+                {evt.kind === 'scan_checkpoint' && (
+                  <>
+                    <span className="text-accent-amber">seal</span>
+                    <span className="text-starlight-500">.{String(evt.data?.phase ?? '?')}: </span>
+                    <span className="text-starlight-200 font-mono">
+                      {String(evt.data?.short_hash ?? (evt.data?.commit_hash ? String(evt.data.commit_hash).slice(0, 12) : ''))}
+                    </span>
                   </>
                 )}
                 {evt.kind === 'scan_queue_decision' && (

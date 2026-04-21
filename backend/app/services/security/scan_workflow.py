@@ -724,6 +724,59 @@ class ScanWorkflow:
                 # chat UI) can inspect per-class decisions.
                 job.options["queue_decisions"] = queue_decisions
                 job.options["queues_dir"] = str(queues_dir)
+
+                # Phase 3.5b: git-checkpoint the queues directory so
+                # the EvidenceChain has a commit hash to seal against
+                # (Shannon Pattern 2). Opt-in via klyntar_checkpoints_
+                # enabled; when disabled, the call returns ok=False
+                # and we just skip it. When enabled, the commit hash
+                # flows back in job.options.checkpoints so later
+                # phases can cross-link or roll back.
+                try:
+                    from app.core.config import get_settings as _get_settings
+                    from app.services.security.evidence_checkpoint import (
+                        checkpoint_if_enabled,
+                    )
+                    _cp_enabled = bool(
+                        getattr(
+                            _get_settings(),
+                            "klyntar_checkpoints_enabled",
+                            False,
+                        )
+                    )
+                    if _cp_enabled:
+                        cp_result = await checkpoint_if_enabled(
+                            queues_dir,
+                            description=(
+                                f"phase=exploitation_queue dispatched={dispatched} "
+                                f"skipped={skipped}"
+                            ),
+                            phase="exploitation_queue",
+                            evidence_chain_id=f"scan-{job.id}",
+                            enabled=_cp_enabled,
+                        )
+                        if cp_result.ok:
+                            job.options.setdefault("checkpoints", {})[
+                                "exploitation_queue"
+                            ] = cp_result.commit_hash
+                            self._emit_event(
+                                job.id, "scan_checkpoint",
+                                phase="exploitation_queue",
+                                commit_hash=cp_result.commit_hash,
+                                short_hash=cp_result.commit_hash[:12],
+                            )
+                        else:
+                            logger.info(
+                                "scan_workflow.checkpoint_skipped",
+                                job_id=job.id,
+                                phase="exploitation_queue",
+                                reason=cp_result.reason,
+                            )
+                except Exception as cp_exc:  # pragma: no cover - fail-safe
+                    logger.warning(
+                        "scan_workflow.checkpoint_failed",
+                        job_id=job.id, error=str(cp_exc),
+                    )
             except Exception as q_exc:  # pragma: no cover - fail-safe
                 logger.warning(
                     "scan_workflow.exploitation_queue_skipped",
