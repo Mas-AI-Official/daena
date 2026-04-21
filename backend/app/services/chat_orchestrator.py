@@ -1537,7 +1537,9 @@ class ChatOrchestrator:
         except Exception:
             logger.debug("orchestrator.cognitive_lens_failed", exc_info=True)
 
-        # ── Stage 6.4: Peer signal injection ───────────────────
+        # ── Stage 6.75: Peer signal injection ──────────────────
+        # Renumbered from 6.4 to 6.75 to match execution order after
+        # Stage 6.7 Cognitive Lens router. No behavior change.
         # Pull recent BorderAgent peer signals and inject them into the
         # system prompt. This is the "departments aware of each other
         # without meetings" vision: a Sales turn starts with Marketing
@@ -1581,7 +1583,9 @@ class ChatOrchestrator:
                 "orchestrator.peer_signals_failed", exc_info=True
             )
 
-        # ── Stage 6.45: Installed-plugin awareness ─────────────
+        # ── Stage 6.8: Installed-plugin awareness ──────────────
+        # Renumbered from 6.45 to 6.8 to match execution order after
+        # Stage 6.75 Peer signal injection. No behavior change.
         # Inject a concise list of currently-installed MCPs + their
         # headline skills into the system prompt. The LLM now knows
         # what ``plugin.call_tool`` can dispatch to -- it doesn't
