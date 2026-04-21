@@ -215,6 +215,33 @@ _SIMULATED_FINDINGS: list[dict[str, Any]] = [
 ]
 
 
+def _load_queue_entries(queues_dir: str) -> list[dict[str, Any]]:
+    """Read every ``{class}_exploitation_queue.json`` under queues_dir
+    and return a flat list of vulnerability entries across all classes.
+    Fail-safe: missing dir or malformed files yield an empty list.
+    """
+    import json as _json
+    import os as _os
+    out: list[dict[str, Any]] = []
+    if not queues_dir or not _os.path.isdir(queues_dir):
+        return out
+    try:
+        for name in _os.listdir(queues_dir):
+            if not name.endswith("_exploitation_queue.json"):
+                continue
+            fp = _os.path.join(queues_dir, name)
+            try:
+                doc = _json.loads(
+                    open(fp, "r", encoding="utf-8").read()
+                )
+                out.extend(doc.get("vulnerabilities", []) or [])
+            except Exception:
+                continue
+    except Exception:
+        return out
+    return out
+
+
 def _simulate_file_scan(file_path: str, tier: ReportTier) -> list[dict[str, Any]]:
     """Simulate scanning a single file. Returns findings relevant to the tier.
 
@@ -616,6 +643,93 @@ class ScanWorkflow:
                     error=str(bm_exc),
                 )
 
+            # Phase 3.5: Structured Exploitation Queue (Shannon Pattern 1).
+            # Partition the enriched findings into 5 per-OWASP-class
+            # queues (injection, xss, ssrf, auth, authz). The queues
+            # are persisted under the scan's deliverables directory
+            # (operators + retries + audit can read them) and each
+            # queue is gated by check_exploitation_queue. In Shannon,
+            # empty queues short-circuit the corresponding exploit
+            # agent and save 30-50% of per-scan spend. Klyntar surfaces
+            # the decision as an SSE "scan_queue_decision" event for
+            # each class so the walkthrough window can render
+            # dispatch vs skip live.
+            queue_decisions: dict[str, Any] = {}
+            try:
+                from app.services.security.exploitation_queue import (
+                    build_queues_from_findings,
+                    check_exploitation_queue,
+                    write_queue_file,
+                )
+                import os as _os
+                queues_dir = _os.path.join(
+                    _os.environ.get("SECURITY_REPORTS_DIR", _os.path.join("var", "security_reports")),
+                    "queues",
+                    job.id,
+                )
+                per_class_queues = build_queues_from_findings(
+                    all_findings,
+                    scan_id=job.id,
+                    tier=job.tier.value,
+                )
+                for cls_key, queue in per_class_queues.items():
+                    try:
+                        qpath = write_queue_file(queue, queues_dir)
+                    except Exception as write_exc:  # pragma: no cover
+                        logger.warning(
+                            "scan_workflow.queue_write_failed",
+                            job_id=job.id, cls=cls_key, error=str(write_exc),
+                        )
+                        qpath = ""
+                    decision = check_exploitation_queue(
+                        queue, kind=cls_key, queue_path=str(qpath),
+                    )
+                    queue_decisions[cls_key] = {
+                        "should_exploit": decision.should_exploit,
+                        "vuln_count": decision.vulnerability_count,
+                        "externally_exploitable_count": decision.externally_exploitable_count,
+                        "reason": decision.reason,
+                    }
+                    self._emit_event(
+                        job.id, "scan_queue_decision",
+                        cls=cls_key,
+                        should_exploit=decision.should_exploit,
+                        vuln_count=decision.vulnerability_count,
+                        externally_exploitable_count=(
+                            decision.externally_exploitable_count
+                        ),
+                        reason=decision.reason,
+                    )
+                dispatched = sum(
+                    1 for d in queue_decisions.values() if d["should_exploit"]
+                )
+                skipped = len(queue_decisions) - dispatched
+                self._emit_event(
+                    job.id, "scan_thinking",
+                    phase="exploitation_queue",
+                    text=(
+                        f"Exploitation queue gate: "
+                        f"{dispatched} of {len(queue_decisions)} classes "
+                        f"would dispatch exploit agents ({skipped} skipped as clean)."
+                    ),
+                )
+                logger.info(
+                    "scan_workflow.exploitation_queue_built",
+                    job_id=job.id,
+                    classes=len(queue_decisions),
+                    dispatched=dispatched,
+                    skipped=skipped,
+                )
+                # Stash on job.options so downstream (report_generator,
+                # chat UI) can inspect per-class decisions.
+                job.options["queue_decisions"] = queue_decisions
+                job.options["queues_dir"] = str(queues_dir)
+            except Exception as q_exc:  # pragma: no cover - fail-safe
+                logger.warning(
+                    "scan_workflow.exploitation_queue_skipped",
+                    job_id=job.id, error=str(q_exc),
+                )
+
             # Phase 3c: Zero-FP gate. Any OPERATOR+ finding without a
             # matching EvidenceChain (or explicit founder override) is
             # rejected before the PDF is built. Prevents the failure
@@ -627,10 +741,30 @@ class ScanWorkflow:
                 override_ids = set(
                     job.options.get("finding_overrides", []) or []
                 )
+                # Build a {finding_id -> queue_entry} map for queue-
+                # linkage cross-validation (Shannon Pattern 1
+                # extension). When queue entries were persisted
+                # earlier in Phase 3.5, feed them to the gate so
+                # tampering with the finding's poc_artifact_sha256
+                # is caught.
+                queue_entries_by_id: dict[str, dict[str, Any]] = {}
+                for cls_queue in (
+                    job.options.get("queue_decisions") and
+                    _load_queue_entries(
+                        job.options.get("queues_dir", ""),
+                    ) or []
+                ):
+                    qid = str(cls_queue.get("id", ""))
+                    if qid:
+                        queue_entries_by_id[qid] = cls_queue
+
                 gate_result = apply_gate(
                     all_findings,
                     job.tier,
                     founder_override_ids=override_ids,
+                    queue_entries_by_id=(
+                        queue_entries_by_id or None
+                    ),
                 )
                 if gate_result.rejected:
                     logger.info(

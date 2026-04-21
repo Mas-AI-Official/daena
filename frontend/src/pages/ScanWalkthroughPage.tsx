@@ -43,8 +43,17 @@ type EventKind =
   | 'scan_thinking'
   | 'scan_observation'
   | 'scan_phase_change'
+  | 'scan_queue_decision'
   | 'scan_complete'
   | 'scan_failed'
+
+interface QueueDecisionState {
+  cls: string
+  should_exploit: boolean
+  vuln_count: number
+  externally_exploitable_count: number
+  reason: string
+}
 
 interface TimelineEvent {
   id: string                   // client-side uuid
@@ -112,6 +121,10 @@ export default function ScanWalkthroughPage() {
   usePageTitle('Scan Walkthrough')
 
   const [events, setEvents] = useState<TimelineEvent[]>([])
+  // Per-OWASP-class gate decisions, keyed by class name. Filled
+  // from scan_queue_decision SSE events. Rendered in the right
+  // column above the findings list.
+  const [queueDecisions, setQueueDecisions] = useState<Record<string, QueueDecisionState>>({})
   const [report, setReport] = useState<ScanReport | null>(null)
   const [status, setStatus] = useState<'connecting' | 'running' | 'complete' | 'failed'>('connecting')
   const [target, setTarget] = useState<string>('')
@@ -166,6 +179,25 @@ export default function ScanWalkthroughPage() {
             const d = parsed.data ?? {}
             setError(typeof d.reason === 'string' ? d.reason : 'Scan failed')
           }
+          if (name === 'scan_queue_decision') {
+            // Backend Phase 3.5 tells us whether each OWASP-class
+            // exploit agent would dispatch or skip. Accumulate into
+            // the per-class decision map.
+            const d = parsed.data ?? {}
+            const cls = typeof d.cls === 'string' ? d.cls : ''
+            if (cls) {
+              setQueueDecisions(prev => ({
+                ...prev,
+                [cls]: {
+                  cls,
+                  should_exploit: Boolean(d.should_exploit),
+                  vuln_count: Number(d.vuln_count ?? 0),
+                  externally_exploitable_count: Number(d.externally_exploitable_count ?? 0),
+                  reason: String(d.reason ?? ''),
+                },
+              }))
+            }
+          }
           pushEvent(name, parsed)
         } catch {
           // malformed; ignore
@@ -175,7 +207,8 @@ export default function ScanWalkthroughPage() {
 
     const kinds: EventKind[] = [
       'scan_started', 'scan_thinking', 'scan_observation',
-      'scan_phase_change', 'scan_complete', 'scan_failed',
+      'scan_phase_change', 'scan_queue_decision',
+      'scan_complete', 'scan_failed',
     ]
     kinds.forEach(k => es.addEventListener(k, on(k)))
     es.onmessage = on('scan_thinking')  // default fallthrough
@@ -191,6 +224,9 @@ export default function ScanWalkthroughPage() {
         setStatus('complete')
         api.get<ScanReport>(`/security/scans/${jobId}/report`).then(r => {
           setReport(r.data)
+          // Populate tier from the report so the header badge ("Founder")
+          // renders even for scans that completed before we subscribed.
+          if (r.data.tier) setTier(r.data.tier)
           // Reconstruct a synthetic timeline if we have no live events.
           setEvents(prev => {
             if (prev.length > 0) return prev
@@ -413,6 +449,17 @@ export default function ScanWalkthroughPage() {
                     <span className="text-starlight-300">{evt.phase ?? '(unknown)'}</span>
                   </>
                 )}
+                {evt.kind === 'scan_queue_decision' && (
+                  <>
+                    <span className="text-accent-amber">queue</span>
+                    <span className="text-starlight-500">.{String(evt.data?.cls ?? '?')}: </span>
+                    <span className="text-starlight-200">
+                      {evt.data?.should_exploit ? 'dispatch' : 'skip'} (
+                      {String(evt.data?.vuln_count ?? 0)} vulns, {' '}
+                      {String(evt.data?.externally_exploitable_count ?? 0)} externally exploitable)
+                    </span>
+                  </>
+                )}
                 {evt.kind === 'scan_started' && (
                   <>
                     <span className="text-status-success">start</span>
@@ -447,6 +494,38 @@ export default function ScanWalkthroughPage() {
 
         {/* Right: findings as they arrive */}
         <aside className="border-l border-white/5 p-4 overflow-y-auto">
+          {/* Exploitation queue gate decisions (Shannon Pattern 1).
+              Shows per-OWASP-class whether the exploit agent would
+              dispatch or skip. Collapsed when empty. */}
+          {Object.keys(queueDecisions).length > 0 && (
+            <div className="mb-4">
+              <p className="text-[10px] uppercase tracking-wider text-starlight-500 mb-2">
+                Exploit gate
+              </p>
+              <div className="space-y-1">
+                {Object.values(queueDecisions).map(d => (
+                  <div
+                    key={d.cls}
+                    className={`flex items-center justify-between text-[11px] px-2 py-1 rounded ${
+                      d.should_exploit
+                        ? 'bg-accent-amber/10 text-accent-amber border border-accent-amber/25'
+                        : 'bg-status-success/5 text-status-success border border-status-success/20'
+                    }`}
+                    title={d.reason}
+                  >
+                    <span className="font-mono">{d.cls}</span>
+                    <span>
+                      {d.should_exploit
+                        ? `dispatch (${d.externally_exploitable_count}/${d.vuln_count})`
+                        : (d.vuln_count === 0 ? 'clean' : `skip (${d.vuln_count})`)
+                      }
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] uppercase tracking-wider text-starlight-500">
               Findings

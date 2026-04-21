@@ -93,12 +93,54 @@ def _has_poc_artifact(finding: dict[str, Any]) -> bool:
     return False
 
 
+def cross_validate_queue_linkage(
+    finding: dict[str, Any],
+    queue_entries_by_id: dict[str, dict[str, Any]] | None,
+) -> tuple[bool, str]:
+    """Cross-validate finding's PoC linkage against exploitation queue.
+
+    When we have the exploitation queue map for the scan, a finding
+    that claims to be exploit-proven must match a queue entry whose
+    ``poc_artifact_sha256`` agrees. Mismatches are tamper signals:
+    either the finding was mutated after the queue was written, or
+    the PoC was swapped. Missing queue mapping is NOT a failure
+    (some scans skip the queue phase); we only enforce when a map is
+    provided.
+
+    Returns (ok, reason).
+    """
+    if queue_entries_by_id is None:
+        return (True, "no queue map provided; skipping cross-validation")
+
+    f_id = str(finding.get("id", ""))
+    f_sha = finding.get("poc_artifact_sha256") or (
+        (finding.get("poc_artifact") or {}).get("sha256") if isinstance(finding.get("poc_artifact"), dict) else ""
+    )
+    if not f_id or not f_sha:
+        # Nothing to cross-check.
+        return (True, "finding lacks id or sha256; no cross-check")
+
+    q_entry = queue_entries_by_id.get(f_id)
+    if q_entry is None:
+        return (False, f"finding id {f_id!r} not present in any queue")
+
+    q_sha = q_entry.get("poc_artifact_sha256", "")
+    if q_sha and q_sha != f_sha:
+        return (
+            False,
+            f"finding id {f_id!r} poc_artifact_sha256 mismatch "
+            f"(finding={f_sha[:16]}.., queue={str(q_sha)[:16]}..)",
+        )
+    return (True, "queue linkage validated")
+
+
 def apply_gate(
     findings: list[dict[str, Any]],
     tier: ReportTier,
     *,
     founder_override_ids: set[str] | None = None,
     require_poc_artifact: bool = False,
+    queue_entries_by_id: dict[str, dict[str, Any]] | None = None,
 ) -> GateResult:
     """Split findings into accepted / rejected / overrides for a tier.
 
@@ -132,8 +174,14 @@ def apply_gate(
         finding_id = str(f.get("id", ""))
         has_ev = _has_evidence(f)
         has_poc = _has_poc_artifact(f) if require_poc_artifact else True
+        # Cross-validate queue linkage when a queue map is provided.
+        # Tampering with either the finding's poc_artifact_sha256 OR
+        # the queue's corresponding entry breaks this check.
+        queue_ok, queue_reason = cross_validate_queue_linkage(
+            f, queue_entries_by_id,
+        )
 
-        if has_ev and has_poc:
+        if has_ev and has_poc and queue_ok:
             accepted.append(f)
             continue
         if finding_id in overrides:
@@ -145,15 +193,18 @@ def apply_gate(
                 title=f.get("title", ""),
                 missing_evidence=not has_ev,
                 missing_poc=not has_poc,
+                queue_mismatch=(not queue_ok),
             )
             continue
-        # Missing evidence and/or PoC + no override: reject.
+        # Missing evidence / PoC / queue linkage + no override: reject.
         rejected_finding = dict(f)
         missing: list[str] = []
         if not has_ev:
             missing.append("EvidenceChain")
         if not has_poc:
             missing.append("PoC artifact")
+        if not queue_ok:
+            missing.append(f"Queue linkage ({queue_reason})")
         rejected_finding["rejection_reason"] = (
             f"Missing {', '.join(missing)} for tier {tier.value}. "
             "Founder override required to include."
