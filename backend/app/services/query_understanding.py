@@ -50,6 +50,7 @@ class IntentType(str, Enum):
     MULTI_STEP = "MULTI_STEP"
     DANGEROUS = "DANGEROUS"
     TOOL_USE = "TOOL_USE"
+    SECURITY_SCAN = "SECURITY_SCAN"
     AMBIGUOUS = "AMBIGUOUS"
 
 
@@ -104,6 +105,28 @@ class QueryUnderstanding:
     # agent that does the work, not a chat bot that describes it.
     auto_escalate_exe: bool = False
     intent_scores: dict[str, float] = field(default_factory=dict)
+    # Scan targets extracted from the message. Covers URLs, bare
+    # domains, IPs, CIDR ranges, host:port, Android package names,
+    # APK/IPA/AAB mobile binaries, and git repos. Populated
+    # regardless of classified intent; downstream stages can prompt
+    # "Want me to scan this?" even when the intent was not
+    # SECURITY_SCAN. Each ScanTarget carries a kind that drives
+    # scanner routing (web DAST / network / mobile / SAST).
+    detected_targets: list[ScanTarget] = field(default_factory=list)
+    # Flag set by Stage 2.7 when the orchestrator should dispatch a
+    # CognitiveScanEngine scan for this turn. See Stage 2.8
+    # SecurityScanDispatcher in chat_orchestrator.py.
+    scan_dispatch_requested: bool = False
+
+    @property
+    def detected_urls(self) -> list[str]:
+        """Backward-compat alias: URL values only.
+
+        Older callers that accessed ``detected_urls`` as a list of
+        strings continue to work. New callers should consume
+        ``detected_targets`` so they see non-URL targets too.
+        """
+        return [t.value for t in self.detected_targets if t.kind == "url"]
 
 
 # ── Keyword Classification ───────────────────────────────────
@@ -113,6 +136,29 @@ class QueryUnderstanding:
 # DANGEROUS checked first — false negatives have worst consequences.
 
 _INTENT_KEYWORDS: dict[IntentType, dict[str, Any]] = {
+    IntentType.SECURITY_SCAN: {
+        # Scan-verb vocabulary. The classifier requires BOTH a matching
+        # keyword AND at least one concrete target (URL, domain, IP,
+        # CIDR, host:port, APK/IPA, android package, or git repo) in
+        # the message to flag SECURITY_SCAN (enforced in
+        # _classify_intent). Without the target gate, asking "how do I
+        # pentest a service?" would misclassify.
+        "keywords": [
+            "scan", "pentest", "penetration test", "penetration testing",
+            "audit", "probe", "fuzz", "fuzzing",
+            "vuln", "vulns", "vulnerability", "vulnerabilities",
+            "find vulns", "find vulnerabilities", "vuln scan",
+            "check security", "security audit", "security scan",
+            "red team", "red-team",
+            "exploit", "exploits", "find exploits",
+            "xss", "sql injection", "idor", "ssrf", "csrf",
+            "test for cve", "look for cve",
+            "audit this site", "audit this url", "audit this endpoint",
+            "check this app", "scan this app", "analyze this apk",
+        ],
+        "weight": 1.4,
+        "threshold": 0.30,
+    },
     IntentType.DANGEROUS: {
         "keywords": [
             "delete", "remove", "destroy", "wipe", "purge", "drop",
@@ -202,9 +248,13 @@ _INTENT_KEYWORDS: dict[IntentType, dict[str, Any]] = {
     },
 }
 
-# Checked in priority order
+# Checked in priority order. SECURITY_SCAN sits ahead of TOOL_USE
+# because "scan https://..." should not be misclassified as a generic
+# file/shell action. DANGEROUS stays first so a scan verb mixed with
+# sudo / rm / DROP still reads as DANGEROUS and hits the right gate.
 _INTENT_PRIORITY: list[IntentType] = [
     IntentType.DANGEROUS,
+    IntentType.SECURITY_SCAN,
     IntentType.TOOL_USE,
     IntentType.CODING,
     IntentType.MULTI_STEP,
@@ -259,6 +309,9 @@ _MODE_MINIMUMS: dict[GovernanceMode, int] = {
 # ── Default Routing Suggestions ──────────────────────────────
 
 _INTENT_PROVIDERS: dict[IntentType, list[ModelProvider]] = {
+    IntentType.SECURITY_SCAN: [
+        ModelProvider.ANTHROPIC, ModelProvider.OPENAI, ModelProvider.PERPLEXITY,
+    ],
     IntentType.SIMPLE: [
         ModelProvider.OLLAMA, ModelProvider.GROQ, ModelProvider.PERPLEXITY,
     ],
@@ -347,6 +400,170 @@ _CODE_KEYWORD_RE = re.compile(
 
 _VAGUE_PRONOUNS = {"it", "that", "this", "they", "them", "those"}
 
+# ── Scan-target extraction ───────────────────────────────────
+#
+# The user wants "scan this" to work for anything a security
+# operator might target: a full URL, a bare domain, an IP, a CIDR
+# range, a host:port, a mobile app package, an APK/IPA file, a git
+# repo, or a source path. Each kind is extracted via its own regex
+# and returned as a typed ScanTarget so downstream ScanWorkflow can
+# route to the right scanner (DAST for urls/domains, network scanner
+# for ips/cidrs, mobile scanner for apks, SAST for repos/files).
+
+# Full URL with scheme. Stops at whitespace or common bracket chars.
+_URL_RE = re.compile(r"https?://[^\s\)\]\>\"'`,]+", re.IGNORECASE)
+
+# Bare hostname or domain (no scheme). Matches label.label[.label...]
+# where each label is 1-63 chars, alnum or hyphen (no leading hyphen),
+# and the TLD is 2+ alpha. Excludes common false positives (e.g.,
+# filenames like foo.py) by requiring at least one known TLD or at
+# least three labels.
+_BARE_DOMAIN_RE = re.compile(
+    r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+"
+    r"(?:com|org|net|io|co|ai|app|dev|tech|cloud|sh|gg|xyz|info|me|us|uk|ca|de|fr|jp|cn|ru|au|in|nz|br|"
+    r"es|it|nl|se|no|fi|dk|pl|pt|mx|tv|site|online|store|blog|page|link|bio|pro|biz|local)"
+    r"(?::\d{1,5})?(?:/\S*)?\b",
+    re.IGNORECASE,
+)
+
+# IPv4 with optional port and optional CIDR. Covers 10.0.0.1,
+# 192.168.1.1:8080, 10.0.0.0/24.
+_IPV4_RE = re.compile(
+    r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}"
+    r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)"
+    r"(?::\d{1,5})?(?:/\d{1,2})?\b"
+)
+
+# Android package identifier: com.example.myapp. Requires 3+ labels,
+# all lowercase alnum, to avoid matching random dotted identifiers.
+_APP_PACKAGE_RE = re.compile(
+    r"\b[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){2,}\b"
+)
+
+# Mobile app binary: MyApp.apk, MyApp.ipa, MyApp.aab (App Bundle).
+_MOBILE_BINARY_RE = re.compile(
+    r"\b[A-Za-z0-9_.\-]+\.(?:apk|ipa|aab|xapk)\b",
+    re.IGNORECASE,
+)
+
+# Git repository: git@host:user/repo, https://git...../user/repo,
+# host/user/repo (when host contains git indicator).
+_GIT_REPO_RE = re.compile(
+    r"(?:git@[\w.\-]+:[\w.\-/]+(?:\.git)?"
+    r"|https?://(?:github|gitlab|bitbucket|gitea|codeberg)\.[\w.\-]+/[\w.\-/]+"
+    r"|\b(?:github|gitlab|bitbucket)\.com/[\w.\-]+/[\w.\-]+)",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ScanTarget:
+    """A security scan target detected in a user message.
+
+    ``kind`` drives downstream routing:
+        url, domain -> web DAST
+        ip, cidr, host_port -> network scanner
+        app_package, mobile_binary -> mobile scanner
+        repo -> SAST / codebase-memory whitebox
+    """
+
+    value: str
+    kind: str
+
+
+def _extract_scan_targets(msg: str) -> list[ScanTarget]:
+    """Parse a message for any kind of scan target.
+
+    Ordering matters: more specific patterns run first so a URL is
+    not double-counted as a bare domain, and a git HTTPS URL is not
+    double-counted as a plain URL. Each extracted value is deduped
+    case-insensitively per kind.
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[ScanTarget] = []
+
+    def _add(kind: str, value: str) -> None:
+        key = (kind, value.lower())
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(ScanTarget(value=value, kind=kind))
+
+    # Git repos first (they would otherwise match url or bare_domain).
+    for m in _GIT_REPO_RE.finditer(msg):
+        _add("repo", m.group(0).rstrip(".,;"))
+
+    # Full URLs next.
+    matched_url_spans: list[tuple[int, int]] = []
+    for m in _URL_RE.finditer(msg):
+        value = m.group(0).rstrip(".,;)]")
+        # Skip if already captured as a git repo.
+        already_repo = any(v.value == value for v in out if v.kind == "repo")
+        if not already_repo:
+            _add("url", value)
+            matched_url_spans.append(m.span())
+
+    def _covered(span: tuple[int, int]) -> bool:
+        s, e = span
+        return any(us <= s and ue >= e for us, ue in matched_url_spans)
+
+    # IPv4 with optional port / CIDR. Classify by suffix.
+    for m in _IPV4_RE.finditer(msg):
+        if _covered(m.span()):
+            continue
+        raw = m.group(0)
+        if "/" in raw:
+            _add("cidr", raw)
+        elif ":" in raw:
+            _add("host_port", raw)
+        else:
+            _add("ip", raw)
+
+    # Bare domains last. Guard against matching something already
+    # inside a captured URL span or a captured git repo string.
+    existing_values = {v.value.lower() for v in out}
+    for m in _BARE_DOMAIN_RE.finditer(msg):
+        if _covered(m.span()):
+            continue
+        raw = m.group(0).rstrip(".,;)]")
+        # Skip if this bare token shows up inside any previously
+        # captured target (e.g. github.com inside a git repo URL).
+        if any(raw.lower() in v for v in existing_values):
+            continue
+        # Classify host:port separately from bare domain.
+        if ":" in raw and raw.split(":", 1)[1].split("/", 1)[0].isdigit():
+            _add("host_port", raw)
+        else:
+            _add("domain", raw)
+
+    # Mobile binaries.
+    for m in _MOBILE_BINARY_RE.finditer(msg):
+        raw = m.group(0)
+        _add("mobile_binary", raw)
+
+    # Android package identifiers. Must NOT collide with a captured
+    # bare domain (com.example.com would match both but domain is
+    # correct). Skip any match that is already in out.
+    for m in _APP_PACKAGE_RE.finditer(msg):
+        raw = m.group(0)
+        if any(raw.lower() == v.value.lower() for v in out):
+            continue
+        # Require 3+ labels AND no uppercase (Android convention).
+        if raw.count(".") >= 2 and raw == raw.lower():
+            # Also require that the rightmost label is NOT a known
+            # TLD (to avoid matching "my.site.com" as a package).
+            last = raw.rsplit(".", 1)[-1]
+            known_tlds = {
+                "com", "org", "net", "io", "co", "ai", "app", "dev",
+                "tech", "cloud", "sh", "gg", "xyz", "info", "me",
+                "us", "uk", "ca", "de", "fr", "jp", "cn", "ru",
+                "local", "internal",
+            }
+            if last not in known_tlds:
+                _add("app_package", raw)
+
+    return out
+
 
 # ── Pipeline Service ─────────────────────────────────────────
 
@@ -367,8 +584,15 @@ class QueryUnderstandingService:
         msg = query_input.raw_message.strip()
         lower = msg.lower()
 
+        # Stage 0.5: Scan-target extraction. Always runs so every
+        # downstream stage can offer scan flows even when SECURITY_SCAN
+        # is not the top intent.
+        detected_targets = _extract_scan_targets(msg)
+
         # Stage 1: Intent classification (keyword heuristic)
-        intent, confidence, scores = self._classify_intent(msg, lower)
+        intent, confidence, scores = self._classify_intent(
+            msg, lower, has_target=bool(detected_targets),
+        )
 
         # Stage 2: Ambiguity detection
         ambiguity_signals = self._detect_ambiguity(
@@ -452,6 +676,14 @@ class QueryUnderstandingService:
 
         elapsed = int((time.monotonic() - start) * 1000)
 
+        # Stage 8: Scan dispatch flag. Set when intent classified as
+        # SECURITY_SCAN AND at least one concrete target was detected.
+        # Stage 2.8 SecurityScanDispatcher consumes this to call
+        # ScanWorkflow.start_scan() with the first target.
+        scan_dispatch_requested = (
+            intent == IntentType.SECURITY_SCAN and bool(detected_targets)
+        )
+
         result = QueryUnderstanding(
             intent=intent,
             confidence=confidence,
@@ -467,6 +699,8 @@ class QueryUnderstandingService:
             exe_suggestion=exe_suggestion,
             auto_escalate_exe=auto_escalate_exe,
             intent_scores={k.value: round(v, 4) for k, v in scores.items()},
+            detected_targets=detected_targets,
+            scan_dispatch_requested=scan_dispatch_requested,
         )
 
         logger.info(
@@ -483,11 +717,17 @@ class QueryUnderstandingService:
     # ── Stage 1: Intent Classification ────────────────────────
 
     def _classify_intent(
-        self, msg: str, lower: str,
+        self, msg: str, lower: str, has_target: bool = False,
     ) -> tuple[IntentType, float, dict[IntentType, float]]:
         """Keyword-based heuristic classification (<5ms).
 
         Returns (best_intent, confidence, all_scores).
+
+        ``has_target`` is True when ``_extract_scan_targets`` found at
+        least one URL / domain / IP / app / repo in the message. It is
+        required for SECURITY_SCAN to fire: without a concrete target,
+        "how do I pentest?" stays a SEARCH / ANALYSIS question rather
+        than kicking off a scan.
         """
         scores: dict[IntentType, float] = {}
 
@@ -515,10 +755,31 @@ class QueryUnderstandingService:
             saturation = 4
             raw_score = min(hit_count / saturation, 1.0) * weight
 
+            # SECURITY_SCAN requires a concrete target (url/domain/ip/
+            # app/repo) in the message. Without one, "how do I pentest
+            # a service?" would misfire. The presence of a target also
+            # boosts score for intents where a URL strongly implies
+            # action (TOOL_USE when keywords look like fetch/navigate).
+            if intent_type == IntentType.SECURITY_SCAN:
+                if not has_target:
+                    raw_score = 0.0
+                elif hit_count > 0:
+                    raw_score = min(raw_score + 0.2, 1.0)
+
             scores[intent_type] = min(raw_score, 1.0)
 
         if not scores or max(scores.values()) == 0:
             return IntentType.SIMPLE, 0.5, scores
+
+        # DANGEROUS fail-safe: if destructive verbs (rm -rf, DROP TABLE,
+        # sudo, money transfer, auth revocation) score at or above
+        # their own threshold, DANGEROUS wins unconditionally.
+        # False-negatives here have the worst consequences; we never
+        # want SECURITY_SCAN or TOOL_USE to mask a rm -rf.
+        dangerous_score = scores.get(IntentType.DANGEROUS, 0.0)
+        dangerous_threshold = _INTENT_KEYWORDS[IntentType.DANGEROUS]["threshold"]
+        if dangerous_score >= dangerous_threshold:
+            return IntentType.DANGEROUS, dangerous_score, scores
 
         best_intent = max(scores, key=lambda k: scores[k])
         best_score = scores[best_intent]
