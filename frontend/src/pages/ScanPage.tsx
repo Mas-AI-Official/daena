@@ -10,7 +10,7 @@
  *   T2 Analyst  -- Find + explain + remediation (Pro)
  *   T3 Operator -- Find + explain + fix code (Enterprise)
  *   T4 Architect -- Full + verify fix + retest (Enterprise+)
- *   T5 3vilbob  -- Offensive mode (Founder only)
+ *   T5 Founder  -- Full adversarial walkthrough (internal tier: 3vilbob)
  *
  * Endpoints:
  *   POST /security/scans/start      -- Start a scan
@@ -178,13 +178,14 @@ const TIERS: ScanTier[] = [
 
 // T5 lives outside the public tier list and is only rendered when
 // the elevated security mode is active (FOUNDER + activation
-// command). Secrecy contract: never listed in autocomplete, never
-// in docs, never named by codename. Label here is intentionally
-// neutral ("Offensive").
+// command via /3vilbob). Secrecy contract: never listed in
+// autocomplete, never in docs, never named by codename. Public
+// label is simply "Founder" (access-level framing), not "Offensive"
+// (which reads aggressive in customer demos).
 const T5_TIER: ScanTier = {
   id: 'T5',
-  name: 'Offensive',
-  description: 'Adversarial exploitation walkthrough',
+  name: 'Founder',
+  description: 'Full adversarial pipeline with exploitation walkthrough',
   features: [
     'Everything in Architect',
     'Exploitation paths (proof of concept)',
@@ -358,14 +359,17 @@ export function ScanPage() {
 
   // Reverse: backend enum -> friendly display label for active-scan
   // cards. Secrecy rule: never surface the internal codename (the T5
-  // backend enum value) anywhere the operator sees it. "Offensive"
-  // is the public-facing label; "EVILBOB" is internal only.
+  // backend enum value) anywhere the operator sees it. Public label
+  // is "Founder" (access-level framing). The word "Offensive" is
+  // intentionally avoided because it reads aggressive to customers
+  // watching demos; operators understand Founder-tier means the
+  // adversarial depth is unlocked.
   const BACKEND_TO_DISPLAY: Record<string, string> = {
     SCOUT: 'Scout',
     ANALYST: 'Analyst',
     OPERATOR: 'Operator',
     ARCHITECT: 'Architect',
-    EVILBOB: 'Offensive',
+    EVILBOB: 'Founder',
   }
 
   // Start scan
@@ -642,8 +646,8 @@ export function ScanPage() {
                   <p className="text-[11px] text-starlight-500 mt-2">
                     This does not mean the target is secure, only that this
                     tier did not uncover anything. Consider running a higher
-                    tier, a supply-chain audit of dependencies, or an
-                    Offensive walkthrough for a broader adversarial sweep.
+                    tier, a supply-chain audit of dependencies, or the
+                    Founder-tier walkthrough for a broader adversarial sweep.
                   </p>
                 </div>
               </div>
@@ -762,7 +766,7 @@ export function ScanPage() {
                       {finding.exploit_path && (
                         <div className="mt-2 p-3 bg-accent-amber/5 border border-accent-amber/25 rounded-lg">
                           <p className="text-[10px] uppercase tracking-wider text-accent-amber font-semibold mb-1">
-                            Exploit Path (T5 Offensive)
+                            Exploit Path
                           </p>
                           <pre className="text-xs text-starlight-300 overflow-x-auto font-mono whitespace-pre-wrap">
                             {finding.exploit_path}

@@ -154,7 +154,7 @@ export function ScanProgressCard({
             Security scan
           </span>
           <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-midnight-400/60 text-starlight-300">
-            {tier === 'EVILBOB' ? 'Offensive' : tier}
+            {tier === 'EVILBOB' ? 'Founder' : tier}
           </span>
         </div>
         <div className="flex items-center gap-2">

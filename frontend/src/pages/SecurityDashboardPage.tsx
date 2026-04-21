@@ -380,7 +380,7 @@ function OverviewTab({ status, shields, opsec }: { status: DashboardStatus; shie
                 Launch Security Intelligence Scan
               </p>
               <p className="text-xs text-starlight-500">
-                Submit a target for multi-model verified analysis -- T1 Scout through T5 Offensive
+                Submit a target for multi-model verified analysis -- T1 Scout through T5 Founder
               </p>
             </div>
           </div>

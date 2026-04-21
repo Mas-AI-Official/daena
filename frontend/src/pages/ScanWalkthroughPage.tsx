@@ -2,7 +2,7 @@
  * ScanWalkthroughPage -- Manus-style live operator view of a scan.
  *
  * Opens in its own tab (via window.open from ScanProgressCard) when
- * a T5 Offensive scan is dispatched. Subscribes to the existing
+ * a T5 Founder scan is dispatched. Subscribes to the existing
  * /api/v1/security/scans/{id}/events SSE feed and renders:
  *   * Left column: phase timeline with elapsed time per phase
  *   * Center:     live reasoning / observations feed (terminal)
@@ -288,11 +288,11 @@ export default function ScanWalkthroughPage() {
           <div className="flex items-center gap-2">
             <Crosshair size={16} className="text-accent-amber" />
             <h1 className="text-sm font-semibold tracking-tight">
-              Offensive Walkthrough
+              Scan Walkthrough
             </h1>
             {tier && (
               <Badge variant="outline" className="text-[10px] font-mono text-accent-amber border-accent-amber/40">
-                {tier === 'EVILBOB' ? 'Offensive' : tier}
+                {tier === 'EVILBOB' ? 'Founder' : tier}
               </Badge>
             )}
           </div>
