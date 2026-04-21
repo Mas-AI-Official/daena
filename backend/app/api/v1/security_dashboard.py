@@ -376,7 +376,14 @@ async def get_scan_report(job_id: str) -> ScanReportResponse:
 
 @router.get("/scans/{job_id}/report/pdf")
 async def download_scan_report_pdf(job_id: str) -> FileResponse:
-    """Download the PDF report for a completed scan."""
+    """Download the report file for a completed scan.
+
+    The URL keeps its ``/pdf`` suffix for backward compatibility, but
+    the response media type follows the actual file extension: PDF
+    when reportlab was available at generation time, markdown when it
+    fell back. This matches what actually landed on disk so browsers
+    pick the right viewer.
+    """
     workflow = _get_workflow()
 
     try:
@@ -389,14 +396,24 @@ async def download_scan_report_pdf(job_id: str) -> FileResponse:
     if not report.report_pdf_path or not os.path.isfile(report.report_pdf_path):
         raise HTTPException(
             status_code=404,
-            detail="PDF report not available. Report data is accessible via /report endpoint.",
+            detail=(
+                "Report file not available. Report data is still "
+                "accessible via /report (JSON)."
+            ),
         )
 
     filename = os.path.basename(report.report_pdf_path)
+    ext = os.path.splitext(filename)[1].lower()
+    media_type = {
+        ".pdf": "application/pdf",
+        ".md": "text/markdown; charset=utf-8",
+        ".html": "text/html; charset=utf-8",
+        ".txt": "text/plain; charset=utf-8",
+    }.get(ext, "application/octet-stream")
     return FileResponse(
         path=report.report_pdf_path,
         filename=filename,
-        media_type="application/pdf",
+        media_type=media_type,
     )
 
 

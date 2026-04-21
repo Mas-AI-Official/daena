@@ -62,6 +62,12 @@ class ReportMetadata:
         default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"),
     )
     methodology: str = "Automated + AI-assisted vulnerability assessment"
+    # Optional unique-filename components. When set, the report
+    # writer appends them to the filename so back-to-back scans of
+    # the same target on the same day do NOT overwrite each other.
+    # tier values: SCOUT / ANALYST / OPERATOR / ARCHITECT / EVILBOB.
+    tier: str = ""
+    job_id: str = ""
 
 
 class BugBountyReportGenerator:
@@ -86,7 +92,15 @@ class BugBountyReportGenerator:
         os.makedirs(REPORTS_DIR, exist_ok=True)
 
         safe_target = metadata.target.replace(".", "_").replace("/", "_")[:30]
-        filename = f"{safe_target}_{metadata.date}.pdf"
+        # Tier + short-job-id suffix prevents back-to-back scans of
+        # the same target on the same day from overwriting each
+        # other's report file.
+        suffix = ""
+        if metadata.tier:
+            suffix += f"_{metadata.tier}"
+        if metadata.job_id:
+            suffix += f"_{metadata.job_id[:8]}"
+        filename = f"{safe_target}_{metadata.date}{suffix}.pdf"
         filepath = os.path.join(REPORTS_DIR, filename)
 
         try:
@@ -379,7 +393,12 @@ class BugBountyReportGenerator:
     ) -> str:
         """Fallback: generate markdown report if reportlab unavailable."""
         safe_target = metadata.target.replace(".", "_").replace("/", "_")[:30]
-        filename = f"{safe_target}_{metadata.date}.md"
+        suffix = ""
+        if metadata.tier:
+            suffix += f"_{metadata.tier}"
+        if metadata.job_id:
+            suffix += f"_{metadata.job_id[:8]}"
+        filename = f"{safe_target}_{metadata.date}{suffix}.md"
         filepath = os.path.join(REPORTS_DIR, filename)
 
         lines = [

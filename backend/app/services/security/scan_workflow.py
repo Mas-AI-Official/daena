@@ -874,6 +874,8 @@ class ScanWorkflow:
             metadata = ReportMetadata(
                 program_name=f"Daena {report.tier.value} Scan",
                 target=report.target,
+                tier=report.tier.value,
+                job_id=job.id,
             )
 
             return gen.generate(vuln_findings, metadata)
@@ -906,7 +908,15 @@ class ScanWorkflow:
 
     @staticmethod
     def _finding_to_dict(finding: SecurityFinding) -> dict[str, Any]:
-        """Convert SecurityFinding dataclass to JSON-serializable dict."""
+        """Convert SecurityFinding dataclass to JSON-serializable dict.
+
+        ``exploit_path`` added 2026-04-21: previously omitted even on
+        EVILBOB tier so the UI and API responses never surfaced the
+        exploitation walkthrough. report_tiers.py already restricts
+        exploit_path to T5 (EVILBOB) at the tier-build level, so
+        including it here is safe: findings that reached this
+        serializer carry an empty string unless their tier allowed it.
+        """
         return {
             "id": finding.id,
             "title": finding.title,
@@ -917,6 +927,7 @@ class ScanWorkflow:
             "remediation": finding.remediation,
             "fix_code": finding.fix_code,
             "fix_verified": finding.fix_verified,
+            "exploit_path": finding.exploit_path,
             "confidence": finding.confidence,
             "verified_by_models": finding.verified_by_models,
             "falsification_survived": finding.falsification_survived,
