@@ -38,8 +38,10 @@ entry_hash, estimated 30 min of future work.
 
 - 59 new tests added this session.
 - 293/293 passing in the focused Package 1-10 suite.
+- **3218 passed, 16 skipped, 0 failed in the full backend regression
+  (6 min 14 sec, exit code 0).** Up from the 2956 v3.7.0 baseline.
 - Frontend tsc clean, frontend build clean (21.91s).
-- 8 new commits on master.
+- 11 new commits on master.
 
 ---
 
