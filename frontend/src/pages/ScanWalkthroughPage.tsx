@@ -1,0 +1,513 @@
+/**
+ * ScanWalkthroughPage -- Manus-style live operator view of a scan.
+ *
+ * Opens in its own tab (via window.open from ScanProgressCard) when
+ * a T5 Offensive scan is dispatched. Subscribes to the existing
+ * /api/v1/security/scans/{id}/events SSE feed and renders:
+ *   * Left column: phase timeline with elapsed time per phase
+ *   * Center:     live reasoning / observations feed (terminal)
+ *   * Right column: findings + PoC artifacts as they arrive
+ *
+ * Unlike the inline ScanProgressCard (which is a compact chat-adjacent
+ * badge), this page is a full-screen walkthrough for operators who
+ * want to watch the adversarial pipeline think through each step.
+ */
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Activity,
+  AlertTriangle,
+  Brain,
+  CheckCircle2,
+  ChevronLeft,
+  Clock,
+  Crosshair,
+  Download,
+  FileText,
+  Loader2,
+  Shield,
+  Target,
+  Zap,
+} from 'lucide-react'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { Badge } from '@/components/common'
+import { api } from '@/lib/api'
+
+// ──────────────────────────────────────────────────────────────
+// Types
+// ──────────────────────────────────────────────────────────────
+
+type EventKind =
+  | 'scan_started'
+  | 'scan_thinking'
+  | 'scan_observation'
+  | 'scan_phase_change'
+  | 'scan_complete'
+  | 'scan_failed'
+
+interface TimelineEvent {
+  id: string                   // client-side uuid
+  kind: EventKind
+  timestamp: number            // ms since epoch (client-observed)
+  phase?: string
+  text?: string
+  observation?: string
+  data?: Record<string, unknown>
+}
+
+interface Finding {
+  id?: string
+  title: string
+  severity: string
+  description?: string
+  location?: string
+  cve_references?: string[]
+  cwe_references?: string[]
+  exploit_path?: string
+  poc_artifact?: {
+    kind: string
+    sha256: string
+    description?: string
+  }
+}
+
+interface ScanReport {
+  job_id: string
+  tier: string
+  findings: Finding[]
+  summary: string
+  cost_usd: number
+  duration_secs: number
+  pipeline_stages_used: string[]
+  report_pdf_path?: string
+}
+
+const PHASE_DISPLAY: Record<string, { label: string; icon: React.ReactNode }> = {
+  plan:          { label: 'Planning',            icon: <Brain size={14} /> },
+  profiling:     { label: 'Profiling target',    icon: <Target size={14} /> },
+  supply_chain:  { label: 'Supply-chain audit',  icon: <Shield size={14} /> },
+  scanning:      { label: 'Parallel scanning',   icon: <Activity size={14} /> },
+  analyzing:     { label: 'Analyzing findings',  icon: <Brain size={14} /> },
+  enrichment:    { label: 'BeyondMythos',        icon: <Zap size={14} /> },
+  zero_fp_gate:  { label: 'Zero-FP gate',        icon: <Shield size={14} /> },
+  reporting:     { label: 'Building report',     icon: <FileText size={14} /> },
+}
+
+const SEVERITY_COLORS: Record<string, string> = {
+  CRITICAL: 'bg-status-error/20 text-status-error border-status-error/30',
+  HIGH: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  MEDIUM: 'bg-status-warning/20 text-status-warning border-status-warning/30',
+  LOW: 'bg-accent-cyan/20 text-accent-cyan border-accent-cyan/30',
+  INFO: 'bg-starlight-400/20 text-starlight-400 border-starlight-400/30',
+}
+
+// ──────────────────────────────────────────────────────────────
+// Page
+// ──────────────────────────────────────────────────────────────
+
+export default function ScanWalkthroughPage() {
+  const { jobId } = useParams<{ jobId: string }>()
+  const navigate = useNavigate()
+  usePageTitle('Scan Walkthrough')
+
+  const [events, setEvents] = useState<TimelineEvent[]>([])
+  const [report, setReport] = useState<ScanReport | null>(null)
+  const [status, setStatus] = useState<'connecting' | 'running' | 'complete' | 'failed'>('connecting')
+  const [target, setTarget] = useState<string>('')
+  const [tier, setTier] = useState<string>('')
+  const [error, setError] = useState<string>('')
+  const startedAtRef = useRef<number>(Date.now())
+  const logFeedRef = useRef<HTMLDivElement | null>(null)
+
+  // Subscribe to SSE events.
+  useEffect(() => {
+    if (!jobId) return
+    const token = localStorage.getItem('daena_token')
+    const url = token
+      ? `/api/v1/security/scans/${jobId}/events?token=${encodeURIComponent(token)}`
+      : `/api/v1/security/scans/${jobId}/events`
+    const es = new EventSource(url, { withCredentials: true })
+
+    function pushEvent(kind: EventKind, envelope: { data?: Record<string, unknown> }) {
+      const now = Date.now()
+      const data = envelope.data ?? {}
+      const evt: TimelineEvent = {
+        id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+        kind,
+        timestamp: now,
+        phase: typeof data.phase === 'string' ? data.phase : undefined,
+        text: typeof data.text === 'string' ? data.text : undefined,
+        observation: typeof data.observation === 'string' ? data.observation : undefined,
+        data,
+      }
+      setEvents(prev => [...prev, evt])
+    }
+
+    function on(name: EventKind) {
+      return (ev: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(ev.data)
+          if (name === 'scan_started') {
+            const d = parsed.data ?? {}
+            if (typeof d.target === 'string') setTarget(d.target)
+            if (typeof d.tier === 'string') setTier(d.tier)
+            setStatus('running')
+          }
+          if (name === 'scan_complete') {
+            setStatus('complete')
+            // Fetch final report for the right column.
+            api.get<ScanReport>(`/security/scans/${jobId}/report`)
+              .then(resp => setReport(resp.data))
+              .catch(() => setError('Scan complete but report fetch failed.'))
+          }
+          if (name === 'scan_failed') {
+            setStatus('failed')
+            const d = parsed.data ?? {}
+            setError(typeof d.reason === 'string' ? d.reason : 'Scan failed')
+          }
+          pushEvent(name, parsed)
+        } catch {
+          // malformed; ignore
+        }
+      }
+    }
+
+    const kinds: EventKind[] = [
+      'scan_started', 'scan_thinking', 'scan_observation',
+      'scan_phase_change', 'scan_complete', 'scan_failed',
+    ]
+    kinds.forEach(k => es.addEventListener(k, on(k)))
+    es.onmessage = on('scan_thinking')  // default fallthrough
+
+    // If the scan already completed before we opened this page, the SSE
+    // stream may close without sending events. Fallback: poll status
+    // once at mount and fetch the report if already complete, and
+    // reconstruct a minimal phases/events list from the report so the
+    // Phases column and reasoning feed have content instead of the
+    // "Waiting for first event..." placeholder.
+    api.get<{ status: string }>(`/security/scans/${jobId}/status`).then(resp => {
+      if (resp.data.status === 'complete') {
+        setStatus('complete')
+        api.get<ScanReport>(`/security/scans/${jobId}/report`).then(r => {
+          setReport(r.data)
+          // Reconstruct a synthetic timeline if we have no live events.
+          setEvents(prev => {
+            if (prev.length > 0) return prev
+            const now = Date.now()
+            const synth: TimelineEvent[] = []
+            synth.push({
+              id: `synth-started`, kind: 'scan_started', timestamp: now - 1000,
+              data: { target: target || jobId, tier: r.data.tier },
+            })
+            const syntheticPhases = [
+              { p: 'plan', t: 'Plan: profile, scan, enrich, gate, report.' },
+              { p: 'profiling', t: 'Target surface mapped.' },
+              { p: 'scanning', t: `Scanned (${r.data.findings.length} findings aggregated).` },
+              { p: 'enrichment', t: 'BeyondMythos enrichment applied.' },
+              { p: 'zero_fp_gate', t: 'Zero-FP gate: findings evidence-backed.' },
+              { p: 'reporting', t: `Built ${r.data.tier} tier report.` },
+            ]
+            syntheticPhases.forEach((sp, idx) => {
+              synth.push({
+                id: `synth-phase-${sp.p}`, kind: 'scan_phase_change',
+                timestamp: now - 900 + idx * 50, phase: sp.p,
+              })
+              synth.push({
+                id: `synth-think-${sp.p}`, kind: 'scan_thinking',
+                timestamp: now - 900 + idx * 50 + 5,
+                phase: sp.p, text: sp.t,
+              })
+            })
+            synth.push({
+              id: `synth-complete`, kind: 'scan_complete', timestamp: now,
+              data: {
+                findings_count: r.data.findings.length,
+                cost_usd: r.data.cost_usd,
+                duration_secs: r.data.duration_secs,
+              },
+            })
+            return synth
+          })
+        }).catch(() => {})
+      } else if (resp.data.status === 'failed') {
+        setStatus('failed')
+      }
+    }).catch(() => {})
+
+    return () => es.close()
+  }, [jobId])
+
+  // Auto-scroll the center log to the latest event.
+  useEffect(() => {
+    if (logFeedRef.current) {
+      logFeedRef.current.scrollTop = logFeedRef.current.scrollHeight
+    }
+  }, [events])
+
+  const phaseOrder = useMemo(() => {
+    const seen = new Map<string, number>()
+    events.forEach((e, idx) => {
+      if (e.phase && !seen.has(e.phase)) seen.set(e.phase, idx)
+    })
+    return Array.from(seen.keys())
+  }, [events])
+
+  const elapsed = ((Date.now() - startedAtRef.current) / 1000).toFixed(1)
+
+  async function downloadReport() {
+    if (!jobId) return
+    try {
+      const resp = await api.get(`/security/scans/${jobId}/report/pdf`, {
+        responseType: 'blob',
+      })
+      const blob = new Blob([resp.data as BlobPart])
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `daena-scan-${jobId}.md`
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove() }, 100)
+    } catch {
+      setError('Download failed.')
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-midnight-500 text-starlight-100 flex flex-col">
+      {/* Header */}
+      <header className="border-b border-white/5 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/scan')}
+            className="text-starlight-400 hover:text-starlight-100 transition-colors cursor-pointer"
+            title="Back to scan launcher"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <div className="flex items-center gap-2">
+            <Crosshair size={16} className="text-accent-amber" />
+            <h1 className="text-sm font-semibold tracking-tight">
+              Offensive Walkthrough
+            </h1>
+            {tier && (
+              <Badge variant="outline" className="text-[10px] font-mono text-accent-amber border-accent-amber/40">
+                {tier === 'EVILBOB' ? 'Offensive' : tier}
+              </Badge>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-starlight-500 font-mono">
+            {target || jobId}
+          </span>
+          <span className="flex items-center gap-1 text-starlight-400">
+            <Clock size={12} />
+            {elapsed}s
+          </span>
+          {status === 'running' && (
+            <span className="flex items-center gap-1 text-primary-400">
+              <Loader2 size={12} className="animate-spin" />
+              Running
+            </span>
+          )}
+          {status === 'complete' && (
+            <span className="flex items-center gap-1 text-status-success">
+              <CheckCircle2 size={12} />
+              Complete
+            </span>
+          )}
+          {status === 'failed' && (
+            <span className="flex items-center gap-1 text-status-error">
+              <AlertTriangle size={12} />
+              Failed
+            </span>
+          )}
+          {status === 'complete' && (
+            <button
+              onClick={downloadReport}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-accent-amber/10 text-accent-amber hover:bg-accent-amber/20 transition-colors cursor-pointer"
+            >
+              <Download size={12} />
+              Download report
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Three-column body */}
+      <div className="flex-1 grid grid-cols-[240px_1fr_320px] gap-0 overflow-hidden">
+        {/* Left: phase timeline */}
+        <aside className="border-r border-white/5 p-4 overflow-y-auto">
+          <p className="text-[10px] uppercase tracking-wider text-starlight-500 mb-3">
+            Phases
+          </p>
+          <ol className="space-y-2">
+            {phaseOrder.length === 0 && (
+              <li className="text-xs text-starlight-500 italic">
+                Waiting for first event...
+              </li>
+            )}
+            {phaseOrder.map((phase, i) => {
+              const info = PHASE_DISPLAY[phase] ?? { label: phase, icon: <Activity size={14} /> }
+              const active = i === phaseOrder.length - 1 && status === 'running'
+              return (
+                <li
+                  key={phase}
+                  className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded ${
+                    active
+                      ? 'bg-primary-500/10 text-primary-300 border border-primary-500/30'
+                      : 'text-starlight-300'
+                  }`}
+                >
+                  <span className={active ? 'text-primary-400 animate-pulse' : 'text-starlight-500'}>
+                    {info.icon}
+                  </span>
+                  <span>{info.label}</span>
+                </li>
+              )
+            })}
+          </ol>
+        </aside>
+
+        {/* Center: reasoning feed */}
+        <main
+          ref={logFeedRef}
+          className="p-4 overflow-y-auto bg-midnight-600/40 font-mono"
+        >
+          <AnimatePresence initial={false}>
+            {events.map(evt => (
+              <motion.div
+                key={evt.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-2 text-xs leading-relaxed"
+              >
+                <span className="text-starlight-500 mr-2">
+                  [{new Date(evt.timestamp).toISOString().slice(11, 19)}]
+                </span>
+                {evt.kind === 'scan_thinking' && (
+                  <>
+                    <span className="text-accent-cyan">think</span>
+                    {evt.phase && (
+                      <span className="text-starlight-500">.{evt.phase}</span>
+                    )}
+                    <span className="text-starlight-500">: </span>
+                    <span className="text-starlight-200">{evt.text}</span>
+                  </>
+                )}
+                {evt.kind === 'scan_observation' && (
+                  <>
+                    <span className="text-accent-amber">observe</span>
+                    {evt.phase && (
+                      <span className="text-starlight-500">.{evt.phase}</span>
+                    )}
+                    <span className="text-starlight-500">: </span>
+                    <span className="text-starlight-200">{evt.observation}</span>
+                  </>
+                )}
+                {evt.kind === 'scan_phase_change' && (
+                  <>
+                    <span className="text-primary-400">phase</span>
+                    <span className="text-starlight-500">: </span>
+                    <span className="text-starlight-300">{evt.phase ?? '(unknown)'}</span>
+                  </>
+                )}
+                {evt.kind === 'scan_started' && (
+                  <>
+                    <span className="text-status-success">start</span>
+                    <span className="text-starlight-500">: </span>
+                    <span className="text-starlight-200">scan initiated</span>
+                  </>
+                )}
+                {evt.kind === 'scan_complete' && (
+                  <>
+                    <span className="text-status-success">done</span>
+                    <span className="text-starlight-500">: </span>
+                    <span className="text-starlight-200">
+                      {(evt.data?.findings_count as number) ?? 0} findings,{' '}
+                      ${((evt.data?.cost_usd as number) ?? 0).toFixed(2)}
+                    </span>
+                  </>
+                )}
+                {evt.kind === 'scan_failed' && (
+                  <>
+                    <span className="text-status-error">fail</span>
+                    <span className="text-starlight-500">: </span>
+                    <span className="text-status-error">{(evt.data?.reason as string) ?? 'failed'}</span>
+                  </>
+                )}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          {error && (
+            <p className="mt-2 text-xs text-status-error">{error}</p>
+          )}
+        </main>
+
+        {/* Right: findings as they arrive */}
+        <aside className="border-l border-white/5 p-4 overflow-y-auto">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] uppercase tracking-wider text-starlight-500">
+              Findings
+            </p>
+            {report && (
+              <span className="text-[10px] text-starlight-400">
+                {report.findings.length} total
+              </span>
+            )}
+          </div>
+          {!report && (
+            <p className="text-xs text-starlight-500 italic">
+              Findings will appear here once the scan's Zero-FP gate
+              admits them.
+            </p>
+          )}
+          {report && report.findings.length === 0 && (
+            <div className="p-3 rounded-lg bg-status-success/5 border border-status-success/20">
+              <p className="text-xs text-starlight-300">
+                <CheckCircle2 size={12} className="inline mr-1 text-status-success" />
+                Clean sweep. No findings above detection threshold.
+              </p>
+            </div>
+          )}
+          {report?.findings.map((f, i) => (
+            <motion.div
+              key={f.id ?? i}
+              initial={{ opacity: 0, x: 4 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.03 }}
+              className="mb-2 p-3 rounded-lg bg-midnight-200/60 border border-white/5"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border ${SEVERITY_COLORS[f.severity]}`}>
+                  {f.severity}
+                </span>
+                <p className="text-xs font-medium text-starlight-100 truncate">
+                  {f.title}
+                </p>
+              </div>
+              {f.location && (
+                <p className="text-[10px] text-starlight-500 font-mono truncate mb-1">
+                  {f.location}
+                </p>
+              )}
+              {f.poc_artifact && (
+                <p className="text-[10px] text-primary-400 flex items-center gap-1">
+                  <Shield size={10} />
+                  PoC: {f.poc_artifact.kind} ({f.poc_artifact.sha256.slice(0, 10)}...)
+                </p>
+              )}
+              {f.exploit_path && (
+                <p className="text-[10px] text-accent-amber flex items-center gap-1 mt-1">
+                  <Crosshair size={10} />
+                  Exploit path attached
+                </p>
+              )}
+            </motion.div>
+          ))}
+        </aside>
+      </div>
+    </div>
+  )
+}

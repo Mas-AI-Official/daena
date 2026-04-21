@@ -11,9 +11,9 @@
  *      scan_failed events arrive.
  *   4. Closes EventSource on scan_complete, scan_failed, or unmount.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ShieldAlert, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { ShieldAlert, CheckCircle2, XCircle, Loader2, ExternalLink } from 'lucide-react'
 
 export interface ScanProgressCardProps {
   jobId: string
@@ -62,6 +62,28 @@ export function ScanProgressCard({
 }: ScanProgressCardProps) {
   const [phase, setPhase] = useState<Phase>('queued')
   const [summary, setSummary] = useState<ScanSummary | null>(null)
+  // Track whether we've auto-popped the walkthrough window once for
+  // this card so remounts do not spawn a fresh window on every event.
+  const autoOpenedRef = useRef(false)
+
+  // Auto-open the Offensive walkthrough window for T5 scans. Defers
+  // until after first render so the popup is associated with a user
+  // gesture (the chat send) chrome-wide popup blockers usually
+  // allow. For non-T5 tiers, the button below is the only path.
+  useEffect(() => {
+    if (autoOpenedRef.current) return
+    if (tier !== 'EVILBOB') return
+    autoOpenedRef.current = true
+    try {
+      window.open(
+        `/scan/walkthrough/${jobId}`,
+        `daena-scan-${jobId}`,
+        'width=1280,height=820,noopener=no',
+      )
+    } catch {
+      // Popup blocked; the manual button below remains available.
+    }
+  }, [jobId, tier])
 
   useEffect(() => {
     if (!eventsUrl) return
@@ -132,17 +154,31 @@ export function ScanProgressCard({
             Security scan
           </span>
           <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-midnight-400/60 text-starlight-300">
-            {tier}
+            {tier === 'EVILBOB' ? 'Offensive' : tier}
           </span>
         </div>
-        {onDismiss && !isRunning && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={onDismiss}
-            className="text-[10px] text-starlight-500 hover:text-starlight-200 cursor-pointer"
+            onClick={() => window.open(
+              `/scan/walkthrough/${jobId}`,
+              `daena-scan-${jobId}`,
+              'width=1280,height=820',
+            )}
+            className="flex items-center gap-1 text-[10px] text-accent-amber hover:text-accent-amber/80 cursor-pointer"
+            title="Open the full walkthrough window"
           >
-            Dismiss
+            <ExternalLink size={10} />
+            Walkthrough
           </button>
-        )}
+          {onDismiss && !isRunning && (
+            <button
+              onClick={onDismiss}
+              className="text-[10px] text-starlight-500 hover:text-starlight-200 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="text-xs text-starlight-400 mb-2 font-mono truncate">

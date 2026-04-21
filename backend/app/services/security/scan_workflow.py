@@ -439,13 +439,39 @@ class ScanWorkflow:
                 job.id, "scan_started",
                 target=job.target, tier=job.tier.value,
             )
+            # Walkthrough-specific: announce the plan before any phase
+            # runs so the Operator window has content immediately.
+            self._emit_event(
+                job.id, "scan_thinking",
+                phase="plan",
+                text=(
+                    f"Target: {job.target}. Tier: {job.tier.value}. "
+                    f"I will profile the target, run the supply-chain "
+                    f"pre-scan if a manifest is attached, dispatch the "
+                    f"scanning sub-agents in parallel, aggregate and "
+                    f"enrich findings through BeyondMythos, gate them "
+                    f"through the Zero-FP check, then build the "
+                    f"{job.tier.value}-tier report."
+                ),
+            )
 
             # Phase 1: Profile the target
             job.status = ScanJobStatus.PROFILING
             job.updated_at = time.time()
             self._emit_event(job.id, "scan_phase_change", phase="profiling")
+            self._emit_event(
+                job.id, "scan_thinking",
+                phase="profiling",
+                text="Profiling target surface: tech stack, file layout, open entry points.",
+            )
             files = self._profile_target(job.target)
             job.files_total = len(files)
+            self._emit_event(
+                job.id, "scan_observation",
+                phase="profiling",
+                observation=f"Target expanded to {len(files)} scannable files.",
+                files_sampled=files[:5],
+            )
 
             if not files:
                 job.status = ScanJobStatus.FAILED
@@ -564,6 +590,17 @@ class ScanWorkflow:
                 )
                 enricher = BeyondMythosEnricher()
                 defenses = list(job.options.get("target_defenses", []) or [])
+                self._emit_event(
+                    job.id, "scan_thinking",
+                    phase="enrichment",
+                    text=(
+                        f"Running BeyondMythos enrichment on "
+                        f"{len(all_findings)} finding(s): ErrorOracle on "
+                        "HTTP responses, AdversarialSimulator on "
+                        "detection risk, CompositionalPlanner on "
+                        "blocked actions."
+                    ),
+                )
                 all_findings = enricher.enrich_findings(
                     all_findings, target_defenses=defenses,
                 )
@@ -604,6 +641,17 @@ class ScanWorkflow:
                         rejected=gate_result.rejected_count,
                         overrides=gate_result.override_count,
                     )
+                self._emit_event(
+                    job.id, "scan_observation",
+                    phase="zero_fp_gate",
+                    observation=(
+                        f"Zero-FP gate: {gate_result.accepted_count} accepted, "
+                        f"{gate_result.rejected_count} rejected, "
+                        f"{gate_result.override_count} founder overrides."
+                    ),
+                    accepted=gate_result.accepted_count,
+                    rejected=gate_result.rejected_count,
+                )
                 all_findings = gate_result.accepted + gate_result.overrides
                 job.options["gate_rejections"] = [
                     {"id": f.get("id"), "reason": f.get("rejection_reason")}
@@ -624,16 +672,30 @@ class ScanWorkflow:
 
             pipeline_config = self._tier_engine.get_pipeline_config(job.tier)
             skip_stages = pipeline_config.get("skip_stages", set())
-            pipeline_stages = [
-                s for s in [
-                    "failure_memory", "socratic", "dce", "epistemic",
-                    "question_audit", "dcs", "amd", "analogy", "rde",
-                    "crg", "validation", "cognitive_sep", "counterfactual",
-                    "adv_gate", "outcome_sim", "consensus", "calibration",
-                    "delivery",
-                ]
-                if s not in skip_stages
+            # Base Laevateinn pipeline (18 stages). SCOUT/ANALYST/
+            # OPERATOR/ARCHITECT filter this list via TIER_SKIP_STAGES.
+            base_stages = [
+                "failure_memory", "socratic", "dce", "epistemic",
+                "question_audit", "dcs", "amd", "analogy", "rde",
+                "crg", "validation", "cognitive_sep", "counterfactual",
+                "adv_gate", "outcome_sim", "consensus", "calibration",
+                "delivery",
             ]
+            # T5 EVILBOB replaces the skip-filter with an EXTEND: the
+            # full Laevateinn pipeline PLUS 8 adversarial stages
+            # (OODA-R loop + proxy OPSEC + evidence + exploitation +
+            # compositional planning + Asset Shield egress gate). This
+            # matches the "26 stages" label surfaced in the scan
+            # launcher UI for the T5 tier.
+            if job.tier.value == "EVILBOB":
+                pipeline_stages = base_stages + [
+                    "ooda_observe", "ooda_orient", "ooda_decide",
+                    "ooda_act", "ooda_reflect",
+                    "opsec_proxy_rotation", "evidence_capture",
+                    "compositional_planning",
+                ]
+            else:
+                pipeline_stages = [s for s in base_stages if s not in skip_stages]
 
             security_report: SecurityReport = self._tier_engine.build_report(
                 tier=job.tier,

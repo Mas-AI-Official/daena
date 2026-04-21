@@ -75,8 +75,25 @@ interface ScanJob {
   cost_usd?: number
 }
 
+interface PocArtifactDict {
+  kind: string                  // curl | http_pair | screenshot | replay_script
+                                // | package_reference | diff_hunk | behavioral_trace
+  content_type: string
+  sha256: string
+  description?: string
+  target?: string
+  reproducible?: boolean
+  destructive?: boolean
+  safe_handover?: boolean
+  created_at?: string
+  content?: string              // present when backend included content
+  content_encoding?: string     // "base64" for binary
+  metadata?: Record<string, unknown>
+}
+
 interface ScanFinding {
   id?: string
+  kind?: string                 // "supply_chain" for SupplyChainScanner results
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO'
   title: string
   file_path?: string            // backend returns `location`; kept for legacy
@@ -91,7 +108,11 @@ interface ScanFinding {
   verified?: boolean
   cve_id?: string
   cve_references?: string[]     // backend field
+  cwe_references?: string[]     // supply-chain findings carry CWE list
   confidence?: number           // 0.0 to 1.0
+  manifest_path?: string        // supply-chain: which package.json
+  poc_artifact_sha256?: string
+  poc_artifact?: PocArtifactDict
 }
 
 interface ScanReport {
@@ -188,6 +209,76 @@ const SEVERITY_COLORS: Record<string, string> = {
   INFO: 'bg-starlight-400/20 text-starlight-400 border-starlight-400/30',
 }
 
+// ── PoC artifact block ──
+// Renders inline on a finding detail card. Different artifact kinds
+// get different UX so a curl (copy-paste ready) and a screenshot
+// (image) do not look identical.
+function PocArtifactBlock({ artifact }: { artifact: PocArtifactDict }) {
+  const kindLabel: Record<string, string> = {
+    curl: 'Reproducible curl PoC',
+    http_pair: 'HTTP Request / Response transcript',
+    screenshot: 'Browser screenshot',
+    replay_script: 'Replay script (sandbox required)',
+    package_reference: 'Package reference',
+    diff_hunk: 'Source pattern',
+    behavioral_trace: 'Behavioral trace',
+  }
+  const label = kindLabel[artifact.kind] ?? artifact.kind
+  const isDestructive = artifact.destructive === true
+  const isImage = artifact.kind === 'screenshot'
+  const hasContent = typeof artifact.content === 'string' && artifact.content.length > 0
+
+  return (
+    <div className={`mt-2 p-3 rounded-lg border ${
+      isDestructive
+        ? 'bg-status-error/5 border-status-error/30'
+        : 'bg-primary-500/5 border-primary-500/25'
+    }`}>
+      <div className="flex items-center justify-between mb-1 gap-2">
+        <p className="text-[10px] uppercase tracking-wider font-semibold flex items-center gap-1">
+          <Shield size={10} className={isDestructive ? 'text-status-error' : 'text-primary-400'} />
+          <span className={isDestructive ? 'text-status-error' : 'text-primary-400'}>
+            {label}
+          </span>
+        </p>
+        <div className="flex items-center gap-1 text-[9px] text-starlight-500 font-mono">
+          <span>sha256: {artifact.sha256.slice(0, 12)}...</span>
+          {isDestructive && (
+            <span className="text-status-error ml-1" title="Destructive artifact">⚠</span>
+          )}
+          {artifact.reproducible && !isDestructive && (
+            <span className="text-status-success ml-1" title="Reproducible">✓</span>
+          )}
+        </div>
+      </div>
+
+      {hasContent && !isImage && artifact.content_encoding !== 'base64' && (
+        <pre className="text-xs text-starlight-300 bg-midnight-400/60 p-2 rounded overflow-x-auto font-mono whitespace-pre-wrap max-h-64">
+          {artifact.content}
+        </pre>
+      )}
+
+      {hasContent && isImage && artifact.content_encoding === 'base64' && (
+        <img
+          src={`data:${artifact.content_type};base64,${artifact.content}`}
+          alt={artifact.description || 'PoC screenshot'}
+          className="rounded max-h-64 mt-1"
+        />
+      )}
+
+      {!hasContent && (
+        <p className="text-[11px] text-starlight-500 italic">
+          Artifact vaulted; content not embedded in report response.
+        </p>
+      )}
+
+      {artifact.description && (
+        <p className="text-[11px] text-starlight-400 mt-2">{artifact.description}</p>
+      )}
+    </div>
+  )
+}
+
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   queued: { label: 'Queued', color: 'text-starlight-400' },
   scanning: { label: 'Scanning files...', color: 'text-accent-cyan' },
@@ -263,6 +354,18 @@ export function ScanPage() {
     T3: 'OPERATOR',
     T4: 'ARCHITECT',
     T5: 'EVILBOB',
+  }
+
+  // Reverse: backend enum -> friendly display label for active-scan
+  // cards. Secrecy rule: never surface the internal codename (the T5
+  // backend enum value) anywhere the operator sees it. "Offensive"
+  // is the public-facing label; "EVILBOB" is internal only.
+  const BACKEND_TO_DISPLAY: Record<string, string> = {
+    SCOUT: 'Scout',
+    ANALYST: 'Analyst',
+    OPERATOR: 'Operator',
+    ARCHITECT: 'Architect',
+    EVILBOB: 'Offensive',
   }
 
   // Start scan
@@ -445,7 +548,7 @@ export function ScanPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Badge variant="outline" className="text-[10px]">{job.tier}</Badge>
+                    <Badge variant="outline" className="text-[10px]">{BACKEND_TO_DISPLAY[job.tier] ?? job.tier}</Badge>
                     {job.findings_count > 0 && (
                       <span className="text-xs text-status-warning font-mono">{job.findings_count} findings</span>
                     )}
@@ -517,6 +620,36 @@ export function ScanPage() {
             <p className="text-sm text-starlight-300 leading-relaxed">{report.summary}</p>
           </Card>
 
+          {/* Findings (empty state when scan returned zero) */}
+          {(!report.findings || report.findings.length === 0) && (
+            <Card className="p-5 border-status-success/20 bg-status-success/5">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 size={18} className="text-status-success shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-starlight-100">
+                    Clean scan
+                  </p>
+                  <p className="text-xs text-starlight-400 mt-1 leading-relaxed">
+                    No security findings were surfaced for this scan. Daena
+                    walked the full {BACKEND_TO_DISPLAY[report.tier] ?? report.tier}
+                    {' '}tier pipeline ({(report.pipeline_stages_used ?? []).length} stages)
+                    {selectedJob && (
+                      <>
+                        {' '}across {selectedJob.files_total} {selectedJob.files_total === 1 ? 'file' : 'files'}
+                      </>
+                    )} and found nothing above the detection threshold.
+                  </p>
+                  <p className="text-[11px] text-starlight-500 mt-2">
+                    This does not mean the target is secure, only that this
+                    tier did not uncover anything. Consider running a higher
+                    tier, a supply-chain audit of dependencies, or an
+                    Offensive walkthrough for a broader adversarial sweep.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+
           {/* Findings */}
           <div className="space-y-2">
             {(report.findings ?? []).map((finding, i) => {
@@ -535,29 +668,71 @@ export function ScanPage() {
                 : ''
               const isVerified = finding.fix_verified ?? finding.verified
 
+              // Supply-chain findings get a purple/amber accent strip
+              // and a "package" chip in the header.
+              const isSupplyChain = finding.kind === 'supply_chain'
+              // Pull ecosystem + package + version out of a
+              // package_reference PoC when present (SupplyChainScanner
+              // always attaches one).
+              const pkgMeta = finding.poc_artifact?.metadata as
+                {ecosystem?: string; package?: string; version?: string} | undefined
+              const allCwes = finding.cwe_references ?? []
+              // Combine CWE + CVE for header display (CVE wins when both carry the same code).
+              const allCodeRefs = [
+                ...new Set([...cves, ...allCwes]),
+              ]
+
               return (
                 <motion.div
                   key={finding.id ?? i}
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  className="bg-midnight-200/60 border border-white/5 rounded-xl p-4"
+                  className={`border rounded-xl p-4 ${
+                    isSupplyChain
+                      ? 'bg-purple-500/5 border-purple-500/30'
+                      : 'bg-midnight-200/60 border-white/5'
+                  }`}
                 >
                   <div className="flex items-start gap-3">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${SEVERITY_COLORS[finding.severity]}`}>
                       {finding.severity}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-starlight-100">{finding.title}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium text-starlight-100">{finding.title}</p>
+                        {isSupplyChain && (
+                          <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono">
+                            supply-chain
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-starlight-500 mt-0.5 font-mono">
                         {locStr}
-                        {cves.map((cve) => (
-                          <span key={cve} className="ml-2 text-status-warning">{cve}</span>
+                        {allCodeRefs.map((ref) => (
+                          <span key={ref} className="ml-2 text-status-warning">{ref}</span>
                         ))}
                         {cvss && (
                           <span className="ml-2 text-accent-amber">CVSS {cvss}</span>
                         )}
                       </p>
+
+                      {/* Supply-chain package chip row */}
+                      {isSupplyChain && pkgMeta?.package && (
+                        <div className="mt-2 flex items-center gap-2 text-[11px] text-starlight-300 font-mono bg-midnight-400/60 rounded-md px-2 py-1 w-fit">
+                          <Layers size={11} className="text-purple-400" />
+                          <span className="text-purple-300">{pkgMeta.ecosystem ?? 'pkg'}</span>
+                          <span>:</span>
+                          <span className="text-starlight-100">{pkgMeta.package}</span>
+                          {pkgMeta.version && (
+                            <>
+                              <span>@</span>
+                              <span className="text-starlight-300">{pkgMeta.version}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
+
                       <p className="text-xs text-starlight-400 mt-2 leading-relaxed">
                         {finding.description}
                       </p>
@@ -592,6 +767,19 @@ export function ScanPage() {
                           <pre className="text-xs text-starlight-300 overflow-x-auto font-mono whitespace-pre-wrap">
                             {finding.exploit_path}
                           </pre>
+                        </div>
+                      )}
+
+                      {/* Proof-of-Concept artifact (Klyntar zero-FP gate).
+                          Different kinds get different renders; all carry
+                          a SHA-256 link to the EvidenceChain vault. */}
+                      {finding.poc_artifact && (
+                        <PocArtifactBlock artifact={finding.poc_artifact} />
+                      )}
+                      {!finding.poc_artifact && finding.poc_artifact_sha256 && (
+                        <div className="mt-2 flex items-center gap-2 text-[10px] text-starlight-500">
+                          <Shield size={10} />
+                          <span>Evidence: PoC artifact stored at sha256 {finding.poc_artifact_sha256.slice(0, 16)}...</span>
                         </div>
                       )}
 
