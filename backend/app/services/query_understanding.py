@@ -155,6 +155,15 @@ _INTENT_KEYWORDS: dict[IntentType, dict[str, Any]] = {
             "test for cve", "look for cve",
             "audit this site", "audit this url", "audit this endpoint",
             "check this app", "scan this app", "analyze this apk",
+            # Supply-chain specific (package / dep / malware):
+            "supply chain", "supply-chain", "malware",
+            "typosquat", "typo-squat", "dependency audit",
+            "dep audit", "check dependencies", "check deps",
+            "audit packages", "audit dependencies", "npm audit",
+            "pip audit", "trojaned", "compromised package",
+            "check my package", "scan my package",
+            "audit package.json", "scan package.json",
+            "scan requirements.txt", "audit requirements",
         ],
         "weight": 1.4,
         "threshold": 0.30,
@@ -455,6 +464,17 @@ _GIT_REPO_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Dependency manifest files. When a user asks "scan my package.json"
+# or "audit requirements.txt for supply-chain risks," we want to
+# route to the SupplyChainScanner instead of the web DAST pipeline.
+# Matches bare filenames and full paths.
+_MANIFEST_FILE_RE = re.compile(
+    r"\b(?:[\w./\\\-]*[/\\])?(package\.json|package-lock\.json|"
+    r"requirements(?:-dev)?\.txt|pyproject\.toml|Pipfile(?:\.lock)?|"
+    r"Cargo\.toml|Cargo\.lock|go\.mod|go\.sum|composer\.json)\b",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ScanTarget:
@@ -540,6 +560,12 @@ def _extract_scan_targets(msg: str) -> list[ScanTarget]:
     for m in _MOBILE_BINARY_RE.finditer(msg):
         raw = m.group(0)
         _add("mobile_binary", raw)
+
+    # Dependency manifest files (supply-chain scan targets).
+    # Matched as group(1) because we keep the filename only, not the
+    # path prefix, for the stable kind="manifest" value.
+    for m in _MANIFEST_FILE_RE.finditer(msg):
+        _add("manifest", m.group(1))
 
     # Android package identifiers. Must NOT collide with a captured
     # bare domain (com.example.com would match both but domain is

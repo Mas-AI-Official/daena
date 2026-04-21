@@ -123,7 +123,8 @@ def test_gate_rejects_operator_finding_without_evidence():
     result = apply_gate(findings, ReportTier.OPERATOR)
     assert result.rejected_count == 1
     assert result.accepted_count == 0
-    assert "No EvidenceChain" in result.rejected[0]["rejection_reason"]
+    # Message format changed when require_poc_artifact flag was added.
+    assert "EvidenceChain" in result.rejected[0]["rejection_reason"]
 
 
 def test_gate_accepts_finding_with_evidence_chain_id():

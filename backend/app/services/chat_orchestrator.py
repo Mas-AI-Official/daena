@@ -785,12 +785,18 @@ class ChatOrchestrator:
                     _tier = _RT.SCOUT
 
                 # Prefer the first URL-kind target; fall back to the
-                # first detected target of any kind.
+                # first detected target of any kind. Manifest-kind
+                # targets also get lifted into options.manifest_paths
+                # so the ScanWorkflow's Phase 1b SupplyChainScanner
+                # runs on them before the LLM-driven phases.
                 _targets = qu_result.detected_targets
                 _primary = next(
                     (t for t in _targets if t.kind == "url"),
                     _targets[0],
                 )
+                _manifest_paths = [
+                    t.value for t in _targets if t.kind == "manifest"
+                ]
 
                 _wf = _scan_wf_singleton()
                 _scan_job = await _wf.start_scan(
@@ -806,6 +812,7 @@ class ChatOrchestrator:
                         "all_targets": [
                             {"value": t.value, "kind": t.kind} for t in _targets
                         ],
+                        "manifest_paths": _manifest_paths,
                     },
                 )
                 logger.info(

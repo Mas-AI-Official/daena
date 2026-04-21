@@ -455,6 +455,51 @@ class ScanWorkflow:
                 )
                 return
 
+            # Phase 1b: Supply-chain pre-scan. When the job target is
+            # a dependency manifest (package.json, requirements.txt,
+            # etc.) OR the scan options include manifest paths, run
+            # the SupplyChainScanner FIRST. Its findings join the
+            # aggregated list so the same Phase 3b BeyondMythos
+            # enrichment + Phase 3c Zero-FP gate + report generation
+            # apply to supply-chain risks just like any other finding.
+            supply_chain_findings: list[dict[str, Any]] = []
+            manifest_paths: list[str] = list(
+                job.options.get("manifest_paths", []) or []
+            )
+            # Also scan the target itself if it looks like a manifest.
+            target_lower = job.target.lower()
+            if any(target_lower.endswith(m) for m in (
+                "package.json", "package-lock.json",
+                "requirements.txt", "requirements-dev.txt",
+                "pyproject.toml", "pipfile",
+            )):
+                manifest_paths.append(job.target)
+            if manifest_paths:
+                try:
+                    from app.services.security.supply_chain_scanner import (
+                        SupplyChainScanner,
+                    )
+                    self._emit_event(
+                        job.id, "scan_phase_change",
+                        phase="supply_chain",
+                        manifests=len(manifest_paths),
+                    )
+                    sc_offline = bool(job.options.get("offline_supply_chain", False))
+                    scanner = SupplyChainScanner(offline=sc_offline)
+                    risks = await scanner.scan_manifests(manifest_paths)
+                    supply_chain_findings = [r.to_finding_dict() for r in risks]
+                    logger.info(
+                        "scan_workflow.supply_chain_complete",
+                        job_id=job.id,
+                        risks_found=len(supply_chain_findings),
+                    )
+                except Exception as sc_exc:  # pragma: no cover - fail-safe
+                    logger.warning(
+                        "scan_workflow.supply_chain_skipped",
+                        job_id=job.id,
+                        error=str(sc_exc),
+                    )
+
             # Phase 2: Parallel file scanning via SubAgentSpawner
             job.status = ScanJobStatus.SCANNING
             job.updated_at = time.time()
@@ -495,6 +540,13 @@ class ScanWorkflow:
             self._emit_event(job.id, "scan_phase_change", phase="analyzing")
 
             all_findings = self._aggregate_findings(spawn_result, job.tier)
+            # Merge supply-chain findings from Phase 1b so they flow
+            # through the same BeyondMythos enrichment + Zero-FP gate +
+            # report generation as LLM-discovered findings. Each one
+            # already carries its evidence_chain_id + poc_artifact.
+            if supply_chain_findings:
+                all_findings.extend(supply_chain_findings)
+                job.findings_count += len(supply_chain_findings)
 
             # Phase 3b: BeyondMythos enrichment. ErrorOracle mines each
             # finding's HTTP response context, AdversarialSimulator
