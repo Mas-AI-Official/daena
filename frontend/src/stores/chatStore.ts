@@ -91,6 +91,15 @@ export type GovernanceEvent =
       taskIds: string[]
       departments: string[]
     }
+  | {
+      kind: 'scan_dispatched'
+      id: string           // unique event id
+      jobId: string        // scan workflow job id
+      target: string       // what's being scanned
+      targetKind: string   // url | domain | ip | cidr | app_package | mobile_binary | repo
+      tier: string         // SCOUT | ANALYST | OPERATOR | ARCHITECT | EVILBOB
+      eventsUrl: string    // SSE endpoint the card subscribes to
+    }
 
 interface StreamState {
   isStreaming: boolean
@@ -670,6 +679,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     : s.activeSession,
                 }))
               }
+            } else if (event.type === 'session_title') {
+              // Eager auto-title event: fired BEFORE the pipeline runs
+              // so the sidebar shows a readable title immediately,
+              // even if generation later fails. (Backend still emits
+              // _session_title on the final `done` event as a safety
+              // net; both paths update the same session entry so the
+              // second update is a no-op when the title's unchanged.)
+              const title = (event as { title?: string }).title
+              if (title) {
+                set((s) => ({
+                  sessions: s.sessions.map((ses) =>
+                    ses.id === get().activeSessionId ? { ...ses, title } : ses,
+                  ),
+                  activeSession: s.activeSession
+                    ? { ...s.activeSession, title }
+                    : s.activeSession,
+                }))
+              }
             } else if (event.type === 'tool_call') {
               // Agentic loop: LLM is calling a tool
               set((s) => ({
@@ -963,6 +990,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 toast.governance(
                   `${count} task${count === 1 ? '' : 's'} created. Check /tasks.`,
                 )
+              }
+            } else if (event.type === 'scan_dispatched') {
+              // Stage 2.78 kicked off a security scan. Surface an
+              // inline ScanProgressCard via a governance event so the
+              // operator sees progress + findings live under the
+              // assistant message. The component opens its own SSE
+              // to events_url for per-phase updates.
+              const jobId = String(event.job_id || '')
+              const target = String(event.target || '')
+              const targetKind = String(event.target_kind || 'url')
+              const tier = String(event.tier || 'SCOUT')
+              const eventsUrl = String(event.events_url || '')
+              if (jobId) {
+                get().addGovernanceEvent({
+                  kind: 'scan_dispatched',
+                  id: `scan-${jobId}`,
+                  jobId,
+                  target,
+                  targetKind,
+                  tier,
+                  eventsUrl,
+                })
+                toast.governance(`Scan started: ${target} (${tier})`)
               }
             } else if (event.type === 'interactive_prompt') {
               // Agent is pausing for user input -- route to UI store

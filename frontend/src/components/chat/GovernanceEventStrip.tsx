@@ -20,6 +20,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { Shield, Check, X, AlertTriangle, Compass, ListTodo } from 'lucide-react'
 import { useChatStore, type GovernanceEvent } from '@/stores/chatStore'
+import { ScanProgressCard } from './ScanProgressCard'
 
 export function GovernanceEventStrip() {
   const events = useChatStore((s) => s.governanceEvents)
@@ -164,6 +165,19 @@ function GovernanceCard({ event, onDismiss, onDecide }: CardProps) {
           <X size={12} />
         </button>
       </div>
+    )
+  }
+
+  if (event.kind === 'scan_dispatched') {
+    return (
+      <ScanProgressCard
+        jobId={event.jobId}
+        target={event.target}
+        targetKind={event.targetKind}
+        tier={event.tier}
+        eventsUrl={event.eventsUrl}
+        onDismiss={onDismiss}
+      />
     )
   }
 

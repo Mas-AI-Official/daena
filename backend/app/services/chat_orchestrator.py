@@ -164,16 +164,98 @@ class ChatOrchestrator:
         self._registry = registry
         self._chat = ChatService(db)
 
+    # CLI runtimes don't bill per-request (they're subscription-based
+    # or local), so the priced model registry has no entry for them.
+    # If we return 0.0 for every CLI call, the user's per-session /
+    # per-day / per-month spend counters stay flat forever -- the
+    # "budget left" indicator in chat looks hardcoded because nothing
+    # ever decrements it. That's the bug the user reported.
+    #
+    # Fix: keep a SHADOW price list that mirrors each CLI runtime /
+    # local provider to its closest paid-API equivalent. These numbers
+    # track what you WOULD pay if the same tokens flowed through the
+    # cloud API version. The counters move. The dashboards make sense.
+    # The user's "how much value am I extracting from my subscription"
+    # view actually works.
+    #
+    # Pricing source: official per-model cards as of 2026-04 (USD per
+    # 1M tokens). Ollama / local vLLM priced at near-zero so they
+    # still surface as usage but don't meaningfully draw the quota
+    # down; this keeps "I'm on free tier" experiences honest.
+    _SHADOW_COSTS: dict[str, tuple[float, float]] = {
+        # Top-tier per provider (founder directive 2026-04-18:
+        # "orchestrator always picks the highest" -- see model_router
+        # priority-tag boost). Shadow prices below track the 4.7 Max
+        # / 5.4 / 3.1 Pro / Auto tier so usage meters reflect what
+        # the equivalent API call WOULD cost.
+        # Claude Code CLI + API -> Sonnet 4.7 Max equivalent
+        "claude-code": (3.00, 15.00),
+        "claude_code": (3.00, 15.00),
+        "claude-sonnet-4-7": (3.00, 15.00),
+        "claude-sonnet-4-7-max": (3.00, 15.00),
+        # Codex CLI -> GPT-5.4 equivalent
+        "codex-cli": (3.00, 12.00),
+        "codex-5-4": (3.00, 12.00),
+        "codex": (3.00, 12.00),
+        # Gemini CLI -> Gemini 3.1 Pro equivalent
+        "gemini-cli": (2.50, 15.00),
+        "gemini-3.1-pro": (2.50, 15.00),
+        "gemini-3.1-pro-preview": (2.50, 15.00),
+        "gemini_cli": (2.50, 15.00),
+        # Perplexity Auto -> averaged Sonar + Sonar Pro
+        "perplexity-auto": (2.00, 8.00),
+        "sonar-pro": (3.00, 15.00),
+        # Grok CLI -> Grok-4 equivalent
+        "grok-cli": (5.00, 15.00),
+        "grok_cli": (5.00, 15.00),
+        # Ollama + vLLM -> effectively free, but count a tiny amount
+        # so the usage meter visibly moves ("you're using something")
+        # without draining the budget. $0.01 per 1M tokens is symbolic.
+        "ollama": (0.01, 0.01),
+        "vllm": (0.01, 0.01),
+    }
+
     def _estimate_cost(self, model_id: str, input_tokens: int, output_tokens: int) -> float:
-        """Estimate USD cost from model pricing in the registry."""
-        if not self._registry:
-            return 0.0
-        model_info = self._registry.get_model_info(model_id)
-        if not model_info:
-            return 0.0
-        input_cost = (input_tokens / 1_000_000) * model_info.cost_per_1m_input
-        output_cost = (output_tokens / 1_000_000) * model_info.cost_per_1m_output
-        return round(input_cost + output_cost, 8)
+        """Estimate USD cost for a chat generation.
+
+        Three lookup layers (first hit wins):
+          1. Priced registry (ModelInfo.cost_per_1m_*) -- real pricing
+             for API-billed providers like Anthropic, OpenAI, Groq.
+          2. Shadow map keyed by model_id prefix / CLI runtime id --
+             equivalent-cost estimate for CLIs and local runtimes so
+             usage meters keep moving.
+          3. Conservative 0.0 -- only for truly unknown providers,
+             logged so operators can spot gaps in the shadow map.
+        """
+        # Layer 1: live registry
+        if self._registry:
+            model_info = self._registry.get_model_info(model_id)
+            if model_info and (
+                model_info.cost_per_1m_input > 0
+                or model_info.cost_per_1m_output > 0
+            ):
+                input_cost = (input_tokens / 1_000_000) * model_info.cost_per_1m_input
+                output_cost = (output_tokens / 1_000_000) * model_info.cost_per_1m_output
+                return round(input_cost + output_cost, 8)
+
+        # Layer 2: shadow map for CLIs / local runtimes
+        lookup_key = (model_id or "").lower()
+        shadow = self._SHADOW_COSTS.get(lookup_key)
+        if shadow is None:
+            # Fallback: match by prefix so variant names like
+            # ``claude-code-sonnet-4.5`` still hit the claude-code entry.
+            for key, price in self._SHADOW_COSTS.items():
+                if lookup_key.startswith(key):
+                    shadow = price
+                    break
+
+        if shadow is not None:
+            in_price, out_price = shadow
+            input_cost = (input_tokens / 1_000_000) * in_price
+            output_cost = (output_tokens / 1_000_000) * out_price
+            return round(input_cost + output_cost, 8)
+
+        return 0.0
 
     async def stream_reply(
         self,
@@ -218,6 +300,34 @@ class ChatOrchestrator:
             return
 
         user_content = last_user_msg.content
+
+        # ── Eager auto-title ─────────────────────────────────────
+        # Generate a title from the user message NOW, before the
+        # pipeline runs. Previously the title was only set after the
+        # assistant message was persisted (Stage 9), which meant a
+        # chat that failed at Stage 6 or 8 left the session forever
+        # untitled in the history. That broke "auto name for history"
+        # every time the LLM fallback chain exhausted itself.
+        #
+        # The helper is idempotent (it early-returns if a title is
+        # already set), so the late call at Stage 9 still runs and
+        # becomes a no-op when this one has already fired.
+        _early_title: str | None = None
+        try:
+            _early_title = await self._chat._auto_title_if_needed(session_id)
+            if _early_title:
+                # Surface it immediately so the sidebar list updates
+                # before the streaming response even starts.
+                yield {
+                    "type": "session_title",
+                    "title": _early_title,
+                }
+        except Exception as _title_exc:  # noqa: BLE001 -- title is best-effort
+            logger.debug(
+                "orchestrator.auto_title_early_failed",
+                session_id=str(session_id),
+                error=str(_title_exc),
+            )
 
         # Benchmark detection is consolidated at Stage 8. No early
         # intercepts -- all messages go through security, governance,
@@ -321,6 +431,28 @@ class ChatOrchestrator:
         if not session_obj:
             yield {"type": "error", "message": "Session not found."}
             return
+
+        # Asset Shield: mark this session as operator-initiated when
+        # the caller role is FOUNDER / ADMIN / MANAGER. Downstream ops
+        # (tool calls, pivots needing creds) read this marker to decide
+        # auto-consent vs interactive approval. Background / heartbeat
+        # / delegated agent ops do not pass through this path, so they
+        # never get the auto-consent signal.
+        try:
+            from app.services.security.asset_shield import (
+                mark_operator_initiated,
+            )
+            if str(user_role or "").upper() in {"FOUNDER", "ADMIN", "MANAGER"}:
+                mark_operator_initiated(
+                    session_id=str(session_id),
+                    user_id=str(getattr(self, "_current_user_id", "")),
+                    user_role=user_role,
+                )
+                # Stash for Stage 2.78 so tier selection can consult
+                # the role without re-reading auth context.
+                self._last_user_role = user_role
+        except Exception:  # pragma: no cover - fail-safe
+            pass
 
         # Resolve session modes: request-level override > session stored value > default
         chat_mode = ChatMode(action_mode_override) if action_mode_override else (
@@ -617,6 +749,86 @@ class ChatOrchestrator:
                 "intent": qu_result.intent.value,
                 "risk": qu_result.risk_level.value,
             }
+
+        # ── Stage 2.78: Security scan dispatch ───────────────────────
+        # When the user's message was classified as SECURITY_SCAN with
+        # at least one concrete target (URL, domain, IP, CIDR,
+        # host:port, app package, APK/IPA, or git repo), start a
+        # ScanWorkflow job and tell the UI. The scan runs in the
+        # background; the frontend opens a parallel SSE connection to
+        # /api/v1/security/scans/{job_id}/events to stream phase
+        # changes and findings inline in the chat turn.
+        #
+        # Tier selection respects elevated-mode + founder-role:
+        #   EVILBOB active + FOUNDER    -> EVILBOB (exploitation)
+        #   FOUNDER (any mode)          -> ARCHITECT (deep analysis)
+        #   ADMIN                       -> OPERATOR (fix suggestions)
+        #   USER                        -> ANALYST (explanations)
+        #   anonymous/trial             -> SCOUT (find only)
+        try:
+            if getattr(qu_result, "scan_dispatch_requested", False) and \
+                    getattr(qu_result, "detected_targets", None):
+                from app.api.v1.security_dashboard import _get_workflow as _scan_wf_singleton
+                from app.services.security.evilbob_mode import is_active as _eb_active
+                from app.services.security.report_tiers import ReportTier as _RT
+
+                _user_role = (getattr(self, "_last_user_role", None) or "USER").upper()
+                if _eb_active() and _user_role == "FOUNDER":
+                    _tier = _RT.EVILBOB
+                elif _user_role == "FOUNDER":
+                    _tier = _RT.ARCHITECT
+                elif _user_role == "ADMIN":
+                    _tier = _RT.OPERATOR
+                elif _user_role in ("USER", "MANAGER"):
+                    _tier = _RT.ANALYST
+                else:
+                    _tier = _RT.SCOUT
+
+                # Prefer the first URL-kind target; fall back to the
+                # first detected target of any kind.
+                _targets = qu_result.detected_targets
+                _primary = next(
+                    (t for t in _targets if t.kind == "url"),
+                    _targets[0],
+                )
+
+                _wf = _scan_wf_singleton()
+                _scan_job = await _wf.start_scan(
+                    target=_primary.value,
+                    tier=_tier.value,
+                    user_id=str(self._current_user_id)
+                        if getattr(self, "_current_user_id", None) else "anonymous",
+                    tenant_id=str(tenant_id),
+                    options={
+                        "from_chat": True,
+                        "session_id": str(session_id),
+                        "target_kind": _primary.kind,
+                        "all_targets": [
+                            {"value": t.value, "kind": t.kind} for t in _targets
+                        ],
+                    },
+                )
+                logger.info(
+                    "orchestrator.scan_dispatched",
+                    job_id=_scan_job.id,
+                    target=_primary.value,
+                    target_kind=_primary.kind,
+                    tier=_tier.value,
+                    user_role=_user_role,
+                )
+                yield {
+                    "type": "scan_dispatched",
+                    "job_id": _scan_job.id,
+                    "target": _primary.value,
+                    "target_kind": _primary.kind,
+                    "tier": _tier.value,
+                    "events_url": f"/api/v1/security/scans/{_scan_job.id}/events",
+                }
+        except Exception as _scan_exc:  # pragma: no cover - fail-safe
+            logger.warning(
+                "orchestrator.scan_dispatch_failed",
+                error=str(_scan_exc),
+            )
 
         # ── Stage 2.8: Daena VP plan (Session B, feature-flagged) ─
         # The VP decomposes the request into department-owned subtasks

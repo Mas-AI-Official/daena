@@ -273,6 +273,60 @@ class ScanWorkflow:
             max_concurrency=50,
         )
         self._tier_engine = ReportTierEngine()
+        # Per-job event queues so subscribers (chat orchestrator,
+        # websocket clients) can stream scan events in real time.
+        # Unbounded so a slow subscriber does not backpressure the
+        # scan. Memory risk is negligible: events are small dicts and
+        # the scan lifecycle is seconds to minutes.
+        self._event_queues: dict[str, list[asyncio.Queue[dict[str, Any]]]] = {}
+
+    def subscribe(self, job_id: str) -> asyncio.Queue[dict[str, Any]]:
+        """Open a new event queue for a running scan.
+
+        Returns an asyncio.Queue that receives dicts shaped like
+        ``{"type": "scan_phase_change", "job_id": ..., "data": {...}}``.
+        Call ``unsubscribe`` when done to avoid a leak if the scan
+        continues beyond the subscriber lifetime.
+        """
+        q: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._event_queues.setdefault(job_id, []).append(q)
+        return q
+
+    def unsubscribe(self, job_id: str, q: asyncio.Queue[dict[str, Any]]) -> None:
+        """Remove a previously subscribed queue."""
+        queues = self._event_queues.get(job_id)
+        if not queues:
+            return
+        try:
+            queues.remove(q)
+        except ValueError:
+            pass
+        if not queues:
+            self._event_queues.pop(job_id, None)
+
+    def _emit_event(
+        self, job_id: str, event_type: str, **data: Any,
+    ) -> None:
+        """Fan out an event to every subscriber of a job.
+
+        Uses ``put_nowait`` so a slow subscriber never blocks the
+        scan pipeline. Queue is unbounded; OOM risk is nil for the
+        scan lifetime (seconds to minutes, tens of events).
+        """
+        queues = self._event_queues.get(job_id)
+        if not queues:
+            return
+        envelope = {"type": event_type, "job_id": job_id, "data": data}
+        for q in queues:
+            try:
+                q.put_nowait(envelope)
+            except asyncio.QueueFull:
+                # Unbounded queue: should never happen. Log and move on.
+                logger.warning(
+                    "scan_workflow.event_queue_full",
+                    job_id=job_id,
+                    event_type=event_type,
+                )
 
     async def start_scan(
         self,
@@ -381,20 +435,33 @@ class ScanWorkflow:
         start_time = time.time()
 
         try:
+            self._emit_event(
+                job.id, "scan_started",
+                target=job.target, tier=job.tier.value,
+            )
+
             # Phase 1: Profile the target
             job.status = ScanJobStatus.PROFILING
             job.updated_at = time.time()
+            self._emit_event(job.id, "scan_phase_change", phase="profiling")
             files = self._profile_target(job.target)
             job.files_total = len(files)
 
             if not files:
                 job.status = ScanJobStatus.FAILED
                 job.error = "No scannable files found in target"
+                self._emit_event(
+                    job.id, "scan_failed", reason=job.error,
+                )
                 return
 
             # Phase 2: Parallel file scanning via SubAgentSpawner
             job.status = ScanJobStatus.SCANNING
             job.updated_at = time.time()
+            self._emit_event(
+                job.id, "scan_phase_change",
+                phase="scanning", files_total=job.files_total,
+            )
 
             plan = self._spawner.plan_spawn(
                 task=f"Security scan of {job.target}",
@@ -425,13 +492,83 @@ class ScanWorkflow:
             job.status = ScanJobStatus.ANALYZING
             job.progress_pct = 75.0
             job.updated_at = time.time()
+            self._emit_event(job.id, "scan_phase_change", phase="analyzing")
 
             all_findings = self._aggregate_findings(spawn_result, job.tier)
+
+            # Phase 3b: BeyondMythos enrichment. ErrorOracle mines each
+            # finding's HTTP response context, AdversarialSimulator
+            # predicts detection for the action that produced it (and
+            # surfaces stealth-adjusted params when risk is high), and
+            # CompositionalPlanner proposes benign-looking alternatives
+            # for any finding flagged as blocked / rate-limited / WAF-
+            # refused. This is where Daena starts thinking OUTSIDE the
+            # LLM: the three cognition classes reason about the target
+            # and the defender from primitives the LLM could never have
+            # seen in training.
+            try:
+                from app.services.security.beyond_mythos_enricher import (
+                    BeyondMythosEnricher,
+                )
+                enricher = BeyondMythosEnricher()
+                defenses = list(job.options.get("target_defenses", []) or [])
+                all_findings = enricher.enrich_findings(
+                    all_findings, target_defenses=defenses,
+                )
+                logger.info(
+                    "scan_workflow.beyond_mythos_applied",
+                    job_id=job.id,
+                    findings_enriched=len(all_findings),
+                )
+            except Exception as bm_exc:  # pragma: no cover - fail-safe
+                logger.warning(
+                    "scan_workflow.beyond_mythos_skipped",
+                    job_id=job.id,
+                    error=str(bm_exc),
+                )
+
+            # Phase 3c: Zero-FP gate. Any OPERATOR+ finding without a
+            # matching EvidenceChain (or explicit founder override) is
+            # rejected before the PDF is built. Prevents the failure
+            # mode shared by every other autonomous-pentest tool in
+            # 2026: unverified LLM-hallucinated findings shipped into
+            # customer reports.
+            try:
+                from app.services.security.zero_fp_gate import apply_gate
+                override_ids = set(
+                    job.options.get("finding_overrides", []) or []
+                )
+                gate_result = apply_gate(
+                    all_findings,
+                    job.tier,
+                    founder_override_ids=override_ids,
+                )
+                if gate_result.rejected:
+                    logger.info(
+                        "scan_workflow.findings_gated",
+                        job_id=job.id,
+                        tier=job.tier.value,
+                        accepted=gate_result.accepted_count,
+                        rejected=gate_result.rejected_count,
+                        overrides=gate_result.override_count,
+                    )
+                all_findings = gate_result.accepted + gate_result.overrides
+                job.options["gate_rejections"] = [
+                    {"id": f.get("id"), "reason": f.get("rejection_reason")}
+                    for f in gate_result.rejected
+                ]
+            except Exception as gate_exc:  # pragma: no cover - fail-safe
+                logger.warning(
+                    "scan_workflow.zero_fp_gate_skipped",
+                    job_id=job.id,
+                    error=str(gate_exc),
+                )
 
             # Phase 4: Build tier-appropriate report via ReportTierEngine
             job.status = ScanJobStatus.REPORTING
             job.progress_pct = 85.0
             job.updated_at = time.time()
+            self._emit_event(job.id, "scan_phase_change", phase="reporting")
 
             pipeline_config = self._tier_engine.get_pipeline_config(job.tier)
             skip_stages = pipeline_config.get("skip_stages", set())
@@ -492,6 +629,14 @@ class ScanWorkflow:
             job.progress_pct = 100.0
             job.findings_count = security_report.total_findings
             job.updated_at = time.time()
+            self._emit_event(
+                job.id, "scan_complete",
+                findings_count=security_report.total_findings,
+                critical=security_report.critical,
+                high=security_report.high,
+                cost_usd=cost,
+                duration_secs=round(duration, 2),
+            )
 
             logger.info(
                 "scan_workflow.complete",
@@ -572,6 +717,7 @@ class ScanWorkflow:
                 job_id=job.id,
                 error=str(exc),
             )
+            self._emit_event(job.id, "scan_failed", reason=str(exc))
 
     def _profile_target(self, target: str) -> list[str]:
         """Profile the target and return list of scannable files.

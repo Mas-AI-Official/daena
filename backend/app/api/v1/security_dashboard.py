@@ -12,8 +12,10 @@ import json
 import os
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+import asyncio
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.logging import get_logger
@@ -419,6 +421,61 @@ def _get_opsec_manager():
         from app.services.security.opsec import OpsecManager
         _opsec_manager = OpsecManager()
     return _opsec_manager
+
+
+@router.get("/scans/{job_id}/events")
+async def stream_scan_events(
+    job_id: str, request: Request,
+) -> StreamingResponse:
+    """Server-sent events for a scan job.
+
+    Yields events emitted by ScanWorkflow: scan_started,
+    scan_phase_change (one per phase transition), scan_complete,
+    scan_failed. The chat UI subscribes to this endpoint when it
+    receives a scan_dispatched event in the main chat SSE so the
+    inline ScanProgressCard updates live.
+
+    Connection closes when the scan terminates (complete or failed)
+    or when the client disconnects.
+    """
+    workflow = _get_workflow()
+
+    try:
+        # Confirm the job exists before opening the stream.
+        await workflow.get_scan_status(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Scan {job_id} not found")
+
+    async def _event_stream():
+        q = workflow.subscribe(job_id)
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    envelope = await asyncio.wait_for(q.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    # Heartbeat so proxies do not close idle SSE.
+                    yield ": heartbeat\n\n"
+                    continue
+
+                data = json.dumps(envelope)
+                yield f"event: {envelope['type']}\ndata: {data}\n\n"
+
+                if envelope["type"] in ("scan_complete", "scan_failed"):
+                    break
+        finally:
+            workflow.unsubscribe(job_id, q)
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/opsec/status")
