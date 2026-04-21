@@ -29,7 +29,9 @@ from app.services.providers.base import (
 logger = get_logger(__name__)
 
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta"
-_DEFAULT_MODEL = "gemini-2.0-flash"
+# 2026-04-18: Primary Mind for Google is Gemini 3.1 Pro -- the
+# founder-specified top-tier. 2.5 Pro / 2.0 Flash kept as fallbacks.
+_DEFAULT_MODEL = "gemini-3.1-pro-preview"
 
 _MODELS: list[dict[str, Any]] = [
     {
@@ -38,7 +40,7 @@ _MODELS: list[dict[str, Any]] = [
         "ctx": 1_000_000,
         "in": 2.50,
         "out": 15.0,
-        "tags": ["reasoning", "analysis", "vision", "large", "long-context"],
+        "tags": ["reasoning", "analysis", "vision", "large", "long-context", "frontier", "priority"],
     },
     {
         "id": "gemini-2.5-pro-preview-06-05",

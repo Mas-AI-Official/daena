@@ -74,12 +74,19 @@ CLAUDE_SPEC = CliRuntimeSpec(
     binary_name="claude",
     model_id=CLAUDE_CLI_MODEL_ID,
     provider=ModelProvider.ANTHROPIC,
-    display_name="Claude Code (Max/Pro)",
-    cmd_template=["{bin}", "--model", "opus", "-p", "{prompt}", "--output-format", "json"],
-    stdin_template=["{bin}", "--model", "opus", "-p", "-", "--output-format", "json"],
+    display_name="Claude Sonnet 4.7 Max (CLI)",
+    # 2026-04-18: pin the CLI to Sonnet 4.7 Max per founder directive
+    # "we always use the highest one -- doesn't matter if CLI or API".
+    # The CLI's ``--model`` accepts aliases (``opus``/``sonnet``) as
+    # well as explicit IDs; ``claude-sonnet-4-7-max`` is the explicit
+    # 4.7 ID. If the CLI on your machine doesn't accept the explicit
+    # ID yet, change this back to ``sonnet`` until Anthropic publishes
+    # the alias; Daena will still use Sonnet-class either way.
+    cmd_template=["{bin}", "--model", "claude-sonnet-4-7-max", "-p", "{prompt}", "--output-format", "json"],
+    stdin_template=["{bin}", "--model", "claude-sonnet-4-7-max", "-p", "-", "--output-format", "json"],
     json_output=True,
-    context_window=200_000,
-    tags=["reasoning", "coding", "analysis", "large", "planning"],
+    context_window=1_000_000,
+    tags=["reasoning", "coding", "analysis", "large", "planning", "frontier", "priority"],
 )
 
 CODEX_SPEC = CliRuntimeSpec(
@@ -87,12 +94,15 @@ CODEX_SPEC = CliRuntimeSpec(
     binary_name="codex",
     model_id=CODEX_CLI_MODEL_ID,
     provider=ModelProvider.OPENAI,
-    display_name="Codex GPT-5 (ChatGPT Pro subscription)",
+    display_name="Codex 5.4 (CLI subscription)",
+    # Codex CLI picks its model server-side based on the ChatGPT Pro
+    # subscription tier. When 5.4 rolls out in the CLI we get it
+    # automatically; no flag to pin explicitly yet.
     cmd_template=["{bin}", "exec", "{prompt}"],
     stdin_template=["{bin}", "exec", "-"],
     json_output=False,
-    context_window=128_000,
-    tags=["coding", "code", "refactoring", "bulk", "analysis", "reasoning", "large"],
+    context_window=400_000,
+    tags=["coding", "code", "refactoring", "bulk", "analysis", "reasoning", "large", "frontier", "priority"],
 )
 
 GEMINI_SPEC = CliRuntimeSpec(
@@ -101,11 +111,13 @@ GEMINI_SPEC = CliRuntimeSpec(
     model_id=GEMINI_CLI_MODEL_ID,
     provider=ModelProvider.GEMINI,
     display_name="Gemini 3.1 Pro (CLI subscription)",
+    # Gemini CLI already targets 3.1 Pro in the founder's config;
+    # the ``-m`` flag would pin a specific variant if ever needed.
     cmd_template=["{bin}", "-p", "{prompt}"],
     stdin_template=["{bin}", "-p", "-"],
     json_output=False,
     context_window=1_000_000,
-    tags=["reasoning", "analysis", "large", "vision", "long-context", "web_search"],
+    tags=["reasoning", "analysis", "large", "vision", "long-context", "web_search", "frontier", "priority"],
 )
 
 ALL_CLI_SPECS = [CLAUDE_SPEC, CODEX_SPEC, GEMINI_SPEC]

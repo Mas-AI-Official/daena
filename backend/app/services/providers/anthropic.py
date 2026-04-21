@@ -32,17 +32,31 @@ logger = get_logger(__name__)
 
 _API_BASE = "https://api.anthropic.com"
 _API_VERSION = "2023-06-01"
-_DEFAULT_MODEL = "claude-sonnet-4-20250514"
+# 2026-04-18: Primary Mind for Anthropic is Sonnet 4.7 Max -- the
+# founder-specified top-tier Claude. Sonnet 4 / Opus 4 / Haiku 4.5
+# kept in the catalog as cheaper fallbacks, but when the router has
+# no cost pressure it picks 4.7 Max first (priority tag).
+_DEFAULT_MODEL = "claude-sonnet-4-7-max"
 
-# Model catalog with pricing per 1M tokens
+# Model catalog with pricing per 1M tokens. Priority tag drives
+# "best of the best" selection when no cost cap forces a cheaper
+# pick -- see model_router.py scoring.
 _MODELS: list[dict[str, Any]] = [
     {
-        "id": "claude-haiku-4-5-20251001",
-        "name": "Claude Haiku 4.5",
+        "id": "claude-sonnet-4-7-max",
+        "name": "Claude Sonnet 4.7 Max",
+        "ctx": 1_000_000,
+        "in": 3.0,
+        "out": 15.0,
+        "tags": ["reasoning", "coding", "frontier", "priority"],
+    },
+    {
+        "id": "claude-opus-4-20250514",
+        "name": "Claude Opus 4",
         "ctx": 200_000,
-        "in": 1.0,
-        "out": 5.0,
-        "tags": ["fast", "cheap"],
+        "in": 15.0,
+        "out": 75.0,
+        "tags": ["reasoning", "premium"],
     },
     {
         "id": "claude-sonnet-4-20250514",
@@ -53,12 +67,12 @@ _MODELS: list[dict[str, Any]] = [
         "tags": ["reasoning", "coding", "balanced"],
     },
     {
-        "id": "claude-opus-4-20250514",
-        "name": "Claude Opus 4",
+        "id": "claude-haiku-4-5-20251001",
+        "name": "Claude Haiku 4.5",
         "ctx": 200_000,
-        "in": 15.0,
-        "out": 75.0,
-        "tags": ["reasoning", "premium"],
+        "in": 1.0,
+        "out": 5.0,
+        "tags": ["fast", "cheap"],
     },
 ]
 

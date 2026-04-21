@@ -344,11 +344,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         try:
             import httpx
 
-            ollama_url = settings.ollama_base_url.rstrip("/")
+            # Use the WSL-aware resolver instead of the raw settings
+            # URL so a Windows-side Ollama is reachable from a WSL
+            # backend via host.docker.internal. Otherwise the warmup
+            # fails with "All connection attempts failed" even when
+            # every other Ollama code path works fine -- which is the
+            # exact footgun the user hit 2026-04-18.
+            from app.services.providers.ollama import (
+                OllamaProvider,
+                resolve_ollama_base_url,
+            )
 
-            # Resolve actual model name (handles "auto" -> best installed)
-            from app.services.providers.ollama import OllamaProvider
+            ollama_url = resolve_ollama_base_url(
+                settings.ollama_base_url
+            ).rstrip("/")
 
+            # Resolve actual model name (handles "auto" -> best installed,
+            # falls back to an installed model if the requested one
+            # isn't pulled -- e.g. ``mistral:7b`` requested but only
+            # ``llama3.1:8b`` available).
             _prov = OllamaProvider()
             warmup_model = await _prov._resolve_model(settings.ollama_default_model)
             await _prov.close()
@@ -381,7 +395,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     import asyncio
 
-    asyncio.create_task(_warmup_ollama())
+    # Ollama warm-up is gated on the OLLAMA_ENABLED flag. When users
+    # migrate to llama.cpp llama-server (see .env + start-llama-server.ps1),
+    # the flag flips to False and we skip the 11434 probe + model
+    # warmup entirely. Without this gate, every startup logged
+    # "ollama_no_models" + "ollama_warmup_failed" noise.
+    if settings.ollama_enabled:
+        asyncio.create_task(_warmup_ollama())
+    else:
+        logger.info(
+            "ollama.disabled_by_config",
+            hint="Set OLLAMA_ENABLED=true in .env to re-enable.",
+        )
 
     # --- Runtime Registry: discover CLIs, check health, probe subscriptions ---
     _ts = _time.perf_counter()
@@ -402,6 +427,50 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             error=str(rt_exc),
             impact="CLI runtimes unavailable until next health check",
         )
+
+    # --- Periodic rediscovery: pick up CLIs/Ollama that come or go
+    # AFTER the backend boots. Without this, installing Claude CLI /
+    # Codex / Ollama models while Daena is running requires a full
+    # backend restart to see them. Now they appear within ~60s.
+    #
+    # Invalidates:
+    #   * runtime registry install cache (Claude/Codex/Gemini CLIs)
+    #   * Ollama URL resolver (in case Ollama moved between localhost
+    #     / host.docker.internal / VPN addresses)
+    #   * model catalog TTL (happens naturally on next list_all_models)
+    async def _periodic_runtime_rescan() -> None:
+        import asyncio as _asyncio
+
+        # First scan fires after 60s (not immediately, since we just
+        # scanned at startup); then every 60s thereafter.
+        from app.core.events import get_runtime_registry
+        from app.services.providers.ollama import (
+            invalidate_ollama_resolver_cache,
+        )
+
+        while True:
+            try:
+                await _asyncio.sleep(60)
+                try:
+                    registry = get_runtime_registry()
+                    await registry.rediscover_all()
+                except Exception as _r_exc:  # noqa: BLE001 -- best-effort
+                    logger.debug(
+                        "runtime_rescan_failed", error=str(_r_exc),
+                    )
+                # Also bump the Ollama resolver so the next call
+                # re-probes instead of trusting the last URL forever.
+                try:
+                    invalidate_ollama_resolver_cache()
+                except Exception:  # noqa: BLE001
+                    pass
+            except _asyncio.CancelledError:
+                break
+            except Exception:  # noqa: BLE001 -- never kill the loop
+                logger.exception("runtime_rescan_loop_error")
+
+    import asyncio as _asyncio_init
+    _asyncio_init.create_task(_periodic_runtime_rescan())
 
     # --- MCP Bootstrap (Option A): spawn-on-first-call adapters for
     # every MCP entry in claude_desktop_config.json. This closes the

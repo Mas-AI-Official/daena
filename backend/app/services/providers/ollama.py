@@ -4,12 +4,25 @@ Ollama runs locally (default: http://localhost:11434) and provides
 free inference with no API key required.  Primary model source for
 Daena (target: 70% of queries via Ollama).
 
+WSL host resolution (added 2026-04-18):
+    When Daena runs inside WSL2 but Ollama runs on the Windows host,
+    ``localhost:11434`` points at WSL's own loopback and nothing's
+    listening there. The user's actual Ollama daemon is reachable via
+    either ``host.docker.internal`` (auto-populated in /etc/hosts on
+    Windows 11 / recent WSL2) or the Windows host IP found in
+    /etc/resolv.conf. ``_resolve_ollama_base_url`` probes the
+    user-configured URL first; if it's unreachable AND we're on WSL,
+    it falls back to these WSL-aware alternatives before giving up.
+    This fixes the "Ollama installed but backend says unavailable"
+    state that looked like the daemon was broken.
+
 API docs: https://github.com/ollama/ollama/blob/main/docs/api.md
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -27,6 +40,152 @@ from app.services.providers.base import (
 )
 
 logger = get_logger(__name__)
+
+
+# WSL/Ollama URL resolution with a short TTL. Caching forever was
+# wrong: when the user starts Ollama on Windows AFTER the backend
+# booted, the cached ``None``/failure wedged every fallback request.
+# And if they switch between systems / stop & restart Ollama on a
+# different port, the cached URL was wrong forever.
+#
+# 60s TTL is short enough to feel instant ("turn Ollama on, wait a
+# minute, it works") but long enough that no request pays a probe
+# cost on the hot path.
+_RESOLVED_BASE_URL: str | None = None
+_RESOLVED_AT: float = 0.0
+_RESOLVE_TTL_SECONDS: float = 60.0
+
+
+def _is_wsl() -> bool:
+    """Return True if the process is running inside WSL (1 or 2)."""
+    try:
+        with open("/proc/version", encoding="utf-8") as fh:
+            return "microsoft" in fh.read().lower()
+    except OSError:
+        return False
+
+
+def _read_windows_host_ip() -> str | None:
+    """Best-effort: return the Windows host IP as seen from WSL.
+
+    On WSL2, /etc/resolv.conf contains a ``nameserver <windows-host-ip>``
+    line. Older WSL2 layouts use 10.255.255.254 for a DNS forwarder
+    rather than the actual host, so this hint is not always correct --
+    ``host.docker.internal`` remains the authoritative probe target.
+    """
+    try:
+        with open("/etc/resolv.conf", encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) >= 2 and parts[0] == "nameserver":
+                    return parts[1]
+    except OSError:
+        return None
+    return None
+
+
+def _probe_url_sync(url: str, timeout: float = 1.5) -> bool:
+    """Tiny synchronous reachability probe. Used only at import time
+    so we don't need an event loop just to resolve a base URL."""
+    try:
+        with httpx.Client(timeout=timeout) as c:
+            return c.get(f"{url.rstrip('/')}/api/tags").status_code == 200
+    except Exception:
+        return False
+
+
+def resolve_ollama_base_url(
+    configured: str | None = None,
+    *,
+    force: bool = False,
+) -> str:
+    """Pick the first working Ollama base URL.
+
+    Priority:
+        1. Environment override (``OLLAMA_BASE_URL``) when explicitly set.
+        2. The caller-provided / settings-provided URL.
+        3. If we're on WSL AND the above didn't answer, try
+           ``http://host.docker.internal:11434`` (Windows host).
+        4. If still nothing, try the Windows host IP from resolv.conf.
+        5. Give up and return the default -- the later code will log
+           "skipped" instead of wasting a full request.
+
+    Cached with a ``_RESOLVE_TTL_SECONDS`` TTL so transient failures
+    (Ollama not yet started, network flap) don't wedge the resolver
+    forever. ``force=True`` bypasses the cache entirely -- use from
+    manual refresh UI / health endpoints.
+    """
+    import time as _time
+
+    global _RESOLVED_BASE_URL, _RESOLVED_AT
+    now = _time.monotonic()
+    if (
+        not force
+        and _RESOLVED_BASE_URL is not None
+        and (now - _RESOLVED_AT) < _RESOLVE_TTL_SECONDS
+    ):
+        return _RESOLVED_BASE_URL
+
+    candidates: list[str] = []
+    env_override = os.environ.get("OLLAMA_BASE_URL", "").strip()
+    if env_override:
+        candidates.append(env_override)
+    if configured:
+        candidates.append(configured)
+    default_local = "http://localhost:11434"
+    if default_local not in candidates:
+        candidates.append(default_local)
+
+    if _is_wsl():
+        wsl_fallbacks = ["http://host.docker.internal:11434"]
+        host_ip = _read_windows_host_ip()
+        if host_ip:
+            wsl_fallbacks.append(f"http://{host_ip}:11434")
+        for fb in wsl_fallbacks:
+            if fb not in candidates:
+                candidates.append(fb)
+
+    for url in candidates:
+        if _probe_url_sync(url):
+            previous = _RESOLVED_BASE_URL
+            _RESOLVED_BASE_URL = url
+            _RESOLVED_AT = now
+            # Log when chosen URL changes OR on first success. A TTL
+            # re-probe that picks the same URL stays quiet.
+            if previous != url:
+                logger.info(
+                    "ollama_base_url_resolved",
+                    chosen=url,
+                    previous=previous,
+                    reason="wsl_fallback" if "host.docker.internal" in url or (
+                        _read_windows_host_ip() and url.startswith(
+                            f"http://{_read_windows_host_ip()}"
+                        )
+                    ) else "configured",
+                )
+            return url
+
+    # Nothing reachable. DO NOT lock in a dead URL as a permanent
+    # cache -- mark it as recently-probed so we don't re-probe every
+    # request, but also don't advertise it as "resolved". Callers
+    # that check health will still see nothing listens there. Next
+    # TTL window we re-probe, so Ollama coming up between boots is
+    # picked up within ~60s with zero manual refresh.
+    _RESOLVED_BASE_URL = candidates[0]
+    _RESOLVED_AT = now
+    return _RESOLVED_BASE_URL
+
+
+def invalidate_ollama_resolver_cache() -> None:
+    """Force the resolver to re-probe on its next call.
+
+    Called from manual "refresh" API endpoints so the user can nudge
+    the backend after starting Ollama, rather than waiting up to 60s
+    for the TTL window.
+    """
+    global _RESOLVED_BASE_URL, _RESOLVED_AT
+    _RESOLVED_BASE_URL = None
+    _RESOLVED_AT = 0.0
 
 # Ollama is free — $0 per token
 _COST_PER_1M_INPUT = 0.0
@@ -106,7 +265,11 @@ class OllamaProvider(BaseProvider):
 
     def __init__(self, base_url: str | None = None, timeout: float = 120.0) -> None:
         super().__init__(ModelProvider.OLLAMA)
-        self._base_url = (base_url or get_settings().ollama_base_url).rstrip("/")
+        configured = (base_url or get_settings().ollama_base_url or "").rstrip("/")
+        # WSL-aware resolution: if configured URL is unreachable but
+        # Ollama is running on the Windows host, this returns the
+        # host.docker.internal form so the provider actually works.
+        self._base_url = resolve_ollama_base_url(configured or None).rstrip("/")
         self._default_timeout = timeout
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
@@ -216,10 +379,19 @@ class OllamaProvider(BaseProvider):
                     logger.info("ollama_model_resolved", requested=model_id, resolved=avail)
                     return avail
 
-            # Use best available as last resort
+            # Use best available as last resort. Logged at info: this
+            # is expected whenever the ``OLLAMA_DEFAULT_MODEL`` setting
+            # names a model the user hasn't pulled yet; we pick
+            # whatever's actually on disk. Warning-level would make
+            # "just pull a different model" look like a defect.
             if available:
                 best = _pick_best_model(available)
-                logger.warning("ollama_model_fallback", requested=model_id, fallback=best.model_id)
+                logger.info(
+                    "ollama_model_fallback",
+                    requested=model_id,
+                    fallback=best.model_id,
+                    reason="requested_model_not_installed",
+                )
                 return best.model_id
 
             raise RuntimeError(
@@ -371,12 +543,28 @@ class OllamaProvider(BaseProvider):
         return self._healthy
 
     async def list_models(self) -> list[ModelInfo]:
-        """Query Ollama for locally available models."""
+        """Query Ollama for locally available models.
+
+        Logs at ``info`` (not ``warning``) when the daemon is simply
+        absent -- that's the expected state for cloud-first users and
+        shouldn't produce yellow "warning" lines in every request log
+        that touches the model registry. Real errors (HTTP 5xx from a
+        live daemon) still surface at warning level.
+        """
         try:
             resp = await self._client.get("/api/tags", timeout=10.0)
             resp.raise_for_status()
             data = resp.json()
-        except (httpx.HTTPError, httpx.ConnectError):
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            # Daemon not running -- expected for cloud-only deployments.
+            logger.info(
+                "ollama_list_models_skipped",
+                reason="daemon_unreachable",
+                base_url=self._base_url,
+            )
+            return []
+        except httpx.HTTPError:
+            # Daemon responded but something else went wrong -- worth warning.
             logger.warning("ollama_list_models_failed", base_url=self._base_url)
             return []
 

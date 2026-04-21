@@ -93,10 +93,17 @@ class ModelRegistry:
     def __init__(self) -> None:
         self._providers: dict[ModelProvider, BaseProvider] = {}
         self._model_cache: dict[str, ModelInfo] = {}
+        self._model_cache_ts: float = 0.0  # monotonic timestamp of last refill
         self._health_cache: dict[ModelProvider, HealthStatus] = {}
         self._initialized = False
         self._snapshot_cache: dict[str, Any] | None = None
         self._snapshot_cache_ts: float = 0.0
+        # TTL for the model catalog. Short enough that a user who
+        # runs ``ollama pull <model>`` mid-session sees the new model
+        # within ~60s (also applies to CLI runtimes coming/going),
+        # long enough that dashboard polling doesn't hammer every
+        # provider's /models endpoint. Override with force_refresh.
+        self._MODEL_CACHE_TTL_SECONDS: float = 60.0
 
     async def initialize(self) -> None:
         """Instantiate providers that have valid credentials configured."""
@@ -105,6 +112,22 @@ class ModelRegistry:
 
         settings = get_settings()
         for provider_enum, (module_path, class_name, config_key) in _PROVIDER_MAP.items():
+            # Ollama has a dedicated kill switch: the user migrated to
+            # llama.cpp llama-server (vLLM adapter on :8080). Skip the
+            # Ollama registration entirely when OLLAMA_ENABLED=false so
+            # the "no models" / "list_models_failed" warnings disappear
+            # and the router never picks an Ollama slot.
+            if (
+                provider_enum == ModelProvider.OLLAMA
+                and not getattr(settings, "ollama_enabled", False)
+            ):
+                logger.debug(
+                    "provider.skipped",
+                    provider=provider_enum.value,
+                    reason="ollama_enabled=false",
+                )
+                continue
+
             config_value = getattr(settings, config_key, "")
             if not config_value:
                 logger.debug("provider.skipped", provider=provider_enum.value, reason="no_key")
@@ -235,11 +258,23 @@ class ModelRegistry:
         return list(self._providers.keys())
 
     async def list_all_models(self, *, force_refresh: bool = False) -> list[ModelInfo]:
-        """Aggregate model catalogs from all available providers."""
-        if force_refresh:
-            self._model_cache.clear()
+        """Aggregate model catalogs from all available providers.
 
-        if self._model_cache:
+        TTL-cached so that installing/removing a local Ollama model or
+        connecting a new CLI runtime shows up within the configured
+        window (``_MODEL_CACHE_TTL_SECONDS``). Pass ``force_refresh``
+        from UI refresh buttons / periodic schedulers to skip the
+        cache entirely.
+        """
+        import time as _time
+
+        now = _time.monotonic()
+        cache_age = now - self._model_cache_ts
+        cache_expired = cache_age >= self._MODEL_CACHE_TTL_SECONDS
+
+        if force_refresh or cache_expired:
+            self._model_cache.clear()
+        elif self._model_cache:
             return list(self._model_cache.values())
 
         all_models: list[ModelInfo] = []
@@ -257,6 +292,7 @@ class ModelRegistry:
             except Exception:
                 logger.exception("registry.list_models_failed", provider=name.value)
 
+        self._model_cache_ts = now
         return all_models
 
     def get_model_info(self, model_id: str) -> ModelInfo | None:

@@ -16,6 +16,7 @@ static knowledge base, Daena has the TALENT to find any answer.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -23,6 +24,74 @@ from uuid import UUID
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Web-search query hygiene: DuckDuckGo's instant-answer API rejects long
+# queries with a 302 redirect and no result. A multi-paragraph system
+# prompt is never a sensible search query anyway. We distill the
+# question down to a short phrase before hitting the network.
+_MAX_WEB_QUERY_CHARS = 200
+# Cap on the total outgoing URL length so we never produce 5KB request
+# lines. 1500 is generous for params + scheme + host.
+_MAX_WEB_URL_CHARS = 1500
+# Words too common to carry search signal. Short list so we stay fast.
+_STOPWORDS = frozenset(
+    "a an and are as at be but by for from has have i in is it its of on or "
+    "that the to was were will with you your we our this these those "
+    "been being do does did so can could should would may might must not "
+    "if then else when where why how".split()
+)
+
+
+def _distill_web_query(raw: str) -> str | None:
+    """Extract a short, searchable phrase from an arbitrary input.
+
+    Strategy (cheapest first):
+        1. If already short and single-line, return as-is.
+        2. If the text contains a literal question ending in '?', use
+           the last such sentence (it's almost always the real ask).
+        3. Otherwise take the leading non-boilerplate line, cap at
+           ``_MAX_WEB_QUERY_CHARS``, strip stopwords only if still
+           too long.
+
+    Returns ``None`` if no usable query can be distilled (e.g. the
+    input is entirely whitespace or code).
+    """
+    if not raw:
+        return None
+
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+
+    # Fast path: already short & single-line.
+    if len(cleaned) <= _MAX_WEB_QUERY_CHARS and "\n" not in cleaned:
+        return cleaned
+
+    # Find the last question in the text; that's usually the operative ask.
+    question_matches = re.findall(r"[^.!?\n]{5,200}\?", cleaned)
+    if question_matches:
+        return question_matches[-1].strip()
+
+    # Take the first non-empty, non-heading line.
+    for line in cleaned.splitlines():
+        candidate = line.strip()
+        if not candidate:
+            continue
+        # Skip markdown headings, separators, bullet boilerplate.
+        if candidate.startswith(("#", "=", "-", "*", "```", ">")):
+            continue
+        if len(candidate) <= _MAX_WEB_QUERY_CHARS:
+            return candidate
+        break
+
+    # Fallback: compress to keywords.
+    tokens = re.findall(r"[A-Za-z0-9][\w.\-]*", cleaned.lower())
+    keywords = [t for t in tokens if t not in _STOPWORDS and len(t) > 2]
+    if not keywords:
+        return None
+    # Take enough keywords to fit the budget.
+    phrase = " ".join(keywords[:12])
+    return phrase[:_MAX_WEB_QUERY_CHARS]
 
 
 @dataclass
@@ -195,17 +264,61 @@ class ResourceFinder:
         """Search the web for information.
 
         Uses available web search capabilities (MCP tools, HTTP, etc.)
+
+        Hardened (2026-04-18): DuckDuckGo rejects long queries with a
+        302 redirect, so a multi-paragraph system prompt used to burn
+        a full round trip before resource_finder gave up. We now
+        distill the raw input into a short query FIRST, and bail out
+        without making any HTTP call if:
+
+            * distillation returned nothing usable (prompt had no
+              natural question or keyword content), OR
+            * the distilled query is still so long that the outgoing
+              URL would exceed ``_MAX_WEB_URL_CHARS``.
         """
-        # Web search is available through DaenaBot's network tools
-        # For now, return a placeholder indicating web search capability
+        query = _distill_web_query(question)
+        if not query:
+            logger.debug(
+                "resource_finder.web_search_skipped",
+                reason="no_distillable_query",
+                input_len=len(question),
+            )
+            return None
+
+        # Build the full URL defensively before we fire. httpx will
+        # accept any length, but DDG won't — and a 5KB request line is
+        # the symptom we're here to stop.
+        import urllib.parse as _urlparse
+
+        base = "https://api.duckduckgo.com/"
+        encoded_params = _urlparse.urlencode(
+            {"q": query, "format": "json", "no_html": "1"}
+        )
+        total_url_len = len(base) + 1 + len(encoded_params)
+        if total_url_len > _MAX_WEB_URL_CHARS:
+            logger.debug(
+                "resource_finder.web_search_skipped",
+                reason="url_too_long",
+                url_len=total_url_len,
+                query_preview=query[:120],
+            )
+            return None
+
+        if query != question:
+            logger.debug(
+                "resource_finder.web_query_distilled",
+                original_len=len(question),
+                distilled=query[:120],
+            )
+
         try:
             import httpx
 
-            # Try DuckDuckGo instant answer API (no key needed)
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
-                    "https://api.duckduckgo.com/",
-                    params={"q": question, "format": "json", "no_html": "1"},
+                    base,
+                    params={"q": query, "format": "json", "no_html": "1"},
+                    follow_redirects=False,
                 )
                 if resp.status_code == 200:
                     data = resp.json()
@@ -219,6 +332,14 @@ class ResourceFinder:
                             references=[data.get("AbstractURL", "")],
                             should_persist=True,
                         )
+                else:
+                    # 302 from DDG means "query was rejected" — treat
+                    # as a non-fatal miss, don't spam error logs.
+                    logger.debug(
+                        "resource_finder.web_search_miss",
+                        status=resp.status_code,
+                        query_preview=query[:120],
+                    )
         except Exception as exc:
             logger.debug("resource_finder.web_search_failed", error=str(exc))
 

@@ -93,6 +93,7 @@ def get_runtime_registry():
     from app.services.runtimes.adapters.gemini_cli import GeminiCLIAdapter
     from app.services.runtimes.adapters.grok_cli import GrokCLIAdapter
     from app.services.runtimes.adapters.ollama_adapter import OllamaRuntimeAdapter
+    from app.services.runtimes.adapters.vllm_adapter import VLLMRuntimeAdapter
     from app.services.runtimes.registry import RuntimeRegistry
 
     registry = RuntimeRegistry()
@@ -100,6 +101,12 @@ def get_runtime_registry():
     registry.register(CodexAdapter())
     registry.register(GeminiCLIAdapter())
     registry.register(GrokCLIAdapter())
+    # VLLM adapter also serves our local llama.cpp llama-server (OpenAI-compat on
+    # VLLM_BASE_URL). On Windows laptops without vLLM, point VLLM_BASE_URL at
+    # http://127.0.0.1:8080/v1 (llama.cpp llama-server) for GGUF-direct inference.
+    registry.register(VLLMRuntimeAdapter())
+    # Ollama kept registered for backward compatibility. If the Ollama daemon
+    # is not running it fails its health check and is skipped by the router.
     registry.register(OllamaRuntimeAdapter())
 
     _runtime_registry = registry

@@ -34,12 +34,41 @@ _SKILLS_DIR = _PROJECT_ROOT / "skills"
 
 # Limits to prevent excessive prompt injection.
 # _MAX_SKILLS raised 100 -> 200 in TICKET-S15 to fit the sales +
-# support + Hormozi frameworks without alphabetic-cutoff. The real
-# prompt-budget gate is _MAX_MANIFEST_CHARS (12k) which trims the
-# rendered manifest regardless of skill count.
-_MAX_SKILLS = 200
+# support + Hormozi frameworks without alphabetic-cutoff. Raised
+# again 200 -> 300 in 2026-04-18 to accommodate the 38 gstack
+# skills (Garry Tan's phase-based thinking framework: CEO review,
+# plan-eng-review, design-review, QA, retro, etc.) alongside
+# existing libraries.
+#
+# _MAX_MANIFEST_CHARS bumped 12k -> 16k for the same reason. The
+# LLM needs to SEE gstack skills in the manifest to know they're
+# available and invoke them -- a truncated manifest means the
+# model never considers the phase-based mental models Tan's pack
+# provides. 16k is ~4k tokens of system prompt overhead, which
+# is modest relative to the upside.
+_MAX_SKILLS = 300
 _MAX_SKILL_FILE_BYTES = 256_000
-_MAX_MANIFEST_CHARS = 12_000
+_MAX_MANIFEST_CHARS = 16_000
+
+# Skill-name prefixes that get sort priority in the manifest.
+# Gstack (Garry Tan's phase-thinking framework) forces distinct
+# cognitive modes for plan / build / review / QA / ship / retro --
+# these should be at the TOP of the manifest so the LLM always
+# knows they're the primary thinking gears before scanning the
+# rest of the library. Anthropic's own skills come next as they're
+# the canonical reasoning + artifact patterns.
+_PRIORITY_PREFIXES: tuple[str, ...] = (
+    "gstack-",
+    "anthropic-",
+    "plan-",
+    "office-hours",
+    "design-",
+    "investigate",
+    "retro",
+    "review",
+    "qa",
+    "ship",
+)
 
 
 @dataclass
@@ -66,6 +95,21 @@ def _parse_frontmatter(content: str) -> dict:
         return {}
 
 
+def _priority_key(dir_name: str) -> int:
+    """Lower-value key => appears earlier in sorted output.
+
+    gstack-prefixed directories get -1, anthropic-prefixed get 0,
+    other priority prefixes get 1, everything else gets 2. The
+    directory-name comparison is lowercased so "Gstack-Foo" still
+    sorts ahead of random user skills.
+    """
+    low = dir_name.lower()
+    for i, prefix in enumerate(_PRIORITY_PREFIXES):
+        if low.startswith(prefix):
+            return i
+    return len(_PRIORITY_PREFIXES)
+
+
 def load_skills(skills_dir: Path | None = None) -> list[SkillMeta]:
     """Scan skills directory for SKILL.md files and parse metadata."""
     root = skills_dir or _SKILLS_DIR
@@ -74,7 +118,14 @@ def load_skills(skills_dir: Path | None = None) -> list[SkillMeta]:
         return []
 
     skills: list[SkillMeta] = []
-    for entry in sorted(root.iterdir()):
+    # Sort by priority first (gstack, anthropic, design, etc.), then
+    # alphabetically. This guarantees the phase-thinking skills
+    # always make it into the manifest even when we hit the 16KB cap.
+    entries = sorted(
+        root.iterdir(),
+        key=lambda p: (_priority_key(p.name), p.name.lower()),
+    )
+    for entry in entries:
         if not entry.is_dir():
             continue
         skill_file = entry / "SKILL.md"

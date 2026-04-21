@@ -400,22 +400,50 @@ class ModelRouter:
             }
             target_provider = _RUNTIME_TO_PROVIDER.get(primary_mind)
             boosted = False
-            for c in scored:
-                # Direct model_id or provider.value match
-                if c.model_id == primary_mind or c.provider.value == primary_mind:
-                    object.__setattr__(c, 'score', c.score + 2.0)
-                    boosted = True
-                    break
-                # Runtime-to-provider match: boost best candidate from provider
-                if target_provider and c.provider == target_provider:
-                    object.__setattr__(c, 'score', c.score + 2.0)
-                    boosted = True
-                    break
 
-            if boosted:
+            # Primary Mind = pick the top-tier model from that
+            # provider (2026-04-18, per founder directive):
+            # "it doesn't matter it is in cli or subscription or api
+            # we always use the highest one". So when Primary Mind is
+            # ``claude_code``, we don't just grab any Anthropic
+            # candidate -- we grab the one tagged ``priority`` (Claude
+            # Sonnet 4.7 Max). Same for codex / gemini_cli / etc.
+            # Falls back to first-match only if no priority-tagged
+            # candidate exists for that provider.
+            def _is_priority(cand: ModelCandidate) -> bool:
+                return "priority" in {t.lower() for t in cand.tags}
+
+            target: ModelCandidate | None = None
+            # Layer 1: exact model_id / provider-value match
+            for c in scored:
+                if c.model_id == primary_mind or c.provider.value == primary_mind:
+                    target = c
+                    break
+            # Layer 2: provider match + priority tag (founder top-tier)
+            if target is None and target_provider:
+                for c in scored:
+                    if c.provider == target_provider and _is_priority(c):
+                        target = c
+                        break
+            # Layer 3: provider match without priority (older fallback)
+            if target is None and target_provider:
+                for c in scored:
+                    if c.provider == target_provider:
+                        target = c
+                        break
+
+            if target is not None:
+                # Large bump so the Primary Mind choice dominates all
+                # other scoring concerns unless the user explicitly
+                # pinned a different model via preferred_model.
+                object.__setattr__(target, "score", target.score + 3.0)
+                boosted = True
                 route_metadata["primary_mind"] = primary_mind
                 route_metadata["primary_mind_boosted"] = True
-            else:
+                route_metadata["primary_mind_model"] = target.model_id
+                route_metadata["primary_mind_priority_tier"] = _is_priority(target)
+
+            if not boosted:
                 route_metadata["primary_mind"] = primary_mind
                 route_metadata["primary_mind_available"] = False
                 logger.info(
@@ -794,6 +822,19 @@ class ModelRouter:
             else:  # LOCAL
                 tier_mult = _loc_mult.get(qu.complexity_label, 0.8)
             composite = composite * tier_mult
+
+            # Priority boost (2026-04-18). Models tagged ``priority``
+            # in their provider catalog are the founder-specified
+            # top-tier per provider (e.g. Claude Sonnet 4.7 Max,
+            # Codex 5.4, Gemini 3.1 Pro, Perplexity Auto). When two
+            # candidates share a provider, the priority-tagged one
+            # should always outrank its siblings unless the user has
+            # explicitly pinned a cheaper model. Bump of +0.5 on the
+            # already-tier-multiplied score is enough to dominate the
+            # tag/locality/cost/context mix without nuking cost
+            # discipline for non-priority models.
+            if "priority" in lower_tags:
+                composite += 0.5
 
             scored.append(
                 ModelCandidate(

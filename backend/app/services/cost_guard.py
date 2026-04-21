@@ -84,6 +84,13 @@ PLAN_DEFAULTS: dict[str, dict] = {
     "BASIC": {"monthly_credit_usd": 5.00, "daily_credit_usd": 1.00, "overage_action": "warn", "max_tenant_share_pct": 50},
     "PRO": {"monthly_credit_usd": 10.00, "daily_credit_usd": 2.00, "overage_action": "warn", "max_tenant_share_pct": 50},
     "ENTERPRISE": {"monthly_credit_usd": 50.00, "daily_credit_usd": None, "overage_action": "allow_overage", "max_tenant_share_pct": 30},
+    # FOUNDER: the platform owner's account. Shadow-cost tracking is
+    # useful (sees movement in usage meters, makes the "what would
+    # this cost on API" view honest), but the owner should never be
+    # capped by their own billing system. 10000 USD / month + no
+    # daily cap + allow_overage means the meter visibly moves with
+    # every request but the system never refuses a call.
+    "FOUNDER": {"monthly_credit_usd": 10000.00, "daily_credit_usd": None, "overage_action": "allow_overage", "max_tenant_share_pct": 100},
 }
 
 
@@ -163,13 +170,27 @@ class CostGuard:
                 quota = result.scalar_one()
             return quota
 
-        # Determine plan tier from tenant
-        sub_stmt = select(Subscription.plan).where(
-            Subscription.tenant_id == tenant_id,
-            Subscription.status == "ACTIVE",
+        # Determine plan tier. FOUNDER users get the FOUNDER tier
+        # automatically -- they're the platform owner and should never
+        # see "Free mode" in their own app. All other users fall back
+        # to whatever their tenant's Subscription plan is (or FREE if
+        # no Subscription row exists yet).
+        from app.models.identity import User
+
+        user_result = await self._db.execute(
+            select(User.role).where(User.id == user_id)
         )
-        sub_result = await self._db.execute(sub_stmt)
-        plan = sub_result.scalar_one_or_none() or "FREE"
+        user_role = (user_result.scalar_one_or_none() or "").upper()
+
+        if user_role == "FOUNDER":
+            plan = "FOUNDER"
+        else:
+            sub_stmt = select(Subscription.plan).where(
+                Subscription.tenant_id == tenant_id,
+                Subscription.status == "ACTIVE",
+            )
+            sub_result = await self._db.execute(sub_stmt)
+            plan = sub_result.scalar_one_or_none() or "FREE"
 
         defaults = PLAN_DEFAULTS.get(plan.upper(), PLAN_DEFAULTS["FREE"])
 

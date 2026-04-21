@@ -99,11 +99,24 @@ class VLLMProvider(BaseProvider):
         raise RuntimeError("vLLM request failed after retries")  # pragma: no cover
 
     async def _resolve_model(self, requested: str | None) -> str:
-        """Resolve model to use: requested > default > auto-detect first available."""
+        """Resolve model to use: requested > default > auto-detect first available.
+
+        When the requested model matches a GGUF catalog key and the
+        LlamaServerManager is in a managed mode, ensure that exact
+        model is loaded on llama-server before returning. Swap cost
+        (~5s cold start) is absorbed here and amortized across the
+        subsequent request + any follow-ups that reuse the same model.
+        """
         default = _get_default_model()
         model_id = requested or default
 
+        # LlamaServerManager integration. When requested matches a
+        # GGUF catalog key (qwen3-8b / coder / gemma), the manager
+        # guarantees that exact file is loaded before we make the
+        # HTTP call. Short-circuits when mode is "off" so behavior
+        # is unchanged for users who manage llama-server manually.
         if model_id and model_id not in ("auto", ""):
+            await self._ensure_gguf_if_managed(model_id)
             return model_id
 
         # Auto-detect: pick the first available model
@@ -129,6 +142,34 @@ class VLLMProvider(BaseProvider):
             raise RuntimeError(
                 "Cannot connect to vLLM to discover models. "
                 "Set VLLM_DEFAULT_MODEL or start the vLLM server."
+            )
+
+    async def _ensure_gguf_if_managed(self, model_id: str) -> None:
+        """Delegate to LlamaServerManager if the model maps to a GGUF key.
+
+        Fail-safe: any manager error is logged but does NOT abort the
+        request. The downstream HTTP call will still fail cleanly
+        with llama-server's own error if the model is not loaded.
+        """
+        try:
+            from app.services.providers.gguf_catalog import (
+                find_by_served_name, get_model,
+            )
+            from app.services.providers.llama_server_manager import (
+                ManagedMode, get_manager,
+            )
+            manager = get_manager()
+            if manager.mode == ManagedMode.OFF:
+                return
+            target = get_model(model_id) or find_by_served_name(model_id)
+            if target is None:
+                return  # Not a GGUF we know about; leave it alone.
+            await manager.ensure_loaded(target.key)
+        except Exception as exc:  # pragma: no cover - never raise from pre-hook
+            logger.warning(
+                "vllm.manager_prehook_failed",
+                model_id=model_id,
+                error=str(exc),
             )
 
     async def generate(self, request: GenerateRequest) -> LLMResponse:

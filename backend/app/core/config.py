@@ -178,6 +178,12 @@ class Settings(BaseSettings):
         return v
 
     # --- LLM Providers ---
+    # Ollama: phased out in favor of llama.cpp llama-server (vLLM
+    # adapter, OpenAI-compatible, see VLLM_BASE_URL below). Keep
+    # OLLAMA_ENABLED=false in .env to silence the 11434 probing +
+    # "no models" warnings. Set to True only if you still have Ollama
+    # installed AND want Daena to use it alongside llama-server.
+    ollama_enabled: bool = False
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_default_model: str = "llama3.1:8b"
     perplexity_api_key: str = ""
@@ -189,6 +195,18 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     vllm_base_url: str = "http://localhost:8100/v1"
     vllm_default_model: str = ""  # empty = auto-detect first available
+    # LlamaServerManager mode. Controls whether Daena owns the
+    # llama-server lifecycle or just consumes whatever the user has
+    # manually launched. See llama_server_manager.py for the full
+    # contract. Three legal values:
+    #   "off"               -- no ownership; user launches via ps1 (safest)
+    #   "respect_external"  -- manage our own, but never kill a server
+    #                          we did not start (prevents stomping
+    #                          Claude Code's MCP bridge session)
+    #   "force"             -- Daena always owns the process; takes
+    #                          over any running llama-server
+    # .env key: LLAMA_SERVER_MANAGED (case-insensitive)
+    llama_server_managed: str = "off"
 
     # --- Feature Flags ---
     enable_web3: bool = False

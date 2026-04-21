@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
 from app.models.financial import UserQuota
+from app.models.identity import User
 from app.services.billing.cost_tracker import UnifiedCostTracker
 from app.services.cost_guard import CostGuard
 

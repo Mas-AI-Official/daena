@@ -376,8 +376,25 @@ class ToolUseLoop:
                 content = msg.content if hasattr(msg, "content") else msg.get("content", "")
                 api_messages.append({"role": role.lower(), "content": content})
 
-            # Try Groq (fast, free tier available)
+            # Try Groq (fast, free tier available).
+            # Groq's free tier returns 413 Payload Too Large on bodies
+            # much above ~30 KB of serialized JSON -- a single big
+            # system prompt + long soul context + conversation history
+            # can cross that. Doing a cheap length estimate here saves
+            # a wasted round trip and a noisy 413 in the logs.
             groq_key = (settings.groq_api_key or "").strip()
+            # Rough payload size = sum of all message contents. Add a
+            # 2KB fudge factor for JSON overhead + system prompt.
+            groq_payload_chars = sum(len(m.get("content", "")) for m in api_messages) + 2048
+            _GROQ_SAFE_CHARS = 28_000  # conservative -- actual 413 threshold lives around 30-35 KB
+            if groq_key and groq_payload_chars > _GROQ_SAFE_CHARS:
+                logger.info(
+                    "tool_loop.groq_skipped",
+                    reason="payload_too_large",
+                    estimated_chars=groq_payload_chars,
+                    threshold=_GROQ_SAFE_CHARS,
+                )
+                groq_key = ""  # fall through to Gemini without hitting Groq
             if groq_key:
                 import httpx
                 try:
@@ -396,6 +413,15 @@ class ToolUseLoop:
                             text = resp.json()["choices"][0]["message"]["content"]
                             yield text
                             return
+                        # Non-200: log at info so operators can see the
+                        # real reason (413, 429, 401) without it being
+                        # a warning that surfaces as an error in the UI.
+                        if resp.status_code in (413, 429):
+                            logger.info(
+                                "tool_loop.groq_rejected",
+                                status=resp.status_code,
+                                estimated_chars=groq_payload_chars,
+                            )
                 except Exception as exc:
                     logger.warning("tool_loop.groq_failed", error=str(exc))
 
@@ -423,15 +449,52 @@ class ToolUseLoop:
         except Exception:
             pass  # Settings unavailable, try Ollama
 
-        # Ollama (local)
-        ollama_url = "http://localhost:11434"
+        # Ollama (local) -- only attempted if the daemon is actually up.
+        # 2026-04-18: the old code hardcoded ``or True`` to ALWAYS try
+        # Ollama as a fallback, which meant every chat request that got
+        # past Groq/Gemini paid for a 120s connect-timeout against a
+        # dead ``localhost:11434`` when the user hadn't run
+        # ``ollama serve``. A cheap up-front probe eliminates the
+        # wasted round trip and the noisy ``tool_loop.ollama_failed``
+        # warning. If the user asked explicitly for an Ollama model
+        # (``provider == "ollama"``) we still try so they get a real
+        # error message instead of silent skip.
+        #
+        # WSL-aware: uses the same resolver as OllamaProvider so a
+        # Windows-side Ollama is reachable from a WSL-side backend via
+        # ``host.docker.internal`` instead of the useless ``localhost``.
         try:
+            from app.services.providers.ollama import resolve_ollama_base_url
             from app.core.config import get_settings
-            ollama_url = get_settings().ollama_base_url or ollama_url
+            ollama_url = resolve_ollama_base_url(
+                (get_settings().ollama_base_url or "").strip() or None
+            )
         except Exception:
-            pass
+            ollama_url = "http://localhost:11434"
 
-        if provider.lower() in ("ollama", "local") or True:  # Always try Ollama as fallback
+        explicit_ollama = provider.lower() in ("ollama", "local")
+        ollama_reachable = explicit_ollama  # Skip probe when explicitly requested
+
+        if not explicit_ollama:
+            import httpx as _httpx_probe
+            try:
+                async with _httpx_probe.AsyncClient(
+                    timeout=_httpx_probe.Timeout(2.0, connect=1.0)
+                ) as _probe_client:
+                    _probe_resp = await _probe_client.get(f"{ollama_url}/api/tags")
+                    ollama_reachable = _probe_resp.status_code == 200
+            except Exception:
+                # Daemon down, port closed, DNS unreachable -- all mean
+                # "don't waste a full request on this fallback." Log at
+                # info so operators can still see what was skipped.
+                ollama_reachable = False
+                logger.info(
+                    "tool_loop.ollama_skipped",
+                    reason="daemon_unreachable",
+                    base_url=ollama_url,
+                )
+
+        if ollama_reachable:
             import httpx
             prompt_parts = [system_prompt, ""]
             for msg in messages:

@@ -29,16 +29,18 @@ from app.services.providers.base import (
 logger = get_logger(__name__)
 
 _API_BASE = "https://api.openai.com"
-_DEFAULT_MODEL = "gpt-4o-mini"
+# 2026-04-18: Primary Mind for OpenAI is Codex 5.4 -- the
+# founder-specified top-tier. Older models kept as cheaper fallbacks.
+_DEFAULT_MODEL = "codex-5-4"
 
 _MODELS: list[dict[str, Any]] = [
     {
-        "id": "gpt-4o-mini",
-        "name": "GPT-4o Mini",
-        "ctx": 128_000,
-        "in": 0.15,
-        "out": 0.60,
-        "tags": ["fast", "cheap"],
+        "id": "codex-5-4",
+        "name": "Codex 5.4",
+        "ctx": 400_000,
+        "in": 3.00,
+        "out": 12.0,
+        "tags": ["reasoning", "coding", "frontier", "priority"],
     },
     {
         "id": "gpt-4o",
@@ -47,6 +49,14 @@ _MODELS: list[dict[str, Any]] = [
         "in": 2.50,
         "out": 10.0,
         "tags": ["reasoning", "vision"],
+    },
+    {
+        "id": "gpt-4o-mini",
+        "name": "GPT-4o Mini",
+        "ctx": 128_000,
+        "in": 0.15,
+        "out": 0.60,
+        "tags": ["fast", "cheap"],
     },
 ]
 

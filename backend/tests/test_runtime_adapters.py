@@ -620,7 +620,7 @@ class TestEventsIntegration:
         registry1 = events.get_runtime_registry()
         registry2 = events.get_runtime_registry()
         assert registry1 is registry2
-        assert len(registry1.registered_ids) == 5  # 5 adapters
+        assert len(registry1.registered_ids) == 6  # 6 adapters: claude_code, codex, gemini_cli, grok_cli, vllm, ollama
         # Cleanup
         events._runtime_registry = None
 
@@ -633,5 +633,6 @@ class TestEventsIntegration:
         assert "codex" in ids
         assert "gemini_cli" in ids
         assert "grok_cli" in ids
+        assert "vllm" in ids
         assert "ollama" in ids
         events._runtime_registry = None

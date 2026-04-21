@@ -28,16 +28,25 @@ from app.services.providers.base import (
 logger = get_logger(__name__)
 
 _API_BASE = "https://api.perplexity.ai"
-_DEFAULT_MODEL = "sonar"
+# 2026-04-18: founder-specified default for Perplexity is AUTO MODE.
+# Perplexity's server-side router picks the right Sonar variant per
+# query (fast / reasoning / search-heavy). No manual model pick from
+# the orchestrator -- we just ask for ``auto`` and let their service
+# do the cost/quality tradeoff. Sonar / Sonar Pro kept as explicit
+# overrides when a caller wants deterministic behaviour.
+_DEFAULT_MODEL = "auto"
 
 _MODELS: list[dict[str, Any]] = [
     {
-        "id": "sonar",
-        "name": "Sonar",
-        "ctx": 128_000,
-        "in": 1.0,
-        "out": 1.0,
-        "tags": ["search", "grounded"],
+        "id": "auto",
+        "name": "Perplexity Auto",
+        "ctx": 200_000,
+        # Shadow price: average of Sonar + Sonar Pro so cost tracking
+        # is in the right ballpark even without knowing which
+        # underlying model served the request.
+        "in": 2.0,
+        "out": 8.0,
+        "tags": ["search", "grounded", "reasoning", "auto", "frontier", "priority"],
     },
     {
         "id": "sonar-pro",
@@ -46,6 +55,14 @@ _MODELS: list[dict[str, Any]] = [
         "in": 3.0,
         "out": 15.0,
         "tags": ["search", "grounded", "reasoning"],
+    },
+    {
+        "id": "sonar",
+        "name": "Sonar",
+        "ctx": 128_000,
+        "in": 1.0,
+        "out": 1.0,
+        "tags": ["search", "grounded"],
     },
 ]
 

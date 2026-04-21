@@ -55,7 +55,18 @@ class RuntimeRegistry:
         self._last_health_check: dict[str, float] = {}
         self._capabilities_cache: dict[str, RuntimeCapability] = {}
         self._installed_cache: dict[str, bool] = {}
+        # Per-runtime timestamp of the last ``check_installed`` call,
+        # used to re-run discovery after the TTL expires. Without this,
+        # a user who installs Claude CLI / Codex / Ollama AFTER the
+        # backend boots would have to restart to be seen. With it,
+        # new runtimes appear on the next eligible request (~30s
+        # worst case, ``RUNTIME_DISCOVERY_TTL``).
+        self._last_discovery_check: dict[str, float] = {}
         self._subscription_cache: dict[str, Any] = {}  # runtime_id -> SubscriptionAuth
+        # 30s TTL: short enough that toggling runtimes feels instant,
+        # long enough that the health endpoint polled every few
+        # seconds doesn't re-probe the filesystem / PATH every time.
+        self._RUNTIME_DISCOVERY_TTL: float = 30.0
 
     def register(self, adapter: BaseRuntimeAdapter) -> None:
         """Register a runtime adapter."""
@@ -123,8 +134,44 @@ class RuntimeRegistry:
             installed = await adapter.check_installed()
         except Exception:
             installed = False
+        previous = self._installed_cache.get(runtime_id)
         self._installed_cache[runtime_id] = installed
+        self._last_discovery_check[runtime_id] = time.monotonic()
+        # Only log when the installed-state actually flips; periodic
+        # re-scans that confirm the same state should stay quiet.
+        if previous is not None and previous != installed:
+            logger.info(
+                "runtime.install_state_changed",
+                runtime_id=runtime_id,
+                installed=installed,
+                previous=previous,
+            )
         return runtime_id, installed
+
+    async def ensure_install_fresh(self, runtime_id: str) -> bool:
+        """Re-run ``check_installed`` if the last check is older than TTL.
+
+        Call this from any code path that branches on whether a
+        runtime is installed (fallback chain, capability probes,
+        `/runtimes` endpoint). Returns the fresh installed state.
+        """
+        last = self._last_discovery_check.get(runtime_id, 0.0)
+        if (time.monotonic() - last) > self._RUNTIME_DISCOVERY_TTL:
+            adapter = self._adapters.get(runtime_id)
+            if adapter is not None:
+                _, installed = await self._check_installed(runtime_id, adapter)
+                return installed
+        return self._installed_cache.get(runtime_id, False)
+
+    async def rediscover_all(self) -> dict[str, bool]:
+        """Force a fresh discovery of every registered runtime.
+
+        Used by the manual "Refresh" button on the Connections page
+        and by periodic schedulers. Bypasses the TTL entirely.
+        """
+        # Reset timestamps so ``_check_installed`` is forced.
+        self._last_discovery_check.clear()
+        return await self.discover_all()
 
     # -- Health Monitoring --
 
