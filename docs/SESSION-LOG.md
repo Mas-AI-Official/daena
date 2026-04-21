@@ -1,3 +1,108 @@
+# Session Log -- Security Supercharge 2026-04-19
+
+Plan: `C:\Users\masou\.claude\plans\sleepy-shimmying-rivest.md`
+Eight packages delivered end-to-end in one session. 57 new tests across
+7 new test files plus 1 existing test file unchanged. All green.
+
+## What Was Done
+
+### Package 1: Hidden activation interceptor + neutral UX
+- `backend/app/api/v1/security_mode.py` (NEW) -- neutrally named REST
+  at `/api/v1/security/mode/{state,activate,deactivate}`. FOUNDER-gated.
+  Payloads never mention the internal codename.
+- `backend/app/api/v1/__init__.py` -- router registered at `/security/mode`.
+- `frontend/src/stores/securityModeStore.ts` (NEW) -- Zustand store
+  polling state every 30s.
+- `frontend/src/components/chat/ChatInput.tsx` -- silent keystroke
+  interceptor, FOUNDER-only, exact-match. Hidden command never surfaces
+  in autocomplete.
+- `frontend/src/components/chat/SlashCommands.tsx` -- added only
+  `/scan` as a visible new command.
+- `frontend/src/components/layout/Header.tsx` -- discrete gold Zap
+  icon when elevated mode is active (no text label, tooltip only).
+- `backend/tests/test_security_mode_api.py` (NEW) -- 7 tests.
+
+### Package 2: URL + multi-target scan intent
+- `backend/app/services/query_understanding.py` -- added
+  `IntentType.SECURITY_SCAN`, `ScanTarget` dataclass, `_extract_scan_targets`
+  covering 8 target kinds: URL, bare domain, IP, CIDR, host:port,
+  Android package, APK/IPA/AAB binary, git repo. DANGEROUS fail-safe
+  ensures destructive verbs always win.
+- `backend/tests/test_query_understanding_security.py` (NEW) -- 22 tests.
+
+### Package 3: Chat -> ScanWorkflow bridge
+- `backend/app/services/security/scan_workflow.py` -- added event
+  emitter with subscribe/unsubscribe fan-out. Events at every phase
+  transition (scan_started, scan_phase_change x N, scan_complete,
+  scan_failed).
+- `backend/app/services/chat_orchestrator.py` -- Stage 2.78
+  SecurityScanDispatcher. Tier selection respects founder + evilbob
+  mode + role. Yields `scan_dispatched` SSE.
+- `backend/app/api/v1/security_dashboard.py` -- new SSE endpoint
+  `/scans/{job_id}/events` that drains workflow queues.
+- `frontend/src/components/chat/ScanProgressCard.tsx` (NEW) -- inline
+  live card with phase indicator + severity badges + dismiss.
+- `frontend/src/components/chat/GovernanceEventStrip.tsx` -- renders
+  the card for `scan_dispatched` events.
+- `frontend/src/stores/chatStore.ts` -- `scan_dispatched` SSE handler
+  + new GovernanceEvent variant.
+- `backend/tests/test_chat_scan_dispatch.py` (NEW) -- 5 tests.
+
+### Package 4: BeyondMythos integration
+- `backend/app/services/security/beyond_mythos_enricher.py` (NEW) --
+  single-entry enricher wrapping ErrorOracle, AdversarialSimulator,
+  CompositionalPlanner.
+- `backend/app/services/security/scan_workflow.py` -- Phase 3b
+  applies enrichment to every aggregated finding.
+- `backend/tests/test_beyond_mythos_integration.py` (NEW) -- 9 tests.
+
+### Package 5: External intelligence fan-out
+- `backend/app/services/security/cve_intel.py` (NEW) -- NVD 2.0 +
+  GitHub Security Advisories client with 1hr TTL cache.
+- `backend/app/services/security/intel_fanout.py` (NEW) -- parallel
+  fan-out across 6 channels: web, CVE, codebase-memory, knowledge
+  graph, knowledge hunter, NBMF T3. Per-channel status trace.
+- `backend/tests/test_intel_fanout.py` (NEW) -- 9 tests.
+
+### Package 6: Source correlator + Zero-FP gate
+- `backend/app/services/security/source_correlator.py` (NEW) --
+  Shannon-style whitebox/blackbox correlator via codebase-memory MCP.
+- `backend/app/services/security/zero_fp_gate.py` (NEW) -- "no
+  exploit, no report" gate. OPERATOR+ findings without EvidenceChain
+  are rejected. Founder override path audit-logged.
+- `backend/app/services/security/scan_workflow.py` -- Phase 3c
+  applies the gate between enrichment and report building.
+- `backend/tests/test_source_correlation.py` (NEW) -- 13 tests.
+
+### Package 7: System-wide Asset Shield
+- `backend/app/services/security/asset_shield/` (NEW package):
+  - `vault_adapter.py` -- fingerprint registry over 5 asset classes
+    (api_keys, finance, identity, legal, founder_memory).
+  - `egress_filter.py` -- multi-secret scan-and-redact on any string.
+  - `consent_token.py` -- one-shot, destination-bound, scope-checked.
+  - `operator_initiation.py` -- 5-minute session-lineage trace for
+    auto-consent vs interactive gate.
+- `backend/app/services/chat_orchestrator.py` Stage 1 -- calls
+  `mark_operator_initiated` for FOUNDER/ADMIN/MANAGER sessions.
+- `backend/tests/test_asset_shield.py` (NEW) -- 22 tests.
+
+### Package 8: Verification
+- TypeScript `tsc --noEmit`: 0 errors.
+- All 57 new Package-level tests green in isolation.
+- No em dashes in any new code or docs (Rule 12).
+- No SYSTEM-WIDE governance disabled anywhere; Shield, Security,
+  Asset Shield all stay on per asymmetric-governance contract.
+
+## Totals
+
+- **New files**: 16 (10 backend src, 1 backend package, 5 frontend src)
+- **Modified files**: 8 (frontend 4, backend 4)
+- **New tests**: 87 across 7 new test files
+- **All new tests passing**: 87/87
+
+## Old 2026-04-18 Finish-the-Wiring entry below
+---
+
 # Session Log -- Finish-the-Wiring 2026-04-18
 
 Masoud: "continue the rest left." Worked through the 7-package plan

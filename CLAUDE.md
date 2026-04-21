@@ -13,6 +13,40 @@ Graph location: `D:\Ideas\Daena\.axon\kuzu` (9617 nodes, 37853 edges)
 Use `mcp__codebase-memory__search_code` and `mcp__codebase-memory__query_graph` for fast lookups.
 Use `mcp__codebase-memory__detect_changes` to see what changed since last session.
 
+## HANDS OFF REFERENCE (2026-04-20)
+Read `D:\Claude-Coworker\inbox.md` HANDS OFF section at the top before
+touching any security / governance / scan / asset-shield code. The
+v3.7.0 Security Supercharge stack is shipped and stable; do not
+refactor without an explicit ticket + GitNexus impact analysis.
+
+## LOCAL LLM RUNTIME (2026-04-20)
+Daena's local runtime is llama.cpp `llama-server.exe` on
+`127.0.0.1:8080`, NOT Ollama. Ollama is deprecated:
+- `OLLAMA_ENABLED=false` in `.env` silences the 11434 probe + no-models warnings.
+- `VLLM_BASE_URL=http://127.0.0.1:8080/v1` (the vLLM adapter speaks
+  to any OpenAI-compatible server, including llama-server).
+- Manual launcher: `backend/start-llama-server.ps1 -Model {qwen3-8b|coder|gemma}`.
+- Models under `D:\Ideas\MODELS_ROOT\gguf\`.
+- The separate MCP bridge at `D:\Ideas\MODELS_ROOT\local-llm-bridge\` is for Claude Code orchestration (Opus delegating to the local worker). Daena's backend does NOT use MCP for local LLM; it hits HTTP directly.
+
+### Auto-swap manager (Package 9, 2026-04-20)
+llama-server only loads one GGUF at a time, but Daena's router
+wants to pick per-task (coder for code, gemma for summarization,
+qwen3-8b for everything else). **`LlamaServerManager`** owns the
+lifecycle and hot-swaps when requested.
+
+`LLAMA_SERVER_MANAGED` three-valued env:
+- `off` -- Daena consumes whatever you manually launched (passive)
+- `respect_external` (DEFAULT) -- Daena swaps its own process on demand, but refuses to kill a server it did not start. Safe alongside Claude Code's MCP bridge.
+- `force` -- Daena always owns the process. Will kill any external llama-server. Use only when the MCP bridge is NOT in use.
+
+Manager guarantees:
+- Mutex lock serializes concurrent `ensure_loaded` calls (no duplicate spawn).
+- Cooldown (30s default) suppresses rapid re-swap thrash.
+- Local in-memory state cached so subsequent calls to the same model skip the `/v1/models` probe.
+- PID file at `backend/.llama-server.pid` tracks the managed process; external servers identified by mismatch.
+- Fail-safe: any manager error in the request pre-hook is logged but never raises into the HTTP call.
+
 ## IDENTITY
 Daena is a governed multi-agent LLM orchestration platform by MAS-AI Technologies Inc.
 An AI operating system where 10 department-agents (each with 6 sub-capabilities) collaborate like a company, governed by internal policies, expert councils, and auditable decision trails.
@@ -35,6 +69,31 @@ Power-first, governance-ready. Choose your brain, unleash the full system."
 
 Do not position Daena as "Ollama wrapper" or "local AI tool."
 Position Daena as "power-first intelligence with governance when you need it."
+
+### Go-to-market positioning (added 2026-04-19)
+
+Daena + MAS-AI sells **three things**, layered:
+
+1. **Product (self-serve SaaS)** at `daena.mas-ai.co`
+   - Governed multi-agent orchestration platform with FREE / PRO / ENT tiers.
+   - Offensive security via elevated mode (founder-only activation).
+   - Hosted, tenant-isolated, audit-logged.
+
+2. **Automation service (done-with-you)** at `mas-ai.co`
+   - Integrate a customer's existing job/workflow/department with Daena agents + external LLMs.
+   - Examples: auto-triage support tickets, auto-run weekly revenue review, auto-scan staging before release, auto-research competitors, auto-generate customer-facing reports.
+   - Deliverable: running Daena instance wired into their stack, plus playbook + SOP for their team.
+
+3. **Consultation (done-for-you strategic)** at `mas-ai.co/consulting`
+   - AI-readiness audits, governance design, agent architecture for regulated industries.
+   - Positions Masoud as the governed-AI specialist, leveraging the patent filings (PhiLattice + NBMF).
+   - Retainer model for ongoing advisory after initial engagement.
+
+Website copy lives at:
+- `daena.mas-ai.co` -> product pages, pricing, docs, sign-up.
+- `mas-ai.co` -> services pages (automation + consulting), case studies, contact.
+
+Do not conflate the two domains. `daena.mas-ai.co` is the product; `mas-ai.co` is the company + services surface.
 
 ### Primary Mind verification
 - The Primary Mind setting (in Connections or Settings) must persist on reload
@@ -212,19 +271,45 @@ Hallucinations auto-expire. Only verified knowledge persists.
 - /ws -- WebSocket connections (skeletal, polling used as interim)
 
 ## TESTING
-- Backend: pytest (1328/1328 passed, 45+ test files in backend/tests/)
+- Backend: pytest (3086/3086 passed, 60+ test files in backend/tests/) -- verified 2026-04-18
 - Frontend: tsc --noEmit for type checking (0 errors)
 - Frontend build: Vite production build clean (23s)
 - Main bundle: 103KB (26KB gzip), all pages lazy-loaded
 - E2E: Playwright (6/6 passing)
 - Linting: ruff clean, zero warnings
 
-## CURRENT VERSION: v3.6.0-production (2026-03-28)
+## CURRENT VERSION: v3.7.0-security-supercharge (2026-04-19)
 
-Tag: v3.0.0-production-ready
-Tests: 1328/1328 passing
+Tag: v3.7.0-security-supercharge
+Tests: 2956 passed, 16 skipped, 0 failed (full fast-subset regression, 2026-04-19)
+Package-focused: 214/214 across the 8 new/modified test files for the Security Supercharge plan
 TS errors: 0
 Build: clean
+8 packages landed in the Security Supercharge plan (see SESSION-LOG 2026-04-19).
+
+### What v3.7.0 adds over v3.6.0
+
+**Three always-on governance layers (asymmetric, initiator-aware, system-wide):**
+1. Shield (existing, always on): PromptInjectionScanner + BehaviorGuard + tenant isolation.
+2. Security (existing, mode-selectable): SecurityGate + ToolCallClassifier + LoopDetector + AsyncApprovalManager.
+3. **Asset Shield (NEW, always on)**: vault adapter + egress filter + consent tokens + initiator-aware tier collapse. Protects api_keys / finance / identity / legal / founder_memory from egress. Operator-initiated = auto-consent; background/heartbeat/delegated = full T0-T4 ladder; asset crossings always gated regardless of initiator.
+
+**New shipped security primitives (2026-04-19):**
+- Hidden activation command: founder-only, silent keystroke interceptor, never surfaces in menus / docs / help / UI. Neutral REST path `/api/v1/security/mode/{state,activate,deactivate}`.
+- `SECURITY_SCAN` intent + 8-kind target detection in `query_understanding.py`: URL, bare domain, IP, CIDR, host:port, APK/IPA/AAB, Android package, git repo.
+- Chat -> ScanWorkflow bridge: Stage 2.78 SecurityScanDispatcher + event emitter with fan-out subscribers + inline `ScanProgressCard` SSE consumer.
+- BeyondMythos enrichment applied to every aggregated finding (ErrorOracle, AdversarialSimulator, CompositionalPlanner wired in `scan_workflow.py` Phase 3b).
+- External intelligence fan-out (`intel_fanout.py`): 6-channel parallel query across web search + NVD + GitHub Advisories + codebase-memory + NBMF T3 + knowledge graph + knowledge hunter. This is the "think outside the LLM" surface.
+- CVE intel client (`cve_intel.py`) with 1hr TTL cache.
+- Whitebox/blackbox source correlator (`source_correlator.py`) Shannon-style.
+- Zero-FP gate (`zero_fp_gate.py`): OPERATOR+ findings without EvidenceChain are rejected before report generation. Founder override path audit-logged.
+- DANGEROUS fail-safe override in intent classifier: destructive verbs (rm -rf, DROP TABLE, sudo, money transfer) always beat SECURITY_SCAN or TOOL_USE regardless of score.
+
+**HANDS OFF list**: see `D:\Claude-Coworker\inbox.md` for the 11 backend src files + 2 frontend src files + 5 modified files + 7 test files that are stable and must not be refactored without explicit instruction.
+
+### v3.6.0-production baseline (2026-03-28)
+Tag: v3.0.0-production-ready
+Tests: 3086/3086 passing (verified 2026-04-18)
 25 issues fixed across P0 (6), P1 (6), P2 (5), verification (8)
 
 ### What is live and verified (browser-tested 2026-03-25)

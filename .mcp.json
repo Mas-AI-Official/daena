@@ -7,6 +7,14 @@
         "serve"
       ],
       "type": "stdio"
+    },
+    "contentops": {
+      "command": "D:\\Ideas\\contentops-core\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "contentops.mcp_server"],
+      "type": "stdio",
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
     }
   }
 }

@@ -32,17 +32,28 @@ if !ERRORLEVEL! NEQ 0 (
 )
 echo        WSL2 kali-linux ready.
 
-:: --- Start Ollama on Windows (accessible from Linux via localhost) ---
-echo  [2/5] Checking Ollama...
-set "OLLAMA_RUNNING=0"
-tasklist /FI "IMAGENAME eq ollama.exe" 2>NUL | findstr /I /C:"ollama.exe" >NUL 2>NUL && set "OLLAMA_RUNNING=1"
-if "!OLLAMA_RUNNING!"=="0" (
-    echo        Starting Ollama...
-    start "" /MIN ollama serve
-    timeout /t 3 /nobreak >NUL
-    echo        Ollama started [localhost:11434].
+:: --- Start llama.cpp llama-server on Windows (replaces Ollama) ---
+:: Accessible from Linux/WSL via localhost host.docker.internal if needed.
+echo  [2/5] Checking llama-server...
+set "LLAMA_CPP=D:\Ideas\llama.cpp\llama-server.exe"
+set "DEFAULT_GGUF=D:\Ideas\MODELS_ROOT\gguf\qwen3-8b\Qwen3-8B-Q4_K_M.gguf"
+set "LLAMA_RUNNING=0"
+tasklist /FI "IMAGENAME eq llama-server.exe" 2>NUL | findstr /I /C:"llama-server.exe" >NUL 2>NUL && set "LLAMA_RUNNING=1"
+if "!LLAMA_RUNNING!"=="0" (
+    if not exist "%LLAMA_CPP%" (
+        echo        [WARN] llama-server.exe not found at %LLAMA_CPP%
+        echo               Install via llama.cpp Windows CUDA release zip.
+    ) else if not exist "%DEFAULT_GGUF%" (
+        echo        [WARN] Default GGUF missing. Run:
+        echo               cd "D:\Ideas\model downloader" ^&^& python download_models.py --project claude-bridge
+    ) else (
+        echo        Starting llama-server with Qwen3-8B [CUDA, port 8080]...
+        start "llama-server" /MIN cmd /c ""%LLAMA_CPP%" -m "%DEFAULT_GGUF%" -c 16384 -ngl 999 --host 127.0.0.1 --port 8080 --jinja --parallel 1"
+        timeout /t 8 /nobreak >NUL
+        echo        llama-server started [127.0.0.1:8080].
+    )
 ) else (
-    echo        Ollama already running.
+    echo        llama-server already running.
 )
 
 :: --- Start Backend on Linux ---
@@ -83,13 +94,13 @@ echo  ============================================
 echo   DAENA IS RUNNING
 echo  ============================================
 echo.
-echo   Frontend:  http://localhost:5173     [Windows]
-echo   Backend:   http://localhost:!BACKEND_PORT!     [Linux]
-echo   API docs:  http://localhost:!BACKEND_PORT!/docs
-echo   Ollama:    http://localhost:11434    [Windows]
+echo   Frontend:    http://localhost:5173     [Windows]
+echo   Backend:     http://localhost:!BACKEND_PORT!     [Linux]
+echo   API docs:    http://localhost:!BACKEND_PORT!/docs
+echo   llama-server: http://127.0.0.1:8080  [Windows, GGUF direct]
 echo.
-echo   Ollama runs on Windows with GPU.
-echo   Backend on Linux calls Ollama via localhost.
+echo   llama-server runs on Windows with CUDA.
+echo   Backend calls it via VLLM_BASE_URL [OpenAI-compat /v1/*].
 echo.
 echo   To stop: run stop-daena.bat
 echo  ============================================
@@ -107,12 +118,16 @@ if not exist "%VENV%\Scripts\python.exe" (
     exit /b 1
 )
 
-echo  [2/5] Checking Ollama...
-set "OLLAMA_RUNNING=0"
-tasklist /FI "IMAGENAME eq ollama.exe" 2>NUL | findstr /I /C:"ollama.exe" >NUL 2>NUL && set "OLLAMA_RUNNING=1"
-if "!OLLAMA_RUNNING!"=="0" (
-    start "" /MIN ollama serve
-    timeout /t 3 /nobreak >NUL
+echo  [2/5] Checking llama-server [Windows fallback]...
+set "LLAMA_CPP=D:\Ideas\llama.cpp\llama-server.exe"
+set "DEFAULT_GGUF=D:\Ideas\MODELS_ROOT\gguf\qwen3-8b\Qwen3-8B-Q4_K_M.gguf"
+set "LLAMA_RUNNING=0"
+tasklist /FI "IMAGENAME eq llama-server.exe" 2>NUL | findstr /I /C:"llama-server.exe" >NUL 2>NUL && set "LLAMA_RUNNING=1"
+if "!LLAMA_RUNNING!"=="0" (
+    if exist "%LLAMA_CPP%" if exist "%DEFAULT_GGUF%" (
+        start "llama-server" /MIN cmd /c ""%LLAMA_CPP%" -m "%DEFAULT_GGUF%" -c 16384 -ngl 999 --host 127.0.0.1 --port 8080 --jinja --parallel 1"
+        timeout /t 8 /nobreak >NUL
+    )
 )
 
 echo  [3/5] Starting backend on Windows [fallback]...

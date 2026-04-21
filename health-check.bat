@@ -53,21 +53,19 @@ if "!FRONTEND_STATUS!"=="200" (
     echo               Run start-frontend.bat
 )
 
-:: ── 3. Ollama ──
-echo  [3/6] Ollama (http://localhost:11434)
-curl -s -o nul -w "%%{http_code}" http://localhost:11434/api/tags > "%TEMP%\daena_hc_ollama.txt" 2>nul
-set /p OLLAMA_STATUS=<"%TEMP%\daena_hc_ollama.txt"
-del "%TEMP%\daena_hc_ollama.txt" 2>nul
+:: -- 3. llama.cpp llama-server [replaces Ollama] --
+echo  [3/6] llama-server (http://127.0.0.1:8080)
+curl -s -o nul -w "%%{http_code}" http://127.0.0.1:8080/health > "%TEMP%\daena_hc_llama.txt" 2>nul
+set /p LLAMA_STATUS=<"%TEMP%\daena_hc_llama.txt"
+del "%TEMP%\daena_hc_llama.txt" 2>nul
 
-if "!OLLAMA_STATUS!"=="200" (
-    echo        [OK]   Ollama is running
+if "!LLAMA_STATUS!"=="200" (
+    echo        [OK]   llama-server is running
     set /a HEALTHY+=1
-    for /f "skip=1 tokens=1" %%m in ('ollama list 2^>nul') do (
-        echo          - %%m
-    )
+    curl -s http://127.0.0.1:8080/v1/models 2>nul ^| python -c "import sys,json; d=json.load(sys.stdin); [print('         -',m['id']) for m in d.get('data',[])]" 2>nul
 ) else (
-    echo        [FAIL] Ollama not responding
-    echo               Run start-ollama.bat
+    echo        [FAIL] llama-server not responding
+    echo               Start: D:\Ideas\llama.cpp\llama-server.exe -m [gguf] -c 16384 -ngl 999 --port 8080
 )
 
 :: ── 4. WSL2 kali-linux ──
@@ -144,7 +142,7 @@ echo  ============================================
 echo.
 echo  Dashboard: http://localhost:5173
 echo  API Docs:  http://localhost:!BPORT!/docs
-echo  Ollama:    http://localhost:11434
+echo  llama-server: http://127.0.0.1:8080
 echo.
 
 pause

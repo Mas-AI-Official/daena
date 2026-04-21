@@ -98,23 +98,29 @@ if not exist "%BACKEND%\.env" (
     echo        backend\.env already exists
 )
 
-:: --- Check Ollama ---
+:: --- Check llama.cpp [replaces Ollama] ---
 echo.
-echo  Checking for Ollama...
-ollama --version >NUL 2>&1
-if %ERRORLEVEL% NEQ 0 (
+echo  Checking for llama.cpp llama-server...
+if not exist "D:\Ideas\llama.cpp\llama-server.exe" (
     echo.
-    echo  [Optional] Ollama not found.
-    echo  For free local AI, install from: https://ollama.ai
-    echo  Then run: ollama pull llama3.1:8b
+    echo  [Optional] llama-server not found at D:\Ideas\llama.cpp\
+    echo  For free local AI, download the llama.cpp Windows CUDA release:
+    echo    https://github.com/ggml-org/llama.cpp/releases
+    echo  Extract to D:\Ideas\llama.cpp\ and the cudart zip into the same folder.
     echo.
 ) else (
-    for /f %%V in ('ollama --version 2^>^&1') do echo        Found Ollama %%V
+    echo        Found llama-server.exe
     echo.
-    echo  Recommended models (run any of these):
-    echo    ollama pull llama3.1:8b          4.7 GB  General chat
-    echo    ollama pull qwen2.5-coder:14b    9 GB    Coding
-    echo    ollama pull deepseek-r1:14b      9 GB    Reasoning
+    echo  Recommended GGUF models [pull via the new downloader]:
+    echo    cd "D:\Ideas\model downloader"
+    echo    python download_models.py --project claude-bridge
+    echo      - Qwen3-8B Q4_K_M            5.0 GB  general + coding   [fits 8GB VRAM]
+    echo      - Qwen2.5-Coder-7B Q4_K_M    4.7 GB  code-specialized   [fits 8GB VRAM]
+    echo      - Gemma 4 E4B Q4_K_M         4.8 GB  Google, 128K ctx   [fits 8GB VRAM]
+    echo.
+    echo  Launch llama-server [example]:
+    echo    D:\Ideas\llama.cpp\llama-server.exe -m ^<gguf^> -c 16384 -ngl 999 ^
+    echo      --host 127.0.0.1 --port 8080 --jinja --parallel 1
     echo.
 )
 

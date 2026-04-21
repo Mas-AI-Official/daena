@@ -77,5 +77,19 @@ echo "Frontend (Windows) connects via http://localhost:${PORT:-8000}"
 echo "=========================================="
 echo ""
 
-# Start the backend
-python3 run.py
+# Start the backend.
+#
+# Log policy (2026-04-18): previously uvicorn's stdout went only to
+# the launching TTY, which meant whenever the window was closed or
+# the backend was started via a detached ``cmd /K`` we lost the ONLY
+# copy of the error output. Now we ALSO duplicate to a file so
+# operators / automation can always tail the last few minutes:
+#
+#     tail -F /tmp/daena-logs/backend.log
+#
+# ``tee -a`` means the TTY keeps showing output for interactive runs
+# while the file captures everything. ``mkdir -p`` is safe on every
+# restart; the file is never rotated automatically -- if it grows
+# uncomfortably large, rotate or truncate manually (``: > file.log``).
+mkdir -p /tmp/daena-logs
+python3 run.py 2>&1 | tee -a /tmp/daena-logs/backend.log
