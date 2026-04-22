@@ -33,6 +33,8 @@ import {
   Save,
   Send,
   ChevronRight,
+  Copy,
+  ExternalLink,
 } from 'lucide-react'
 
 import { usePageTitle } from '@/hooks/usePageTitle'
@@ -855,18 +857,63 @@ function MissionDraftsModal({
                         <p className="mt-1.5 text-[10px] text-status-error">{d.error}</p>
                       )}
                       {canSend && (
-                        <div className="mt-2 flex justify-end">
-                          <Button
-                            variant="premium"
-                            size="sm"
-                            isLoading={sendingId === d.draft_id}
-                            disabled={sendingId !== null}
-                            onClick={() => sendDraft(d.draft_id)}
-                          >
-                            <span className="flex items-center gap-1.5">
-                              <Send size={12} /> Send draft
-                            </span>
-                          </Button>
+                        <div className="mt-2 flex flex-wrap justify-end gap-2">
+                          {d.channel === 'linkedin' ? (
+                            // LinkedIn automated sending violates ToS (permanent
+                            // account ban risk). The user-facing path is
+                            // "Copy + Open LinkedIn": Daena writes the body to
+                            // the clipboard and opens the LinkedIn messaging UI
+                            // in a new tab so the founder can paste + send
+                            // from their own browser session. Zero ToS risk.
+                            // See docs/LINKEDIN_COMPLIANCE.md for the rationale.
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                  const payload = d.subject
+                                    ? `Subject: ${d.subject}\n\n${d.body}`
+                                    : d.body
+                                  try {
+                                    await navigator.clipboard.writeText(payload)
+                                    window.open('https://www.linkedin.com/messaging/', '_blank', 'noopener,noreferrer')
+                                    toast.success('Body copied. Paste into LinkedIn and send from your own session.')
+                                  } catch {
+                                    toast.error('Could not copy to clipboard. Select + Ctrl+C manually.')
+                                  }
+                                }}
+                                title="Copy message body + open LinkedIn messaging in a new tab. ToS-safe."
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <Copy size={12} /> Copy + Open LinkedIn <ExternalLink size={11} />
+                                </span>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                isLoading={sendingId === d.draft_id}
+                                disabled={sendingId !== null}
+                                onClick={() => sendDraft(d.draft_id)}
+                                title="Updates status -- Daena records that you handled this draft manually via LinkedIn. No automated send."
+                              >
+                                <span className="flex items-center gap-1.5 text-[11px]">
+                                  Mark handled
+                                </span>
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              variant="premium"
+                              size="sm"
+                              isLoading={sendingId === d.draft_id}
+                              disabled={sendingId !== null}
+                              onClick={() => sendDraft(d.draft_id)}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <Send size={12} /> Send draft
+                              </span>
+                            </Button>
+                          )}
                         </div>
                       )}
                     </div>

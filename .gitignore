@@ -36,6 +36,10 @@ docs/*
 !docs/assets/
 !docs/pitch/
 !docs/SESSION-LOG.md
+# LinkedIn compliance rationale -- public-facing product doc explaining
+# why Daena never auto-sends on LinkedIn. Shipping in-repo so evaluators
+# + open-source contributors can find the reasoning without source-diving.
+!docs/LINKEDIN_COMPLIANCE.md
 
 # Internal prompts and session logs (dev-only)
 Doc/
