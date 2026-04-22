@@ -51,6 +51,7 @@ from app.api.v1 import (
     settings,
     skill_refinery,
     skills,
+    tts,
     voice_ws,
     waitlist,
     ws,
@@ -100,6 +101,7 @@ router.include_router(files.router, prefix="/files", tags=["files"])
 router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])
 router.include_router(org.router, prefix="/org", tags=["org"])
 router.include_router(security_dashboard.router, prefix="/security", tags=["security-dashboard"])
+router.include_router(tts.router, prefix="/tts", tags=["tts"])
 router.include_router(security_mode.router, prefix="/security/mode", tags=["security-mode"])
 router.include_router(engagements.router, prefix="/engagements", tags=["engagements"])
 router.include_router(agent_ops.sales_router, prefix="/sales", tags=["sales"])

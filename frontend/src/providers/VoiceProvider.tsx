@@ -105,6 +105,75 @@ const STOP_WORDS = new Set([
   'stop', 'stop listening', 'goodbye', 'bye daena', 'stop daena', 'pause',
 ])
 
+// ── TTS text sanitizer ────────────────────────────────────────────────────────
+//
+// Windows SAPI5 voices (David, Zira, Mark, Hazel) literally vocalize
+// punctuation character names: a bare "*" becomes "asterisk", "(" becomes
+// "open paren", "|" becomes "vertical bar", and "``" becomes "grave accent
+// grave accent". Neural voices skip these, but we can't assume the user
+// has one available, so we strip everything that isn't natural speech
+// before handing text to the TTS engine.
+//
+// What we keep:
+//   * ., !, ? for end-of-sentence prosody
+//   * , ; : for mid-sentence pause prosody
+//   * Letters, digits, apostrophes, hyphens, dollar signs, percent signs
+//   * Spaces and newlines (newlines become breath pauses)
+// Everything else is dropped or substituted.
+
+export function cleanTextForTts(raw: string): string {
+  let t = raw
+
+  // 1. Code fences ``` ... ``` -> "code block" (don't read source).
+  t = t.replace(/```[\s\S]*?```/g, ' code block ')
+
+  // 2. Inline code `foo` -> foo (drop the backticks).
+  t = t.replace(/`([^`]+)`/g, '$1')
+
+  // 3. Markdown link [label](url) -> label.
+  t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+
+  // 4. Markdown image ![alt](url) -> alt.
+  t = t.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+
+  // 5. Bold / italic / strike markers -- just drop them.
+  t = t.replace(/\*\*([^*]+)\*\*/g, '$1')
+  t = t.replace(/\*([^*]+)\*/g, '$1')
+  t = t.replace(/__([^_]+)__/g, '$1')
+  t = t.replace(/_([^_]+)_/g, '$1')
+  t = t.replace(/~~([^~]+)~~/g, '$1')
+
+  // 6. Headings, blockquotes, list markers at the start of lines.
+  t = t.replace(/^\s*#{1,6}\s+/gm, '')
+  t = t.replace(/^\s*>\s+/gm, '')
+  t = t.replace(/^\s*[-*+]\s+/gm, '')
+  t = t.replace(/^\s*\d+\.\s+/gm, '')
+
+  // 7. Drop tables: any line that is just pipes and dashes.
+  t = t.replace(/^\s*\|[\s\S]*?\|\s*$/gm, '')
+  t = t.replace(/^\s*\|?[\s\-:|]+\|?\s*$/gm, '')
+
+  // 8. URLs without markdown wrapping -- speak domain only or drop.
+  t = t.replace(/https?:\/\/\S+/g, 'a link')
+
+  // 9. Emoji / pictographs -- drop. Nothing good comes of the TTS
+  //    engine trying to read U+1F680.
+  t = t.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F02F}]/gu, '')
+
+  // 10. HTML/XML tags.
+  t = t.replace(/<[^>]+>/g, '')
+
+  // 11. Any remaining character that isn't natural speech. Kept chars:
+  //     letters, digits, space, newline, . , ! ? ; : ' - $ % & ( ) / + = @
+  //     Dropped: * _ ~ ` # > | [ ] { } < > ^ and exotic punctuation.
+  t = t.replace(/[*_~`#>|\[\]{}^\\]/g, '')
+
+  // 12. Collapse whitespace runs.
+  t = t.replace(/\s+/g, ' ').trim()
+
+  return t
+}
+
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function VoiceProvider({ children }: { children: React.ReactNode }) {
@@ -162,18 +231,30 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      // Auto-select best English voice:
-      // 1. Google voices (cloud-based, much more natural than Microsoft)
-      // 2. Neural/Natural keyword
-      // 3. Known good voices by name
-      // 4. Any English non-robotic
+      // Auto-select best English voice. 2026 Windows ships robotic
+      // voices that literally *read punctuation* ("question mark",
+      // "asterisk") -- unusable for conversation. Skip them hard,
+      // prefer anything neural/natural/Google.
+      //
+      // Ranked preference:
+      //   1. Google voices (cloud-based neural, best-in-class)
+      //   2. Microsoft *Neural / *Natural (Aria/Jenny/Guy/Davis/etc.)
+      //   3. Platform natural voices (Samantha on macOS, Siri)
+      //   4. Any English voice that is NOT on the robotic blacklist
+      //   5. Last resort: first English voice
+      //
+      // Blacklist: SAPI5 David / Zira / Mark / Hazel / Hortense are
+      // the classic robotic Windows voices and some of them read
+      // punctuation character names aloud.
+      const ROBOTIC = /\b(david|zira|mark|hazel|hortense|eva|helen|heera|kalpana|ravi|ravi|kangkang)\b/i
       if (!selectedVoiceRef.current) {
+        const english = voices.filter((v) => v.lang.toLowerCase().startsWith('en'))
         const best =
-          voices.find((v) => v.lang.startsWith('en') && v.name.toLowerCase().includes('google')) ??
-          voices.find((v) => v.lang.startsWith('en') && /Natural|Neural/.test(v.name)) ??
-          voices.find((v) => /Aria|Jenny|Samantha|Google UK English Female/i.test(v.name)) ??
-          voices.find((v) => v.lang.startsWith('en') && !/david|zira|mark/i.test(v.name)) ??
-          voices.find((v) => v.lang.startsWith('en')) ??
+          english.find((v) => v.name.toLowerCase().includes('google')) ??
+          english.find((v) => /(Natural|Neural|Online)/i.test(v.name) && !ROBOTIC.test(v.name)) ??
+          english.find((v) => /(Aria|Jenny|Guy|Davis|Brian|Ana|Samantha|Siri)/i.test(v.name)) ??
+          english.find((v) => !ROBOTIC.test(v.name)) ??
+          english[0] ??
           voices[0]
         if (best) {
           setSelectedVoiceState(best.name)
@@ -277,11 +358,83 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [speakWithBrowser])
 
-  // ── TTS dispatcher ────────────────────────────────────────────────────────
+  // ── TTS: Edge-TTS (Microsoft neural, free, no API key) ───────────────────
+  //
+  // Streams audio/mpeg from the backend /api/v1/tts/speak endpoint.
+  // Voices like en-US-AriaNeural / en-US-JennyNeural / en-US-GuyNeural
+  // sound natural and do NOT read punctuation character names, which is
+  // the #1 complaint about SAPI5 browser TTS. ~150-300ms first-byte
+  // latency on a warm network.
 
-  const speakResponse = useCallback((text: string) => {
+  const speakWithEdgeTts = useCallback(async (text: string): Promise<boolean> => {
+    setIsSpeaking(true)
+    isSpeakingRef.current = true
+    let url: string | null = null
+    try {
+      const voice = localStorage.getItem('daena_edge_voice') || 'en-US-AriaNeural'
+      const token = localStorage.getItem('daena_token') || ''
+      const res = await fetch('/api/v1/tts/speak', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ text: text.slice(0, 5000), voice }),
+      })
+      if (!res.ok) {
+        throw new Error(`edge-tts HTTP ${res.status}`)
+      }
+      const blob = await res.blob()
+      if (blob.size < 100) {
+        // Empty/truncated response -- treat as failure so caller falls back.
+        throw new Error('edge-tts empty blob')
+      }
+      url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      await new Promise<void>((resolve, reject) => {
+        audio.onended = () => resolve()
+        audio.onerror = () => reject(new Error('audio element error'))
+        void audio.play().catch(reject)
+      })
+      setIsSpeaking(false)
+      isSpeakingRef.current = false
+      if (isActiveRef.current) {
+        setTimeout(() => {
+          try { recognitionRef.current?.start() } catch {}
+        }, 300)
+      }
+      return true
+    } catch (err) {
+      console.warn('[VoiceProvider] Edge-TTS failed:', err)
+      return false
+    } finally {
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [])
+
+  // ── TTS dispatcher ────────────────────────────────────────────────────────
+  //
+  // Preference order:
+  //   1. Edge-TTS (free neural, no key, no "question mark" readouts)
+  //   2. ElevenLabs (if the user has a key configured)
+  //   3. Browser SpeechSynthesis (always-available robot-voice fallback)
+
+  const speakResponse = useCallback(async (text: string) => {
     if (!isActiveRef.current && !ttsEnabledRef.current) return
     try { recognitionRef.current?.stop() } catch {}
+
+    // Honor an opt-out so users on locked networks who can't reach
+    // Microsoft's CDN can force browser-native without editing code.
+    const edgeDisabled = localStorage.getItem('daena_edge_tts_disabled') === '1'
+
+    if (!edgeDisabled) {
+      const ok = await speakWithEdgeTts(text)
+      if (ok) return
+      // ok=false resets isSpeaking internally; the finally on the function
+      // already logged, fall through to next provider.
+      isSpeakingRef.current = false
+      setIsSpeaking(false)
+    }
 
     const apiKey = localStorage.getItem('daena:elevenlabs_key')
     if (apiKey) {
@@ -289,21 +442,64 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     } else {
       speakWithBrowser(text)
     }
-  }, [speakWithElevenLabs, speakWithBrowser])
+  }, [speakWithEdgeTts, speakWithElevenLabs, speakWithBrowser])
 
   // ── Voice-through-chat: send via chatStore (text shows in UI) ─────────────
+  //
+  // Bug before 2026-04-22: chatStore.sendMessage silently returns when
+  // ``activeSessionId`` is null. Clicking Voice on a fresh /chat page
+  // (no session yet) meant the STT transcript was captured but never
+  // reached the API -- no message appeared, no response, no TTS.
+  //
+  // Fix: use sendMessageStream with ``createSession`` init so the store
+  // auto-creates a session on first message. Match the defaults used by
+  // the plain-text chat input (STANDARD mode + AUTO routing) so voice
+  // and keyboard inputs behave identically.
+
+  // Voice-mode prompt prefix. Attached to the user's message before it
+  // hits the LLM so responses are short, conversational, and TTS-friendly.
+  // Without this, the model defaults to paragraph-length markdown which
+  // the TTS has to strip and stutter through.
+  const VOICE_PROMPT_PREFIX =
+    "[Voice mode: the user is speaking to you out loud and the reply " +
+    "will be read aloud. Reply in 1-3 natural spoken sentences. " +
+    "No markdown, no bullet lists, no code blocks, no URLs -- just " +
+    "plain conversation as if you were on a call.] "
 
   const sendViaChat = useCallback(async (text: string) => {
     try { recognitionRef.current?.stop() } catch {}
     try {
-      // Send through normal chat pipeline -- message appears in chat UI
-      await useChatStore.getState().sendMessage(text)
+      const store = useChatStore.getState()
+      // Prefix once so the LLM knows to keep it short.
+      const prompted = VOICE_PROMPT_PREFIX + text
+      // Route voice turns through Gemma-4-E4B: ~3 GB VRAM, 55-70 tok/s,
+      // trained for conversational output -- the Goldilocks pick for
+      // RTX 4060 Laptop assistant usage. The router + llama-server
+      // auto-swap manager handle the hot-swap; the user sees lower
+      // latency and more natural phrasing than the default Qwen path.
+      const voiceModel = 'gemma'
+      if (store.activeSessionId) {
+        await store.sendMessageStream(prompted, voiceModel)
+      } else {
+        await store.sendMessageStream(prompted, voiceModel, {
+          createSession: {
+            mode: 'STANDARD',
+            routingMode: 'AUTO',
+            autopilot: false,
+            thinkMode: false,
+          },
+        })
+      }
     } catch (err) {
       console.error('[VoiceProvider] sendViaChat error:', err)
     }
     // Restart mic after a delay (TTS auto-read will handle speaking)
     if (isActiveRef.current) {
-      setTimeout(() => { if (isActiveRef.current && !isSpeakingRef.current) try { recognitionRef.current?.start() } catch {} }, 500)
+      setTimeout(() => {
+        if (isActiveRef.current && !isSpeakingRef.current) {
+          try { recognitionRef.current?.start() } catch {}
+        }
+      }, 500)
     }
   }, [])
 
@@ -331,12 +527,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         !state.stream.isStreaming
       ) {
         lastMsgCount = msgs.length
-        // Speak the response (strips markdown for cleaner TTS)
-        const cleanText = newest.content
-          .replace(/```[\s\S]*?```/g, ' code block ')
-          .replace(/[#*_~`>|]/g, '')
-          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-          .trim()
+        // Speak the response. Robotic Windows voices literally say
+        // "question mark" / "asterisk" / "open paren" for punctuation
+        // characters, so we strip anything that isn't natural speech.
+        // Terminal punctuation (. , ! ?) is kept because TTS engines
+        // use it for prosody -- only the raw character names get
+        // vocalized on trashy voices, and the user's neural-voice
+        // preference (see auto-select) handles that.
+        const cleanText = cleanTextForTts(newest.content)
         if (cleanText) speakResponse(cleanText.slice(0, 2000))
       } else {
         lastMsgCount = msgs.length
