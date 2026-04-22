@@ -74,16 +74,21 @@ CLAUDE_SPEC = CliRuntimeSpec(
     binary_name="claude",
     model_id=CLAUDE_CLI_MODEL_ID,
     provider=ModelProvider.ANTHROPIC,
-    display_name="Claude Sonnet 4.7 Max (CLI)",
-    # 2026-04-18: pin the CLI to Sonnet 4.7 Max per founder directive
-    # "we always use the highest one -- doesn't matter if CLI or API".
-    # The CLI's ``--model`` accepts aliases (``opus``/``sonnet``) as
-    # well as explicit IDs; ``claude-sonnet-4-7-max`` is the explicit
-    # 4.7 ID. If the CLI on your machine doesn't accept the explicit
-    # ID yet, change this back to ``sonnet`` until Anthropic publishes
-    # the alias; Daena will still use Sonnet-class either way.
-    cmd_template=["{bin}", "--model", "claude-sonnet-4-7-max", "-p", "{prompt}", "--output-format", "json"],
-    stdin_template=["{bin}", "--model", "claude-sonnet-4-7-max", "-p", "-", "--output-format", "json"],
+    display_name="Claude Sonnet (CLI)",
+    # 2026-04-22: rolled back from explicit ``claude-sonnet-4-7-max`` to
+    # the ``sonnet`` alias. The explicit ID was rejected by the CLI on
+    # at least one authenticated account with:
+    #   "There's an issue with the selected model (claude-sonnet-4-7-
+    #   max). It may not exist or you may not have access to it."
+    # The ``sonnet`` alias is permanent on the Anthropic CLI and always
+    # resolves to the latest Sonnet available to the subscription. If
+    # the explicit 4.7-max ID needs to be re-pinned later (e.g. for
+    # benchmarking a specific version), do it via founder_policy
+    # preferred-model override, not here -- the default should be the
+    # alias so the registered CLI continues to work for every tier of
+    # subscription Daena ships to.
+    cmd_template=["{bin}", "--model", "sonnet", "-p", "{prompt}", "--output-format", "json"],
+    stdin_template=["{bin}", "--model", "sonnet", "-p", "-", "--output-format", "json"],
     json_output=True,
     context_window=1_000_000,
     tags=["reasoning", "coding", "analysis", "large", "planning", "frontier", "priority"],

@@ -143,8 +143,11 @@ class ClaudeSession:
                 cwd=cwd, timeout=timeout,
             )
 
-            # Parse the JSON result (may be multiple lines, take last result type)
-            result = self._parse_output(proc_result.stdout)
+            # Parse the JSON result (may be multiple lines, take last result type).
+            # Pass stderr through so the fallback path can surface real
+            # error text ("There's an issue with the selected model...")
+            # instead of the opaque "[No output]" placeholder.
+            result = self._parse_output(proc_result.stdout, proc_result.stderr or "")
 
             # Capture CLI session ID from first response
             if result.session_id and not self.cli_session_id:
@@ -189,8 +192,15 @@ class ClaudeSession:
                 is_error=True,
             )
 
-    def _parse_output(self, stdout: str) -> ClaudeSessionResult:
-        """Parse Claude CLI JSON output, extracting the result line."""
+    def _parse_output(self, stdout: str, stderr: str = "") -> ClaudeSessionResult:
+        """Parse Claude CLI JSON output, extracting the result line.
+
+        Fallback surfaces real stderr when JSON parsing failed -- the
+        "[No output]" placeholder used before silently hid CLI errors
+        like "There's an issue with the selected model (x). It may not
+        exist or you may not have access to it." which were the actual
+        cause of the empty response the user saw in chat.
+        """
         lines = stdout.strip().splitlines()
 
         # Find the result JSON (type=result) -- scan from end
@@ -210,9 +220,21 @@ class ClaudeSession:
             except json.JSONDecodeError:
                 continue
 
-        # Fallback: return raw output
+        # Fallback: show whichever of stdout/stderr has content so
+        # operators see the actual failure mode, not a placeholder.
+        raw_stdout = (stdout or "").strip()
+        raw_stderr = (stderr or "").strip()
+        if raw_stderr and not raw_stdout:
+            # stderr-only: almost always a real CLI error message.
+            body = f"[Claude CLI error] {raw_stderr[:2000]}"
+        elif raw_stdout:
+            body = raw_stdout[:4000]
+        elif raw_stderr:
+            body = f"[Claude CLI error] {raw_stderr[:2000]}"
+        else:
+            body = "[No output -- CLI returned empty stdout AND stderr]"
         return ClaudeSessionResult(
-            result_text=stdout.strip()[:4000] if stdout.strip() else "[No output]",
+            result_text=body,
             session_id="",
             is_error=True,
         )
