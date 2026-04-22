@@ -361,16 +361,27 @@ IMPORTANT: Coordinates must be precise pixel positions on the {width}x{height} s
         return None
 
     async def _call_ollama_vision(self, prompt: str, image_b64: str) -> VisionAction | None:
-        """Call Ollama with a multimodal model (llava, bakllava, etc.)."""
+        """Call Ollama with a multimodal model (llava, bakllava, etc.).
+
+        Gated on OLLAMA_ENABLED. Ollama is deprecated in Daena (CLAUDE.md:
+        llama.cpp llama-server is the local runtime). Returns None when
+        disabled so the caller falls through to the runtime registry.
+        """
+        from app.core.config import get_settings
+        _settings = get_settings()
+        if not _settings.ollama_enabled:
+            return None
+
         import httpx
 
         # Check for vision-capable models
         vision_models = ["llava:latest", "bakllava:latest", "llava:13b", "llava:7b"]
+        base = _settings.ollama_base_url.rstrip("/")
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             # Find first available vision model
             try:
-                tags_resp = await client.get("http://localhost:11434/api/tags")
+                tags_resp = await client.get(f"{base}/api/tags")
                 if tags_resp.status_code == 200:
                     available = {m["name"] for m in tags_resp.json().get("models", [])}
                     selected = None
@@ -387,7 +398,7 @@ IMPORTANT: Coordinates must be precise pixel positions on the {width}x{height} s
 
             # Call with image
             resp = await client.post(
-                "http://localhost:11434/api/generate",
+                f"{base}/api/generate",
                 json={
                     "model": selected,
                     "prompt": prompt,

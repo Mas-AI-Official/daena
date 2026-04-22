@@ -401,26 +401,39 @@ class KnowledgeHunter:
 
         Priority: Ollama (free) > Groq (cheap) > Together (cheap) > fallback.
         """
-        # Try Ollama first (free, local)
+        # Try Ollama first (free, local) -- only when OLLAMA_ENABLED=true.
+        # Ollama is deprecated in Daena; llama.cpp llama-server is the
+        # default local runtime. Honoring the flag prevents wasted
+        # 404s on hosts where Ollama is up but the model isn't pulled.
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(
-                    "http://localhost:11434/api/generate",
-                    json={
-                        "model": "llama3.1:8b",  # Smallest fast model
-                        "prompt": prompt,
-                        "stream": False,
-                        "options": {"temperature": 0.3, "num_predict": 500},
-                    },
-                    timeout=30.0,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    response = data.get("response", "")
-                    if response and len(response) > 20:
-                        logger.info("knowledge_hunter.extracted", model="ollama/llama3.1:8b", cost=0.0)
-                        return response
+            from app.core.config import get_settings
+            _settings = get_settings()
+            if _settings.ollama_enabled:
+                import httpx
+                base = _settings.ollama_base_url.rstrip("/")
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    # Verify model exists before POSTing /api/generate.
+                    tags_resp = await client.get(f"{base}/api/tags")
+                    have = set()
+                    if tags_resp.status_code == 200:
+                        have = {m.get("name", "").split(":")[0] for m in (tags_resp.json().get("models", []) or [])}
+                    if "llama3.1" in have:
+                        resp = await client.post(
+                            f"{base}/api/generate",
+                            json={
+                                "model": "llama3.1:8b",  # Smallest fast model
+                                "prompt": prompt,
+                                "stream": False,
+                                "options": {"temperature": 0.3, "num_predict": 500},
+                            },
+                            timeout=30.0,
+                        )
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            response = data.get("response", "")
+                            if response and len(response) > 20:
+                                logger.info("knowledge_hunter.extracted", model="ollama/llama3.1:8b", cost=0.0)
+                                return response
         except Exception:
             pass
 

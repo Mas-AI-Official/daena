@@ -371,10 +371,25 @@ class ModelRouter:
                 },
             )
 
+        # "Power mode" cloud bias: when the user has combined Autopilot
+        # + Quintessence + EXE, they've explicitly opted into the most
+        # capable routing available. Local models (Ollama / vLLM / llama-
+        # server) are weaker than Claude Opus / GPT-5 / Gemini 3 and
+        # should NOT win routing for those sessions even on SIMPLE
+        # complexity classifications. power_mode=True bumps SOVEREIGN
+        # tier further and pushes LOCAL tier near zero for this call.
+        # Signals: reasoning_mode in {COUNCIL, QUINTESSENCE} is the
+        # strongest intent signal. metadata.power_mode=True is the
+        # explicit hook for chat_orchestrator to force it when AGI+EXE
+        # are also on.
+        _power_mode = bool((metadata or {}).get("power_mode")) or (
+            requested_mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE)
+        )
         scored = self._score_candidates(
             candidates,
             qu,
             preferred_tags=preferred_tags,
+            power_mode=_power_mode,
         )
 
         # Boost Primary Mind: when the user explicitly sets a Primary Mind,
@@ -741,6 +756,7 @@ class ModelRouter:
         qu: QueryUnderstanding,
         *,
         preferred_tags: list[str] | None = None,
+        power_mode: bool = False,
     ) -> list[ModelCandidate]:
         """Score each candidate on tag match, cost, locality, and context.
 
@@ -752,6 +768,12 @@ class ModelRouter:
 
         Philosophy: simple tasks should use the cheapest available model.
         Complex tasks should use the most capable, regardless of cost.
+
+        ``power_mode`` (Autopilot + Quintessence + EXE): pins the
+        tier multipliers at VERY_COMPLEX level regardless of the query's
+        own complexity classification. Local tier collapses to 0.25x,
+        sovereign tier jumps to 1.75x -- cloud wins unless nothing else
+        is reachable.
         """
         preferred_tags = list(preferred_tags or _INTENT_TAGS.get(qu.intent, []))
 
@@ -815,12 +837,20 @@ class ModelRouter:
                 ComplexityLabel.COMPLEX:      0.4,
                 ComplexityLabel.VERY_COMPLEX: 0.25,
             }
+            # Power-mode override: pin tier multipliers at the strongest
+            # cloud-preference setting (VERY_COMPLEX) regardless of what
+            # the query's own complexity classification said. This is the
+            # AGI+QE+EXE "use the best, not the nearest" routing policy.
+            effective_complexity = (
+                ComplexityLabel.VERY_COMPLEX if power_mode
+                else qu.complexity_label
+            )
             if tier == ModelTier.SOVEREIGN:
-                tier_mult = _sov_mult.get(qu.complexity_label, 1.15)
+                tier_mult = _sov_mult.get(effective_complexity, 1.15)
             elif tier == ModelTier.TACTICAL:
                 tier_mult = 1.0
             else:  # LOCAL
-                tier_mult = _loc_mult.get(qu.complexity_label, 0.8)
+                tier_mult = _loc_mult.get(effective_complexity, 0.8)
             composite = composite * tier_mult
 
             # Priority boost (2026-04-18). Models tagged ``priority``

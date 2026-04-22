@@ -466,16 +466,31 @@ class ToolUseLoop:
         try:
             from app.services.providers.ollama import resolve_ollama_base_url
             from app.core.config import get_settings
+            _settings = get_settings()
             ollama_url = resolve_ollama_base_url(
-                (get_settings().ollama_base_url or "").strip() or None
+                (_settings.ollama_base_url or "").strip() or None
             )
         except Exception:
             ollama_url = "http://localhost:11434"
+            _settings = None
 
         explicit_ollama = provider.lower() in ("ollama", "local")
         ollama_reachable = explicit_ollama  # Skip probe when explicitly requested
 
-        if not explicit_ollama:
+        # Honor OLLAMA_ENABLED. Per CLAUDE.md Ollama is deprecated in
+        # favour of llama.cpp llama-server (vLLM adapter). When the flag
+        # is false, skip entirely -- otherwise every chat turn burns a
+        # 2s probe + a wasted POST /api/generate that 404s because the
+        # hardcoded ``llama3.1:8b`` model isn't pulled.
+        if _settings is not None and not _settings.ollama_enabled and not explicit_ollama:
+            ollama_reachable = False
+            logger.info(
+                "tool_loop.ollama_skipped",
+                reason="ollama_disabled",
+                base_url=ollama_url,
+            )
+
+        if not explicit_ollama and ollama_reachable is not False:
             import httpx as _httpx_probe
             try:
                 async with _httpx_probe.AsyncClient(
@@ -483,6 +498,22 @@ class ToolUseLoop:
                 ) as _probe_client:
                     _probe_resp = await _probe_client.get(f"{ollama_url}/api/tags")
                     ollama_reachable = _probe_resp.status_code == 200
+                    # Verify the requested model is actually installed.
+                    # Without this check we POST /api/generate with a
+                    # model that isn't pulled -> 404 -> retry + fallback.
+                    if ollama_reachable:
+                        tags = _probe_resp.json().get("models", []) or []
+                        have = {m.get("name", "").split(":")[0] for m in tags}
+                        have |= {m.get("name", "") for m in tags}
+                        want = (model_id or "llama3.1:8b").split(":")[0]
+                        if want not in have and (model_id or "llama3.1:8b") not in have:
+                            ollama_reachable = False
+                            logger.info(
+                                "tool_loop.ollama_skipped",
+                                reason="model_not_pulled",
+                                model=model_id or "llama3.1:8b",
+                                available=sorted(have)[:10],
+                            )
             except Exception:
                 # Daemon down, port closed, DNS unreachable -- all mean
                 # "don't waste a full request on this fallback." Log at

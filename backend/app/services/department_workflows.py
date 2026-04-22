@@ -861,20 +861,29 @@ class DepartmentWorkflowEngine:
                     value = json.dumps(value, indent=2, default=str)
                 prompt = prompt.replace(f"{{{input_name}}}", str(value))
 
-        # Use Ollama or configured LLM for reasoning
+        # Ollama is deprecated (CLAUDE.md: llama.cpp llama-server is the
+        # local runtime). Only hit Ollama when OLLAMA_ENABLED=true AND the
+        # model is actually pulled. Otherwise skip cleanly and let the
+        # caller fall back to the runtime registry.
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.post(
-                    "http://localhost:11434/api/generate",
-                    json={
-                        "model": "llama3.1:8b",
-                        "prompt": prompt,
-                        "stream": False,
-                    },
-                )
-                if resp.status_code == 200:
-                    return resp.json().get("response", "")
+            from app.core.config import get_settings
+            _settings = get_settings()
+            if _settings.ollama_enabled:
+                import httpx
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    tags = await client.get(f"{_settings.ollama_base_url}/api/tags")
+                    have = {m.get("name", "").split(":")[0] for m in (tags.json().get("models", []) or [])}
+                    if "llama3.1" in have:
+                        resp = await client.post(
+                            f"{_settings.ollama_base_url}/api/generate",
+                            json={
+                                "model": "llama3.1:8b",
+                                "prompt": prompt,
+                                "stream": False,
+                            },
+                        )
+                        if resp.status_code == 200:
+                            return resp.json().get("response", "")
         except Exception as exc:
             logger.warning("workflow.llm_fallback", error=str(exc))
 

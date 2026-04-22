@@ -54,7 +54,20 @@ export function ChatPage() {
   const autopilotActive = useUiStore((s) => s.autopilotActive)
   const activePrompt = useUiStore((s) => s.activePrompt)
   const dismissPrompt = useUiStore((s) => s.dismissPrompt)
-  const [autopilotBannerDismissed, setAutopilotBannerDismissed] = useState(false)
+  // Autopilot banner dismiss persists to localStorage. Before: local
+  // useState reset every refresh, so the banner reappeared on every
+  // reload. Now one dismiss hides it permanently (founder clears the
+  // flag manually if they want the nudge back).
+  const [autopilotBannerDismissed, _setAutopilotBannerDismissed] = useState<boolean>(() => {
+    try { return localStorage.getItem('daena:autopilotBannerDismissed') === 'true' } catch { return false }
+  })
+  const setAutopilotBannerDismissed = (v: boolean) => {
+    _setAutopilotBannerDismissed(v)
+    try {
+      if (v) localStorage.setItem('daena:autopilotBannerDismissed', 'true')
+      else localStorage.removeItem('daena:autopilotBannerDismissed')
+    } catch { /* localStorage blocked; in-memory state still works */ }
+  }
   const registry = useModelRegistryStore((s) => s.registry)
   const fetchRegistry = useModelRegistryStore((s) => s.fetchRegistry)
 

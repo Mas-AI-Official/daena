@@ -2,20 +2,20 @@
  * FounderModeBanner
  *
  * Subtle founder-only strip at the top of /chat that confirms
- * elevated mode is active. Answers the founder's "where did the
- * activation go?" concern without leaking the internal codename or
- * the activation keystroke anywhere a customer-in-demo could see.
+ * elevated mode is active. The header already shows a gold lightning
+ * icon for this, so the banner is REDUNDANT -- the founder can dismiss
+ * it permanently and rely on the header indicator going forward.
  *
  * Render rules (all must hold; else returns null):
  *   1. User role is FOUNDER
  *   2. securityModeStore.state.active === true
- *   3. User has not dismissed the banner for this session
- *      (dismissal persisted in localStorage; auto-clears when
- *       elevated mode turns off so a future activation re-shows it)
+ *   3. User has not dismissed the banner (permanent, not session)
  *
- * Visual language: single 28-pixel-high row at the very top of the
- * chat area, gold lightning icon + "Elevated mode active" text +
- * dismiss (X) button. Not a modal, not animated, no codename.
+ * Before: dismissal cleared on every off->on toggle, so every
+ * reactivation shoved the banner back over the chat. That reads as
+ * nagging. Now the dismiss flag persists across toggles -- one click
+ * hides it forever. The header's gold lightning indicator still
+ * surfaces elevated state, so the founder never loses the signal.
  */
 import { useEffect, useState } from 'react'
 import { Zap, X } from 'lucide-react'
@@ -42,14 +42,6 @@ export function FounderModeBanner() {
   useEffect(() => {
     fetchState()
   }, [fetchState])
-
-  // When elevated mode toggles OFF, clear the dismissed flag so the
-  // next activation surfaces the banner again.
-  useEffect(() => {
-    if (!active) {
-      try { localStorage.removeItem(DISMISS_KEY) } catch {}
-    }
-  }, [active])
 
   const isFounder = (role ?? '').toUpperCase() === 'FOUNDER'
   if (!isFounder || !active || dismissed) return null
