@@ -108,7 +108,90 @@ class Mission:
     drafts_sent: int = 0
     drafts_awaiting_approval: int = 0
     errors: list[str] = field(default_factory=list)
+    draft_ids: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass
+class Draft:
+    """A single outbound draft awaiting founder approval and send.
+
+    Stored in the module-level ``_DRAFT_STORE`` so the REST layer can
+    look it up by id for send / list operations. ``drafts_generated``
+    on the Mission stays the canonical counter; the store holds the
+    full content + status so the founder UI can render + act on it.
+    """
+
+    draft_id: str
+    mission_id: str
+    channel: str
+    recipient: str
+    body: str
+    subject: str | None = None
+    status: str = "awaiting_approval"
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    sent_at: datetime | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "draft_id": self.draft_id,
+            "mission_id": self.mission_id,
+            "channel": self.channel,
+            "recipient": self.recipient,
+            "subject": self.subject,
+            "body": self.body,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            "sent_at": self.sent_at.isoformat() if self.sent_at else None,
+            "error": self.error,
+        }
+
+
+# Module-level draft store. Keyed by ``draft_id``. Lives in-process
+# only; production can swap for a DB-backed table without changing the
+# service contract. Every draft counted in ``Mission.drafts_generated``
+# must also be present here so the two views stay consistent.
+_DRAFT_STORE: dict[str, Draft] = {}
+
+
+def register_draft(
+    *,
+    mission_id: str,
+    channel: str,
+    recipient: str,
+    body: str,
+    subject: str | None = None,
+) -> Draft:
+    """Create a Draft, stash it in ``_DRAFT_STORE``, return the record.
+
+    This is the single chokepoint used by the marketing mission + the
+    reply-auto-booking flow so every draft has an id the REST layer
+    can act on. Mission counters are NOT bumped here; the caller owns
+    that so the counter semantics (e.g. "awaiting approval" vs
+    "generated") stay explicit.
+    """
+    draft_id = str(uuid.uuid4())
+    draft = Draft(
+        draft_id=draft_id,
+        mission_id=mission_id,
+        channel=channel,
+        recipient=recipient,
+        body=body,
+        subject=subject,
+    )
+    _DRAFT_STORE[draft_id] = draft
+    return draft
+
+
+def get_draft(draft_id: str) -> Draft | None:
+    """Return the Draft with this id, or None if unknown."""
+    return _DRAFT_STORE.get(draft_id)
+
+
+def list_drafts_for_mission(mission_id: str) -> list[Draft]:
+    """Return every draft in the store that belongs to this mission."""
+    return [d for d in _DRAFT_STORE.values() if d.mission_id == mission_id]
 
 
 @dataclass
@@ -145,6 +228,7 @@ class ActivationResult:
                     "prospects_found": m.prospects_found,
                     "drafts_generated": m.drafts_generated,
                     "drafts_awaiting_approval": m.drafts_awaiting_approval,
+                    "draft_ids": list(m.draft_ids),
                     "errors": m.errors,
                 }
                 for m in self.missions
@@ -234,14 +318,14 @@ async def _dispatch_marketing_mission(
     marketing = create_marketing_agent(db=db, tenant_id=tenant_id, user_id=user_id)
     drafts: list[dict[str, Any]] = []
     for contact in prospects:
+        contact_id = contact.get("id") or contact.get("contact_id")
+        if not contact_id:
+            continue
         try:
             # author_outreach signature varies by deployment -- we pass the
             # minimum required + optional context. The agent's current
             # contract accepts (contact_id, context) and we supply the
             # emotional / brief context under ``context``.
-            contact_id = contact.get("id") or contact.get("contact_id")
-            if not contact_id:
-                continue
             draft = await marketing.author_outreach(
                 contact_id=str(contact_id),
                 context={
@@ -256,26 +340,53 @@ async def _dispatch_marketing_mission(
                     "require_approval": brief.require_founder_approval,
                 },
             )
-            if draft:
-                drafts.append(draft)
-                mission.drafts_generated += 1
-                if not brief.auto_send:
-                    mission.drafts_awaiting_approval += 1
         except TypeError:
             # Older MarketingAgent.author_outreach signature: (contact_id,)
             # Fallback keeps the pipeline alive if the agent was shipped
             # before the context-kwarg contract.
             try:
                 draft = await marketing.author_outreach(contact_id=str(contact_id))
-                if draft:
-                    drafts.append(draft)
-                    mission.drafts_generated += 1
-                    if not brief.auto_send:
-                        mission.drafts_awaiting_approval += 1
             except Exception as exc:
                 mission.errors.append(f"draft_failed:{contact_id}:{exc}")
+                continue
         except Exception as exc:
             mission.errors.append(f"draft_failed:{contact_id}:{exc}")
+            continue
+
+        if not draft:
+            continue
+        drafts.append(draft)
+        mission.drafts_generated += 1
+        if not brief.auto_send:
+            mission.drafts_awaiting_approval += 1
+
+        # Mirror the draft into the module-level store so the REST
+        # layer can look it up for send / list operations. ``contact``
+        # holds the recipient identity; ``draft`` holds the generated
+        # content. Both may be partial -- we extract defensively.
+        recipient = (
+            contact.get("email")
+            or contact.get("linkedin_url")
+            or contact.get("handle")
+            or str(contact_id)
+        )
+        body = (
+            draft.get("body")
+            or draft.get("message")
+            or draft.get("preview")
+            or ""
+        )
+        subject = draft.get("subject") if isinstance(draft, dict) else None
+        record = register_draft(
+            mission_id=mission.id,
+            channel=mission.channel.value,
+            recipient=str(recipient),
+            body=str(body),
+            subject=str(subject) if subject else None,
+        )
+        mission.draft_ids.append(record.draft_id)
+        if brief.auto_send:
+            record.status = "sending"
 
     mission.status = (
         MissionStatus.COMPLETED if brief.auto_send else MissionStatus.AWAITING_APPROVAL

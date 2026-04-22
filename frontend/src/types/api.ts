@@ -1,4 +1,4 @@
-/** Daena API type definitions — mirrors backend schemas exactly */
+/** Daena API type definitions -- mirrors backend schemas exactly */
 
 // ── Enums ──
 
@@ -670,6 +670,49 @@ export interface ActivationMission {
   drafts_generated: number
   drafts_awaiting_approval: number
   errors: string[]
+  // Optional: backend may populate with the draft IDs produced by the mission
+  // so the frontend can fetch them without a second round-trip.
+  draft_ids?: string[]
+}
+
+export type DraftStatus = 'awaiting_approval' | 'sending' | 'sent' | 'failed' | 'blocked'
+
+export interface Draft {
+  draft_id: string
+  mission_id: string
+  channel: MissionChannel
+  recipient: string
+  subject: string | null
+  body: string
+  status: DraftStatus
+  created_at: string
+  sent_at: string | null
+  error: string | null
+}
+
+export interface SendOutcome {
+  status: 'sent' | 'blocked' | 'failed'
+  provider: string
+  sent_at: string | null
+  detail: string | null
+}
+
+export interface SeedBriefResponse {
+  brief: ActivateRequest | null
+  exists: boolean
+  updated_at: string | null
+}
+
+export interface ReplyClassification {
+  sentiment: 'positive' | 'neutral' | 'negative'
+  intent: 'meet' | 'info' | 'unsubscribe' | 'unknown'
+  keywords_matched: string[]
+}
+
+export interface ReplyProcessResponse {
+  classification: ReplyClassification
+  suggested_slots: string[]
+  confirmation_draft_id: string | null
 }
 
 export interface ActivationBriefEcho {

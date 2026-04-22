@@ -11,7 +11,7 @@
  *   - Activation form (left, sticky on wide screens)
  *   - Latest activation result + history ring buffer (right)
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -29,18 +29,27 @@ import {
   ShieldCheck,
   Clock,
   Building,
+  Download,
+  Save,
+  Send,
+  ChevronRight,
 } from 'lucide-react'
 
 import { usePageTitle } from '@/hooks/usePageTitle'
-import { Card, Badge, Button, Input, Switch, EmptyState, Shimmer } from '@/components/common'
+import { Card, Badge, Button, Input, Switch, EmptyState, Shimmer, Modal } from '@/components/common'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import type {
   ActivateRequest,
   ActivationResult,
+  ActivationMission,
   ActivationHistoryEntry,
   MissionChannel,
+  Draft,
+  DraftStatus,
+  SeedBriefResponse,
+  SendOutcome,
 } from '@/types/api'
 
 // Channel presentation (icon + short label + ToS risk flag).
@@ -89,6 +98,14 @@ export function CompanyModePage() {
   const [history, setHistory] = useState<ActivationHistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
 
+  // Seed brief quick-fill state. The founder can stash a "go-to" brief on
+  // the backend and reload it with one click. We load the stash on mount
+  // but never auto-apply -- user must click "Load seed" explicitly.
+  const [seedBrief, setSeedBrief] = useState<ActivateRequest | null>(null)
+  const [seedExists, setSeedExists] = useState(false)
+  const [seedUpdatedAt, setSeedUpdatedAt] = useState<string | null>(null)
+  const [seedSaving, setSeedSaving] = useState(false)
+
   useEffect(() => {
     if (!isFounder) return
     let cancelled = false
@@ -102,7 +119,25 @@ export function CompanyModePage() {
         if (!cancelled) setHistoryLoading(false)
       }
     }
+    const loadSeed = async () => {
+      try {
+        const { data } = await api.get<SeedBriefResponse>('/company-mode/seed-brief')
+        if (cancelled) return
+        if (data?.exists && data.brief) {
+          setSeedBrief(data.brief)
+          setSeedExists(true)
+          setSeedUpdatedAt(data.updated_at)
+        }
+      } catch (err) {
+        // 404 is fine -- no seed yet. Only log real errors.
+        const status = (err as { response?: { status?: number } })?.response?.status
+        if (status && status !== 404) {
+          console.error('Failed to load seed brief:', err)
+        }
+      }
+    }
     void load()
+    void loadSeed()
     return () => {
       cancelled = true
     }
@@ -123,6 +158,49 @@ export function CompanyModePage() {
   }, [req])
 
   const canSubmit = Object.keys(errors).length === 0 && !submitting
+  const canSaveSeed = Object.keys(errors).length === 0 && !seedSaving
+
+  // Apply the loaded seed into the form. We deep-copy arrays so later edits
+  // do not mutate the stashed seed.
+  const applySeed = () => {
+    if (!seedBrief) return
+    setReq({
+      ...seedBrief,
+      proof_points: seedBrief.proof_points.length > 0 ? [...seedBrief.proof_points] : [''],
+      channels: [...seedBrief.channels],
+    })
+    toast.success('Seed brief loaded')
+  }
+
+  const saveSeed = async () => {
+    if (!canSaveSeed) return
+    setSeedSaving(true)
+    try {
+      const payload: ActivateRequest = {
+        ...req,
+        company_name: req.company_name.trim(),
+        company_one_liner: req.company_one_liner.trim(),
+        target_customer: req.target_customer.trim(),
+        customer_pain: req.customer_pain.trim(),
+        our_promise: req.our_promise.trim(),
+        proof_points: req.proof_points.map((p) => p.trim()).filter(Boolean),
+        notes: req.notes?.trim() || null,
+      }
+      const { data } = await api.post<{ exists: boolean; updated_at: string }>(
+        '/company-mode/seed-brief',
+        payload,
+      )
+      setSeedBrief(payload)
+      setSeedExists(true)
+      setSeedUpdatedAt(data?.updated_at ?? new Date().toISOString())
+      toast.success('Seed brief saved')
+    } catch (err) {
+      console.error('save seed failed:', err)
+      toast.error('Could not save seed brief')
+    } finally {
+      setSeedSaving(false)
+    }
+  }
 
   const toggleChannel = (channel: MissionChannel) => {
     setReq((prev) => {
@@ -229,6 +307,37 @@ export function CompanyModePage() {
           <div className="lg:col-span-2 space-y-4">
             <Card variant="glass" padding="md">
               <div className="space-y-4">
+                {/* Seed brief quick-fill row. "Load seed" needs a stashed brief
+                    on the backend; "Save current as seed" needs the form to
+                    pass client-side validation (errors memo empty). */}
+                <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-white/5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!seedExists}
+                    onClick={applySeed}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Download size={12} /> Load seed
+                    </span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!canSaveSeed}
+                    isLoading={seedSaving}
+                    onClick={saveSeed}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Save size={12} /> Save current as seed
+                    </span>
+                  </Button>
+                  {seedExists && seedUpdatedAt && (
+                    <span className="text-[10px] text-starlight-500">
+                      Last saved: {formatRelativeTime(seedUpdatedAt)}
+                    </span>
+                  )}
+                </div>
                 <Input
                   label="Company name"
                   placeholder="e.g. MAS-AI Technologies Inc."
@@ -513,6 +622,8 @@ function Textarea({
 
 function ActivationResultCard({ result }: { result: ActivationResult }) {
   const totalDrafts = result.missions.reduce((n, m) => n + m.drafts_generated, 0)
+  const [openMission, setOpenMission] = useState<ActivationMission | null>(null)
+
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
       <Card variant="glass" padding="md">
@@ -542,7 +653,12 @@ function ActivationResultCard({ result }: { result: ActivationResult }) {
 
         <div className="space-y-2">
           {result.missions.map((m) => (
-            <div key={m.id} className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.02] border border-white/5">
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setOpenMission(m)}
+              className="w-full flex items-center justify-between p-2.5 rounded-lg bg-white/[0.02] border border-white/5 hover:border-white/10 hover:bg-white/[0.04] transition-all text-left cursor-pointer"
+            >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 mb-0.5">
                   <Badge variant="default" size="sm">
@@ -555,14 +671,17 @@ function ActivationResultCard({ result }: { result: ActivationResult }) {
                   {m.objective}
                 </p>
               </div>
-              <div className="text-right text-[10px] text-starlight-400 shrink-0 ml-3">
-                <div>{m.prospects_found} prospects</div>
-                <div>{m.drafts_generated} drafts</div>
-                {m.drafts_awaiting_approval > 0 && (
-                  <div className="text-status-warning">{m.drafts_awaiting_approval} awaiting</div>
-                )}
+              <div className="flex items-center gap-2 shrink-0 ml-3">
+                <div className="text-right text-[10px] text-starlight-400">
+                  <div>{m.prospects_found} prospects</div>
+                  <div>{m.drafts_generated} drafts</div>
+                  {m.drafts_awaiting_approval > 0 && (
+                    <div className="text-status-warning">{m.drafts_awaiting_approval} awaiting</div>
+                  )}
+                </div>
+                <ChevronRight size={14} className="text-starlight-500" />
               </div>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -577,8 +696,211 @@ function ActivationResultCard({ result }: { result: ActivationResult }) {
           </div>
         )}
       </Card>
+
+      <MissionDraftsModal mission={openMission} onClose={() => setOpenMission(null)} />
     </motion.div>
   )
+}
+
+// ── Mission drill-down modal ────────────────────────────────────────
+// Lazily fetches drafts for a single mission and lets the founder send
+// any draft that is still awaiting_approval. Status updates inline so
+// the founder can triage a full mission without closing the modal.
+
+const DRAFT_STATUS_VARIANT: Record<DraftStatus, 'default' | 'warning' | 'success' | 'danger' | 'info'> = {
+  awaiting_approval: 'warning',
+  sending: 'info',
+  sent: 'success',
+  failed: 'danger',
+  blocked: 'danger',
+}
+
+function MissionDraftsModal({
+  mission,
+  onClose,
+}: {
+  mission: ActivationMission | null
+  onClose: () => void
+}) {
+  const [drafts, setDrafts] = useState<Draft[]>([])
+  const [loading, setLoading] = useState(false)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [sendingId, setSendingId] = useState<string | null>(null)
+
+  const isOpen = mission !== null
+  const missionId = mission?.id ?? null
+
+  const loadDrafts = useCallback(
+    async (id: string) => {
+      setLoading(true)
+      try {
+        const { data } = await api.get<Draft[]>(`/company-mode/missions/${id}/drafts`)
+        setDrafts(data ?? [])
+      } catch (err) {
+        console.error('Failed to load drafts:', err)
+        toast.error('Could not load drafts for this mission')
+        setDrafts([])
+      } finally {
+        setLoading(false)
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!isOpen || !missionId) {
+      setDrafts([])
+      setExpanded({})
+      return
+    }
+    void loadDrafts(missionId)
+  }, [isOpen, missionId, loadDrafts])
+
+  const sendDraft = async (draftId: string) => {
+    if (!missionId || sendingId) return
+    setSendingId(draftId)
+    // Flip local status to sending so the UI reflects the in-flight state.
+    setDrafts((prev) =>
+      prev.map((d) => (d.draft_id === draftId ? { ...d, status: 'sending' as DraftStatus } : d)),
+    )
+    try {
+      const { data } = await api.post<{ outcome: SendOutcome; draft: Draft }>(
+        `/company-mode/missions/${missionId}/drafts/${draftId}/send`,
+      )
+      setDrafts((prev) => prev.map((d) => (d.draft_id === draftId ? data.draft : d)))
+      if (data.outcome.status === 'sent') {
+        toast.success('Draft sent')
+      } else if (data.outcome.status === 'blocked') {
+        toast.warning(data.outcome.detail ?? 'Send blocked by governance')
+      } else {
+        toast.error(data.outcome.detail ?? 'Send failed')
+      }
+    } catch (err) {
+      console.error('send draft failed:', err)
+      toast.error('Could not send draft')
+      // Revert to awaiting_approval so the founder can retry.
+      setDrafts((prev) =>
+        prev.map((d) =>
+          d.draft_id === draftId ? { ...d, status: 'awaiting_approval' as DraftStatus } : d,
+        ),
+      )
+    } finally {
+      setSendingId(null)
+    }
+  }
+
+  const allHandled =
+    drafts.length > 0 &&
+    drafts.every((d) => d.status === 'sent' || d.status === 'blocked' || d.status === 'failed')
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} size="lg">
+      {mission && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="default" size="sm">
+              {mission.department}
+            </Badge>
+            <span className="text-sm text-starlight-100 font-medium">{mission.mind}</span>
+            <span className="text-xs text-starlight-500 font-mono">{mission.channel}</span>
+          </div>
+          <p className="text-xs text-starlight-400">{mission.objective}</p>
+
+          <div className="pt-3 border-t border-white/5">
+            {loading ? (
+              <Shimmer count={3} layout="list" />
+            ) : drafts.length === 0 ? (
+              <EmptyState
+                icon={<Mail size={24} />}
+                title="No drafts yet"
+                description="This mission did not produce any drafts."
+              />
+            ) : (
+              <div className="space-y-2">
+                {drafts.map((d) => {
+                  const variant = DRAFT_STATUS_VARIANT[d.status] ?? 'default'
+                  const isExpanded = expanded[d.draft_id] === true
+                  const canSend = d.status === 'awaiting_approval'
+                  return (
+                    <div
+                      key={d.draft_id}
+                      className="p-3 rounded-lg bg-white/[0.02] border border-white/5"
+                    >
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        <Badge variant={variant} size="sm">
+                          {d.status.replace('_', ' ')}
+                        </Badge>
+                        <span className="text-[11px] text-starlight-300 truncate">{d.recipient}</span>
+                        {d.sent_at && (
+                          <span className="text-[10px] text-starlight-500">
+                            {new Date(d.sent_at).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      {d.subject && (
+                        <p className="text-xs font-medium text-starlight-200 mb-1">{d.subject}</p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpanded((prev) => ({ ...prev, [d.draft_id]: !isExpanded }))
+                        }
+                        className={`text-[11px] text-starlight-400 whitespace-pre-wrap text-left w-full cursor-pointer hover:text-starlight-300 transition-colors ${
+                          isExpanded ? '' : 'line-clamp-3'
+                        }`}
+                      >
+                        {d.body}
+                      </button>
+                      {d.error && (
+                        <p className="mt-1.5 text-[10px] text-status-error">{d.error}</p>
+                      )}
+                      {canSend && (
+                        <div className="mt-2 flex justify-end">
+                          <Button
+                            variant="premium"
+                            size="sm"
+                            isLoading={sendingId === d.draft_id}
+                            disabled={sendingId !== null}
+                            onClick={() => sendDraft(d.draft_id)}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <Send size={12} /> Send draft
+                            </span>
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {allHandled && (
+              <div className="mt-3 p-2 rounded-lg bg-status-success/10 border border-status-success/30 text-[11px] text-status-success flex items-center gap-1.5">
+                <CheckCircle2 size={12} /> All drafts handled
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+// Human-readable relative time for the seed-brief footer. Keeps the UI
+// readable without pulling date-fns.
+function formatRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return 'unknown'
+  const diffMs = Date.now() - then
+  const sec = Math.round(diffMs / 1000)
+  if (sec < 60) return 'just now'
+  const min = Math.round(sec / 60)
+  if (min < 60) return `${min} min ago`
+  const hr = Math.round(min / 60)
+  if (hr < 24) return `${hr} hr ago`
+  const days = Math.round(hr / 24)
+  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`
+  return new Date(iso).toLocaleDateString()
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
