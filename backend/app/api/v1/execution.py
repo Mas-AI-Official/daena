@@ -211,6 +211,22 @@ async def delete_task(
     return {"success": True}
 
 
+@router.post("/tasks/{task_id}/run")
+async def run_task(
+    task_id: UUID,
+    user: CurrentUser = Depends(get_current_user),
+    service: ExecutionService = Depends(get_execution_service),
+) -> dict:
+    """Kick off execution for a PENDING / FAILED / CANCELLED task.
+
+    Returns the task in its new RUNNING state immediately; the actual
+    work proceeds in a background asyncio task. Poll GET /tasks/{id}
+    to watch progress or wait for COMPLETED / FAILED.
+    """
+    task = await service.run_task(task_id, user.tenant_id)
+    return {"success": True, "data": task}
+
+
 # ── Department Tasks in Execution View ──
 
 @router.get("/department-tasks")

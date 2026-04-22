@@ -74,17 +74,62 @@ export function TasksPage() {
     setSelectedIds(selectedIds.size === tasks.length ? new Set() : new Set(tasks.map((t) => t.id)))
   }
 
-  // ── Retry a failed task (re-enqueue as PENDING) ──
-  const handleRetry = async (taskId: string) => {
+  // ── Run a PENDING task immediately (new endpoint) ──
+  //
+  // Before this ticket tasks sat in PENDING forever because there was
+  // no worker. /execution/tasks/{id}/run flips the task to RUNNING
+  // and spawns an async background runner that drives it to COMPLETED
+  // or FAILED. The UI shows progress via existing 15s auto-refresh.
+
+  const handleRun = async (taskId: string) => {
     setRetryingId(taskId)
     try {
-      await api.patch(`/execution/tasks/${taskId}`, { status: 'PENDING' })
+      await api.post(`/execution/tasks/${taskId}/run`)
       await fetchTasks()
     } catch {
       // Graceful
     } finally {
       setRetryingId(null)
     }
+  }
+
+  // ── Retry a failed/completed/cancelled task ──
+  //
+  // Chain: PATCH -> PENDING, then POST -> /run. Before the /run
+  // endpoint existed, flipping to PENDING did nothing because no
+  // worker picked PENDING tasks up -- retry felt like it was "working"
+  // but the task never left PENDING. Now retry actually restarts.
+
+  const handleRetry = async (taskId: string) => {
+    setRetryingId(taskId)
+    try {
+      await api.patch(`/execution/tasks/${taskId}`, { status: 'PENDING' })
+      await api.post(`/execution/tasks/${taskId}/run`)
+      await fetchTasks()
+    } catch {
+      // Graceful
+    } finally {
+      setRetryingId(null)
+    }
+  }
+
+  // ── Batch run (kick off every selected PENDING task) ──
+  const handleBatchRun = async () => {
+    const runnable = tasks.filter(
+      (t) => selectedIds.has(t.id) &&
+        ['PENDING', 'FAILED', 'CANCELLED', 'PAUSED'].includes(t.status),
+    )
+    if (runnable.length === 0) return
+    for (const t of runnable) {
+      try {
+        if (t.status !== 'PENDING') {
+          await api.patch(`/execution/tasks/${t.id}`, { status: 'PENDING' })
+        }
+        await api.post(`/execution/tasks/${t.id}/run`)
+      } catch { /* continue */ }
+    }
+    setSelectedIds(new Set())
+    await fetchTasks()
   }
 
   // ── Batch archive ──
@@ -191,6 +236,9 @@ export function TasksPage() {
             {selectedIds.size > 0 && (
               <>
                 <div className="w-px h-4 bg-white/10" />
+                <button onClick={handleBatchRun} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-status-success/10 text-status-success hover:bg-status-success/20 transition-colors cursor-pointer">
+                  <Play size={11} /> Run
+                </button>
                 <button onClick={handleBatchArchive} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-amber/10 text-accent-amber hover:bg-accent-amber/20 transition-colors cursor-pointer">
                   <Archive size={11} /> Archive
                 </button>
@@ -287,19 +335,43 @@ export function TasksPage() {
                           )}
                         </div>
 
-                        {/* Re-run: available on any terminal state
-                            (FAILED / COMPLETED / CANCELLED). Not
-                            shown on PENDING/RUNNING because those are
-                            already in flight. Re-submitting sets
-                            status back to PENDING; the swarm picks it
-                            up on the next cycle. */}
+                        {/* Run: PENDING or PAUSED tasks haven't started
+                            (or were paused mid-flight). POST to /run
+                            kicks off the minimal task runner which
+                            flips RUNNING -> COMPLETED with progress
+                            reporting. Without this button PENDING
+                            tasks sat forever because no autopilot
+                            worker picked them up. */}
+                        {['PENDING', 'PAUSED'].includes(task.status) && (
+                          <button
+                            onClick={() => handleRun(task.id)}
+                            disabled={retryingId === task.id}
+                            title={
+                              task.status === 'PENDING'
+                                ? 'Start this pending task now'
+                                : 'Resume this paused task'
+                            }
+                            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer disabled:opacity-50 bg-status-success/10 text-status-success hover:bg-status-success/20"
+                          >
+                            {retryingId === task.id
+                              ? <Loader2 size={12} className="animate-spin" />
+                              : <Play size={12} />}
+                            {task.status === 'PENDING' ? 'Run' : 'Resume'}
+                          </button>
+                        )}
+
+                        {/* Re-run / Retry: FAILED / COMPLETED / CANCELLED
+                            flips back to PENDING and immediately POSTs
+                            /run so the task actually restarts. Before
+                            the /run endpoint existed this button only
+                            flipped status and looked stuck. */}
                         {['FAILED', 'COMPLETED', 'CANCELLED'].includes(task.status) && (
                           <button
                             onClick={() => handleRetry(task.id)}
                             disabled={retryingId === task.id}
                             title={
                               task.status === 'FAILED'
-                                ? 'Retry this failed task'
+                                ? 'Retry this failed task (flips to PENDING + kicks off /run)'
                                 : task.status === 'COMPLETED'
                                   ? 'Re-run with the same parameters'
                                   : 'Re-submit this cancelled task'

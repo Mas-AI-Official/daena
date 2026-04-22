@@ -582,6 +582,139 @@ class ExecutionService(BaseService):
         await self.db.delete(task)
         await self.db.commit()
 
+    async def run_task(self, task_id: UUID, tenant_id: UUID) -> dict:
+        """Kick off execution for a PENDING / FAILED / CANCELLED task.
+
+        There is no long-lived autopilot worker yet; without an explicit
+        kick-off, tasks sit in PENDING forever. This method flips the
+        task to RUNNING and fires an asyncio background task that
+        simulates progress through 0 -> 100 and marks COMPLETED on
+        success or FAILED on exception.
+
+        The background task uses a fresh async session (not ``self.db``
+        which belongs to the request lifecycle); otherwise the session
+        would be closed before the background task finishes.
+
+        Returns the task in its new RUNNING state so the UI can start
+        polling progress immediately.
+
+        Raises:
+            ValidationError: when the task is already RUNNING or
+                COMPLETED (use delete/retry for those).
+        """
+        import asyncio as _asyncio
+
+        task = await self._get_task_orm(task_id, tenant_id)
+
+        # Guard against double-dispatch. Only resume states are runnable.
+        runnable = {
+            TaskStatus.PENDING.value,
+            TaskStatus.FAILED.value,
+            TaskStatus.CANCELLED.value,
+            TaskStatus.PAUSED.value,
+        }
+        if task.status not in runnable:
+            raise ValidationError(
+                f"Task is {task.status}; only {sorted(runnable)} can be run"
+            )
+
+        # Flip to RUNNING immediately so the UI reflects state on the
+        # POST response, not on the next poll.
+        task.status = TaskStatus.RUNNING.value
+        task.started_at = datetime.now(UTC)
+        task.completed_at = None
+        task.error = None
+        task.progress = 0
+        await self.db.commit()
+        await self.db.refresh(task)
+
+        # Snapshot the fields the background task needs BEFORE the
+        # request session closes. Re-fetching by id inside the bg task
+        # will use a fresh session.
+        payload = self._task_to_dict(task)
+        captured_id = task.id
+        captured_tenant = tenant_id
+        captured_name = task.name
+        captured_desc = task.description or ""
+
+        # Bind the bg session factory to the SAME engine the request
+        # used (``self.db.bind``) instead of the app-global factory.
+        # Tests override ``get_db`` to an in-memory SQLite; pointing
+        # the bg task at the global (file-backed) factory would make
+        # it miss rows committed by the request. In production both
+        # factories resolve to the same engine so behavior is identical.
+        from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+        bg_factory = async_sessionmaker(
+            self.db.bind, class_=AsyncSession, expire_on_commit=False,
+        )
+
+        async def _background_run() -> None:
+            """Run the task body in a detached session."""
+            logger.info(
+                "task_run.started",
+                task_id=str(captured_id),
+                name=captured_name,
+            )
+            async with bg_factory() as bg_db:
+                bg_service = ExecutionService(bg_db)
+                try:
+                    # Simulate work in three slices so the UI can show
+                    # real progress bars. Future ticket replaces this
+                    # with the actual executor (chat_orchestrator /
+                    # department workflow dispatch / tool loop).
+                    for pct in (25, 60, 90):
+                        await _asyncio.sleep(0.8)
+                        await bg_service.update_task_status(
+                            captured_id, captured_tenant,
+                            progress=pct,
+                        )
+                    # Produce a lightweight result. Real executor would
+                    # attach LLM output / tool results / file paths.
+                    result = {
+                        "summary": f"Task '{captured_name}' executed.",
+                        "description_used": captured_desc[:500],
+                        "executed_at": datetime.now(UTC).isoformat(),
+                        "executor": "minimal-run-task-v1",
+                        "note": (
+                            "This is the minimal task executor. A real "
+                            "executor (department workflow / tool loop) "
+                            "will replace it in a later ticket; until then "
+                            "'run' just cycles through RUNNING -> COMPLETED "
+                            "so operators can exercise the lifecycle."
+                        ),
+                    }
+                    await bg_service.update_task_status(
+                        captured_id, captured_tenant,
+                        status=TaskStatus.COMPLETED.value,
+                        progress=100,
+                        result=result,
+                    )
+                    logger.info(
+                        "task_run.completed",
+                        task_id=str(captured_id),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(
+                        "task_run.failed",
+                        task_id=str(captured_id),
+                        error=str(exc),
+                    )
+                    try:
+                        await bg_service.update_task_status(
+                            captured_id, captured_tenant,
+                            status=TaskStatus.FAILED.value,
+                            error=str(exc)[:500],
+                        )
+                    except Exception as inner:  # noqa: BLE001
+                        logger.exception(
+                            "task_run.status_update_failed",
+                            task_id=str(captured_id),
+                            error=str(inner),
+                        )
+
+        _asyncio.create_task(_background_run())
+        return payload
+
     # ── Private helpers ───────────────────────────────────────
 
     async def _get_session(
