@@ -508,9 +508,19 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming,
           </div>
         )}
 
-        {/* Action row: timestamp + edit/copy — appears on hover */}
+        {/* Action row: timestamp + edit/copy.
+          * USER rows stay hover-only (edit is destructive, reduces clutter).
+          * ASSISTANT rows are persistently visible at 60% opacity so Copy +
+          * Feedback are always discoverable (touch devices have no hover
+          * event, and founders reported "there is no copy button"). */}
         {!isEditing && !isStreaming && (
-          <div className={`flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all ${isUser ? 'flex-row-reverse' : ''}`}>
+          <div
+            className={`flex items-center gap-2 transition-all ${isUser ? 'flex-row-reverse' : ''} ${
+              isUser
+                ? 'opacity-0 group-hover:opacity-100'
+                : 'opacity-60 group-hover:opacity-100'
+            }`}
+          >
             {/* Timestamp */}
             {message.created_at && (
               <span className="text-[10px] text-starlight-600">

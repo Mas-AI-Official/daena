@@ -1,7 +1,7 @@
 """Soul Engine: loads and caches Daena's character foundation.
 
-Reads soul documents from the Daena-Mind vault (D:/Ideas/Daena-Mind/soul/)
-and constructs system prompt fragments that shape HOW Daena reasons.
+Reads soul documents from ``backend/app/soul/`` (core soul + 10 department
+overlays) and constructs system prompt fragments that shape HOW Daena reasons.
 
 The soul is the philosophical foundation from which all behavior flows.
 It is not a system prompt that can be overridden -- it is injected first,
@@ -12,18 +12,30 @@ Three intensity modes based on GovernanceMode:
 - BALANCED: Full soul + light guardrails
 - GOVERNED: Full soul + enterprise safety overlay
 
+Department overlays (new 2026-04-22):
+Each of Daena's 10 departments has a named persona ("Mind") that composes on
+top of the core soul. Loaded from ``backend/app/soul/departments/<slug>.md``.
+Each overlay defines preferred runtime, voice profile, scoped toolchain,
+and reasoning patterns specific to that department's job.
+
 Pattern follows dcp_loader.py: file-based loading with process-level cache.
 
 Usage::
 
     soul = SoulEngine.get_soul_prompt("UNLEASHED")
     system_prompt = soul + operational_instructions
+
+    # With department overlay:
+    soul = SoulEngine.get_soul_prompt("GOVERNED", department="engineering")
+    # -> core soul + Aria overlay + governance addendum
 """
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from app.core.logging import get_logger
 
@@ -32,6 +44,7 @@ logger = get_logger(__name__)
 # Relative to app/ directory -- works in dev (D:\Ideas\Daena\backend\app\soul)
 # and in Docker (/app/app/soul). No hardcoded absolute paths.
 _SOUL_VAULT_PATH = Path(__file__).resolve().parent.parent / "soul"
+_DEPARTMENT_SOUL_PATH = _SOUL_VAULT_PATH / "departments"
 
 # Files loaded in order (priority order for prompt construction).
 # vp_mode.md was added 2026-04-18 when Masoud promoted Daena from
@@ -46,7 +59,60 @@ _SOUL_FILES = [
     "loyalty.md",
     "shield.md",
     "vp_mode.md",
+    # emotional_awareness.md was added 2026-04-22 after the founder
+    # flagged that an earlier emotional-awareness layer had been lost
+    # in a refactor. It loads near the end so the baseline personality
+    # and loyalty frames are established first, then tonal adaptation
+    # rules sit on top. Works in conjunction with the runtime
+    # EmotionalSignal overlay injected by chat_orchestrator.
+    "emotional_awareness.md",
 ]
+
+# Department name normalization. We accept any of: raw DB name ("Legal &
+# Compliance"), snake_case ("legal_compliance"), Title Case ("Engineering"),
+# or the Mind's given name ("Aria"). All resolve to a canonical slug which
+# maps to a file in backend/app/soul/departments/<slug>.md
+_DEPARTMENT_SLUG_ALIASES: dict[str, str] = {
+    # Engineering -- Aria
+    "engineering": "engineering",
+    "aria": "engineering",
+    "eng": "engineering",
+    # Product -- Nova
+    "product": "product",
+    "nova": "product",
+    # Marketing -- Zephyr
+    "marketing": "marketing",
+    "zephyr": "marketing",
+    # Sales -- Orion
+    "sales": "sales",
+    "orion": "sales",
+    # Finance -- Sterling
+    "finance": "finance",
+    "sterling": "finance",
+    # Operations -- Atlas
+    "operations": "operations",
+    "atlas": "operations",
+    "ops": "operations",
+    # Research -- Iris
+    "research": "research",
+    "iris": "research",
+    # Legal & Compliance -- Themis
+    "legal_compliance": "legal_compliance",
+    "legal & compliance": "legal_compliance",
+    "legal": "legal_compliance",
+    "compliance": "legal_compliance",
+    "themis": "legal_compliance",
+    # Skill Governance -- Kira
+    "skill_governance": "skill_governance",
+    "skill governance": "skill_governance",
+    "kira": "skill_governance",
+    # Security Operations -- Rourke
+    "security_operations": "security_operations",
+    "security operations": "security_operations",
+    "security": "security_operations",
+    "secops": "security_operations",
+    "rourke": "security_operations",
+}
 
 # ── Mode-specific addenda ────────────────────────────────────
 
@@ -127,20 +193,126 @@ def _load_soul_files() -> str:
     return combined
 
 
+def _normalize_department(name: str | None) -> str | None:
+    """Resolve a free-form department reference to a canonical slug.
+
+    Accepts DB names ("Legal & Compliance"), snake_case, Mind names
+    ("Aria"), or anything in the alias table. Returns None if the
+    input doesn't match any known department.
+    """
+    if not name:
+        return None
+    key = name.strip().lower()
+    # Direct alias hit
+    if key in _DEPARTMENT_SLUG_ALIASES:
+        return _DEPARTMENT_SLUG_ALIASES[key]
+    # Try normalized snake_case (spaces, hyphens, & -> _)
+    normalized = re.sub(r"[^a-z0-9]+", "_", key).strip("_")
+    if normalized in _DEPARTMENT_SLUG_ALIASES:
+        return _DEPARTMENT_SLUG_ALIASES[normalized]
+    return None
+
+
+def _parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
+    """Parse YAML-ish frontmatter from a soul file.
+
+    Returns (metadata_dict, body_text). Keeps the parser dependency-free
+    so the SoulEngine stays importable in minimal environments (tests,
+    scripts, migrations). Handles the shallow key/value + inline-list
+    shapes present in our soul files; anything deeper is returned as a
+    raw string for the metadata consumer to handle.
+    """
+    if not content.startswith("---"):
+        return {}, content
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        return {}, content
+    front, body = parts[1], parts[2].strip()
+    meta: dict[str, Any] = {}
+    for line in front.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        k, _, v = line.partition(":")
+        k = k.strip()
+        v = v.strip()
+        # Inline list: [a, b, c]
+        if v.startswith("[") and v.endswith("]"):
+            inner = v[1:-1].strip()
+            meta[k] = [x.strip().strip('"').strip("'") for x in inner.split(",") if x.strip()]
+        # Quoted string
+        elif (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+            meta[k] = v[1:-1]
+        # Bare scalar
+        else:
+            meta[k] = v
+    return meta, body
+
+
+@lru_cache(maxsize=32)
+def _load_department_soul(slug: str) -> tuple[dict[str, Any], str]:
+    """Load a single department soul file. Cached per slug.
+
+    Returns (metadata_dict, body_text). Returns ({}, "") if the file
+    is missing -- a missing department is a degradation, not a crash.
+    """
+    path = _DEPARTMENT_SOUL_PATH / f"{slug}.md"
+    if not path.exists():
+        logger.warning("soul_engine.dept_missing", slug=slug, path=str(path))
+        return {}, ""
+    content = path.read_text(encoding="utf-8")
+    meta, body = _parse_frontmatter(content)
+    logger.debug(
+        "soul_engine.dept_loaded",
+        slug=slug,
+        mind=meta.get("name"),
+        runtime=meta.get("runtime_preference"),
+        chars=len(body),
+    )
+    return meta, body
+
+
 class SoulEngine:
     """Loads Daena's soul from the vault and provides mode-aware prompts.
 
     Usage::
 
+        # Core soul only
         prompt = SoulEngine.get_soul_prompt("UNLEASHED")
+
+        # Core soul + department overlay (department Mind persona)
+        prompt = SoulEngine.get_soul_prompt("GOVERNED", department="engineering")
+
+        # Metadata (preferred runtime, voice, tools) for routing decisions
+        meta = SoulEngine.get_department_metadata("engineering")
+        # -> {"name": "Aria", "runtime_preference": "claude_code", ...}
     """
 
     @classmethod
-    def get_soul_prompt(cls, governance_mode: str = "GOVERNED") -> str:
-        """Return soul prompt adjusted for governance mode.
+    def get_soul_prompt(
+        cls,
+        governance_mode: str = "GOVERNED",
+        *,
+        department: str | None = None,
+    ) -> str:
+        """Return soul prompt adjusted for governance mode and department.
+
+        Composition order (priority for LLM attention):
+            1. Core soul files (foundation, reasoning, personality, loyalty,
+               shield, vp_mode) -- shared across all departments
+            2. Department overlay (when department is resolvable) -- gives the
+               Mind its name, voice, preferred runtime, reasoning patterns
+            3. Governance mode addendum (UNLEASHED / BALANCED / GOVERNED)
+
+        A missing department overlay degrades silently to core-soul-only;
+        this matches the Daena rule "never break existing passing tests."
 
         Args:
             governance_mode: UNLEASHED, BALANCED, or GOVERNED.
+            department: Optional department name, slug, or Mind name. See
+                ``_DEPARTMENT_SLUG_ALIASES`` for accepted forms.
 
         Returns:
             Complete soul prompt string ready for system prompt injection.
@@ -149,14 +321,64 @@ class SoulEngine:
         if not base:
             return ""
 
+        dept_section = ""
+        slug = _normalize_department(department)
+        if slug:
+            _meta, dept_body = _load_department_soul(slug)
+            if dept_body:
+                dept_section = (
+                    "\n\n---\n\n"
+                    "## DEPARTMENT MIND OVERLAY\n"
+                    "You are currently operating as the named Mind below. "
+                    "Your core soul above is unchanged -- this overlay shapes "
+                    "tone, expertise framing, and tool preferences.\n\n"
+                    + dept_body
+                )
+
+        addendum = _GOVERNED_ADDENDUM
         if governance_mode == "UNLEASHED":
-            return base + _UNLEASHED_ADDENDUM
-        if governance_mode == "BALANCED":
-            return base + _BALANCED_ADDENDUM
-        return base + _GOVERNED_ADDENDUM
+            addendum = _UNLEASHED_ADDENDUM
+        elif governance_mode == "BALANCED":
+            addendum = _BALANCED_ADDENDUM
+
+        return base + dept_section + addendum
+
+    @classmethod
+    def get_department_metadata(cls, department: str | None) -> dict[str, Any]:
+        """Return department soul metadata (preferred runtime, voice, tools).
+
+        Used by the model router to bias runtime selection when a session
+        is scoped to a department, and by the voice provider to pick the
+        right EdgeTTS neural voice per Mind.
+
+        Returns an empty dict when the department is unknown.
+        """
+        slug = _normalize_department(department)
+        if not slug:
+            return {}
+        meta, _ = _load_department_soul(slug)
+        return dict(meta)
+
+    @classmethod
+    def list_departments(cls) -> list[dict[str, Any]]:
+        """List all available Department Minds with their metadata.
+
+        Used by the UI to render the Minds gallery (avatar + name + tone)
+        and by the soul-maker service to iterate candidates for refinement.
+        """
+        out: list[dict[str, Any]] = []
+        if not _DEPARTMENT_SOUL_PATH.exists():
+            return out
+        for path in sorted(_DEPARTMENT_SOUL_PATH.glob("*.md")):
+            slug = path.stem
+            meta, _ = _load_department_soul(slug)
+            if meta:
+                out.append({"slug": slug, **meta})
+        return out
 
     @classmethod
     def reload(cls) -> None:
         """Clear the cache and reload soul files. Use after vault updates."""
         _load_soul_files.cache_clear()
+        _load_department_soul.cache_clear()
         logger.info("soul_engine.cache_cleared")

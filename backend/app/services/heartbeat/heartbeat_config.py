@@ -44,6 +44,7 @@ class CheckType(Enum):
     DEPARTMENT_WORKFLOWS = "department_workflows"  # Run scheduled department workflows
     AUTONOMOUS_WORK = "autonomous_work"  # AGI mode: pick up pending tasks and execute via SwarmPlanner
     OLLAMA_MODEL_UPDATES = "ollama_model_updates"  # Check and pull Ollama model updates
+    SOUL_REFINEMENT = "soul_refinement"  # Weekly: refine Department Mind souls against domain best-practices
     CUSTOM = "custom"  # User-defined check
 
 

@@ -19,6 +19,7 @@ from app.api.v1 import (
     billing,
     bridge,
     chat,
+    company_mode,
     connections,
     connector_oauth,
     daenabot,
@@ -51,6 +52,7 @@ from app.api.v1 import (
     settings,
     skill_refinery,
     skills,
+    souls,
     tts,
     voice_ws,
     waitlist,
@@ -77,6 +79,15 @@ router.include_router(department_messages.router, prefix="/department-messages",
 router.include_router(department_policies.router, prefix="/department-policies", tags=["department-policies"])
 router.include_router(skills.router, prefix="/skills", tags=["skills"])
 router.include_router(skill_refinery.router, prefix="/skills/refinery", tags=["skill-refinery"])
+# Department Minds (souls) -- persona overlays for the 10 departments +
+# founder-gated refinement pipeline (/souls list/get, /souls/{dept}/refine,
+# /souls/proposals/{id}/approve|reject). Mounted BEFORE /security so the
+# path tree matches the frontend router exactly.
+router.include_router(souls.router, tags=["souls"])
+# Company Mode -- founder activates Daena as an AI marketing+sales agency
+# from a brief (ICP / pain / promise / channels). Spawns Sales + Marketing
+# missions; outbound drafts land in approval queue unless auto_send is set.
+router.include_router(company_mode.router, prefix="/company-mode", tags=["company-mode"])
 router.include_router(connections.router, prefix="/connections", tags=["connections"])
 router.include_router(dynamic_models.router, prefix="/dynamic-models", tags=["dynamic-models"])
 router.include_router(settings.router, prefix="/settings", tags=["settings"])

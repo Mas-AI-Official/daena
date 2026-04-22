@@ -332,6 +332,38 @@ class HeartbeatDaemon:
                 status="ok",
                 summary="Skipped: requires AGI autopilot level",
             )
+        elif check_type == CheckType.SOUL_REFINEMENT:
+            # Weekly refinement of the 10 Department Minds against
+            # current domain best-practices. All produced proposals
+            # are PENDING -- founder approves each one via the
+            # /souls/proposals/{id}/approve endpoint. No live file is
+            # touched autonomously. Cheapest cadence is weekly; this
+            # check is disabled by default and must be enabled from
+            # the Heartbeat config UI after the founder has reviewed
+            # the Soul Maker token budget.
+            try:
+                from app.services.soul_maker.refinement import refine_all_departments
+
+                results = await refine_all_departments(use_research=True)
+                approved = sum(1 for r in results if r.verdict == "APPROVE")
+                needs_work = sum(1 for r in results if r.verdict == "NEEDS_WORK")
+                errors = sum(1 for r in results if r.verdict in {"ABORT", "REJECT"})
+                total = len(results)
+                return HeartbeatCheckResult(
+                    check_type="soul_refinement",
+                    status="ok" if errors == 0 else "warning",
+                    summary=(
+                        f"Refined {total} Minds -- "
+                        f"{approved} APPROVE, {needs_work} NEEDS_WORK, {errors} error/reject. "
+                        "Pending proposals await founder review at /souls/proposals."
+                    ),
+                )
+            except Exception as exc:
+                return HeartbeatCheckResult(
+                    check_type="soul_refinement",
+                    status="error",
+                    summary=f"soul_refinement_failed: {exc}",
+                )
         else:
             return HeartbeatCheckResult(
                 check_type=check_type.value,

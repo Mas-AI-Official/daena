@@ -534,23 +534,39 @@ class ChatOrchestrator:
         except Exception:
             logger.debug("orchestrator.primary_mind_lookup_failed", exc_info=True)
 
-        # Build system prompt -- soul first (highest LLM attention priority)
+        # Build system prompt -- soul first (highest LLM attention priority).
+        # Order of operations matters: we must resolve ``dept_name`` FIRST so
+        # the SoulEngine can compose the department Mind overlay (Aria /
+        # Rourke / Nova / ...) on top of the core soul. Before 2026-04-22 the
+        # department path CLOBBERED the soul prompt with a bare template,
+        # losing loyalty / shield / vp_mode context. The new composition:
+        #   [core soul] + [department Mind overlay] + [governance addendum]
+        #   + [_SYSTEM_PROMPT_DEFAULT] (operational rules)
+        # keeps every layer intact.
         from app.services.soul_engine import SoulEngine
 
-        _soul_prefix = SoulEngine.get_soul_prompt(governance_mode.value)
-        system_prompt = (
-            (_soul_prefix + "\n\n") if _soul_prefix else ""
-        ) + _SYSTEM_PROMPT_DEFAULT
         # Hoisted default so later stages (CKG insights, peer-signal
-        # injection) can reference `dept_name` without triggering
+        # injection) can reference ``dept_name`` without triggering
         # UnboundLocalError when the session isn't pinned to a
         # department (e.g. the Daena chat).
         dept_name: str | None = None
         if session_obj.department_id:
             with contextlib.suppress(Exception):
                 dept_name = session_obj.department.name if session_obj.department else None
-            if dept_name:
-                system_prompt = _SYSTEM_PROMPT_DEPARTMENT.format(dept=dept_name)
+
+        _soul_prefix = SoulEngine.get_soul_prompt(
+            governance_mode.value,
+            department=dept_name,
+        )
+        system_prompt = (
+            (_soul_prefix + "\n\n") if _soul_prefix else ""
+        ) + _SYSTEM_PROMPT_DEFAULT
+        # Emotional-awareness overlay (per-turn, volatile). Always
+        # appended AFTER the soul + default rules so the turn-specific
+        # tonal read wins on attention. When disabled or no signal was
+        # produced, ``emotional_overlay`` is empty and this is a no-op.
+        if emotional_overlay:
+            system_prompt += "\n\n" + emotional_overlay
 
         # CMD/EXE mode differentiation
         if chat_mode == ChatMode.CMD:
@@ -704,6 +720,42 @@ class ChatOrchestrator:
             risk=qu_result.risk_level.value,
             confidence=qu_result.confidence,
         )
+
+        # ── Stage 2.3: Emotional Awareness ───────────────────
+        # Read the user's tone so the system prompt overlay can steer
+        # register (warmth, urgency, formality). Heuristic pass is
+        # zero-cost; LLM refinement only fires when confidence is low.
+        # A setting kill-switch (``emotional_awareness_enabled``) keeps
+        # the orchestrator on the flat-voice path if the deployment
+        # wants deterministic tone. Restored 2026-04-22 after the
+        # founder flagged it had been lost in a prior refactor.
+        emotional_signal: dict[str, Any] | None = None
+        emotional_overlay: str = ""
+        try:
+            from app.core.config import get_settings as _get_settings_emo
+            _settings_for_emo = _get_settings_emo()
+        except Exception:
+            _settings_for_emo = None
+        if getattr(_settings_for_emo, "emotional_awareness_enabled", True):
+            try:
+                from app.services.emotional_intelligence import (
+                    analyze_message,
+                    build_tone_overlay,
+                )
+
+                _emo = await analyze_message(user_content, history=history)
+                emotional_signal = _emo.to_dict()
+                emotional_overlay = build_tone_overlay(_emo)
+                logger.info(
+                    "orchestrator.emotional_signal",
+                    emotion=_emo.primary_emotion.value,
+                    valence=round(_emo.valence, 2),
+                    urgency=round(_emo.urgency, 2),
+                    confidence=round(_emo.confidence, 2),
+                    source=_emo.source,
+                )
+            except Exception as exc:
+                logger.debug("orchestrator.emotional_skipped", error=str(exc))
 
         # ── Stage 2.5: Intent Amplification ──────────────────
         # Decodes vague requests into power-user intent and selects

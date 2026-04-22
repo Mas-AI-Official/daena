@@ -243,6 +243,13 @@ class Settings(BaseSettings):
     ollama_enabled: bool = False
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_default_model: str = "llama3.1:8b"
+    # Emotional awareness layer. Heuristic pass is always on (zero-cost).
+    # The LLM refinement pass runs only when heuristic confidence falls
+    # below the threshold in emotional_intelligence.analyze_message.
+    # Set EMOTIONAL_AWARENESS_LLM=false in .env to force heuristic-only
+    # on low-budget deployments.
+    emotional_awareness_enabled: bool = True
+    emotional_awareness_llm: bool = True
     perplexity_api_key: str = ""
     anthropic_api_key: str = ""
     openai_api_key: str = ""
