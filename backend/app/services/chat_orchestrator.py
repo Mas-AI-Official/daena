@@ -476,7 +476,18 @@ class ChatOrchestrator:
             selectable_count = 0
             if self._registry:
                 try:
-                    snapshot = self._registry.snapshot(force_refresh=True)
+                    # Before 2026-04-22: snapshot() is an async def, so
+                    # missing ``await`` returned a coroutine object.
+                    # ``.get("summary", {})`` on a coroutine throws
+                    # AttributeError -> caught by the bare except below
+                    # -> selectable_count stayed 0 -> every Council /
+                    # Quintessence request silently downgraded to
+                    # STANDARD. Visible symptom: the "VP mode on" turn
+                    # still routed to codex-cli STANDARD even though
+                    # QE was requested. RuntimeWarning:
+                    # "coroutine 'ModelRegistry.snapshot' was never
+                    # awaited" was the only breadcrumb in logs.
+                    snapshot = await self._registry.snapshot(force_refresh=True)
                     summary = snapshot.get("summary", {})
                     raw_count = summary.get("selectable_model_count", 0)
                     selectable_count = int(raw_count) if isinstance(raw_count, (int, float)) else 0
