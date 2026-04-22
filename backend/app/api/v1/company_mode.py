@@ -180,8 +180,13 @@ def _seed_path() -> Path:
     never commit.
     """
     here = Path(__file__).resolve()
-    # backend/app/api/v1/company_mode.py -> backend/app/soul/company_seed.md
-    return here.parents[3] / "soul" / "company_seed.md"
+    # Parent chain: v1 (0) -> api (1) -> app (2) -> backend (3).
+    # We want backend/app/soul/, so parents[2] is the correct index.
+    # parents[3] was a P0 bug: it resolved to backend/soul/ which is NOT
+    # covered by .gitignore line 15 (`backend/app/soul/`), so a real
+    # founder brief saved from the UI would leak to public git on the
+    # next `git add -A`.
+    return here.parents[2] / "soul" / "company_seed.md"
 
 
 def _load_seed() -> tuple[ActivateRequest | None, datetime | None]:

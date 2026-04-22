@@ -35,7 +35,12 @@ logger = get_logger(__name__)
 
 # Outbox lives under backend/var/outbox. ``var/`` is already gitignored
 # at the repo root so the .eml artifacts never land in source control.
-_OUTBOX_DIR = Path(__file__).resolve().parents[3] / "var" / "outbox"
+# Parent chain: services (0) -> app (1) -> backend (2) -> Daena-repo (3).
+# We want backend/var/outbox, so parents[2] is the correct index. Using
+# parents[3] (bug) lands at Daena/var/outbox at the repo root. Both
+# locations are covered by gitignore line 81 (``var/``), but the outbox
+# belongs under the backend runtime dir -- mirror the seed-brief fix.
+_OUTBOX_DIR = Path(__file__).resolve().parents[2] / "var" / "outbox"
 
 
 class SendOutcome(TypedDict):
