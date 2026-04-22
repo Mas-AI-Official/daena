@@ -23,6 +23,8 @@ import {
   User,
   Settings,
   LogOut,
+  Sparkles,
+  Rocket,
 } from 'lucide-react'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -60,7 +62,22 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Security Scan', path: '/scan', icon: <Crosshair size={18} /> },
       { label: 'Departments', path: '/departments', icon: <Brain size={18} /> },
+      // Minds = per-department soul personas. Cards open the live soul
+      // body + founder-gated refinement loop. Lives next to Departments
+      // because they're two lenses on the same 10-unit model.
+      { label: 'Minds', path: '/minds', icon: <Sparkles size={18} /> },
       { label: 'Skills', path: '/skills', icon: <Zap size={18} /> },
+    ],
+  },
+  {
+    title: 'Go-to-market',
+    color: 'text-status-success',
+    items: [
+      // Company Mode = one-click activation of Daena as an AI
+      // marketing+sales agency. Founder-gated on the backend; the page
+      // self-blocks non-FOUNDER roles with an empty state instead of
+      // hiding the link so operators know the capability exists.
+      { label: 'Company Mode', path: '/company-mode', icon: <Rocket size={18} /> },
     ],
   },
   {

@@ -31,6 +31,11 @@ const PoliciesPage = lazy(() => import('@/pages/PoliciesPage'))
 const GovernanceApprovalsPage = lazy(() => import('@/pages/GovernanceApprovalsPage'))
 const GovernanceAuditPage = lazy(() => import('@/pages/GovernanceAuditPage'))
 const DepartmentsPage = lazy(() => import('@/pages/DepartmentsPage'))
+// Department Minds (soul personas) + Company Mode activation -- shipped
+// with the TICKET-DEPT-MINDS-01 stack. Consumes /souls + /company-mode.
+const MindsPage = lazy(() => import('@/pages/MindsPage'))
+const MindDetailPage = lazy(() => import('@/pages/MindDetailPage'))
+const CompanyModePage = lazy(() => import('@/pages/CompanyModePage'))
 const TasksPage = lazy(() => import('@/pages/TasksPage'))
 const SkillsPage = lazy(() => import('@/pages/SkillsPage'))
 const DaenaBotPage = lazy(() => import('@/pages/DaenaBotPage'))
@@ -126,6 +131,9 @@ function AppRoutes() {
                   <Route path="/departments/:departmentId" element={<DepartmentChatPage />} />
                   <Route path="/departments/:departmentId/chat" element={<DepartmentChatPage />} />
                   <Route path="/departments/:departmentId/chat/:sessionId" element={<DepartmentChatPage />} />
+                  <Route path="/minds" element={<MindsPage />} />
+                  <Route path="/minds/:slug" element={<MindDetailPage />} />
+                  <Route path="/company-mode" element={<CompanyModePage />} />
                   <Route path="/skills" element={<SkillsPage />} />
 
                   {/* Execution */}

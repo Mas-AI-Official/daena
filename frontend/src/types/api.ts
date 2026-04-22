@@ -589,3 +589,113 @@ export interface WsMessage {
   session_id?: string
   message?: string
 }
+
+// ── Department Minds (Souls) ──
+// Mirrors backend/app/api/v1/souls.py response_models.
+
+export interface SoulSummary {
+  slug: string
+  name?: string | null
+  department?: string | null
+  runtime_preference?: string | null
+  voice?: string | null
+  accent_color?: string | null
+  temperature?: number | null
+}
+
+export interface SoulDetail extends SoulSummary {
+  body: string
+  fallback_runtimes: string[]
+  tools_enabled: string[]
+  version?: string | null
+}
+
+export interface SoulRefineVerdict {
+  slug: string
+  verdict: string
+  confidence: number
+  error?: string | null
+  gap_count?: number
+  evidence_sources?: number
+  improvement_notes?: string[]
+}
+
+export interface SoulProposal {
+  proposal_id: string
+  department_slug: string
+  status: 'pending' | 'approved' | 'rejected'
+  created_at: string
+  decided_at?: string | null
+  decided_by?: string | null
+  notes?: string | null
+  verdict?: string
+  confidence?: number
+  current_body?: string
+  proposed_body?: string
+  improvement_notes?: string[]
+  gap_report?: Record<string, unknown>
+  evidence_sources?: string[]
+}
+
+// ── Company Mode (GTM activation) ──
+// Mirrors backend/app/api/v1/company_mode.py ActivateRequest + ActivationResult.
+
+export type MissionChannel = 'linkedin' | 'email' | 'twitter_dm' | 'sms' | 'web_form' | 'phone'
+
+export interface ActivateRequest {
+  company_name: string
+  company_one_liner: string
+  target_customer: string
+  customer_pain: string
+  our_promise: string
+  proof_points: string[]
+  channels: MissionChannel[]
+  prospect_limit_per_mission: number
+  tone: string
+  auto_send: boolean
+  require_founder_approval: boolean
+  notes?: string | null
+}
+
+export type MissionStatus = 'drafting' | 'awaiting_approval' | 'sending' | 'sent' | 'failed'
+
+export interface ActivationMission {
+  id: string
+  department: string
+  mind: string
+  channel: MissionChannel
+  objective: string
+  status: MissionStatus | string
+  prospects_found: number
+  drafts_generated: number
+  drafts_awaiting_approval: number
+  errors: string[]
+}
+
+export interface ActivationBriefEcho {
+  company_name: string
+  target_customer: string
+  channels: MissionChannel[]
+  auto_send: boolean
+}
+
+export interface ActivationResult {
+  activation_id: string
+  created_at: string
+  brief: ActivationBriefEcho
+  missions: ActivationMission[]
+  summary: string
+  prospects_count: number
+  drafts_preview: Record<string, unknown>[]
+  next_steps: string[]
+  governance_warning?: string | null
+}
+
+export interface ActivationHistoryEntry {
+  activation_id: string
+  created_at: string
+  company_name: string
+  prospects: number
+  drafts: number
+  summary: string
+}
