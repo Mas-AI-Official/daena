@@ -123,8 +123,65 @@ class Settings(BaseSettings):
     daena_vp_enabled: bool = True
 
     # --- Database ---
+    #
+    # Default is a relative-path SQLite URL. The validator below anchors
+    # any relative sqlite path to the backend package root so the DB
+    # file opens the same way regardless of which cwd uvicorn / pytest /
+    # preview_start happened to launch from. Works on Windows dev, WSL,
+    # Linux servers, and Docker.
+    #
+    # Non-SQLite URLs (postgres, mysql, etc.) pass through untouched.
     database_url: str = "sqlite+aiosqlite:///./daena_dev2.db"
     database_echo: bool = False
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def resolve_sqlite_relative_path(cls, v: str) -> str:
+        """Anchor a relative sqlite path to the backend root.
+
+        Accepted URL shapes (all SQLAlchemy SQLite dialects):
+            sqlite:///./foo.db
+            sqlite+aiosqlite:///./foo.db
+            sqlite+pysqlite:///foo.db        (already relative-to-cwd)
+            sqlite+aiosqlite:////abs/path.db (4 slashes = absolute; leave alone)
+
+        Absolute paths (Windows drive letters, POSIX rooted paths) and
+        in-memory URLs (``:memory:``) are returned verbatim. Only the
+        ``sqlite:///./...`` / ``sqlite:///filename.db`` case gets
+        re-anchored -- the rest are explicit user choices we don't
+        second-guess.
+        """
+        if not v.startswith("sqlite"):
+            return v
+        # Split once on "://" to keep any custom driver (aiosqlite/pysqlite).
+        try:
+            scheme, path = v.split("://", 1)
+        except ValueError:
+            return v
+        if not path or ":memory:" in path:
+            return v
+
+        # SQLAlchemy convention: the leading slash(es) encode how many
+        # path components follow. Four-slash form is absolute POSIX.
+        # Anything that looks like a Windows absolute path (``C:/...``,
+        # ``D:\...``) we also leave alone.
+        raw = path.lstrip("/")
+        if not raw:
+            return v
+        # Windows drive letter check (``C:``, ``D:`` etc.)
+        if len(raw) >= 2 and raw[1] == ":":
+            return v
+        # POSIX absolute -- original was sqlite:////abs/path (4 slashes)
+        if path.startswith("////") or path.startswith("/") and path.count("/") > 3:
+            return v
+        # ./relative or relative/path.db -- anchor to backend root.
+        candidate = Path(raw.lstrip("./"))
+        if candidate.is_absolute():
+            return v
+        resolved = (_BACKEND_ROOT / candidate).resolve()
+        # Ensure the parent directory exists so aiosqlite can open it.
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        return f"{scheme}:///{resolved.as_posix()}"
 
     # --- Server ---
     host: str = "127.0.0.1"  # Bind to loopback ONLY. Never 0.0.0.0 in dev.
