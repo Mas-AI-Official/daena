@@ -8,7 +8,6 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Keyboard, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { usePageTitle } from '@/hooks/usePageTitle'
-import { FounderModeBanner } from '@/components/chat/FounderModeBanner'
 import { useChatStore } from '@/stores/chatStore'
 import { useModelRegistryStore } from '@/stores/modelRegistryStore'
 import { useUiStore } from '@/stores/uiStore'
@@ -323,10 +322,12 @@ export function ChatPage() {
 
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Founder elevated-mode banner (only renders for FOUNDER
-            with active elevated mode; dismissible; auto-resurfaces
-            on the next activation). */}
-        <FounderModeBanner />
+        {/* FounderModeBanner removed 2026-04-22: the gold lightning
+            icon in the header is the only signal we keep for elevated
+            mode. The banner was redundant (same fact shown twice) and
+            it covered the first row of chat content. Component file
+            kept in /components/chat for possible reuse, just not
+            rendered here. */}
         {/* Autopilot banner -- minimal */}
         {autopilotActive && !autopilotBannerDismissed && (
           <div className="shrink-0 pl-14 pr-6 py-1.5 bg-status-success/[0.03] flex items-center justify-between gap-4">
