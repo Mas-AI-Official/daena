@@ -14,6 +14,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
+import json
 import httpx
 
 from app.core.config import get_settings
@@ -256,11 +257,33 @@ class VLLMProvider(BaseProvider):
                         token_index += 1
 
     async def health_check(self) -> HealthStatus:
-        """Ping vLLM server and check for available models."""
+        """Ping vLLM server and check for available models.
+
+        Hardened 2026-04-22: when something OTHER than llama-server /
+        vLLM is holding the configured port (common in WSL: port 8080
+        often maps to the Windows-side landing page), resp.json() used
+        to raise JSONDecodeError -- crashed the health refresh and
+        spammed logs. Now we verify content-type + catch JSON errors
+        before propagating.
+        """
         try:
             resp = await self._client.get("/models", timeout=5.0)
             if resp.status_code == 200:
-                data = resp.json()
+                ctype = resp.headers.get("content-type", "").lower()
+                if "application/json" not in ctype:
+                    logger.warning(
+                        "vllm_non_json_response",
+                        base_url=self._base_url,
+                        content_type=ctype,
+                        hint="Port may be held by a non-LLM service.",
+                    )
+                    self._healthy = HealthStatus.UNAVAILABLE
+                    return self._healthy
+                try:
+                    data = resp.json()
+                except (json.JSONDecodeError, ValueError):
+                    self._healthy = HealthStatus.UNAVAILABLE
+                    return self._healthy
                 models = data.get("data", [])
                 if models:
                     self._healthy = HealthStatus.HEALTHY
@@ -277,12 +300,24 @@ class VLLMProvider(BaseProvider):
         return self._healthy
 
     async def list_models(self) -> list[ModelInfo]:
-        """Query vLLM for currently loaded models via /v1/models."""
+        """Query vLLM for currently loaded models via /v1/models.
+
+        Same hardening as health_check: graceful empty-list when the
+        port is held by a non-LLM service returning HTML.
+        """
         try:
             resp = await self._client.get("/models", timeout=10.0)
             resp.raise_for_status()
+            ctype = resp.headers.get("content-type", "").lower()
+            if "application/json" not in ctype:
+                logger.warning(
+                    "vllm_list_models_non_json",
+                    base_url=self._base_url,
+                    content_type=ctype,
+                )
+                return []
             data = resp.json()
-        except (httpx.HTTPError, httpx.ConnectError):
+        except (httpx.HTTPError, httpx.ConnectError, json.JSONDecodeError, ValueError):
             logger.warning("vllm_list_models_failed", base_url=self._base_url)
             return []
 

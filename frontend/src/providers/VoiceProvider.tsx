@@ -472,19 +472,32 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       const store = useChatStore.getState()
       // Prefix once so the LLM knows to keep it short.
       const prompted = VOICE_PROMPT_PREFIX + text
-      // Route voice turns through Gemma-4-E4B: ~3 GB VRAM, 55-70 tok/s,
-      // trained for conversational output -- the Goldilocks pick for
-      // RTX 4060 Laptop assistant usage. The router + llama-server
-      // auto-swap manager handle the hot-swap; the user sees lower
-      // latency and more natural phrasing than the default Qwen path.
-      const voiceModel = 'gemma'
+      // DO NOT pin preferredModel for voice turns.
+      //
+      // Previous attempt pinned 'gemma' so the local llama-server
+      // auto-swap manager would hot-load Gemma-4-E4B. Problem: when
+      // llama-server is down / the port is held by another service /
+      // the user has no local runtime at all, the router couldn't
+      // find a candidate named 'gemma' and the whole chat stream
+      // returned 500. Voice messages then dropped silently.
+      //
+      // Letting the router decide (preferredModel=null) uses the
+      // healthy-model-aware scorer + power_mode cloud bias. On hosts
+      // with llama-server up, Gemma still wins via locality/tag.
+      // On hosts without it, routing falls through to cloud (Claude/
+      // Codex/Gemini CLI) and voice continues to work.
       if (store.activeSessionId) {
-        await store.sendMessageStream(prompted, voiceModel)
+        await store.sendMessageStream(prompted, null)
       } else {
-        await store.sendMessageStream(prompted, voiceModel, {
+        // Enum contracts (verified against backend schemas):
+        //   mode:        CMD | EXE                              (action mode)
+        //   routingMode: STANDARD | COUNCIL | QUINTESSENCE      (reasoning)
+        // Earlier attempt sent 'STANDARD' and 'AUTO' which failed
+        // backend pattern validation with 422, voice messages dropped.
+        await store.sendMessageStream(prompted, null, {
           createSession: {
-            mode: 'STANDARD',
-            routingMode: 'AUTO',
+            mode: 'CMD',
+            routingMode: 'STANDARD',
             autopilot: false,
             thinkMode: false,
           },
