@@ -22,7 +22,6 @@ import { useCallback, useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Shield,
-  ShieldCheck,
   Crosshair,
   Play,
   Download,
@@ -38,14 +37,15 @@ import {
   Eye,
   Layers,
   DollarSign,
-  BarChart3,
-  RefreshCw,
   Activity,
+  Trash2,
+  ExternalLink,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
-import { Card, Badge, EmptyState } from '@/components/common'
+import { Card, EmptyState, Badge } from '@/components/common'
 import { api } from '@/lib/api'
 import { useSecurityModeStore } from '@/stores/securityModeStore'
+import { confirmDialog } from '@/stores/confirmStore'
 
 // ── Types ──
 
@@ -315,16 +315,18 @@ export function ScanPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Load scan history on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await api.get('/security/scans', { params: { limit: 20 } })
-        if (Array.isArray(data)) setHistory(data)
-      } catch {
-        // Silent -- history is optional
-      }
-    })()
+  const refreshHistory = useCallback(async () => {
+    try {
+      const { data } = await api.get('/security/scans', { params: { limit: 20 } })
+      if (Array.isArray(data)) setHistory(data)
+    } catch {
+      // Silent -- history is optional
+    }
   }, [])
+
+  useEffect(() => {
+    refreshHistory()
+  }, [refreshHistory])
 
   // Poll active jobs
   const pollJobs = useCallback(async () => {
@@ -416,6 +418,62 @@ export function ScanPage() {
     } catch {
       setError('Failed to download PDF')
     }
+  }
+
+  // Archive a single scan (CLAUDE.md rule 2: archive by default).
+  const archiveScan = async (jobId: string) => {
+    const confirmed = await confirmDialog({
+      title: 'Archive this scan?',
+      message: (
+        'The scan trace and report will be moved to the archive folder. ' +
+        'They are removed from the active list but recoverable from ' +
+        'var/security_reports/.archive/.'
+      ),
+      confirmLabel: 'Archive',
+      cancelLabel: 'Cancel',
+      variant: 'warning',
+    })
+    if (!confirmed) return
+    try {
+      await api.delete(`/security/scans/${jobId}`)
+      setActiveJobs(prev => prev.filter(j => j.job_id !== jobId))
+      setHistory(prev => prev.filter(h => (h.scan_id || h.id) !== jobId))
+      if (selectedJob?.job_id === jobId) {
+        setSelectedJob(null)
+        setReport(null)
+      }
+    } catch {
+      setError(`Failed to archive scan ${jobId}`)
+    }
+  }
+
+  // Archive everything in history.
+  const archiveAll = async () => {
+    const confirmed = await confirmDialog({
+      title: 'Archive all scans?',
+      message: (
+        `This archives ${history.length} scan(s). Trace + report JSON ` +
+        'files move to var/security_reports/.archive/. Active scans ' +
+        'in progress are not affected.'
+      ),
+      confirmLabel: `Archive ${history.length}`,
+      cancelLabel: 'Cancel',
+      variant: 'warning',
+    })
+    if (!confirmed) return
+    try {
+      await api.delete('/security/scans')
+      setHistory([])
+      setReport(null)
+      setSelectedJob(null)
+    } catch {
+      setError('Failed to archive scans')
+    }
+  }
+
+  // Open the Manus-style walkthrough window for a given scan.
+  const openWalkthrough = (jobId: string) => {
+    window.open(`/scan/walkthrough/${jobId}`, '_blank', 'noopener,noreferrer')
   }
 
   return (
@@ -568,9 +626,23 @@ export function ScanPage() {
                         <button
                           onClick={() => downloadPdf(job.job_id)}
                           className="p-1.5 rounded-lg hover:bg-white/5 text-starlight-400 hover:text-accent-amber transition-colors cursor-pointer"
-                          title="Download PDF"
+                          title="Download report"
                         >
                           <Download size={14} />
+                        </button>
+                        <button
+                          onClick={() => openWalkthrough(job.job_id)}
+                          className="p-1.5 rounded-lg hover:bg-white/5 text-starlight-400 hover:text-accent-cyan transition-colors cursor-pointer"
+                          title="Open live walkthrough window"
+                        >
+                          <ExternalLink size={14} />
+                        </button>
+                        <button
+                          onClick={() => archiveScan(job.job_id)}
+                          className="p-1.5 rounded-lg hover:bg-white/5 text-starlight-400 hover:text-status-error transition-colors cursor-pointer"
+                          title="Archive scan"
+                        >
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     )}
@@ -804,34 +876,85 @@ export function ScanPage() {
       {/* Scan History */}
       {history.length > 0 && (
         <div className="space-y-3">
-          <h2 className="text-sm font-medium text-starlight-300 flex items-center gap-2">
-            <Clock size={14} className="text-starlight-400" />
-            Recent Scans
-          </h2>
-          <div className="space-y-2">
-            {history.map((trace: any) => (
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-starlight-300 flex items-center gap-2">
+              <Clock size={14} className="text-starlight-400" />
+              Recent Scans
+              <span className="text-[10px] text-starlight-500 ml-1">({history.length})</span>
+            </h2>
+            <div className="flex items-center gap-2">
               <button
-                key={trace.scan_id || trace.id}
-                onClick={() => trace.scan_id && loadReport(trace.scan_id)}
-                className="w-full text-left bg-midnight-200/40 border border-white/5 rounded-xl p-3 hover:border-white/15 transition-colors"
+                onClick={refreshHistory}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-starlight-400 hover:text-starlight-200 hover:bg-white/5 transition-colors cursor-pointer"
+                title="Refresh"
               >
-                <div className="flex items-center justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-starlight-200 truncate font-mono">{trace.target || 'unknown target'}</p>
-                    <p className="text-[10px] text-starlight-500 mt-0.5">
-                      {trace.tier || 'SCOUT'} · {trace.finding_count ?? 0} findings · {trace.timestamp || trace.created_at || ''}
-                    </p>
-                  </div>
-                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
-                    trace.status === 'complete' ? 'bg-status-success/10 text-status-success' :
-                    trace.status === 'failed' ? 'bg-status-error/10 text-status-error' :
-                    'bg-starlight-500/10 text-starlight-400'
-                  }`}>
-                    {trace.status || 'complete'}
-                  </span>
-                </div>
+                <RefreshCw size={12} />
               </button>
-            ))}
+              <button
+                onClick={archiveAll}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-status-error/80 hover:text-status-error hover:bg-status-error/10 transition-colors cursor-pointer"
+                title="Archive all scans"
+              >
+                <Trash2 size={12} />
+                Archive all
+              </button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {history.map((trace: any) => {
+              const sid = trace.scan_id || trace.id
+              const findings = trace.finding_count ?? trace.total_findings ?? 0
+              const toolsUsed: string[] = Array.isArray(trace.tools_used) ? trace.tools_used : []
+              return (
+                <div
+                  key={sid}
+                  className="bg-midnight-200/40 border border-white/5 rounded-xl p-3 hover:border-white/15 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      onClick={() => sid && loadReport(sid)}
+                      className="min-w-0 flex-1 text-left cursor-pointer"
+                    >
+                      <p className="text-sm text-starlight-200 truncate font-mono">{trace.target || 'unknown target'}</p>
+                      <p className="text-[10px] text-starlight-500 mt-0.5">
+                        {trace.tier || 'SCOUT'} · {findings} findings
+                        {toolsUsed.length > 0 && <> · {toolsUsed.slice(0, 3).join(', ')}</>}
+                      </p>
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                        trace.status === 'complete' ? 'bg-status-success/10 text-status-success' :
+                        trace.status === 'failed' ? 'bg-status-error/10 text-status-error' :
+                        'bg-starlight-500/10 text-starlight-400'
+                      }`}>
+                        {trace.status || 'complete'}
+                      </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openWalkthrough(sid) }}
+                        className="p-1.5 rounded-lg hover:bg-white/5 text-starlight-500 hover:text-accent-cyan transition-colors cursor-pointer"
+                        title="Open live walkthrough"
+                      >
+                        <ExternalLink size={13} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); downloadPdf(sid) }}
+                        className="p-1.5 rounded-lg hover:bg-white/5 text-starlight-500 hover:text-accent-amber transition-colors cursor-pointer"
+                        title="Download report"
+                      >
+                        <Download size={13} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); archiveScan(sid) }}
+                        className="p-1.5 rounded-lg hover:bg-white/5 text-starlight-500 hover:text-status-error transition-colors cursor-pointer"
+                        title="Archive scan"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

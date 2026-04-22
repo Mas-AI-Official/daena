@@ -28,6 +28,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.logging import get_logger
+from app.services.security.real_scanner import scan_target as _real_scan_target
 from app.services.security.report_tiers import (
     ReportTier,
     ReportTierEngine,
@@ -427,6 +428,10 @@ class ScanWorkflow:
     async def get_scan_report(self, job_id: str) -> ScanReport:
         """Get the completed report for a scan.
 
+        Looks in the in-memory cache first; on miss, falls back to
+        ``var/security_reports/{job_id}.json`` so View/Download work
+        for scans from previous process lifetimes.
+
         Args:
             job_id: The scan job ID.
 
@@ -434,26 +439,102 @@ class ScanWorkflow:
             ScanReport with findings, PDF path, and cost.
 
         Raises:
-            KeyError: If job_id not found.
-            ValueError: If scan is not yet complete.
+            KeyError: If job_id not found in memory or on disk.
+            ValueError: If scan is not yet complete (in-memory case only).
         """
         job = self._jobs.get(job_id)
-        if not job:
-            raise KeyError(f"Scan job {job_id} not found")
+        if job:
+            if job.status == ScanJobStatus.FAILED:
+                raise ValueError(f"Scan {job_id} failed: {job.error}")
+            if job.status != ScanJobStatus.COMPLETE:
+                raise ValueError(
+                    f"Scan {job_id} is still in progress (status: {job.status.value})"
+                )
 
-        if job.status == ScanJobStatus.FAILED:
-            raise ValueError(f"Scan {job_id} failed: {job.error}")
-
-        if job.status != ScanJobStatus.COMPLETE:
-            raise ValueError(
-                f"Scan {job_id} is still in progress (status: {job.status.value})"
-            )
-
+        # Cache hit
         report = self._reports.get(job_id)
-        if not report:
-            raise KeyError(f"Report for job {job_id} not found")
+        if report:
+            return report
 
-        return report
+        # Disk fallback: historic scans from a prior process lifetime.
+        disk = self._load_report_from_disk(job_id)
+        if disk is not None:
+            # Cache it so repeated View/Download calls don't re-hit disk.
+            self._reports[job_id] = disk
+            return disk
+
+        raise KeyError(f"Report for job {job_id} not found")
+
+    # -- Disk persistence helpers --
+
+    def _report_disk_path(self, job_id: str) -> str:
+        base = os.environ.get(
+            "SECURITY_REPORTS_DIR", os.path.join("var", "security_reports"),
+        )
+        return os.path.join(base, f"{job_id}.json")
+
+    def _persist_report(self, job: ScanJob, report: ScanReport) -> None:
+        """Write ``{SECURITY_REPORTS_DIR}/{job_id}.json`` so the report
+        survives restart. Shape mirrors the API response plus enough job
+        metadata to reconstruct the ScanReport dataclass on load.
+        """
+        path = self._report_disk_path(job.id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        payload = {
+            "job_id": report.job_id,
+            "tier": report.tier.value,
+            "target": job.target,
+            "findings": report.findings,
+            "summary": report.summary,
+            "report_pdf_path": report.report_pdf_path,
+            "cost_usd": report.cost_usd,
+            "duration_secs": report.duration_secs,
+            "pipeline_stages_used": report.pipeline_stages_used,
+            "recommendations": report.recommendations,
+            "severity_counts": report.severity_counts,
+            "files_scanned": job.files_scanned,
+            "tools_used": job.options.get("tools_used", []),
+            "tools_missing": job.options.get("tools_missing", []),
+            "target_kind": job.options.get("target_kind", ""),
+            "scanner_notes": job.options.get("scanner_notes", ""),
+            "created_at": job.created_at,
+            "completed_at": time.time(),
+        }
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, path)
+        logger.info("scan_workflow.persisted", job_id=job.id, path=path)
+
+    def _load_report_from_disk(self, job_id: str) -> ScanReport | None:
+        """Reconstruct a ScanReport from a persisted JSON file, or None
+        if the file does not exist.
+        """
+        path = self._report_disk_path(job_id)
+        if not os.path.isfile(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("scan_workflow.load_failed", job_id=job_id, error=str(exc))
+            return None
+        try:
+            tier = ReportTier(data.get("tier", "SCOUT").upper())
+        except ValueError:
+            tier = ReportTier.SCOUT
+        return ScanReport(
+            job_id=data.get("job_id", job_id),
+            tier=tier,
+            findings=data.get("findings", []) or [],
+            summary=data.get("summary", ""),
+            report_pdf_path=data.get("report_pdf_path", ""),
+            cost_usd=float(data.get("cost_usd", 0.0) or 0.0),
+            duration_secs=float(data.get("duration_secs", 0.0) or 0.0),
+            pipeline_stages_used=data.get("pipeline_stages_used", []) or [],
+            recommendations=data.get("recommendations", []) or [],
+            severity_counts=data.get("severity_counts", {}) or {},
+        )
 
     # -- Internal pipeline execution --
 
@@ -553,37 +634,52 @@ class ScanWorkflow:
                         error=str(sc_exc),
                     )
 
-            # Phase 2: Parallel file scanning via SubAgentSpawner
+            # Phase 2: Real scanner pass. real_scanner is deterministic,
+            # LLM-free, and produces evidence-backed findings (each one
+            # carries ``evidence_chain_id``) so the downstream Zero-FP
+            # gate auto-admits OPERATOR+ tiers. SubAgentSpawner is kept
+            # available for future multi-repo scans but intentionally
+            # bypassed here: one scanner pass over the whole target
+            # avoids duplicating work and eliminates the hash-based
+            # fake-finding generator that shipped before.
             job.status = ScanJobStatus.SCANNING
             job.updated_at = time.time()
             self._emit_event(
                 job.id, "scan_phase_change",
                 phase="scanning", files_total=job.files_total,
             )
-
-            plan = self._spawner.plan_spawn(
-                task=f"Security scan of {job.target}",
-                department="Security Operations",
-                capability="SHIELD",
-                items=files,
-                task_type="security_scan",
+            self._emit_event(
+                job.id, "scan_thinking", phase="scanning",
+                text=(
+                    f"Dispatching real_scanner against {job.target}. "
+                    "Rule-based pass (secret patterns + code rules) + "
+                    "optional bandit/semgrep/gitleaks subprocess dispatch "
+                    "if installed."
+                ),
             )
 
-            async def scan_file(file_path: str) -> str:
-                """Executor function for each sub-agent."""
-                findings = _simulate_file_scan(file_path, job.tier)
-                # Update job progress (thread-safe via GIL for simple increments)
-                job.files_scanned += 1
-                job.progress_pct = round(
-                    (job.files_scanned / job.files_total) * 70, 1,
-                )
-                job.findings_count += len(findings)
-                return json.dumps(findings)
+            scan_opts = dict(job.options or {})
+            outcome = await _real_scan_target(job.target, scan_opts)
+            job.files_scanned = outcome.files_scanned
+            job.files_total = max(outcome.files_scanned, 1)
+            job.progress_pct = 70.0
+            job.findings_count = len(outcome.findings)
 
-            spawn_result: SpawnResult = await self._spawner.spawn_and_execute(
-                plan,
-                executor_fn=scan_file,
-                timeout=120.0,
+            # Surface tools-used / tools-missing on the job so the report
+            # and the walkthrough window can show what actually ran.
+            job.options["tools_used"] = outcome.tools_used
+            job.options["tools_missing"] = outcome.tools_missing
+            job.options["scanner_notes"] = outcome.notes
+            job.options["target_kind"] = outcome.target_kind
+
+            self._emit_event(
+                job.id, "scan_observation", phase="scanning",
+                observation=(
+                    f"real_scanner: {outcome.files_scanned} files, "
+                    f"{len(outcome.findings)} findings, "
+                    f"tools_used={outcome.tools_used}, "
+                    f"missing={outcome.tools_missing}"
+                ),
             )
 
             # Phase 3: Aggregate findings
@@ -592,7 +688,12 @@ class ScanWorkflow:
             job.updated_at = time.time()
             self._emit_event(job.id, "scan_phase_change", phase="analyzing")
 
-            all_findings = self._aggregate_findings(spawn_result, job.tier)
+            all_findings: list[dict[str, Any]] = list(outcome.findings)
+            # Cache the sub-agent names list so the tier engine still gets
+            # something sensible for the "models_used" slot of the report.
+            spawn_models_used: list[str] = [
+                f"real_scanner:{t}" for t in outcome.tools_used
+            ] or ["real_scanner"]
             # Merge supply-chain findings from Phase 1b so they flow
             # through the same BeyondMythos enrichment + Zero-FP gate +
             # report generation as LLM-discovered findings. Each one
@@ -890,7 +991,7 @@ class ScanWorkflow:
                 raw_findings=all_findings,
                 pipeline_stages=pipeline_stages,
                 pipeline_time_ms=int((time.time() - start_time) * 1000),
-                models_used=spawn_result.sub_agents_spawned,
+                models_used=spawn_models_used,
             )
 
             # Phase 5: Generate PDF report
@@ -924,6 +1025,17 @@ class ScanWorkflow:
             )
 
             self._reports[job.id] = scan_report
+            # Persist report to disk so View/Download survive restart and
+            # a historic scan always has a resolvable report. Also writes
+            # the job metadata so _profile_target / tools_used are
+            # recoverable.
+            try:
+                self._persist_report(job, scan_report)
+            except Exception as persist_exc:  # noqa: BLE001
+                logger.warning(
+                    "scan_workflow.persist_failed",
+                    job_id=job.id, error=str(persist_exc),
+                )
 
             # Mark complete
             job.status = ScanJobStatus.COMPLETE
@@ -1182,4 +1294,8 @@ class ScanWorkflow:
             "falsification_survived": finding.falsification_survived,
             "reasoning_chain": finding.reasoning_chain,
             "cve_references": finding.cve_references,
+            "source_tool": finding.source_tool,
+            "source_rule": finding.source_rule,
+            "raw_line": finding.raw_line,
+            "evidence_chain_id": finding.evidence_chain_id,
         }

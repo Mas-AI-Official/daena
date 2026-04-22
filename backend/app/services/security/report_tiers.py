@@ -69,6 +69,14 @@ class SecurityFinding:
     falsification_survived: bool = False  # Did adversarial gate confirm?
     reasoning_chain: list[str] = field(default_factory=list)  # Visible pipeline trace
     cve_references: list[str] = field(default_factory=list)
+    # Provenance fields added 2026-04-21: real_scanner / bandit / semgrep /
+    # gitleaks / http_probe set these so the UI can distinguish rule-based
+    # deterministic findings from LLM-derived ones. The Zero-FP gate also
+    # reads ``evidence_chain_id`` to auto-admit findings without founder override.
+    source_tool: str = ""        # real_scanner / bandit / semgrep / http_probe / ...
+    source_rule: str = ""        # gitleaks:aws-access-key / bandit:B608 / ...
+    raw_line: str = ""           # The matched line (truncated)
+    evidence_chain_id: str = ""  # Links to EvidenceChain vault entry
 
 
 @dataclass
@@ -233,6 +241,13 @@ class ReportTierEngine:
                 confidence=raw.get("confidence", 0.0),
                 verified_by_models=raw.get("verified_by_models", 0),
                 falsification_survived=raw.get("falsification_survived", False),
+                # Provenance always carried through regardless of tier so
+                # the UI can render "from real_scanner / gitleaks / ..." and
+                # the Zero-FP gate sees evidence_chain_id on the dataclass.
+                source_tool=raw.get("source_tool", ""),
+                source_rule=raw.get("source_rule", ""),
+                raw_line=raw.get("raw_line", ""),
+                evidence_chain_id=raw.get("evidence_chain_id", ""),
             )
 
             # T2+: Add explanations
