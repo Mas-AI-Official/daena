@@ -57,14 +57,33 @@ class ClaudeCodeAdapter(BaseRuntimeAdapter):
         import os
         import shutil
 
-        self._claude_bin = shutil.which("claude") or ""
+        # Prefer a native Linux/macOS binary when we're on WSL or Linux.
+        # shutil.which("claude") can return the Windows .exe on /mnt/c/
+        # first (WSL exposes Windows PATH inside Linux), but the Windows
+        # binary reads credentials from a Windows path Linux can't
+        # resolve -- producing the 401 auth_error we debugged today.
+        # Native /usr/bin/claude (installed via npm -g on WSL) uses
+        # /root/.claude/ and authenticates cleanly.
+        _native_unix_candidates = [
+            "/usr/bin/claude",
+            "/usr/local/bin/claude",
+            os.path.expanduser("~/.local/bin/claude"),
+        ]
+        self._claude_bin = ""
+        for candidate in _native_unix_candidates:
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                self._claude_bin = candidate
+                break
+
+        if not self._claude_bin:
+            self._claude_bin = shutil.which("claude") or ""
+
         if not self._claude_bin:
             # WSL fallback: try well-known Windows paths via /mnt/c/
             _wsl_candidates = [
                 "/mnt/c/Users/masou/.local/bin/claude",
                 "/mnt/c/Users/masou/.local/bin/claude.exe",
             ]
-            # Also try Windows native paths (when running as native Windows Python)
             _win_candidates = [
                 os.path.expandvars(r"%USERPROFILE%\.local\bin\claude.exe"),
             ]

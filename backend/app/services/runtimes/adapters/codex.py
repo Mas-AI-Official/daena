@@ -52,9 +52,28 @@ class CodexAdapter(BaseRuntimeAdapter):
             runtime_id="codex",
             display_name="Codex (OpenAI)",
         )
+        import os
         import shutil
 
-        self._codex_bin = shutil.which("codex") or "codex"
+        # Prefer native Linux/macOS codex over the Windows-mounted
+        # npm binary. The Windows .exe ships the Windows-only optional
+        # dependency @openai/codex-win32-x64; when Linux spawns it the
+        # ESM loader throws "Missing optional dependency
+        # @openai/codex-linux-x64" (the exact error the operator hit).
+        # /usr/bin/codex installed via npm -g on the WSL Linux side
+        # uses the platform-correct variant.
+        _native_unix_candidates = [
+            "/usr/bin/codex",
+            "/usr/local/bin/codex",
+            os.path.expanduser("~/.local/bin/codex"),
+        ]
+        self._codex_bin = ""
+        for candidate in _native_unix_candidates:
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                self._codex_bin = candidate
+                break
+        if not self._codex_bin:
+            self._codex_bin = shutil.which("codex") or "codex"
         logger.info("codex.init", binary=self._codex_bin)
 
     async def check_installed(self) -> bool:
