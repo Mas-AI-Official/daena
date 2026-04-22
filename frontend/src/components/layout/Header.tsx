@@ -434,8 +434,13 @@ function ElevatedModeIndicator() {
   return (
     <div
       className="flex items-center justify-center p-1.5 rounded-lg"
-      title="Elevated mode"
-      aria-label="Elevated mode active"
+      title={
+        "Full-spectrum security mode active (founder).\n" +
+        "This is separate from CMD/EXE action mode:\n" +
+        "  EXE = Daena executes tools vs just plans.\n" +
+        "  Elevated = Offensive security primitives + T5 Founder scan tier unlocked."
+      }
+      aria-label="Elevated security mode active"
     >
       <Zap size={14} className="text-accent-amber animate-pulse" />
     </div>

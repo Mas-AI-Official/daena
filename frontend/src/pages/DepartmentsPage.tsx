@@ -35,27 +35,34 @@ const STATUS_VARIANT: Record<string, 'default' | 'info' | 'warning' | 'success' 
   OFFLINE:    'danger',
 }
 
-// Department icons + Tailwind color classes
+// Department icons + Tailwind color classes.
+// ``dotColor`` is an explicit static class string so Tailwind JIT can
+// see and compile it. Previously the dot used
+// ``bgColor.replace('/15', '/40')`` which produces strings Tailwind
+// never sees at build time -- only Engineering rendered because
+// ``bg-primary-500/40`` happened to be referenced elsewhere in the
+// bundle. Explicit dotColor per department fixes all 9 other cards.
 const DEPT_META: Record<
   string,
-  { icon: React.ReactNode; color: string; bgColor: string }
+  { icon: React.ReactNode; color: string; bgColor: string; dotColor: string }
 > = {
-  Engineering:           { icon: <Wrench size={24} />,         color: 'text-primary-400',    bgColor: 'bg-primary-500/15' },
-  Product:               { icon: <Layers size={24} />,         color: 'text-accent-purple',  bgColor: 'bg-accent-purple/15' },
-  Marketing:             { icon: <Megaphone size={24} />,      color: 'text-status-success', bgColor: 'bg-status-success/15' },
-  Sales:                 { icon: <TrendingUp size={24} />,     color: 'text-accent-cyan',    bgColor: 'bg-accent-cyan/15' },
-  Finance:               { icon: <Calculator size={24} />,     color: 'text-status-warning', bgColor: 'bg-status-warning/15' },
-  Operations:            { icon: <Settings size={24} />,       color: 'text-accent-amber',   bgColor: 'bg-accent-amber/15' },
-  Research:              { icon: <Microscope size={24} />,     color: 'text-blue-400',       bgColor: 'bg-blue-500/15' },
-  'Legal & Compliance':  { icon: <Scale size={24} />,          color: 'text-status-error',   bgColor: 'bg-status-error/15' },
-  'Skill Governance':    { icon: <GraduationCap size={24} />,  color: 'text-fuchsia-400',    bgColor: 'bg-fuchsia-500/15' },
-  'Security Operations': { icon: <ShieldCheck size={24} />,    color: 'text-pink-400',       bgColor: 'bg-pink-500/15' },
+  Engineering:           { icon: <Wrench size={24} />,         color: 'text-primary-400',    bgColor: 'bg-primary-500/15',      dotColor: 'bg-primary-400' },
+  Product:               { icon: <Layers size={24} />,         color: 'text-accent-purple',  bgColor: 'bg-accent-purple/15',    dotColor: 'bg-accent-purple' },
+  Marketing:             { icon: <Megaphone size={24} />,      color: 'text-status-success', bgColor: 'bg-status-success/15',   dotColor: 'bg-status-success' },
+  Sales:                 { icon: <TrendingUp size={24} />,     color: 'text-accent-cyan',    bgColor: 'bg-accent-cyan/15',      dotColor: 'bg-accent-cyan' },
+  Finance:               { icon: <Calculator size={24} />,     color: 'text-status-warning', bgColor: 'bg-status-warning/15',   dotColor: 'bg-status-warning' },
+  Operations:            { icon: <Settings size={24} />,       color: 'text-accent-amber',   bgColor: 'bg-accent-amber/15',     dotColor: 'bg-accent-amber' },
+  Research:              { icon: <Microscope size={24} />,     color: 'text-blue-400',       bgColor: 'bg-blue-500/15',         dotColor: 'bg-blue-400' },
+  'Legal & Compliance':  { icon: <Scale size={24} />,          color: 'text-status-error',   bgColor: 'bg-status-error/15',     dotColor: 'bg-status-error' },
+  'Skill Governance':    { icon: <GraduationCap size={24} />,  color: 'text-fuchsia-400',    bgColor: 'bg-fuchsia-500/15',      dotColor: 'bg-fuchsia-400' },
+  'Security Operations': { icon: <ShieldCheck size={24} />,    color: 'text-pink-400',       bgColor: 'bg-pink-500/15',         dotColor: 'bg-pink-400' },
 }
 
 const FALLBACK = {
   icon: <Bot size={24} />,
   color: 'text-primary-400',
   bgColor: 'bg-primary-500/15',
+  dotColor: 'bg-primary-400',
 }
 
 // Sub-capabilities
@@ -168,12 +175,14 @@ export function DepartmentsPage() {
                       {dept.description}
                     </p>
 
-                    {/* Sub-capability dots */}
-                    <div className="flex items-center gap-1 mb-2">
+                    {/* Sub-capability dots. Static class names (see
+                        DEPT_META.dotColor) so Tailwind JIT compiles
+                        them for every department, not just Engineering. */}
+                    <div className="flex items-center gap-1 mb-2" title="MIND, EYES, HANDS, VOICE, SHIELD, MEMORY">
                       {SUB_CAPS.map((cap) => (
                         <div
                           key={cap}
-                          className={`w-1.5 h-1.5 rounded-full ${meta.bgColor.replace('/15', '/40')}`}
+                          className={`w-1.5 h-1.5 rounded-full ${meta.dotColor}`}
                           title={cap}
                         />
                       ))}
