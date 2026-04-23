@@ -848,12 +848,33 @@ _HACKINGTOOL_ENTRIES, _HACKINGTOOL_RED_DENYLIST = _load_hackingtool_entries()
 
 # Extend the static catalog in-place so ToolCatalog._tools, find_by_*,
 # search, etc. all see the hackingtool additions without duplication.
-# Collisions with existing hand-curated entries are skipped (static
-# catalog wins -- we already had a curated install recipe for those
-# tools).
-_existing_names_lower = {t.name.lower() for t in _CATALOG}
+#
+# Collision policy (2026-04-23 update):
+# - The hand-curated static _CATALOG is the source of truth for
+#   install_cmd + capabilities + description -- those were written
+#   with attention to Daena's actual runtime.
+# - The audit-approved JSON is the source of truth for `tier`. When
+#   the JSON classifies a tool as YELLOW but the static entry
+#   defaulted to GREEN (because the tier field was added later), the
+#   JSON tier wins. This is a tier UPGRADE only -- a JSON entry
+#   can never DOWNGRADE a statically-declared tier.
+# - If the tool is genuinely new (not in _CATALOG), append it.
+_TIER_STRICTNESS = {SecurityTier.GREEN: 0, SecurityTier.YELLOW: 1, SecurityTier.RED: 2}
+_existing_by_name = {t.name.lower(): t for t in _CATALOG}
 for _ht_entry in _HACKINGTOOL_ENTRIES:
-    if _ht_entry.name.lower() in _existing_names_lower:
+    _lower = _ht_entry.name.lower()
+    if _lower in _existing_by_name:
+        _existing = _existing_by_name[_lower]
+        if _TIER_STRICTNESS[_ht_entry.tier] > _TIER_STRICTNESS[_existing.tier]:
+            logger.info(
+                "tool_catalog.hackingtool_tier_upgrade",
+                name=_existing.name,
+                from_tier=_existing.tier.value,
+                to_tier=_ht_entry.tier.value,
+            )
+            _existing.tier = _ht_entry.tier
+        # install_cmd / capabilities / description stay as the
+        # curated static entry -- do not overwrite.
         continue
     _CATALOG.append(_ht_entry)
 

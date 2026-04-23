@@ -233,3 +233,7 @@ Default/
 .gitnexus
 # Added by code-review-graph
 .code-review-graph/
+
+# Tenant-specific authorized-scope config for YELLOW security tools
+# (pending Tenant.settings JSONB migration). Tenant-private IP.
+backend/app/data/authorized_scopes.json
