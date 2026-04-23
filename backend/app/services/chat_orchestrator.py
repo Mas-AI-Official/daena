@@ -1013,7 +1013,32 @@ class ChatOrchestrator:
         from app.core.config import get_settings as _get_settings
         _vp_settings = _get_settings()
         vp_plan = None
-        if getattr(_vp_settings, "daena_vp_enabled", False):
+        # Complexity gate (Step 6 of intelligence consolidation,
+        # 2026-04-23): the VP planner was previously firing on every
+        # single chat message, including "what is 2+2". VP's value is
+        # multi-department decomposition -- that's only needed for
+        # non-trivial cross-cutting asks. For SIMPLE complexity +
+        # SIMPLE/SEARCH/CREATIVE intents we skip it entirely, saving
+        # ~1-2 s of LLM planning latency per trivial chat. Anything
+        # classified as MODERATE / COMPLEX / VERY_COMPLEX, any TOOL_USE
+        # or MULTI_STEP intent, or any HIGH/CRITICAL risk still runs
+        # the planner.
+        _vp_complexity = (qu_result.complexity_label.value or "").upper()
+        _vp_intent = (qu_result.intent.value or "").upper()
+        _vp_risk = (qu_result.risk_level.value or "").upper()
+        _vp_skip = (
+            _vp_complexity == "SIMPLE"
+            and _vp_intent in ("SIMPLE", "SEARCH", "CREATIVE")
+            and _vp_risk in ("NONE", "LOW")
+        )
+        if _vp_skip:
+            logger.debug(
+                "orchestrator.vp_skipped_trivial",
+                complexity=_vp_complexity,
+                intent=_vp_intent,
+                risk=_vp_risk,
+            )
+        if getattr(_vp_settings, "daena_vp_enabled", False) and not _vp_skip:
             try:
                 from app.services.daena_vp import DaenaVP
                 from app.services.department_state_service import (
