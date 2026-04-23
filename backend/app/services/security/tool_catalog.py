@@ -14,10 +14,13 @@ BACKGROUND PATH ONLY -- never import in hot path
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from app.core.logging import get_logger
@@ -28,6 +31,28 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
+
+class SecurityTier(str, Enum):
+    """Governance tier for a security tool, per the hackingtool audit
+    (docs/HACKINGTOOL_INTEGRATION.md).
+
+    GREEN  -- safe to offer broadly. Forensics, passive recon, OSINT,
+              offline RE. Auto-install on user confirm.
+    YELLOW -- dual-use. Founder/security-lead role required, approval
+              queue entry per project-first-run, authorized_scope
+              check before execution, audit log mandatory.
+    RED    -- never offered. Hard-denied at register time. Category
+              examples: phishing kits, DDoS weapons, RATs, rootkits,
+              silent keyloggers, wifi jammers, Android payload
+              generators. If a RED tool name reaches
+              register_tool() the call fails loud.
+    """
+
+    GREEN = "green"
+    YELLOW = "yellow"
+    RED = "red"
+
 
 @dataclass
 class SecurityTool:
@@ -42,6 +67,12 @@ class SecurityTool:
     offensive_only: bool = False  # Requires /3vilbob?
     platforms: list[str] = field(default_factory=lambda: ["linux", "windows", "macos"])
     url: str = ""           # Project homepage
+    # Added 2026-04-23 for the hackingtool filtered-subset integration.
+    # Existing in-file tools default to GREEN (they are the curated
+    # baseline Daena already ships with). The hackingtool JSON catalog
+    # explicitly tags each tool GREEN or YELLOW; RED entries are
+    # rejected before a SecurityTool object is even constructed.
+    tier: SecurityTier = SecurityTier.GREEN
 
 
 # ---------------------------------------------------------------------------
@@ -699,6 +730,145 @@ _CATALOG: list[SecurityTool] = [
 
 
 # ---------------------------------------------------------------------------
+# HackingTool catalog loader (audit-approved filtered subset)
+# ---------------------------------------------------------------------------
+#
+# Pinned JSON at backend/app/data/hackingtool_catalog.json. See
+# docs/HACKINGTOOL_INTEGRATION.md for the audit report behind every
+# allowlist/denylist entry.
+#
+# Integration contract:
+#   * Only entries in `allowlist` are loaded into the runtime catalog.
+#   * Any name in `red_denylist` (case-insensitive) is rejected even
+#     if it somehow appears in allowlist or is registered via a future
+#     loader. Defense-in-depth.
+#   * Unknown `tier` values or malformed entries are rejected loud.
+#   * Runtime network calls to hackingtool's repo: never. The JSON is
+#     the source of truth; updating it requires a manual review diff.
+#
+# YELLOW tier runtime gate (authorized_scope, approval queue, rate
+# limit) is tracked in TICKET-HACKINGTOOL-YELLOW-RUNTIME. This module
+# exposes the tier via SecurityTool.tier so the executor can enforce
+# the gate once that ticket lands; it does not itself execute any
+# tool.
+
+
+_HACKINGTOOL_JSON_PATH = (
+    Path(__file__).resolve().parents[2] / "data" / "hackingtool_catalog.json"
+)
+
+
+def _normalize_tool_name(name: str) -> str:
+    """Canonical form for denylist matching: lowercase, dashes/underscores equivalent."""
+    return (name or "").strip().lower().replace("_", "-")
+
+
+def _load_hackingtool_entries() -> tuple[list[SecurityTool], frozenset[str]]:
+    """Load the pinned JSON, return (allowlist SecurityTool objects, RED denylist set).
+
+    Fail-safe: if the file is missing or malformed, returns empty
+    allowlist but still enforces the denylist (empty frozenset means
+    nothing is denied by-file, but the register path still default-
+    rejects unknown names).
+    """
+    if not _HACKINGTOOL_JSON_PATH.exists():
+        logger.warning(
+            "tool_catalog.hackingtool_json_missing",
+            path=str(_HACKINGTOOL_JSON_PATH),
+        )
+        return ([], frozenset())
+    try:
+        data = json.loads(_HACKINGTOOL_JSON_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.error(
+            "tool_catalog.hackingtool_json_parse_failed",
+            path=str(_HACKINGTOOL_JSON_PATH),
+            error=str(exc),
+        )
+        return ([], frozenset())
+
+    red_list = frozenset(
+        _normalize_tool_name(n) for n in data.get("red_denylist", []) if isinstance(n, str)
+    )
+
+    entries: list[SecurityTool] = []
+    for raw in data.get("allowlist", []):
+        try:
+            name = str(raw["name"])
+            tier_raw = str(raw.get("tier", "green")).lower()
+            if tier_raw == "red":
+                logger.error(
+                    "tool_catalog.hackingtool_red_in_allowlist",
+                    name=name,
+                    detail="RED tier must never appear in allowlist. Entry skipped.",
+                )
+                continue
+            if tier_raw not in ("green", "yellow"):
+                logger.error(
+                    "tool_catalog.hackingtool_unknown_tier",
+                    name=name,
+                    tier=tier_raw,
+                )
+                continue
+            if _normalize_tool_name(name) in red_list:
+                # Defense in depth: even if the author accidentally put
+                # a RED name into the allowlist, the denylist wins.
+                logger.error(
+                    "tool_catalog.hackingtool_denylist_hit_in_allowlist",
+                    name=name,
+                )
+                continue
+            entries.append(
+                SecurityTool(
+                    name=name,
+                    category=str(raw.get("category", "other")),
+                    description=str(raw.get("description", "")),
+                    capabilities=list(raw.get("capabilities", [])),
+                    install_cmd=str(raw.get("install_cmd", "")),
+                    check_cmd=str(raw.get("check_cmd", name)),
+                    usage_examples=list(raw.get("usage_examples", [])),
+                    offensive_only=bool(raw.get("offensive_only", False)),
+                    platforms=list(raw.get("platforms", ["linux", "windows", "macos"])),
+                    url=str(raw.get("url", "")),
+                    tier=SecurityTier.GREEN if tier_raw == "green" else SecurityTier.YELLOW,
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.error(
+                "tool_catalog.hackingtool_entry_malformed",
+                entry_preview=str(raw)[:200],
+                error=str(exc),
+            )
+            continue
+    return (entries, red_list)
+
+
+# Load once at module import (same pattern as the static _CATALOG).
+_HACKINGTOOL_ENTRIES, _HACKINGTOOL_RED_DENYLIST = _load_hackingtool_entries()
+
+# Extend the static catalog in-place so ToolCatalog._tools, find_by_*,
+# search, etc. all see the hackingtool additions without duplication.
+# Collisions with existing hand-curated entries are skipped (static
+# catalog wins -- we already had a curated install recipe for those
+# tools).
+_existing_names_lower = {t.name.lower() for t in _CATALOG}
+for _ht_entry in _HACKINGTOOL_ENTRIES:
+    if _ht_entry.name.lower() in _existing_names_lower:
+        continue
+    _CATALOG.append(_ht_entry)
+
+
+def is_red_denylisted(name: str) -> bool:
+    """Public helper: is this tool name on the hackingtool RED denylist?
+
+    Other services (scan_workflow, execution_service, DaenaBot router)
+    call this before attempting any auto-install or runtime dispatch
+    of a security tool that the user or the orchestrator proposed.
+    """
+    return _normalize_tool_name(name) in _HACKINGTOOL_RED_DENYLIST
+
+
+# ---------------------------------------------------------------------------
 # Catalog API
 # ---------------------------------------------------------------------------
 
@@ -718,6 +888,24 @@ class ToolCatalog:
         for tool in _CATALOG:
             for cap in tool.capabilities:
                 self._capability_index.setdefault(cap, []).append(tool.name)
+
+    def register_tool(self, tool: SecurityTool) -> None:
+        """Register a tool at runtime. Fails loud for RED-denylisted names.
+
+        Defense-in-depth point: if a caller bypasses the JSON loader
+        (e.g. a future MCP-provided tool or an ops script) and tries
+        to slot a RED hackingtool name into the catalog, this gate
+        catches it.
+        """
+        if is_red_denylisted(tool.name):
+            raise ValueError(
+                f"Security tool '{tool.name}' is on the hackingtool RED denylist "
+                "and cannot be registered. See docs/HACKINGTOOL_INTEGRATION.md."
+            )
+        self._tools[tool.name] = tool
+        for cap in tool.capabilities:
+            if tool.name not in self._capability_index.setdefault(cap, []):
+                self._capability_index[cap].append(tool.name)
 
     # ------ Query ------
 

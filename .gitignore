@@ -40,6 +40,9 @@ docs/*
 # why Daena never auto-sends on LinkedIn. Shipping in-repo so evaluators
 # + open-source contributors can find the reasoning without source-diving.
 !docs/LINKEDIN_COMPLIANCE.md
+# HackingTool integration audit + policy doc -- public-facing rationale
+# for the security-tool denylist. Commits to both Daena + Daena OSS.
+!docs/HACKINGTOOL_INTEGRATION.md
 
 # Internal prompts and session logs (dev-only)
 Doc/
