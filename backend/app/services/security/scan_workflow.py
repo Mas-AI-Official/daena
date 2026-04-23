@@ -542,6 +542,66 @@ class ScanWorkflow:
         """Run the full scan pipeline. Called as a background task."""
         start_time = time.time()
 
+        # Phase 0: authorized_scope pre-check (TICKET-HACKINGTOOL-
+        # YELLOW-WIRING, scan surface).
+        #
+        # Policy: scans are opt-in to scope enforcement.
+        #   - Empty scope (tenant has not configured one)
+        #     -> pass through. Preserves existing behaviour so this
+        #     change is not a breaking upgrade for tenants that
+        #     haven't touched /security/scope yet.
+        #   - Non-empty scope, target is a URL / IPv4 / domain
+        #     -> must match the scope OR be blocked with a
+        #     scan_failed event that surfaces the scope reason.
+        #   - File-path / other unknown-shape targets
+        #     -> pass through. Local codebase scans against the
+        #     user's own files are by definition in-scope.
+        #
+        # Fail-safe: if the gate helper errors, log and continue --
+        # never block on gate infrastructure failure. The rest of the
+        # security pipeline (governance, Shield, Zero-FP) still runs.
+        try:
+            if job.tenant_id:  # tenant-scoped scan only
+                from app.services.security.yellow_runtime_gate import (
+                    load_authorized_scope,
+                    parse_target,
+                    target_matches_scope,
+                )
+                _scope = load_authorized_scope(str(job.tenant_id))
+                if not _scope.is_empty:
+                    _kind, _ = parse_target(job.target)
+                    if _kind in ("domain", "ipv4") and not target_matches_scope(
+                        job.target, _scope
+                    ):
+                        _reason = (
+                            f"Scan target '{job.target}' is outside the tenant's "
+                            "authorized_scope. Security scans only run against "
+                            "targets you have explicitly declared you own. "
+                            "Edit the scope at /security/scope and retry."
+                        )
+                        job.status = ScanJobStatus.FAILED
+                        job.error = _reason
+                        self._emit_event(
+                            job.id, "scan_failed",
+                            reason=_reason,
+                            scope_violation=True,
+                        )
+                        logger.warning(
+                            "scan_workflow.scope_block",
+                            job_id=job.id,
+                            target=job.target,
+                            tenant_id=str(job.tenant_id),
+                        )
+                        return
+        except Exception as _scope_exc:
+            logger.error(
+                "scan_workflow.scope_check_error",
+                job_id=job.id,
+                error=str(_scope_exc),
+                exc_info=True,
+            )
+            # Fall through -- pre-check failure must not block legit scans.
+
         try:
             self._emit_event(
                 job.id, "scan_started",
