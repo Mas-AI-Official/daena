@@ -565,6 +565,18 @@ class ChatOrchestrator:
         # appended AFTER the soul + default rules so the turn-specific
         # tonal read wins on attention. When disabled or no signal was
         # produced, ``emotional_overlay`` is empty and this is a no-op.
+        #
+        # BUGFIX 2026-04-23: emotional_overlay is populated in Stage 2.3
+        # which runs AFTER this point. Reading it here without a pre-
+        # declared default caused UnboundLocalError on EVERY chat
+        # message -- every request to /chat died before the LLM was
+        # called. Hoisting the default declaration ahead of the read
+        # matches the one at Stage 2.3 (line 733) and lets the Stage
+        # 2.3 population mutate the same name. The duplicate decl at
+        # 733 becomes a no-op overwrite with "" when that stage starts
+        # -- harmless because the stage always re-assigns the value
+        # based on its own logic.
+        emotional_overlay: str = ""
         if emotional_overlay:
             system_prompt += "\n\n" + emotional_overlay
 
