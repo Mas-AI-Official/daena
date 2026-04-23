@@ -59,6 +59,7 @@ const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
 const SecurityDashboardPage = lazy(() => import('@/pages/SecurityDashboardPage'))
 const ScanPage = lazy(() => import('@/pages/ScanPage'))
 const ScanWalkthroughPage = lazy(() => import('@/pages/ScanWalkthroughPage'))
+const SecurityScopePage = lazy(() => import('@/pages/SecurityScopePage'))
 
 /** Skeleton loading fallback with shimmer animation for polished load perception */
 function PageLoader() {
@@ -122,6 +123,7 @@ function AppRoutes() {
                   <Route path="/governance/approvals" element={<GovernanceApprovalsPage />} />
                   <Route path="/governance/audit" element={<GovernanceAuditPage />} />
                   <Route path="/security" element={<SecurityDashboardPage />} />
+                  <Route path="/security/scope" element={<SecurityScopePage />} />
                   <Route path="/scan" element={<ScanPage />} />
                   <Route path="/scan/walkthrough/:jobId" element={<ScanWalkthroughPage />} />
                   <Route path="/engagements" element={<EngagementConsolePage />} />

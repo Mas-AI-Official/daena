@@ -6,6 +6,7 @@ import {
   MessageSquare,
   LayoutDashboard,
   Shield,
+  ShieldCheck,
   Brain,
   Zap,
   Plug,
@@ -102,6 +103,10 @@ const navGroups: NavGroup[] = [
     color: 'text-accent-amber',
     items: [
       { label: 'Security Ops', path: '/security', icon: <Shield size={18} /> },
+      // Authorized-scope editor: declares which domains/CIDRs YELLOW-
+      // tier security tools may run against for this tenant. Founder-
+      // only page -- non-founders see an empty-state lock.
+      { label: 'Authorized Scope', path: '/security/scope', icon: <ShieldCheck size={18} /> },
       // "Engagements" used to live here at /engagements. It was a
       // duplicate of /scan (same T1-T5 launcher). Removed from the
       // visible nav 2026-04-21 per founder feedback. The route still

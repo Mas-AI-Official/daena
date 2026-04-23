@@ -249,6 +249,85 @@ class ExecutionService(BaseService):
                 "Current session is in CMD (read-only) mode."
             )
 
+        # Step 1b: YELLOW-tier security-tool runtime gate.
+        # Only engages when the tool is registered in the security
+        # ToolCatalog (nmap, sqlmap, BloodHound, ...). Non-security
+        # tools (email_send, slack_post, etc.) are not in the catalog
+        # and skip the gate entirely -- they continue through the
+        # standard governance path below.
+        #
+        # The gate enforces:
+        #   - RED hard-deny (defense-in-depth with register-time gate)
+        #   - Unknown catalog tool -> deny
+        #   - GREEN -> auto-allow (still audited)
+        #   - YELLOW -> role match + authorized_scope match
+        #     (FOUNDER-only for active-exploitation subset)
+        #   - First-run-in-project -> requires_approval=True (caller
+        #     writes the approval record)
+        #
+        # On deny the gate raises ValidationError with the human-
+        # readable reason; no governance evaluate is spent on a call
+        # that would have been blocked anyway.
+        try:
+            from app.services.security.tool_catalog import ToolCatalog
+            from app.services.security.yellow_runtime_gate import (
+                check_yellow_runtime,
+            )
+
+            _sec_catalog = ToolCatalog()
+            _is_security_tool = (
+                tool_name in _sec_catalog._tools  # noqa: SLF001 - public enum
+            )
+            if _is_security_tool:
+                _target = (
+                    params.get("target")
+                    or params.get("url")
+                    or params.get("host")
+                    or params.get("domain")
+                    or ""
+                )
+                _gate = check_yellow_runtime(
+                    tool_name=tool_name,
+                    target=str(_target),
+                    user_role=actor_role,
+                    tenant_id=str(tenant_id),
+                    user_id=str(user_id),
+                    session_id=str(session_id),
+                    # First-run detection is out of scope for this
+                    # commit -- the gate still computes
+                    # `requires_approval` when the caller sets this
+                    # True. Leaving False until TICKET-FIRST-RUN-
+                    # DETECT adds proper per-(tenant, tool, project)
+                    # state lookup.
+                    is_first_run_in_project=False,
+                    catalog=_sec_catalog,
+                )
+                logger.info(
+                    "execution.yellow_gate_decision",
+                    tool=tool_name,
+                    target=str(_target)[:100],
+                    tier=(_gate.tier.value if _gate.tier else None),
+                    allow=_gate.allow,
+                    user_role=actor_role,
+                    tenant_id=str(tenant_id),
+                    user_id=str(user_id),
+                )
+                if not _gate.allow:
+                    raise ValidationError(_gate.reason)
+        except ValidationError:
+            raise
+        except Exception as _gate_exc:
+            # Fail-safe: if the gate itself errors (e.g. the JSON
+            # catalog is corrupt), log loudly but do NOT block
+            # execution. The downstream governance check still runs
+            # and may block on its own grounds.
+            logger.error(
+                "execution.yellow_gate_error",
+                tool=tool_name,
+                error=str(_gate_exc),
+                exc_info=True,
+            )
+
         # Step 2: Governance evaluation — resolve correct action_type
         #         for DaenaBot agents (operation-aware risk classification)
         resolved_action = self._resolve_action_type(tool_name, params)

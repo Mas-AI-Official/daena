@@ -46,6 +46,7 @@ from app.api.v1 import (
     projects,
     prompts,
     runtimes,
+    security_authorized_scope,
     security_dashboard,
     security_mode,
     self_improvement,
@@ -112,6 +113,10 @@ router.include_router(files.router, prefix="/files", tags=["files"])
 router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])
 router.include_router(org.router, prefix="/org", tags=["org"])
 router.include_router(security_dashboard.router, prefix="/security", tags=["security-dashboard"])
+# Note: authorized_scope router is NOT mounted under /security prefix
+# because its paths already start with /security/authorized-scope.
+# Mounting under / keeps the paths as declared in the file.
+router.include_router(security_authorized_scope.router, tags=["security-authorized-scope"])
 router.include_router(tts.router, prefix="/tts", tags=["tts"])
 router.include_router(security_mode.router, prefix="/security/mode", tags=["security-mode"])
 router.include_router(engagements.router, prefix="/engagements", tags=["engagements"])
