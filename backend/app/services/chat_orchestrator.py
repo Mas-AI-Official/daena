@@ -554,6 +554,32 @@ class ChatOrchestrator:
             with contextlib.suppress(Exception):
                 dept_name = session_obj.department.name if session_obj.department else None
 
+        # Auto-Mind routing: if no department is pinned (generic /chat),
+        # classify the user message against the 10 Mind keyword buckets
+        # and pick the best match. Zero-LLM, <5 ms. Conservative: when
+        # no strong topical match, falls through and the generic Daena
+        # soul ships as before. Adds a trace hint for observability.
+        _auto_mind_trace: str | None = None
+        if not dept_name:
+            try:
+                from app.services.cognition.mind_router import pick_mind
+
+                _mind_match = pick_mind(user_content)
+                if _mind_match.slug:
+                    dept_name = _mind_match.slug
+                    _auto_mind_trace = (
+                        f"auto_mind={_mind_match.slug} score={_mind_match.score} "
+                        f"kw={','.join(_mind_match.matched_keywords[:5])}"
+                    )
+                    logger.info(
+                        "orchestrator.auto_mind_picked",
+                        slug=_mind_match.slug,
+                        score=_mind_match.score,
+                        keywords=list(_mind_match.matched_keywords[:5]),
+                    )
+            except Exception as _mind_exc:
+                logger.debug("orchestrator.auto_mind_failed", error=str(_mind_exc), exc_info=True)
+
         _soul_prefix = SoulEngine.get_soul_prompt(
             governance_mode.value,
             department=dept_name,
@@ -1774,6 +1800,15 @@ class ChatOrchestrator:
             )
             # Fall through -- if the meta-command dispatcher blew up,
             # let the normal pipeline try to handle the message.
+
+        # ── Late emotional overlay inject (originally Stage 1 read-ahead bug) ──
+        # Stage 2.3 populates emotional_overlay AFTER the Stage 1 system_prompt
+        # build. The Stage-1 append was dead code (overlay was always "").
+        # Appending here, right before Stage 7 builds the LLM request, gives
+        # the turn-specific tonal read the highest LLM attention priority
+        # while still respecting the soul + default rules ordering.
+        if emotional_overlay:
+            system_prompt += "\n\n" + emotional_overlay
 
         # ── Stage 7: Build LLM request ────────────────────────
         llm_messages = []
