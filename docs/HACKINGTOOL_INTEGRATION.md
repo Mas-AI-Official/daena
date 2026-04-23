@@ -56,9 +56,20 @@ All 7 audit open questions resolved with the default recommendations:
 6. **Auto-install UX** — one-click confirm. User sees which binary is pulled before each install.
 7. **Stale upstream flagging** — yes. Soft-deprecate + warn for tools whose upstream repo has no commit in > 540 days.
 
-## Runtime gate — now live
+## Runtime gate — now live AND wired end-to-end
 
-The YELLOW runtime gate is shipped as `backend/app/services/security/yellow_runtime_gate.py`. It is **not yet wired into `scan_workflow` / `execution_service`** — that is the next ticket (TICKET-HACKINGTOOL-YELLOW-WIRING). The gate itself:
+As of commit `28f5571`, the gate is integrated into every security-tool dispatch surface:
+
+| Surface | Hook | Commit |
+| --- | --- | --- |
+| `execute_tool` (EXE-mode tool dispatch) | Step 1b in `execution_service.execute_tool` | `c9830f1` |
+| `scan_workflow` (T1-T5 security scans) | Phase 0 in `_execute_scan` | `28f5571` |
+| `tool_catalog.register_tool` (registration-time) | RED hard-deny with `ValueError` | `806ed01` |
+| Pure-function gate | `check_yellow_runtime()` | `806ed01` |
+| Scope REST API | `GET/PUT/POST /security/authorized-scope` | `c9830f1` |
+| Scope UI | `/security/scope` page + sidebar link | `c9830f1` |
+
+The gate itself:
 
 ```python
 from app.services.security.yellow_runtime_gate import check_yellow_runtime
@@ -110,15 +121,14 @@ The policy is upgrade-only — a JSON entry can never DOWNGRADE a statically-dec
 
 ## What this commit does NOT ship (tracked tickets)
 
-### TICKET-HACKINGTOOL-YELLOW-WIRING
-Wire `check_yellow_runtime()` into:
-- `backend/app/services/security/scan_workflow.py` — before any tool dispatch
-- `backend/app/services/execution_service.py` — before any security-tool subprocess spawn
-- `backend/app/services/daenabot/router.py` — before dispatching security-shaped intents
-Each call site surfaces `decision.reason` verbatim to the user on deny, creates an approval record when `requires_approval=True`, and feeds `decision.rate_limit_key` to a shared limiter (10/hour/user per YELLOW tool).
+### TICKET-HACKINGTOOL-DAENABOT-WIRING (deferred)
+`daenabot/router.py` still dispatches without the gate. When a user says "run nmap against X" in chat and EXE mode is on, DaenaBot's router hands off directly to a runtime adapter instead of going through `execute_tool`. Add the same gate hook there so all three paths are uniform.
 
-### TICKET-HACKINGTOOL-YELLOW-RUNTIME
-Move `authorized_scope` from JSON file → `Tenant.settings` JSONB column. Pure plumbing change; `load_authorized_scope()` in the gate is the single call site to swap.
+### TICKET-FIRST-RUN-DETECT (deferred)
+The gate takes `is_first_run_in_project=True` as an input and produces `requires_approval=True` when passed. Both wire-in call sites hardcode `False` today. Add a small JSON-backed tracker at `backend/app/data/yellow_first_run.json` keyed by `(tenant_id, session_id, tool_name)` that returns True on the first call and False thereafter. Caller then creates an approval record when the gate returns `requires_approval=True`.
+
+### TICKET-HACKINGTOOL-YELLOW-RUNTIME (deferred)
+Move `authorized_scope` from JSON file → `Tenant.settings` JSONB column. Pure plumbing change; `load_authorized_scope()` in the gate is the single call site to swap. Adds a proper Alembic migration.
 
 ### TICKET-HACKINGTOOL-YELLOW-RUNTIME_OLD
 The full YELLOW runtime gate:
