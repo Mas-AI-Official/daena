@@ -1090,16 +1090,25 @@ function ScanRow({ scan, expanded }: { scan: ScanSummary; expanded?: boolean }) 
           )}
         </div>
         <div className="text-xs text-starlight-500 mt-0.5">
-          {scan.cycles_used} cycles, {scan.strategies_tried.length} strategies
+          {/*
+            Historical scan records (pre-v3.7.1) + records merged from the
+            on-disk persisted-reports store may not carry every field the
+            ScanSummary type declares. Use optional chaining + ?? 0/[] so
+            missing fields render as "0 cycles, 0 strategies" instead of
+            crashing the whole SecurityDashboardPage. TypeScript-type is
+            kept strict on purpose -- the backend is the source of truth
+            and a future Nyquist test should assert the shape.
+          */}
+          {scan.cycles_used ?? 0} cycles, {(scan.strategies_tried ?? []).length} strategies
         </div>
       </div>
 
       <div className="flex items-center gap-3 text-xs">
         <div className="text-center">
-          <div className="text-starlight-200 font-medium">{scan.total_findings}</div>
+          <div className="text-starlight-200 font-medium">{scan.total_findings ?? 0}</div>
           <div className="text-starlight-600">findings</div>
         </div>
-        {scan.exploits_succeeded > 0 && (
+        {(scan.exploits_succeeded ?? 0) > 0 && (
           <div className="text-center">
             <div className="text-status-error font-medium">{scan.exploits_succeeded}</div>
             <div className="text-starlight-600">exploited</div>

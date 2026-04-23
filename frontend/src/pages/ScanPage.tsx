@@ -40,6 +40,7 @@ import {
   Activity,
   Trash2,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, EmptyState, Badge } from '@/components/common'
