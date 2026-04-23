@@ -504,12 +504,27 @@ class ChatOrchestrator:
                 routing_mode = RoutingMode.STANDARD
                 _mode_downgraded = True
 
-        # Council is now aliased to Quintessence (Council removed from UI,
-        # Quintessence is strictly better: Council + DCP expert injection).
-        # Keep the alias for backward compatibility with stored sessions.
-        # Only applies if Council was NOT downgraded to Standard above.
-        if routing_mode == RoutingMode.COUNCIL:
-            routing_mode = RoutingMode.QUINTESSENCE
+        # Council / Quintessence distinction (Step 5 of intelligence
+        # consolidation, 2026-04-23):
+        #
+        # Historical behavior removed: Council was silently aliased to
+        # Quintessence here because Quintessence = Council + 15 DCP
+        # experts was marketed as "strictly better." In practice the
+        # 15-expert injection adds N-times the LLM cost for marginal
+        # signal when Skills + Mind personas already cover domain
+        # expertise. For chat, the 3-model Council synthesis is
+        # enough (founder's call).
+        #
+        # New behavior:
+        #   * COUNCIL stays COUNCIL (3-model parallel + meta-synthesis).
+        #   * QUINTESSENCE only fires when the user or a downstream
+        #     caller explicitly asks for it -- no silent promotion.
+        #
+        # Auto-upgrade STANDARD -> COUNCIL on complex/high-risk
+        # queries lives AFTER Stage 2 (query_understanding) because
+        # it reads qu_result. See the block immediately after the
+        # Stage 2 qu_result assignment.
+        _auto_upgraded_routing = False
 
         autopilot = getattr(session_obj, "autopilot", False) or False
         think_mode = getattr(session_obj, "think_mode", False) or False
@@ -758,6 +773,52 @@ class ChatOrchestrator:
             risk=qu_result.risk_level.value,
             confidence=qu_result.confidence,
         )
+
+        # ── Stage 2.15: Auto-upgrade routing mode on complex queries ──
+        # (Step 4 of intelligence consolidation, 2026-04-23.)
+        # When the founder leaves the chat on STANDARD but asks a
+        # genuinely hard question, silently upgrade to COUNCIL (3-model
+        # parallel + meta-synthesis). Hard = complexity COMPLEX /
+        # VERY_COMPLEX OR risk HIGH / CRITICAL. Not QUINTESSENCE --
+        # the 15 DCP experts are off the auto path (see Stage 5 note
+        # above). Respects the 2+ selectable models gate; if not
+        # enough models available, stays on STANDARD so the user
+        # still gets an answer instead of a governance downgrade
+        # notice.
+        if (
+            routing_mode == RoutingMode.STANDARD
+            and not _mode_downgraded
+            and self._registry is not None
+        ):
+            _complexity_u = (qu_result.complexity_label.value or "").upper()
+            _risk_u = (qu_result.risk_level.value or "").upper()
+            _hard_query = (
+                _complexity_u in ("COMPLEX", "VERY_COMPLEX")
+                or _risk_u in ("HIGH", "CRITICAL")
+            )
+            if _hard_query:
+                try:
+                    _snap = await self._registry.snapshot(force_refresh=False)
+                    _sel = int(_snap.get("summary", {}).get("selectable_model_count", 0) or 0)
+                except Exception:
+                    _sel = 0
+                if _sel >= 2:
+                    routing_mode = RoutingMode.COUNCIL
+                    _auto_upgraded_routing = True
+                    logger.info(
+                        "orchestrator.auto_routing_upgraded",
+                        from_mode="STANDARD",
+                        to_mode="COUNCIL",
+                        complexity=_complexity_u,
+                        risk=_risk_u,
+                        selectable_models=_sel,
+                    )
+                    yield {
+                        "type": "auto_routing_upgraded",
+                        "from": "STANDARD",
+                        "to": "COUNCIL",
+                        "reason": f"{_complexity_u.lower()} query -- multi-model debate",
+                    }
 
         # ── Stage 2.3: Emotional Awareness ───────────────────
         # Read the user's tone so the system prompt overlay can steer
