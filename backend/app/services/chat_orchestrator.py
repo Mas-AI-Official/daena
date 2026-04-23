@@ -1739,16 +1739,36 @@ class ChatOrchestrator:
 
         # ── Stage 6.6: Filesystem skills (OpenClaw pattern) ─────
         # Inject a compact manifest of SKILL.md-based skills so the
-        # LLM knows what actionable skills are available.  These
+        # LLM knows what actionable skills are available. These
         # complement the DB-backed Skill Refinery skills above.
-        try:
-            from app.services.skills.skill_loader import get_skill_manifest
-            fs_manifest = get_skill_manifest()
-            if fs_manifest:
-                system_prompt += fs_manifest
-                logger.info("orchestrator.fs_skills_injected", chars=len(fs_manifest))
-        except Exception:
-            logger.debug("orchestrator.fs_skill_loader_failed", exc_info=True)
+        #
+        # Intent gate (Step 7 of intelligence consolidation, 2026-04-23):
+        # the manifest is ~15 KB (3.7k tokens) per turn. On trivial
+        # queries (SIMPLE / SEARCH / CREATIVE intent) the LLM has no
+        # use for it -- the DB skill retrieval at Stage 6.5 already
+        # ships the top-5 relevant skills. Only inject the full
+        # manifest when the LLM is likely to need to PICK between
+        # many skills: TOOL_USE, CODING, MULTI_STEP, DANGEROUS,
+        # AMBIGUOUS, ANALYSIS.
+        _fs_skills_intents = {
+            "TOOL_USE", "CODING", "MULTI_STEP",
+            "DANGEROUS", "AMBIGUOUS", "ANALYSIS",
+        }
+        _fs_skills_eligible = (qu_result.intent.value or "").upper() in _fs_skills_intents
+        if _fs_skills_eligible:
+            try:
+                from app.services.skills.skill_loader import get_skill_manifest
+                fs_manifest = get_skill_manifest()
+                if fs_manifest:
+                    system_prompt += fs_manifest
+                    logger.info("orchestrator.fs_skills_injected", chars=len(fs_manifest))
+            except Exception:
+                logger.debug("orchestrator.fs_skill_loader_failed", exc_info=True)
+        else:
+            logger.debug(
+                "orchestrator.fs_skills_skipped_trivial",
+                intent=qu_result.intent.value,
+            )
 
         # ── Stage 6.65: TLM Phase-Aware Tool Optimization ───────
         # Detect conversation phase from user message (zero LLM cost),
