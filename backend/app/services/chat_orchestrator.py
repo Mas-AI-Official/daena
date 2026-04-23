@@ -1126,28 +1126,87 @@ class ChatOrchestrator:
 
         elif governance_mode == GovernanceMode.BALANCED:
             # BALANCED: Run governance but auto-approve tiers 0-2.
-            yield {"type": "thinking", "stage": "governance"}
-
-            from app.services.governance import GovernanceEngine
-
-            gov = GovernanceEngine(self._db)
-            gov_result = await gov.evaluate(
-                action_type="LLM_CALL",
-                action_params={
-                    "intent": qu_result.intent.value,
-                    "risk": qu_result.risk_level.value,
-                    "model": preferred_model,
-                    "routing_mode": routing_mode.value,
-                },
-                governance_slider=governance_mode.value,
-                actor_type="USER",
-                actor_role=user_role,
-                tenant_id=tenant_id,
-                user_id=user_id,
-                session_id=session_id,
-                autopilot=True,  # Force auto-approve in BALANCED
+            #
+            # Fast-path (Step 3 of intelligence consolidation): skip the
+            # DB-backed GovernanceEngine.evaluate for safe read-only
+            # LLM_CALL queries. Previously this stage took ~2.0 s per
+            # chat on "what is 2+2" because evaluate loads policies,
+            # intent mappings, tier rules, and writes an audit row.
+            # For BALANCED + safe intent + low risk + CMD mode, the
+            # outcome is ALWAYS "allowed=True, tier=0, auto-approve"
+            # -- so the evaluate call is pure latency with no signal.
+            #
+            # The fast-path still:
+            #   - records the skip in structured log for audit trail
+            #   - emits a governance_notice event (tier=0) so the UI
+            #     continues to reflect governance activity
+            #   - respects governance_mode overrides by only kicking in
+            #     when governance_mode == BALANCED (GOVERNED keeps the
+            #     full path unchanged)
+            #
+            # Anything that hints at risk -- DANGEROUS / TOOL_USE /
+            # SECURITY_SCAN / MULTI_STEP / AMBIGUOUS intents, MEDIUM+
+            # risk, EXE mode -- falls through to the full evaluate
+            # call below the fast-path block.
+            _FAST_PATH_INTENTS = {
+                "SIMPLE", "SEARCH", "CODING", "ANALYSIS", "CREATIVE",
+            }
+            _FAST_PATH_RISKS = {"NONE", "LOW"}
+            _fast_path_eligible = (
+                qu_result.intent.value in _FAST_PATH_INTENTS
+                and qu_result.risk_level.value in _FAST_PATH_RISKS
+                and chat_mode == ChatMode.CMD
             )
-            governance_tier = gov_result.get("governance_tier", 0)
+
+            if _fast_path_eligible:
+                governance_tier = 0
+                gov_result = {
+                    "allowed": True,
+                    "governance_tier": 0,
+                    "risk_level": qu_result.risk_level.value,
+                    "action_type": "LLM_CALL",
+                    "action_params": {
+                        "intent": qu_result.intent.value,
+                        "risk": qu_result.risk_level.value,
+                        "model": preferred_model,
+                        "routing_mode": routing_mode.value,
+                    },
+                    "message": (
+                        f"BALANCED fast-path -- {qu_result.intent.value} "
+                        f"intent + {qu_result.risk_level.value} risk, "
+                        "auto-approved at tier 0."
+                    ),
+                    "autopilot_override": True,
+                }
+                logger.info(
+                    "orchestrator.governance_fast_path",
+                    session_id=str(session_id),
+                    intent=qu_result.intent.value,
+                    risk=qu_result.risk_level.value,
+                )
+            else:
+                yield {"type": "thinking", "stage": "governance"}
+
+                from app.services.governance import GovernanceEngine
+
+                gov = GovernanceEngine(self._db)
+                gov_result = await gov.evaluate(
+                    action_type="LLM_CALL",
+                    action_params={
+                        "intent": qu_result.intent.value,
+                        "risk": qu_result.risk_level.value,
+                        "model": preferred_model,
+                        "routing_mode": routing_mode.value,
+                    },
+                    governance_slider=governance_mode.value,
+                    actor_type="USER",
+                    actor_role=user_role,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    session_id=session_id,
+                    autopilot=True,  # Force auto-approve in BALANCED
+                )
+                governance_tier = gov_result.get("governance_tier", 0)
 
         else:
             # GOVERNED: Full 10-stage pipeline (enterprise mode, unchanged)
