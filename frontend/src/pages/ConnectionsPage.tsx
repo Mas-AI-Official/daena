@@ -2489,7 +2489,17 @@ export function ConnectionsPage() {
   const autopilotActive = useUiStore((s) => s.autopilotActive)
   // CLI-side MCP detection (Session 9) -- surfaces MCPs already installed
   // in Claude Code / Codex / Gemini CLIs and offers one-click import.
-  const mcpSync = useMCPDetections()
+  //
+  // The onImported callback fires after a successful import and tells
+  // the MCP registry to refresh. Without this, the import succeeds in
+  // the backend but the MCP Servers tab + header chip stay stale, so
+  // the user sees "Imported" on the button but no other counter
+  // updates -- looks like nothing happened. (Wiring fix 2026-04-23.)
+  const mcpSync = useMCPDetections({
+    onImported: () => {
+      void mcpRegistry.refresh()
+    },
+  })
   // Session 10: inline OAuth-broker setup modal (replaces the jarring
   // redirect to /settings when Google/Notion/etc. credentials aren't
   // configured yet). Holds the connector name + missing field so the
