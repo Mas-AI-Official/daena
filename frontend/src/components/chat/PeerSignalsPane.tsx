@@ -101,9 +101,21 @@ export function PeerSignalsPane({
 
   if (collapsed) return null
 
+  // Self-explanatory title hover so first-time viewers don't have to
+  // guess what "Company-wide" means. The wildcard "Daena" department
+  // shows cross-team events; a real department name shows just-that-
+  // room's events. (See module docstring + audit 2026-04-23.)
+  const headerHelp =
+    departmentName === 'Daena' || !departmentName
+      ? 'Cross-department activity feed: scans, approvals, drafts, and other events from every team. Updates in real time as work happens anywhere in Daena.'
+      : `Activity feed scoped to the ${departmentName} department. Events from peer departments that match this department's relevance lens also appear here.`
+
   return (
     <div className="h-full w-80 shrink-0 border-l border-white/5 bg-midnight-300/20 flex flex-col">
-      <div className="shrink-0 flex items-center gap-2 px-3 py-2.5 border-b border-white/5">
+      <div
+        className="shrink-0 flex items-center gap-2 px-3 py-2.5 border-b border-white/5"
+        title={headerHelp}
+      >
         <Radio size={14} className="text-accent-cyan" />
         <p className="text-xs font-medium text-starlight-100">{title}</p>
         <span className="text-[10px] text-starlight-500 ml-auto">

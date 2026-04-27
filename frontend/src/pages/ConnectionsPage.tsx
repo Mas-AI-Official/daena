@@ -2682,16 +2682,34 @@ export function ConnectionsPage() {
         <div className="p-5 rounded-xl bg-gradient-to-r from-primary-500/10 via-accent-purple/10 to-accent-cyan/10 border border-primary-500/20">
           <h1 className="text-lg font-display font-semibold text-starlight-100 mb-1">Connect your tools</h1>
           <p className="text-xs text-starlight-400 mb-4">Runtimes, MCP servers, and external services -- all governed by Daena</p>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-x-6 gap-y-2 flex-wrap">
+            {/*
+              Honest label split (2026-04-23 wiring fix): the header
+              previously read extensions.length under "MCP servers
+              active", which contradicted the MCP Servers tab beside
+              it (that one read mcpRegistry.entries.length). Now each
+              chip uses one source of truth and self-explains its
+              meaning via title= tooltip.
+            */}
+            <div className="flex items-center gap-2" title="CLI runtimes (Claude Code / Codex / Gemini CLI / Ollama / vLLM) currently reachable">
               <div className="w-2 h-2 rounded-full bg-status-success" />
               <span className="text-xs text-starlight-300"><span className="font-mono font-semibold text-starlight-100">{onlineRuntimes}</span> runtimes connected</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-accent-purple" />
-              <span className="text-xs text-starlight-300"><span className="font-mono font-semibold text-starlight-100">{extensions.length}</span> MCP servers active</span>
+            <div className="flex items-center gap-2" title="Local primitives Daena can use directly: filesystem, terminal, browser, screen capture. Configured in the Extensions tab.">
+              <div className="w-2 h-2 rounded-full bg-status-info" />
+              <span className="text-xs text-starlight-300"><span className="font-mono font-semibold text-starlight-100">{extensions.length}</span> extensions active</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" title="MCP servers imported into Daena's registry. Manage in the MCP Servers tab.">
+              <div className="w-2 h-2 rounded-full bg-accent-purple" />
+              <span className="text-xs text-starlight-300"><span className="font-mono font-semibold text-starlight-100">{mcpRegistry.entries.length}</span> MCP servers active</span>
+            </div>
+            {mcpSync.detections.length > 0 && (
+              <div className="flex items-center gap-2" title={`${mcpSync.detections.length} MCP servers were detected in other CLI configs (Claude Desktop, etc.) but are not yet imported to Daena. Open the MCP Servers tab and click Import to enable them.`}>
+                <div className="w-2 h-2 rounded-full bg-accent-amber" />
+                <span className="text-xs text-starlight-300"><span className="font-mono font-semibold text-accent-amber">{mcpSync.detections.length}</span> detected, not imported</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2" title="Aggregate tool count exposed to Daena across all extensions and connected plugins.">
               <div className="w-2 h-2 rounded-full bg-accent-cyan" />
               <span className="text-xs text-starlight-300"><span className="font-mono font-semibold text-starlight-100">{totalTools}</span> tools available</span>
             </div>

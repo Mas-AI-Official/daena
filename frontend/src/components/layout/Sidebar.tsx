@@ -26,6 +26,7 @@ import {
   LogOut,
   Sparkles,
   Rocket,
+  Activity,
 } from 'lucide-react'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -37,6 +38,10 @@ interface NavItem {
   icon: React.ReactNode
   badge?: string
   badgeKey?: string
+  /** Hover tooltip explaining what the page does in one sentence.
+   *  Added 2026-04-23 so first-time users don't have to click every
+   *  link to learn what it is. Kept short (≤120 chars). */
+  title?: string
 }
 
 interface NavGroup {
@@ -85,10 +90,22 @@ const navGroups: NavGroup[] = [
     title: 'Execution',
     color: 'text-status-success',
     items: [
-      { label: 'Tasks', path: '/tasks', icon: <ListTodo size={18} />, badgeKey: 'tasks' },
-      { label: 'Projects', path: '/projects', icon: <FolderKanban size={18} /> },
-      { label: 'Pipeline', path: '/pipeline', icon: <Kanban size={18} /> },
-      { label: 'Files', path: '/files', icon: <FileText size={18} /> },
+      // Workstreams = Daena's visible unit of autonomy (Council R3 lock,
+      // 2026-04-25). Listed first because it's THE buyer-facing surface
+      // that demonstrates "OpenClaw-but-better": governed, interruptible
+      // threads of work that can be redirected mid-flight. Tasks /
+      // Projects / Pipeline / Files are containers and dumb lists; the
+      // workstream is the live thing.
+      {
+        label: 'Workstreams',
+        path: '/workstreams',
+        icon: <Activity size={18} />,
+        title: 'Live console for autonomous work. Each workstream is one Daena task you can pause, redirect mid-flight, or cancel. Use this to watch what she is doing in real time.',
+      },
+      { label: 'Tasks', path: '/tasks', icon: <ListTodo size={18} />, badgeKey: 'tasks', title: 'Discrete work items, queued + retryable. Each task has a status, owner, and audit trail.' },
+      { label: 'Projects', path: '/projects', icon: <FolderKanban size={18} />, title: 'Group related tasks under a project. Scopes context for agents and bills work to the right tenant.' },
+      { label: 'Pipeline', path: '/pipeline', icon: <Kanban size={18} />, title: 'Sales / GTM kanban. Auto-populated by Company Mode activations and reply triage.' },
+      { label: 'Files', path: '/files', icon: <FileText size={18} />, title: 'Files Daena has read or produced -- uploads, generated artifacts, exported reports.' },
     ],
   },
   {
@@ -106,7 +123,7 @@ const navGroups: NavGroup[] = [
       // Authorized-scope editor: declares which domains/CIDRs YELLOW-
       // tier security tools may run against for this tenant. Founder-
       // only page -- non-founders see an empty-state lock.
-      { label: 'Authorized Scope', path: '/security/scope', icon: <ShieldCheck size={18} /> },
+      { label: 'Scan Scope', path: '/security/scope', icon: <ShieldCheck size={18} /> },
       // "Engagements" used to live here at /engagements. It was a
       // duplicate of /scan (same T1-T5 launcher). Removed from the
       // visible nav 2026-04-21 per founder feedback. The route still
@@ -265,6 +282,7 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
                   <Link
                     key={item.path}
                     to={item.path}
+                    title={item.title}
                     className={`
                       flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]
                       ${
