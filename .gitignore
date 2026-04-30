@@ -43,6 +43,14 @@ docs/*
 # HackingTool integration audit + policy doc -- public-facing rationale
 # for the security-tool denylist. Commits to both Daena + Daena OSS.
 !docs/HACKINGTOOL_INTEGRATION.md
+# Connections / MCP / Plugins / Runtime rebuild deliverables
+# (rebuild-connections-mcp-runtime branch, started 2026-04-30)
+!docs/CONNECTIONS_REBUILD_PLAN.md
+!docs/CONNECTIONS_MCP_PLUGIN_ARCHITECTURE_V2.md
+!docs/CONNECTIONS_CURRENT_DAMAGE_REPORT.md
+!docs/CONNECTIONS_FILE_MAP.md
+!docs/_explore/
+!docs/_explore/*.md
 
 # Internal prompts and session logs (dev-only)
 Doc/
