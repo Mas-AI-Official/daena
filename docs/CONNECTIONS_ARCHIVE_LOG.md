@@ -32,12 +32,17 @@ All 7 moves verified:
 | 6 | `frontend/src/pages/connections/oauth.ts` (5.5 KB) | `archive/connections_rebuild_20260430_171410/frontend/src/pages/connections/oauth.ts` | Helper `startOAuthConnect` used only by archived `BrowseModal` + `ConnectionsConnectors`. The V2 OAuth flow lives in `installFlow.ts` + `components/connections/ConnectorInstallDialog.tsx` (both KEEP). | `pages/connections/installFlow.ts` (V2 OAuth state machine; already live) | LOW |
 | 7 | `frontend/src/pages/connections/shared.tsx` (5.2 KB) | `archive/connections_rebuild_20260430_171410/frontend/src/pages/connections/shared.tsx` | Helper components `ConfigPanel`, `ContextMenu`, `PermissionSelect` used only by archived `ConnectionsConnectors` + `ConnectionsExtensions` + `ConnectionsRuntimes`. | None needed; V2 panels do not use these helpers. New equivalents (if needed) will be added per V2 §9 Plugin Detail Drawer in Phase 7. | LOW |
 
-### Files NOT moved this batch (intentional deferrals)
+### Files NOT moved in the main Phase 3 batch (intentional deferrals)
 
 | Path | Status | Why deferred |
 |---|---|---|
 | `frontend/src/pages/connections/catalog.ts` (880 LOC) | DEFER → Phase 7 | Live consumer: `PluginsCatalogBrowser.tsx` imports `CONNECTOR_MCP_EQUIVALENT`. Extraction of this single constant into `connectorMcpMap.ts` is a frontend code change; founder constraint for Phase 3 is "no rebuild frontend yet." Per file map: "ARCHIVE (mostly); KEEP only `CONNECTOR_MCP_EQUIVALENT` (move to small file)." Move scheduled for Phase 7 frontend rebuild. |
-| `frontend/src/pages/connections/OAuthSetupModal.tsx` (13 KB) | DEFER → ADR supplement / Phase 7 | Independent finding: zero external consumers (cross-tree grep + gitnexus). Same orphan pattern as `ConnectionsMcpServers.tsx`. NOT in the file map's ARCHIVE list, so not moved in this batch. Suggest founder add to next ADR supplement or roll into Phase 7 sweep. |
+
+### Phase 3 supplement (2026-04-30) — OAuthSetupModal.tsx
+
+| # | Original path | Archive path | Why archived | Replacement file | Risk |
+|---|---|---|---|---|---|
+| 8 | `frontend/src/pages/connections/OAuthSetupModal.tsx` (13 KB) | `archive/connections_rebuild_20260430_171410/frontend/src/pages/connections/OAuthSetupModal.tsx` | Independent orphan finding during Phase 3 verification: zero static imports, zero dynamic imports, zero URL/route refs, gitnexus `impactedCount=0`. Same orphan pattern as `ConnectionsMcpServers.tsx`. Per ADR-002 D-016. | `pages/connections/installFlow.ts` + `components/connections/ConnectorInstallDialog.tsx` (V2 OAuth flow; both KEEP) | LOW (no live consumers; was untracked in git) |
 
 ### Files NOT in scope for any phase of this rebuild
 

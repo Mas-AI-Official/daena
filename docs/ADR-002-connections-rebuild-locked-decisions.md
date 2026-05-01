@@ -245,6 +245,20 @@ This ADR is the single source of truth for the design decisions surfaced by the 
 
 ---
 
+## D-016 — `OAuthSetupModal.tsx` is ARCHIVE (Phase 3 supplement, 2026-04-30)
+
+**Decision.** `frontend/src/pages/connections/OAuthSetupModal.tsx` (13 KB, untracked, zero external consumers) is classified ARCHIVE. Moved to `archive/connections_rebuild_20260430_171410/frontend/src/pages/connections/OAuthSetupModal.tsx` in a 1-file follow-up commit to the Phase 3 batch.
+
+**Rule.**
+- Same archive treatment as the Phase 3 batch (D-009): no header comment, original file moved as-is, recovery via `mv` reversal.
+- Verified zero consumers via four checks: static `from '...OAuthSetupModal'` grep (0 external), dynamic `import(...)` / `React.lazy` grep (0), URL/route grep (0), `gitnexus impact OAuthSetupModal --direction upstream --depth 3` (LOW risk, 0 affected modules / processes).
+- The file imported `CONNECTOR_MCP_EQUIVALENT` from `catalog.ts`; after archive, `catalog.ts` has exactly one remaining live consumer (`PluginsCatalogBrowser`). The catalog.ts Phase-7 extraction plan (D-009 deferral) is unaffected.
+- The OAuth flow that this modal claimed to provide is now owned by `installFlow.ts` + `components/connections/ConnectorInstallDialog.tsx` (both KEEP). No replacement needed.
+
+**Why.** Found during Ultraview review and Phase 3 archive verification. Same orphan pattern as `ConnectionsMcpServers.tsx` (D-009): file is in tree, has no consumers, would have silently survived Phase 3 if not flagged. Archiving in a tiny follow-up commit (rather than rolling into Phase 7) keeps the live `pages/connections/` tree honest about what is actually mounted.
+
+---
+
 ## D-015 — Pre-Phase-3 baseline tests recorded in CONNECTIONS_REBUILD_PLAN.md (resolves Ultraview B5)
 
 **Decision.** Backend pytest, frontend `tsc --noEmit`, frontend `npm run build`, and frontend lint baselines MUST be recorded in `CONNECTIONS_REBUILD_PLAN.md` before any `git mv`.
