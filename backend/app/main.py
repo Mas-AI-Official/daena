@@ -707,6 +707,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # === ESSENTIALS START ===
 
+    # --- Vault V2 KEK validation (Phase 4a-2) ---
+    # Refuse-to-boot in production if DAENA_KEK is missing or invalid.
+    # In dev mode, fall back to a deterministic dev KEK with a warning.
+    # Per ADR-002 D-003. Never logs the KEK itself, only its 8-hex
+    # sha256 prefix as an identity fingerprint.
+    _ts = _time.perf_counter()
+    from app.core.vault_boot import (
+        RefuseToBoot,
+        kek_sha256_prefix,
+        load_kek_from_env,
+    )
+
+    try:
+        _kek = load_kek_from_env(is_production=settings.is_production)
+    except RefuseToBoot as exc:
+        logger.critical("vault.kek_missing_in_production", reason=str(exc))
+        raise
+    app.state.daena_kek = _kek
+    logger.info(
+        "vault.kek_loaded",
+        sha256_prefix=kek_sha256_prefix(_kek),
+        is_production=settings.is_production,
+        ms=int((_time.perf_counter() - _ts) * 1000),
+    )
+    del _kek  # Reduce time it sits in a local; app.state holds the canonical ref.
+
     # --- Auto-create tables (idempotent) + ALTER TABLE migrations ---
     _ts = _time.perf_counter()
     from app.core.database import engine

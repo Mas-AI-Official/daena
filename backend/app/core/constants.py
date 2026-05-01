@@ -626,3 +626,30 @@ def resolve_governance_tier(
             pass  # Unknown value, use governance_mode as-is
     tier_map = GOVERNANCE_TIER_MAP.get(governance_mode, GOVERNANCE_TIER_MAP[GovernanceMode.BALANCED])
     return tier_map.get(risk, 0)
+
+
+# ============================================================
+# Vault V2 (Phase 4a-2) -- envelope-encryption KEK env vars
+# ============================================================
+#
+# DAENA_KEK is the new master KEK env var (per ADR-002 D-003).
+# LEGACY_VAULT_KEK_ENV is honored as fallback during the migration
+# window; remove post-V2.
+#
+# KEK_BYTE_LENGTH = 32 (AES-256). Env value is encoded as 64-char hex
+# OR 44-char base64 (since binary 32 bytes can't live in env vars).
+#
+# PLACEHOLDER_KEK_VALUES are recognized as "not set" -- prevents the
+# legacy "CHANGE-ME" placeholder from accidentally being treated as
+# a real KEK by load_kek_from_env() in production.
+
+DAENA_KEK_ENV: str = "DAENA_KEK"
+LEGACY_VAULT_KEK_ENV: str = "VAULT_ENCRYPTION_KEY"
+KEK_BYTE_LENGTH: int = 32
+PLACEHOLDER_KEK_VALUES: frozenset[str] = frozenset({
+    "",
+    "CHANGE-ME-32-byte-key-for-aes256",
+    "CHANGE-ME",
+    "PLACEHOLDER",
+    "PLACEHOLDER-DEV-KEY",
+})

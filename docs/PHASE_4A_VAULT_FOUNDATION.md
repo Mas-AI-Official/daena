@@ -103,11 +103,20 @@ Total: **33 tests**, all green, sub-100ms. Pure-functional module with no fixtur
 
 ## What comes next
 
-**Phase 4a-2** (separate PR, gated on founder review of the 4 NEEDS_FOUNDER_DECISION files):
-- Add Alembic migration `006_secrets_envelope_vault.py` (creates `secrets` table + `tenants.dek_wrapped` column).
-- Register `Secret` SQLAlchemy model in `models/__init__.py`.
-- Add boot-time KEK validation in `main.py` (`RefuseToBoot` if `DAENA_KEK` missing in `DEPLOYMENT_MODE=cloud`; print `vault.kek_loaded sha256_prefix=<8hex>` log line).
-- Env-var rename plumbing: accept both `VAULT_ENCRYPTION_KEY` (legacy) and `DAENA_KEK` (new) in `core/constants.py`, with deprecation warning when only legacy is set.
+**Phase 4a-2 — DONE** (committed alongside Phase 4a-1's foundation):
+- ✅ Alembic migration `006_secrets_envelope_vault.py` -- creates `secrets` table + adds `tenants.dek_wrapped` column. Idempotent guards mirror migrations 003-005. Chain verified: `001 → 002 → 003 → 004 → 005 → 006`.
+- ✅ `Secret` SQLAlchemy model at `backend/app/models/secret.py` -- TenantMixin + TimestampMixin + unique constraint on `(tenant_id, secret_class, bound_to)` + index on `(tenant_id, secret_class)`. Ciphertext / nonce / tag stored as `LargeBinary` (BYTEA on Postgres, BLOB on SQLite).
+- ✅ `Secret` registered in `backend/app/models/__init__.py` (import + `__all__`). Triggers Alembic auto-discovery; `Base.metadata.create_all` picks it up in dev.
+- ✅ Boot-time KEK validation in `main.py` lifespan ESSENTIALS (added BEFORE the auto-create-tables step). Calls `load_kek_from_env(is_production=settings.is_production)`. Stores the validated KEK on `app.state.daena_kek`. Logs `vault.kek_loaded sha256_prefix=<8hex>` with `is_production` flag. `RefuseToBoot` propagates from the lifespan and aborts startup in production.
+- ✅ Env-var plumbing: `DAENA_KEK_ENV` + `LEGACY_VAULT_KEK_ENV` constants in `core/constants.py`. New `core/vault_boot.py` (~140 LOC) reads either env var (DAENA_KEK precedence), validates 64-char hex OR 44-char base64 yielding 32 bytes, raises `RefuseToBoot` in prod / falls back to deterministic `DEV_FALLBACK_KEK` in dev with a loud warning. Placeholder values (`CHANGE-ME`, `PLACEHOLDER`, etc.) treated as "not set."
+- ✅ 38 new tests (`test_vault_boot.py` 32 + `test_secret_model.py` 6). All pass.
+- ✅ vault_v2.py module unchanged (per founder rule "Do not modify vault_v2.py unless a test proves a bug").
+- ✅ Legacy `core/vault.py` unchanged.
+- ✅ No existing secrets migrated.
+
+**Phase 4a-3** (separate PR):
+- `scripts/migrate_vault_to_v2.py` — re-encrypt every existing `ConnectorInstance.credentials_encrypted` row under envelope. Dry-run by default.
+- Dual-read window: 7 days where both legacy and V2 paths can decrypt.
 
 **Phase 4a-3** (separate PR):
 - `scripts/migrate_vault_to_v2.py` — re-encrypt every existing `ConnectorInstance.credentials_encrypted` row under envelope. Dry-run by default.

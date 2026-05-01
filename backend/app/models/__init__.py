@@ -26,6 +26,7 @@ from app.models.api_key import ApiKey
 from app.models.background_task import BackgroundTask
 from app.models.cron_run import CronRun
 from app.models.mcp_server import McpServer
+from app.models.secret import Secret
 from app.models.waitlist import WaitlistEntry
 from app.models.workstream import (
     Workstream,
@@ -54,6 +55,7 @@ __all__ = [
     "BackgroundTask",
     "CronRun",
     "McpServer",
+    "Secret",
     "WaitlistEntry",
     "Workstream", "WorkstreamEvent",
     "WorkstreamStatus", "WorkstreamEscalationLevel", "WorkstreamEventKind",
