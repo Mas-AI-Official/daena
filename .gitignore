@@ -55,6 +55,8 @@ docs/*
 !docs/PHASE_4A_VAULT_MIGRATION.md
 !docs/PHASE_4A_3_OPERATOR_GATE_REPORT.md
 !docs/PHASE_4B_HANDOFF_CONTEXT.md
+!docs/PHASE_4B_DEV_ONLY_GUARDRAILS.md
+!docs/MIGRATION_SYSTEM_GAP_REPORT.md
 !docs/PRE_PHASE4A_CORE_HUNK_REVIEW.md
 !docs/pre_phase4a_core_dirty_backup.patch
 !docs/_explore/
