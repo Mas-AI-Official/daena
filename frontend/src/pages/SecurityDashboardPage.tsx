@@ -1,5 +1,12 @@
 /**
  * SecurityDashboardPage -- security operations command center.
+ * (Split refactor 2026-04-25; types.ts renamed to types.tsx for JSX exports.)
+ *
+ * Thin orchestrator: header + mode indicator + tab nav + lifted state.
+ * Each tab is its own component under ./security/. Per-tab fetches and
+ * widget logic live there; this page only owns cross-tab state
+ * (governance status, tool catalog + filters, expanded scan detail)
+ * so a tab swap doesn't reset the dashboard.
  *
  * Consumes /api/v1/security/* endpoints:
  *   GET /status  -- mode, shields, tools, history, self-improvement
@@ -14,165 +21,139 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Shield,
   ShieldAlert,
-  ShieldCheck,
-  Crosshair,
-  Terminal,
-  Package,
   RefreshCw,
-  ChevronRight,
-  Activity,
-  Zap,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  Target,
-  Brain,
-  Wrench,
-  TrendingUp,
   Lock,
   Unlock,
-  Search,
-  Loader2,
-  PackagePlus,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
-import { Card, Badge, Shimmer, EmptyState } from '@/components/common'
+import { Shimmer, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
-import { alertDialog, confirmDialog } from '@/stores/confirmStore'
 
-// ── Types ──
+import SecurityOverview from './security/SecurityOverview'
+import SecurityTools from './security/SecurityTools'
+import SecurityScans from './security/SecurityScans'
+import SecurityShields from './security/SecurityShields'
+import SecurityMissions from './security/SecurityMissions'
+import {
+  type DashboardStatus,
+  type ToolInfo,
+  type ShieldDetails,
+  type OpsecStatus,
+  type InstalledFilter,
+} from './security/types'
 
-interface DashboardStatus {
-  evilbob_active: boolean
-  environment: string
-  activated_at: string
-  activated_by: string
-  capabilities: string[]
-  shield_status: Record<string, boolean>
-  tool_stats: {
-    total_known: number
-    total_installed: number
-    total_capabilities: number
-    categories: string[]
-    installed_names: string[]
-  }
-  scan_history: ScanSummary[]
-  self_improvement: {
-    total_traces: number
-    upgrades_triggered: number
-    next_upgrade_at: number
-    traces_until_next: number
-  }
+type TabId = 'overview' | 'tools' | 'scans' | 'shields' | 'missions'
+const TABS: readonly TabId[] = ['overview', 'tools', 'scans', 'shields', 'missions'] as const
+
+// F-SECURITY-CACHE: module-level 30s cache mirrors DashboardPage's pattern.
+// Without this, every tab-bounce to /security re-fired 4 parallel
+// /security/* fetches plus the lazy-chunk parse, contributing to the
+// "chat feels heavy after security tabs" complaint. Cold-load still
+// fetches; subsequent visits inside 30s hit the cache instantly.
+const SECURITY_CACHE_TTL_MS = 30_000
+const SECURITY_REQUEST_TIMEOUT_MS = 10_000
+interface SecurityCache {
+  ts: number
+  status: DashboardStatus | null
+  tools: ToolInfo[]
+  shields: ShieldDetails | null
+  opsec: OpsecStatus | null
 }
-
-interface ScanSummary {
-  scan_id: string
-  target: string
-  target_type: string
-  total_findings: number
-  cycles_used: number
-  strategies_tried: string[]
-  offensive_mode: boolean
-  exploits_succeeded: number
-  waf_detected: string
-}
-
-interface ToolInfo {
-  name: string
-  category: string
-  description: string
-  capabilities: string[]
-  installed: boolean
-  install_cmd: string
-  offensive_only: boolean
-  enabled: boolean
-}
-
-interface OpsecStatus {
-  gated: boolean
-  evilbob_active: boolean
-  fingerprint_profile: string
-  fingerprint_rotations: number
-  request_count: number
-  timing_delay_ms: number
-  evidence_vault_count: number
-  fingerprinting_detected: boolean
-  stealth_tools_installed: Record<string, boolean>
-  note: string
-}
-
-interface ShieldDetails {
-  evilbob_active: boolean
-  departments: Record<string, {
-    mode: string
-    active: boolean
-    role_summary: string
-  }>
-  total_offensive: number
-  total_departments: number
-}
-
-// ── Category colors ──
-const CATEGORY_COLORS: Record<string, string> = {
-  recon: 'text-accent-cyan bg-accent-cyan/10 border-accent-cyan/20',
-  scanning: 'text-status-warning bg-status-warning/10 border-status-warning/20',
-  exploitation: 'text-status-error bg-status-error/10 border-status-error/20',
-  credential: 'text-accent-purple bg-accent-purple/10 border-accent-purple/20',
-  network: 'text-primary-400 bg-primary-400/10 border-primary-400/20',
-  osint: 'text-accent-amber bg-accent-amber/10 border-accent-amber/20',
-  fuzzing: 'text-status-success bg-status-success/10 border-status-success/20',
-  wireless: 'text-starlight-400 bg-starlight-400/10 border-starlight-400/20',
-  cloud: 'text-accent-cyan bg-accent-cyan/10 border-accent-cyan/20',
-  container: 'text-primary-300 bg-primary-300/10 border-primary-300/20',
-  web: 'text-accent-amber bg-accent-amber/10 border-accent-amber/20',
-  reporting: 'text-starlight-500 bg-starlight-500/10 border-starlight-500/20',
-}
-
-// ── Component ──
+let securityCache: SecurityCache | null = null
 
 export function SecurityDashboardPage() {
   usePageTitle('Security Dashboard')
 
-  const [status, setStatus] = useState<DashboardStatus | null>(null)
-  const [tools, setTools] = useState<ToolInfo[]>([])
-  const [shields, setShields] = useState<ShieldDetails | null>(null)
-  const [opsec, setOpsec] = useState<OpsecStatus | null>(null)
-  const [loading, setLoading] = useState(true)
+  const cachedFresh = securityCache && Date.now() - securityCache.ts < SECURITY_CACHE_TTL_MS
+  const [status, setStatus] = useState<DashboardStatus | null>(cachedFresh ? securityCache!.status : null)
+  const [tools, setTools] = useState<ToolInfo[]>(cachedFresh ? securityCache!.tools : [])
+  const [shields, setShields] = useState<ShieldDetails | null>(cachedFresh ? securityCache!.shields : null)
+  const [opsec, setOpsec] = useState<OpsecStatus | null>(cachedFresh ? securityCache!.opsec : null)
+  const [loading, setLoading] = useState(!cachedFresh)
   const [error, setError] = useState('')
 
-  // Filters
+  // Filters live on the parent so they survive tab switches and the
+  // bulk-install button can read the current category filter.
   const [toolSearch, setToolSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
-  const [installedFilter, setInstalledFilter] = useState<'all' | 'installed' | 'missing'>('all')
-  const [activeTab, setActiveTab] = useState<'overview' | 'tools' | 'scans' | 'shields' | 'missions'>('overview')
+  const [installedFilter, setInstalledFilter] = useState<InstalledFilter>('all')
+  const [activeTab, setActiveTab] = useState<TabId>('overview')
 
-  // Expanded scan detail
+  // Expanded scan detail -- lifted so the cached payload survives a
+  // tab-swap back to Scans.
   const [expandedScan, setExpandedScan] = useState<string | null>(null)
   const [scanDetail, setScanDetail] = useState<Record<string, unknown> | null>(null)
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true)
+  const fetchAll = useCallback(async (showLoader = true) => {
+    if (showLoader) setLoading(true)
     setError('')
-    try {
-      const [statusRes, toolsRes, shieldsRes, opsecRes] = await Promise.all([
-        api.get('/security/status'),
-        api.get('/security/tools'),
-        api.get('/security/shields'),
-        api.get('/security/opsec/status').catch(() => ({ data: null })),
-      ])
-      setStatus(statusRes.data)
-      setTools(toolsRes.data)
-      setShields(shieldsRes.data)
-      setOpsec(opsecRes.data)
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to load security dashboard'
+    // 2026-04-30 stabilization: switched from Promise.all to allSettled so
+    // partial backend availability (e.g. /security/tools is the slow one,
+    // ~5s; if it tips over the 10s ceiling under jitter the whole page
+    // used to fail with "Security Dashboard Unavailable"). Now each
+    // section renders independently and only the truly empty page shows
+    // the unavailable card. Per-section "section unavailable" hints will
+    // be rendered downstream.
+    const results = await Promise.allSettled([
+      api.get('/security/status', { timeout: SECURITY_REQUEST_TIMEOUT_MS }),
+      api.get('/security/tools', { timeout: SECURITY_REQUEST_TIMEOUT_MS }),
+      api.get('/security/shields', { timeout: SECURITY_REQUEST_TIMEOUT_MS }),
+      api.get('/security/opsec/status', { timeout: SECURITY_REQUEST_TIMEOUT_MS }),
+    ])
+
+    const [statusR, toolsR, shieldsR, opsecR] = results
+    const nextStatus = statusR.status === 'fulfilled' ? statusR.value.data : null
+    const nextTools = toolsR.status === 'fulfilled' ? toolsR.value.data : []
+    const nextShields = shieldsR.status === 'fulfilled' ? shieldsR.value.data : null
+    const nextOpsec = opsecR.status === 'fulfilled' ? opsecR.value.data : null
+
+    setStatus(nextStatus)
+    setTools(nextTools)
+    setShields(nextShields)
+    setOpsec(nextOpsec)
+
+    // Only declare the dashboard "unavailable" when the headline /status
+    // failed AND we have nothing else useful to render. Otherwise we
+    // render what we have.
+    if (statusR.status === 'rejected' && toolsR.status === 'rejected' && shieldsR.status === 'rejected') {
+      const reason = statusR.reason
+      const msg = reason instanceof Error
+        ? `Security Ops backend request failed: ${reason.message}`
+        : 'Security Ops backend request failed before a response was returned'
       setError(msg)
-    } finally {
-      setLoading(false)
+    } else {
+      // Cache only when we have at least the headline status payload --
+      // otherwise we'd serve partial/incomplete data on subsequent mounts.
+      if (nextStatus) {
+        securityCache = {
+          ts: Date.now(),
+          status: nextStatus,
+          tools: nextTools,
+          shields: nextShields,
+          opsec: nextOpsec,
+        }
+      }
     }
+    if (showLoader) setLoading(false)
   }, [])
 
-  useEffect(() => { fetchAll() }, [fetchAll])
+  useEffect(() => {
+    // Skip the 4-call burst entirely if cache is fresh.
+    if (securityCache && Date.now() - securityCache.ts < SECURITY_CACHE_TTL_MS) return
+    fetchAll()
+  }, [fetchAll])
+
+  useEffect(() => {
+    if (loading) return
+    const toolInventoryRefreshing = Boolean(status?.tool_stats?.refreshing)
+      || tools.some(t => t.install_state === 'pending' || t.install_state === 'stale')
+    if (!toolInventoryRefreshing) return
+
+    const timeout = window.setTimeout(() => {
+      fetchAll(false)
+    }, 2500)
+    return () => window.clearTimeout(timeout)
+  }, [fetchAll, loading, status?.tool_stats?.refreshing, tools])
 
   // Filtered tools
   const filteredTools = useMemo(() => {
@@ -243,7 +224,28 @@ export function SecurityDashboardPage() {
     )
   }
 
-  const s = status!
+  const s: DashboardStatus = status ?? {
+    evilbob_active: false,
+    environment: '',
+    activated_at: '',
+    activated_by: '',
+    capabilities: [],
+    shield_status: {},
+    tool_stats: {
+      total_known: tools.length,
+      total_installed: tools.filter((tool) => tool.installed).length,
+      total_capabilities: categories.length,
+      categories,
+      installed_names: tools.filter((tool) => tool.installed).map((tool) => tool.name),
+    },
+    scan_history: [],
+    self_improvement: {
+      total_traces: 0,
+      upgrades_triggered: 0,
+      next_upgrade_at: 10,
+      traces_until_next: 10,
+    },
+  }
   const isActive = s.evilbob_active
 
   return (
@@ -259,12 +261,23 @@ export function SecurityDashboardPage() {
             )}
             <div>
               <h1 className="text-xl font-semibold text-starlight-100">
-                Security Dashboard
+                Security Operations Center
               </h1>
               <p className="text-sm text-starlight-500">
                 {isActive
-                  ? 'Full-spectrum mode active -- offensive + defensive'
-                  : 'Defensive mode'}
+                  ? 'Elevated authorized security mode active'
+                  : 'Defensive mode -- live shield counters, scan history, threat feed'}
+              </p>
+              {/*
+                Audit-fix banner (2026-04-xx). Keeps users from confusing
+                this dashboard ("what is being blocked") with Scan Scope
+                in the sidebar ("what should we be scanning"). Do not
+                remove without an explicit re-design ticket -- it was
+                added to resolve cross-page confusion the audit caught.
+              */}
+              <p className="text-xs text-starlight-600 mt-0.5">
+                This page shows WHAT Daena is blocking and monitoring.
+                To declare scan targets, use <span className="text-primary-400">Scan Scope</span> in the sidebar.
               </p>
             </div>
           </div>
@@ -278,11 +291,11 @@ export function SecurityDashboardPage() {
                 : 'bg-starlight-800 text-starlight-400 border border-starlight-700'}
             `}>
               {isActive ? <Unlock size={14} /> : <Lock size={14} />}
-              {isActive ? 'OFFENSIVE' : 'DEFENSIVE'}
+              {isActive ? 'ELEVATED' : 'DEFENSIVE'}
             </div>
 
             <button
-              onClick={fetchAll}
+              onClick={() => fetchAll()}
               className="p-2 rounded-lg hover:bg-starlight-800 text-starlight-400
                          hover:text-starlight-200 transition-colors"
               title="Refresh"
@@ -294,7 +307,7 @@ export function SecurityDashboardPage() {
 
         {/* ── Tab bar ── */}
         <div className="flex items-center gap-1 border-b border-starlight-800 pb-px">
-          {(['overview', 'tools', 'scans', 'shields', 'missions'] as const).map(tab => (
+          {TABS.map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -320,10 +333,10 @@ export function SecurityDashboardPage() {
             transition={{ duration: 0.15 }}
           >
             {activeTab === 'overview' && (
-              <OverviewTab status={s} shields={shields} opsec={opsec} />
+              <SecurityOverview status={s} shields={shields} opsec={opsec} />
             )}
             {activeTab === 'tools' && (
-              <ToolsTab
+              <SecurityTools
                 tools={filteredTools}
                 allTools={tools}
                 categories={categories}
@@ -337,7 +350,7 @@ export function SecurityDashboardPage() {
               />
             )}
             {activeTab === 'scans' && (
-              <ScansTab
+              <SecurityScans
                 scans={s.scan_history}
                 expandedScan={expandedScan}
                 scanDetail={scanDetail}
@@ -345,1125 +358,14 @@ export function SecurityDashboardPage() {
               />
             )}
             {activeTab === 'shields' && (
-              <ShieldsTab shields={shields} />
+              <SecurityShields shields={shields} />
             )}
             {activeTab === 'missions' && (
-              <MissionsTab />
+              <SecurityMissions />
             )}
           </motion.div>
         </AnimatePresence>
       </div>
-    </div>
-  )
-}
-
-// ── Overview Tab ──
-
-function OverviewTab({ status, shields, opsec }: { status: DashboardStatus; shields: ShieldDetails | null; opsec: OpsecStatus | null }) {
-  const ts = status.tool_stats
-  const si = status.self_improvement
-
-  return (
-    <div className="space-y-6">
-      {/* IaaS CTA Banner */}
-      <a
-        href="/scan"
-        className="block p-4 rounded-xl bg-gradient-to-r from-primary-500/10 via-accent-cyan/5 to-accent-amber/10 border border-primary-500/20 hover:border-primary-500/40 transition-all group"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Crosshair size={20} className="text-primary-400" />
-            <div>
-              <p className="text-sm font-semibold text-starlight-100 group-hover:text-primary-400 transition-colors">
-                Launch Security Intelligence Scan
-              </p>
-              <p className="text-xs text-starlight-500">
-                Submit a target for multi-model verified analysis -- T1 Scout through T5 Founder
-              </p>
-            </div>
-          </div>
-          <ChevronRight size={16} className="text-starlight-500 group-hover:text-primary-400 transition-colors" />
-        </div>
-      </a>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard
-          icon={<Package size={20} />}
-          label="Tools Known"
-          value={ts.total_known}
-          sub={`${ts.total_installed} installed`}
-          color="text-accent-cyan"
-        />
-        <StatCard
-          icon={<Zap size={20} />}
-          label="Capabilities"
-          value={ts.total_capabilities}
-          sub={`${(ts.categories || []).length} categories`}
-          color="text-accent-amber"
-        />
-        <StatCard
-          icon={<Target size={20} />}
-          label="Scans Run"
-          value={si.total_traces}
-          sub={`${si.upgrades_triggered} upgrades`}
-          color="text-status-success"
-        />
-        <StatCard
-          icon={<Brain size={20} />}
-          label="Next Upgrade"
-          value={si.traces_until_next}
-          sub="scans remaining"
-          color="text-accent-purple"
-        />
-      </div>
-
-      {/* Mode + capabilities */}
-      {status.evilbob_active && (
-        <Card className="p-4 border-status-error/20 bg-status-error/5">
-          <div className="flex items-center gap-2 mb-3">
-            <ShieldAlert className="text-status-error" size={18} />
-            <span className="text-sm font-medium text-status-error">
-              Full-Spectrum Mode Active
-            </span>
-            {status.activated_at && (
-              <span className="text-xs text-starlight-500 ml-auto">
-                Since {status.activated_at}
-              </span>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {status.capabilities.map(cap => (
-              <span
-                key={cap}
-                className="px-2 py-0.5 text-xs rounded bg-status-error/10
-                           text-status-error/80 border border-status-error/20"
-              >
-                {cap}
-              </span>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* SHIELD summary */}
-      {shields && shields.total_offensive > 0 && (
-        <Card className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Shield className="text-accent-amber" size={18} />
-            <span className="text-sm font-medium text-starlight-200">
-              Hidden SHIELD Activation
-            </span>
-            <span className="text-xs text-starlight-500 ml-auto">
-              {shields.total_offensive}/{shields.total_departments} departments offensive
-            </span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            {Object.entries(shields.departments).map(([dept, info]) => (
-              <div
-                key={dept}
-                className={`
-                  px-3 py-2 rounded-lg text-xs border
-                  ${info.active
-                    ? 'bg-status-error/5 border-status-error/20 text-status-error'
-                    : 'bg-starlight-800/50 border-starlight-700 text-starlight-500'}
-                `}
-              >
-                <div className="font-medium truncate">{dept}</div>
-                <div className="opacity-70">{info.mode}</div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* OPSEC (no-trace) stealth stack */}
-      {opsec && (
-        <Card className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            {opsec.gated ? (
-              <Lock className="text-starlight-500" size={18} />
-            ) : (
-              <Unlock className="text-accent-amber" size={18} />
-            )}
-            <span className="text-sm font-medium text-starlight-200">
-              OPSEC Stealth Stack
-            </span>
-            <span className="text-xs text-starlight-500 ml-auto">
-              {opsec.gated ? 'GATED (3vilbob off)' : 'READY'}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            <div>
-              <div className="text-xs text-starlight-500">Active profile</div>
-              <div className="text-starlight-200 truncate" title={opsec.fingerprint_profile}>
-                {opsec.fingerprint_profile || '--'}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-starlight-500">Rotations</div>
-              <div className="text-starlight-200">{opsec.fingerprint_rotations}</div>
-            </div>
-            <div>
-              <div className="text-xs text-starlight-500">Requests</div>
-              <div className="text-starlight-200">{opsec.request_count}</div>
-            </div>
-            <div>
-              <div className="text-xs text-starlight-500">Evidence vault</div>
-              <div className="text-starlight-200">{opsec.evidence_vault_count}</div>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {Object.entries(opsec.stealth_tools_installed).map(([tool, installed]) => (
-              <span
-                key={tool}
-                className={`px-2 py-0.5 text-xs rounded border ${
-                  installed
-                    ? 'bg-status-success/10 border-status-success/30 text-status-success'
-                    : 'bg-starlight-800/50 border-starlight-700 text-starlight-500'
-                }`}
-              >
-                {tool} {installed ? 'installed' : 'missing'}
-              </span>
-            ))}
-          </div>
-
-          {opsec.fingerprinting_detected && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-status-warning">
-              <AlertTriangle size={14} />
-              <span>Target fingerprinted us on a prior request -- consider rotating profile or switching to Playwright-with-stealth.</span>
-            </div>
-          )}
-
-          <div className="mt-3 text-xs text-starlight-500 italic">
-            {opsec.note}
-          </div>
-        </Card>
-      )}
-
-      {/* Recent scans */}
-      {status.scan_history.length > 0 && (
-        <Card className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Activity className="text-accent-cyan" size={18} />
-            <span className="text-sm font-medium text-starlight-200">
-              Recent Scans
-            </span>
-          </div>
-          <div className="space-y-2">
-            {status.scan_history.slice(0, 5).map(scan => (
-              <ScanRow key={scan.scan_id} scan={scan} />
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* Self-improvement progress */}
-      <Card className="p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <TrendingUp className="text-accent-purple" size={18} />
-          <span className="text-sm font-medium text-starlight-200">
-            Self-Improvement Loop
-          </span>
-        </div>
-        <div className="space-y-2 text-sm text-starlight-400">
-          <div className="flex justify-between">
-            <span>Total scan traces archived</span>
-            <span className="text-starlight-200">{si.total_traces}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Upgrade cycles triggered</span>
-            <span className="text-starlight-200">{si.upgrades_triggered}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Next upgrade in</span>
-            <span className="text-starlight-200">{si.traces_until_next} scans</span>
-          </div>
-          {/* Progress bar */}
-          <div className="w-full bg-starlight-800 rounded-full h-1.5 mt-2">
-            <div
-              className="bg-accent-purple rounded-full h-1.5 transition-all"
-              style={{
-                width: `${si.next_upgrade_at > 0
-                  ? ((si.next_upgrade_at - si.traces_until_next) / si.next_upgrade_at) * 100
-                  : 0}%`
-              }}
-            />
-          </div>
-        </div>
-      </Card>
-    </div>
-  )
-}
-
-// ── Tools Tab ──
-
-function ToolsTab({
-  tools, allTools, categories, search, onSearchChange,
-  categoryFilter, onCategoryChange, installedFilter, onInstalledChange,
-  onReload,
-}: {
-  tools: ToolInfo[]
-  allTools: ToolInfo[]
-  categories: string[]
-  search: string
-  onSearchChange: (v: string) => void
-  categoryFilter: string
-  onCategoryChange: (v: string) => void
-  installedFilter: 'all' | 'installed' | 'missing'
-  onInstalledChange: (v: 'all' | 'installed' | 'missing') => void
-  onReload: () => void
-}) {
-  // Bulk-install progress state: null when idle, otherwise the latest
-  // poll snapshot from /tools/install-all/status/{jobId}.
-  const [bulkProgress, setBulkProgress] = useState<{
-    jobId: string
-    status: 'running' | 'complete' | 'failed'
-    total: number
-    done: number
-    succeeded: number
-    failed: number
-    skipped: number
-    current: string
-  } | null>(null)
-  const bulkRunning = bulkProgress?.status === 'running'
-
-  const installAll = async () => {
-    const missing = allTools.filter(t => !t.installed)
-    const effectiveMissing = categoryFilter
-      ? missing.filter(t => t.category === categoryFilter)
-      : missing
-    if (effectiveMissing.length === 0) {
-      await alertDialog({
-        title: 'Nothing to install',
-        message: 'All tools in the current filter are already installed.',
-        confirmLabel: 'OK',
-      })
-      return
-    }
-    const confirmed = await confirmDialog({
-      title: `Install ${effectiveMissing.length} missing tool(s)?`,
-      message: (
-        'Daena will run each tool\'s catalog install command as a subprocess ' +
-        '(choco / pip / npm / go install / apt, per platform). This runs in ' +
-        'the background -- the button shows live progress. Tools whose ' +
-        'prerequisite (e.g. Go, Ruby) is missing will be skipped cleanly.'
-      ),
-      confirmLabel: `Install ${effectiveMissing.length}`,
-      cancelLabel: 'Cancel',
-      variant: 'warning',
-    })
-    if (!confirmed) return
-
-    // Kick off the background job. Backend returns immediately with job_id.
-    let jobId = ''
-    try {
-      const { data } = await api.post(
-        '/security/tools/install-all',
-        null,
-        { params: categoryFilter ? { category: categoryFilter } : {} },
-      )
-      jobId = data.job_id
-      setBulkProgress({
-        jobId,
-        status: 'running',
-        total: data.total,
-        done: 0,
-        succeeded: 0,
-        failed: 0,
-        skipped: 0,
-        current: '',
-      })
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Install-all failed'
-      await alertDialog({
-        title: 'Bulk install failed to start',
-        message: msg,
-        confirmLabel: 'Dismiss',
-        variant: 'danger',
-      })
-      return
-    }
-
-    // Poll every 2s until complete; refresh tool list every 10 installs
-    // so the UI reflects newly-installed tools without waiting for the
-    // full run to finish.
-    let lastReloadDone = 0
-    while (true) {
-      await new Promise(r => setTimeout(r, 2000))
-      try {
-        const { data } = await api.get(
-          `/security/tools/install-all/status/${jobId}`,
-        )
-        setBulkProgress({
-          jobId,
-          status: data.status,
-          total: data.total,
-          done: data.done,
-          succeeded: data.succeeded,
-          failed: data.failed,
-          skipped: data.skipped,
-          current: data.current || '',
-        })
-        if (data.done - lastReloadDone >= 10) {
-          lastReloadDone = data.done
-          onReload()
-        }
-        if (data.status !== 'running') {
-          onReload()
-          break
-        }
-      } catch {
-        // Single poll failure -- keep trying. The user can dismiss the
-        // progress banner manually once done.
-      }
-    }
-  }
-
-  const missingCount = allTools.filter(t => !t.installed).length
-
-  return (
-    <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-starlight-500" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => onSearchChange(e.target.value)}
-            placeholder="Search tools or capabilities..."
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-starlight-800 border border-starlight-700
-                       text-sm text-starlight-200 placeholder:text-starlight-600
-                       focus:outline-none focus:border-primary-500/50"
-          />
-        </div>
-
-        <select
-          value={categoryFilter}
-          onChange={e => onCategoryChange(e.target.value)}
-          className="px-3 py-2 rounded-lg bg-starlight-800 border border-starlight-700
-                     text-sm text-starlight-300 focus:outline-none"
-        >
-          <option value="">All categories</option>
-          {categories.map(c => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-
-        <div className="flex items-center rounded-lg border border-starlight-700 overflow-hidden">
-          {(['all', 'installed', 'missing'] as const).map(f => (
-            <button
-              key={f}
-              onClick={() => onInstalledChange(f)}
-              className={`
-                px-3 py-2 text-xs font-medium capitalize transition-colors
-                ${installedFilter === f
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-starlight-800 text-starlight-400 hover:text-starlight-200'}
-              `}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-
-        <span className="text-xs text-starlight-500">
-          {tools.length}/{allTools.length} tools
-        </span>
-
-        <button
-          onClick={installAll}
-          disabled={bulkRunning || missingCount === 0}
-          className="ml-auto flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-amber/15 text-accent-amber border border-accent-amber/30 text-xs font-medium hover:bg-accent-amber/25 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
-          title="Install every missing tool"
-        >
-          {bulkRunning ? <Loader2 size={14} className="animate-spin" /> : <PackagePlus size={14} />}
-          {bulkRunning
-            ? `Installing ${bulkProgress!.done}/${bulkProgress!.total}`
-            : `Install all missing (${missingCount})`}
-        </button>
-      </div>
-
-      {bulkProgress && (
-        <div className={`p-3 rounded-lg border text-xs ${
-          bulkProgress.status === 'running'
-            ? 'bg-accent-amber/5 border-accent-amber/25 text-accent-amber'
-            : bulkProgress.failed > bulkProgress.succeeded
-              ? 'bg-status-error/5 border-status-error/25 text-status-error'
-              : 'bg-status-success/5 border-status-success/25 text-status-success'
-        }`}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              {bulkProgress.status === 'running' ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <CheckCircle2 size={12} />
-              )}
-              <span className="font-medium">
-                {bulkProgress.status === 'running'
-                  ? `Installing ${bulkProgress.done}/${bulkProgress.total}`
-                  : `Install finished: ${bulkProgress.succeeded} ok, ${bulkProgress.failed} failed, ${bulkProgress.skipped} skipped`}
-              </span>
-              {bulkProgress.current && bulkProgress.status === 'running' && (
-                <span className="text-starlight-400 font-mono">→ {bulkProgress.current}</span>
-              )}
-            </div>
-            {bulkProgress.status !== 'running' && (
-              <button
-                onClick={() => setBulkProgress(null)}
-                className="text-starlight-500 hover:text-starlight-200 cursor-pointer"
-              >
-                Dismiss
-              </button>
-            )}
-          </div>
-          <div className="w-full h-1 bg-starlight-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-current transition-all"
-              style={{
-                width: `${bulkProgress.total > 0 ? (bulkProgress.done / bulkProgress.total) * 100 : 0}%`,
-              }}
-            />
-          </div>
-          <div className="mt-1.5 flex gap-4 text-[10px] text-starlight-500">
-            <span>ok: {bulkProgress.succeeded}</span>
-            <span>failed: {bulkProgress.failed}</span>
-            <span>skipped: {bulkProgress.skipped}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Tool grid */}
-      {tools.length === 0 ? (
-        <EmptyState
-          icon={<Package className="text-starlight-500" size={40} />}
-          title="No tools match"
-          description="Try adjusting your filters"
-        />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {tools.map(tool => (
-            <ToolCard key={tool.name} tool={tool} onReload={onReload} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ToolCard({ tool, onReload }: { tool: ToolInfo; onReload: () => void }) {
-  const [showCmd, setShowCmd] = useState(false)
-  const [installing, setInstalling] = useState(false)
-  const [installError, setInstallError] = useState('')
-  // Optimistic local copy of ``enabled`` so the toggle feels instant
-  // while the POST is in flight. Rolled back on failure.
-  const [localEnabled, setLocalEnabled] = useState(tool.enabled)
-  const [toggling, setToggling] = useState(false)
-  const catColor = CATEGORY_COLORS[tool.category] || 'text-starlight-400 bg-starlight-800 border-starlight-700'
-
-  const handleInstall = async () => {
-    setInstalling(true)
-    setInstallError('')
-    try {
-      const { data } = await api.post(`/security/tools/install/${tool.name}`)
-      if (data.installed_after || data.success || data.already_installed) {
-        onReload()
-      } else {
-        setInstallError(
-          (data.stderr || data.error || 'Install reported failure').slice(0, 300),
-        )
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Install failed'
-      setInstallError(msg.slice(0, 300))
-    } finally {
-      setInstalling(false)
-    }
-  }
-
-  const handleToggle = async () => {
-    const next = !localEnabled
-    setLocalEnabled(next)       // optimistic
-    setToggling(true)
-    try {
-      await api.post(`/security/tools/${tool.name}/enable`, { enabled: next })
-    } catch {
-      setLocalEnabled(!next)    // rollback
-    } finally {
-      setToggling(false)
-    }
-  }
-
-  return (
-    <Card className={`p-3 space-y-2 ${tool.installed && !localEnabled ? 'opacity-60' : ''}`}>
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-2">
-          <Wrench size={14} className="text-starlight-400 flex-shrink-0" />
-          <span className="text-sm font-medium text-starlight-200">{tool.name}</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {tool.offensive_only && (
-            <span className="px-1.5 py-0.5 text-[10px] rounded bg-status-error/10
-                             text-status-error border border-status-error/20">
-              OFF
-            </span>
-          )}
-          {tool.installed ? (
-            <CheckCircle2 size={14} className="text-status-success" />
-          ) : (
-            <XCircle size={14} className="text-starlight-600" />
-          )}
-          {tool.installed && (
-            <button
-              onClick={handleToggle}
-              disabled={toggling}
-              title={localEnabled
-                ? 'Tool is ON — Daena will dispatch it on scans'
-                : 'Tool is OFF — Daena will skip it on scans'}
-              className={`
-                relative inline-flex h-[18px] w-[32px] items-center rounded-full
-                transition-colors cursor-pointer
-                ${localEnabled
-                  ? 'bg-status-success/70 hover:bg-status-success'
-                  : 'bg-starlight-700 hover:bg-starlight-600'}
-                ${toggling ? 'opacity-60' : ''}
-              `}
-            >
-              <span
-                className={`
-                  inline-block h-[14px] w-[14px] rounded-full bg-white transition-transform
-                  ${localEnabled ? 'translate-x-[16px]' : 'translate-x-[2px]'}
-                `}
-              />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <p className="text-xs text-starlight-500 line-clamp-2">{tool.description}</p>
-
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className={`px-1.5 py-0.5 text-[10px] rounded border ${catColor}`}>
-          {tool.category}
-        </span>
-        {tool.capabilities.slice(0, 3).map(cap => (
-          <span
-            key={cap}
-            className="px-1.5 py-0.5 text-[10px] rounded
-                       bg-starlight-800 text-starlight-500 border border-starlight-700"
-          >
-            {cap.replace(/_/g, ' ')}
-          </span>
-        ))}
-        {tool.capabilities.length > 3 && (
-          <span className="text-[10px] text-starlight-600">
-            +{tool.capabilities.length - 3}
-          </span>
-        )}
-      </div>
-
-      {!tool.installed && (
-        <div className="flex items-center gap-2 mt-1">
-          <button
-            onClick={handleInstall}
-            disabled={installing}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-accent-amber/15 text-accent-amber border border-accent-amber/25 hover:bg-accent-amber/25 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
-          >
-            {installing ? <Loader2 size={11} className="animate-spin" /> : <PackagePlus size={11} />}
-            {installing ? 'Installing' : 'Install'}
-          </button>
-          <button
-            onClick={() => setShowCmd(!showCmd)}
-            className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300 transition-colors cursor-pointer"
-          >
-            <Terminal size={11} />
-            {showCmd ? 'Hide cmd' : 'Show cmd'}
-          </button>
-        </div>
-      )}
-
-      {installError && (
-        <p className="text-[10px] text-status-error flex items-start gap-1 mt-1">
-          <AlertTriangle size={10} className="mt-0.5 flex-shrink-0" />
-          <span className="line-clamp-3">{installError}</span>
-        </p>
-      )}
-
-      <AnimatePresence>
-        {showCmd && !tool.installed && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <pre className="text-[10px] text-accent-cyan bg-starlight-900 rounded p-2 overflow-x-auto
-                            border border-starlight-800">
-              {tool.install_cmd}
-            </pre>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </Card>
-  )
-}
-
-// ── Scans Tab ──
-
-function ScansTab({
-  scans, expandedScan, scanDetail, onExpandScan,
-}: {
-  scans: ScanSummary[]
-  expandedScan: string | null
-  scanDetail: Record<string, unknown> | null
-  onExpandScan: (id: string) => void
-}) {
-  if (scans.length === 0) {
-    return (
-      <EmptyState
-        icon={<Crosshair className="text-starlight-500" size={40} />}
-        title="No scans yet"
-        description="No scans recorded yet"
-      />
-    )
-  }
-
-  return (
-    <div className="space-y-2">
-      {scans.map(scan => (
-        <div key={scan.scan_id}>
-          <button
-            onClick={() => onExpandScan(scan.scan_id)}
-            className="w-full text-left"
-          >
-            <ScanRow scan={scan} expanded={expandedScan === scan.scan_id} />
-          </button>
-
-          <AnimatePresence>
-            {expandedScan === scan.scan_id && scanDetail && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden"
-              >
-                <Card className="p-4 ml-4 mt-1 mb-2 border-starlight-700">
-                  <pre className="text-xs text-starlight-400 overflow-x-auto max-h-96 overflow-y-auto">
-                    {JSON.stringify(scanDetail, null, 2)}
-                  </pre>
-                </Card>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ScanRow({ scan, expanded }: { scan: ScanSummary; expanded?: boolean }) {
-  return (
-    <Card className={`
-      p-3 flex items-center gap-3 transition-colors
-      ${expanded ? 'border-primary-500/30' : 'hover:border-starlight-600'}
-    `}>
-      <div className={`
-        p-1.5 rounded
-        ${scan.offensive_mode ? 'bg-status-error/10 text-status-error' : 'bg-starlight-800 text-starlight-400'}
-      `}>
-        <Target size={14} />
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-starlight-200 truncate">
-            {scan.target || scan.scan_id}
-          </span>
-          {scan.waf_detected && (
-            <span className="px-1.5 py-0.5 text-[10px] rounded
-                             bg-status-warning/10 text-status-warning border border-status-warning/20">
-              WAF: {scan.waf_detected}
-            </span>
-          )}
-        </div>
-        <div className="text-xs text-starlight-500 mt-0.5">
-          {/*
-            Historical scan records (pre-v3.7.1) + records merged from the
-            on-disk persisted-reports store may not carry every field the
-            ScanSummary type declares. Use optional chaining + ?? 0/[] so
-            missing fields render as "0 cycles, 0 strategies" instead of
-            crashing the whole SecurityDashboardPage. TypeScript-type is
-            kept strict on purpose -- the backend is the source of truth
-            and a future Nyquist test should assert the shape.
-          */}
-          {scan.cycles_used ?? 0} cycles, {(scan.strategies_tried ?? []).length} strategies
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 text-xs">
-        <div className="text-center">
-          <div className="text-starlight-200 font-medium">{scan.total_findings ?? 0}</div>
-          <div className="text-starlight-600">findings</div>
-        </div>
-        {(scan.exploits_succeeded ?? 0) > 0 && (
-          <div className="text-center">
-            <div className="text-status-error font-medium">{scan.exploits_succeeded}</div>
-            <div className="text-starlight-600">exploited</div>
-          </div>
-        )}
-      </div>
-
-      <ChevronRight
-        size={14}
-        className={`text-starlight-600 transition-transform ${expanded ? 'rotate-90' : ''}`}
-      />
-    </Card>
-  )
-}
-
-// ── Shields Tab ──
-
-function ShieldsTab({ shields }: { shields: ShieldDetails | null }) {
-  if (!shields) {
-    return (
-      <EmptyState
-        icon={<Shield className="text-starlight-500" size={40} />}
-        title="SHIELD data unavailable"
-        description="SHIELD data not available"
-      />
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <Card className="p-4">
-        <div className="flex items-center gap-2 mb-1">
-          <Shield className="text-accent-amber" size={18} />
-          <span className="text-sm font-medium text-starlight-200">
-            Department SHIELD Status
-          </span>
-        </div>
-        <p className="text-xs text-starlight-500 mb-4">
-          When full-spectrum mode activates, every department's SHIELD sub-capability gets
-          an offensive security prompt overlay. This is invisible to the user
-          but transforms each department into a security operator.
-        </p>
-
-        <div className="space-y-2">
-          {Object.entries(shields.departments).map(([dept, info]) => (
-            <div
-              key={dept}
-              className={`
-                p-3 rounded-lg border flex items-start gap-3
-                ${info.active
-                  ? 'bg-status-error/5 border-status-error/20'
-                  : 'bg-starlight-800/30 border-starlight-700'}
-              `}
-            >
-              <div className={`p-1.5 rounded ${info.active ? 'bg-status-error/10' : 'bg-starlight-800'}`}>
-                {info.active ? (
-                  <ShieldAlert size={16} className="text-status-error" />
-                ) : (
-                  <ShieldCheck size={16} className="text-starlight-500" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-starlight-200">{dept}</span>
-                  <span className={`
-                    px-1.5 py-0.5 text-[10px] rounded font-medium
-                    ${info.active
-                      ? 'bg-status-error/15 text-status-error'
-                      : 'bg-starlight-800 text-starlight-500'}
-                  `}>
-                    {info.mode.toUpperCase()}
-                  </span>
-                </div>
-                <p className="text-xs text-starlight-500 mt-1 line-clamp-2">
-                  {info.role_summary}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Summary bar */}
-      <div className="flex items-center gap-4 text-sm text-starlight-400">
-        <div className="flex items-center gap-1.5">
-          <ShieldAlert size={14} className="text-status-error" />
-          <span>{shields.total_offensive} offensive</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <ShieldCheck size={14} className="text-starlight-500" />
-          <span>{shields.total_departments - shields.total_offensive} defensive</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Shared components ──
-
-function StatCard({
-  icon, label, value, sub, color,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: number
-  sub: string
-  color: string
-}) {
-  return (
-    <Card className="p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <span className={color}>{icon}</span>
-        <span className="text-xs text-starlight-500">{label}</span>
-      </div>
-      <div className="text-2xl font-semibold text-starlight-100">{value}</div>
-      <div className="text-xs text-starlight-500 mt-0.5">{sub}</div>
-    </Card>
-  )
-}
-
-// ── Missions Tab ──
-
-interface MissionInfo {
-  mission_id: string
-  goal: string
-  target: string
-  status: string
-  engagement_level: string
-  paths_total?: number
-  nodes_discovered?: number
-}
-
-function MissionsTab() {
-  const [missions, setMissions] = useState<MissionInfo[]>([])
-  const [loading, setLoading] = useState(false)
-  const [goal, setGoal] = useState('')
-  const [target, setTarget] = useState('')
-  const [level, setLevel] = useState('pentest')
-  const [selectedMission, setSelectedMission] = useState<string | null>(null)
-  const [missionDetail, setMissionDetail] = useState<Record<string, unknown> | null>(null)
-
-  const loadMissions = useCallback(async () => {
-    try {
-      const res = await api.get('/missions/active')
-      setMissions(res.data)
-    } catch {
-      // No active missions
-    }
-  }, [])
-
-  useEffect(() => { loadMissions() }, [loadMissions])
-
-  const startMission = async () => {
-    if (!goal || !target) return
-    setLoading(true)
-    try {
-      const res = await api.post('/missions/start', {
-        goal, target, engagement_level: level,
-      })
-      setGoal('')
-      setTarget('')
-      loadMissions()
-      setSelectedMission(res.data.mission_id)
-      loadMissionDetail(res.data.mission_id)
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to start mission'
-      await alertDialog({
-        title: 'Mission failed to start',
-        message: msg,
-        confirmLabel: 'Dismiss',
-        variant: 'danger',
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadMissionDetail = async (mid: string) => {
-    try {
-      const [statusRes, pathsRes] = await Promise.all([
-        api.get(`/missions/${mid}/status`),
-        api.get(`/missions/${mid}/paths`),
-      ])
-      setMissionDetail({
-        status: statusRes.data,
-        paths: pathsRes.data,
-      })
-    } catch {
-      // Error loading detail
-    }
-  }
-
-  const executeStep = async (mid: string) => {
-    try {
-      await api.post(`/missions/${mid}/execute`)
-      loadMissionDetail(mid)
-    } catch {
-      // Error executing
-    }
-  }
-
-  const LEVEL_COLORS: Record<string, string> = {
-    audit: 'text-accent-cyan',
-    pentest: 'text-status-warning',
-    red_team: 'text-status-error',
-    adversary: 'text-accent-purple',
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Start new mission */}
-      <Card className="p-4">
-        <h3 className="text-sm font-medium text-starlight-300 mb-3 flex items-center gap-2">
-          <Crosshair size={16} className="text-accent-amber" />
-          Start Mission
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <input
-            type="text"
-            value={goal}
-            onChange={e => setGoal(e.target.value)}
-            placeholder="Goal (e.g., Prove database access)"
-            className="px-3 py-2 bg-starlight-900 border border-starlight-700 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-600 focus:border-accent-amber/50 focus:outline-none"
-          />
-          <input
-            type="text"
-            value={target}
-            onChange={e => setTarget(e.target.value)}
-            placeholder="Target (e.g., target.com)"
-            className="px-3 py-2 bg-starlight-900 border border-starlight-700 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-600 focus:border-accent-amber/50 focus:outline-none"
-          />
-          <select
-            value={level}
-            onChange={e => setLevel(e.target.value)}
-            className="px-3 py-2 bg-starlight-900 border border-starlight-700 rounded-lg text-sm text-starlight-200 focus:border-accent-amber/50 focus:outline-none"
-          >
-            <option value="audit">Audit</option>
-            <option value="pentest">Pentest</option>
-            <option value="red_team">Red Team</option>
-            <option value="adversary">Adversary</option>
-          </select>
-          <button
-            onClick={startMission}
-            disabled={loading || !goal || !target}
-            className="px-4 py-2 bg-accent-amber/20 text-accent-amber border border-accent-amber/30 rounded-lg text-sm font-medium hover:bg-accent-amber/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? 'Planning...' : 'Launch Mission'}
-          </button>
-        </div>
-      </Card>
-
-      {/* Active missions */}
-      {missions.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium text-starlight-400">Active Missions</h3>
-          {missions.map(m => (
-            <Card
-              key={m.mission_id}
-              className={`p-4 cursor-pointer transition-colors ${
-                selectedMission === m.mission_id ? 'border-accent-amber/50' : 'hover:border-starlight-600'
-              }`}
-              onClick={() => { setSelectedMission(m.mission_id); loadMissionDetail(m.mission_id) }}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-starlight-200 font-medium">{m.goal}</div>
-                  <div className="text-xs text-starlight-500 mt-1">
-                    Target: {m.target}
-                    <span className={`ml-3 ${LEVEL_COLORS[m.engagement_level] || ''}`}>
-                      {m.engagement_level?.toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant={m.status === 'planned' ? 'warning' : m.status === 'executing' ? 'error' : 'success'}>
-                    {m.status}
-                  </Badge>
-                  <button
-                    onClick={e => { e.stopPropagation(); executeStep(m.mission_id) }}
-                    className="px-3 py-1 bg-status-error/20 text-status-error border border-status-error/30 rounded text-xs hover:bg-status-error/30 transition-colors"
-                  >
-                    Execute Next
-                  </button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Mission detail */}
-      {selectedMission && missionDetail ? (
-        <Card className="p-4">
-          <h3 className="text-sm font-medium text-starlight-300 mb-3">
-            Mission Detail: {selectedMission}
-          </h3>
-          {Boolean(missionDetail.status) && typeof missionDetail.status === 'object' && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-              {['paths_total', 'paths_completed', 'paths_failed', 'nodes_discovered'].map(key => {
-                // Narrow to number so React accepts the child. Unknown
-                // values fall back to 0 so the tile still renders rather
-                // than producing a TS2322 at build time.
-                const raw = (missionDetail.status as Record<string, unknown>)[key]
-                const value = typeof raw === 'number' ? raw : 0
-                return (
-                  <div key={key} className="bg-starlight-900 rounded-lg p-3">
-                    <div className="text-xs text-starlight-500 capitalize">{key.replace(/_/g, ' ')}</div>
-                    <div className="text-lg font-semibold text-starlight-200 mt-1">{value}</div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-          {/* Attack paths */}
-          {Array.isArray(missionDetail.paths) && (missionDetail.paths as Array<Record<string, unknown>>).map((path, i) => (
-            <div key={i} className="mb-3 bg-starlight-900 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-starlight-300 font-medium capitalize">
-                  {(path.type as string) ?? 'unknown'} Path
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-starlight-500">
-                    Feasibility: {((path.feasibility as number) * 100).toFixed(0)}%
-                  </span>
-                  <Badge variant={(path.status as string) === 'planned' ? 'warning' : 'success'}>
-                    {path.status as string}
-                  </Badge>
-                </div>
-              </div>
-              {Array.isArray(path.step_details) && (path.step_details as Array<Record<string, string>>).map((step, j) => (
-                <div key={j} className="flex items-center gap-2 py-1 text-xs">
-                  <span className={
-                    step.status === 'succeeded' ? 'text-status-success' :
-                    step.status === 'failed' ? 'text-status-error' :
-                    'text-starlight-500'
-                  }>
-                    {step.status === 'succeeded' ? '\u2713' : step.status === 'failed' ? '\u2717' : '\u25CB'}
-                  </span>
-                  <span className="text-starlight-400">{step.description}</span>
-                  <span className="text-starlight-600 ml-auto">{step.module}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </Card>
-      ) : null}
-
-      {/* Empty state */}
-      {missions.length === 0 && !loading && (
-        <EmptyState
-          icon={<Crosshair size={40} />}
-          title="No Active Missions"
-          description="Start a mission to begin autonomous red team operations. Daena will plan attack paths, map the target's proximity rings, and execute step by step."
-        />
-      )}
     </div>
   )
 }
