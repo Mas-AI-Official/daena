@@ -262,6 +262,21 @@ export function SettingsHeartbeat() {
         </div>
       </Card>
 
+      {/* Phase 10C-D banner: interval / active hours / checks / cost guard
+          persist only in daemon process memory; uvicorn restart resets them.
+          Phase 11 PR-H1 will move daemon config to a heartbeat_config table. */}
+      <div
+        className="flex items-start gap-2 rounded-lg border border-accent-amber/20 bg-accent-amber/5 px-3 py-2"
+        title="Phase 10C-D: the controls below (interval, active hours, checks) write to the daemon's in-memory config object. A backend restart erases them. Phase 11 PR-H1 will move all daemon config to a persistent heartbeat_config table."
+      >
+        <Badge variant="warning" size="sm">Daemon-memory only</Badge>
+        <p className="text-[10px] text-starlight-400 leading-relaxed">
+          Interval, active hours, and checks below write to the daemon's in-memory
+          config object — a backend restart erases them. Phase 11 PR-H1 moves these
+          to a persistent <code>heartbeat_config</code> table.
+        </p>
+      </div>
+
       {/* Interval selector */}
       <div>
         <label className="block text-xs font-semibold text-starlight-300 mb-2">

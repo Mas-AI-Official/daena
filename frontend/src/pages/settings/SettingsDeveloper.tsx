@@ -137,19 +137,31 @@ export function SettingsDeveloper() {
           <Bug size={14} /> Debug
         </h3>
         <div className="space-y-3 max-w-md">
-          <div className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-between"
+            title="Phase 10C-D: setting persists, but no debug-overlay component reads debugMode yet. Phase 11 ships the overlay."
+          >
             <div>
-              <p className="text-sm text-starlight-200">Debug Mode</p>
-              <p className="text-xs text-starlight-500">Show raw API responses and timing</p>
+              <p className="text-sm text-starlight-200">
+                Debug Mode
+                <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
+              </p>
+              <p className="text-xs text-starlight-500">Show raw API responses and timing. (Persists; no consumer reads it yet.)</p>
             </div>
-            <Switch checked={debugMode} onChange={handleDebugToggle} label="" size="sm" />
+            <Switch checked={debugMode} onChange={handleDebugToggle} label="" size="sm" disabled />
           </div>
-          <div className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-between"
+            title="Phase 10C-D: setting persists, but no logger setup reads verboseLogging. Phase 11."
+          >
             <div>
-              <p className="text-sm text-starlight-200">Verbose Logging</p>
-              <p className="text-xs text-starlight-500">Log all agent decisions to console</p>
+              <p className="text-sm text-starlight-200">
+                Verbose Logging
+                <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
+              </p>
+              <p className="text-xs text-starlight-500">Log all agent decisions to console. (Persists; no consumer reads it yet.)</p>
             </div>
-            <Switch checked={verboseLogging} onChange={handleVerboseToggle} label="" size="sm" />
+            <Switch checked={verboseLogging} onChange={handleVerboseToggle} label="" size="sm" disabled />
           </div>
         </div>
       </Card>
@@ -164,7 +176,13 @@ export function SettingsDeveloper() {
             { key: 'WS_URL', val: window.location.origin.replace('http', 'ws') + '/ws' },
             { key: 'VERSION', val: version },
             { key: 'APP_ENV', val: appEnv },
-            { key: 'DEVELOPER_MODE', val: String(developerMode) },
+            // Phase 10C-D: this is the SYSTEM-level developer_mode (from
+            // /settings/, controls archive vs hard-delete per CLAUDE.md
+            // rule 2). Distinct from any per-user JSONB key — collision
+            // with users.settings.developer_mode is documented in
+            // PHASE_10B_SETTINGS_DOWNSTREAM_READ_AUDIT.md §4.3 and will
+            // be renamed in Phase 11 PR-S6.
+            { key: 'DEVELOPER_MODE (system)', val: String(developerMode) },
           ].map((e) => (
             <div key={e.key} className="flex gap-2 px-2 py-1 rounded bg-midnight-800/40">
               <span className="text-accent-cyan">{e.key}</span>

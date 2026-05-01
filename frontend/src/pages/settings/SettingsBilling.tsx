@@ -362,8 +362,24 @@ export function SettingsBilling() {
         <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
           <Bell size={14} /> Budget Settings
         </h3>
+        {/* Phase 10C-D: these three values persist to user.settings, but the
+            cost-guard reads Subscription.monthly_budget_usd (parallel source
+            of truth) and BudgetManager hard-codes the over-budget action
+            default. Phase 11 PR-S3 unifies the vocabulary and wires the
+            user.settings read. */}
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-accent-amber/20 bg-accent-amber/5 px-3 py-2">
+          <Badge variant="warning" size="sm">Wiring pending</Badge>
+          <p className="text-[10px] text-starlight-400 leading-relaxed">
+            These three preferences persist to <code>user.settings</code>, but the
+            cost-guard currently reads <code>Subscription.monthly_budget_usd</code> and
+            <code>BudgetManager</code> hard-codes the over-budget action default.
+            Phase 11 PR-S3 unifies the vocabulary and wires the user.settings read.
+          </p>
+        </div>
         <div className="space-y-4 max-w-md">
-          <div>
+          <div
+            title="Persists to user.settings.monthly_budget. Cost enforcement reads Subscription.monthly_budget_usd (different column). Phase 11 PR-S3 unifies."
+          >
             <label className="block text-xs text-starlight-400 mb-1">Monthly Budget (USD)</label>
             <input
               type="number"
@@ -376,7 +392,9 @@ export function SettingsBilling() {
               className="glass-input w-32 px-3 py-2 rounded-lg text-sm text-starlight-200 text-center"
             />
           </div>
-          <div>
+          <div
+            title="Persists. Alert emit pending — depends on Phase 11 notification emitter (PR-S2)."
+          >
             <label className="block text-xs text-starlight-400 mb-1">Alert at (%)</label>
             <input
               type="range"
@@ -392,7 +410,9 @@ export function SettingsBilling() {
             />
             <p className="text-[10px] text-starlight-500 mt-0.5">Alert when usage reaches {alertThreshold}% of budget</p>
           </div>
-          <div>
+          <div
+            title="Persists. Vocabulary mismatch with BudgetManager enum (warn/fallback/block <-> warn_only/pause_tasks/free_models_only) blocks wiring until Phase 11 PR-S3."
+          >
             <label className="block text-xs text-starlight-400 mb-1">Over-budget action</label>
             <select
               value={overBudgetAction}

@@ -3,8 +3,8 @@
  * All toggles persist to backend via PUT /settings/user JSONB.
  */
 import { useState, useEffect } from 'react'
-import { Bell, Volume2, Mail, CheckCircle2 } from 'lucide-react'
-import { Card, Switch } from '@/components/common'
+import { Bell, Volume2, Mail, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Card, Switch, Badge } from '@/components/common'
 import { useAuthStore } from '@/stores/authStore'
 import { api } from '@/lib/api'
 import { persistUiPref } from '@/stores/uiStore'
@@ -20,6 +20,7 @@ export function SettingsNotifications() {
   const [sound, setSound] = useState(false)
   const [emailEnabled, setEmailEnabled] = useState(false)
   const [dailyDigest, setDailyDigest] = useState(false)
+  const emailConfigured = false
 
   // Hydrate from backend on mount
   useEffect(() => {
@@ -68,10 +69,13 @@ export function SettingsNotifications() {
           Desktop Notifications
         </h3>
         <Card variant="glass" padding="md" className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-between"
+            title="Phase 10C-D: master gate is meaningful — it controls whether the browser Notification permission request and the Send Test button fire on this device. Per-event sub-toggles below are disabled because the backend notification emitter does not exist yet (Phase 11 PR-S2)."
+          >
             <div>
               <p className="text-sm text-starlight-200">Enable desktop notifications</p>
-              <p className="text-[10px] text-starlight-500">Show system notifications for important events.</p>
+              <p className="text-[10px] text-starlight-500">Show system notifications for important events. (Master gate works client-side; sub-toggles below await Phase 11 emitter.)</p>
             </div>
             <Switch checked={desktop} onChange={() => toggle('notif_desktop', desktop, setDesktop)} label="" size="sm" />
           </div>
@@ -94,26 +98,33 @@ export function SettingsNotifications() {
             </div>
           )}
           {desktop && (
-            <div className="pl-4 border-l border-white/10 space-y-3 mt-1">
+            <div
+              className="pl-4 border-l border-white/10 space-y-3 mt-1"
+              title="Phase 10C-D: per-event toggles persist but no backend emitter consumes them. Phase 11 PR-S2 ships the NotificationService."
+            >
+              <p className="text-[10px] text-accent-amber flex items-center gap-1.5">
+                <Badge variant="warning" size="sm">Coming soon</Badge>
+                Per-event delivery is queued for Phase 11 — toggles below persist your preference but don't fire yet.
+              </p>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-starlight-300">Task completion</p>
-                <Switch checked={taskComplete} onChange={() => toggle('notif_task_complete', taskComplete, setTaskComplete)} label="" size="sm" />
+                <Switch checked={taskComplete} onChange={() => toggle('notif_task_complete', taskComplete, setTaskComplete)} label="" size="sm" disabled />
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-starlight-300">Budget alerts</p>
-                <Switch checked={budgetAlert} onChange={() => toggle('notif_budget_alert', budgetAlert, setBudgetAlert)} label="" size="sm" />
+                <Switch checked={budgetAlert} onChange={() => toggle('notif_budget_alert', budgetAlert, setBudgetAlert)} label="" size="sm" disabled />
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-starlight-300">Daena Heartbeat findings</p>
-                <Switch checked={heartbeat} onChange={() => toggle('notif_heartbeat', heartbeat, setHeartbeat)} label="" size="sm" />
+                <Switch checked={heartbeat} onChange={() => toggle('notif_heartbeat', heartbeat, setHeartbeat)} label="" size="sm" disabled />
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-starlight-300">Governance rejections</p>
-                <Switch checked={govReject} onChange={() => toggle('notif_gov_reject', govReject, setGovReject)} label="" size="sm" />
+                <Switch checked={govReject} onChange={() => toggle('notif_gov_reject', govReject, setGovReject)} label="" size="sm" disabled />
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-starlight-300">Runtime disconnection</p>
-                <Switch checked={runtimeDisc} onChange={() => toggle('notif_runtime_disconnect', runtimeDisc, setRuntimeDisc)} label="" size="sm" />
+                <Switch checked={runtimeDisc} onChange={() => toggle('notif_runtime_disconnect', runtimeDisc, setRuntimeDisc)} label="" size="sm" disabled />
               </div>
             </div>
           )}
@@ -127,12 +138,18 @@ export function SettingsNotifications() {
           Sound
         </h3>
         <Card variant="glass" padding="md">
-          <div className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-between"
+            title="Phase 10C-D: sound preference persists but the backend notification emitter does not exist. Phase 11 PR-S2."
+          >
             <div>
-              <p className="text-sm text-starlight-200">Notification sound</p>
-              <p className="text-[10px] text-starlight-500">Play a sound when notifications arrive.</p>
+              <p className="text-sm text-starlight-200">
+                Notification sound
+                <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
+              </p>
+              <p className="text-[10px] text-starlight-500">Play a sound when notifications arrive. (Toggle persists; emitter pending.)</p>
             </div>
-            <Switch checked={sound} onChange={() => toggle('notif_sound', sound, setSound)} label="" size="sm" />
+            <Switch checked={sound} onChange={() => toggle('notif_sound', sound, setSound)} label="" size="sm" disabled />
           </div>
         </Card>
       </section>
@@ -147,11 +164,27 @@ export function SettingsNotifications() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-starlight-200">Enable email notifications</p>
-              <p className="text-[10px] text-starlight-500">Receive important updates via email.</p>
+              <p className="text-[10px] text-starlight-500">Email delivery is not configured in this local build.</p>
             </div>
-            <Switch checked={emailEnabled} onChange={() => toggle('notif_email', emailEnabled, setEmailEnabled)} label="" size="sm" />
+            <Switch
+              checked={emailConfigured && emailEnabled}
+              onChange={() => {
+                if (emailConfigured) toggle('notif_email', emailEnabled, setEmailEnabled)
+              }}
+              label=""
+              size="sm"
+              disabled={!emailConfigured}
+            />
           </div>
-          {emailEnabled && (
+          {!emailConfigured && (
+            <div className="flex items-start gap-2 rounded-lg border border-accent-amber/20 bg-accent-amber/5 px-3 py-2">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0 text-accent-amber" />
+              <p className="text-[10px] text-starlight-400">
+                Hidden from execution: no SMTP/provider endpoint is wired, so this page will not pretend email tests can send.
+              </p>
+            </div>
+          )}
+          {emailConfigured && emailEnabled && (
             <div className="space-y-3 pt-2 border-t border-white/5">
               <div>
                 <label className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold">Email</label>

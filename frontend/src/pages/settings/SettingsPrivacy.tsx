@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react'
 import { Download, Trash2, Database, Shield, AlertTriangle } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
-import { Card, Switch } from '@/components/common'
+import { Card, Switch, Badge } from '@/components/common'
 import { api } from '@/lib/api'
 import { persistUiPref } from '@/stores/uiStore'
 
@@ -112,20 +112,32 @@ export function SettingsPrivacy() {
           <p className="text-xs text-starlight-400 mt-0.5">Control how Daena remembers and uses context.</p>
         </div>
         <Card variant="glass" padding="md" className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-between"
+            title="Phase 10C-D: setting persists to user.settings, but the MemoryService write-path does not yet check this flag. Phase 11 PR-S1 wires enforcement; until then this toggle is informational only."
+          >
             <div>
-              <p className="text-sm text-starlight-200">Generate memories from conversations</p>
-              <p className="text-[10px] text-starlight-500">Daena extracts and stores relevant facts from your chats.</p>
+              <p className="text-sm text-starlight-200">
+                Generate memories from conversations
+                <Badge variant="warning" size="sm" className="ml-2 align-middle">Enforcement coming soon</Badge>
+              </p>
+              <p className="text-[10px] text-starlight-500">Daena extracts and stores relevant facts from your chats. (Toggle persists; backend enforcement lands in Phase 11.)</p>
             </div>
-            <Switch checked={memoryGen} onChange={() => { setMemoryGen(!memoryGen); persistUiPref('memory_generation', !memoryGen) }} label="" size="sm" />
+            <Switch checked={memoryGen} onChange={() => { setMemoryGen(!memoryGen); persistUiPref('memory_generation', !memoryGen) }} label="" size="sm" disabled />
           </div>
 
-          <div className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-between"
+            title="Phase 10C-D: setting persists, but the MemoryRecall pipeline stage does not yet check this flag. Phase 11 PR-S1 wires it."
+          >
             <div>
-              <p className="text-sm text-starlight-200">Search past conversations for context</p>
-              <p className="text-[10px] text-starlight-500">Daena references previous chats for better answers.</p>
+              <p className="text-sm text-starlight-200">
+                Search past conversations for context
+                <Badge variant="warning" size="sm" className="ml-2 align-middle">Enforcement coming soon</Badge>
+              </p>
+              <p className="text-[10px] text-starlight-500">Daena references previous chats for better answers. (Toggle persists; backend enforcement lands in Phase 11.)</p>
             </div>
-            <Switch checked={searchPast} onChange={() => { setSearchPast(!searchPast); persistUiPref('search_past_conversations', !searchPast) }} label="" size="sm" />
+            <Switch checked={searchPast} onChange={() => { setSearchPast(!searchPast); persistUiPref('search_past_conversations', !searchPast) }} label="" size="sm" disabled />
           </div>
 
           <div className="border-t border-white/5 pt-3">
@@ -153,20 +165,32 @@ export function SettingsPrivacy() {
           <p className="text-xs text-starlight-400 mt-0.5">Control how your data is used beyond your conversations.</p>
         </div>
         <Card variant="glass" padding="md" className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-between"
+            title="Phase 10C-D: setting persists; no consumer code reads it yet. Founder must define the semantic before Phase 11 wires enforcement."
+          >
             <div>
-              <p className="text-sm text-starlight-200">Allow Daena to improve from your usage</p>
-              <p className="text-[10px] text-starlight-500">Conversations may improve Daena's capabilities. Never shared externally.</p>
+              <p className="text-sm text-starlight-200">
+                Allow Daena to improve from your usage
+                <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
+              </p>
+              <p className="text-[10px] text-starlight-500">Conversations may improve Daena's capabilities. Never shared externally. (Toggle persists; semantic + enforcement pending.)</p>
             </div>
-            <Switch checked={improveUsage} onChange={() => { setImproveUsage(!improveUsage); persistUiPref('improve_from_usage', !improveUsage) }} label="" size="sm" />
+            <Switch checked={improveUsage} onChange={() => { setImproveUsage(!improveUsage); persistUiPref('improve_from_usage', !improveUsage) }} label="" size="sm" disabled />
           </div>
 
-          <div className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-between"
+            title="Phase 10C-D: setting persists; no consumer code reads it yet."
+          >
             <div>
-              <p className="text-sm text-starlight-200">Location metadata</p>
-              <p className="text-[10px] text-starlight-500">Allow coarse location for local recommendations.</p>
+              <p className="text-sm text-starlight-200">
+                Location metadata
+                <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
+              </p>
+              <p className="text-[10px] text-starlight-500">Allow coarse location for local recommendations. (Toggle persists; backend consumer pending.)</p>
             </div>
-            <Switch checked={locationMeta} onChange={() => { setLocationMeta(!locationMeta); persistUiPref('location_metadata', !locationMeta) }} label="" size="sm" />
+            <Switch checked={locationMeta} onChange={() => { setLocationMeta(!locationMeta); persistUiPref('location_metadata', !locationMeta) }} label="" size="sm" disabled />
           </div>
         </Card>
       </section>
