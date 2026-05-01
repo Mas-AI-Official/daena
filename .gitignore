@@ -49,6 +49,7 @@ docs/*
 !docs/CONNECTIONS_MCP_PLUGIN_ARCHITECTURE_V2.md
 !docs/CONNECTIONS_CURRENT_DAMAGE_REPORT.md
 !docs/CONNECTIONS_FILE_MAP.md
+!docs/CONNECTIONS_ARCHIVE_LOG.md
 !docs/_explore/
 # Ultraview review + ADR-002 founder-locked decisions for the rebuild
 !docs/ADR-002-connections-rebuild-locked-decisions.md
