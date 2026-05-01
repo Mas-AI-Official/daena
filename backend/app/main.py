@@ -792,44 +792,81 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     del _kek  # Reduce time it sits in a local; app.state holds the canonical ref.
 
     # --- Auto-create tables (idempotent) + ALTER TABLE migrations ---
+    # Production refuses to boot on SQLite (state would be ephemeral on
+    # Cloud Run). In production, the schema is owned by Alembic; create_all
+    # + hand-rolled ALTERs are dev-only. See:
+    #   docs/Ultraview/PRODUCTION_DB_AND_SECRET_ROTATION_PLAN.md
     _ts = _time.perf_counter()
+    if settings.is_production and settings.database_url.startswith("sqlite"):
+        logger.critical(
+            "production_database_url_is_sqlite",
+            impact="State is ephemeral; refusing to boot.",
+        )
+        raise RuntimeError(
+            "Production refuses to boot with a SQLite DATABASE_URL. "
+            "Bind DATABASE_URL to Cloud SQL via Secret Manager."
+        )
     from app.core.database import engine
     from app.models import Base  # noqa: F401 -- triggers all model imports
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-        from sqlalchemy import text as _text
-        # SQLite doesn't support ALTER COLUMN, but VARCHAR is flexible.
-        _nbmf_cols = {
-            "agent_id": "TEXT",
-            "is_quarantined": "BOOLEAN DEFAULT 0",
-            "trust_score": "REAL DEFAULT 0.0",
-            "content_hash": "VARCHAR(64)",
-            "skill_id": "VARCHAR(200)",
-            "success_flag": "BOOLEAN",
-            "is_sensitive": "BOOLEAN DEFAULT 0",
-            "encoding_mode": "VARCHAR(20) DEFAULT 'semantic'",
-            "contradiction": "BOOLEAN DEFAULT 0",
-        }
-        for col_name, col_type in _nbmf_cols.items():
-            try:
-                await conn.execute(
-                    _text(f"ALTER TABLE memory_entries ADD COLUMN {col_name} {col_type}")
+        if not settings.is_production:
+            # Dev convenience: idempotent CREATE TABLE IF NOT EXISTS so
+            # rapid iteration works without alembic. NEVER runs in
+            # production -- production schema must come from Alembic
+            # via the start.sh entrypoint.
+            await conn.run_sync(Base.metadata.create_all)
+        else:
+            # Production sanity: assert alembic_version table exists +
+            # has a row. start.sh ran `alembic upgrade head` before
+            # uvicorn, so this is just a belt-and-suspenders check.
+            from sqlalchemy import text as _text
+            result = await conn.execute(
+                _text("SELECT version_num FROM alembic_version")
+            )
+            current = result.scalar_one_or_none()
+            if current is None:
+                raise RuntimeError(
+                    "Production schema check failed: alembic_version is "
+                    "empty. Container start.sh should have run "
+                    "`alembic upgrade head` before this lifespan ran."
                 )
-            except Exception:
-                pass  # Column already exists
+            logger.info("essentials.alembic_at", version=current)
 
-        _chat_session_cols = {
-            "governance_mode": "VARCHAR(20) DEFAULT 'BALANCED'",
-        }
-        for col_name, col_type in _chat_session_cols.items():
-            try:
-                await conn.execute(
-                    _text(f"ALTER TABLE chat_sessions ADD COLUMN {col_name} {col_type}")
-                )
-            except Exception:
-                pass
+        if not settings.is_production:
+            from sqlalchemy import text as _text
+            # SQLite doesn't support ALTER COLUMN, but VARCHAR is flexible.
+            # These ALTERs are duplicates of Alembic 004 / 006 migrations
+            # for dev convenience; production gets them via alembic.
+            _nbmf_cols = {
+                "agent_id": "TEXT",
+                "is_quarantined": "BOOLEAN DEFAULT 0",
+                "trust_score": "REAL DEFAULT 0.0",
+                "content_hash": "VARCHAR(64)",
+                "skill_id": "VARCHAR(200)",
+                "success_flag": "BOOLEAN",
+                "is_sensitive": "BOOLEAN DEFAULT 0",
+                "encoding_mode": "VARCHAR(20) DEFAULT 'semantic'",
+                "contradiction": "BOOLEAN DEFAULT 0",
+            }
+            for col_name, col_type in _nbmf_cols.items():
+                try:
+                    await conn.execute(
+                        _text(f"ALTER TABLE memory_entries ADD COLUMN {col_name} {col_type}")
+                    )
+                except Exception:
+                    pass  # Column already exists
+
+            _chat_session_cols = {
+                "governance_mode": "VARCHAR(20) DEFAULT 'BALANCED'",
+            }
+            for col_name, col_type in _chat_session_cols.items():
+                try:
+                    await conn.execute(
+                        _text(f"ALTER TABLE chat_sessions ADD COLUMN {col_name} {col_type}")
+                    )
+                except Exception:
+                    pass
 
     logger.info("essentials.tables_ready", ms=int((_time.perf_counter() - _ts) * 1000))
 

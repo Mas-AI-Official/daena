@@ -90,6 +90,11 @@ COPY backend/app/soul/ ./app/soul/
 # Copy compiled frontend into backend static directory
 COPY --from=frontend-build /frontend/dist /app/static
 
+# Copy production entrypoint (alembic upgrade head -> uvicorn).
+# See start.sh at the repo root.
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
 # Create non-root user for security
 RUN groupadd -r daena && useradd -r -g daena -s /bin/false daena && \
     chown -R daena:daena /app
@@ -102,12 +107,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD curl -sf http://localhost:8000/health || exit 1
 
-# Production: uvicorn with 2 workers, graceful shutdown
-# For high-traffic: switch to gunicorn -k uvicorn.workers.UvicornWorker
-CMD ["uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "2", \
-     "--timeout-keep-alive", "65", \
-     "--access-log", \
-     "--log-level", "info"]
+# Production entrypoint: runs `alembic upgrade head` then exec's uvicorn.
+# See /app/start.sh.
+ENTRYPOINT ["/app/start.sh"]

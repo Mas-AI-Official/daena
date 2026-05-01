@@ -18,18 +18,25 @@ steps:
       - 'push'
       - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:latest'
 
+  # Deploy the new image AND bind Secret Manager secrets + Cloud SQL
+  # in one atomic revision. This avoids the half-baked state where the
+  # new image runs against the old plaintext env, or the new env binds
+  # to the old image's unguarded Base.metadata.create_all.
+  #
+  # Schema migrations run inside the container at start via
+  # /app/start.sh -> `alembic upgrade head`. See Dockerfile ENTRYPOINT.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
       - 'daena'
-      - '--image'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$SHORT_SHA'
-      - '--region'
-      - 'us-central1'
-      - '--platform'
-      - 'managed'
+      - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$SHORT_SHA'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--add-cloudsql-instances=$PROJECT_ID:us-central1:daena-db'
+      - '--update-secrets=DATABASE_URL=daena-database-url:latest,DAENA_KEK=daena-daena-kek:latest,JWT_SECRET_KEY=daena-jwt-secret-key:latest,GROQ_API_KEY=daena-groq-api-key:latest,GEMINI_API_KEY=daena-gemini-api-key:latest,GOOGLE_CLIENT_SECRET=daena-google-client-secret:latest,GITHUB_CLIENT_SECRET=daena-github-client-secret:latest'
+      - '--update-env-vars=APP_ENV=production,LOG_LEVEL=info,USE_CONNECTION_REGISTRY_V2=false,DISABLE_AUTH=false'
 
 images:
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$SHORT_SHA'
