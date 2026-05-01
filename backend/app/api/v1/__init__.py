@@ -43,6 +43,7 @@ from app.api.v1 import (
     memory,
     missions,
     mobile,
+    notifications,
     org,
     pipeline,
     policies,
@@ -144,6 +145,10 @@ router.include_router(agent_ops.sales_router, prefix="/sales", tags=["sales"])
 router.include_router(agent_ops.marketing_router, prefix="/marketing", tags=["marketing"])
 router.include_router(agent_ops.crm_router, prefix="/crm", tags=["crm"])
 router.include_router(missions.router, prefix="/missions", tags=["missions"])
+# Phase 11 PR-S2 (2026-05-01): in-app notifications.
+# GET /notifications + POST /notifications/test. Backend-only emit
+# (NotificationService); no client-side type override (no spam).
+router.include_router(notifications.router, tags=["notifications"])
 # Note: ws.router (Phase 5 placeholder /ws/{session_id}) was removed 2026-04-29.
 # It only echoed "LLM routing not yet active" with zero consumers (no frontend
 # WebSocket client, no tests). Chat SSE at /api/v1/chat/messages/stream is the

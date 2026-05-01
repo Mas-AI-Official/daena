@@ -288,6 +288,57 @@ export async function hydrateUiFromBackend(): Promise<void> {
 }
 
 /**
+ * Phase 11 PR-S2: hydrate the bell from the backend `notifications`
+ * table on app load. Safe to call multiple times — dedupes by id so a
+ * second call cannot duplicate rows.
+ *
+ * Backend severity (info|success|warning|error) maps 1:1 onto the bell
+ * `Notification.type`. created_at -> timestamp. We prepend so backend
+ * rows appear above any in-memory client toasts the user already has.
+ */
+type BackendNotificationRow = {
+  id: string
+  title: string
+  message: string
+  severity: string
+  created_at?: string | null
+}
+
+export async function hydrateNotificationsFromBackend(
+  limit: number = 20,
+): Promise<void> {
+  try {
+    const { api } = await import('@/lib/api')
+    const res = await api.get(`/notifications?limit=${limit}`)
+    const rows: BackendNotificationRow[] = res.data?.data ?? []
+    if (!rows.length) return
+    const store = useUiStore.getState()
+    const existing = new Set(store.notifications.map((n) => n.id))
+    const sevMap: Record<string, Notification['type']> = {
+      info: 'info',
+      success: 'success',
+      warning: 'warning',
+      error: 'error',
+    }
+    const incoming: Notification[] = rows
+      .filter((r) => !existing.has(r.id))
+      .map((r) => ({
+        id: r.id,
+        type: sevMap[r.severity] ?? 'info',
+        title: r.title,
+        message: r.message,
+        timestamp: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+      }))
+    if (!incoming.length) return
+    useUiStore.setState({
+      notifications: [...incoming, ...store.notifications],
+    })
+  } catch {
+    // Non-critical -- bell stays in-memory-only on failure.
+  }
+}
+
+/**
  * Debounced persist of a single UI preference to the backend.
  * Batches rapid changes into one PUT request after 500ms.
  */

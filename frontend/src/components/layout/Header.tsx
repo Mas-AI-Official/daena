@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, useEffect, useRef } from 'react'
 import { Bell, Search, Brain, BrainCircuit, Zap, X, Menu, Heart, Mic, MicOff, AudioLines, AudioWaveform } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useUiStore, persistUiPref } from '@/stores/uiStore'
+import { useUiStore, persistUiPref, hydrateNotificationsFromBackend } from '@/stores/uiStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
@@ -58,6 +58,14 @@ export const Header = memo(function Header() {
     if (notifOpen) document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [notifOpen])
+
+  // Phase 11 PR-S2: hydrate the bell from /notifications on mount so
+  // persisted rows survive a browser refresh. Once-only; future
+  // additions arrive via the in-memory addNotification path (toast)
+  // or a dedicated SSE channel (future PR-S2 follow-up).
+  useEffect(() => {
+    void hydrateNotificationsFromBackend(20)
+  }, [])
 
   // Global Ctrl+K / Cmd+K shortcut
   useEffect(() => {

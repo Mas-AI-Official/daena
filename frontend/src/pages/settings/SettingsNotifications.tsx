@@ -1,6 +1,12 @@
 /**
  * SettingsNotifications -- notification preferences tab.
  * All toggles persist to backend via PUT /settings/user JSONB.
+ *
+ * Phase 11 PR-S2 (2026-05-01): backend now consumes the per-event
+ * notif_* flags via NotificationService. Five per-event toggles flip
+ * from "Coming soon" to "Enforced by backend." Sound / Email / Daily
+ * Digest stay disabled because there is no delivery channel for them
+ * yet (no audio pipeline, no SMTP, no scheduler-driven digest job).
  */
 import { useState, useEffect } from 'react'
 import { Bell, Volume2, Mail, CheckCircle2, AlertTriangle } from 'lucide-react'
@@ -8,6 +14,7 @@ import { Card, Switch, Badge } from '@/components/common'
 import { useAuthStore } from '@/stores/authStore'
 import { api } from '@/lib/api'
 import { persistUiPref } from '@/stores/uiStore'
+import { toast } from '@/stores/toastStore'
 
 export function SettingsNotifications() {
   const userEmail = useAuthStore((s) => s.user?.email || '')
@@ -20,6 +27,7 @@ export function SettingsNotifications() {
   const [sound, setSound] = useState(false)
   const [emailEnabled, setEmailEnabled] = useState(false)
   const [dailyDigest, setDailyDigest] = useState(false)
+  const [sendingTest, setSendingTest] = useState(false)
   const emailConfigured = false
 
   // Hydrate from backend on mount
@@ -60,6 +68,62 @@ export function SettingsNotifications() {
     persistUiPref(key, !current)
   }
 
+  /**
+   * Phase 11 PR-S2: real backend test.
+   *
+   * 1. POST /api/v1/notifications/test → backend creates a system_info
+   *    row in `notifications` table (unconditionally — system_info
+   *    bypasses per-event flags so the user sees confirmation that
+   *    the plumbing works).
+   * 2. Push the row into the in-memory uiStore so it shows in the
+   *    bell immediately (no need to wait for next dropdown open).
+   * 3. If the user has granted browser permission AND notif_desktop
+   *    is on, also fire an OS notification.
+   * 4. Toast on success / failure.
+   */
+  const handleSendTest = async () => {
+    setSendingTest(true)
+    try {
+      const res = await api.post('/notifications/test', {
+        title: 'Test from Daena',
+        message: 'Notifications are working correctly!',
+        severity: 'info',
+      })
+      const row = res.data?.data
+      // Push into the bell store so it shows immediately.
+      const { useUiStore } = await import('@/stores/uiStore')
+      useUiStore.setState((s) => ({
+        notifications: [
+          {
+            id: row?.id ?? crypto.randomUUID(),
+            type: 'info',
+            title: row?.title ?? 'Test from Daena',
+            message: row?.message ?? 'Notifications are working correctly!',
+            timestamp: row?.created_at
+              ? new Date(row.created_at).getTime()
+              : Date.now(),
+          },
+          ...s.notifications,
+        ],
+      }))
+      // Fire OS notification only if the user has both granted
+      // permission AND the master desktop toggle is on. (Master toggle
+      // is a client-side gate; per-event toggles affect only what the
+      // backend persists.)
+      if (desktop && permStatus === 'granted') {
+        new Notification('Test from Daena', {
+          body: 'Notifications are working correctly!',
+          icon: '/daena-blue.png',
+        })
+      }
+      toast.success('Test notification sent. Check the bell in the header.')
+    } catch {
+      toast.error('Failed to send test notification.')
+    } finally {
+      setSendingTest(false)
+    }
+  }
+
   return (
     <div className="space-y-8">
       {/* Desktop */}
@@ -71,11 +135,11 @@ export function SettingsNotifications() {
         <Card variant="glass" padding="md" className="space-y-3">
           <div
             className="flex items-center justify-between"
-            title="Phase 10C-D: master gate is meaningful — it controls whether the browser Notification permission request and the Send Test button fire on this device. Per-event sub-toggles below are disabled because the backend notification emitter does not exist yet (Phase 11 PR-S2)."
+            title="Master gate: controls whether the browser asks for OS notification permission and whether the Send Test button fires an OS notification. Per-event toggles below now have a real backend consumer (Phase 11 PR-S2)."
           >
             <div>
               <p className="text-sm text-starlight-200">Enable desktop notifications</p>
-              <p className="text-[10px] text-starlight-500">Show system notifications for important events. (Master gate works client-side; sub-toggles below await Phase 11 emitter.)</p>
+              <p className="text-[10px] text-starlight-500">Show system notifications for important events. (Master gate is client-side; in-app rows are governed by per-event toggles below.)</p>
             </div>
             <Switch checked={desktop} onChange={() => toggle('notif_desktop', desktop, setDesktop)} label="" size="sm" />
           </div>
@@ -100,31 +164,31 @@ export function SettingsNotifications() {
           {desktop && (
             <div
               className="pl-4 border-l border-white/10 space-y-3 mt-1"
-              title="Phase 10C-D: per-event toggles persist but no backend emitter consumes them. Phase 11 PR-S2 ships the NotificationService."
+              title="Phase 11 PR-S2: per-event toggles enforce in-app row creation. NotificationService.emit reads users.settings.notif_<type> and skips writing the row when the matching flag is False."
             >
-              <p className="text-[10px] text-accent-amber flex items-center gap-1.5">
-                <Badge variant="warning" size="sm">Coming soon</Badge>
-                Per-event delivery is queued for Phase 11 — toggles below persist your preference but don't fire yet.
+              <p className="text-[10px] text-status-success flex items-center gap-1.5">
+                <Badge variant="success" size="sm">Enforced by backend</Badge>
+                In-app rows for these events land in the bell. OS notifications still require browser permission above.
               </p>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-starlight-300">Task completion</p>
-                <Switch checked={taskComplete} onChange={() => toggle('notif_task_complete', taskComplete, setTaskComplete)} label="" size="sm" disabled />
+                <Switch checked={taskComplete} onChange={() => toggle('notif_task_complete', taskComplete, setTaskComplete)} label="" size="sm" />
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-starlight-300">Budget alerts</p>
-                <Switch checked={budgetAlert} onChange={() => toggle('notif_budget_alert', budgetAlert, setBudgetAlert)} label="" size="sm" disabled />
+                <Switch checked={budgetAlert} onChange={() => toggle('notif_budget_alert', budgetAlert, setBudgetAlert)} label="" size="sm" />
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-starlight-300">Daena Heartbeat findings</p>
-                <Switch checked={heartbeat} onChange={() => toggle('notif_heartbeat', heartbeat, setHeartbeat)} label="" size="sm" disabled />
+                <Switch checked={heartbeat} onChange={() => toggle('notif_heartbeat', heartbeat, setHeartbeat)} label="" size="sm" />
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-starlight-300">Governance rejections</p>
-                <Switch checked={govReject} onChange={() => toggle('notif_gov_reject', govReject, setGovReject)} label="" size="sm" disabled />
+                <Switch checked={govReject} onChange={() => toggle('notif_gov_reject', govReject, setGovReject)} label="" size="sm" />
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-starlight-300">Runtime disconnection</p>
-                <Switch checked={runtimeDisc} onChange={() => toggle('notif_runtime_disconnect', runtimeDisc, setRuntimeDisc)} label="" size="sm" disabled />
+                <Switch checked={runtimeDisc} onChange={() => toggle('notif_runtime_disconnect', runtimeDisc, setRuntimeDisc)} label="" size="sm" />
               </div>
             </div>
           )}
@@ -140,14 +204,14 @@ export function SettingsNotifications() {
         <Card variant="glass" padding="md">
           <div
             className="flex items-center justify-between"
-            title="Phase 10C-D: sound preference persists but the backend notification emitter does not exist. Phase 11 PR-S2."
+            title="Phase 11 PR-S2: sound preference persists, but no audio delivery channel is wired (NotificationService is in-app row only). Coming when an audio surface ships."
           >
             <div>
               <p className="text-sm text-starlight-200">
                 Notification sound
                 <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
               </p>
-              <p className="text-[10px] text-starlight-500">Play a sound when notifications arrive. (Toggle persists; emitter pending.)</p>
+              <p className="text-[10px] text-starlight-500">Play a sound when notifications arrive. (Toggle persists; audio delivery channel pending.)</p>
             </div>
             <Switch checked={sound} onChange={() => toggle('notif_sound', sound, setSound)} label="" size="sm" disabled />
           </div>
@@ -215,20 +279,14 @@ export function SettingsNotifications() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-starlight-200">Send a test notification</p>
-              <p className="text-[10px] text-starlight-500">Verify your notification setup is working.</p>
+              <p className="text-[10px] text-starlight-500">Calls POST /notifications/test → creates one in-app row + bell entry. OS notification fires only if browser permission was granted above.</p>
             </div>
             <button
-              onClick={() => {
-                if (desktop && permStatus === 'granted') {
-                  new Notification('Test from Daena', { body: 'Notifications are working correctly!', icon: '/daena-blue.png' })
-                }
-                import('@/stores/uiStore').then(({ useUiStore }) => {
-                  useUiStore.getState().addNotification({ type: 'info', title: 'Test', message: 'Notification system is working.' })
-                })
-              }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-500/10 text-primary-400 border border-primary-500/20 hover:bg-primary-500/20 cursor-pointer"
+              onClick={() => { void handleSendTest() }}
+              disabled={sendingTest}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-500/10 text-primary-400 border border-primary-500/20 hover:bg-primary-500/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Send Test
+              {sendingTest ? 'Sending…' : 'Send Test'}
             </button>
           </div>
         </Card>
