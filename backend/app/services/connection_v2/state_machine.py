@@ -99,7 +99,13 @@ def derive_label(row: ConnectionV2, active_ops: Iterable[str] = ()) -> str:
         return "failed"
 
     # Callable=True path -- check freshness for stale split.
-    age = _now() - (row.callable_at or _now())
+    # Defensive tz-coercion: SQLite drops timezone info on retrieval even
+    # when the column is DateTime(timezone=True), so we re-attach UTC here
+    # before comparing against tz-aware _now().
+    callable_at = row.callable_at or _now()
+    if callable_at.tzinfo is None:
+        callable_at = callable_at.replace(tzinfo=timezone.utc)
+    age = _now() - callable_at
     ratio = row.healthy_call_ratio if row.healthy_call_ratio is not None else 1.0
     if age < CALLABLE_TTL:
         return "healthy" if ratio > DEGRADED_THRESHOLD else "degraded"

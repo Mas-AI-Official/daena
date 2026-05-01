@@ -18,7 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, get_current_user
+from app.api.deps import CurrentUser, get_current_user, require_role
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.vault_boot import load_kek_from_env
@@ -35,6 +35,10 @@ from app.schemas.connection_v2 import (
     TruthDimOut,
 )
 from app.services.connection_v2 import ConnectionRegistryV2
+from app.services.connection_v2.legacy_bridge import is_v2_enabled
+from app.services.connection_v2.reconciliation import (
+    ConnectionReconciliationService,
+)
 
 router = APIRouter()
 
@@ -228,3 +232,63 @@ async def archive_connection(
         raise HTTPException(status_code=404, detail="connection_not_found")
     await db.commit()
     return await _to_out(reg, row)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Reconciliation (Phase 4b PR 3)
+# ──────────────────────────────────────────────────────────────────
+#
+# Surface the soak-window drift report. Read-only by default.
+# Mutation requires apply=True AND USE_CONNECTION_REGISTRY_V2.
+# Both endpoints are FOUNDER+ -- this is operator tooling, not a
+# user-facing flow.
+
+
+@router.get("/reconciliation/status")
+async def reconciliation_status(
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Read-only: latest reconciliation snapshot for the current tenant.
+
+    Always returns a fresh report (no caching) -- the cost is one
+    SELECT per table. Never mutates. Never includes plaintext
+    secrets / KEK / DEK material.
+    """
+    svc = ConnectionReconciliationService(db)
+    report = await svc.run(tenant_id=user.tenant_id, apply=False)
+    return {
+        "success": True,
+        "data": report.to_dict(),
+        "v2_enabled": is_v2_enabled(),
+    }
+
+
+@router.post("/reconciliation/run")
+async def reconciliation_run(
+    apply: bool = Query(default=False, description="Set true to perform safe automatic remediations (orphan op-lock cleanup only)"),
+    all_tenants: bool = Query(default=False, description="Founder-only: scan ALL tenants instead of just the caller's"),
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Trigger a reconciliation run.
+
+    Safety belts:
+      * apply=True is silently downgraded to apply=False if
+        USE_CONNECTION_REGISTRY_V2 is off
+      * legacy ConnectorInstance rows + Secret rows are NEVER mutated
+        (only ConnectionV2OpLock rows can be cleaned up automatically)
+      * report never contains plaintext secrets
+    """
+    svc = ConnectionReconciliationService(db)
+    tenant_filter = None if all_tenants else user.tenant_id
+    report = await svc.run(tenant_id=tenant_filter, apply=apply)
+    if report.mutations_applied > 0:
+        await db.commit()
+    return {
+        "success": True,
+        "data": report.to_dict(),
+        "v2_enabled": is_v2_enabled(),
+        "applied_requested": apply,
+        "applied_effective": apply and is_v2_enabled(),
+    }
