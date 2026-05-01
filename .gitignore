@@ -50,6 +50,7 @@ docs/*
 !docs/CONNECTIONS_CURRENT_DAMAGE_REPORT.md
 !docs/CONNECTIONS_FILE_MAP.md
 !docs/CONNECTIONS_ARCHIVE_LOG.md
+!docs/PRE_PHASE4A_DIRTY_TREE_INVENTORY.md
 !docs/_explore/
 # Ultraview review + ADR-002 founder-locked decisions for the rebuild
 !docs/ADR-002-connections-rebuild-locked-decisions.md
