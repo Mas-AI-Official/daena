@@ -50,11 +50,7 @@ GROQ_API_KEY=daena-groq-api-key:latest,\
 GEMINI_API_KEY=daena-gemini-api-key:latest,\
 GOOGLE_CLIENT_SECRET=daena-google-client-secret:latest,\
 GITHUB_CLIENT_SECRET=daena-github-client-secret:latest" \
-  --update-env-vars="\
-APP_ENV=production,\
-LOG_LEVEL=info,\
-USE_CONNECTION_REGISTRY_V2=false,\
-DISABLE_AUTH=false"
+  --update-env-vars='^@^APP_ENV=production@LOG_LEVEL=info@USE_CONNECTION_REGISTRY_V2=false@DISABLE_AUTH=false@CORS_ORIGINS=["https://daena.mas-ai.co","https://mas-ai.co","http://localhost:5173"]'
 
 echo ""
 echo "Note: schema migration ('alembic upgrade head') runs at container"

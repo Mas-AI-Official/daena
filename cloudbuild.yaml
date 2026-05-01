@@ -45,7 +45,15 @@ steps:
       - '--service-account=daena-run@$PROJECT_ID.iam.gserviceaccount.com'
       - '--add-cloudsql-instances=$PROJECT_ID:us-central1:daena-db'
       - '--update-secrets=DATABASE_URL=daena-database-url:latest,DAENA_KEK=daena-daena-kek:latest,JWT_SECRET_KEY=daena-jwt-secret-key:latest,VAULT_ENCRYPTION_KEY=daena-vault-encryption-key:latest,GROQ_API_KEY=daena-groq-api-key:latest,GEMINI_API_KEY=daena-gemini-api-key:latest,GOOGLE_CLIENT_SECRET=daena-google-client-secret:latest,GITHUB_CLIENT_SECRET=daena-github-client-secret:latest'
-      - '--update-env-vars=APP_ENV=production,LOG_LEVEL=info,USE_CONNECTION_REGISTRY_V2=false,DISABLE_AUTH=false'
+      # CORS_ORIGINS is a JSON array; commas inside it would collide with
+      # gcloud's default --update-env-vars separator. The `^@^` prefix
+      # tells gcloud to use `@` as the KEY=VALUE separator instead, so
+      # the JSON value passes through unmodified. Pydantic's CORS_ORIGINS
+      # validator (backend/app/core/config.py:225) accepts both JSON
+      # array and comma-separated string forms; we use JSON here for
+      # clarity. Production guardrail at backend/app/main.py:758 refuses
+      # to start the app if this is left at the localhost-only default.
+      - '--update-env-vars=^@^APP_ENV=production@LOG_LEVEL=info@USE_CONNECTION_REGISTRY_V2=false@DISABLE_AUTH=false@CORS_ORIGINS=["https://daena.mas-ai.co","https://mas-ai.co","http://localhost:5173"]'
       - '--allow-unauthenticated'
 
 images:
