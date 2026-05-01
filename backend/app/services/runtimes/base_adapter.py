@@ -10,6 +10,9 @@ uniformly. Each adapter wraps a CLI subprocess and exposes:
   - Cancellation
   - Auth requirements (static description)
   - Subscription check (dynamic runtime probe)
+  - Structured probe (Phase 4b PR 2): real round-trip producing the
+    6 V2 truth dimensions (detected / configured / reachable /
+    authenticated / callable) plus failure_dim + failure_reason.
 
 All methods are async to support concurrent health checks and
 parallel task execution across multiple runtimes.
@@ -20,6 +23,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -31,6 +35,62 @@ class RuntimeStatus(Enum):
     RATE_LIMITED = "rate_limited"
     ERROR = "error"
     NOT_INSTALLED = "not_installed"
+
+
+@dataclass
+class RuntimeProbeResult:
+    """Phase 4b PR 2: Structured probe outcome for the V2 truth model.
+
+    Replaces the lying "binary exists == online" pattern in legacy
+    check_health(). All 5 truth dims map directly to ConnectionV2
+    columns; ``failure_dim`` names which dim is now false (per ADR-002
+    D-001 per-dim failure storage). ``last_checked_at`` defaults to
+    UTC now.
+
+    Truth contract (founder-locked, ADR-002 + Phase 4b PR 2 spec):
+      - detected = True iff binary/server exists at expected location
+      - configured = True iff per-kind config schema validates
+      - reachable = True iff a transport-level handshake succeeded
+        (TCP connect, HTTP 2xx/3xx/4xx, MCP initialize OK, CLI exits
+        with version on stdout)
+      - authenticated = True iff a credential check passes (token
+        valid, OAuth not expired, subscription active)
+      - callable = True ONLY iff a harmless real round-trip succeeds
+        end-to-end. detected/reachable/authenticated alone never
+        flip this dim true.
+    """
+
+    detected: bool = False
+    configured: bool = False
+    reachable: bool = False
+    authenticated: bool | None = None  # None = unknown / not applicable
+    callable: bool = False
+
+    failure_dim: str | None = None  # which dim failed first
+    failure_reason: str | None = None  # plain-English (no secrets)
+    duration_ms: int = 0
+    last_checked_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+    # Optional auxiliary signal: capabilities discovered during probe
+    # (e.g. MCP tools list, model list). Opaque per-kind; consumed by
+    # ConnectionRegistryV2 capability side-table writer.
+    capabilities: list[dict] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "detected": self.detected,
+            "configured": self.configured,
+            "reachable": self.reachable,
+            "authenticated": self.authenticated,
+            "callable": self.callable,
+            "failure_dim": self.failure_dim,
+            "failure_reason": self.failure_reason,
+            "duration_ms": self.duration_ms,
+            "last_checked_at": self.last_checked_at.isoformat(),
+            "capabilities_count": len(self.capabilities),
+        }
 
 
 @dataclass
@@ -179,6 +239,40 @@ class BaseRuntimeAdapter(ABC):
             method=AuthMethod.API_KEY,
             status=SubscriptionStatus.UNKNOWN,
             detail="check_subscription not implemented for this adapter",
+        )
+
+    async def probe(self) -> RuntimeProbeResult:
+        """Phase 4b PR 2: Structured probe. Default is honest-but-shallow.
+
+        Subclasses (claude_code, codex, gemini_cli, grok_cli, mcp_bridge)
+        override this with real round-trip semantics. The default here
+        does NOT lie -- it derives only ``detected`` from check_installed
+        and leaves callable=False so legacy adapters that haven't been
+        rewritten yet cannot be misread as "callable" by the V2
+        registry.
+
+        Returns:
+            RuntimeProbeResult with detected/callable populated. Other
+            dims default False (or None for authenticated when not
+            applicable).
+        """
+        import time as _time
+
+        start = _time.perf_counter()
+        try:
+            installed = await self.check_installed()
+        except Exception as exc:  # noqa: BLE001 -- contract: never raise
+            return RuntimeProbeResult(
+                detected=False,
+                failure_dim="detected",
+                failure_reason=f"check_installed raised: {type(exc).__name__}",
+                duration_ms=int((_time.perf_counter() - start) * 1000),
+            )
+        return RuntimeProbeResult(
+            detected=bool(installed),
+            failure_dim=None if installed else "detected",
+            failure_reason=None if installed else "binary not found",
+            duration_ms=int((_time.perf_counter() - start) * 1000),
         )
 
     def __repr__(self) -> str:

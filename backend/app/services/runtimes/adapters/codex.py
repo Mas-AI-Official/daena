@@ -22,10 +22,15 @@ from app.core.logging import get_logger
 from app.services.runtimes.base_adapter import (
     BaseRuntimeAdapter,
     RuntimeCapability,
+    RuntimeProbeResult,
     RuntimeStatus,
 )
 
 logger = get_logger(__name__)
+
+_PROBE_VERSION_TIMEOUT = 8.0
+_PROBE_ROUNDTRIP_TIMEOUT = 25.0
+_PROBE_PING_PROMPT = "ping"
 
 
 def _run_cmd(
@@ -129,7 +134,15 @@ class CodexAdapter(BaseRuntimeAdapter):
             if output:
                 yield output
             if result.stderr.strip():
-                yield f"\n[stderr: {result.stderr.strip()[:500]}]"
+                # Stderr is for backend logs only -- never yield to the SSE
+                # stream. The Codex CLI banner contains workdir/model/provider/
+                # session-id strings that violate Asset Shield's egress promise
+                # (Hard Law 5: data exfiltration). See QA finding F-0011.
+                logger.warning(
+                    "codex.stderr",
+                    stderr=result.stderr.strip()[:500],
+                    task=task[:100],
+                )
         except subprocess.TimeoutExpired:
             yield "[Codex timed out after 5 minutes]"
         except Exception as exc:
@@ -243,3 +256,132 @@ class CodexAdapter(BaseRuntimeAdapter):
                 setup_command="codex login",
                 detail=f"Could not check Codex CLI status: {exc}",
             )
+
+    async def probe(self) -> RuntimeProbeResult:
+        """Real round-trip probe (Phase 4b PR 2).
+
+        Truth ladder mirrors claude_code:
+          1. detected = codex binary present
+          2. configured = trivially True once detected
+          3. reachable = ``codex --version`` exits 0
+          4. authenticated = ~/.codex/auth.json has a parseable token
+          5. callable = ``codex exec "ping"`` succeeds with non-empty
+             stdout
+
+        Stderr is logged server-side only (Asset Shield Hard Law 5).
+        """
+        import os
+        import time as _time
+
+        from app.services.runtimes.subscription_auth import SubscriptionStatus
+
+        start = _time.perf_counter()
+        result = RuntimeProbeResult()
+
+        # Dim 1: detected
+        try:
+            detected = (
+                self._codex_bin != "codex"
+                and os.path.isfile(self._codex_bin)
+            )
+            if not detected:
+                version_check = await asyncio.to_thread(
+                    _run_cmd,
+                    [self._codex_bin, "--version"],
+                    timeout=_PROBE_VERSION_TIMEOUT,
+                )
+                detected = version_check.returncode == 0
+            result.detected = detected
+        except Exception as exc:  # noqa: BLE001
+            result.failure_dim = "detected"
+            result.failure_reason = f"detect probe error: {type(exc).__name__}"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+
+        if not result.detected:
+            result.failure_dim = "detected"
+            result.failure_reason = "codex binary not found"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+
+        result.configured = True
+
+        # Dim 3: reachable
+        try:
+            version_check = await asyncio.to_thread(
+                _run_cmd,
+                [self._codex_bin, "--version"],
+                timeout=_PROBE_VERSION_TIMEOUT,
+            )
+            result.reachable = version_check.returncode == 0
+        except subprocess.TimeoutExpired:
+            result.failure_dim = "reachable"
+            result.failure_reason = (
+                f"codex --version timed out after {_PROBE_VERSION_TIMEOUT}s"
+            )
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.failure_dim = "reachable"
+            result.failure_reason = f"reachable probe error: {type(exc).__name__}"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+
+        if not result.reachable:
+            result.failure_dim = "reachable"
+            result.failure_reason = "codex --version exited non-zero"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+
+        # Dim 4: authenticated (read ~/.codex/auth.json via check_subscription)
+        try:
+            sub = await self.check_subscription()
+            if sub.status == SubscriptionStatus.AUTHENTICATED:
+                result.authenticated = True
+            else:
+                result.authenticated = False
+                result.failure_dim = "authenticated"
+                result.failure_reason = (
+                    f"codex subscription status: {sub.status.value}"
+                )
+                result.duration_ms = int((_time.perf_counter() - start) * 1000)
+                return result
+        except Exception as exc:  # noqa: BLE001
+            result.authenticated = False
+            result.failure_dim = "authenticated"
+            result.failure_reason = f"auth probe error: {type(exc).__name__}"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+
+        # Dim 5: callable -- real ``codex exec "ping"``
+        try:
+            roundtrip = await asyncio.to_thread(
+                _run_cmd,
+                [self._codex_bin, "exec", _PROBE_PING_PROMPT],
+                timeout=_PROBE_ROUNDTRIP_TIMEOUT,
+            )
+            output = (roundtrip.stdout or "").strip()
+            if roundtrip.returncode != 0:
+                result.failure_dim = "callable"
+                result.failure_reason = (
+                    f"round-trip exited {roundtrip.returncode}"
+                )
+            elif not output:
+                result.failure_dim = "callable"
+                result.failure_reason = "round-trip returned empty stdout"
+            else:
+                result.callable = True
+        except subprocess.TimeoutExpired:
+            result.failure_dim = "callable"
+            result.failure_reason = (
+                f"round-trip timed out after {_PROBE_ROUNDTRIP_TIMEOUT}s"
+            )
+        except Exception as exc:  # noqa: BLE001
+            result.failure_dim = "callable"
+            result.failure_reason = f"round-trip probe error: {type(exc).__name__}"
+
+        result.duration_ms = int((_time.perf_counter() - start) * 1000)
+        if result.callable:
+            result.failure_dim = None
+            result.failure_reason = None
+        return result

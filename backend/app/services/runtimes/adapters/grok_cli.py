@@ -17,10 +17,15 @@ from app.core.logging import get_logger
 from app.services.runtimes.base_adapter import (
     BaseRuntimeAdapter,
     RuntimeCapability,
+    RuntimeProbeResult,
     RuntimeStatus,
 )
 
 logger = get_logger(__name__)
+
+_PROBE_VERSION_TIMEOUT = 8.0
+_PROBE_ROUNDTRIP_TIMEOUT = 25.0
+_PROBE_PING_PROMPT = "ping"
 
 
 class GrokCLIAdapter(BaseRuntimeAdapter):
@@ -165,3 +170,121 @@ class GrokCLIAdapter(BaseRuntimeAdapter):
                 setup_command="grok auth",
                 detail="Could not check Grok CLI status",
             )
+
+    async def probe(self) -> RuntimeProbeResult:
+        """Real round-trip probe (Phase 4b PR 2).
+
+        Truth ladder:
+          1. detected = `grok --version` returns rc=0 within 8s
+          2. configured = trivially True once detected
+          3. reachable = same probe also satisfies reachable
+          4. authenticated = `grok auth status` indicates logged-in
+          5. callable = `grok "ping"` returns non-empty stdout
+        """
+        import time as _time
+
+        from app.services.runtimes.subscription_auth import SubscriptionStatus
+
+        start = _time.perf_counter()
+        result = RuntimeProbeResult()
+
+        # Dim 1+3 fused: try grok --version
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "grok", "--version",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout_b, _ = await asyncio.wait_for(
+                    proc.communicate(), timeout=_PROBE_VERSION_TIMEOUT,
+                )
+            except TimeoutError:
+                proc.kill()
+                result.failure_dim = "reachable"
+                result.failure_reason = (
+                    f"grok --version timed out after {_PROBE_VERSION_TIMEOUT}s"
+                )
+                result.duration_ms = int((_time.perf_counter() - start) * 1000)
+                return result
+            if proc.returncode == 0:
+                result.detected = True
+                result.configured = True
+                result.reachable = True
+            else:
+                result.failure_dim = "reachable"
+                result.failure_reason = (
+                    f"grok --version exited {proc.returncode}"
+                )
+                result.duration_ms = int((_time.perf_counter() - start) * 1000)
+                return result
+        except (FileNotFoundError, OSError) as exc:
+            result.failure_dim = "detected"
+            result.failure_reason = f"grok binary not found: {type(exc).__name__}"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.failure_dim = "reachable"
+            result.failure_reason = f"reachable probe error: {type(exc).__name__}"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+
+        # Dim 4: authenticated
+        try:
+            sub = await self.check_subscription()
+            if sub.status == SubscriptionStatus.AUTHENTICATED:
+                result.authenticated = True
+            else:
+                result.authenticated = False
+                result.failure_dim = "authenticated"
+                result.failure_reason = (
+                    f"grok subscription status: {sub.status.value}"
+                )
+                result.duration_ms = int((_time.perf_counter() - start) * 1000)
+                return result
+        except Exception as exc:  # noqa: BLE001
+            result.authenticated = False
+            result.failure_dim = "authenticated"
+            result.failure_reason = f"auth probe error: {type(exc).__name__}"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+
+        # Dim 5: callable -- grok "ping" round-trip
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "grok", _PROBE_PING_PROMPT,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout_b, _ = await asyncio.wait_for(
+                    proc.communicate(), timeout=_PROBE_ROUNDTRIP_TIMEOUT,
+                )
+            except TimeoutError:
+                proc.kill()
+                result.failure_dim = "callable"
+                result.failure_reason = (
+                    f"round-trip timed out after {_PROBE_ROUNDTRIP_TIMEOUT}s"
+                )
+                result.duration_ms = int((_time.perf_counter() - start) * 1000)
+                return result
+            output = (stdout_b or b"").decode("utf-8", errors="replace").strip()
+            if proc.returncode != 0:
+                result.failure_dim = "callable"
+                result.failure_reason = (
+                    f"round-trip exited {proc.returncode}"
+                )
+            elif not output:
+                result.failure_dim = "callable"
+                result.failure_reason = "round-trip returned empty stdout"
+            else:
+                result.callable = True
+        except Exception as exc:  # noqa: BLE001
+            result.failure_dim = "callable"
+            result.failure_reason = f"round-trip probe error: {type(exc).__name__}"
+
+        result.duration_ms = int((_time.perf_counter() - start) * 1000)
+        if result.callable:
+            result.failure_dim = None
+            result.failure_reason = None
+        return result

@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.logging import get_logger
-from app.services.runtimes.adapters.mcp_bridge import MCPBridgeAdapter
+from app.services.runtimes.adapters.mcp_bridge_runtime_adapter import MCPBridgeAdapter
 
 logger = get_logger(__name__)
 

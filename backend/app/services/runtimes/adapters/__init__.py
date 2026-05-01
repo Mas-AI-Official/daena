@@ -7,7 +7,7 @@ from app.services.runtimes.adapters.claude_code import ClaudeCodeAdapter
 from app.services.runtimes.adapters.codex import CodexAdapter
 from app.services.runtimes.adapters.gemini_cli import GeminiCLIAdapter
 from app.services.runtimes.adapters.grok_cli import GrokCLIAdapter
-from app.services.runtimes.adapters.mcp_bridge import MCPBridgeAdapter
+from app.services.runtimes.adapters.mcp_bridge_runtime_adapter import MCPBridgeAdapter
 from app.services.runtimes.adapters.ollama_adapter import OllamaRuntimeAdapter
 from app.services.runtimes.adapters.vllm_adapter import VLLMRuntimeAdapter
 

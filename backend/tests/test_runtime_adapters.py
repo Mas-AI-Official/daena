@@ -509,7 +509,7 @@ class TestAdapterCapabilities:
 
     @pytest.mark.asyncio
     async def test_mcp_bridge_capabilities(self):
-        from app.services.runtimes.adapters.mcp_bridge import MCPBridgeAdapter
+        from app.services.runtimes.adapters.mcp_bridge_runtime_adapter import MCPBridgeAdapter
         adapter = MCPBridgeAdapter("test_server", url="http://localhost:9999")
         caps = await adapter.get_capabilities()
         assert caps.file_operations >= 3.0
@@ -517,7 +517,7 @@ class TestAdapterCapabilities:
 
     @pytest.mark.asyncio
     async def test_mcp_bridge_custom_capabilities(self):
-        from app.services.runtimes.adapters.mcp_bridge import MCPBridgeAdapter
+        from app.services.runtimes.adapters.mcp_bridge_runtime_adapter import MCPBridgeAdapter
         custom = RuntimeCapability(file_operations=10.0)
         adapter = MCPBridgeAdapter("custom", url="http://localhost:9999", capabilities=custom)
         caps = await adapter.get_capabilities()

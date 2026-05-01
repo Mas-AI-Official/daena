@@ -21,10 +21,15 @@ from app.core.logging import get_logger
 from app.services.runtimes.base_adapter import (
     BaseRuntimeAdapter,
     RuntimeCapability,
+    RuntimeProbeResult,
     RuntimeStatus,
 )
 
 logger = get_logger(__name__)
+
+_PROBE_VERSION_TIMEOUT = 8.0
+_PROBE_ROUNDTRIP_TIMEOUT = 25.0
+_PROBE_PING_PROMPT = "ping"
 
 
 def _run_cmd(
@@ -304,3 +309,110 @@ class GeminiCLIAdapter(BaseRuntimeAdapter):
             login_url="https://gemini.google.com",
             plan_name="Google/Gemini",
         )
+
+    async def probe(self) -> RuntimeProbeResult:
+        """Real round-trip probe (Phase 4b PR 2).
+
+        gemini CLI hangs on --version when not authenticated, so we
+        gate dim 3 (reachable) on a short timeout and treat hang-then-
+        timeout as "reachable=false, failure_reason=hang".
+
+        Truth ladder:
+          1. detected = `gemini` resolves on PATH
+          2. configured = trivially True once detected
+          3. reachable = ``gemini --version`` returns within 8s with rc=0
+             (a hang is treated as not-reachable)
+          4. authenticated = check_subscription returns AUTHENTICATED
+          5. callable = ``gemini -p "ping"`` returns non-empty stdout
+        """
+        import time as _time
+
+        from app.services.runtimes.subscription_auth import SubscriptionStatus
+
+        start = _time.perf_counter()
+        result = RuntimeProbeResult()
+
+        # Dim 1: detected
+        if shutil.which("gemini") is None:
+            result.failure_dim = "detected"
+            result.failure_reason = "gemini binary not on PATH"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+        result.detected = True
+        result.configured = True
+
+        # Dim 3: reachable (gemini --version may hang -- timeout-gated)
+        try:
+            version_check = await asyncio.to_thread(
+                _run_cmd, ["gemini", "--version"], timeout=_PROBE_VERSION_TIMEOUT,
+            )
+            result.reachable = version_check.returncode == 0
+            if not result.reachable:
+                result.failure_dim = "reachable"
+                result.failure_reason = "gemini --version exited non-zero"
+                result.duration_ms = int((_time.perf_counter() - start) * 1000)
+                return result
+        except subprocess.TimeoutExpired:
+            result.failure_dim = "reachable"
+            result.failure_reason = (
+                f"gemini --version hung past {_PROBE_VERSION_TIMEOUT}s "
+                "(typical of unauthenticated CLI)"
+            )
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.failure_dim = "reachable"
+            result.failure_reason = f"reachable probe error: {type(exc).__name__}"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+
+        # Dim 4: authenticated
+        try:
+            sub = await self.check_subscription()
+            if sub.status == SubscriptionStatus.AUTHENTICATED:
+                result.authenticated = True
+            else:
+                result.authenticated = False
+                result.failure_dim = "authenticated"
+                result.failure_reason = (
+                    f"gemini subscription status: {sub.status.value}"
+                )
+                result.duration_ms = int((_time.perf_counter() - start) * 1000)
+                return result
+        except Exception as exc:  # noqa: BLE001
+            result.authenticated = False
+            result.failure_dim = "authenticated"
+            result.failure_reason = f"auth probe error: {type(exc).__name__}"
+            result.duration_ms = int((_time.perf_counter() - start) * 1000)
+            return result
+
+        # Dim 5: callable -- real `gemini -p "ping"` round-trip
+        try:
+            roundtrip = await asyncio.to_thread(
+                _run_cmd,
+                ["gemini", "-p", _PROBE_PING_PROMPT],
+                timeout=_PROBE_ROUNDTRIP_TIMEOUT,
+            )
+            output = (roundtrip.stdout or "").strip()
+            if roundtrip.returncode != 0:
+                result.failure_dim = "callable"
+                result.failure_reason = f"round-trip exited {roundtrip.returncode}"
+            elif not output:
+                result.failure_dim = "callable"
+                result.failure_reason = "round-trip returned empty stdout"
+            else:
+                result.callable = True
+        except subprocess.TimeoutExpired:
+            result.failure_dim = "callable"
+            result.failure_reason = (
+                f"round-trip timed out after {_PROBE_ROUNDTRIP_TIMEOUT}s"
+            )
+        except Exception as exc:  # noqa: BLE001
+            result.failure_dim = "callable"
+            result.failure_reason = f"round-trip probe error: {type(exc).__name__}"
+
+        result.duration_ms = int((_time.perf_counter() - start) * 1000)
+        if result.callable:
+            result.failure_dim = None
+            result.failure_reason = None
+        return result

@@ -17,7 +17,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from app.core.constants import ConnectorStatus, PermissionLevel
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.core.vault import decrypt_dict, encrypt_dict
 from app.models.connections import Connector, ConnectorInstance, ConnectorPermission
@@ -113,6 +113,102 @@ class ConnectionService(BaseService):
             "created_at": perm.created_at.isoformat() if perm.created_at else None,
             "updated_at": perm.updated_at.isoformat() if perm.updated_at else None,
         }
+
+    @staticmethod
+    def _auth_type_value(connector: Connector) -> str:
+        """Normalize the mixed catalog auth_type spellings."""
+        return str(connector.auth_type or "").strip().lower()
+
+    @classmethod
+    def _is_no_auth_connector(cls, connector: Connector) -> bool:
+        """Return True for connectors that are callable without account auth."""
+        if cls._auth_type_value(connector) not in {"none", "no_auth", "no-auth"}:
+            return False
+        schema = connector.config_schema if isinstance(connector.config_schema, dict) else {}
+        return schema.get("callable_without_auth") is True
+
+    @classmethod
+    def _status_for_install(cls, connector: Connector, credentials: dict | None = None) -> str:
+        """Legacy heuristic: credentials-presence -> 'connected'.
+
+        Phase 4b PR 2 (ADR-002 D-010): when ``USE_CONNECTION_REGISTRY_V2``
+        is True, callers MUST instead route through ``_status_via_v2``
+        below, which derives status from the V2 truth dimensions
+        (callable / authenticated / reachable) rather than just
+        "have we stored credentials." This stays as the legacy
+        fallback for the soak window.
+
+        OAuth/API-key/token connectors without credentials are only
+        installed. They become connected after OAuth/token setup succeeds.
+        No-auth connectors only become connected immediately when the
+        catalog explicitly says Daena has a callable backend adapter.
+        """
+        if cls._is_no_auth_connector(connector):
+            return ConnectorStatus.CONNECTED.value
+        if credentials:
+            return ConnectorStatus.CONNECTED.value
+        return ConnectorStatus.INSTALLED.value
+
+    async def _status_via_v2(
+        self,
+        connector: Connector,
+        *,
+        tenant_id: UUID,
+        user_id: UUID,
+        credentials: dict | None = None,
+    ) -> str:
+        """V2-backed status (Phase 4b PR 2, ADR-002 D-010).
+
+        When ``USE_CONNECTION_REGISTRY_V2`` is True, derives the legacy
+        status from the V2 row's derived label instead of the
+        credential-presence heuristic. Falls back to legacy
+        ``_status_for_install`` when:
+          * the flag is off
+          * no V2 row exists yet (nothing to derive from)
+          * any V2 lookup error occurs (legacy stays operational)
+        """
+        from app.services.connection_v2.legacy_bridge import (
+            derive_legacy_status_from_v2,
+            is_v2_enabled,
+        )
+
+        if not is_v2_enabled():
+            return self._status_for_install(connector, credentials)
+        v2_status = await derive_legacy_status_from_v2(
+            db=self.db,
+            connector=connector,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+        if v2_status is not None:
+            return v2_status
+        return self._status_for_install(connector, credentials)
+
+    async def _mirror_to_v2(
+        self,
+        connector: Connector,
+        *,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Mirror a legacy install/connect into a V2 ConnectionV2 row.
+
+        No-op when the V2 flag is off. Failure is logged + swallowed
+        so the legacy path always succeeds.
+        """
+        from app.services.connection_v2.legacy_bridge import (
+            is_v2_enabled,
+            mirror_legacy_install,
+        )
+
+        if not is_v2_enabled():
+            return
+        await mirror_legacy_install(
+            db=self.db,
+            connector=connector,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
 
     # ── Connector Catalog (tenant-independent) ────────────────
 
@@ -212,7 +308,7 @@ class ConnectionService(BaseService):
             ConflictError: If user already connected to this connector.
         """
         # Verify connector exists
-        await self.get_connector(connector_id)
+        connector = await self.get_connector(connector_id)
 
         # Check for existing connection
         existing = await self.db.execute(
@@ -230,12 +326,21 @@ class ConnectionService(BaseService):
         # Encrypt credentials before storage
         encrypted_creds = encrypt_dict(credentials) if credentials else None
 
+        # Phase 4b PR 2: mirror to V2 BEFORE writing legacy row, so the
+        # V2-derived status is queryable when we set instance.status.
+        await self._mirror_to_v2(
+            connector, tenant_id=tenant_id, user_id=user_id,
+        )
+        status = await self._status_via_v2(
+            connector, tenant_id=tenant_id, user_id=user_id, credentials=credentials,
+        )
+
         instance = ConnectorInstance(
             connector_id=connector_id,
             user_id=user_id,
             tenant_id=tenant_id,
             credentials=encrypted_creds,
-            status=ConnectorStatus.CONNECTED.value,
+            status=status,
         )
         self.db.add(instance)
         await self.db.commit()
@@ -248,6 +353,153 @@ class ConnectionService(BaseService):
             user_id=str(user_id),
         )
         return self._instance_to_dict(instance, include_credentials=True)
+
+    async def install(
+        self,
+        *,
+        connector_id: UUID,
+        user_id: UUID,
+        tenant_id: UUID,
+    ) -> dict:
+        """Install a connector locally without asking for auth.
+
+        This is idempotent by design so the frontend can run
+        "install recommended" safely. It does not claim the connector is
+        connected unless the connector has no auth requirement.
+        """
+        connector = await self.get_connector(connector_id)
+
+        existing_result = await self.db.execute(
+            select(ConnectorInstance)
+            .where(ConnectorInstance.connector_id == connector_id)
+            .where(ConnectorInstance.user_id == user_id)
+            .where(ConnectorInstance.tenant_id == tenant_id)
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            if existing.status == ConnectorStatus.DISCONNECTED.value:
+                # Re-install of a previously-disconnected row: route
+                # through V2 if the flag is on.
+                await self._mirror_to_v2(
+                    connector, tenant_id=tenant_id, user_id=user_id,
+                )
+                existing.status = await self._status_via_v2(
+                    connector, tenant_id=tenant_id, user_id=user_id,
+                )
+                existing.credentials = None
+                await self.db.commit()
+                await self.db.refresh(existing)
+            return self._instance_to_dict(existing)
+
+        # Mirror to V2 first so derive_status_from_v2 has a row to query.
+        await self._mirror_to_v2(
+            connector, tenant_id=tenant_id, user_id=user_id,
+        )
+        status = await self._status_via_v2(
+            connector, tenant_id=tenant_id, user_id=user_id,
+        )
+
+        instance = ConnectorInstance(
+            connector_id=connector_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            credentials=None,
+            status=status,
+        )
+        self.db.add(instance)
+        await self.db.commit()
+        await self.db.refresh(instance)
+
+        logger.info(
+            "connector_installed",
+            instance_id=str(instance.id),
+            connector_id=str(connector_id),
+            user_id=str(user_id),
+            status=instance.status,
+        )
+        return self._instance_to_dict(instance)
+
+    async def connect_account(
+        self,
+        *,
+        instance_id: UUID,
+        tenant_id: UUID,
+        credentials: dict,
+    ) -> dict:
+        """Attach credentials to an installed connector instance."""
+        if not credentials:
+            raise ValidationError("Credentials are required to connect this account")
+
+        instance = await self._get_or_404(
+            ConnectorInstance, instance_id, "Connector instance",
+            tenant_id=tenant_id,
+        )
+        # Load connector so no-auth rows can still normalize correctly.
+        connector = await self.get_connector(instance.connector_id)
+        instance.credentials = encrypt_dict(credentials)
+        # Phase 4b PR 2: route through V2 if flag is on; legacy fallback otherwise.
+        await self._mirror_to_v2(
+            connector, tenant_id=tenant_id, user_id=instance.user_id,
+        )
+        instance.status = await self._status_via_v2(
+            connector,
+            tenant_id=tenant_id,
+            user_id=instance.user_id,
+            credentials=credentials,
+        )
+        await self.db.commit()
+        await self.db.refresh(instance)
+
+        logger.info(
+            "connector_account_connected",
+            instance_id=str(instance.id),
+            connector_id=str(instance.connector_id),
+        )
+        return self._instance_to_dict(instance, include_credentials=True)
+
+    async def install_recommended(
+        self,
+        *,
+        user_id: UUID,
+        tenant_id: UUID,
+    ) -> list[dict]:
+        """Install the default useful connector set without credentials."""
+        recommended_names = [
+            "GitHub",
+            "Gmail",
+            "Google Drive",
+            "Google Calendar",
+            "Slack",
+            "Notion",
+            "Figma",
+            "Canva",
+            "Linear",
+            "Vercel",
+            "Cloudflare",
+            "Sentry",
+            "Stripe",
+            "HubSpot",
+        ]
+        rows = (
+            await self.db.execute(
+                select(Connector).where(Connector.name.in_(recommended_names))
+            )
+        ).scalars().all()
+        by_name = {row.name: row for row in rows}
+
+        installed: list[dict] = []
+        for name in recommended_names:
+            connector = by_name.get(name)
+            if connector is None:
+                continue
+            installed.append(
+                await self.install(
+                    connector_id=connector.id,
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                )
+            )
+        return installed
 
     async def disconnect(
         self, instance_id: UUID, tenant_id: UUID
@@ -315,7 +567,22 @@ class ConnectionService(BaseService):
         # credentials JSONB. We look up the ORM rows again (cheap, same
         # page size) so we can read the credentials field without
         # re-running the whole query.
-        instance_ids = [UUID(item["id"]) for item in result.data if "id" in item]
+        def _item_get(item: object, key: str) -> object | None:
+            if isinstance(item, dict):
+                return item.get(key)
+            return getattr(item, key, None)
+
+        def _item_set(item: object, key: str, value: object) -> None:
+            if isinstance(item, dict):
+                item[key] = value
+            else:
+                setattr(item, key, value)
+
+        instance_ids = [
+            UUID(str(item_id))
+            for item in result.data
+            if (item_id := _item_get(item, "id")) is not None
+        ]
         if instance_ids:
             id_stmt = select(ConnectorInstance).where(ConnectorInstance.id.in_(instance_ids))
             rows = (await self.db.execute(id_stmt)).scalars().all()
@@ -330,9 +597,10 @@ class ConnectionService(BaseService):
                 if isinstance(creds, dict):
                     identity_by_id[str(row.id)] = creds.get("account_identity", "") or ""
             for item in result.data:
-                item_id = item.get("id")
-                if item_id and item_id in identity_by_id:
-                    item["account_identity"] = identity_by_id[item_id]
+                item_id = _item_get(item, "id")
+                item_key = str(item_id) if item_id else ""
+                if item_key and item_key in identity_by_id:
+                    _item_set(item, "account_identity", identity_by_id[item_key])
 
         return result
 
