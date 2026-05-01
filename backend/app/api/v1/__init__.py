@@ -15,12 +15,14 @@ from app.api.v1 import (
     api_keys,
     auth,
     autopilot,
+    connections_v2,
     benchmark,
     billing,
     bridge,
     chat,
     company_mode,
     connections,
+    connector_install,
     connector_oauth,
     daenabot,
     department_budget,
@@ -43,9 +45,12 @@ from app.api.v1 import (
     mobile,
     org,
     pipeline,
+    policies,
     projects,
     prompts,
+    runtime,
     runtimes,
+    workstreams,
     security_authorized_scope,
     security_dashboard,
     security_mode,
@@ -57,7 +62,6 @@ from app.api.v1 import (
     tts,
     voice_ws,
     waitlist,
-    ws,
 )
 
 router = APIRouter()
@@ -90,6 +94,9 @@ router.include_router(souls.router, tags=["souls"])
 # missions; outbound drafts land in approval queue unless auto_send is set.
 router.include_router(company_mode.router, prefix="/company-mode", tags=["company-mode"])
 router.include_router(connections.router, prefix="/connections", tags=["connections"])
+router.include_router(
+    connections_v2.router, prefix="/connections/v2", tags=["connections-v2"],
+)
 router.include_router(dynamic_models.router, prefix="/dynamic-models", tags=["dynamic-models"])
 router.include_router(settings.router, prefix="/settings", tags=["settings"])
 router.include_router(autopilot.router, prefix="/autopilot", tags=["autopilot"])
@@ -98,12 +105,25 @@ router.include_router(mcp_sync.router, prefix="/mcp-sync", tags=["mcp-sync"])
 # approval_dashboard removed -- dead code (in-memory duplicate of governance/approvals).
 # Archived to .archive/dead_approval_queue/. Real approvals live at /governance/approvals.
 router.include_router(pipeline.router, prefix="/pipeline", tags=["pipeline"])
+# Workstreams -- Daena's visible unit of autonomy (Council R3 lock,
+# 2026-04-25). Department -> Workstream -> Task hierarchy. Every backend
+# primitive (Council/QE, OODA-R, NBMF, sub-agent spawner, Plain-English
+# Policy Compiler, Shield, completeness probe) serves the workstream.
+router.include_router(workstreams.router, prefix="/workstreams", tags=["workstreams"])
+# Plain-English policy compiler (Phase 2 F8, 2026-04-24). Founder writes
+# governance rules in natural English; Claude CLI compiles to structured
+# YAML stored under backend/app/config/policies/<tenant>/. SecurityGate
+# evaluates these alongside the legacy department_policies table. The
+# UI lives at /policies (frontend route).
+router.include_router(policies.router, prefix="/policies", tags=["policies"])
 router.include_router(projects.router, prefix="/projects", tags=["projects"])
 router.include_router(prompts.router, prefix="/prompts", tags=["prompts"])
+router.include_router(runtime.router, prefix="/runtime", tags=["runtime-truth"])
 router.include_router(runtimes.router, prefix="/runtimes", tags=["runtimes"])
 router.include_router(heartbeat.router, prefix="/heartbeat", tags=["heartbeat"])
 router.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 router.include_router(connector_oauth.router, tags=["connector-oauth"])
+router.include_router(connector_install.router, tags=["connector-install"])
 router.include_router(bridge.router, tags=["bridge"])
 router.include_router(self_improvement.router, prefix="/self-improvement", tags=["self-improvement"])
 router.include_router(waitlist.router, prefix="/waitlist", tags=["waitlist"])
@@ -124,5 +144,9 @@ router.include_router(agent_ops.sales_router, prefix="/sales", tags=["sales"])
 router.include_router(agent_ops.marketing_router, prefix="/marketing", tags=["marketing"])
 router.include_router(agent_ops.crm_router, prefix="/crm", tags=["crm"])
 router.include_router(missions.router, prefix="/missions", tags=["missions"])
-router.include_router(ws.router, tags=["websocket"])
+# Note: ws.router (Phase 5 placeholder /ws/{session_id}) was removed 2026-04-29.
+# It only echoed "LLM routing not yet active" with zero consumers (no frontend
+# WebSocket client, no tests). Chat SSE at /api/v1/chat/messages/stream is the
+# canonical streaming surface. The ConnectionManager at app/core/websocket.py
+# is retained for future LLM-pipeline streaming reuse. voice_ws is independent.
 router.include_router(voice_ws.router, tags=["voice-websocket"])

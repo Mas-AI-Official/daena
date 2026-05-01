@@ -5,6 +5,15 @@ All models are imported here for Alembic auto-discovery.
 
 from app.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin
 from app.models.chat import ChatCategory, ChatMessage, ChatSession
+from app.models.connection_v2 import (
+    AuthMethod,
+    ConnectionKind,
+    ConnectionV2,
+    ConnectionV2Capability,
+    ConnectionV2OpLock,
+    OpKind,
+    TrustTier,
+)
 from app.models.connections import Connector, ConnectorInstance, ConnectorPermission
 from app.models.crm import Account, Contact, Deal, OutreachDraft
 from app.models.department_budget import DepartmentBudget, ExpenseProposal
@@ -46,6 +55,8 @@ __all__ = [
     "Task", "ToolExecution", "Skill", "DepartmentTask", "FileRecord",
     "RefinedSkill",
     "Connector", "ConnectorInstance", "ConnectorPermission",
+    "ConnectionV2", "ConnectionV2Capability", "ConnectionV2OpLock",
+    "ConnectionKind", "AuthMethod", "TrustTier", "OpKind",
     "Account", "Contact", "Deal", "OutreachDraft",
     "DepartmentBudget", "ExpenseProposal", "DepartmentState", "DepartmentMessage", "DepartmentPolicy",
     "UsageLedger", "VaultSecret", "Subscription",

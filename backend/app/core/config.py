@@ -243,6 +243,19 @@ class Settings(BaseSettings):
     ollama_enabled: bool = False
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_default_model: str = "llama3.1:8b"
+
+    # Phase 4b feature flag (per ADR-002 D-003 + PHASE_4B_DEV_ONLY_GUARDRAILS).
+    # MUST default to False in production. When False:
+    #   - Live UI hits legacy connection_service.py
+    #   - Legacy core/vault.py is the secret-storage path
+    #   - New /api/v1/connections/v2/* routes exist but operate on the
+    #     empty connection_v2 table (read-only-ish; writes go to V2 only)
+    # When True (dev only until prod soak gate clears):
+    #   - V2 service layer is the canonical source-of-truth
+    #   - Writes go to secrets table via vault_v2
+    #   - Reads check V2 first, fall back to legacy via dual-read
+    use_connection_registry_v2: bool = False
+
     # Emotional awareness layer. Heuristic pass is always on (zero-cost).
     # The LLM refinement pass runs only when heuristic confidence falls
     # below the threshold in emotional_intelligence.analyze_message.
