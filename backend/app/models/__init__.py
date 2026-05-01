@@ -23,7 +23,17 @@ from app.models.pipeline import ProjectPipeline
 from app.models.project import Project
 from app.models.skill import RefinedSkill
 from app.models.api_key import ApiKey
+from app.models.background_task import BackgroundTask
+from app.models.cron_run import CronRun
+from app.models.mcp_server import McpServer
 from app.models.waitlist import WaitlistEntry
+from app.models.workstream import (
+    Workstream,
+    WorkstreamEscalationLevel,
+    WorkstreamEvent,
+    WorkstreamEventKind,
+    WorkstreamStatus,
+)
 
 __all__ = [
     "Base", "TimestampMixin", "TenantMixin", "SoftDeleteMixin",
@@ -41,5 +51,10 @@ __all__ = [
     "ProjectPipeline",
     "Project",
     "ApiKey",
+    "BackgroundTask",
+    "CronRun",
+    "McpServer",
     "WaitlistEntry",
+    "Workstream", "WorkstreamEvent",
+    "WorkstreamStatus", "WorkstreamEscalationLevel", "WorkstreamEventKind",
 ]

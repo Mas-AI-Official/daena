@@ -21,8 +21,12 @@ SQLite pool strategy (2026-04-18):
 
 from __future__ import annotations
 
+import contextlib
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
@@ -138,13 +142,46 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     Usage in routes:
         async def my_route(db: AsyncSession = Depends(get_db)):
             ...
+
+    Cancellation guard (Phase 2 efficiency, 2026-04-24): a long-running
+    SSE chat stream that the user aborts (Stop button or browser close)
+    propagates ``CancelledError`` UP through this generator. The original
+    code then tried ``session.commit()`` -- which crashed with
+    ``sqlite3.OperationalError: no active connection`` because aiosqlite
+    had already torn down the connection during cancellation. The crash
+    surfaces as ``unhandled_exception`` 500s in the logs and erases any
+    helpful chat error from the audit trail. We now treat cancellation
+    as a clean exit: rollback if possible, swallow connection-gone
+    errors, and let the cancellation propagate so FastAPI completes the
+    response cycle properly. Other exceptions still re-raise.
     """
+    import asyncio
+    from sqlalchemy.exc import OperationalError
+
     async with async_session_factory() as session:
         try:
             yield session
-            await session.commit()
+            try:
+                await session.commit()
+            except (asyncio.CancelledError, OperationalError) as exc:
+                # Cancellation race: connection may already be gone.
+                logger.debug(
+                    "get_db.commit_skipped_cancelled",
+                    error=str(exc)[:200],
+                )
+                # Re-raise CancelledError so the task tree unwinds correctly.
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+        except asyncio.CancelledError:
+            # Best-effort rollback; never block cancellation propagation
+            # on a hung connection.
+            with contextlib.suppress(Exception):
+                await session.rollback()
+            raise
         except Exception:
-            await session.rollback()
+            with contextlib.suppress(Exception):
+                await session.rollback()
             raise
         finally:
-            await session.close()
+            with contextlib.suppress(Exception):
+                await session.close()

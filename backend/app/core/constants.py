@@ -271,6 +271,7 @@ class AuthType(str, enum.Enum):
 
 class ConnectorStatus(str, enum.Enum):
     """Connector instance state."""
+    INSTALLED = "INSTALLED"
     CONNECTED = "CONNECTED"
     DISCONNECTED = "DISCONNECTED"
     ERROR = "ERROR"
