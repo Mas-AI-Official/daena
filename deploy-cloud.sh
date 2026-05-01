@@ -18,7 +18,8 @@ set -euo pipefail
 
 PROJECT='daena-467315'
 REGION='us-central1'
-SERVICE='daena'
+SERVICE='daena-v2'  # fresh service per CLEAN_GCLOUD_REBUILD_PLAN.md (the
+                    # legacy `daena` service was left broken for autopsy).
 CLOUDSQL_INSTANCE="${PROJECT}:${REGION}:daena-db"
 
 echo "=== Daena Cloud Deploy ==="
@@ -44,6 +45,7 @@ gcloud run services update "${SERVICE}" \
 DATABASE_URL=daena-database-url:latest,\
 DAENA_KEK=daena-daena-kek:latest,\
 JWT_SECRET_KEY=daena-jwt-secret-key:latest,\
+VAULT_ENCRYPTION_KEY=daena-vault-encryption-key:latest,\
 GROQ_API_KEY=daena-groq-api-key:latest,\
 GEMINI_API_KEY=daena-gemini-api-key:latest,\
 GOOGLE_CLIENT_SECRET=daena-google-client-secret:latest,\

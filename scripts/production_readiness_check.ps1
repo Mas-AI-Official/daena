@@ -61,7 +61,7 @@
 param(
     [string]$Project = 'daena-467315',
     [string]$Region = 'us-central1',
-    [string]$Service = 'daena',
+    [string]$Service = 'daena-v2',
     [switch]$SkipGcp,
     [switch]$AllowV2Flag,
     [switch]$Verbose
@@ -79,6 +79,7 @@ $RequiredSecretEnvNames = @(
     'DATABASE_URL',
     'DAENA_KEK',
     'JWT_SECRET_KEY',
+    'VAULT_ENCRYPTION_KEY',
     'GROQ_API_KEY',
     'GEMINI_API_KEY',
     'GOOGLE_CLIENT_SECRET',

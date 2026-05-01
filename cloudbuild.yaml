@@ -29,26 +29,24 @@ steps:
   # --service-account on the deploy step pins the RUNTIME SA (daena-run).
   # The BUILD SA (daena-build) is set via the top-level serviceAccount
   # field below. Two distinct SAs by design: build vs runtime separation.
+  # Deploys to a FRESH service `daena-v2` (the prior `daena` service has
+  # 4 broken revisions stuck on a 2026-04-08 image; left alone for autopsy).
+  # Fresh service has no plaintext env to remove (so no --remove-env-vars
+  # needed). All secrets bound directly via --update-secrets.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
-      - 'daena'
+      - 'daena-v2'
       - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$BUILD_ID'
       - '--region=us-central1'
       - '--platform=managed'
       - '--service-account=daena-run@$PROJECT_ID.iam.gserviceaccount.com'
       - '--add-cloudsql-instances=$PROJECT_ID:us-central1:daena-db'
-      # Remove the 6 currently-plaintext env vars before binding them
-      # as Secret Manager refs. gcloud refuses to convert env type
-      # ("Cannot update environment variable to the given type because
-      # it has already been set with a different type") unless we
-      # remove first. DAENA_KEK is excluded because it is NEW (not
-      # previously set as plaintext).
-      - '--remove-env-vars=DATABASE_URL,JWT_SECRET_KEY,GROQ_API_KEY,GEMINI_API_KEY,GOOGLE_CLIENT_SECRET,GITHUB_CLIENT_SECRET'
-      - '--update-secrets=DATABASE_URL=daena-database-url:latest,DAENA_KEK=daena-daena-kek:latest,JWT_SECRET_KEY=daena-jwt-secret-key:latest,GROQ_API_KEY=daena-groq-api-key:latest,GEMINI_API_KEY=daena-gemini-api-key:latest,GOOGLE_CLIENT_SECRET=daena-google-client-secret:latest,GITHUB_CLIENT_SECRET=daena-github-client-secret:latest'
+      - '--update-secrets=DATABASE_URL=daena-database-url:latest,DAENA_KEK=daena-daena-kek:latest,JWT_SECRET_KEY=daena-jwt-secret-key:latest,VAULT_ENCRYPTION_KEY=daena-vault-encryption-key:latest,GROQ_API_KEY=daena-groq-api-key:latest,GEMINI_API_KEY=daena-gemini-api-key:latest,GOOGLE_CLIENT_SECRET=daena-google-client-secret:latest,GITHUB_CLIENT_SECRET=daena-github-client-secret:latest'
       - '--update-env-vars=APP_ENV=production,LOG_LEVEL=info,USE_CONNECTION_REGISTRY_V2=false,DISABLE_AUTH=false'
+      - '--allow-unauthenticated'
 
 images:
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$BUILD_ID'
