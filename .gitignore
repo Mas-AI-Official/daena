@@ -53,6 +53,7 @@ docs/*
 !docs/PRE_PHASE4A_DIRTY_TREE_INVENTORY.md
 !docs/PHASE_4A_VAULT_FOUNDATION.md
 !docs/PHASE_4A_VAULT_MIGRATION.md
+!docs/PHASE_4A_3_OPERATOR_GATE_REPORT.md
 !docs/PRE_PHASE4A_CORE_HUNK_REVIEW.md
 !docs/pre_phase4a_core_dirty_backup.patch
 !docs/_explore/
