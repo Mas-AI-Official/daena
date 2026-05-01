@@ -1,9 +1,21 @@
 # Connections / MCP / Plugins / Runtime Architecture V2
 
-**Status:** Draft 1 -- chairman synthesis (2026-04-30, 3 council proposers)
+**Status:** Draft 2 -- chairman synthesis (2026-04-30) + Ultraview amendments per ADR-002 (2026-04-30)
 **Replaces:** prior connections architecture (see `CONNECTIONS_CURRENT_DAMAGE_REPORT.md`)
 **Sources:** `docs/_explore/06_arch_proposal_{A_system,B_security,C_frontend}.md`
 **Inventory:** `CONNECTIONS_FILE_MAP.md` (action plan §19)
+**Authoritative for conflicts:** `docs/ADR-002-connections-rebuild-locked-decisions.md` -- where this spec contradicts ADR-002, ADR-002 wins.
+
+> **Ultraview amendments applied in this revision** (see ADR-002 for the binding decisions):
+> - §3 truth model: per-dimension failure storage (D-001); in-progress state via op-lock table not boolean columns (D-002).
+> - §4 schema: per-dim `<dim>_failure_at` + `<dim>_failure_reason` OR typed JSONB; new `connection_v2_op_lock` table; `governance_tier` no silent default (D-013).
+> - §6 vault: rewrite, not extend. Split into Phase 4a (vault) + Phase 4b (registry/tokens) (D-003).
+> - §7 plugin trust: catalog signing deferred to post-V2 hardening; dev/internal trust banner replaces sigfail in dev mode (D-006). `daena-mcp` classified OFFICIAL before npm publish (D-011).
+> - §13 two-registry collapse: WRAP layer for `/runtimes`, NOT 308 redirect (D-004).
+> - §18 state→UI mapping: stale ≠ failed; new `healthy_stale` and `degraded_stale` labels (D-005).
+> - §3 dimension collapse: `imported=true` requires durable persistence that survives restart (D-007).
+> - §4 / §19: per-kind Pydantic discriminated-union validator ships in Phase 4 (D-008).
+> - §19 file moves: `connection_service.py` reclassified REWRITE (D-010); `mcp_bridge.py` adapter renamed `mcp_bridge_runtime_adapter.py` (D-012).
 
 ---
 
@@ -34,18 +46,27 @@ Bridge dispatch enablement (Phase 2); VSCode/Cursor/Cline/Continue/Zed MCP detec
 |---|---|---|
 | `detected` | Evidence it exists | FS scan / npm hit / CLI config parse |
 | `configured` | Operator supplied required config | Form submission persisted |
-| `imported` | DB row exists for this tenant | Row insert |
+| `imported` | **Persisted in canonical store; survives backend restart** (per ADR-002 D-007) | Row commit AND restart-safe load proven |
 | `reachable` | Network/IPC handshake OK | TCP/HTTP/stdio open in TTL |
 | `authenticated` | Auth current, not expired | Probe round-trip w/ auth in TTL |
 | `callable` | Real capability invocation succeeded | Per-kind probe (§14) succeeds in TTL |
 
-Each carries `<dim>_at` timestamp + `<dim>_failure_reason` text.
+**Per-dim failure storage (ADR-002 D-001).** Each dim carries:
+- `<dim>_at` -- timestamp when last set true.
+- `<dim>_failure_at` -- timestamp of most recent failure.
+- `<dim>_failure_reason` -- sanitized text reason of most recent failure.
 
-### 11 derived labels (UI-facing, NOT persisted)
+A failure on one dim NEVER overwrites the failure reason of another. The API surfaces failure reasons keyed by dim (`truth.<dim>.failure_reason`). Implementation may use 18 explicit columns OR a typed JSONB `truth_failures: { <dim>: { reason, at } }`; the wire shape is keyed-by-dim either way. History deeper than "most recent failure per dim" lives in `audit_entries` (§17).
 
-`unknown`, `installable`, `installing`, `needs_auth`, `auth_pending`, `needs_config`, `probing`, `healthy`, `degraded`, `failed`, `disabled`, `archived` (12 total; `archived` is soft-delete state).
+**In-progress state via op-lock table (ADR-002 D-002).** `auth_in_progress` and `probe_in_flight` are NOT columns. They derive from rows in `connection_v2_op_lock` (see §4) where `expires_at > now()`. `derive_label()` queries the lock table (or its Redis mirror) on every label resolution.
 
-Pure-function output of `derive_label(row)`. Frontend never writes a label. ESLint rule blocks `state = '...'` assignments (D9).
+### 14 derived labels (UI-facing, NOT persisted)
+
+`unknown`, `installable`, `installing`, `needs_auth`, `auth_pending`, `needs_config`, `probing`, `healthy`, `healthy_stale`, `degraded`, `degraded_stale`, `failed`, `disabled`, `archived` (14 total; `archived` is soft-delete state).
+
+**Stale ≠ failed (ADR-002 D-005).** A connection whose last `callable_at` is older than `CALLABLE_TTL` and which has no fresher failure (`callable_failure_at` < `callable_at`) is `healthy_stale`, NOT `failed`. The UI renders stale labels with a 60% opacity overlay and a "Stale -- re-probe" subtitle, never red. `failed` is reserved for cases where the most recent probe actually failed (per-dim `<dim>_failure_at >= <dim>_at`).
+
+Pure-function output of `derive_label(row, active_ops)`. Frontend never writes a label. ESLint rule blocks `state = '...'` assignments (D9).
 
 ### State graph
 
@@ -57,24 +78,39 @@ detected -> needs_config -> configured -> needs_auth -> auth_pending -> probing
                           +--> disabled --> archived (D14 soft-delete)
 ```
 
-### `derive_label()` reference
+### `derive_label()` reference (amended per ADR-002 D-002, D-005)
+
+`active_ops` is the set of `op` strings from `connection_v2_op_lock` rows where `connection_id == row.id AND expires_at > now()`. Resolved by the service layer via single LEFT JOIN on the list query.
 
 ```python
-def derive_label(row: ConnectionV2) -> str:
+def derive_label(row: ConnectionV2, active_ops: set[str]) -> str:
     if row.archived: return "archived"
     if row.disabled: return "disabled"
+    if "install" in active_ops: return "installing"
+    if "authenticate" in active_ops: return "auth_pending"
+    if "probe" in active_ops: return "probing"
     if not row.detected: return "unknown"
     if not row.configured: return "needs_config"
     if not row.imported: return "installable"
-    if row.last_op == "install" and not row.reachable: return "installing"
+    # Most-recent-failure tests use per-dim failure_at, not a single triple.
+    if row.reachable_failure_at and row.reachable_failure_at >= (row.reachable_at or EPOCH):
+        return "failed"
     if not row.reachable: return "failed"
     if row.requires_auth and not row.authenticated:
-        return "auth_pending" if row.auth_in_progress else "needs_auth"
-    if row.probe_in_flight: return "probing"
-    if row.callable and (now() - row.callable_at) < CALLABLE_TTL:
-        return "healthy" if row.healthy_call_ratio > 0.7 else "degraded"
+        return "needs_auth"
+    if row.callable_failure_at and row.callable_failure_at >= (row.callable_at or EPOCH):
+        return "failed"
+    if row.callable and row.callable_at:
+        age = now() - row.callable_at
+        ratio = row.healthy_call_ratio  # rolling window (e.g. last 10 probes)
+        if age < CALLABLE_TTL:
+            return "healthy" if ratio > 0.7 else "degraded"
+        # Stale ≠ failed.
+        return "healthy_stale" if ratio > 0.7 else "degraded_stale"
     return "failed"
 ```
+
+**Hidden state was removed.** No more `row.auth_in_progress` / `row.probe_in_flight` -- both replaced by `active_ops` queried from the op-lock table. No more `row.last_op == "install"` -- replaced by `"install" in active_ops`.
 
 **Rejected: 16-state enum.** A pushed back; monolithic enum conflates orthogonal axes (install vs auth vs reach) and produced string-prefix badges (`McpServersPanel.tsx:296`). 6 booleans + derived labels is the cure.
 
@@ -100,15 +136,36 @@ class ConnectionV2(Base, TenantMixin, TimestampMixin):
     config = Column(JSONBCompat, nullable=False, default=dict); vault_ref = Column(String(256))
     # 6 truth dims: each Boolean(default=False) + <dim>_at DateTime(timezone=True)
     #   detected | configured | imported | reachable | authenticated | callable
-    last_failure_dim = Column(String(32)); last_failure_msg = Column(Text)
-    last_failure_at = Column(DateTime(timezone=True))
-    last_op = Column(String(32))  # discover|import|install|configure|authenticate|probe
+    # Per-dim failure storage (ADR-002 D-001) -- choose ONE of the two below at Phase 4 implementation:
+    #   Option A (explicit columns): 6x <dim>_failure_at DateTime + 6x <dim>_failure_reason Text
+    #   Option B (typed JSONB):      truth_failures = Column(JSONBCompat, default=dict)
+    #                                shape: { <dim>: { "at": iso8601, "reason": str } }
+    # Wire shape (ConnectionV2Out.truth) is keyed by dim regardless of storage choice.
     archived = Column(Boolean, default=False); archived_at = Column(DateTime(timezone=True))
-    governance_tier = Column(SmallInteger, default=2); disabled = Column(Boolean, default=False)
+    # governance_tier: NO silent service-layer default (ADR-002 D-013).
+    # Service callers MUST pass explicitly. The column default exists only for Alembic.
+    # 0=auto-logged, 1=logged, 2=notified post-hoc (BALANCED-equivalent), 3=approval, 4=founder.
+    governance_tier = Column(SmallInteger, nullable=False, default=2)
+    disabled = Column(Boolean, default=False)
     __table_args__ = (
         UniqueConstraint("tenant_id","kind","slug", name="uq_conn_v2_tenant_kind_slug"),
         Index("ix_conn_v2_tenant_callable","tenant_id","callable"),
         Index("ix_conn_v2_tenant_kind","tenant_id","kind"))
+
+# Per ADR-002 D-002 -- in-progress state for derive_label().
+class ConnectionOpLock(Base):
+    __tablename__ = "connection_v2_op_lock"
+    id            = Column(GUID, primary_key=True, default=uuid4)
+    connection_id = Column(GUID, ForeignKey("connection_v2.id", ondelete="CASCADE"),
+                           nullable=False, index=True)
+    op            = Column(String(32), nullable=False)   # 'authenticate'|'probe'|'install'|'oauth_callback'
+    acquired_at   = Column(DateTime(timezone=True), nullable=False, default=now_utc)
+    expires_at    = Column(DateTime(timezone=True), nullable=False)
+    owner_token   = Column(String(64), nullable=False)   # caller's request_id
+    __table_args__ = (UniqueConstraint("connection_id","op", name="uq_op_lock_conn_op"),)
+# Per-op TTL defaults: authenticate=600s, probe=30s, install=120s, oauth_callback=60s.
+# Mirrored in Redis for fast reads; DB row is durable source-of-truth.
+# Background sweeper deletes rows where expires_at < now().
 
 class ConnectionCapability(Base):  # mcp_tool | provider_model | cli_command
     __tablename__ = "connection_v2_capability"
@@ -140,9 +197,23 @@ Three layers; ORM is load-bearing. (1) **ORM listener** (`core/db/tenant_guard.p
 
 **Cloud Run gap:** `mcp_sync/detector.py` reads `Path.home()` -- container's home, not tenant's. V2 splits: `detect_local_mcps()` gated on `DEPLOYMENT_MODE=local`; cloud tenants get `detect_remote_mcps_for_tenant(tenant_id)` from curated catalog + uploaded configs only.
 
-## 6. Secret vault (D4)
+## 6. Secret vault (D4) -- REWRITE, split into Phase 4a + 4b (ADR-002 D-003)
 
-One vault: `backend/app/core/vault.py` (extend AES-256-GCM). Delete `oauth_credentials_store.py` + `.daena_oauth_overrides.json`. Move `_MCP_OAUTH_STATES` + `_oauth_states` -> Redis TTL=600s.
+**Current `core/vault.py` is single-key SHA-256 (143 LOC). V2 vault is a REWRITE, not an extension.** Split into two phases:
+
+**Phase 4a -- Vault rewrite (ships first, ungated by registry work):**
+- New `secrets` table with envelope columns below; new `tenants.dek_wrapped` column.
+- Env-var rename: `VAULT_ENCRYPTION_KEY` (legacy) → `DAENA_KEK` (32B). Both honored during transition; `DAENA_KEK` wins. Deprecation warning when only legacy is set.
+- `RefuseToBoot` if `DAENA_KEK` missing in `DEPLOYMENT_MODE=cloud`. Dev mode falls back to placeholder with warning (matches legacy behavior).
+- Boot log: `vault.kek_loaded sha256_prefix=<8 hex chars>` for verification without exposure.
+- `scripts/migrate_vault_to_v2.py` re-encrypts existing `ConnectorInstance.credentials_encrypted` rows under the new envelope. Dry-run by default; `--apply` required to write. Idempotent.
+- Dual-read window: 7 days where both legacy and V2 paths can decrypt. Zero drift -> Phase 4b unblocked.
+
+**Phase 4b -- Registry / token / OAuth / API-key storage (ships after 4a passes its gate):**
+- `oauth_credentials_store.py` and `.daena_oauth_overrides.json` REMAIN ALIVE during 4a -- deleted only at end of 4b.
+- New OAuth/API-key storage uses the new vault from day one.
+- `connection_v2.vault_ref` points into the new `secrets` table.
+- Move `_MCP_OAUTH_STATES` + `_oauth_states` -> Redis TTL=600s.
 
 **Envelope encryption:**
 ```
@@ -168,7 +239,9 @@ DAENA_KEK (env, 32B) -> per-tenant KEK = HKDF-SHA256(KEK, salt=tenant_id, info="
 
 UNVERIFIED has NO exception -- chairman ratifies B§15#2 (malicious manifest harvests vault tokens during friendly demo).
 
-**Catalog signing:** `connector_catalog_signed.json` -- sigstore-style sig over canonical JSON. Verified at startup against `backend/app/security/catalog_pubkey.pem`. Sig fail -> catalog read-only + UI banner "Catalog tamper detected".
+**Catalog signing (deferred per ADR-002 D-006):** Production signed-catalog flow (`connector_catalog_signed.json`, sigstore-style sig over canonical JSON, verified against `backend/app/security/catalog_pubkey.pem`, sigfail -> catalog read-only + tamper banner) is deferred to **post-V2 production hardening**. For dev/internal builds, the catalog ships unsigned and the UI displays a "Catalog source: unsigned -- internal build only" banner. No private signing key in the repo. Before any public release: separate ADR + private key in MAS-AI infra signing service (NOT on Daena instances).
+
+**`daena-mcp` package trust tier (ADR-002 D-011):** Before Phase 9 npm publish, `daena-mcp` MUST be classified `trust_tier: "official"` in the catalog and the npm publish pipeline MUST sign the artifact with `DAENA_CATALOG_PUBKEY`. Regression test: fresh-tenant install of `daena-mcp` does NOT trigger the founder gate in BALANCED or UNLEASHED mode. If it must ship unsigned (dev/internal), force `trust_tier: "unverified"` and accept the founder-gate friction (consistent with the dev catalog banner).
 
 **Skill packs** (`auth_method=none AND installable=false`): render "Skill pack" chip. NO install button. Schema rejects rows missing explicit `auth_method` at startup. Regression test asserts no auto-default to `api_token` (B§9).
 
@@ -246,8 +319,8 @@ V2: (1) Backend WS handler **refuses inbound dispatch** regardless of handshake;
 | `runtimes/registry.py` (in-memory) | Demoted to LRU adapter cache; reads `connection_v2 WHERE kind=cli_runtime`. |
 | `mcp_bootstrap.py` | Folded into `mcp_sync/detector.py` -- one detector, startup AND on-demand. |
 | `api/v1/runtime.py` (singular) | Promoted, merged into `connections.py`. |
-| `api/v1/runtimes.py` (plural, 620 LOC) | 308-redirect to `/connections?kind=cli_runtime`. Deleted next release. |
-| `useRuntimeRegistry.ts` + `useConnectorCatalog.ts` | One hook: `useConnectionRegistry.ts`. |
+| `api/v1/runtimes.py` (plural, 620 LOC) | **WRAP layer (ADR-002 D-004), NOT 308 redirect.** Public route surface unchanged; internals call `connection_v2/registry.py` service functions and adapt response shapes in-process. `Deprecation: true` + `Sunset: <date>` headers added once new endpoints are GA. Deletion deferred to post-V2 cleanup phase (post-§24 sign-off + 14 days zero traffic on old paths). |
+| `useRuntimeRegistry.ts` (currently dead code -- 0 non-self consumers per Ultraview H3) + `useConnectorCatalog.ts` | One hook: `useConnectionRegistry.ts`. |
 
 **Migration timeline:** Phase 4 new table+service+migration (gate tests pass); Phase 5 dual-write, JSON primary read (gate daily reconciliation); Phase 6 flip read to `connection_v2`, JSON write 1 release fallback (gate 7-day zero drift); Phase 7 drop JSON write, delete `var/runtime_truth.json` (gate reconciliation green); Phase 8 replace `RuntimeRegistry` -> `ConnectionRegistry.get_runtime(slug)`, archive old file (gate callers migrated). Phase 7 is irreversible; daily reconciliation cron emits hard alert on drift.
 
@@ -338,10 +411,14 @@ class AuditEntry(Base):
 | `auth_pending` | Authorizing | spinner-anim | `#D4A843` | Open auth window | Cancel |
 | `probing` | Testing | spinner-anim | `#2DD4BF` | -- | Cancel |
 | `healthy` | Callable | bolt | `#2DD4BF` | Use in chat | Re-probe |
+| `healthy_stale` | Callable (Stale) | bolt | `#2DD4BF` 60% | **Re-probe** | Details |
 | `degraded` | Degraded | warning | `#F59E0B` | View error | Re-probe |
+| `degraded_stale` | Degraded (Stale) | warning | `#F59E0B` 60% | **Re-probe** | View error |
 | `failed` | Failed | x | `#EF4444` | View error | Re-probe |
 | `disabled` | Disabled | pause | `#64748B` | Enable | Remove |
 | `archived` | Archived | archive | `#64748B` 50% | Restore | Hard-delete (founder) |
+
+**Per ADR-002 D-005: stale ≠ failed.** `*_stale` labels render dim, never red. Subtitle on stale pills: "Last call <n> ago -- TTL exceeded, re-probe to confirm." `failed` is reserved for actual probe failures (per-dim `_failure_at >= _at`).
 
 Each label carries a one-line copy string in pill tooltip + drawer header (e.g. healthy "Last call succeeded `<n>` ago"; failed "Probe failed `<n>` ago"; archived "Soft-deleted -- 30-day grace"). Palette: design system (`#0F1419`, `#D4A843`, `#2DD4BF`) + traffic-light (`#10B981`, `#F59E0B`, `#EF4444`, `#64748B`).
 
@@ -383,20 +460,22 @@ Codes: **K**=KEEP, **A**=ARCHIVE, **R**=REWRITE, **W**=WRAP, **S**=SPLIT, **P**=
 
 | Phase | Deliverable | Gate |
 |---|---|---|
-| 3 | This doc + ADR-002 lock + Storybook fixtures (12 labels) | Founder accepts doc |
-| 4 | `connection_v2` table + migration + ConnectionRegistry + tenant_guard + envelope vault | Tests pass; old untouched |
-| 5 | Dual-write + Redis OAuth state + audit chain + reconciliation cron | 7-day drift = 0 |
-| 6 | Read-flip + per-kind probe contracts + detector extension | 5 lying CLI adapters real round-trip; tests assert |
-| 7 | Frontend rebuild: 5 tabs, 2 drawers, StatusPill, ESLint rule, SSE consumer | E2E green; Storybook = prod |
+| 3 | This doc + ADR-002 lock + Storybook fixtures (14 labels per ADR-002 D-005) + archive moves | Founder accepts doc + baseline test results recorded |
+| **4a** | **Vault rewrite (ADR-002 D-003)**: `secrets` table + `tenants.dek_wrapped` + envelope crypto + `DAENA_KEK` env + `RefuseToBoot` + migration script | Existing creds readable via legacy AND V2; 7-day dual-read zero drift |
+| **4b** | `connection_v2` table + `connection_v2_op_lock` + ConnectionRegistry + tenant_guard + per-kind discriminated unions (D-008) + delete `connection_service._status_for_install` (D-010) + rename `mcp_bridge.py` -> `mcp_bridge_runtime_adapter.py` (D-012) | Tests pass; vault 4a gate green |
+| 5 | Dual-write + Redis OAuth state + audit chain + reconciliation cron + `daena-mcp` OFFICIAL classification (D-011) | 7-day drift = 0 |
+| 6 | Read-flip + per-kind probe contracts + detector extension + `oauth_credentials_store.py` deletion | 5 lying CLI adapters real round-trip; tests assert |
+| 7 | Frontend rebuild: 5 tabs, 2 drawers, StatusPill, ESLint rule, SSE consumer, `*_stale` label rendering (D-005) | E2E green; Storybook = prod |
 | 8 | Decommission flow + hard-delete grace + legacy deletes (JSON, archived FE) | Founder approves grace |
-| 9 | `daena-mcp` v0.2.0 npm publish + per-host bearer tokens | Bridge dispatch still BLOCKED |
-| 10 | Catalog signing + KEK rotation playbook + production deploy | Founder runs first KEK rotation in staging |
+| 9 | `daena-mcp` v0.2.0 npm publish (signed) + per-host bearer tokens | Bridge dispatch still BLOCKED |
+| 10 | KEK rotation playbook + production deploy | Founder runs first KEK rotation in staging |
+| Post-V2 | Catalog signing service (deferred per D-006) | Separate ADR + private key in MAS-AI infra |
 
 Bridge dispatch enablement = post-Phase 10 (Phase 2 in B§ terms). Out of V2 scope.
 
 ## 21. Open questions
 
-1. **Catalog signing key custody during updates?** `DAENA_CATALOG_PUBKEY` at boot; where does the private key live? Proposal: separate signing service in MAS-AI infra, never on Daena instance. Founder-approved release. Need ops sign-off.
+1. ~~**Catalog signing key custody during updates?**~~ **RESOLVED per ADR-002 D-006**: deferred to post-V2 hardening. Dev/internal builds ship unsigned with banner. Public release will get a separate ADR and a MAS-AI-infra signing service.
 2. **Per-tenant SSE channels under load?** ~120 conns x 50 tenants = ~6000 concurrent streams. HTTP/2 multiplexing limits unknown at scale. Test before prod.
 3. **`last_op` enum values?** `discover|import|install|configure|authenticate|probe|disable|archive`?
 4. **Deprecate `connector_catalog.json` once V2 catalog in DB?** Defer to Phase 7.

@@ -540,3 +540,128 @@ The OSINT stack built for Layer 3 of the security subsystem (Apollo, Hunter, peo
 - TS errors: 0
 - Build: PASS
 - Next: browser-test the memory writeback with a running server (verify tier counts non-zero after chat)
+
+## Codex P0/P1 Repair Pass -- 2026-04-29
+- **Root**: Confirmed active canonical root is `D:\Ideas\Daena`; legacy `D:\Ideas\Daena_old_upgrade_20251213` was not present and was not touched.
+- **Done**: Removed remaining fake cloud MCP catalog behavior; catalog rows are read-only, not enabled, not selectable, and show an explicit not-installed reason.
+- **Done**: Removed fabricated department fallback cards when backend department data is absent.
+- **Done**: Added draft-only customer acquisition workflow from Pipeline page to backend route: prospect -> qualify -> draft outreach -> follow-up task -> approval request -> audit event.
+- **Done**: Added visible background queue persistence status on Tasks page through `/api/v1/autopilot/queue/status`.
+- **Done**: Added cron runtime dispatch visibility on Heartbeat settings.
+- **Done**: Added explicit load-error states on approval queue and audit log pages.
+- **Verified**: `py_compile` passed on touched backend files.
+- **Verified**: `git diff --check` passed on touched code and docs.
+- **Blocked**: pytest and backend launch blocked by Python `asyncio` import failure: `_overlapped` / WinError 10106.
+- **Blocked**: frontend build/typecheck/launch blocked by Node CSPRNG initialization failure.
+- **Current test count**: full test count not measurable in this environment; static validation passed.
+- **Next task**: fix local Python/Node/socket environment, then run backend tests, frontend build, local launch, and browser smoke of the sales draft/approval workflow.
+
+## Codex Frontend Truth + Wiring Pass -- 2026-04-29
+- **Scope**: Frontend truth, polish, and backend wiring only.
+- **Done**: Created `docs/FRONTEND_BACKEND_TRUTH_MATRIX.md`, `docs/FRONTEND_REPAIR_LOG.md`, and `docs/FRONTEND_VALIDATION_REPORT.md`.
+- **Done**: Repaired analytics offline behavior so failed `/analytics/dashboard` renders unavailable metrics instead of fake zeros/placeholders.
+- **Done**: Removed fake Developer API-key card; API-key action now routes to `/account`. Disabled webhook controls with a clear not-wired reason.
+- **Done**: Removed fake slash commands (`/export`, `/compact`, `/clear`) and wired `/cost` plus `/marketplace` to real pages.
+- **Done**: Removed fake connector docs toast and connector batch actions; hosted OAuth broker now states unavailable in the local build.
+- **Done**: Added `GET /memory/status` and wired Memory settings to honest NBMF/RAG/Obsidian status.
+- **Done**: Fixed Settings General memory import to use `POST /memory/memories`.
+- **Done**: Reworked Skills bulk actions to await backend mutations and refresh canonical state on partial failure.
+- **Verified**: Backend `py_compile` passed on touched API files.
+- **Verified**: `git diff --check` passed on touched code/docs.
+- **Blocked**: npm/typecheck/lint/build/dev launch blocked by Node CSPRNG assertion.
+- **Blocked**: backend HTTP smoke and FastAPI launch blocked by OS socket provider + Python `asyncio` `_overlapped` WinError 10106.
+- **Current test count**: full runtime count not measurable in this environment; static validation passed.
+- **Next task**: repair Windows networking/crypto provider or run in clean environment, then execute `npm run build`, `npm run lint`, frontend launch, and backend smoke endpoints from `FRONTEND_VALIDATION_REPORT.md`.
+
+## Codex Runtime Truth / Connections Repair Pass -- 2026-04-30
+- **Done**: Added backend `RuntimeTruthRegistry` and `/api/v1/runtime/*` endpoints for runtime/provider/MCP/plugin truth.
+- **Done**: Rebuilt `/connections` as Runtime & Connections Center backed by `/runtime/truth`.
+- **Done**: Fixed API-provider status semantics: configured keys with no safe zero-cost test are `configured_untested`, not imported/failing.
+- **Done**: Fixed Daena MCP package semantics: package exists means detected, not persisted.
+- **Done**: Changed header `AGI ACTIVE/OFF` to `AUTOPILOT ON/OFF` so it no longer implies backend health.
+- **Done**: Reduced Security Ops cold-load timeout to 10s and added explicit backend request failure copy.
+- **Docs**: Added root/server/classification/runtime/governance/heartbeat/security/performance/memory/business/final truth reports under `docs/`.
+- **Verified**: `backend\app\services\runtime_truth_registry.py` compiles via Python `compile(...)`.
+- **Verified**: Vite transforms `frontend\src\pages\ConnectionsPage.tsx` and `SecurityDashboardPage.tsx` with the new logic.
+- **Blocked**: backend launch/revalidation is blocked. `127.0.0.1:8000` is `ECONNREFUSED`; WSL cannot execute commands (`Wsl/Service/0x8007072c`); Windows Python cannot import `asyncio` (`_overlapped` WinError 10106); shell Node fails CSPRNG.
+- **Current test count**: full backend/frontend runtime count not measurable in this environment; source/static frontend transform validation passed.
+- **Next task**: repair host WSL/Windows networking runtime, start backend, then validate `/health`, `/api/v1/runtime/truth`, import persistence across restart, Security Ops error/empty states, and page-switch timing.
+
+## Codex Stabilization Sprint -- 2026-04-30
+- **Scope**: Stabilization only. No broad redesign or new product features.
+- **Done**: Delayed `.daena-port` publication until FastAPI startup completion and added owned-port cleanup on shutdown.
+- **Done**: Added frontend backend-offline/degraded banner and blocked Autopilot UI when backend health is failing.
+- **Done**: Fixed analytics concurrent `AsyncSession` bug by removing `asyncio.gather` over one request-scoped DB session.
+- **Done**: Moved model provider CLI/model/health probes and runtime registry checks into background startup tasks.
+- **Done**: Polished Runtime Truth rows with one lifecycle badge, collapsible raw details, visible failure reason, and fix suggestion.
+- **Done**: Reworked Security scan history into defensive report cards with target, scope, status, severity, runtime/tool, View Report, Re-run, Export, Archive.
+- **Done**: Cleaned settings truth: hid/labelled fake model auto-update, fake routing toggle, unconfigured email notifications, advanced governance tiers, duplicate quota admin rows, and backend-failed Autopilot.
+- **Docs**: Added stabilization backend/port, SQLAlchemy, startup, runtime UI, security UX, settings cleanup, and validation reports.
+- **Verified**: In-memory Python syntax compile passed for changed backend files.
+- **Blocked**: backend launch, HTTP smoke, npm build/typecheck, and browser smoke are blocked by host runtime failures: Python `asyncio` `_overlapped` WinError 10106, WSL `0x8007072c`, Node CSPRNG assertion, and Windows localhost provider error.
+- **Current test count**: full backend/frontend runtime count not measurable in this environment; backend syntax checks passed.
+- **Next task**: repair host Winsock/WSL/Node runtime, then rerun `STABILIZATION_VALIDATION_REPORT.md` exactly.
+
+## Codex Connections/Security Continuation -- 2026-04-30
+- **Scope**: Continue stabilization, specifically Connections plugins/Main Brain, Security Ops speed, Heartbeat/Dream/settings smoke.
+- **Done**: Verified `/connections` in browser. Main Brain persisted as `codex`; Plugins uses real connector catalog (`116 apps`, `15 installed`, `1 connected`); Install now creates connector instance, while Connect account owns auth.
+- **Done**: Reworked Security dashboard tool inventory so `/security/status` and `/security/tools` no longer block page load on full PATH scanning. Inventory refreshes in background and UI labels pending/stale/fresh state.
+- **Done**: Added backend confirmation guard to security-tool install endpoints: single and bulk install now return 409 without `confirm=install-security-tool`; dry-run still works.
+- **Done**: Added cooperative cancel endpoint for future bulk security-tool install jobs.
+- **Done**: Reworded visible security/evidence-control note away from OPSEC wording.
+- **Verified**: Browser DevTools API smoke through Vite proxy: `/health` 200/11ms, `/security/status` 200/397ms, `/security/tools` 200/21ms, `/connections/catalog` 200/57ms, authenticated `/settings/user` 200/54ms, `/heartbeat/status` 200/14ms, `/memory/dream/status` 200/15ms.
+- **Verified**: Security page console after reload had no warnings/errors. `git diff --check` passed on touched code.
+- **Incident**: A preserved browser request showed unintended `POST /api/v1/security/tools/install-all`. Backend reload killed the job, but Daena now detects `prowler`, `scoutsuite`, and `trufflehog` as installed. No uninstall was performed because cleanup is destructive and may break the Python environment.
+- **Incident**: Attempted `Stop-Process -Id 32888` on `D:\Ideas\Daena\venv_daena\Scripts\python.exe` while trying to stop the install job. The API stayed healthy, so that PID was not the active backend worker.
+- **Blocked**: `npm run build` still fails in this shell with Node CSPRNG initialization failure. Backend pytest still fails before collection because Python `asyncio` cannot import `_overlapped` (`WinError 10106`). PowerShell HTTP clients still fail with Windows socket provider errors.
+- **Current test count**: full test count not measurable in this shell; live browser/API validation passed for the targeted paths.
+- **Next task**: decide whether to uninstall `prowler`, `scoutsuite`, and `trufflehog`, then run a clean environment build/test pass outside the broken Codex shell.
+
+## Codex Connections Plugin Install Truth Pass -- 2026-04-30
+
+- **Scope**: Continue from the Codex plugin scraping/install-dialog work and verify the live `/connections` route, not orphaned components.
+- **Finding**: The richer install dialog existed, but it was originally wired into `frontend/src/pages/connections/ConnectionsConnectors.tsx`, which is not mounted by the active route. The live Plugins tab uses `PluginsCatalogBrowser.tsx`.
+- **Done**: Wired `PluginsCatalogBrowser.tsx` to `ConnectorInstallDialog` for both `Install` and `Connect account`.
+- **Done**: Extended `/api/v1/connections/catalog` to merge DB connector state with `connector_catalog.json` metadata, so skills, interface metadata, MCP server URLs, and catalog-only connectors reach the active UI.
+- **Done**: Updated connector install start behavior so missing managed OAuth env falls back to token setup when a token flow exists.
+- **Done**: Implemented MCP Remote OAuth start/callback/token-exchange code for metadata-driven providers. Cloudflare now returns a real authorization URL; Figma still falls back because metadata discovery failed.
+- **Done**: Added local Neon and Quicknode icon fallbacks to remove broken CDN icon requests.
+- **Docs**: Added `docs/CONNECTIONS_PLUGIN_INSTALL_TRUTH_REPORT.md`.
+- **Verified**: Browser `/connections` Plugins tab shows `116 apps`, `15 installed`, `1 connected`; Cloudflare shows 9 Codex skills and MCP available; clicking Cloudflare opens the rich dialog.
+- **Verified**: Browser API fetches: Cloudflare install-start returns 200 with `method=mcp_remote_oauth`, `popup=true`, and a Cloudflare authorization URL; GitHub/Hugging Face return honest token setup; Figma returns metadata-not-discovered token fallback. Invalid MCP callback state returns 400.
+- **Verified**: Backend compileall passed for touched API files. `git diff --check` passed for touched code before docs.
+- **Blocked**: Full frontend build/typecheck still blocked by Node CSPRNG failure. Full backend pytest still blocked by Python `_overlapped` / `WinError 10106`.
+- **Current test count**: full count not measurable in this shell; targeted browser/API/static validation passed.
+- **Next task**: manually complete Cloudflare OAuth once, then verify encrypted token persistence and authenticated MCP health/callability. Investigate Figma's real MCP OAuth metadata separately.
+
+## Codex Connections Fake-State Removal -- 2026-04-30
+
+- **Scope**: Stop fake plugin installs, connected states, and MCP Test error noise.
+- **Finding**: Skill-only catalog rows with `auth_type=none` were being treated as installable connections. Backend defaulted missing `auth.method` to `api_token`, so Build macOS returned a fake bearer-token form.
+- **Done**: `connector_install.py` now resolves auth from `auth_type` and returns 409 for skill-pack-only rows.
+- **Done**: `ConnectionService` no longer marks no-auth connectors connected unless `config_schema.callable_without_auth` is explicitly true.
+- **Done**: Plugins UI labels skill-only rows as `Skill pack`, shows a reason, and removes the install action.
+- **Done**: Cloudflare dialog no longer shows stale bearer-token form; install-start returns MCP Remote OAuth.
+- **Done**: MCP Test re-bootstraps stale registry, sanitizes TaskGroup and connection-closed failures, and shows `Not callable` with a reason.
+- **Done**: Removed broken SendGrid and Statsig SimpleIcons CDN aliases.
+- **Verified**: Browser/API evidence: Build macOS install-start 409; Cloudflare install-start 200 MCP OAuth popup no token form; Filesystem MCP Test shows Not callable with handshake-failure reason; fresh `/connections` console has 0 errors.
+- **Blocked**: `npm run typecheck` still fails with Node CSPRNG assertion. Backend pytest still fails before collection because Python `asyncio` cannot import `_overlapped` (`WinError 10106`).
+- **Current test count**: full count not measurable in this shell; targeted browser/API/static validation passed.
+- **Next task**: Complete real Cloudflare consent once and verify encrypted token persistence plus authenticated MCP tool listing.
+
+## Connections Rebuild -- Ultraview + ADR-002 Lock -- 2026-04-30
+- **Scope**: Documentation/spec/baseline only. No code edits, no archive moves, no file moves.
+- **Done**: `docs/Ultraview/ULTRAVIEW_REPORT.md` -- manual ultrareview of Phase 0-2 deliverables. Surfaced 5 BLOCKERS, 8 HIGH RISKS, 10 MEDIUM RISKS, 11 SAFE-TO-PROCEED items, and 15 REQUIRED CHANGES BEFORE PHASE 3.
+- **Done**: `docs/ADR-002-connections-rebuild-locked-decisions.md` -- 15 founder-locked decisions D-001..D-015 covering per-dim failure storage, op-lock table for in-progress state, vault rewrite split into Phase 4a/4b, WRAP not 308 redirect, stale != failed (14 derived labels), catalog signing deferred, persisted/imported merge constraint, per-kind discriminated unions in Phase 4, ConnectionsMcpServers.tsx ARCHIVE classification, connection_service.py REWRITE reclassification, daena-mcp OFFICIAL trust tier, mcp_bridge.py rename, governance_tier no silent default, connector_catalog.json tracking, baseline test recording.
+- **Done**: `docs/CONNECTIONS_MCP_PLUGIN_ARCHITECTURE_V2.md` Draft 2 -- amendments per ADR-002 in §3 (per-dim failure + op-lock + 14 labels), §4 (schema + ConnectionOpLock table + governance_tier no-default), §6 (vault rewrite split into 4a/4b), §7 (catalog signing deferred + daena-mcp OFFICIAL), §13 (WRAP not 308), §18 (healthy_stale + degraded_stale rows), §20 (Phase 4 split into 4a/4b, post-V2 catalog signing).
+- **Done**: `docs/CONNECTIONS_FILE_MAP.md` -- added `ConnectionsMcpServers.tsx` (54 KB, untracked, zero external imports) as ARCHIVE (D-009); reclassified `connection_service.py` from KEEP to REWRITE (D-010); added rename note to `mcp_bridge.py` adapter (D-012); updated ARCHIVE count 7->8 and REWRITE count 3->4 in summary.
+- **Done**: `docs/CONNECTIONS_REBUILD_PLAN.md` -- added Phase 3 entry criteria block, baseline section per ADR-002 D-015, updated chairman-decisions list with ADR-002 cross-references, split Phase 4 into 4a (vault) + 4b (registry), pickup instructions reordered to read ADR-002 second.
+- **Done (baseline)**: Frontend `tsc --noEmit` CLEAN; `npm run build` 1 pre-existing TS error in out-of-scope `SecurityDashboardPage.tsx:298`; `eslint src` 125 errors / 10 warnings (pre-existing baseline). Backend pytest (excluding `test_scan_workflow.py` which wedges suite): **3532 passed / 21 failed / 76 errors / 16 skipped in 385s on commit 6d3ca5e**. 73/76 errors are out-of-scope (department/files/pipeline tenant_id IntegrityError fixture gap); 3/76 are in `test_extension_permissions.py` (will need replacement in Phase 4b). 19/21 failures are out-of-scope (security dashboard, audit chain, founder routing, memory recall, skill refinery); **2/21 are in-scope** (`test_connections.py::test_install_no_auth_connector_is_connected` + `test_extensions_install_persists_tenant_mcp_server`) -- these test the lying CONNECTED-on-no-auth behavior the rebuild explicitly removes; will be replaced (not "fixed") in Phase 4b when `_status_for_install` is deleted per ADR-002 D-010.
+- **Done (catalog)**: `connector_catalog.json` (3352 LOC, untracked) committed in this batch per ADR-002 D-014.
+- **Done (verification)**: `git log --since="7 days ago"` on `ConnectionsConnectors.tsx` returned zero commits -- working-tree edits only, no committed fixes at risk of loss when archived.
+- **Verified**: `useRuntimeRegistry` hook has zero non-self consumers -- documented in V2 §13 collapse table.
+- **Verified**: `_status_for_install` in `connection_service.py:131-143` still returns CONNECTED for both no-auth and credentials-present cases -- targeted for deletion in Phase 4b.
+- **Verified**: `claude_code.check_health` at `claude_code.py:182-186` still returns ONLINE on binary presence -- targeted for rewrite in Phase 6.
+- **Verified**: `core/vault.py` is 143 LOC single-key SHA-256 -- confirms B4 finding that V2 vault is rewrite not extension.
+- **Phase 3 status**: SAFE TO PROCEED on documentation/spec front. HOLD pending founder acknowledgement of the 21-failure / 76-error baseline + the `test_scan_workflow.py` wedge (separate ticket). No code, no archive moves, no file moves performed in this round (per founder instruction).
+- **Next task**: Founder reviews baseline + signs off on pre-existing failure list. Then Phase 3 archive may begin, starting with `gitnexus impact` per file in the ARCHIVE list.

@@ -1,6 +1,8 @@
 # Connections System -- File Map
 **Generated:** 2026-04-30
+**Amended:** 2026-04-30 (Ultraview round per ADR-002)
 **Sources:** docs/_explore/02_backend_file_map.md, docs/_explore/03_frontend_file_map.md, docs/_explore/04_mcp_package_map.md
+**Authoritative for conflicts:** `docs/ADR-002-connections-rebuild-locked-decisions.md`
 
 ## Backend files (by directory)
 
@@ -25,7 +27,7 @@
 
 | path | purpose | KEEP/ARCHIVE/REWRITE/WRAP | reason |
 |------|---------|---------------------------|--------|
-| `backend/app/services/connection_service.py` (622 LOC) | CMP service -- connector catalog, instances, per-tool permissions; vault encrypt/decrypt | KEEP | normal |
+| `backend/app/services/connection_service.py` (622 LOC) | CMP service -- connector catalog, instances, per-tool permissions; vault encrypt/decrypt | **REWRITE** (Phase 4b) | Per ADR-002 D-010: `_status_for_install` (lines 131-143) is the single worst backend offender (P0 #2 + #4). MUST be deleted in the same Phase 4b PR that introduces the 6 truth-field schema -- no transition window where lying status function and new truth fields coexist. Vault encrypt/decrypt + per-tool permission CRUD consolidated into `connection_v2/registry.py` + `connection_v2/permissions.py`; original deleted at end of Phase 4b. |
 | `backend/app/services/mcp_invoker.py` (199 LOC) | Spawns stdio MCP server, MCP handshake | KEEP | "Fail-safe stdio session manager" |
 | `backend/app/services/mcp_registry.py` (592 LOC) | Tenant-scoped MCP tool runtime cache; hydrate_from_db on startup | KEEP | "Tenant-scoped, DB-backed, hydrate-on-startup -- matches CLAUDE.md ADR-001" |
 | `backend/app/services/model_registry.py` (561 LOC) | Singleton catalog of all 9 LLM providers; lazy provider init via `_PROVIDER_MAP` | KEEP | normal |
@@ -61,7 +63,7 @@
 | `backend/app/services/runtimes/adapters/grok_cli.py` (167 LOC) | Grok CLI adapter | KEEP | normal |
 | `backend/app/services/runtimes/adapters/ollama_adapter.py` (157 LOC) | Ollama via HTTP API (no CLI) | KEEP | normal |
 | `backend/app/services/runtimes/adapters/vllm_adapter.py` (183 LOC) | vLLM runtime (OpenAI-compat HTTP) | KEEP | normal |
-| `backend/app/services/runtimes/adapters/mcp_bridge.py` (214 LOC) | Generic MCP server adapter (stdio or HTTP) | KEEP | normal |
+| `backend/app/services/runtimes/adapters/mcp_bridge.py` (214 LOC) | Generic MCP server adapter (stdio or HTTP) | KEEP (RENAME) | Per ADR-002 D-012: rename to `mcp_bridge_runtime_adapter.py` in Phase 4b to disambiguate from `mcp_sync/detector.py` (the unique discovery source). |
 | `backend/app/services/providers/base.py` (190 LOC) | `BaseProvider` abstract | KEEP | normal |
 | `backend/app/services/providers/anthropic.py` (252 LOC) | Anthropic Messages API; primary = Sonnet 4.7 Max | KEEP | normal |
 | `backend/app/services/providers/claude_cli.py` (513 LOC) | claude/codex/gemini CLI as subscription provider | KEEP | normal |
@@ -116,6 +118,7 @@
 | `frontend/src/pages/connections/ConnectionsConnectors.tsx` (33 KB) | Legacy "plugins" tab w/ ConnectorRow + advanced per-tool perms | ARCHIVE | "NOT mounted by current ConnectionsPage shell"; imports hardcoded `CONNECTORS` from `catalog.ts` (~110 entries) |
 | `frontend/src/pages/connections/ConnectionsExtensions.tsx` (26 KB) | Legacy extensions tab w/ per-tool optimistic perms | ARCHIVE | "NOT mounted (replaced by McpServersPanel)" |
 | `frontend/src/pages/connections/ConnectionsRuntimes.tsx` (31 KB) | Legacy "Mind Control" runtimes tab + CLIBridgeCard | ARCHIVE | "NOT mounted (replaced by MainBrainPanel)" -- "kept only if CLI Bridge moves to MainBrainPanel" |
+| `frontend/src/pages/connections/ConnectionsMcpServers.tsx` (54 KB, **untracked**) | Legacy Codex-parity MCP CRUD tab (toggle/edit/add/delete) | ARCHIVE | NOT mounted by `pages/ConnectionsPage.tsx`; zero external imports verified 2026-04-30; no git history (untracked). Per ADR-002 D-009: archive same as ConnectionsConnectors family; CRUD UX patterns must be reviewed for port to V2 `McpServersPanel.tsx` Tools sub-tab BEFORE archive PR merges. |
 | `frontend/src/pages/connections/BrowseModal.tsx` | Legacy marketplace overlay for connectors+extensions | ARCHIVE | "NOT mounted"; reads `BROWSE_CONNECTORS_CATALOG` hardcoded |
 | `frontend/src/pages/connections/catalog.ts` (880 LOC) | Hardcoded `CONNECTORS`, `BROWSE_*_CATALOG`, `CLOUD_PREINSTALLED_EXTENSIONS`, `SKILL_DESCRIPTIONS`, `CONNECTOR_MCP_EQUIVALENT` | ARCHIVE (mostly) | "Entire file is hardcoded data; backend `/connections/catalog` already supersedes most"; KEEP only `CONNECTOR_MCP_EQUIVALENT` (move to small file) |
 | `frontend/src/pages/connections/installFlow.ts` (208 LOC) | OAuth/api-token install state machine | KEEP | "Imported by `ConnectorInstallDialog`" |
@@ -207,8 +210,8 @@ All routers in scope ARE mounted in `backend/app/api/v1/__init__.py`:
 | Action | Count | Files (top 5 examples) |
 |--------|-------|------------------------|
 | KEEP | 70+ | All providers (13), all adapters (8), models, schemas, hooks, services not flagged |
-| ARCHIVE | 7 | `pages/connections/ConnectionsConnectors.tsx`, `ConnectionsExtensions.tsx`, `ConnectionsRuntimes.tsx`, `BrowseModal.tsx`, `catalog.ts` (mostly), `oauth.ts`, `shared.tsx` |
-| REWRITE | 3 | `services/integrations/oauth_credentials_store.py` (-> AES vault), `pages/settings/SettingsModelsRuntimes.tsx` (stale providers; merge w/ MainBrainPanel), `packages/daena-mcp/src/tools/audit.ts` + `package.json` (publish to npm) |
+| ARCHIVE | 8 | `pages/connections/ConnectionsConnectors.tsx`, `ConnectionsExtensions.tsx`, `ConnectionsRuntimes.tsx`, **`ConnectionsMcpServers.tsx` (NEW per ADR-002 D-009)**, `BrowseModal.tsx`, `catalog.ts` (mostly), `oauth.ts`, `shared.tsx` |
+| REWRITE | 4 | `services/integrations/oauth_credentials_store.py` (-> AES vault, Phase 4b per ADR-002 D-003), **`services/connection_service.py` (NEW per ADR-002 D-010 -- delete `_status_for_install` in Phase 4b)**, `pages/settings/SettingsModelsRuntimes.tsx` (stale providers; merge w/ MainBrainPanel), `packages/daena-mcp/src/tools/audit.ts` + `package.json` (publish to npm) |
 | WRAP | 3 | `api/v1/runtimes.py` (UI shim -> `runtime_truth_registry`), `services/mcp_bootstrap.py` (fold into `mcp_sync/`), `services/dynamic_model_service.py` (stop importing private `_PROVIDER_MAP`) |
 | SPLIT (KEEP but break apart) | 4 | `api/v1/connections.py` (1150 LOC), `services/model_router.py` (1464 LOC), `config/connector_catalog.json` (3352 lines), `connector_install.py` + `connector_oauth.py` (extract OAuth state to Redis) |
 | PROMOTE | 1 | `services/runtime_truth_registry.py` + `api/v1/runtime.py` -> canonical source-of-truth |

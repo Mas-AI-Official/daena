@@ -1,0 +1,3353 @@
+{
+  "version": "2026-04-29.3",
+  "connectors": [
+    {
+      "name": "Hugging Face",
+      "slug": "hugging-face",
+      "description": "Inspect models, datasets, Spaces, and research",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_models",
+          "description": "Search public models by task, library, or author."
+        },
+        {
+          "name": "model_info",
+          "description": "Fetch metadata, tags, and usage info for a specific model."
+        },
+        {
+          "name": "run_inference",
+          "description": "Run inference against a hosted Hugging Face model."
+        },
+        {
+          "name": "search_datasets",
+          "description": "Search datasets by task, license, or language."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Hugging Face",
+        "shortDescription": "Inspect models, datasets, Spaces, and research",
+        "longDescription": "Browse and inspect models, datasets, and Spaces on the Hugging Face Hub. Read-only by default; upgrade scope when you need to push artifacts or run inference.",
+        "developerName": "Hugging Face",
+        "websiteURL": "https://huggingface.co",
+        "privacyPolicyURL": "https://huggingface.co/privacy",
+        "termsOfServiceURL": "https://huggingface.co/terms-of-service",
+        "brandColor": "#FFD21E",
+        "defaultPrompts": [
+          "Find the top open-source LLMs under 8B params.",
+          "Show me the most-downloaded text-to-image dataset this month."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Read"
+        ]
+      },
+      "auth": {
+        "method": "api_token",
+        "token_settings_url": "https://huggingface.co/settings/tokens",
+        "token_help": "Create a Read-only or Fine-grained token. Daena will only call read endpoints by default.",
+        "validate_endpoint": "https://huggingface.co/api/whoami-v2"
+      }
+    },
+    {
+      "name": "Netlify",
+      "slug": "netlify",
+      "description": "Deploy projects and manage releases",
+      "category": "Coding",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "netlify_deploy",
+          "description": "Deploy a site or trigger a new build."
+        },
+        {
+          "name": "netlify_list_sites",
+          "description": "List sites connected to this Netlify team."
+        },
+        {
+          "name": "netlify_env",
+          "description": "Inspect or update environment variables for a site."
+        },
+        {
+          "name": "netlify_logs",
+          "description": "Stream deploy logs and function execution traces."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Netlify",
+        "shortDescription": "Deploy projects and manage releases",
+        "longDescription": "Deploy sites, stream build logs, manage environment variables, and inspect serverless function executions on Netlify.",
+        "developerName": "Netlify",
+        "websiteURL": "https://www.netlify.com",
+        "privacyPolicyURL": "https://www.netlify.com/privacy/",
+        "termsOfServiceURL": "https://www.netlify.com/legal/terms-of-use/",
+        "brandColor": "#00C7B7",
+        "defaultPrompts": [
+          "Trigger a deploy of the main branch.",
+          "Show me the function execution logs for the last hour."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write"
+        ]
+      },
+      "auth": {
+        "method": "api_token",
+        "token_settings_url": "https://app.netlify.com/user/applications#personal-access-tokens",
+        "token_help": "Personal access tokens grant the same permissions your account has.",
+        "validate_endpoint": "https://api.netlify.com/api/v1/user"
+      }
+    },
+    {
+      "name": "Vercel",
+      "slug": "vercel",
+      "description": "Build and deploy web apps and agents",
+      "category": "Coding",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "vercel_deploy",
+          "description": "Deploy a project to Vercel production or a preview."
+        },
+        {
+          "name": "vercel_list_projects",
+          "description": "List projects accessible to this Vercel account."
+        },
+        {
+          "name": "vercel_logs",
+          "description": "Fetch build + runtime logs from a deployment."
+        },
+        {
+          "name": "vercel_env",
+          "description": "Manage environment variables across Vercel environments."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Vercel",
+        "shortDescription": "Build and deploy web apps and agents",
+        "longDescription": "Trigger deployments, inspect logs, manage environment variables, and read project state on Vercel. Pair with the Build Web Apps plugin for end-to-end shipping.",
+        "developerName": "Vercel",
+        "websiteURL": "https://vercel.com",
+        "privacyPolicyURL": "https://vercel.com/legal/privacy-policy",
+        "termsOfServiceURL": "https://vercel.com/legal/terms",
+        "brandColor": "#000000",
+        "defaultPrompts": [
+          "Show me the last 5 deployments for my production project.",
+          "Why did the last deployment fail? Read the build logs."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write"
+        ]
+      },
+      "auth": {
+        "method": "api_token",
+        "token_settings_url": "https://vercel.com/account/tokens",
+        "token_help": "Create a token scoped to the team and projects you want Daena to manage.",
+        "validate_endpoint": "https://api.vercel.com/v2/user"
+      }
+    },
+    {
+      "name": "Game Studio",
+      "slug": "game-studio",
+      "description": "Design, prototype, and ship browser games",
+      "category": "Coding",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "prototype_game",
+          "description": "Scaffold a browser-game prototype from a prompt."
+        },
+        {
+          "name": "publish_game",
+          "description": "Build and publish a game to the hosted studio."
+        },
+        {
+          "name": "list_assets",
+          "description": "List available sprites, audio, and scene assets."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Superpowers",
+      "slug": "superpowers",
+      "description": "Planning, TDD, debugging, and delivery workflows",
+      "category": "Coding",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "plan_feature",
+          "description": "Break a feature request into a TDD plan."
+        },
+        {
+          "name": "run_tdd",
+          "description": "Run a red-green-refactor cycle for the current task."
+        },
+        {
+          "name": "debug_session",
+          "description": "Start a structured debug session with rubber-ducking."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "GitHub",
+      "slug": "github",
+      "description": "Triage PRs, issues, CI, and publish flows",
+      "category": "Coding",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_repos",
+          "description": "Search public and private repositories by name, language, or topic."
+        },
+        {
+          "name": "read_file",
+          "description": "Read the content of a file you own or have access to."
+        },
+        {
+          "name": "list_issues",
+          "description": "List open or closed issues in a repository."
+        },
+        {
+          "name": "create_issue",
+          "description": "Open a new issue with title, body, and labels."
+        },
+        {
+          "name": "create_pr",
+          "description": "Create a pull request from a branch to the base."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "GitHub",
+        "shortDescription": "Triage PRs, issues, CI, and publish flows",
+        "longDescription": "Read repos and files, triage pull requests, manage issues, inspect Actions runs, and cut releases. The included GitHub MCP server gives Daena live repo state without manual context.",
+        "developerName": "GitHub",
+        "websiteURL": "https://github.com",
+        "privacyPolicyURL": "https://docs.github.com/en/site-policy/privacy-policies",
+        "termsOfServiceURL": "https://docs.github.com/en/site-policy/github-terms",
+        "brandColor": "#181717",
+        "defaultPrompts": [
+          "Triage the open PRs on this repo and tell me which need attention.",
+          "Why did the last CI run fail on this branch?"
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write",
+          "Read"
+        ]
+      },
+      "auth": {
+        "method": "oauth_managed",
+        "token_settings_url": "https://github.com/settings/tokens?type=beta",
+        "token_help": "Fine-grained personal access tokens recommended. Scope to specific repos.",
+        "validate_endpoint": "https://api.github.com/user"
+      }
+    },
+    {
+      "name": "CircleCI",
+      "slug": "circleci",
+      "description": "Build, test, and deploy any application",
+      "category": "Coding",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_pipelines",
+          "description": "List recent CircleCI pipelines for a project."
+        },
+        {
+          "name": "trigger_build",
+          "description": "Trigger a CircleCI pipeline on a branch or tag."
+        },
+        {
+          "name": "get_job_logs",
+          "description": "Fetch logs for a specific CircleCI job."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "CircleCI",
+        "shortDescription": "Build, test, and deploy any application",
+        "longDescription": "List pipelines, trigger builds, and fetch job logs from CircleCI. Pair with GitHub for end-to-end CI debugging.",
+        "developerName": "CircleCI",
+        "websiteURL": "https://circleci.com",
+        "privacyPolicyURL": "https://circleci.com/privacy",
+        "termsOfServiceURL": "https://circleci.com/terms-of-service",
+        "brandColor": "#161616",
+        "defaultPrompts": [
+          "Show me the last 10 pipeline runs and their statuses.",
+          "Trigger the deploy workflow on the release branch."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write"
+        ]
+      },
+      "auth": {
+        "method": "api_token",
+        "token_settings_url": "https://app.circleci.com/settings/user/tokens",
+        "token_help": "Personal API token with read access to your projects.",
+        "validate_endpoint": "https://circleci.com/api/v2/me"
+      }
+    },
+    {
+      "name": "Cloudflare",
+      "slug": "cloudflare",
+      "description": "Cloudflare platform guidance with official MCP",
+      "category": "Coding",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_zones",
+          "description": "List Cloudflare zones (domains) on this account."
+        },
+        {
+          "name": "update_dns",
+          "description": "Add or update a DNS record on a Cloudflare zone."
+        },
+        {
+          "name": "deploy_worker",
+          "description": "Deploy a Cloudflare Worker script."
+        },
+        {
+          "name": "list_tunnels",
+          "description": "List active Cloudflare Tunnels and their routes."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Cloudflare",
+        "shortDescription": "Cloudflare platform guidance with official MCP",
+        "longDescription": "Bring Cloudflare platform guidance into Codex with curated skills for the broader platform, Wrangler CLI, and the Agents SDK, plus the official Cloudflare API MCP server for authenticated access to live account data and workflows across Workers, Pages, storage, AI, networking, security, and analytics services.",
+        "developerName": "Cloudflare",
+        "websiteURL": "https://workers.cloudflare.com/",
+        "privacyPolicyURL": "https://www.cloudflare.com/privacypolicy/",
+        "termsOfServiceURL": "https://www.cloudflare.com/website-terms/",
+        "brandColor": "#F48120",
+        "capabilities": [
+          "Interactive",
+          "Write"
+        ],
+        "defaultPrompts": [
+          "Help me choose the right Cloudflare product, configure Wrangler, and use Cloudflare MCP to inspect or deploy this project"
+        ],
+        "logoPath": "/frontend/src/assets/icons/connectors/cloudflare.png"
+      },
+      "mcp_servers": {
+        "cloudflare-api": {
+          "type": "http",
+          "url": "https://mcp.cloudflare.com/mcp",
+          "note": "Official Cloudflare API MCP server. Uses OAuth on first connection, with optional bearer-token auth for automation. Provides token-efficient access to the Cloudflare API via search() and execute()."
+        }
+      },
+      "auth": {
+        "method": "mcp_remote_oauth",
+        "mcp_url": "https://mcp.cloudflare.com/mcp"
+      },
+      "skills": [
+        {
+          "id": "agents-sdk",
+          "name": "agents-sdk",
+          "description": "Build AI agents on Cloudflare Workers using the Agents SDK. Load when creating stateful agents, durable workflows, real-time WebSocket apps, scheduled tasks, MCP servers, or chat applications. Covers Agent class, state management, callable RPC, Workflows integration, and React hooks. Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "source": "codex/cloudflare"
+        },
+        {
+          "id": "building-ai-agent-on-cloudflare",
+          "name": "building-ai-agent-on-cloudflare",
+          "description": "| Builds AI agents on Cloudflare using the Agents SDK with state management, real-time WebSockets, scheduled tasks, tool integration, and chat capabilities. Generates production-ready agent code deployed to Workers. Use when: user wants to \"build an agent\", \"AI agent\", \"chat agent\", \"stateful agent\", mentions \"Agents SDK\", needs \"real-time AI\", \"WebSocket AI\", or asks about agent \"state management\", \"scheduled tasks\", or \"tool calling\". Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "source": "codex/cloudflare"
+        },
+        {
+          "id": "building-mcp-server-on-cloudflare",
+          "name": "building-mcp-server-on-cloudflare",
+          "description": "| Builds remote MCP (Model Context Protocol) servers on Cloudflare Workers with tools, OAuth authentication, and production deployment. Generates server code, configures auth providers, and deploys to Workers. Use when: user wants to \"build MCP server\", \"create MCP tools\", \"remote MCP\", \"deploy MCP\", add \"OAuth to MCP\", or mentions Model Context Protocol on Cloudflare. Also triggers on \"MCP authentication\" or \"MCP deployment\". Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "source": "codex/cloudflare"
+        },
+        {
+          "id": "cloudflare",
+          "name": "cloudflare",
+          "description": "Comprehensive Cloudflare platform skill covering Workers, Pages, storage (KV, D1, R2), AI (Workers AI, Vectorize, Agents SDK), networking (Tunnel, Spectrum), security (WAF, DDoS), and infrastructure-as-code (Terraform, Pulumi). Use for any Cloudflare development task. Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "source": "codex/cloudflare"
+        },
+        {
+          "id": "durable-objects",
+          "name": "durable-objects",
+          "description": "Create and review Cloudflare Durable Objects. Use when building stateful coordination (chat rooms, multiplayer games, booking systems), implementing RPC methods, SQLite storage, alarms, WebSockets, or reviewing DO code for best practices. Covers Workers integration, wrangler config, and testing with Vitest. Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "source": "codex/cloudflare"
+        },
+        {
+          "id": "sandbox-sdk",
+          "name": "sandbox-sdk",
+          "description": "Build sandboxed applications for secure code execution. Load when building AI code execution, code interpreters, CI/CD systems, interactive dev environments, or executing untrusted code. Covers Sandbox SDK lifecycle, commands, files, code interpreter, and preview URLs. Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "source": "codex/cloudflare"
+        },
+        {
+          "id": "web-perf",
+          "name": "web-perf",
+          "description": "Analyzes web performance using Chrome DevTools MCP. Measures Core Web Vitals (FCP, LCP, TBT, CLS, Speed Index), identifies render-blocking resources, network dependency chains, layout shifts, caching issues, and accessibility gaps. Use when asked to audit, profile, debug, or optimize page load performance, Lighthouse scores, or site speed. Biases towards retrieval from current documentation over pre-trained knowledge.",
+          "source": "codex/cloudflare"
+        },
+        {
+          "id": "workers-best-practices",
+          "name": "workers-best-practices",
+          "description": "Reviews and authors Cloudflare Workers code against production best practices. Load when writing new Workers, reviewing Worker code, configuring wrangler.jsonc, or checking for common Workers anti-patterns (streaming, floating promises, global state, secrets, bindings, observability). Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "source": "codex/cloudflare"
+        },
+        {
+          "id": "wrangler",
+          "name": "wrangler",
+          "description": "Cloudflare Workers CLI for deploying, developing, and managing Workers, KV, R2, D1, Vectorize, Hyperdrive, Workers AI, Containers, Queues, Workflows, Pipelines, and Secrets Store. Load before running wrangler commands to ensure correct syntax and best practices. Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "source": "codex/cloudflare"
+        }
+      ],
+      "skill_count": 9
+    },
+    {
+      "name": "Sentry",
+      "slug": "sentry",
+      "description": "Inspect recent Sentry issues and events",
+      "category": "Coding",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_issues_sentry",
+          "description": "List recent Sentry issues with frequency + severity."
+        },
+        {
+          "name": "get_event",
+          "description": "Fetch a specific Sentry event with stack trace."
+        },
+        {
+          "name": "search_events",
+          "description": "Search Sentry events by query, release, or environment."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Sentry",
+        "shortDescription": "Inspect recent Sentry issues and events",
+        "longDescription": "Surface recent errors, group similar events, and pull stack traces for triage. Read-only by default.",
+        "developerName": "Sentry",
+        "websiteURL": "https://sentry.io",
+        "privacyPolicyURL": "https://sentry.io/privacy/",
+        "termsOfServiceURL": "https://sentry.io/terms/",
+        "brandColor": "#362D59",
+        "defaultPrompts": [
+          "What are the top 5 errors in the last 24 hours?",
+          "Show me the stack trace for issue SENTRY-1234."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Read"
+        ]
+      },
+      "auth": {
+        "method": "api_token",
+        "token_settings_url": "https://sentry.io/settings/account/api/auth-tokens/",
+        "token_help": "User auth tokens with project:read scope.",
+        "validate_endpoint": "https://sentry.io/api/0/"
+      }
+    },
+    {
+      "name": "Build iOS Apps",
+      "slug": "build-ios",
+      "description": "Build, refine, and debug iOS apps with SwiftUI and Xcode",
+      "category": "Coding",
+      "auth_type": "none",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "build_xcode",
+          "description": "Invoke an Xcode build on the current scheme."
+        },
+        {
+          "name": "run_simulator",
+          "description": "Launch an iOS simulator for the current target."
+        },
+        {
+          "name": "debug_ios",
+          "description": "Attach the debugger and walk the iOS call stack."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Build macOS Apps",
+      "slug": "build-macos",
+      "description": "Build, debug, instrument macOS apps with SwiftUI and AppKit",
+      "category": "Coding",
+      "auth_type": "none",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "build_xcode",
+          "description": "Invoke an Xcode build on the current scheme."
+        },
+        {
+          "name": "run_macos",
+          "description": "Launch the built macOS app for manual testing."
+        },
+        {
+          "name": "debug_macos",
+          "description": "Attach the debugger and inspect macOS app state."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Build Web Apps",
+      "slug": "build-web",
+      "description": "Build, review, ship, and scale web apps",
+      "category": "Coding",
+      "auth_type": "none",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "scaffold_app",
+          "description": "Scaffold a new web app with the chosen stack."
+        },
+        {
+          "name": "run_review",
+          "description": "Run the code-review checklist on recent changes."
+        },
+        {
+          "name": "deploy_web",
+          "description": "Ship the web app to the configured hosting target."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Test Android Apps",
+      "slug": "test-android",
+      "description": "Reproduce issues and inspect Android emulators",
+      "category": "Coding",
+      "auth_type": "none",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "run_emulator",
+          "description": "Boot an Android emulator for the active profile."
+        },
+        {
+          "name": "capture_screen",
+          "description": "Capture a screenshot of the running Android emulator."
+        },
+        {
+          "name": "dump_ui",
+          "description": "Dump the current Android UI hierarchy for inspection."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Expo",
+      "slug": "expo",
+      "description": "Build, deploy, upgrade Expo and React Native apps",
+      "category": "Coding",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "expo_build",
+          "description": "Run an Expo build for the current app."
+        },
+        {
+          "name": "expo_publish",
+          "description": "Publish the Expo bundle to the update channel."
+        },
+        {
+          "name": "expo_logs",
+          "description": "Tail device / build logs from Expo."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Expo",
+        "shortDescription": "Build, deploy, upgrade Expo and React Native apps",
+        "longDescription": "Drive EAS Build pipelines, ship OTA updates, and inspect Expo project state.",
+        "developerName": "Expo",
+        "websiteURL": "https://expo.dev",
+        "privacyPolicyURL": "https://expo.dev/privacy",
+        "termsOfServiceURL": "https://expo.dev/terms",
+        "brandColor": "#000020",
+        "defaultPrompts": [
+          "Build my app for iOS production via EAS.",
+          "Push an OTA update to the staging channel."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write"
+        ]
+      },
+      "auth": {
+        "method": "api_token",
+        "token_settings_url": "https://expo.dev/accounts/[account]/settings/access-tokens",
+        "token_help": "Personal access tokens for EAS Build, Submit, and Update.",
+        "validate_endpoint": "https://api.expo.dev/v2/user"
+      }
+    },
+    {
+      "name": "CodeRabbit",
+      "slug": "coderabbit",
+      "description": "Run AI-powered code review for your current changes",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "review_pr",
+          "description": "Run AI code review on the currently-open PR."
+        },
+        {
+          "name": "summarize_diff",
+          "description": "Summarize the intent of a diff or PR."
+        },
+        {
+          "name": "suggest_fixes",
+          "description": "Suggest concrete fixes for review comments."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "CodeRabbit",
+        "shortDescription": "Run AI-powered code review for your current changes",
+        "longDescription": "Run CodeRabbit reviews against pull requests, summarize diffs, and surface suggested fixes inline.",
+        "developerName": "CodeRabbit",
+        "websiteURL": "https://www.coderabbit.ai",
+        "privacyPolicyURL": "https://www.coderabbit.ai/privacy-policy",
+        "termsOfServiceURL": "https://www.coderabbit.ai/terms",
+        "brandColor": "#F58220",
+        "defaultPrompts": [
+          "Run a CodeRabbit review on PR #123.",
+          "Summarize the diff in plain English."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Read"
+        ]
+      },
+      "auth": {
+        "method": "api_token",
+        "token_settings_url": "https://app.coderabbit.ai/settings/api-keys",
+        "token_help": "API key for the CodeRabbit review service.",
+        "validate_endpoint": "https://api.coderabbit.ai/v1/health"
+      }
+    },
+    {
+      "name": "Neon Postgres",
+      "slug": "neon",
+      "description": "Manage Neon Serverless Postgres projects and databases",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_neon_projects",
+          "description": "List Neon projects available to this account."
+        },
+        {
+          "name": "run_query",
+          "description": "Run a SQL query against a Neon branch."
+        },
+        {
+          "name": "create_branch",
+          "description": "Create a Neon database branch for safe iteration."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Neon Postgres",
+        "shortDescription": "Manage Neon Serverless Postgres projects and databases",
+        "longDescription": "List Neon projects, branch databases for safe migrations, run queries, and inspect connection strings. Branching is the killer feature; reach for it before destructive changes.",
+        "developerName": "Neon",
+        "websiteURL": "https://neon.tech",
+        "privacyPolicyURL": "https://neon.tech/privacy-policy",
+        "termsOfServiceURL": "https://neon.tech/terms-of-service",
+        "brandColor": "#00E599",
+        "defaultPrompts": [
+          "Branch the production database for a migration test.",
+          "Show me the connection string for my dev branch."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write",
+          "Read"
+        ]
+      },
+      "auth": {
+        "method": "mcp_remote_oauth",
+        "mcp_url": "https://mcp.neon.tech/sse",
+        "fallback": {
+          "method": "api_token",
+          "token_settings_url": "https://console.neon.tech/app/settings/api-keys"
+        }
+      }
+    },
+    {
+      "name": "Plugin Eval",
+      "slug": "plugin-eval",
+      "description": "Start from chat, then evaluate or benchmark locally",
+      "category": "Coding",
+      "auth_type": "none",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "run_eval",
+          "description": "Evaluate the current plugin against a dataset."
+        },
+        {
+          "name": "run_benchmark",
+          "description": "Run a benchmark suite locally and collect metrics."
+        },
+        {
+          "name": "compare_results",
+          "description": "Compare benchmark runs side-by-side."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Cloudinary",
+      "slug": "cloudinary",
+      "description": "Manage, search, and transform your media library",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "upload_media",
+          "description": "Upload an image or video to Cloudinary."
+        },
+        {
+          "name": "search_media",
+          "description": "Search the Cloudinary library by tag or metadata."
+        },
+        {
+          "name": "transform_image",
+          "description": "Apply a Cloudinary transformation recipe."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Cloudinary",
+        "shortDescription": "Manage, search, and transform your media library",
+        "longDescription": "Upload, search, and transform images and videos via the Cloudinary Media Library. Pair with ContentOps for end-to-end social rendering.",
+        "developerName": "Cloudinary",
+        "websiteURL": "https://cloudinary.com",
+        "privacyPolicyURL": "https://cloudinary.com/privacy",
+        "termsOfServiceURL": "https://cloudinary.com/tos",
+        "brandColor": "#3448C5",
+        "defaultPrompts": [
+          "Upload this video and return the streaming URL.",
+          "Find all images tagged 'hero-shot' in my library."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write"
+        ]
+      },
+      "auth": {
+        "method": "api_token",
+        "token_settings_url": "https://console.cloudinary.com/settings/c-/api-keys",
+        "token_help": "API key + secret pair. Cloudinary uses both, not just one.",
+        "field_layout": [
+          "api_key",
+          "api_secret",
+          "cloud_name"
+        ]
+      }
+    },
+    {
+      "name": "Hostinger",
+      "slug": "hostinger",
+      "description": "Build websites and apps by describing what you want",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "create_site",
+          "description": "Create a new Hostinger site from a prompt."
+        },
+        {
+          "name": "deploy_site",
+          "description": "Deploy the current site to Hostinger."
+        },
+        {
+          "name": "configure_domain",
+          "description": "Attach a custom domain to a Hostinger site."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "MarcoPolo",
+      "slug": "marcopolo",
+      "description": "Secure container where Claude can work with your data",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "create_sandbox",
+          "description": "Spin up a secure MarcoPolo sandbox."
+        },
+        {
+          "name": "upload_data",
+          "description": "Upload a dataset into the sandbox for analysis."
+        },
+        {
+          "name": "run_script",
+          "description": "Run a user-supplied script inside the sandbox."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Quicknode",
+      "slug": "quicknode",
+      "description": "Manage your Quicknode infrastructure",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_endpoints",
+          "description": "List Quicknode endpoints across networks."
+        },
+        {
+          "name": "get_stats",
+          "description": "Fetch usage + performance stats for an endpoint."
+        },
+        {
+          "name": "deploy_function",
+          "description": "Deploy a Quicknode Function to an endpoint."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "SendGrid",
+      "slug": "sendgrid",
+      "description": "Connector for the SendGrid email API",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "send_email_sg",
+          "description": "Send an email via SendGrid."
+        },
+        {
+          "name": "list_templates",
+          "description": "List dynamic email templates."
+        },
+        {
+          "name": "get_stats_sg",
+          "description": "Fetch delivery + engagement stats."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Statsig",
+      "slug": "statsig",
+      "description": "Bring your Statsig workspace into Codex",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_gates",
+          "description": "List feature gates configured in Statsig."
+        },
+        {
+          "name": "get_experiment",
+          "description": "Fetch an experiment definition and exposure stats."
+        },
+        {
+          "name": "update_config",
+          "description": "Update a dynamic config value."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Vantage",
+      "slug": "vantage",
+      "description": "Cloud observability and cost optimization",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "get_cost",
+          "description": "Get current cloud spend broken down by service."
+        },
+        {
+          "name": "list_recommendations",
+          "description": "List Vantage cost-saving recommendations."
+        },
+        {
+          "name": "compare_clouds",
+          "description": "Compare equivalent resources across cloud providers."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "YepCode",
+      "slug": "yepcode",
+      "description": "Build custom AI tools using your own code",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "create_tool",
+          "description": "Define a new YepCode tool with code + schema."
+        },
+        {
+          "name": "run_tool",
+          "description": "Execute a YepCode tool against live inputs."
+        },
+        {
+          "name": "list_tools",
+          "description": "List tools in your YepCode workspace."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Render",
+      "slug": "render",
+      "description": "Deploy, debug, monitor, and migrate apps on Render",
+      "category": "Coding",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "render_deploy",
+          "description": "Trigger a deploy on a Render service."
+        },
+        {
+          "name": "render_logs",
+          "description": "Stream logs from a Render service."
+        },
+        {
+          "name": "render_list_services",
+          "description": "List services in your Render account."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Render",
+        "shortDescription": "Deploy, debug, monitor, and migrate apps on Render",
+        "longDescription": "Deploy services, stream logs, list services, and migrate apps on Render. Read-only safe; deploys gated behind explicit approval.",
+        "developerName": "Render",
+        "websiteURL": "https://render.com",
+        "privacyPolicyURL": "https://render.com/privacy",
+        "termsOfServiceURL": "https://render.com/terms",
+        "brandColor": "#46E3B7",
+        "defaultPrompts": [
+          "Show me the deploy status for my production service.",
+          "Stream the logs for the last 5 minutes."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write",
+          "Read"
+        ]
+      },
+      "auth": {
+        "method": "api_token",
+        "token_settings_url": "https://dashboard.render.com/u/settings#api-keys",
+        "validate_endpoint": "https://api.render.com/v1/services"
+      }
+    },
+    {
+      "name": "Canva",
+      "slug": "canva",
+      "description": "Search, create, edit designs",
+      "category": "Design",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_designs",
+          "description": "List designs in your Canva workspace."
+        },
+        {
+          "name": "create_design",
+          "description": "Create a new design from a template or blank canvas."
+        },
+        {
+          "name": "export_design",
+          "description": "Export a design as PDF, PNG, or other formats."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Canva",
+        "shortDescription": "Search, create, edit designs",
+        "longDescription": "Search your Canva library, create new designs, and export finished work. OAuth flow.",
+        "developerName": "Canva",
+        "websiteURL": "https://www.canva.com",
+        "privacyPolicyURL": "https://www.canva.com/policies/privacy-policy/",
+        "termsOfServiceURL": "https://www.canva.com/policies/terms-of-use/",
+        "brandColor": "#00C4CC",
+        "defaultPrompts": [
+          "Find my latest brand kit designs.",
+          "Export the team logo as PNG and SVG."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write",
+          "Read"
+        ]
+      },
+      "auth": {
+        "method": "oauth_managed"
+      }
+    },
+    {
+      "name": "Figma",
+      "slug": "figma",
+      "description": "Design-to-code workflows powered by Figma",
+      "category": "Design",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "get_file",
+          "description": "Fetch a Figma file tree (pages, frames, components)."
+        },
+        {
+          "name": "get_components",
+          "description": "List reusable components from a Figma file."
+        },
+        {
+          "name": "export_assets",
+          "description": "Export assets (PNG, SVG, PDF) from a Figma file."
+        }
+      ],
+      "config_schema": {},
+      "mcp_servers": {
+        "figma": {
+          "type": "http",
+          "url": "https://mcp.figma.com/mcp"
+        }
+      },
+      "auth": {
+        "method": "mcp_remote_oauth",
+        "mcp_url": "https://mcp.figma.com/mcp"
+      },
+      "skills": [
+        {
+          "id": "figma-code-connect",
+          "name": "figma-code-connect",
+          "description": "Creates and maintains Figma Code Connect template files that map Figma components to code snippets. Use when the user mentions Code Connect, Figma component mapping, design-to-code translation, or asks to create/update .figma.ts or .figma.js files.",
+          "source": "codex/figma"
+        },
+        {
+          "id": "figma-create-design-system-rules",
+          "name": "figma-create-design-system-rules",
+          "description": "Generates custom design system rules for the user's codebase. Use when user says \"create design system rules\", \"generate rules for my project\", \"set up design rules\", \"customize design system guidelines\", or wants to establish project-specific conventions for Figma-to-code workflows. Requires Figma MCP server connection.",
+          "source": "codex/figma"
+        },
+        {
+          "id": "figma-create-new-file",
+          "name": "figma-create-new-file",
+          "description": "Create a new blank Figma file. Use when the user wants to create a new Figma design or FigJam file, or when you need a new file before calling use_figma. Handles plan resolution via whoami if needed. Usage — /figma-create-new-file [editorType] [fileName] (e.g. /figma-create-new-file figjam My Whiteboard)",
+          "source": "codex/figma"
+        },
+        {
+          "id": "figma-generate-design",
+          "name": "figma-generate-design",
+          "description": "\"Use this skill alongside figma-use when the task involves translating an application page, view, or multi-section layout into Figma. Triggers: 'write to Figma', 'create in Figma from code', 'push page to Figma', 'take this app/page and build it in Figma', 'create a screen', 'build a landing page in Figma', 'update the Figma screen to match code', 'convert this modal/dialog/drawer/panel to Figma'. This is the preferred workflow skill whenever the user wants to build or update a full page, modal, dialog, drawer, sidebar, panel, or any composed multi-section view in Figma from code or a description. Discovers design system components, variables, and styles from Code Connect files, existing screens, and library search, then imports them and assembles views incrementally section-by-section using design system tokens instead of hardcoded values.\"",
+          "source": "codex/figma"
+        },
+        {
+          "id": "figma-generate-diagram",
+          "name": "figma-generate-diagram",
+          "description": "\"MANDATORY prerequisite — load this skill BEFORE every `generate_diagram` tool call. Routes to type-specific guidance (generic flowchart, architecture flowchart) and tells you when to proceed directly, when to use a different diagram type, or when the tool isn't the right fit at all.\"",
+          "source": "codex/figma"
+        },
+        {
+          "id": "figma-generate-library",
+          "name": "figma-generate-library",
+          "description": "\"Build or update a professional-grade design system in Figma from a codebase. Use when the user wants to create variables/tokens, build component libraries, set up theming (light/dark modes), document foundations, or reconcile gaps between code and Figma. This skill teaches WHAT to build and in WHAT ORDER — it complements the `figma-use` skill which teaches HOW to call the Plugin API. Both skills should be loaded together.\"",
+          "source": "codex/figma"
+        },
+        {
+          "id": "figma-implement-design",
+          "name": "figma-implement-design",
+          "description": "Translates Figma designs into production-ready application code with 1:1 visual fidelity. Use when implementing UI code from Figma files, when user mentions \"implement design\", \"generate code\", \"implement component\", provides Figma URLs, or asks to build components matching Figma specs. For Figma canvas writes via `use_figma`, use `figma-use`.",
+          "source": "codex/figma"
+        },
+        {
+          "id": "figma-use",
+          "name": "figma-use",
+          "description": "\"**MANDATORY prerequisite** — you MUST invoke this skill BEFORE every `use_figma` tool call. NEVER call `use_figma` directly without loading this skill first. Skipping it causes common, hard-to-debug failures. Trigger whenever the user wants to perform a write action or a unique read action that requires JavaScript execution in the Figma file context — e.g. create/edit/delete nodes, set up variables or tokens, build components and variants, modify auto-layout or fills, bind variables to properties, or inspect file structure programmatically.\"",
+          "source": "codex/figma"
+        },
+        {
+          "id": "figma-use-figjam",
+          "name": "figma-use-figjam",
+          "description": "\"This skill helps agents use Figma's use_figma MCP tool in the FigJam context. Can be used alongside figma-use which has foundational context for using the use_figma tool.\"",
+          "source": "codex/figma"
+        }
+      ],
+      "skill_count": 9
+    },
+    {
+      "name": "Remotion",
+      "slug": "remotion",
+      "description": "Create motion graphics from prompts",
+      "category": "Design",
+      "auth_type": "none",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "render_video",
+          "description": "Render a motion-graphics video from a prompt."
+        },
+        {
+          "name": "list_compositions",
+          "description": "List Remotion compositions in the project."
+        },
+        {
+          "name": "preview_frame",
+          "description": "Render a single preview frame for quick iteration."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "BioRender",
+      "slug": "biorender",
+      "description": "Create professional scientific figures in minutes",
+      "category": "Design",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_templates",
+          "description": "List dynamic email templates."
+        },
+        {
+          "name": "create_figure",
+          "description": "Create a new BioRender figure from a template."
+        },
+        {
+          "name": "export_figure",
+          "description": "Export a BioRender figure to PNG or SVG."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Cogedim",
+      "slug": "cogedim",
+      "description": "France's leading real estate developer",
+      "category": "Lifestyle",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_properties",
+          "description": "Search Cogedim real-estate listings."
+        },
+        {
+          "name": "get_property",
+          "description": "Fetch details for a Cogedim property."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "FINN",
+      "slug": "finn",
+      "description": "Flexible car subscription service",
+      "category": "Lifestyle",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_vehicles",
+          "description": "List vehicles available for FINN subscription."
+        },
+        {
+          "name": "book_subscription",
+          "description": "Book a FINN car subscription."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "MyRegistry.com",
+      "slug": "myregistry",
+      "description": "Universal gift registry",
+      "category": "Lifestyle",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_registries",
+          "description": "List MyRegistry.com registries you manage."
+        },
+        {
+          "name": "add_item",
+          "description": "Add an item to a MyRegistry.com registry."
+        },
+        {
+          "name": "share_registry",
+          "description": "Share a MyRegistry.com registry via link."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Setu Bharat Connect BillPay",
+      "slug": "setu-billpay",
+      "description": "Pay utility bills through conversation",
+      "category": "Lifestyle",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_bills",
+          "description": "List pending utility bills."
+        },
+        {
+          "name": "pay_bill",
+          "description": "Pay a selected utility bill."
+        },
+        {
+          "name": "get_receipt",
+          "description": "Fetch the receipt for a paid bill."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "WeatherPromise",
+      "slug": "weatherpromise",
+      "description": "Trip protection against rainy weather",
+      "category": "Lifestyle",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "get_quote",
+          "description": "Get a WeatherPromise protection quote."
+        },
+        {
+          "name": "create_policy",
+          "description": "Create a WeatherPromise policy for a trip."
+        },
+        {
+          "name": "file_claim",
+          "description": "File a weather-based claim on a policy."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Linear",
+      "slug": "linear",
+      "description": "Find and reference issues and projects",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_issues",
+          "description": "List open or closed issues in a repository."
+        },
+        {
+          "name": "create_issue",
+          "description": "Open a new issue with title, body, and labels."
+        },
+        {
+          "name": "update_issue",
+          "description": "Update a Linear issue status, assignee, or description."
+        },
+        {
+          "name": "list_projects",
+          "description": "List projects in your Linear workspace."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Linear",
+        "shortDescription": "Find and reference issues and projects",
+        "longDescription": "Read issues, create and update them, and reference projects. Linear MCP supports OAuth so you do not need to manage tokens.",
+        "developerName": "Linear",
+        "websiteURL": "https://linear.app",
+        "privacyPolicyURL": "https://linear.app/privacy",
+        "termsOfServiceURL": "https://linear.app/terms",
+        "brandColor": "#5E6AD2",
+        "defaultPrompts": [
+          "Show me my P0 issues.",
+          "Create an issue: 'Login button is broken on Safari'."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write",
+          "Read"
+        ]
+      },
+      "auth": {
+        "method": "mcp_remote_oauth",
+        "mcp_url": "https://mcp.linear.app/sse",
+        "fallback": {
+          "method": "api_token",
+          "token_settings_url": "https://linear.app/settings/api"
+        }
+      }
+    },
+    {
+      "name": "Atlassian Rovo",
+      "slug": "atlassian-rovo",
+      "description": "Manage Jira and Confluence fast",
+      "category": "Productivity",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_issues",
+          "description": "Search Jira issues by project, status, or JQL."
+        },
+        {
+          "name": "create_issue",
+          "description": "Open a new issue with title, body, and labels."
+        },
+        {
+          "name": "search_pages",
+          "description": "Search pages and databases by keyword."
+        },
+        {
+          "name": "read_page",
+          "description": "Read the full content of a page including blocks."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Atlassian Rovo",
+        "shortDescription": "Manage Jira and Confluence fast",
+        "longDescription": "Search Jira issues and Confluence pages, create issues, and read documentation. OAuth-based; no tokens to manage.",
+        "developerName": "Atlassian",
+        "websiteURL": "https://www.atlassian.com/software/rovo",
+        "privacyPolicyURL": "https://www.atlassian.com/legal/privacy-policy",
+        "termsOfServiceURL": "https://www.atlassian.com/legal/cloud-terms-of-service",
+        "brandColor": "#0052CC",
+        "defaultPrompts": [
+          "Find Jira issues assigned to me with 'urgent' label.",
+          "Search Confluence for the deploy runbook."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write",
+          "Read"
+        ]
+      },
+      "auth": {
+        "method": "mcp_remote_oauth",
+        "mcp_url": "https://mcp.atlassian.com/v1/sse"
+      }
+    },
+    {
+      "name": "Google Calendar",
+      "slug": "google-calendar",
+      "description": "Manage Google Calendar events and schedules",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_events",
+          "description": "List upcoming calendar events in a time window."
+        },
+        {
+          "name": "create_event",
+          "description": "Create a new event with attendees and meeting link."
+        },
+        {
+          "name": "update_event",
+          "description": "Change time, attendees, or details of an existing event."
+        },
+        {
+          "name": "find_free_time",
+          "description": "Find free slots in one or more calendars."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Google Calendar",
+        "shortDescription": "Manage Google Calendar events and schedules",
+        "longDescription": "Read calendars, create and update events, and find free slots. OAuth flow handled by Daena; no API key needed.",
+        "developerName": "Google",
+        "websiteURL": "https://calendar.google.com",
+        "privacyPolicyURL": "https://policies.google.com/privacy",
+        "termsOfServiceURL": "https://policies.google.com/terms",
+        "brandColor": "#4285F4",
+        "defaultPrompts": [
+          "What is on my calendar tomorrow?",
+          "Find a 30-minute slot this week to meet with Sarah."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write",
+          "Read"
+        ]
+      },
+      "auth": {
+        "method": "oauth_managed",
+        "scopes": [
+          "https://www.googleapis.com/auth/calendar.readonly",
+          "https://www.googleapis.com/auth/calendar.events"
+        ]
+      }
+    },
+    {
+      "name": "Gmail",
+      "slug": "gmail",
+      "description": "Read and manage Gmail",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_emails",
+          "description": "Search the inbox by sender, subject, date, or label."
+        },
+        {
+          "name": "read_email",
+          "description": "Read the body and metadata of a specific email."
+        },
+        {
+          "name": "send_email",
+          "description": "Compose and send an email to one or more recipients."
+        },
+        {
+          "name": "create_draft",
+          "description": "Save a draft email without sending."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "Gmail",
+        "shortDescription": "Read and manage Gmail",
+        "longDescription": "Read inboxes, search threads, send emails, and create drafts. OAuth-only; no tokens to manage.",
+        "developerName": "Google",
+        "websiteURL": "https://mail.google.com",
+        "privacyPolicyURL": "https://policies.google.com/privacy",
+        "termsOfServiceURL": "https://policies.google.com/terms",
+        "brandColor": "#EA4335",
+        "defaultPrompts": [
+          "Triage my unread inbox.",
+          "Draft a reply to the last email from Sarah."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write",
+          "Read"
+        ],
+        "logoPath": "/frontend/src/assets/icons/connectors/gmail.png"
+      },
+      "codex_app": {
+        "gmail": {
+          "id": "connector_2128aebfecb84f64a069897515042a44"
+        }
+      },
+      "skills": [
+        {
+          "id": "gmail",
+          "name": "gmail",
+          "description": "Manage Gmail inbox triage, mailbox search, thread summaries, action extraction, reply drafting, and email forwarding through connected Gmail data. Use when the user wants to inspect a mailbox or thread, search email with Gmail query syntax, summarize messages, extract decisions and follow-ups, prepare replies or forwarded messages, or organize messages with explicit confirmation before send, archive, delete, or label actions.",
+          "source": "codex/gmail"
+        },
+        {
+          "id": "gmail-inbox-triage",
+          "name": "gmail-inbox-triage",
+          "description": "Triage a Gmail inbox into actionable buckets such as urgent, needs reply soon, waiting, and FYI using connected Gmail data. Use when the user asks to triage the inbox, rank what needs attention, find what still needs a reply, or separate important mail from noise.",
+          "source": "codex/gmail"
+        }
+      ],
+      "skill_count": 2,
+      "auth": {
+        "method": "oauth_managed",
+        "scopes": [
+          "https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.send",
+          "https://www.googleapis.com/auth/gmail.modify"
+        ]
+      }
+    },
+    {
+      "name": "Slack",
+      "slug": "slack",
+      "description": "Read and manage Slack",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_messages",
+          "description": "Search across channels and DMs for keywords."
+        },
+        {
+          "name": "send_message",
+          "description": "Post a message to a channel or thread."
+        },
+        {
+          "name": "list_channels",
+          "description": "List channels you are a member of."
+        },
+        {
+          "name": "read_channel",
+          "description": "Read recent messages from a specific channel."
+        }
+      ],
+      "config_schema": {},
+      "mcp_servers": {
+        "slack": {
+          "type": "http",
+          "url": "https://mcp.slack.com/mcp",
+          "oauth": {
+            "clientId": "1601185624273.8899143856786",
+            "callbackPort": 3118
+          }
+        }
+      },
+      "auth": {
+        "method": "mcp_remote_oauth",
+        "mcp_url": "https://mcp.slack.com/mcp",
+        "oauth_client_id": "1601185624273.8899143856786",
+        "oauth_callback_port": 3118
+      },
+      "skills": [
+        {
+          "id": "slack-messaging",
+          "name": "slack-messaging",
+          "description": "Guidance for composing well-formatted, effective Slack messages using standard markdown",
+          "source": "codex/slack"
+        },
+        {
+          "id": "slack-search",
+          "name": "slack-search",
+          "description": "Guidance for effectively searching Slack to find messages, files, channels, and people",
+          "source": "codex/slack"
+        }
+      ],
+      "skill_count": 2
+    },
+    {
+      "name": "Teams",
+      "slug": "teams",
+      "description": "Summarize Teams and draft follow-ups",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_teams_chats",
+          "description": "List Microsoft Teams chats and channels."
+        },
+        {
+          "name": "summarize_thread",
+          "description": "Summarize a Teams thread into key points."
+        },
+        {
+          "name": "draft_followup",
+          "description": "Draft a follow-up message for a Teams meeting."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "SharePoint",
+      "slug": "sharepoint",
+      "description": "Summarize SharePoint sites and files",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_sp_sites",
+          "description": "List SharePoint sites accessible to the user."
+        },
+        {
+          "name": "read_sp_file",
+          "description": "Read the content of a SharePoint file."
+        },
+        {
+          "name": "search_sp",
+          "description": "Search SharePoint sites + documents by keyword."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Outlook Email",
+      "slug": "outlook-email",
+      "description": "Triage Outlook inboxes and draft replies",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_outlook",
+          "description": "Search the Outlook inbox."
+        },
+        {
+          "name": "draft_outlook",
+          "description": "Draft an Outlook email reply."
+        },
+        {
+          "name": "send_outlook",
+          "description": "Send an Outlook email."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Outlook Calendar",
+      "slug": "outlook-calendar",
+      "description": "Manage Outlook schedules and meetings",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_outlook_events",
+          "description": "List upcoming Outlook calendar events."
+        },
+        {
+          "name": "create_outlook_event",
+          "description": "Create a new Outlook calendar event."
+        },
+        {
+          "name": "update_outlook_event",
+          "description": "Reschedule or update an Outlook event."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Jam",
+      "slug": "jam",
+      "description": "Screen record with context",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_recordings",
+          "description": "List Jam screen recordings."
+        },
+        {
+          "name": "get_recording",
+          "description": "Fetch metadata and transcript for a Jam recording."
+        },
+        {
+          "name": "share_recording",
+          "description": "Share a Jam recording with a link."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Stripe",
+      "slug": "stripe",
+      "description": "Payments and business tools",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_charges",
+          "description": "List Stripe charges with status, amount, and customer."
+        },
+        {
+          "name": "list_subscriptions",
+          "description": "List active subscriptions and their customers."
+        },
+        {
+          "name": "create_invoice",
+          "description": "Create and send a PayPal invoice to a customer."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Box",
+      "slug": "box",
+      "description": "Search and reference your documents",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_box",
+          "description": "Search Box for documents by keyword."
+        },
+        {
+          "name": "read_box_file",
+          "description": "Read the content of a Box file."
+        },
+        {
+          "name": "upload_box",
+          "description": "Upload a file to a Box folder."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Google Drive",
+      "slug": "google-drive",
+      "description": "Work across Drive, Docs, Sheets, and Slides",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_files",
+          "description": "Search files, folders, and shared drives by keyword or metadata."
+        },
+        {
+          "name": "read_file",
+          "description": "Read the content of a file you own or have access to."
+        },
+        {
+          "name": "upload_file",
+          "description": "Upload a new file or new version to Drive."
+        },
+        {
+          "name": "list_folders",
+          "description": "List folders in a drive or parent folder."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Notion",
+      "slug": "notion",
+      "description": "Specs, research, meetings, and knowledge capture",
+      "category": "Productivity",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_pages",
+          "description": "Search pages and databases by keyword."
+        },
+        {
+          "name": "read_page",
+          "description": "Read the full content of a page including blocks."
+        },
+        {
+          "name": "create_page",
+          "description": "Create a new page under a parent page or database."
+        },
+        {
+          "name": "query_database",
+          "description": "Query a Notion database with filters and sorting."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Amplitude",
+      "slug": "amplitude",
+      "description": "Product analytics and funnels",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "query_events",
+          "description": "Query Amplitude events with filters."
+        },
+        {
+          "name": "list_funnels",
+          "description": "List defined Amplitude funnels."
+        },
+        {
+          "name": "get_cohort",
+          "description": "Fetch an Amplitude cohort definition."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Attio",
+      "slug": "attio",
+      "description": "Connects Codex directly to your CRM workspace",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_records",
+          "description": "Search CRM records across objects."
+        },
+        {
+          "name": "create_record",
+          "description": "Create a new CRM record."
+        },
+        {
+          "name": "update_record",
+          "description": "Update fields on an existing CRM record."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Brand24",
+      "slug": "brand24",
+      "description": "Brand mentions, sentiment, and media coverage",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_mentions",
+          "description": "Search recent brand mentions."
+        },
+        {
+          "name": "get_sentiment",
+          "description": "Get sentiment score for a tracked brand."
+        },
+        {
+          "name": "list_projects_b24",
+          "description": "List Brand24 tracking projects."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Brex",
+      "slug": "brex",
+      "description": "Review company finances through conversation",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_transactions_brex",
+          "description": "List Brex card transactions."
+        },
+        {
+          "name": "list_cards",
+          "description": "List Brex cards and their limits."
+        },
+        {
+          "name": "get_balance",
+          "description": "Fetch the current Brex account balance."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Carta CRM",
+      "slug": "carta",
+      "description": "Deal flow CRM for investment teams",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_deals",
+          "description": "List Carta deals in the pipeline."
+        },
+        {
+          "name": "get_company",
+          "description": "Fetch Carta company profile and fundraising history."
+        },
+        {
+          "name": "update_deal",
+          "description": "Update stage or notes on a Carta deal."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Channel99",
+      "slug": "channel99",
+      "description": "Real-time go-to-market intelligence",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "get_gtm_metrics",
+          "description": "Get real-time go-to-market metrics."
+        },
+        {
+          "name": "list_accounts",
+          "description": "List target accounts from Channel99."
+        },
+        {
+          "name": "trace_pipeline",
+          "description": "Trace a deal across the GTM pipeline."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Circleback",
+      "slug": "circleback",
+      "description": "AI-powered meeting notes and action items",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_meetings_cb",
+          "description": "List meetings tracked by Circleback."
+        },
+        {
+          "name": "get_summary",
+          "description": "Fetch AI summary for a meeting."
+        },
+        {
+          "name": "list_actions",
+          "description": "List action items extracted from meetings."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "ClickUp",
+      "slug": "clickup",
+      "description": "Turn Codex into your ClickUp command center",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_tasks_cu",
+          "description": "List ClickUp tasks in a space."
+        },
+        {
+          "name": "create_task_cu",
+          "description": "Create a new ClickUp task."
+        },
+        {
+          "name": "update_task_cu",
+          "description": "Update a ClickUp task status or assignee."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Common Room",
+      "slug": "common-room",
+      "description": "Complete buyer intelligence within Codex",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_signals",
+          "description": "Search Common Room community signals."
+        },
+        {
+          "name": "list_community",
+          "description": "List community members with filters."
+        },
+        {
+          "name": "find_prospect",
+          "description": "Find a prospect matching an ICP profile."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Conductor",
+      "slug": "conductor",
+      "description": "Brand visibility and sentiment metrics",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "get_visibility",
+          "description": "Get brand-visibility score for a topic."
+        },
+        {
+          "name": "get_sentiment_cond",
+          "description": "Get Conductor sentiment score."
+        },
+        {
+          "name": "list_topics",
+          "description": "List monitored topics in Conductor."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Coupler.io",
+      "slug": "coupler",
+      "description": "Analyze multi-channel business data",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_importers",
+          "description": "List Coupler.io data importers."
+        },
+        {
+          "name": "run_importer",
+          "description": "Run a Coupler.io importer manually."
+        },
+        {
+          "name": "list_sources",
+          "description": "List available data sources."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Coveo",
+      "slug": "coveo",
+      "description": "Search your enterprise content",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_coveo",
+          "description": "Search enterprise content via Coveo."
+        },
+        {
+          "name": "list_sources_coveo",
+          "description": "List indexed Coveo sources."
+        },
+        {
+          "name": "get_document",
+          "description": "Fetch a Coveo-indexed document."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Demandbase",
+      "slug": "demandbase",
+      "description": "B2B data for sales, marketing, and GTM",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_accounts_db",
+          "description": "Search Demandbase accounts by intent or firmographic."
+        },
+        {
+          "name": "get_intent",
+          "description": "Get intent signals for an account."
+        },
+        {
+          "name": "list_campaigns",
+          "description": "List active Demandbase campaigns."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Docket",
+      "slug": "docket",
+      "description": "Sales knowledge as an instant superpower",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "ask_docket",
+          "description": "Ask Docket AI a sales-knowledge question."
+        },
+        {
+          "name": "list_playbooks",
+          "description": "List Docket playbooks."
+        },
+        {
+          "name": "get_answer",
+          "description": "Get a Docket answer with source citations."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Domotz (Preview)",
+      "slug": "domotz",
+      "description": "Monitor and manage network infrastructure",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_devices_net",
+          "description": "List Domotz-monitored network devices."
+        },
+        {
+          "name": "get_alerts",
+          "description": "Get current Domotz alerts."
+        },
+        {
+          "name": "ping_device",
+          "description": "Ping a network device to verify reachability."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Dovetail",
+      "slug": "dovetail",
+      "description": "Turn customer feedback into decisions",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_insights",
+          "description": "Search Dovetail insights by theme."
+        },
+        {
+          "name": "list_projects_dt",
+          "description": "List Dovetail projects."
+        },
+        {
+          "name": "get_theme",
+          "description": "Fetch a Dovetail theme and related data."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Egnyte",
+      "slug": "egnyte",
+      "description": "Work with documents and files in Egnyte",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_egnyte",
+          "description": "Search Egnyte-stored documents."
+        },
+        {
+          "name": "read_egnyte",
+          "description": "Read an Egnyte file."
+        },
+        {
+          "name": "upload_egnyte",
+          "description": "Upload a file to an Egnyte folder."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Fireflies",
+      "slug": "fireflies",
+      "description": "Meetings and knowledge into Codex",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_meetings_ff",
+          "description": "List Fireflies meetings."
+        },
+        {
+          "name": "get_transcript",
+          "description": "Fetch transcript for a recorded meeting."
+        },
+        {
+          "name": "search_meetings",
+          "description": "Search Fireflies meetings by keyword."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Fyxer",
+      "slug": "fyxer",
+      "description": "Write emails that sound like you",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "draft_email_fx",
+          "description": "Draft an email in your personal voice."
+        },
+        {
+          "name": "list_templates_fx",
+          "description": "List Fyxer email templates."
+        },
+        {
+          "name": "send_email_fx",
+          "description": "Send an email composed via Fyxer."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Granola",
+      "slug": "granola",
+      "description": "Meeting history and AI notes",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_granola_meetings",
+          "description": "List Granola meetings."
+        },
+        {
+          "name": "get_notes",
+          "description": "Fetch Granola notes for a meeting."
+        },
+        {
+          "name": "search_granola",
+          "description": "Search Granola knowledge base."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Happenstance",
+      "slug": "happenstance",
+      "description": "Search your professional network",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_network",
+          "description": "Search your professional network."
+        },
+        {
+          "name": "find_person",
+          "description": "Find a person matching given criteria."
+        },
+        {
+          "name": "suggest_intro",
+          "description": "Suggest an introduction path to a target."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Help Scout",
+      "slug": "help-scout",
+      "description": "Sync Help Scout mailboxes and conversations",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_hs_conversations",
+          "description": "List Help Scout conversations."
+        },
+        {
+          "name": "reply_hs",
+          "description": "Reply to a Help Scout conversation."
+        },
+        {
+          "name": "assign_hs",
+          "description": "Assign a Help Scout conversation to a teammate."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "HighLevel",
+      "slug": "highlevel",
+      "description": "Unified CRM, automation, and client comms",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_hl_contacts",
+          "description": "List HighLevel CRM contacts."
+        },
+        {
+          "name": "send_campaign",
+          "description": "Send a HighLevel campaign."
+        },
+        {
+          "name": "list_pipelines_hl",
+          "description": "List HighLevel pipelines."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "HubSpot",
+      "slug": "hubspot",
+      "description": "Work with your HubSpot CRM data",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_hubspot",
+          "description": "Search HubSpot CRM records."
+        },
+        {
+          "name": "create_hs_contact",
+          "description": "Create a new HubSpot contact."
+        },
+        {
+          "name": "update_hs_deal",
+          "description": "Update a HubSpot deal stage or fields."
+        }
+      ],
+      "config_schema": {},
+      "interface": {
+        "displayName": "HubSpot",
+        "shortDescription": "Work with your HubSpot data to analyze patterns, create and update records, and manage your CRM operations.",
+        "longDescription": "Read and write deals, contacts, companies, tickets, and engagements. Prepare reports, update deal stages, log calls, create tasks, or review pipeline before meetings.",
+        "developerName": "HubSpot",
+        "websiteURL": "https://www.hubspot.com",
+        "privacyPolicyURL": "https://legal.hubspot.com/privacy-policy",
+        "termsOfServiceURL": "https://legal.hubspot.com/terms-of-service",
+        "brandColor": "#FF7A59",
+        "defaultPrompts": [
+          "Show me deals closing this quarter.",
+          "Create a follow-up task to schedule a meeting with the deal owner."
+        ],
+        "capabilities": [
+          "Interactive",
+          "Write",
+          "Read"
+        ],
+        "logoPath": "/frontend/src/assets/icons/connectors/hubspot.png"
+      },
+      "codex_app": {
+        "hubspot": {
+          "id": "asdk_app_697acb8e53d88191bf7a79e62012ae14"
+        }
+      },
+      "skill_count": 0,
+      "auth": {
+        "method": "oauth_managed",
+        "token_settings_url": "https://app.hubspot.com/private-apps",
+        "fallback": {
+          "method": "api_token",
+          "token_help": "Private app access tokens with crm.objects scopes."
+        }
+      }
+    },
+    {
+      "name": "KeyBid Puls",
+      "slug": "keybid-puls",
+      "description": "Short-term rental ROI calculator",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "calculate_roi",
+          "description": "Calculate ROI for a short-term-rental property."
+        },
+        {
+          "name": "list_properties_kb",
+          "description": "List properties tracked in KeyBid Puls."
+        },
+        {
+          "name": "forecast_income",
+          "description": "Forecast expected rental income."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Mem",
+      "slug": "mem",
+      "description": "Give Codex your second-brain context",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_mem",
+          "description": "Search your Mem second-brain."
+        },
+        {
+          "name": "create_mem_note",
+          "description": "Create a Mem note."
+        },
+        {
+          "name": "list_mem_collections",
+          "description": "List Mem collections."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Monday.com",
+      "slug": "monday",
+      "description": "Powerful monday.com connector for AI agents",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_boards",
+          "description": "List monday.com boards."
+        },
+        {
+          "name": "create_item_mon",
+          "description": "Create a new monday.com item on a board."
+        },
+        {
+          "name": "update_item_mon",
+          "description": "Update a monday.com item."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "MotherDuck",
+      "slug": "motherduck",
+      "description": "Connect AI assistants to your MotherDuck warehouse",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "run_sql_md",
+          "description": "Run a SQL query against MotherDuck."
+        },
+        {
+          "name": "list_tables_md",
+          "description": "List tables in a MotherDuck database."
+        },
+        {
+          "name": "describe_table_md",
+          "description": "Describe the schema of a MotherDuck table."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Network Solutions",
+      "slug": "network-solutions",
+      "description": "Find available domains conversationally",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "check_domain",
+          "description": "Check whether a domain is available."
+        },
+        {
+          "name": "suggest_domains",
+          "description": "Suggest alternative available domains."
+        },
+        {
+          "name": "register_domain",
+          "description": "Register a domain via Network Solutions."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Omni Analytics",
+      "slug": "omni-analytics",
+      "description": "Query your semantic model directly",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "query_omni",
+          "description": "Query Omni Analytics using the semantic model."
+        },
+        {
+          "name": "list_models_omni",
+          "description": "List Omni semantic models."
+        },
+        {
+          "name": "get_metric",
+          "description": "Fetch a specific Omni metric value."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Otter.ai",
+      "slug": "otter",
+      "description": "Meeting intelligence, transcripts, and search",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_otter_meetings",
+          "description": "List Otter.ai meetings."
+        },
+        {
+          "name": "get_transcript_ot",
+          "description": "Fetch an Otter.ai meeting transcript."
+        },
+        {
+          "name": "search_otter",
+          "description": "Search Otter.ai transcripts."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Pipedrive",
+      "slug": "pipedrive",
+      "description": "Sync Pipedrive deals and contacts",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_deals_pd",
+          "description": "List Pipedrive deals."
+        },
+        {
+          "name": "create_pd_deal",
+          "description": "Create a new Pipedrive deal."
+        },
+        {
+          "name": "update_pd_contact",
+          "description": "Update a Pipedrive contact."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Pylon",
+      "slug": "pylon",
+      "description": "Customer support platform in Codex",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_pylon_tickets",
+          "description": "List Pylon support tickets."
+        },
+        {
+          "name": "reply_pylon",
+          "description": "Reply to a Pylon ticket."
+        },
+        {
+          "name": "resolve_pylon",
+          "description": "Mark a Pylon ticket as resolved."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Ranked AI",
+      "slug": "ranked-ai",
+      "description": "Industry-leading AI SEO and PPC software",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "run_seo_audit",
+          "description": "Run a Ranked AI SEO audit."
+        },
+        {
+          "name": "list_campaigns_ra",
+          "description": "List Ranked AI campaigns."
+        },
+        {
+          "name": "get_ranking",
+          "description": "Get current SERP ranking for a keyword."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Razorpay",
+      "slug": "razorpay",
+      "description": "Access Razorpay payment data conversationally",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_payments_rz",
+          "description": "List Razorpay payments."
+        },
+        {
+          "name": "create_refund_rz",
+          "description": "Issue a Razorpay refund."
+        },
+        {
+          "name": "get_settlement",
+          "description": "Get Razorpay settlement details."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Read AI",
+      "slug": "read-ai",
+      "description": "Meeting intelligence in your AI workflows",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_read_meetings",
+          "description": "List Read AI meetings."
+        },
+        {
+          "name": "get_summary_read",
+          "description": "Fetch a Read AI meeting summary."
+        },
+        {
+          "name": "search_read",
+          "description": "Search Read AI intelligence."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Responsive",
+      "slug": "responsive",
+      "description": "Work with your organization data in Codex",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_responsive",
+          "description": "Search Responsive RFP content library."
+        },
+        {
+          "name": "create_rfp",
+          "description": "Create a new RFP in Responsive."
+        },
+        {
+          "name": "list_projects_rsp",
+          "description": "List Responsive projects."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Semrush",
+      "slug": "semrush",
+      "description": "SEO and traffic data for domains and keywords",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "get_domain_overview",
+          "description": "Get Semrush overview for a domain."
+        },
+        {
+          "name": "list_keywords",
+          "description": "List tracked keywords in Semrush."
+        },
+        {
+          "name": "get_backlinks",
+          "description": "Fetch backlinks for a domain."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "SignNow",
+      "slug": "signnow",
+      "description": "Get documents signed faster",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_documents_sn",
+          "description": "List SignNow documents awaiting signature."
+        },
+        {
+          "name": "send_for_signature",
+          "description": "Send a document out for SignNow signature."
+        },
+        {
+          "name": "get_signing_status",
+          "description": "Check the signing status of a document."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "SkyWatch",
+      "slug": "skywatch",
+      "description": "Satellite imagery from top providers",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_imagery",
+          "description": "Search satellite imagery archive."
+        },
+        {
+          "name": "order_capture",
+          "description": "Order a new satellite capture for a bounding box."
+        },
+        {
+          "name": "list_archive",
+          "description": "List available satellite archive entries."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Streak",
+      "slug": "streak",
+      "description": "CRM built directly into Gmail",
+      "category": "Productivity",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_pipelines_st",
+          "description": "List Streak pipelines inside Gmail."
+        },
+        {
+          "name": "create_box_st",
+          "description": "Create a new Streak box (deal)."
+        },
+        {
+          "name": "update_box_st",
+          "description": "Update a Streak box."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Teamwork.com",
+      "slug": "teamwork",
+      "description": "Sync Teamwork projects and tasks",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_tw_projects",
+          "description": "List Teamwork.com projects."
+        },
+        {
+          "name": "create_tw_task",
+          "description": "Create a Teamwork.com task."
+        },
+        {
+          "name": "update_tw_task",
+          "description": "Update a Teamwork.com task status or assignee."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "United Rentals",
+      "slug": "united-rentals",
+      "description": "Get the right equipment for the job",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_equipment",
+          "description": "Search United Rentals equipment catalog."
+        },
+        {
+          "name": "get_quote_ur",
+          "description": "Get a United Rentals rental quote."
+        },
+        {
+          "name": "place_order",
+          "description": "Place a rental order."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Waldo",
+      "slug": "waldo",
+      "description": "AI-powered strategy for agencies and brands",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "get_strategy",
+          "description": "Get a Waldo strategic recommendation."
+        },
+        {
+          "name": "list_plans_waldo",
+          "description": "List Waldo strategy plans."
+        },
+        {
+          "name": "run_analysis",
+          "description": "Run a Waldo strategy analysis."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Windsor.ai",
+      "slug": "windsor",
+      "description": "Connect marketing and business data",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_sources_ws",
+          "description": "List Windsor.ai marketing data sources."
+        },
+        {
+          "name": "run_sync",
+          "description": "Run a Windsor.ai data sync."
+        },
+        {
+          "name": "get_dataset",
+          "description": "Fetch a Windsor.ai dataset."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Life Science Research",
+      "slug": "life-science-research",
+      "description": "Life-sciences research with evidence synthesis",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_papers",
+          "description": "Search biomedical / life-sciences literature."
+        },
+        {
+          "name": "synthesize_evidence",
+          "description": "Synthesize evidence across multiple papers."
+        },
+        {
+          "name": "run_parallel_analysis",
+          "description": "Run parallel subagent analysis on a research question."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Alpaca",
+      "slug": "alpaca",
+      "description": "Stop watching the markets",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "get_quote_al",
+          "description": "Get the current Alpaca market quote."
+        },
+        {
+          "name": "list_positions",
+          "description": "List open Alpaca positions."
+        },
+        {
+          "name": "place_order_al",
+          "description": "Place an Alpaca trade order."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Binance",
+      "slug": "binance",
+      "description": "Explore Binance public market data",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "get_ticker",
+          "description": "Get Binance ticker data."
+        },
+        {
+          "name": "list_pairs",
+          "description": "List available Binance trading pairs."
+        },
+        {
+          "name": "get_orderbook",
+          "description": "Fetch the Binance order book snapshot."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "CB Insights",
+      "slug": "cb-insights",
+      "description": "Private-markets research agent",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_companies_cb",
+          "description": "Search CB Insights companies."
+        },
+        {
+          "name": "get_funding",
+          "description": "Fetch funding history for a company."
+        },
+        {
+          "name": "list_industries",
+          "description": "List CB Insights industries."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Cube",
+      "slug": "cube",
+      "description": "Query live Cube data including variances",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "query_cube",
+          "description": "Query Cube data with measures and dimensions."
+        },
+        {
+          "name": "list_measures",
+          "description": "List Cube measures."
+        },
+        {
+          "name": "list_dimensions",
+          "description": "List Cube dimensions."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Daloopa",
+      "slug": "daloopa",
+      "description": "High-quality fundamental data from SEC filings",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_filings",
+          "description": "Search Daloopa-indexed SEC filings."
+        },
+        {
+          "name": "get_fundamentals",
+          "description": "Fetch structured company fundamentals."
+        },
+        {
+          "name": "list_datasets_da",
+          "description": "List Daloopa datasets."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Dow Jones Factiva",
+      "slug": "factiva",
+      "description": "Search the Factiva global news archive",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_factiva",
+          "description": "Search the Factiva news archive."
+        },
+        {
+          "name": "get_article_factiva",
+          "description": "Fetch a Factiva article by id."
+        },
+        {
+          "name": "list_sources_factiva",
+          "description": "List Factiva news sources."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "GovTribe",
+      "slug": "govtribe",
+      "description": "Government contracts, awards, and vendors",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_contracts",
+          "description": "Search government contracts on GovTribe."
+        },
+        {
+          "name": "list_awards",
+          "description": "List awarded government contracts."
+        },
+        {
+          "name": "get_vendor",
+          "description": "Fetch a government vendor profile."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Moody's",
+      "slug": "moodys",
+      "description": "Credit and risk intelligence",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "get_rating",
+          "description": "Fetch a Moody's credit rating."
+        },
+        {
+          "name": "list_issuers",
+          "description": "List Moody's-rated issuers."
+        },
+        {
+          "name": "get_risk_report",
+          "description": "Fetch a Moody's risk report."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Morningstar",
+      "slug": "morningstar",
+      "description": "Investment and fund research",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_funds",
+          "description": "Search Morningstar funds."
+        },
+        {
+          "name": "get_fund_profile",
+          "description": "Fetch a Morningstar fund profile."
+        },
+        {
+          "name": "list_holdings",
+          "description": "List top holdings for a fund."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "MT Newswires",
+      "slug": "mt-newswires",
+      "description": "Real-time global financial news",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "latest_news",
+          "description": "Fetch the latest MT Newswires headlines."
+        },
+        {
+          "name": "search_news_mt",
+          "description": "Search MT Newswires by query."
+        },
+        {
+          "name": "get_article_mt",
+          "description": "Fetch an MT Newswires article by id."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Particl Market Research",
+      "slug": "particl",
+      "description": "E-commerce research answers in Codex",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_products",
+          "description": "Search Particl e-commerce product data."
+        },
+        {
+          "name": "get_price_trend",
+          "description": "Get price trend for a product."
+        },
+        {
+          "name": "list_competitors",
+          "description": "List competing products or brands."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "PitchBook",
+      "slug": "pitchbook",
+      "description": "Structured private-capital market data",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_companies_pb",
+          "description": "Search PitchBook companies."
+        },
+        {
+          "name": "get_deal_pb",
+          "description": "Fetch a PitchBook deal record."
+        },
+        {
+          "name": "list_funds_pb",
+          "description": "List PitchBook funds."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "PolicyNote",
+      "slug": "policynote",
+      "description": "Structured policy and regulatory intelligence",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_policies",
+          "description": "Search PolicyNote policy + regulatory content."
+        },
+        {
+          "name": "get_regulation",
+          "description": "Fetch a specific regulation."
+        },
+        {
+          "name": "list_jurisdictions",
+          "description": "List PolicyNote jurisdictions."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Quartr",
+      "slug": "quartr",
+      "description": "Structured IR data from 14,500+ companies",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_companies_q",
+          "description": "Search Quartr-covered public companies."
+        },
+        {
+          "name": "get_earnings",
+          "description": "Fetch earnings call data for a company."
+        },
+        {
+          "name": "list_events_q",
+          "description": "List upcoming IR events."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Readwise",
+      "slug": "readwise",
+      "description": "Official app for Readwise and Reader",
+      "category": "Research",
+      "auth_type": "oauth",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_highlights",
+          "description": "List Readwise highlights."
+        },
+        {
+          "name": "get_book",
+          "description": "Fetch a Readwise book summary."
+        },
+        {
+          "name": "search_readwise",
+          "description": "Search Readwise content."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Scite",
+      "slug": "scite",
+      "description": "Answers grounded in peer-reviewed research",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_scite",
+          "description": "Search Scite for peer-reviewed answers."
+        },
+        {
+          "name": "get_citation_context",
+          "description": "Fetch the citation context around a claim."
+        },
+        {
+          "name": "verify_claim",
+          "description": "Verify a claim against peer-reviewed research."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Taxdown",
+      "slug": "taxdown",
+      "description": "Spanish tax guidance for individuals and self-employed",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "ask_tax_es",
+          "description": "Ask Taxdown a Spanish-tax question."
+        },
+        {
+          "name": "list_deductions_es",
+          "description": "List Spanish tax deductions available to the user."
+        },
+        {
+          "name": "simulate_return_es",
+          "description": "Simulate a Spanish tax-return outcome."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Third Bridge",
+      "slug": "third-bridge",
+      "description": "Expert industry insights for research",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "search_transcripts_tb",
+          "description": "Search Third Bridge expert transcripts."
+        },
+        {
+          "name": "get_expert",
+          "description": "Fetch a Third Bridge expert profile."
+        },
+        {
+          "name": "list_industries_tb",
+          "description": "List Third Bridge industries."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Tinman AI",
+      "slug": "tinman-ai",
+      "description": "Underwrite home financing scenarios",
+      "category": "Research",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "underwrite_scenario",
+          "description": "Underwrite a home-financing scenario."
+        },
+        {
+          "name": "list_products_tm",
+          "description": "List Tinman AI loan products."
+        },
+        {
+          "name": "get_answer_tm",
+          "description": "Get a Tinman AI loan-officer answer."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "PayPal",
+      "slug": "paypal",
+      "description": "Payments and invoicing",
+      "category": "Productivity",
+      "auth_type": "api_key",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_transactions",
+          "description": "List recent PayPal transactions in a time window."
+        },
+        {
+          "name": "create_invoice",
+          "description": "Create and send a PayPal invoice to a customer."
+        },
+        {
+          "name": "send_payment",
+          "description": "Send a payment to a PayPal account."
+        }
+      ],
+      "config_schema": {}
+    },
+    {
+      "name": "Intercom",
+      "slug": "intercom",
+      "description": "Customer messaging platform",
+      "category": "Productivity",
+      "auth_type": "token",
+      "icon_url": null,
+      "tools": [
+        {
+          "name": "list_conversations",
+          "description": "List recent support conversations."
+        },
+        {
+          "name": "send_message",
+          "description": "Post a message to a channel or thread."
+        },
+        {
+          "name": "search_contacts",
+          "description": "Search Intercom contacts by email or external id."
+        }
+      ],
+      "config_schema": {}
+    }
+  ]
+}
