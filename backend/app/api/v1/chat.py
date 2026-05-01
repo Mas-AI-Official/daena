@@ -21,6 +21,7 @@ from app.schemas.chat import (
     TruncateMessagesRequest,
     UpdateSessionRequest,
 )
+from app.services.audit import AuditService
 from app.services.chat import ChatService
 
 router = APIRouter()
@@ -409,8 +410,15 @@ async def update_session(
     body: UpdateSessionRequest,
     user: CurrentUser = Depends(get_current_user),
     service: ChatService = Depends(get_chat_service),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Update session metadata (title, mode, archive status)."""
+    """Update session metadata (title, mode, archive status).
+
+    Phase 10 commit-4: emit a session-updated audit event so renames,
+    archives, and other metadata mutations land in the tamper-evident
+    ledger. Pre-Phase-10 these were silent DB writes (no audit row),
+    which the matrix audit flagged as a Rule-17 honesty violation.
+    """
     result = await service.update_session(
         session_id=session_id,
         tenant_id=user.tenant_id,
@@ -422,6 +430,36 @@ async def update_session(
         autopilot=body.autopilot,
         think_mode=body.think_mode,
     )
+    # Best-effort audit emit — never blocks the user mutation.
+    try:
+        # Choose action_type by the most distinctive change in the body
+        # so the ledger says "archived" / "renamed" / "updated" rather
+        # than a generic catch-all.
+        if body.is_archived is True:
+            action_type = "chat_session.archived"
+        elif body.is_archived is False:
+            action_type = "chat_session.unarchived"
+        elif body.title is not None:
+            action_type = "chat_session.renamed"
+        else:
+            action_type = "chat_session.updated"
+        await AuditService(db).log_decision(
+            tenant_id=user.tenant_id,
+            actor_id=user.id,
+            actor_type="USER",
+            action_type=action_type,
+            action_params={
+                "session_id": str(session_id),
+                "title": body.title,
+                "is_archived": body.is_archived,
+            },
+            result="ALLOWED",
+            risk_level="LOW",
+            governance_tier=1,
+            session_id=session_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _chat_logger.warning("audit_emit_failed action=chat_session.update err=%s", exc)
     return {"success": True, "data": result}
 
 
@@ -430,12 +468,31 @@ async def delete_session(
     session_id: UUID,
     user: CurrentUser = Depends(get_current_user),
     service: ChatService = Depends(get_chat_service),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Soft-delete a chat session (sets is_archived=True)."""
+    """Soft-delete a chat session (sets is_archived=True).
+
+    Phase 10 commit-4: emit a session-deleted audit event so the
+    deletion lands in the tamper-evident ledger.
+    """
     await service.delete_session(
         session_id=session_id,
         tenant_id=user.tenant_id,
     )
+    try:
+        await AuditService(db).log_decision(
+            tenant_id=user.tenant_id,
+            actor_id=user.id,
+            actor_type="USER",
+            action_type="chat_session.deleted",
+            action_params={"session_id": str(session_id)},
+            result="ALLOWED",
+            risk_level="LOW",
+            governance_tier=1,
+            session_id=session_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _chat_logger.warning("audit_emit_failed action=chat_session.delete err=%s", exc)
     return {"success": True}
 
 

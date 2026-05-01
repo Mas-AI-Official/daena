@@ -26,6 +26,10 @@ interface ChatInputProps {
   isStreaming: boolean
   disabled?: boolean
   placeholder?: string
+  // Optional one-shot prefill (e.g. project context from /chat?project=<id>).
+  // Owner clears the value once it has been written into the textarea.
+  prefillValue?: string | null
+  onPrefillConsumed?: () => void
 }
 
 interface ModelOption {
@@ -44,8 +48,19 @@ function getModelBadge(model: ModelRegistryModelResponse): string | undefined {
   return undefined
 }
 
-export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder: customPlaceholder }: ChatInputProps) {
+export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder: customPlaceholder, prefillValue, onPrefillConsumed }: ChatInputProps) {
   const [value, setValue] = useState('')
+
+  // One-shot prefill: when ChatPage detects /chat?project=<id> it drops a
+  // pre-staged context string here. We only apply it if the textarea is
+  // empty (don't clobber what the user is already typing).
+  useEffect(() => {
+    if (prefillValue && value === '') {
+      setValue(prefillValue)
+      onPrefillConsumed?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillValue])
   const [modelOpen, setModelOpen] = useState(false)
   const [activeProvider, setActiveProvider] = useState<string | null>(null)
   const [attachedFiles, setAttachedFiles] = useState<{ file_id: string; filename: string; size_bytes: number }[]>([])
@@ -602,10 +617,20 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
             {attachedFiles.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {attachedFiles.map((f) => (
-                  <span key={f.file_id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary-500/10 border border-primary-500/20 text-xs text-primary-300">
+                  <span
+                    key={f.file_id}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary-500/10 border border-primary-500/20 text-xs text-primary-300"
+                    title={`${f.filename} — remove from this draft only. The file remains in /files; delete it there if you want it gone.`}
+                  >
                     <Paperclip size={10} />
                     <span className="max-w-[120px] truncate">{f.filename}</span>
-                    <button onClick={() => removeAttachment(f.file_id)} className="hover:text-accent-red transition-colors cursor-pointer"><X size={10} /></button>
+                    <button
+                      onClick={() => removeAttachment(f.file_id)}
+                      className="hover:text-accent-red transition-colors cursor-pointer"
+                      aria-label={`Remove ${f.filename} from draft (file stays in /files)`}
+                    >
+                      <X size={10} />
+                    </button>
                   </span>
                 ))}
               </div>
