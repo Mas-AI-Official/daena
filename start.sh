@@ -13,10 +13,10 @@ set -e
 cd /app
 
 echo "[entrypoint] Running alembic upgrade head..."
-python -m alembic -c migrations/alembic.ini upgrade head
+python3 -m alembic -c migrations/alembic.ini upgrade head
 
 echo "[entrypoint] Starting uvicorn on port ${PORT:-8000}..."
-exec uvicorn app.main:app \
+exec python3 -m uvicorn app.main:app \
   --host 0.0.0.0 \
   --port "${PORT:-8000}" \
   --workers 2 \
