@@ -2,10 +2,65 @@
 
 **Branch:** `rebuild-connections-mcp-runtime`
 **HEAD at inventory time:** `f2a30a3` (post Phase 3 + OAuthSetupModal supplement)
+**Original total files dirty:** 194 (109 modified, 82 untracked, 3 deleted)
 **Generated:** 2026-04-30
-**Total files dirty:** 194 (109 modified, 82 untracked, 3 deleted)
+**Cleanup batch update:** 2026-04-30 (post hygiene commits B + C)
 
-> Per founder pre-Phase-4a hygiene checkpoint instruction. Do NOT commit any of these files as a result of this inventory. Do NOT reset. This is documentation only.
+> Per founder pre-Phase-4a hygiene checkpoint instruction.
+
+---
+
+## CLEANUP BATCH UPDATE (2026-04-30)
+
+Two prerequisite hygiene commits landed per founder option B:
+
+| Commit | Title | Files committed |
+|---|---|---|
+| `4d97f88` | `pre-phase4a: land prerequisite migrations 003-005` | 3 backend migration files (003 workstreams, 004 chat-session FK, 005 cron/mcp/background) |
+| `7862991` | `pre-phase4a: sync approved skills artifacts` | 62 files across 27 skill dirs (per CLAUDE.md SKILLS SYNC RULE) |
+
+**Post-cleanup dirty count: 164** (109 modified, 52 untracked, 3 deleted).
+
+Net change vs original 194: **-30** (3 migrations + 27 skill dirs reduced 27 untracked entries; 62 underlying skill files were rolled into 27 entries by `git status --short` directory shorthand).
+
+### What was deliberately NOT committed in cleanup
+
+- The 4 NEEDS_FOUNDER_DECISION files (main.py, models/__init__.py, core/database.py, core/constants.py) -- founder picked option B which routes them to a follow-up cleanup commit, not this batch.
+- The model files referenced by the new migrations (workstream.py, cron_run.py, mcp_server.py, background_task.py) -- they remain dirty/untracked. Migrations apply cleanly without them (CREATE TABLE is self-contained), but app code that queries the new tables stays broken until Phase 4b lands its model commit.
+- All 36 KEEP_DIRTY_FOR_PHASE4B files -- left dirty intentionally for Phase 4b absorption.
+- All 50+ frontend modifications outside scope -- deferred until founder reviews per-file diffs.
+
+### Updated recommendation summary (164 remaining files)
+
+| Recommendation | Was | Now |
+|---|---|---|
+| `COMMIT_SEPARATE_BEFORE_PHASE4A` | 150 | **120** (subtract 3 migrations + 27 skill dirs) |
+| `KEEP_DIRTY_FOR_PHASE4B` | 36 | **36** (unchanged) |
+| `IGNORE_FOR_NOW` | 4 | **4** (unchanged) |
+| `NEEDS_FOUNDER_DECISION` | 4 | **4** (unchanged) |
+| **TOTAL** | **194** | **164** |
+
+### Updated Phase 4a risk assessment
+
+`backend/app/core/vault.py` is still NOT in the dirty list. Cipher rewrite has clean starting point.
+
+The 4 NEEDS_FOUNDER_DECISION files (main.py + models/__init__.py + core/database.py + core/constants.py) are still dirty. Per the option (C) recommendation in the original §9 of this doc: Phase 4a's first PR should restrict to NET-NEW files only:
+- `backend/app/core/vault_v2.py` (or rewrite of vault.py to envelope crypto)
+- `backend/app/models/secret.py` (new SQLAlchemy model)
+- `backend/migrations/versions/006_secrets_envelope_vault.py` (new migration; numerically follows the just-landed 005)
+- `scripts/migrate_vault_to_v2.py` (one-shot re-encryption tool)
+
+These additions do NOT touch the 4 dirty hot-path files, so Phase 4a's first PR is safe to land on top of the current dirty tree.
+
+The hot-path edits (registering Secret in models/__init__.py, RefuseToBoot in main.py, KEK boot log) move to a Phase 4a follow-up PR, gated on a separate hygiene commit for those 4 files.
+
+**Phase 4a green-light criteria:**
+- [x] Migrations 003-005 committed (`4d97f88`)
+- [x] Skills synced (`7862991`)
+- [x] No vault file in dirty list
+- [x] No vault-related file in dirty list
+- [ ] First Phase-4a PR restricted to NET-NEW files (procedural, enforced at PR time)
+- [ ] Founder decides timing of the 4 NEEDS_FOUNDER_DECISION files (before second Phase-4a PR)
 
 ---
 
