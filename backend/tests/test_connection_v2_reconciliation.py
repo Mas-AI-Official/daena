@@ -146,8 +146,10 @@ async def _make_v2_for_legacy(
 class TestZeroDrift:
     @pytest.mark.asyncio
     async def test_empty_db_yields_zero_drift(self, db_session):
+        # Scope to a fresh tenant id so committed rows from other tests
+        # in the session-scoped engine can't leak into this assertion.
         svc = ConnectionReconciliationService(db_session)
-        report = await svc.run(apply=False)
+        report = await svc.run(tenant_id=uuid.uuid4(), apply=False)
         assert report.legacy_row_count == 0
         assert report.v2_row_count == 0
         assert report.has_drift is False

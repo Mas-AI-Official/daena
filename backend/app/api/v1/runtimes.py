@@ -28,8 +28,10 @@ import time
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user
+from app.core.database import get_db
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -437,67 +439,77 @@ class PrimaryRuntimeRequest(BaseModel):
 async def set_primary_runtime(
     body: PrimaryRuntimeRequest,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Set the primary runtime (mind) for this user.
 
     The primary runtime handles EXE mode tasks, Council synthesis,
     and complex reasoning. Persisted in user settings JSONB.
+
+    Phase 6 refactor: takes ``db: AsyncSession = Depends(get_db)`` so
+    HTTP-level tests can exercise the V2 gate against the test SQLite
+    engine. Previously the route used ``async_session_factory()``
+    directly and could not be reached by overridden test sessions.
     """
     from sqlalchemy import select
 
     from app.models.identity import User
-
-    # Validate runtime/provider exists.
-    #
-    # Runtime IDs (claude_code, codex, gemini_cli, ollama) are handled by
-    # RuntimeRegistry adapters. API provider values (OPENAI, PERPLEXITY,
-    # ANTHROPIC, GEMINI, GROQ, etc.) are already understood by ModelRouter
-    # as Primary Mind boosts, but this endpoint used to reject them because
-    # it only checked adapters. That made the UI unable to select GPT or
-    # Perplexity as Main Brain even though the execution loop knew how to
-    # honor that value.
     from app.core.events import get_runtime_registry
     from app.core.config import get_settings
     from app.core.constants import ModelProvider
+    from app.services.connection_v2.legacy_bridge import is_v2_enabled
+    from app.models.connection_v2 import (
+        ConnectionKind as _Kind,
+        ConnectionV2 as _CV2,
+    )
 
     registry = get_runtime_registry()
     adapter = registry.get_adapter(body.runtime_id)
     display_name = adapter.display_name if adapter else body.runtime_id
     provider_value: str | None = None
-
-    # Phase 5 PR 2: V2 callable gate.
-    #
-    # When USE_CONNECTION_REGISTRY_V2 is on, refuse to pin a runtime
-    # whose V2 row is not callable=True UNLESS the request opts in
-    # via experimental_override=True. The override is logged below
-    # so the audit trail captures who pinned a non-callable brain.
-    from app.services.connection_v2.legacy_bridge import is_v2_enabled
-
     callable_check_skipped_reason: str | None = None
-    if is_v2_enabled() and adapter is not None:
-        from app.core.database import async_session_factory as _async_factory
-        from app.models.connection_v2 import (
-            ConnectionKind as _Kind,
-            ConnectionV2 as _CV2,
-        )
-        from sqlalchemy import select as _select
+    v2_row: _CV2 | None = None
+    v2_kind_for_audit: str | None = None
 
-        async with _async_factory() as _db:
-            v2_row = (await _db.execute(
-                _select(_CV2).where(
+    # ── Phase 6: V2 callable gate (CLI runtimes + providers) ──
+    #
+    # Phase 5 PR 2 covered cli_runtime kind. Phase 6 extends the gate
+    # to provider-id selections (OPENAI, ANTHROPIC, GEMINI, etc.) so
+    # the lie "API key is configured ⇒ provider is callable" is also
+    # closed. We resolve the V2 row by:
+    #   - kind=cli_runtime, slug=runtime_id (e.g. "claude_code") for
+    #     adapter-backed runtimes
+    #   - kind=provider, slug=lowercase(provider_value) (e.g.
+    #     "anthropic") for hosted-API providers
+    if is_v2_enabled():
+        if adapter is not None:
+            v2_kind_for_audit = _Kind.CLI_RUNTIME.value
+            v2_slug = body.runtime_id
+        else:
+            normalized = body.runtime_id.strip().upper()
+            try:
+                provider = ModelProvider(normalized)
+                v2_kind_for_audit = _Kind.PROVIDER.value
+                v2_slug = provider.value.lower()
+            except ValueError:
+                v2_kind_for_audit = None
+                v2_slug = None
+
+        if v2_kind_for_audit and v2_slug:
+            v2_row = (await db.execute(
+                select(_CV2).where(
                     _CV2.tenant_id == user.tenant_id,
-                    _CV2.kind == _Kind.CLI_RUNTIME.value,
-                    _CV2.slug == body.runtime_id,
+                    _CV2.kind == v2_kind_for_audit,
+                    _CV2.slug == v2_slug,
                 )
             )).scalar_one_or_none()
+
         if v2_row is None:
-            # No V2 row for this runtime yet -- allow but tag.
             callable_check_skipped_reason = (
                 "no V2 row yet (legacy probe path; will be checked on next "
                 "real probe via ConnectionRegistryV2)"
             )
         elif not v2_row.callable and not body.experimental_override:
-            # Refuse the selection.
             from app.core.logging import get_logger
             _l = get_logger(__name__)
             _l.warning(
@@ -505,6 +517,7 @@ async def set_primary_runtime(
                 runtime_id=body.runtime_id,
                 tenant_id=str(user.tenant_id),
                 user_id=str(user.id),
+                v2_kind=v2_kind_for_audit,
                 v2_label="not_callable",
             )
             return {
@@ -518,6 +531,7 @@ async def set_primary_runtime(
                     ),
                     "code": "runtime_not_callable",
                     "v2_callable": False,
+                    "v2_kind": v2_kind_for_audit,
                     "v2_truth": {
                         "detected": v2_row.detected,
                         "configured": v2_row.configured,
@@ -528,19 +542,9 @@ async def set_primary_runtime(
                     },
                 },
             }
-        elif not v2_row.callable and body.experimental_override:
-            # Founder override accepted -- audit this loudly.
-            from app.core.logging import get_logger
-            _l = get_logger(__name__)
-            _l.warning(
-                "runtimes.primary_override_not_callable",
-                runtime_id=body.runtime_id,
-                tenant_id=str(user.tenant_id),
-                user_id=str(user.id),
-                role=getattr(user, "role", "unknown"),
-                v2_label="not_callable_overridden",
-            )
 
+    # Provider validation (legacy path retained for non-V2 mode AND
+    # for translating runtime_id -> provider_value for adapter=None case).
     if adapter is None:
         normalized = body.runtime_id.strip().upper()
         try:
@@ -580,32 +584,68 @@ async def set_primary_runtime(
         provider_value = provider.value
         display_name = provider.value.title()
 
-    # Persist to user settings
-    from app.core.database import async_session_factory
+    # ── Persist to user settings (uses Depends(get_db) session) ──
+    stmt = select(User).where(User.id == user.id)
+    result = await db.execute(stmt)
+    db_user = result.scalar_one_or_none()
+    if db_user is None:
+        return {
+            "success": False,
+            "error": {"message": "User row not found; Main Brain was not saved"},
+        }
+    settings = dict(db_user.settings) if db_user.settings else {}
+    selected_runtime = provider_value or body.runtime_id
+    settings["primary_runtime"] = selected_runtime
+    db_user.settings = settings
+    # Mark JSONB attribute as modified so SQLAlchemy actually emits an UPDATE
+    # for the JSON column (in-place dict mutation doesn't trigger dirty).
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(db_user, "settings")
+    await db.commit()
 
-    async with async_session_factory() as db:
-        stmt = select(User).where(User.id == user.id)
-        result = await db.execute(stmt)
-        db_user = result.scalar_one_or_none()
-        if db_user is None:
-            return {
-                "success": False,
-                "error": {"message": "User row not found; Main Brain was not saved"},
-            }
-        settings = dict(db_user.settings) if db_user.settings else {}
-        selected_runtime = provider_value or body.runtime_id
-        settings["primary_runtime"] = selected_runtime
-        db_user.settings = settings
-        await db.commit()
-
-        verify_result = await db.execute(stmt)
-        verified_user = verify_result.scalar_one_or_none()
-        verified_runtime = (verified_user.settings or {}).get("primary_runtime") if verified_user else None
-        if verified_runtime != selected_runtime:
-            return {
-                "success": False,
-                "error": {"message": "Main Brain write verification failed"},
-            }
+    # ── Phase 6: formal audit event for experimental override ──
+    #
+    # Per founder rule: Experimental Override pin must write a formal
+    # audit_service event, not just a WARNING log line. The hash chain
+    # in GoaAuditEvent makes the override tamper-evident.
+    override_used = (
+        body.experimental_override
+        and v2_row is not None
+        and not v2_row.callable
+    )
+    if override_used:
+        from app.services.audit import AuditService
+        try:
+            await AuditService(db).log_decision(
+                tenant_id=user.tenant_id,
+                actor_id=user.id,
+                actor_type="FOUNDER" if getattr(user, "role", "") == "FOUNDER" else "USER",
+                action_type="audit.runtime.primary_override",
+                action_params={
+                    "runtime_id": body.runtime_id,
+                    "v2_kind": v2_kind_for_audit,
+                    "selected_runtime": selected_runtime,
+                    "v2_truth": {
+                        "detected": v2_row.detected,
+                        "configured": v2_row.configured,
+                        "imported": v2_row.imported,
+                        "reachable": v2_row.reachable,
+                        "authenticated": v2_row.authenticated,
+                        "callable": v2_row.callable,
+                    },
+                },
+                result="OVERRIDE_GRANTED",
+                risk_level="HIGH",
+                governance_tier=3,
+            )
+            await db.commit()
+        except Exception as exc:  # noqa: BLE001 -- audit failure must not break flow
+            from app.core.logging import get_logger
+            get_logger(__name__).warning(
+                "runtimes.audit_log_failed",
+                error_type=type(exc).__name__,
+                error=str(exc)[:200],
+            )
 
     _invalidate_runtimes_cache(str(user.tenant_id))
 
@@ -615,9 +655,8 @@ async def set_primary_runtime(
             "primary_runtime": provider_value or body.runtime_id,
             "display_name": display_name,
             "callable_check_skipped_reason": callable_check_skipped_reason,
-            "experimental_override_used": (
-                body.experimental_override and adapter is not None
-            ),
+            "experimental_override_used": override_used,
+            "v2_gate_applied": v2_row is not None,
         },
     }
 
