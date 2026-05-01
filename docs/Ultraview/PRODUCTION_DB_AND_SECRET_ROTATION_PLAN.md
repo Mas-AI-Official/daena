@@ -12,6 +12,41 @@
 
 ---
 
+## 0. Cloud deployment paused. Local-first mode is primary. (added 2026-05-01)
+
+After this plan was authored, the founder issued a strategic pivot:
+**Daena is local-first** for founder/operator development; Cloud Run
+is paused as the production target and remains optional (for demos /
+managed-client engagements only). See:
+
+- `LOCAL_FIRST_DAENA_ARCHITECTURE.md` — what runs on the founder's
+  workstation, how to launch it, and where memory / vault / RAG
+  live locally.
+- `CLOUD_DEPLOYMENT_PAUSED_DECISION.md` — what's preserved in GCP,
+  what's paused, cost-control options for Cloud SQL, resume criteria.
+
+Then the founder revised: **fix the GCloud production foundation now**
+(Phases 1–6 below + the Cloud Build NOT_FOUND fix in
+`CLOUD_BUILD_NOT_FOUND_DIAGNOSIS.md`) so future deploys are not
+painful — but **local-first remains the primary developer workflow**.
+
+Implications for this rotation plan:
+
+- §3 (rotation checklist) and §6 (DATABASE_URL migration) **remain
+  the source of truth** for cloud rotation steps. Founder still owns
+  provider-side rotation of leaked secrets at issuer surfaces.
+- §7 (`deploy-cloud.sh` rewrite) is **DONE** in commit `f7f79dd`.
+  `cloudbuild.yaml` is the canonical atomic build+deploy path.
+- §9 (founder approval gates) **still apply** for every cloud-side
+  action. None are autonomous.
+- New gate: every `gcloud builds submit` must follow the recommended
+  sequence in `PRODUCTION_HYGIENE_AUTOMATION_REPORT.md` §5 and the
+  service-account fix in `CLOUD_BUILD_NOT_FOUND_DIAGNOSIS.md`.
+
+The rest of this plan (§§1–10) reads as originally written.
+
+---
+
 ## 1. Production risk assessment
 
 ### Confirmed (founder-reported)

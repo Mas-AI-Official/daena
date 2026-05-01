@@ -25,6 +25,10 @@ steps:
   #
   # Schema migrations run inside the container at start via
   # /app/start.sh -> `alembic upgrade head`. See Dockerfile ENTRYPOINT.
+  #
+  # --service-account on the deploy step pins the RUNTIME SA (daena-run).
+  # The BUILD SA (daena-build) is set via the top-level serviceAccount
+  # field below. Two distinct SAs by design: build vs runtime separation.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -34,6 +38,7 @@ steps:
       - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$SHORT_SHA'
       - '--region=us-central1'
       - '--platform=managed'
+      - '--service-account=daena-run@$PROJECT_ID.iam.gserviceaccount.com'
       - '--add-cloudsql-instances=$PROJECT_ID:us-central1:daena-db'
       - '--update-secrets=DATABASE_URL=daena-database-url:latest,DAENA_KEK=daena-daena-kek:latest,JWT_SECRET_KEY=daena-jwt-secret-key:latest,GROQ_API_KEY=daena-groq-api-key:latest,GEMINI_API_KEY=daena-gemini-api-key:latest,GOOGLE_CLIENT_SECRET=daena-google-client-secret:latest,GITHUB_CLIENT_SECRET=daena-github-client-secret:latest'
       - '--update-env-vars=APP_ENV=production,LOG_LEVEL=info,USE_CONNECTION_REGISTRY_V2=false,DISABLE_AUTH=false'
@@ -41,6 +46,11 @@ steps:
 images:
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$SHORT_SHA'
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:latest'
+
+# Build SA: dedicated daena-build (created 2026-05-01, narrow roles).
+# Required because the project has no compute default SA. Custom SA
+# requires explicit logging destination (CLOUD_LOGGING_ONLY).
+serviceAccount: 'projects/$PROJECT_ID/serviceAccounts/daena-build@$PROJECT_ID.iam.gserviceaccount.com'
 
 options:
   logging: CLOUD_LOGGING_ONLY
