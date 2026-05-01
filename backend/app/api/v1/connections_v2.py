@@ -264,6 +264,40 @@ async def reconciliation_status(
     }
 
 
+@router.post("/reconciliation/seed-providers")
+async def seed_providers(
+    all_tenants: bool = Query(default=False, description="Founder-only: seed every tenant; default: just the caller's"),
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Phase 6: idempotent provider V2 row seeder.
+
+    Creates ``ConnectionV2(kind=provider, slug=<lowercase>)`` rows for
+    every API provider whose key is configured in settings. Existing
+    rows are NOT touched. Probe is NOT run -- caller invokes
+    ``POST /api/v1/connections/v2/{id}/probe`` separately.
+
+    Idempotent: re-running on the same tenant yields zero new rows
+    when the config hasn't changed.
+    """
+    from app.services.connection_v2.provider_seeder import (
+        seed_providers_all_tenants,
+        seed_providers_for_tenant,
+    )
+
+    if all_tenants:
+        reports = await seed_providers_all_tenants(db)
+        await db.commit()
+        return {
+            "success": True,
+            "data": {"reports": [r.to_dict() for r in reports]},
+        }
+
+    report = await seed_providers_for_tenant(db, tenant_id=user.tenant_id)
+    await db.commit()
+    return {"success": True, "data": report.to_dict()}
+
+
 @router.post("/reconciliation/run")
 async def reconciliation_run(
     apply: bool = Query(default=False, description="Set true to perform safe automatic remediations (orphan op-lock cleanup only)"),
