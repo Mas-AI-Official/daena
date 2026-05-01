@@ -114,30 +114,30 @@ export function SettingsPrivacy() {
         <Card variant="glass" padding="md" className="space-y-4">
           <div
             className="flex items-center justify-between"
-            title="Phase 10C-D: setting persists to user.settings, but the MemoryService write-path does not yet check this flag. Phase 11 PR-S1 wires enforcement; until then this toggle is informational only."
+            title="Enforced by backend (Phase 11 PR-S1): when OFF, MemoryService.store refuses new memory writes for this user. The first block per process emits a privacy.memory_write_blocked audit row; subsequent blocks are silent to avoid log spam."
           >
             <div>
               <p className="text-sm text-starlight-200">
                 Generate memories from conversations
-                <Badge variant="warning" size="sm" className="ml-2 align-middle">Enforcement coming soon</Badge>
+                <Badge variant="success" size="sm" className="ml-2 align-middle">Enforced by backend</Badge>
               </p>
-              <p className="text-[10px] text-starlight-500">Daena extracts and stores relevant facts from your chats. (Toggle persists; backend enforcement lands in Phase 11.)</p>
+              <p className="text-[10px] text-starlight-500">Daena extracts and stores relevant facts from your chats. When OFF, no new memory rows are written for this user.</p>
             </div>
-            <Switch checked={memoryGen} onChange={() => { setMemoryGen(!memoryGen); persistUiPref('memory_generation', !memoryGen) }} label="" size="sm" disabled />
+            <Switch checked={memoryGen} onChange={() => { setMemoryGen(!memoryGen); persistUiPref('memory_generation', !memoryGen) }} label="" size="sm" />
           </div>
 
           <div
             className="flex items-center justify-between"
-            title="Phase 10C-D: setting persists, but the MemoryRecall pipeline stage does not yet check this flag. Phase 11 PR-S1 wires it."
+            title="Enforced by backend (Phase 11 PR-S1): when OFF, the chat orchestrator's Stage 6 memory-recall is skipped for this user. Agent experiences and CKG cross-domain insights (system-derived patterns, not user past conversations) are not affected by this toggle."
           >
             <div>
               <p className="text-sm text-starlight-200">
                 Search past conversations for context
-                <Badge variant="warning" size="sm" className="ml-2 align-middle">Enforcement coming soon</Badge>
+                <Badge variant="success" size="sm" className="ml-2 align-middle">Enforced by backend</Badge>
               </p>
-              <p className="text-[10px] text-starlight-500">Daena references previous chats for better answers. (Toggle persists; backend enforcement lands in Phase 11.)</p>
+              <p className="text-[10px] text-starlight-500">Daena references previous chats for better answers. When OFF, the chat pipeline skips memory recall for this user.</p>
             </div>
-            <Switch checked={searchPast} onChange={() => { setSearchPast(!searchPast); persistUiPref('search_past_conversations', !searchPast) }} label="" size="sm" disabled />
+            <Switch checked={searchPast} onChange={() => { setSearchPast(!searchPast); persistUiPref('search_past_conversations', !searchPast) }} label="" size="sm" />
           </div>
 
           <div className="border-t border-white/5 pt-3">

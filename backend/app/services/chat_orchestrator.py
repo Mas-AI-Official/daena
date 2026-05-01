@@ -1607,22 +1607,74 @@ class ChatOrchestrator:
         from app.services.memory import MemoryService
 
         memory_svc = MemoryService(self._db)
+
+        # Phase 11 PR-S1: privacy gate for "search past conversations".
+        # When users.settings.search_past_conversations is explicitly
+        # false, skip user-content recall (this stage only). Stages 6.1
+        # (agent experiences) and 6.2 (CKG cross-domain insights) are
+        # system-derived patterns rather than "past conversations" of
+        # the user, so they remain unaffected by this toggle. The audit
+        # doc (PHASE_10B_SETTINGS_DOWNSTREAM_READ_AUDIT.md §2.10)
+        # explicitly scopes this toggle to user-content recall.
+        recall_allowed = True
         try:
-            memories = await memory_svc.recall_for_chat(
-                tenant_id=tenant_id,
-                user_id=user_id,
-                session_id=session_id,
-                query=user_content,
-                tier=2,  # LONG_TERM and above
-                page_size=5,
-            )
-            if memories.get("data"):
-                memory_context = "\n".join(
-                    f"- {m['content']}" for m in memories["data"]
+            from app.models.identity import User as _User
+            _u_row = (
+                await self._db.execute(
+                    select(_User.settings).where(_User.id == user_id)
                 )
-                system_prompt += f"\n\nRelevant context from memory:\n{memory_context}"
+            ).scalar_one_or_none()
+            _u_settings = _u_row if isinstance(_u_row, dict) else {}
+            if _u_settings.get("search_past_conversations") is False:
+                recall_allowed = False
         except Exception:
-            logger.debug("orchestrator.memory_recall_failed", exc_info=True)
+            # Fail-open: a failed privacy lookup must not silently disable
+            # recall for users who never opted out.
+            logger.debug("orchestrator.recall_privacy_check_failed", exc_info=True)
+
+        if not recall_allowed:
+            logger.info(
+                "orchestrator.memory_recall_skipped_by_privacy",
+                user_id=str(user_id),
+                reason="search_past_conversations=false",
+            )
+            try:
+                from app.services.audit import AuditService
+                await AuditService(self._db).log_decision(
+                    tenant_id=tenant_id,
+                    actor_id=user_id,
+                    actor_type="USER",
+                    action_type="privacy.memory_recall_skipped",
+                    action_params={"reason": "search_past_conversations=false"},
+                    result="BLOCKED",
+                    risk_level="LOW",
+                    governance_tier=1,
+                    session_id=session_id,
+                )
+            except Exception:  # noqa: BLE001
+                # Audit emit is best-effort. The privacy guarantee is
+                # "no recall happens" — that holds whether or not the
+                # audit row lands.
+                logger.debug(
+                    "orchestrator.recall_privacy_audit_failed", exc_info=True,
+                )
+        else:
+            try:
+                memories = await memory_svc.recall_for_chat(
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    session_id=session_id,
+                    query=user_content,
+                    tier=2,  # LONG_TERM and above
+                    page_size=5,
+                )
+                if memories.get("data"):
+                    memory_context = "\n".join(
+                        f"- {m['content']}" for m in memories["data"]
+                    )
+                    system_prompt += f"\n\nRelevant context from memory:\n{memory_context}"
+            except Exception:
+                logger.debug("orchestrator.memory_recall_failed", exc_info=True)
 
         # ── Stage 6.1: Agent experience injection ─────────────
         # Inject validated agent experiences (decisions, patterns)

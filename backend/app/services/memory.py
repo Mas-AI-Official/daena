@@ -21,17 +21,22 @@ Patent-pending: NBMF Architecture.
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import re
 from datetime import datetime, timedelta
+from typing import ClassVar
 from uuid import UUID
 
 from sqlalchemy import func, select
 
 from app.core.constants import NBMFTier
 from app.core.exceptions import ValidationError
+from app.models.identity import User
 from app.models.memory import LearningLog, MemoryEntry
 from app.services._base import BaseService
+
+_log = logging.getLogger(__name__)
 
 # Trust threshold: quarantined items must reach this score to be promoted
 TRUST_PROMOTE_THRESHOLD = 0.7
@@ -102,6 +107,82 @@ class MemoryService(BaseService):
         results = await svc.recall(tenant_id=tid, query="dark mode")
     """
 
+    # Phase 11 PR-S1: process-lifetime set of user_ids we have already
+    # warned/audited about a privacy block. Prevents log+audit-row spam
+    # when a user with memory_generation=false sends a long chat session
+    # (every message would otherwise emit a write-block event).
+    _privacy_blocked_warned: ClassVar[set[UUID]] = set()
+
+    async def _user_allows_memory_writes(self, user_id: UUID | None) -> bool:
+        """Return True unless ``users.settings.memory_generation`` is False.
+
+        Phase 11 PR-S1 privacy gate: if the user has explicitly toggled
+        Settings -> Privacy -> "Generate memories from conversations"
+        OFF, refuse new memory writes for that user. Default behavior is
+        unchanged when the setting is unset (returns True).
+
+        Fail-open on any read error per the brief's rule "Preserve
+        existing behavior when settings are unset" — better to record a
+        memory than to silently drop one because of a transient DB hiccup.
+        """
+        if user_id is None:
+            return True  # Anonymous / system writes pass through.
+        try:
+            result = await self.db.execute(
+                select(User.settings).where(User.id == user_id)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                return True
+            settings = row if isinstance(row, dict) else {}
+            return settings.get("memory_generation") is not False
+        except Exception:  # noqa: BLE001
+            # Fail-open: never let a privacy-check error silently drop
+            # memory rows. Log at debug; observers can grep for it.
+            _log.debug("memory.privacy_check_failed user=%s", user_id, exc_info=True)
+            return True
+
+    async def _emit_privacy_block_once(
+        self,
+        *,
+        tenant_id: UUID,
+        user_id: UUID,
+        action: str,
+    ) -> None:
+        """Best-effort audit emit + log for the first block per user-process.
+
+        Subsequent blocks for the same user_id within this process are
+        silently dropped so a long chat session doesn't fill the audit
+        ledger / logs with identical privacy-block rows.
+        """
+        if user_id in self._privacy_blocked_warned:
+            return
+        self._privacy_blocked_warned.add(user_id)
+        _log.info(
+            "memory.privacy_blocked action=%s user_id=%s "
+            "reason=memory_generation_false",
+            action, user_id,
+        )
+        try:
+            from app.services.audit import AuditService
+            await AuditService(self.db).log_decision(
+                tenant_id=tenant_id,
+                actor_id=user_id,
+                actor_type="USER",
+                action_type="privacy.memory_write_blocked",
+                action_params={"action": action, "reason": "memory_generation=false"},
+                result="BLOCKED",
+                risk_level="LOW",
+                governance_tier=1,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Audit emit is best-effort. Do not raise — the user-facing
+            # privacy decision is "no write happens", which is the
+            # promise we need to keep regardless of audit success.
+            _log.warning(
+                "memory.privacy_block_audit_failed user=%s err=%s", user_id, exc,
+            )
+
     async def store(
         self,
         *,
@@ -129,7 +210,11 @@ class MemoryService(BaseService):
         entry instead of creating a duplicate.
 
         Returns:
-            Dict with stored memory details.
+            Dict with stored memory details. When the user has set
+            ``users.settings.memory_generation=False``, returns a
+            ``{"blocked_by_privacy": True, "reason": ..., "id": None}``
+            sentinel instead of writing — callers do not currently read
+            this dict, so the sentinel is safe.
 
         Raises:
             ValueError: If tier > MAX_DIRECT_STORE_TIER.
@@ -141,6 +226,23 @@ class MemoryService(BaseService):
                 "Use promote() to reach higher tiers."
             )
             raise ValidationError(msg)
+
+        # Phase 11 PR-S1: privacy gate. If the user explicitly set
+        # ``users.settings.memory_generation=false`` in /settings/privacy,
+        # refuse to write a new memory row. Audit + log once per user
+        # per process so a long session doesn't spam the ledger.
+        if not await self._user_allows_memory_writes(user_id):
+            await self._emit_privacy_block_once(
+                tenant_id=tenant_id, user_id=user_id, action="store",
+            )
+            return {
+                "blocked_by_privacy": True,
+                "reason": "memory_generation=false",
+                "id": None,
+                "content": None,
+                "content_type": content_type,
+                "tier": tier,
+            }
 
         # CAS deduplication: check for exact content match
         c_hash = _content_hash(content)
