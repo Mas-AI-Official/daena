@@ -3,7 +3,7 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$SHORT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$BUILD_ID'
       - '-t'
       - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:latest'
       - '.'
@@ -11,7 +11,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$SHORT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$BUILD_ID'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
@@ -35,7 +35,7 @@ steps:
       - 'run'
       - 'deploy'
       - 'daena'
-      - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$SHORT_SHA'
+      - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$BUILD_ID'
       - '--region=us-central1'
       - '--platform=managed'
       - '--service-account=daena-run@$PROJECT_ID.iam.gserviceaccount.com'
@@ -44,7 +44,7 @@ steps:
       - '--update-env-vars=APP_ENV=production,LOG_LEVEL=info,USE_CONNECTION_REGISTRY_V2=false,DISABLE_AUTH=false'
 
 images:
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$SHORT_SHA'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:$BUILD_ID'
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/daena-repo/daena:latest'
 
 # Build SA: dedicated daena-build (created 2026-05-01, narrow roles).
