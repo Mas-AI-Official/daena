@@ -575,6 +575,64 @@ async def _run_deferred_initialization(app: FastAPI) -> None:
 
     await _step("tlm", _tlm_init)
 
+    async def _provider_v2_seed() -> None:
+        """Phase 7-A: Install real provider probes + idempotent seed.
+
+        Installs ProviderProbe for kind=provider (replacing NoopProbe).
+        Then seeds ConnectionV2(kind=provider) rows for every existing
+        tenant whose API key is configured. Probes are NOT auto-run --
+        the operator triggers them via POST /api/v1/connections/v2/{id}/probe
+        (or by visiting the V2 panels in the UI).
+
+        Gated on USE_CONNECTION_REGISTRY_V2 to keep production safe.
+        Production default is False, so seeding is a no-op there until
+        the founder flips the flag with full migration context.
+        """
+        from app.core.config import get_settings as _gs
+        if not _gs().use_connection_registry_v2:
+            logger.info(
+                "provider_v2_seed_skipped",
+                reason="USE_CONNECTION_REGISTRY_V2=false",
+            )
+            return
+
+        from app.core.database import async_session_factory
+        from app.services.connection_v2.probes import install_all_probes
+        from app.services.connection_v2.provider_seeder import (
+            seed_providers_all_tenants,
+        )
+
+        # Install real probes (idempotent; replaces NoopProbe for
+        # kind=provider). Other kinds keep their NoopProbe until
+        # Phase 7+ adds real ones.
+        install_all_probes()
+
+        try:
+            async with async_session_factory() as db:
+                reports = await seed_providers_all_tenants(db)
+                if reports:
+                    await db.commit()
+            total_created = sum(len(r.created) for r in reports)
+            total_existing = sum(len(r.skipped_existing) for r in reports)
+            total_unconfigured = sum(
+                len(r.skipped_unconfigured) for r in reports
+            )
+            logger.info(
+                "provider_v2_seed_complete",
+                tenants=len(reports),
+                created=total_created,
+                existing=total_existing,
+                unconfigured=total_unconfigured,
+            )
+        except Exception as exc:  # noqa: BLE001 - never break startup
+            logger.warning(
+                "provider_v2_seed_failed",
+                error_type=type(exc).__name__,
+                error=str(exc)[:200],
+            )
+
+    await _step("provider_v2_seed", _provider_v2_seed)
+
     async def _evilbob_init() -> None:
         from app.services.security.evilbob_mode import auto_activate_if_configured
 
