@@ -238,6 +238,54 @@ async def list_runtimes(
 
 
 # Static paths MUST come before /{runtime_id} to avoid path param capture
+@router.get("/subscriptions")
+async def list_runtime_subscriptions(
+    _user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return the per-runtime subscription truth used by ``/settings/llm``.
+
+    Phase 10b G4 fix: closes the 404 ghost from ``SettingsLLM.tsx:46``.
+    The data was already produced by the runtime registry's
+    ``check_subscriptions_all`` background scan and surfaced as one
+    ``subscription`` field per adapter inside the bigger ``GET /runtimes``
+    response. Carving it out into a dedicated endpoint matches what the
+    Settings page actually wants — a flat list of
+    ``{provider, plan_name, is_authenticated}`` rows it can hash by
+    provider name to badge the connected providers.
+
+    Reads strictly from the registry's in-memory cache so this endpoint
+    is fast and never blocks on a CLI probe. The cache is populated by
+    the lifespan's deferred discovery + the periodic refresh, so a
+    fresh-boot first-call may legitimately return an empty list while
+    ``warming: true`` (mirrors the GET /runtimes behavior).
+    """
+    from app.core.events import get_runtime_registry
+
+    registry = get_runtime_registry()
+    subs = []
+    warming = not any(registry._installed_cache.values())
+    for runtime_id, adapter in registry._adapters.items():
+        sub_auth = registry._subscription_cache.get(runtime_id)
+        if sub_auth is None:
+            continue
+        sub_dict = sub_auth.to_dict()
+        subs.append({
+            "provider": adapter.display_name,
+            "runtime_id": runtime_id,
+            "plan_name": sub_dict.get("plan_name"),
+            "is_authenticated": bool(sub_dict.get("is_authenticated")),
+            "method": sub_dict.get("method"),
+            "status": sub_dict.get("status"),
+            "user_display": sub_dict.get("user_display"),
+        })
+    return {
+        "success": True,
+        "data": subs,
+        "warming": warming,
+        "total": len(subs),
+    }
+
+
 @router.post("/discover")
 async def rediscover_runtimes(
     _user: CurrentUser = Depends(get_current_user),

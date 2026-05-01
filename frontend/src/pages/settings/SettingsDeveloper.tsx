@@ -44,7 +44,10 @@ export function SettingsDeveloper() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const { data } = await api.get<{ data: SettingsResponse }>('/settings')
+        // Phase 10b G5 fix: trailing slash matches the SettingsOverview
+        // route (GET /settings/) instead of bouncing through a 307 that
+        // axios used to swallow as a 404 in the OpenAPI diff.
+        const { data } = await api.get<{ data?: SettingsResponse } & SettingsResponse>('/settings/')
         const settings = data.data || data
         if (settings.app_env) setAppEnv(settings.app_env)
         else setAppEnv('unknown')

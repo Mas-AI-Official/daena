@@ -309,6 +309,53 @@ async def get_seed_brief(
     }
 
 
+@router.delete("/seed-brief")
+async def delete_seed_brief(
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+) -> dict[str, Any]:
+    """Soft-archive the persisted seed brief.
+
+    Phase 10b: the founder UI already exposed a Delete button at
+    ``CompanyModePage.tsx:235`` but the backend route did not exist
+    (Phase 9D ghost G1 — 405 Method Not Allowed). Per the audit's
+    "prefer soft-delete/archive semantics if persistent" rule, we
+    rename the file to ``company_seed.archived-<UTC-timestamp>.md``
+    instead of unlinking. The founder can manually purge from disk
+    if they want; this preserves the IP for recovery.
+
+    Returns 200 with ``exists: false`` either way so the UI optimistic
+    update succeeds.
+    """
+    _ = user
+    path = _seed_path()
+    if not path.exists():
+        return {"exists": False, "archived_to": None}
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    archived = path.with_name(f"{path.stem}.archived-{stamp}{path.suffix}")
+    try:
+        path.rename(archived)
+    except OSError as exc:
+        logger.error("company_mode.seed_archive_failed", error=str(exc))
+        raise HTTPException(
+            status_code=500, detail=f"seed_archive_failed: {exc}",
+        ) from exc
+
+    # Best-effort: also clear the runtime context for this tenant so
+    # the next chat doesn't keep responding as the (now-archived) VP.
+    try:
+        tenant_key = str(getattr(user, "tenant_id", "") or "founder")
+        company_context_store.clear(tenant_key)
+        company_context_store.clear("founder")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("company_mode.context_clear_failed", error=str(exc))
+
+    logger.info(
+        "company_mode.seed_archived",
+        archived_to=str(archived.name),
+    )
+    return {"exists": False, "archived_to": archived.name}
+
+
 @router.post("/seed-brief")
 async def save_seed_brief(
     body: ActivateRequest,

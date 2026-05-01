@@ -392,9 +392,20 @@ async def recommend_tools(
 
 
 @router.get("/scans")
-async def list_scans(limit: int = 50) -> list[dict[str, Any]]:
-    """List recent scan traces."""
-    return _load_scan_history(limit)
+async def list_scans(
+    limit: int = 50,
+    archived: bool = False,
+) -> list[dict[str, Any]]:
+    """List recent scan traces.
+
+    Phase 10b: ``archived=true`` flips the loader to read from the
+    ``.archive/`` folder so the founder can recover scans that were
+    soft-archived via ``DELETE /scans/{id}`` (the default action).
+    Without this flag the previous behavior is preserved (active list
+    only). Closes the "archive makes reports disappear with no recovery
+    surface" gap from the Phase 9B matrix.
+    """
+    return _load_scan_history(limit, archived=archived)
 
 
 @router.get("/scans/{scan_id}")
@@ -1369,15 +1380,32 @@ async def cancel_install_all(job_id: str) -> dict[str, Any]:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _load_scan_history(limit: int = 20) -> list[dict[str, Any]]:
+def _load_scan_history(
+    limit: int = 20, *, archived: bool = False,
+) -> list[dict[str, Any]]:
     """Load scan summaries from both scan_traces/ (legacy) and
     security_reports/ (persisted reports from the real-scan workflow).
     Dedupes on scan_id. Orders newest first. Honors ``limit``.
+
+    Phase 10b: when ``archived=True`` the loader points at the
+    ``security_reports/.archive`` sibling folder. Scans there have
+    filenames of the shape ``<scan_id>.<label>.<ts>.json`` produced by
+    :func:`_archive_scan`; the scan_id encoded inside the JSON payload
+    is the source of truth, the filename is just a path hint.
     """
     trace_dir = Path(os.environ.get("DAENA_VAR", "var")) / "scan_traces"
-    reports_dir = Path(
+    reports_root = Path(
         os.environ.get("SECURITY_REPORTS_DIR", os.path.join("var", "security_reports")),
     )
+    if archived:
+        # Archive lives only under the reports root. Legacy traces are
+        # archived alongside reports (see ``_archive_scan``), so we
+        # point both loaders at the same archive folder. The legacy
+        # loader simply finds nothing if no traces are there.
+        reports_dir = reports_root / ".archive"
+        trace_dir = reports_root / ".archive"
+    else:
+        reports_dir = reports_root
     max_candidates = max(limit * 4, 100)
 
     def _recent_json_files(directory: Path) -> list[Path]:

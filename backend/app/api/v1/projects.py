@@ -171,3 +171,88 @@ async def delete_project(
         raise HTTPException(status_code=404, detail="Project not found")
     await db.commit()
     return {"success": True}
+
+
+# ── Project sub-resources (Phase 10b ghost-call fixes G2/G3) ──
+#
+# UI surfaces under ProjectDetailPage's Tasks + Files tabs called
+# ``GET /projects/{id}/tasks`` and ``GET /projects/{id}/files`` — both
+# absent from the backend. They returned 404 in production (Phase 9D).
+#
+# The current schema does NOT link tasks or files to projects:
+#   * ``Task.session_id`` references ``chat_sessions.id``; tasks have
+#     no ``project_id`` FK.
+#   * ``ChatSession`` itself has no ``project_id``.
+#   * ``FileRecord`` has a ``purpose`` enum (incl. ``project_file``)
+#     but no ``project_id`` FK.
+#   * ``Project.to_dict()`` hard-codes ``task_count: 0`` /
+#     ``file_count: 0`` for the same reason.
+#
+# Rather than ship a fake relation, these endpoints return an empty
+# list plus an honest ``meta.tracking_enabled: false`` flag so the UI
+# (which already renders an honest empty state) never sees a 404 and
+# the founder reading the JSON can tell the gap is by design.
+
+
+async def _ensure_project(project_id: UUID, tenant_id: UUID, db: AsyncSession) -> dict:
+    """Resolve a project + 404 if missing. Reused by sub-resource routes."""
+    service = ProjectService(db)
+    project = await service.get(project_id, tenant_id=tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+_PROJECT_RELATION_NOT_WIRED = (
+    "Project-relation not wired in current schema. Tasks and files are "
+    "scoped to user/session, not project. Counts on the project row are "
+    "always zero until a project FK is added."
+)
+
+
+@router.get("/{project_id}/tasks")
+async def list_project_tasks(
+    project_id: UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return task IDs scoped to a project.
+
+    Phase 10b G3 fix: closes the 404 ghost. Returns an honest empty
+    list because no project↔task FK exists in the schema yet (see
+    module-level comment).
+    """
+    project = await _ensure_project(project_id, user.tenant_id, db)
+    return {
+        "project_id": str(project["id"]),
+        "task_ids": [],
+        "total": 0,
+        "meta": {
+            "tracking_enabled": False,
+            "message": _PROJECT_RELATION_NOT_WIRED,
+        },
+    }
+
+
+@router.get("/{project_id}/files")
+async def list_project_files(
+    project_id: UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return file paths scoped to a project.
+
+    Phase 10b G2 fix: closes the 404 ghost. Returns an honest empty
+    list because no project↔file FK exists in the schema yet (see
+    module-level comment).
+    """
+    project = await _ensure_project(project_id, user.tenant_id, db)
+    return {
+        "project_id": str(project["id"]),
+        "file_paths": [],
+        "total": 0,
+        "meta": {
+            "tracking_enabled": False,
+            "message": _PROJECT_RELATION_NOT_WIRED,
+        },
+    }
