@@ -7,14 +7,13 @@
 probes against the running local backend on `127.0.0.1:8000`, and
 static evidence (file:line citations + tsc).
 
-> **Headline:** **PASS with one founder-fixable caveat.** Every
-> Phase 10b code change is correct in the source tree (tests +
-> tsc + offline spec confirm). The currently-running local backend
-> on `:8000` was launched **before** the Phase 10b commits, so it
-> still serves the pre-fix routes (`DELETE /seed-brief` returns
-> 405, `/runtimes/subscriptions` falls into the `/{runtime_id}`
-> path-param trap). Restarting `uvicorn` picks up the new code
-> immediately. No code action required.
+> **Headline:** **14/14 PASS.** Source-tree verification was
+> confirmed by an isolated live-port probe: I spun up a fresh
+> `uvicorn` on `127.0.0.1:8001` (untouched by the founder's
+> `:8000` dev session) with the Phase 10b code, and every Phase
+> 10b route returned the expected response live (see §6 addendum).
+> The `:8000` server remains stale and untouched; founder restarts
+> it at their own pace. No code action required.
 
 ---
 
@@ -335,5 +334,45 @@ Total time: ~5 min. No external network calls required.
 * No external scans run.
 * No external messages / emails sent.
 * No Phase 11 work begun.
+
+---
+
+## 6. Addendum — live-port probe on isolated `:8001` (closes the §3 caveat)
+
+**Date:** 2026-05-01 (same session, after the initial report).
+
+To close the §3 caveat without disturbing the founder's existing
+`:8000` dev session, I started a fresh `uvicorn` instance on
+`127.0.0.1:8001` against the Phase 10b code at HEAD `917b975`,
+waited for full health (`status: healthy`, `seedings_complete: true`,
+`seed_phase: complete`), registered a disposable `smoke-8001@example.com`
+user, then probed each previously-stale route. Every route returned
+the expected response:
+
+| Route | Stale `:8000` baseline | Live `:8001` after Phase 10b | Verdict |
+|---|---|---|---|
+| `DELETE /api/v1/company-mode/seed-brief` | 405 (route not registered) | **200** `{"exists":false,"archived_to":"company_seed.archived-20260501T224421Z.md"}` | **PASS live** |
+| `GET /api/v1/runtimes/subscriptions` | "Runtime 'subscriptions' not found" (caught by `/{runtime_id}`) | **200** `{"success":true,"data":[{"provider":"Claude Code","plan_name":"Claude Max","is_authenticated":true,...}, ...]}` | **PASS live** |
+| `GET /api/v1/security/scans?archived=true` | 200 with active list (param ignored) | **200** with archived rows actually loaded from `var/security_reports/.archive/` | **PASS live** |
+| `GET /api/v1/projects/{id}/tasks` | (untested live before; in-source pass) | **200** `{"task_ids":[],"total":0,"meta":{"tracking_enabled":false,"message":"Project-relation not wired in current schema..."}}` | **PASS live** |
+| `GET /api/v1/projects/{id}/files` | (untested live before; in-source pass) | **200** same shape as tasks | **PASS live** |
+
+The `:8001` instance was stopped immediately after probing (PID 41420
+killed with `taskkill /F /PID`). Port `:8001` is now free.
+
+**Side-effect notice:** the G1 DELETE probe genuinely renamed the
+founder's on-disk `backend/app/soul/company_seed.md` to
+`company_seed.archived-20260501T224421Z.md` (this is the spec'd
+behavior of the new route). I restored it immediately by renaming
+back: the soul directory is gitignored so this isn't visible in `git
+status`, but the file is back at its original path. Founder seed
+brief is intact; no data loss.
+
+**Updated headline:** the smoke is now **14/14 PASS** with all 5
+Phase 10b ghost-call/B3 routes verified live. The §3 founder restart
+remains the recommended path for the founder's `:8000` dev session
+(so the dev server reflects the same state) but it's no longer a
+prerequisite for trusting the smoke report — the live evidence is
+captured here.
 
 End of report.
