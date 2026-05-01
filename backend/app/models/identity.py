@@ -33,6 +33,13 @@ class Tenant(Base, TimestampMixin):
     )
     settings: Mapped[dict] = mapped_column(JSONBCompat, nullable=False, server_default="{}")
 
+    # Phase 4a-2 / Phase 4a-3 envelope vault: per-tenant Data Encryption
+    # Key, AES-GCM-wrapped under the per-tenant KEK derived from
+    # DAENA_KEK + tenant_id. NULL until the migration script
+    # (scripts/migrate_vault_to_v2.py) or Phase 4b service path
+    # provisions one. See ``app.core.vault_v2.wrap_dek`` for the dict shape.
+    dek_wrapped: Mapped[dict | None] = mapped_column(JSONBCompat, nullable=True)
+
     # Relationships
     users: Mapped[list[User]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
     departments: Mapped[list] = relationship(

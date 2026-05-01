@@ -114,15 +114,18 @@ Total: **33 tests**, all green, sub-100ms. Pure-functional module with no fixtur
 - ✅ Legacy `core/vault.py` unchanged.
 - ✅ No existing secrets migrated.
 
-**Phase 4a-3** (separate PR):
-- `scripts/migrate_vault_to_v2.py` — re-encrypt every existing `ConnectorInstance.credentials_encrypted` row under envelope. Dry-run by default.
-- Dual-read window: 7 days where both legacy and V2 paths can decrypt.
+**Phase 4a-3 — DONE** (see `docs/PHASE_4A_VAULT_MIGRATION.md`):
+- ✅ `backend/scripts/migrate_vault_to_v2.py` (CLI) + `backend/app/services/vault_migration.py` (library)
+- ✅ Default `--dry-run`; `--apply` requires explicit flag; `--force` overrides drift
+- ✅ Dual-read invariant: encrypt then immediately decrypt; mismatch counts as drift
+- ✅ All 7 founder counters tracked; structured-log + JSON-report output
+- ✅ Plaintext NEVER in logs / report (sentinel-string tests pin this)
+- ✅ Graceful precheck for missing `secrets` table
+- ✅ 20 new tests; legacy `vault.py` + `oauth_credentials_store.py` UNTOUCHED
+- ✅ Tenant.dek_wrapped Mapped column added in models/identity.py
+- ✅ Dry-run on dev DB: 44 candidates / 44 skipped (JSON-null literals; no real encrypted creds present)
 
-**Phase 4a-3** (separate PR):
-- `scripts/migrate_vault_to_v2.py` — re-encrypt every existing `ConnectorInstance.credentials_encrypted` row under envelope. Dry-run by default.
-- Dual-read window: 7 days where both legacy and V2 paths can decrypt.
-
-**Phase 4b** kicks off after Phase 4a's dual-read window proves zero drift.
+**Phase 4b** kicks off after operator runs `--apply` on production AND the 7-day dual-read soak window proves zero drift.
 
 ## Module API surface (intentionally minimal for Phase 4a-1)
 
