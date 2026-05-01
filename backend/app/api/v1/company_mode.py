@@ -34,6 +34,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, require_role
 from app.core.database import get_db
 from app.core.logging import get_logger
+from app.services.company_context import (
+    CompanyContext,
+    company_context_store,
+)
 from app.services.company_mode import (
     ActivationBrief,
     ActivationResult,
@@ -101,6 +105,24 @@ async def activate_company(
     ``auto_send=True`` (which triggers a governance warning for
     LinkedIn because unattended LI automation breaks their ToS).
     """
+    # Phase 10 commit-1: refuse the contradictory combination at the
+    # REST boundary. Previously the UI form let the founder set
+    # ``auto_send=true`` AND ``require_founder_approval=false``
+    # simultaneously, which would dispatch outbound traffic without
+    # any approval gate. Defense-in-depth — the UI also disables
+    # auto_send when approval is off (CompanyModePage.tsx).
+    if body.auto_send and not body.require_founder_approval:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "auto_send_requires_founder_approval",
+                "message": (
+                    "auto_send=true requires require_founder_approval=true. "
+                    "Outbound traffic must be founder-approved."
+                ),
+            },
+        )
+
     try:
         channels = [MissionChannel(c.lower()) for c in body.channels] or [MissionChannel.EMAIL]
     except ValueError as exc:
@@ -156,6 +178,31 @@ async def activate_company(
         "drafts": sum(m["drafts_generated"] for m in payload["missions"]),
         "summary": payload["summary"],
     })
+
+    # Phase 1 F4 (2026-04-24): publish the brief into the runtime
+    # CompanyContext store so soul_engine.get_soul_prompt() picks it up
+    # on every subsequent chat without requiring a server restart or a
+    # disk re-read. The on-disk file remains the durable source -- this
+    # is the runtime cache for fast reads.
+    try:
+        runtime_ctx = CompanyContext(
+            company_name=brief.company_name,
+            one_liner=brief.company_one_liner,
+            target_customer=brief.target_customer,
+            pain=brief.customer_pain,
+            promise=brief.our_promise,
+            proof_points=list(brief.proof_points or []),
+            channels=[c.value for c in brief.channels],
+            tone=brief.tone or "professional",
+        )
+        tenant_key = str(getattr(user, "tenant_id", "") or "founder")
+        company_context_store.set(tenant_key, runtime_ctx)
+        # Mirror to the bootstrap key so chat handlers that haven't
+        # plumbed tenant_id yet still find the brief.
+        company_context_store.set("founder", runtime_ctx)
+    except Exception as exc:
+        logger.warning("company_mode.context_publish_failed", error=str(exc))
+
     return payload
 
 
@@ -276,11 +323,54 @@ async def save_seed_brief(
         raise HTTPException(
             status_code=500, detail=f"seed_write_failed: {exc}",
         ) from exc
+
+    # Phase 1 F4: a save-without-activate still updates the runtime
+    # store so the next chat sees the freshest brief. The activate path
+    # already does this; saving alone used to leave the cache stale.
+    try:
+        runtime_ctx = CompanyContext(
+            company_name=body.company_name,
+            one_liner=body.company_one_liner,
+            target_customer=body.target_customer,
+            pain=body.customer_pain,
+            promise=body.our_promise,
+            proof_points=list(body.proof_points or []),
+            channels=[c for c in body.channels],
+            tone=body.tone or "professional",
+        )
+        tenant_key = str(getattr(user, "tenant_id", "") or "founder")
+        company_context_store.set(tenant_key, runtime_ctx)
+        company_context_store.set("founder", runtime_ctx)
+    except Exception as exc:
+        logger.warning("company_mode.context_publish_failed", error=str(exc))
+
     logger.info(
         "company_mode.seed_saved",
         company=body.company_name,
     )
     return {"exists": True, "updated_at": updated_at.isoformat()}
+
+
+# ── Runtime context: chat orchestrator + dashboards read this ─────
+
+
+@router.get("/context")
+async def get_runtime_context(
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+) -> dict[str, Any]:
+    """Return the active CompanyContext from the runtime store.
+
+    Frontend uses this to render the "VP of <Company>" badge in the
+    chat header + on department cards, and to attach a chip to chat
+    messages so the orchestrator can see which company brief is in
+    effect for this turn. 404 when no Company Mode has been activated
+    yet -- the UI handles that with a "Activate Company Mode" CTA.
+    """
+    tenant_key = str(getattr(user, "tenant_id", "") or "founder")
+    ctx = company_context_store.get(tenant_key) or company_context_store.get("founder")
+    if ctx is None:
+        raise HTTPException(status_code=404, detail="company_context_not_set")
+    return ctx.model_dump(mode="json")
 
 
 # ── Draft store access + send dispatch (TICKET-COMPANY-MODE-03) ───

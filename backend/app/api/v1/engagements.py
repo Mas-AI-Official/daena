@@ -29,6 +29,10 @@ from app.services.departments.security_operations_agent import (
     EngagementApprovalRequired,
     create_security_ops_agent,
 )
+from app.services.security.yellow_runtime_gate import (
+    load_authorized_scope,
+    target_matches_scope,
+)
 
 logger = get_logger(__name__)
 
@@ -66,6 +70,27 @@ async def start_engagement(
     badge increment immediately; the frontend routes the user to
     ``/governance/approvals`` to grant approval, then retry.
     """
+    # Phase 10 commit-1: enforce authorized-scope gate at REST boundary.
+    # The agent may also enforce internally (HANDS-OFF list — not refactoring),
+    # but the REST boundary IS the security boundary; defense-in-depth.
+    scope = load_authorized_scope(user.tenant_id)
+    if not target_matches_scope(body.target, scope):
+        logger.warning(
+            "security.engagement.scope_blocked",
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            target=body.target,
+            tier=body.tier,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "target_not_in_scope",
+                "target": body.target,
+                "hint": "Add this target to /security/scope before launching an engagement.",
+            },
+        )
+
     agent = create_security_ops_agent(
         tenant_id=user.tenant_id,
         user_id=user.id,

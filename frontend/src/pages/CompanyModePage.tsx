@@ -35,6 +35,7 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  Trash2,
 } from 'lucide-react'
 
 import { usePageTitle } from '@/hooks/usePageTitle'
@@ -100,13 +101,18 @@ export function CompanyModePage() {
   const [history, setHistory] = useState<ActivationHistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
 
-  // Seed brief quick-fill state. The founder can stash a "go-to" brief on
-  // the backend and reload it with one click. We load the stash on mount
-  // but never auto-apply -- user must click "Load seed" explicitly.
+  // Seed brief quick-fill state. The founder stashes a "go-to" brief on the
+  // backend; we auto-apply it on mount so the form is never blank when a
+  // seed exists. Manual "Load seed" remains as an idempotent reset button.
+  // (Old design left the form blank with all "Required" errors visible
+  // even though the seed was on disk -- Masoud surfaced this 2026-04-24
+  // as "company mode is not working, you load something else".)
   const [seedBrief, setSeedBrief] = useState<ActivateRequest | null>(null)
   const [seedExists, setSeedExists] = useState(false)
   const [seedUpdatedAt, setSeedUpdatedAt] = useState<string | null>(null)
   const [seedSaving, setSeedSaving] = useState(false)
+  const [seedAutoLoaded, setSeedAutoLoaded] = useState(false)
+  const [seedDeleting, setSeedDeleting] = useState(false)
 
   useEffect(() => {
     if (!isFounder) return
@@ -129,6 +135,16 @@ export function CompanyModePage() {
           setSeedBrief(data.brief)
           setSeedExists(true)
           setSeedUpdatedAt(data.updated_at)
+          // Auto-apply: populate the form with the saved seed so the user
+          // never sees an empty form when their company brief is on disk.
+          setReq({
+            ...data.brief,
+            proof_points: data.brief.proof_points.length > 0
+              ? [...data.brief.proof_points]
+              : [''],
+            channels: [...data.brief.channels],
+          })
+          setSeedAutoLoaded(true)
         }
       } catch (err) {
         // 404 is fine -- no seed yet. Only log real errors.
@@ -201,6 +217,32 @@ export function CompanyModePage() {
       toast.error('Could not save seed brief')
     } finally {
       setSeedSaving(false)
+    }
+  }
+
+  const deleteSeed = async () => {
+    if (!seedExists || seedDeleting) return
+    const { confirmDialog } = await import('@/stores/confirmStore')
+    const ok = await confirmDialog({
+      title: 'Delete saved seed brief?',
+      message: 'The form stays as-is; only the disk-backed seed will be removed. You can save a new one anytime.',
+      confirmLabel: 'Delete seed',
+      variant: 'danger',
+    })
+    if (!ok) return
+    setSeedDeleting(true)
+    try {
+      await api.delete('/company-mode/seed-brief')
+      setSeedExists(false)
+      setSeedUpdatedAt(null)
+      setSeedBrief(null)
+      setSeedAutoLoaded(false)
+      toast.success('Seed brief deleted')
+    } catch (err) {
+      console.error('delete seed failed:', err)
+      toast.error('Could not delete seed brief')
+    } finally {
+      setSeedDeleting(false)
     }
   }
 
@@ -338,6 +380,24 @@ export function CompanyModePage() {
                     <span className="text-[10px] text-starlight-500">
                       Last saved: {formatRelativeTime(seedUpdatedAt)}
                     </span>
+                  )}
+                  {seedAutoLoaded && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-500/15 text-primary-300 border border-primary-500/25">
+                      Loaded from saved seed
+                    </span>
+                  )}
+                  {seedExists && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      isLoading={seedDeleting}
+                      onClick={deleteSeed}
+                      className="!text-status-error hover:!bg-status-error/10 ml-auto"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Trash2 size={12} /> Delete seed
+                      </span>
+                    </Button>
                   )}
                 </div>
                 <Input
@@ -492,7 +552,17 @@ export function CompanyModePage() {
                     </div>
                     <Switch
                       checked={req.require_founder_approval}
-                      onChange={(v) => setReq({ ...req, require_founder_approval: v })}
+                      onChange={(v) =>
+                        setReq({
+                          ...req,
+                          require_founder_approval: v,
+                          // Phase 10 commit-1: clear auto_send when approval
+                          // toggles off — prevents the contradictory state
+                          // (auto_send=true + require_founder_approval=false)
+                          // that the backend now refuses with 422.
+                          auto_send: v ? req.auto_send : false,
+                        })
+                      }
                     />
                   </div>
                   <div className="flex items-start justify-between gap-4">
@@ -507,8 +577,17 @@ export function CompanyModePage() {
                         Send drafts without a human click. On LinkedIn this violates ToS and can trigger account
                         suspension.
                       </p>
+                      {!req.require_founder_approval && (
+                        <p className="text-[11px] text-status-warning mt-1">
+                          Auto-send requires founder approval to remain enabled.
+                        </p>
+                      )}
                     </div>
-                    <Switch checked={req.auto_send} onChange={(v) => setReq({ ...req, auto_send: v })} />
+                    <Switch
+                      checked={req.auto_send}
+                      onChange={(v) => setReq({ ...req, auto_send: v })}
+                      disabled={!req.require_founder_approval}
+                    />
                   </div>
                 </div>
 

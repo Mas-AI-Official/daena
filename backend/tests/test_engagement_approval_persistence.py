@@ -13,6 +13,7 @@ literal in its narrative.
 from __future__ import annotations
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
@@ -20,8 +21,16 @@ from sqlalchemy import select
 
 from app.models.governance import GoaRequest, PendingApproval
 from app.services.security.report_tiers import ReportTier
+from app.services.security.yellow_runtime_gate import AuthorizedScope
 
 _T5 = ReportTier.EVILBOB.value
+# Phase 10 commit-1 introduces a REST-boundary scope gate on
+# /api/v1/engagements. These tests pre-date that gate; add a fixture
+# scope that includes the test target so the gate passes and the
+# original behavior (T5 → approval row, SCOUT → run) is verified.
+_TEST_ENGAGEMENT_SCOPE = AuthorizedScope(
+    exact_domains=frozenset({"target.example"}),
+)
 
 
 async def _register_and_login(client: AsyncClient) -> dict:
@@ -59,11 +68,15 @@ async def test_t5_tier_persists_approval_row(
     """
     auth = await _register_and_login(client)
 
-    resp = await client.post(
-        "/api/v1/engagements",
-        json={"target": "https://target.example", "tier": _T5},
-        headers=auth["headers"],
-    )
+    with patch(
+        "app.api.v1.engagements.load_authorized_scope",
+        return_value=_TEST_ENGAGEMENT_SCOPE,
+    ):
+        resp = await client.post(
+            "/api/v1/engagements",
+            json={"target": "https://target.example", "tier": _T5},
+            headers=auth["headers"],
+        )
     assert resp.status_code == 201
     body = resp.json()
     assert body["success"] is False
@@ -99,11 +112,15 @@ async def test_scout_tier_does_not_create_approval(
     """Low-risk tiers proceed without approval. No spurious rows."""
     auth = await _register_and_login(client)
 
-    resp = await client.post(
-        "/api/v1/engagements",
-        json={"target": "https://target.example", "tier": "SCOUT"},
-        headers=auth["headers"],
-    )
+    with patch(
+        "app.api.v1.engagements.load_authorized_scope",
+        return_value=_TEST_ENGAGEMENT_SCOPE,
+    ):
+        resp = await client.post(
+            "/api/v1/engagements",
+            json={"target": "https://target.example", "tier": "SCOUT"},
+            headers=auth["headers"],
+        )
     assert resp.status_code == 201
     body = resp.json()
     assert body["success"] is True

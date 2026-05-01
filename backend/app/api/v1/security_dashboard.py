@@ -10,15 +10,22 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from pathlib import Path
 from typing import Any
 
 import asyncio
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from app.api.deps import CurrentUser, get_current_user
 from app.core.logging import get_logger
+from app.services.security.yellow_runtime_gate import (
+    load_authorized_scope,
+    target_matches_scope,
+)
 
 logger = get_logger(__name__)
 
@@ -26,6 +33,12 @@ router = APIRouter()
 
 # Singleton scan workflow instance (lazy-init to avoid import-time side effects)
 _scan_workflow = None
+
+_SECURITY_STATUS_CACHE_TTL_S = 15.0
+_TOOLS_CACHE_TTL_S = 30.0
+_tool_stats_cache: tuple[float, dict[str, Any]] | None = None
+_tool_stats_refresh_task: asyncio.Task | None = None
+_tools_cache: dict[tuple[str, str, bool], tuple[float, list[ToolInfo]]] = {}
 
 
 def _get_workflow():
@@ -62,6 +75,182 @@ class ToolInfo(BaseModel):
     install_cmd: str = ""
     offensive_only: bool = False
     enabled: bool = True       # user toggle; False = Daena skips this tool
+    install_state: str = "unknown"  # fresh/stale/pending/failed
+
+
+def _invalidate_security_tool_cache() -> None:
+    global _tool_stats_cache
+    _tool_stats_cache = None
+    _tools_cache.clear()
+
+
+def _build_tool_stats_payload() -> dict[str, Any]:
+    """Run the slow installed-tool inventory.
+
+    This walks PATH for every known tool. It must not run inline on
+    /security/status because Windows PATH probing has measured at 6-7s on
+    Masoud's machine.
+    """
+    from app.services.security.tool_catalog import ToolCatalog
+
+    catalog = ToolCatalog()
+    started = time.monotonic()
+    installed = catalog.get_installed()
+    return {
+        "total_known": catalog.total_tools,
+        "total_installed": len(installed),
+        "total_capabilities": catalog.total_capabilities,
+        "categories": catalog.categories,
+        "installed_names": [t.name for t in installed],
+        "detection_state": "fresh",
+        "refreshing": False,
+        "last_checked": time.time(),
+        "duration_ms": int((time.monotonic() - started) * 1000),
+    }
+
+
+def _cheap_tool_stats_payload(detection_state: str = "pending") -> dict[str, Any]:
+    """Return catalog metadata without installed-tool probing."""
+    try:
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+        return {
+            "total_known": catalog.total_tools,
+            "total_installed": 0,
+            "total_capabilities": catalog.total_capabilities,
+            "categories": catalog.categories,
+            "installed_names": [],
+            "detection_state": detection_state,
+            "refreshing": True,
+            "last_checked": None,
+            "duration_ms": 0,
+        }
+    except Exception as exc:
+        logger.error("security_dashboard.tool_stats_catalog_failed", error=str(exc))
+        return {
+            "total_known": 0,
+            "total_installed": 0,
+            "total_capabilities": 0,
+            "categories": [],
+            "installed_names": [],
+            "detection_state": "failed",
+            "refreshing": False,
+            "last_checked": None,
+            "failure_reason": str(exc),
+            "duration_ms": 0,
+        }
+
+
+async def _refresh_tool_stats_background() -> None:
+    """Refresh installed-tool inventory without blocking request handlers."""
+    global _tool_stats_cache
+    started = time.monotonic()
+    try:
+        payload = await asyncio.to_thread(_build_tool_stats_payload)
+    except Exception as exc:
+        logger.error("security_dashboard.tool_stats_failed", error=str(exc))
+        payload = _cheap_tool_stats_payload("failed")
+        payload["failure_reason"] = str(exc)
+        payload["refreshing"] = False
+        payload["duration_ms"] = int((time.monotonic() - started) * 1000)
+
+    _tool_stats_cache = (
+        time.monotonic() + _SECURITY_STATUS_CACHE_TTL_S,
+        payload,
+    )
+    _tools_cache.clear()
+
+
+def _ensure_tool_stats_refresh() -> None:
+    """Start one background inventory refresh if none is already running."""
+    global _tool_stats_refresh_task
+    if _tool_stats_refresh_task and not _tool_stats_refresh_task.done():
+        return
+    _tool_stats_refresh_task = asyncio.create_task(_refresh_tool_stats_background())
+
+
+async def _get_tool_stats_cached() -> dict[str, Any]:
+    """Return cached tool stats immediately and refresh stale data in background."""
+    now = time.monotonic()
+    if _tool_stats_cache and now < _tool_stats_cache[0]:
+        return dict(_tool_stats_cache[1])
+
+    _ensure_tool_stats_refresh()
+    if _tool_stats_cache:
+        stale = dict(_tool_stats_cache[1])
+        stale["detection_state"] = "stale"
+        stale["refreshing"] = True
+        return stale
+    return _cheap_tool_stats_payload("pending")
+
+
+def _installed_tool_snapshot() -> tuple[set[str], str]:
+    """Return installed names from the latest cache without probing PATH."""
+    now = time.monotonic()
+    if not _tool_stats_cache:
+        return set(), "pending"
+
+    expires_at, payload = _tool_stats_cache
+    state = str(payload.get("detection_state") or "unknown")
+    if now >= expires_at and state == "fresh":
+        state = "stale"
+    names = payload.get("installed_names") or []
+    return {str(name) for name in names}, state
+
+
+def _list_tools_cached(
+    category: str = "",
+    capability: str = "",
+    installed_only: bool = False,
+) -> list[ToolInfo]:
+    key = (category, capability, installed_only)
+    now = time.monotonic()
+    cached = _tools_cache.get(key)
+    if cached and now < cached[0]:
+        return list(cached[1])
+
+    try:
+        from app.services.security.tool_catalog import ToolCatalog
+        catalog = ToolCatalog()
+
+        if capability:
+            tools = catalog.find_by_capability(capability)
+        elif category:
+            tools = catalog.find_by_category(category)
+        else:
+            tools = catalog.get_all()
+
+        installed_names, install_state = _installed_tool_snapshot()
+        if install_state in {"pending", "stale"}:
+            try:
+                _ensure_tool_stats_refresh()
+            except RuntimeError:
+                # list_tools can be called from a worker thread in tests.
+                pass
+
+        enabled_state = _load_tool_enabled()
+        result: list[ToolInfo] = []
+        for tool in tools:
+            is_installed = tool.name in installed_names
+            if installed_only and not is_installed:
+                continue
+            result.append(ToolInfo(
+                name=tool.name,
+                category=tool.category,
+                description=tool.description,
+                capabilities=tool.capabilities,
+                installed=is_installed,
+                install_cmd=tool.install_cmd,
+                offensive_only=tool.offensive_only,
+                enabled=enabled_state.get(tool.name, True),
+                install_state=install_state,
+            ))
+    except Exception as exc:
+        logger.error("security_dashboard.tools_failed", error=str(exc))
+        result = []
+
+    _tools_cache[key] = (now + _TOOLS_CACHE_TTL_S, result)
+    return list(result)
 
 
 # ---------------------------------------------------------------------------
@@ -135,26 +324,14 @@ async def get_dashboard_status() -> DashboardStatus:
     except Exception:
         shield_status = {}
 
-    # Tool catalog stats
-    try:
-        from app.services.security.tool_catalog import ToolCatalog
-        catalog = ToolCatalog()
-        installed = catalog.get_installed()
-        tool_stats = {
-            "total_known": catalog.total_tools,
-            "total_installed": len(installed),
-            "total_capabilities": catalog.total_capabilities,
-            "categories": catalog.categories,
-            "installed_names": [t.name for t in installed],
-        }
-    except Exception:
-        tool_stats = {"total_known": 0, "total_installed": 0}
-
-    # Scan history (last 20 traces)
-    scan_history = _load_scan_history(20)
-
-    # Self-improvement metrics
-    self_improvement = _get_self_improvement_metrics()
+    # Scan-history JSON reads are filesystem-bound. Tool inventory returns
+    # cached/stale data immediately and refreshes PATH probing in the
+    # background, so /security/status stays responsive on first navigation.
+    tool_stats, scan_history, self_improvement = await asyncio.gather(
+        _get_tool_stats_cached(),
+        asyncio.to_thread(_load_scan_history, 20),
+        asyncio.to_thread(_get_self_improvement_metrics),
+    )
 
     return DashboardStatus(
         evilbob_active=evilbob_active,
@@ -176,37 +353,15 @@ async def list_tools(
     installed_only: bool = False,
 ) -> list[ToolInfo]:
     """List security tools from the catalog with optional filters."""
-    try:
-        from app.services.security.tool_catalog import ToolCatalog
-        catalog = ToolCatalog()
-
-        if capability:
-            tools = catalog.find_by_capability(capability)
-        elif category:
-            tools = catalog.find_by_category(category)
-        else:
-            tools = catalog.get_all()
-
-        enabled_state = _load_tool_enabled()
-        result = []
-        for tool in tools:
-            is_installed = catalog.is_installed(tool.name)
-            if installed_only and not is_installed:
-                continue
-            result.append(ToolInfo(
-                name=tool.name,
-                category=tool.category,
-                description=tool.description,
-                capabilities=tool.capabilities,
-                installed=is_installed,
-                install_cmd=tool.install_cmd,
-                offensive_only=tool.offensive_only,
-                enabled=enabled_state.get(tool.name, True),
-            ))
-        return result
-    except Exception as exc:
-        logger.error("security_dashboard.tools_failed", error=str(exc))
-        return []
+    installed_names, install_state = _installed_tool_snapshot()
+    if not installed_names and install_state in {"pending", "stale"}:
+        _ensure_tool_stats_refresh()
+    return await asyncio.to_thread(
+        _list_tools_cached,
+        category,
+        capability,
+        installed_only,
+    )
 
 
 @router.get("/tools/recommend")
@@ -336,19 +491,44 @@ class ScanReportResponse(BaseModel):
 
 
 @router.post("/scans/start", response_model=ScanJobResponse)
-async def start_scan(body: ScanStartRequest) -> ScanJobResponse:
+async def start_scan(
+    body: ScanStartRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> ScanJobResponse:
     """Start a new security scan.
+
+    Phase 10 commit-1 hardening: enforces the authorized-scope gate at the
+    REST boundary BEFORE dispatch. Previously the gate ran inside
+    ``scan_workflow.py`` Phase 0 (after job-create), so callers received
+    HTTP 200 + a job_id for out-of-scope targets and the rejection
+    surfaced only as an internal job-state transition. The REST boundary
+    is the security boundary.
 
     Kicks off the full intelligence pipeline:
     profiling -> parallel scanning -> analysis -> report generation.
-    Returns immediately with a job ID for polling.
     """
+    user_id = user.id
+    tenant_id = user.tenant_id
+
+    scope = load_authorized_scope(tenant_id)
+    if not target_matches_scope(body.target, scope):
+        logger.warning(
+            "security.scan.scope_blocked",
+            user_id=user_id,
+            tenant_id=tenant_id,
+            target=body.target,
+            tier=body.tier,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "target_not_in_scope",
+                "target": body.target,
+                "hint": "Add this target to /security/scope before scanning.",
+            },
+        )
+
     workflow = _get_workflow()
-
-    # Default user/tenant for now; will be injected from auth middleware
-    user_id = "system"
-    tenant_id = "default"
-
     try:
         job = await workflow.start_scan(
             target=body.target,
@@ -594,8 +774,8 @@ async def get_opsec_status() -> dict[str, Any]:
         "fingerprinting_detected": fingerprinting_seen,
         "stealth_tools_installed": stealth_tools,
         "note": (
-            "OPSEC is background-path only. This endpoint exposes status; "
-            "it never initiates network requests."
+            "Browser/evidence controls are background-path only. This endpoint "
+            "exposes status; it never initiates network requests."
         ),
     }
 
@@ -673,6 +853,81 @@ def _archive_scan(scan_id: str, *, hard: bool = False) -> dict[str, Any]:
     }
 
 
+@router.post("/scans/{scan_id}/rerun")
+async def rerun_scan(scan_id: str) -> ScanJobResponse:
+    """Re-run a scan with the same target + tier as the original.
+
+    Phase 2.7 (2026-04-25): added so the user can repeat a scan from
+    the Recent Scans list without re-typing the target. Loads the
+    original trace JSON, extracts target + tier, and dispatches a new
+    scan via the same workflow as ``start_scan``. Returns a fresh
+    job_id; the original scan record is left untouched in history.
+
+    Critical safety note that's also surfaced in the UX disclaimer:
+    this endpoint reads the ORIGINAL scan record (a JSON file in
+    ``var/security_reports/``) and starts a NEW scan. It does NOT
+    modify or delete any actual files on disk.
+    """
+    import json
+    trace_path = _scan_trace_path(scan_id)
+    report_path = _scan_report_path(scan_id)
+    raw: dict[str, Any] | None = None
+    if os.path.isfile(trace_path):
+        try:
+            raw = json.loads(open(trace_path, encoding="utf-8").read())
+        except Exception as exc:
+            logger.warning("rerun_scan.trace_read_failed", error=str(exc))
+    if not raw and os.path.isfile(report_path):
+        try:
+            raw = json.loads(open(report_path, encoding="utf-8").read())
+        except Exception as exc:
+            logger.warning("rerun_scan.report_read_failed", error=str(exc))
+    if not raw:
+        raise HTTPException(status_code=404, detail=f"Scan {scan_id} not found")
+
+    target = raw.get("target") or raw.get("scan_target")
+    tier = raw.get("tier") or raw.get("scan_tier") or "SCOUT"
+    if not target:
+        raise HTTPException(
+            status_code=400,
+            detail="Original scan record missing 'target' field; cannot rerun.",
+        )
+
+    workflow = _get_workflow()
+    user_id = "system"
+    tenant_id = "default"
+    try:
+        job = await workflow.start_scan(
+            target=str(target),
+            tier=str(tier),
+            user_id=user_id,
+            tenant_id=tenant_id,
+            options=raw.get("options") or {},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error("rerun_scan.start_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    logger.info(
+        "rerun_scan.started",
+        original_scan_id=scan_id,
+        new_job_id=job.id,
+        target=target,
+        tier=tier,
+    )
+    return ScanJobResponse(
+        job_id=job.id,
+        target=job.target,
+        tier=job.tier.value,
+        status=job.status.value,
+        created_at=job.created_at,
+        progress_pct=job.progress_pct,
+        findings_count=job.findings_count,
+    )
+
+
 @router.delete("/scans/{scan_id}")
 async def delete_scan(scan_id: str, hard: bool = False) -> dict[str, Any]:
     """Archive (default) or hard-delete a scan's trace + report.
@@ -742,6 +997,7 @@ async def set_tool_enabled(name: str, body: ToolEnableRequest) -> dict[str, Any]
     state = _load_tool_enabled()
     state[name] = bool(body.enabled)
     _save_tool_enabled(state)
+    _invalidate_security_tool_cache()
     logger.info(
         "security_dashboard.tool_toggled",
         tool=name, enabled=body.enabled,
@@ -750,12 +1006,14 @@ async def set_tool_enabled(name: str, body: ToolEnableRequest) -> dict[str, Any]
 
 
 @router.post("/tools/install/{name}")
-async def install_tool(name: str) -> dict[str, Any]:
+async def install_tool(name: str, confirm: str = "") -> dict[str, Any]:
     """Install a single tool by name. Runs the ``install_cmd`` from the
     catalog via subprocess. On success, triggers the post-install
     rule-pack hook (nuclei templates, trivy DB, etc.) so the tool is
     immediately useful on the next scan.
     """
+    _require_security_tool_install_confirmation(confirm)
+
     try:
         from app.services.security.tool_catalog import ToolCatalog
         catalog = ToolCatalog()
@@ -768,6 +1026,7 @@ async def install_tool(name: str) -> dict[str, Any]:
 
     result = await catalog.auto_install(name)
     installed_after = catalog.is_installed(name)
+    _invalidate_security_tool_cache()
     post_install = {"ran": False}
     if installed_after and name in _POST_INSTALL_HOOKS:
         loop = asyncio.get_running_loop()
@@ -826,6 +1085,18 @@ _INSTALL_PREFIX_CHECKS: dict[str, str] = {
     "choco install": "choco",
     "winget install": "winget",
 }
+_SECURITY_TOOL_INSTALL_CONFIRMATION = "install-security-tool"
+
+
+def _require_security_tool_install_confirmation(confirm: str) -> None:
+    if confirm != _SECURITY_TOOL_INSTALL_CONFIRMATION:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Installing security tools runs local package-manager or shell "
+                "commands. Retry with explicit confirmation."
+            ),
+        )
 
 # Post-install hooks: for tools that ship binary without their rule
 # pack, run a one-shot fetch command so the scanner has something to
@@ -908,6 +1179,13 @@ async def _run_install_job(job_id: str, plan: list[dict[str, Any]]) -> None:
         return
 
     for entry in plan:
+        if job.get("cancel_requested"):
+            job["status"] = "cancelled"
+            job["current"] = ""
+            job["completed_at"] = asyncio.get_event_loop().time()
+            _invalidate_security_tool_cache()
+            return
+
         name = entry["name"]
         cmd = entry["install_cmd"]
         job["current"] = name
@@ -965,6 +1243,7 @@ async def _run_install_job(job_id: str, plan: list[dict[str, Any]]) -> None:
     job["status"] = "complete"
     job["current"] = ""
     job["completed_at"] = asyncio.get_event_loop().time()
+    _invalidate_security_tool_cache()
 
 
 @router.post("/tools/install-all")
@@ -972,6 +1251,7 @@ async def install_all_tools(
     category: str = "",
     offensive_only: bool = False,
     dry_run: bool = False,
+    confirm: str = "",
 ) -> dict[str, Any]:
     """Kick off a bulk install. Returns immediately with a ``job_id`` the
     UI polls via ``/tools/install-all/status/{job_id}``.
@@ -980,6 +1260,9 @@ async def install_all_tools(
     Prereq-missing tools (e.g. ``go install`` on a host without Go) are
     flagged as ``skipped`` rather than wasting an install attempt.
     """
+    if not dry_run:
+        _require_security_tool_install_confirmation(confirm)
+
     try:
         from app.services.security.tool_catalog import ToolCatalog
         catalog = ToolCatalog()
@@ -1020,6 +1303,7 @@ async def install_all_tools(
         "succeeded": 0,
         "failed": 0,
         "skipped": 0,
+        "cancel_requested": False,
         "current": "",
         "results": [],
         "started_at": asyncio.get_event_loop().time(),
@@ -1054,8 +1338,30 @@ async def install_all_status(job_id: str) -> dict[str, Any]:
         "succeeded": job["succeeded"],
         "failed": job["failed"],
         "skipped": job["skipped"],
+        "cancel_requested": bool(job.get("cancel_requested")),
         "current": job["current"],
         "recent": job["results"][-10:],
+    }
+
+
+@router.post("/tools/install-all/cancel/{job_id}")
+async def cancel_install_all(job_id: str) -> dict[str, Any]:
+    """Request cancellation of a background install job.
+
+    Cancellation is cooperative: an active subprocess is allowed to finish, then
+    the runner stops before the next tool.
+    """
+    job = _install_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Install job {job_id} not found")
+    job["cancel_requested"] = True
+    if job.get("status") == "running":
+        job["status"] = "cancelling"
+    return {
+        "job_id": job_id,
+        "status": job["status"],
+        "cancel_requested": True,
+        "current": job.get("current", ""),
     }
 
 
@@ -1068,78 +1374,89 @@ def _load_scan_history(limit: int = 20) -> list[dict[str, Any]]:
     security_reports/ (persisted reports from the real-scan workflow).
     Dedupes on scan_id. Orders newest first. Honors ``limit``.
     """
-    trace_dir = os.path.join(os.environ.get("DAENA_VAR", "var"), "scan_traces")
-    reports_dir = os.environ.get(
-        "SECURITY_REPORTS_DIR", os.path.join("var", "security_reports"),
+    trace_dir = Path(os.environ.get("DAENA_VAR", "var")) / "scan_traces"
+    reports_dir = Path(
+        os.environ.get("SECURITY_REPORTS_DIR", os.path.join("var", "security_reports")),
     )
+    max_candidates = max(limit * 4, 100)
+
+    def _recent_json_files(directory: Path) -> list[Path]:
+        if not directory.is_dir():
+            return []
+        try:
+            files = [
+                p for p in directory.iterdir()
+                if p.is_file() and p.suffix == ".json" and not p.name.startswith(".")
+            ]
+        except OSError:
+            return []
+
+        def _mtime(path: Path) -> float:
+            try:
+                return path.stat().st_mtime
+            except OSError:
+                return 0.0
+
+        files.sort(key=_mtime, reverse=True)
+        return files[:max_candidates]
 
     by_id: dict[str, dict[str, Any]] = {}
 
     # Legacy scan traces (adversarial scan engine output)
-    if os.path.isdir(trace_dir):
-        for trace_file in sorted(os.listdir(trace_dir), reverse=True):
-            if not trace_file.endswith(".json"):
-                continue
-            trace_path = os.path.join(trace_dir, trace_file)
-            try:
-                with open(trace_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                continue
-            sid = data.get("scan_id", trace_file.replace(".json", ""))
-            by_id[sid] = {
-                "scan_id": sid,
-                "target": data.get("target", ""),
-                "target_type": data.get("target_type", ""),
-                "total_findings": data.get("total_findings", 0),
-                "cycles_used": data.get("cycles_used", 0),
-                "strategies_tried": data.get("strategies_tried", []),
-                "offensive_mode": data.get("offensive_mode", False),
-                "exploits_succeeded": data.get("exploits_succeeded", 0),
-                "waf_detected": data.get("waf_detected", ""),
-                "tier": data.get("tier", ""),
-                "status": "complete",
-                "source": "scan_trace",
-                "timestamp": data.get("timestamp", ""),
-                "created_at": data.get("created_at", ""),
-                "finding_count": data.get("total_findings", 0),
-            }
+    for trace_path in _recent_json_files(trace_dir):
+        try:
+            data = json.loads(trace_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        sid = data.get("scan_id", trace_path.stem)
+        by_id[sid] = {
+            "scan_id": sid,
+            "target": data.get("target", ""),
+            "target_type": data.get("target_type", ""),
+            "total_findings": data.get("total_findings", 0),
+            "cycles_used": data.get("cycles_used", 0),
+            "strategies_tried": data.get("strategies_tried", []),
+            "offensive_mode": data.get("offensive_mode", False),
+            "exploits_succeeded": data.get("exploits_succeeded", 0),
+            "waf_detected": data.get("waf_detected", ""),
+            "tier": data.get("tier", ""),
+            "status": "complete",
+            "source": "scan_trace",
+            "timestamp": data.get("timestamp", ""),
+            "created_at": data.get("created_at", ""),
+            "finding_count": data.get("total_findings", 0),
+        }
 
     # Persisted real-scan reports
-    if os.path.isdir(reports_dir):
-        for name in sorted(os.listdir(reports_dir), reverse=True):
-            if not name.endswith(".json") or name.startswith("."):
-                continue
-            path = os.path.join(reports_dir, name)
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                continue
-            sid = data.get("job_id", name.replace(".json", ""))
-            findings = data.get("findings", []) or []
-            severities = [f.get("severity", "INFO") for f in findings]
-            by_id[sid] = {
-                **by_id.get(sid, {}),
-                "scan_id": sid,
-                "target": data.get("target", ""),
-                "target_type": data.get("target_kind", ""),
-                "tier": data.get("tier", ""),
-                "total_findings": len(findings),
-                "finding_count": len(findings),
-                "status": "complete",
-                "source": "persisted_report",
-                "created_at": data.get("created_at", 0),
-                "completed_at": data.get("completed_at", 0),
-                "tools_used": data.get("tools_used", []),
-                "tools_missing": data.get("tools_missing", []),
-                "cost_usd": data.get("cost_usd", 0.0),
-                "duration_secs": data.get("duration_secs", 0.0),
-                "severity_counts": {
-                    s: severities.count(s)
-                    for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
-                },
-            }
+    for report_path in _recent_json_files(reports_dir):
+        try:
+            data = json.loads(report_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        sid = data.get("job_id", report_path.stem)
+        findings = data.get("findings", []) or []
+        severities = [f.get("severity", "INFO") for f in findings]
+        by_id[sid] = {
+            **by_id.get(sid, {}),
+            "scan_id": sid,
+            "target": data.get("target", ""),
+            "target_type": data.get("target_kind", ""),
+            "tier": data.get("tier", ""),
+            "total_findings": len(findings),
+            "finding_count": len(findings),
+            "status": "complete",
+            "source": "persisted_report",
+            "created_at": data.get("created_at", 0),
+            "completed_at": data.get("completed_at", 0),
+            "tools_used": data.get("tools_used", []),
+            "tools_missing": data.get("tools_missing", []),
+            "cost_usd": data.get("cost_usd", 0.0),
+            "duration_secs": data.get("duration_secs", 0.0),
+            "severity_counts": {
+                s: severities.count(s)
+                for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
+            },
+        }
 
     history = list(by_id.values())
     history.sort(
