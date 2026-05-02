@@ -713,6 +713,7 @@ class ExecutionService(BaseService):
         payload = self._task_to_dict(task)
         captured_id = task.id
         captured_tenant = tenant_id
+        captured_user_id = task.user_id
         captured_name = task.name
         captured_desc = task.description or ""
 
@@ -772,6 +773,42 @@ class ExecutionService(BaseService):
                         "task_run.completed",
                         task_id=str(captured_id),
                     )
+                    # Phase 11 PR-S2.1: in-app notification on successful
+                    # completion. Best-effort — must NEVER raise from the
+                    # background task. Gated by users.settings.notif_task_complete.
+                    # update_task_status above already committed the COMPLETED
+                    # row, so the bg_db session is in a fresh transaction.
+                    # We add the notification then commit explicitly so the
+                    # row is visible to the API layer that reads it.
+                    try:
+                        from app.services.notification_service import (
+                            NotificationService,
+                        )
+                        await NotificationService(bg_db).emit(
+                            tenant_id=captured_tenant,
+                            user_id=captured_user_id,
+                            type="task_complete",
+                            title=f"Task completed: {captured_name}",
+                            message=(
+                                result.get("summary")
+                                or f"Task '{captured_name}' finished."
+                            ),
+                            severity="success",
+                            source="execution_service.background_run",
+                        )
+                        await bg_db.commit()
+                    except Exception as _notif_exc:  # noqa: BLE001
+                        logger.warning(
+                            "task_run.notify_failed",
+                            task_id=str(captured_id),
+                            error=str(_notif_exc),
+                        )
+                        # Roll back the failed notification add so the
+                        # session can be cleanly closed by the bg_factory.
+                        try:
+                            await bg_db.rollback()
+                        except Exception:  # noqa: BLE001
+                            pass
                 except Exception as exc:  # noqa: BLE001
                     logger.error(
                         "task_run.failed",

@@ -24,8 +24,10 @@ Usage::
 
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass
+from typing import ClassVar
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +37,14 @@ from app.core.logging import get_logger
 from app.models.financial import Subscription, UsageLedger, UserQuota
 
 logger = get_logger(__name__)
+
+# Phase 11 PR-S2.1: dedup window for budget_alert in-app notifications.
+# preflight_check fires before EVERY LLM call. Without a window, a user
+# over their personal quota with action="warn" would get a notification
+# row per chat message — spam. 60 minutes is the smallest window that
+# keeps the bell readable while still surfacing the breach soon enough
+# to act on. Per process; restart resets so a fresh deploy re-emits.
+_BUDGET_WARN_WINDOW_SECONDS = 60 * 60
 
 
 # ── Data structures ───────────────────────────────────────────
@@ -102,6 +112,13 @@ class CostGuard:
     Requires an async database session for reading subscription
     data and writing usage records.
     """
+
+    # Phase 11 PR-S2.1: per-user "last warn-emit timestamp" so the same
+    # user does not get a notification row on every preflight call when
+    # they are over quota with action="warn" or "allow_overage". Cleared
+    # on process restart (intentional: a fresh deploy gives one signal
+    # per user that the gate is still firing).
+    _recent_warn_emits: ClassVar[dict[uuid.UUID, float]] = {}
 
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
@@ -309,6 +326,37 @@ class CostGuard:
                     spent=user_status.spend_this_month_usd,
                     limit=user_status.monthly_credit_usd,
                 )
+                # Phase 11 PR-S2.1: in-app notification on quota breach.
+                # Dedup by (user_id, 60-min window) so a long chat session
+                # doesn't spam the bell. Best-effort — must NEVER raise
+                # from preflight_check (the cost gate is load-bearing).
+                _now = time.time()
+                _last = self._recent_warn_emits.get(user_id, 0.0)
+                if (_now - _last) >= _BUDGET_WARN_WINDOW_SECONDS:
+                    self._recent_warn_emits[user_id] = _now
+                    try:
+                        from app.services.notification_service import (
+                            NotificationService,
+                        )
+                        await NotificationService(self._db).emit(
+                            tenant_id=tenant_id,
+                            user_id=user_id,
+                            type="budget_alert",
+                            title="Personal usage near limit",
+                            message=(
+                                f"Spent ${user_status.spend_this_month_usd:.2f} of "
+                                f"${user_status.monthly_credit_usd:.2f} this month "
+                                f"(action: {action}). LLM calls will continue."
+                            ),
+                            severity="warning",
+                            source="cost_guard.preflight_check",
+                        )
+                    except Exception as _notif_exc:  # noqa: BLE001
+                        logger.warning(
+                            "cost_guard.notify_failed",
+                            user_id=str(user_id),
+                            error=str(_notif_exc),
+                        )
 
         return status
 

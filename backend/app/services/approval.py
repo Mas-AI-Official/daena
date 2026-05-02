@@ -182,6 +182,33 @@ class ApprovalService(BaseService):
         # negative-signal variant so they can unblock or escalate.
         await self._emit_decision_event(request, approved=False)
 
+        # Phase 11 PR-S2.1: in-app notification to the user whose
+        # request was rejected. Note: we emit to request.user_id (the
+        # original requester), NOT decided_by (the approver) — the
+        # approver does not need to be told their own decision. Best-
+        # effort; never raise from the rejection path. Gated by
+        # users.settings.notif_gov_reject.
+        try:
+            from app.services.notification_service import NotificationService
+            await NotificationService(self.db).emit(
+                tenant_id=tenant_id,
+                user_id=request.user_id,
+                type="governance_rejection",
+                title=f"Action rejected: {request.action_type}",
+                message=(
+                    reason
+                    or "Your action was rejected by governance. No reason provided."
+                ),
+                severity="warning",
+                source="approval.reject",
+            )
+        except Exception as _notif_exc:  # noqa: BLE001
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "approval.reject.notify_failed request_id=%s err=%s",
+                request_id, _notif_exc,
+            )
+
         return self._request_to_dict(request)
 
     async def get_request(
