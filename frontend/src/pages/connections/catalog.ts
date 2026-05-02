@@ -1,0 +1,880 @@
+/**
+ * Static catalogs and lookup tables for the Connections page.
+ *
+ * These are pure data (no React, no state) so any sub-tab component
+ * can import them without dragging in unrelated UI code.
+ */
+import type { AuthMethod, BrowseCatalogItem, ConnectorDef, ExtensionData, MCPEquivalent } from './types'
+
+// AuthMethod is referenced by the per-row `as AuthMethod` casts in the
+// catalog literal below. The cast preserves the historical loosening of
+// some `'none'` entries to AuthMethod (kept identical to the pre-split
+// inline catalog).
+export type { AuthMethod }
+
+// ── Connector definitions (Claude Desktop style) ──
+
+// Full Codex-style plugin catalog. Categories mirror Codex Desktop's
+// grouping; each plugin ships with 2-4 skills. Skill descriptions are
+// defined in SKILL_DESCRIPTIONS below -- they render as the one-line
+// caption under each skill card in the Plugins tab.
+export const CONNECTORS: ConnectorDef[] = [
+  // ── Coding ──
+  { id: 'hugging-face', name: 'Hugging Face', subtitle: 'Inspect models, datasets, Spaces, and research', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['search_models', 'model_info', 'run_inference', 'search_datasets'] },
+  { id: 'netlify', name: 'Netlify', subtitle: 'Deploy projects and manage releases', category: 'Coding', auth: 'token' as AuthMethod, tools: ['netlify_deploy', 'netlify_list_sites', 'netlify_env', 'netlify_logs'] },
+  { id: 'vercel', name: 'Vercel', subtitle: 'Build and deploy web apps and agents', category: 'Coding', auth: 'token' as AuthMethod, tools: ['vercel_deploy', 'vercel_list_projects', 'vercel_logs', 'vercel_env'] },
+  { id: 'game-studio', name: 'Game Studio', subtitle: 'Design, prototype, and ship browser games', category: 'Coding', auth: 'token' as AuthMethod, tools: ['prototype_game', 'publish_game', 'list_assets'] },
+  { id: 'superpowers', name: 'Superpowers', subtitle: 'Planning, TDD, debugging, and delivery workflows', category: 'Coding', auth: 'token' as AuthMethod, tools: ['plan_feature', 'run_tdd', 'debug_session'] },
+  {
+    id: 'github', name: 'GitHub',
+    subtitle: 'Triage PRs, issues, CI, and publish flows',
+    category: 'Coding', auth: 'token' as AuthMethod,
+    tools: ['search_repos', 'read_file', 'list_issues', 'create_issue', 'create_pr'],
+    developer: 'GitHub',
+    built_by: 'Built by GitHub',
+    capabilities: ['Interactive', 'Write', 'Read'],
+    website: 'https://github.com',
+    privacy_policy: 'https://docs.github.com/en/site-policy/privacy-policies',
+    terms_url: 'https://docs.github.com/en/site-policy/github-terms',
+    included_mcp: { name: 'GitHub MCP', package: '@github/mcp-server', scope: 'official' },
+    included_skills: [
+      { id: 'github-pr-review', name: 'PR Review', description: 'Review pull requests with diff context and inline comments' },
+      { id: 'github-issue-triage', name: 'Issue Triage', description: 'Label, assign, and close issues with policy guards' },
+      { id: 'github-actions', name: 'GitHub Actions', description: 'Read workflow logs and debug failed CI runs' },
+      { id: 'github-release', name: 'Release Management', description: 'Cut releases with changelog generation and tag policy' },
+    ],
+  },
+  { id: 'circleci', name: 'CircleCI', subtitle: 'Build, test, and deploy any application', category: 'Coding', auth: 'token' as AuthMethod, tools: ['list_pipelines', 'trigger_build', 'get_job_logs'] },
+  {
+    id: 'cloudflare', name: 'Cloudflare',
+    subtitle: 'Cloudflare platform guidance with official MCP',
+    category: 'Coding', auth: 'token' as AuthMethod,
+    tools: ['list_zones', 'update_dns', 'deploy_worker', 'list_tunnels'],
+    developer: 'Cloudflare',
+    built_by: 'Built by Cloudflare',
+    capabilities: ['Interactive', 'Write'],
+    website: 'https://cloudflare.com',
+    privacy_policy: 'https://www.cloudflare.com/privacypolicy/',
+    terms_url: 'https://www.cloudflare.com/website-terms/',
+    included_mcp: { name: 'Cloudflare API MCP', package: '@cloudflare/mcp-server', scope: 'official' },
+    included_skills: [
+      { id: 'cloudflare', name: 'Cloudflare', description: 'Choose the right Cloudflare product and workflow' },
+      { id: 'cloudflare-wrangler', name: 'Wrangler', description: 'Use the Cloudflare Workers CLI safely' },
+      { id: 'cloudflare-workers-best-practices', name: 'Workers Best Practices', description: 'Write and review production-grade Workers code' },
+      { id: 'cloudflare-agents-sdk', name: 'Agents SDK', description: 'Build stateful agents on Cloudflare Workers' },
+      { id: 'cloudflare-build-ai-agents', name: 'Building AI Agents on Cloudflare', description: 'Build stateful AI agents on Cloudflare Workers' },
+      { id: 'cloudflare-build-mcp', name: 'Building MCP Servers on Cloudflare', description: 'Build remote MCP servers on Cloudflare Workers' },
+      { id: 'cloudflare-durable-objects', name: 'Durable Objects', description: 'Build stateful coordination on Cloudflare Workers' },
+      { id: 'cloudflare-sandbox-sdk', name: 'Sandbox SDK', description: 'Build secure sandboxed code execution' },
+      { id: 'cloudflare-web-performance', name: 'Web Performance', description: 'Audit page performance with Chrome DevTools MCP' },
+    ],
+  },
+  { id: 'sentry', name: 'Sentry', subtitle: 'Inspect recent Sentry issues and events', category: 'Coding', auth: 'token' as AuthMethod, tools: ['list_issues_sentry', 'get_event', 'search_events'] },
+  { id: 'build-ios', name: 'Build iOS Apps', subtitle: 'Build, refine, and debug iOS apps with SwiftUI and Xcode', category: 'Coding', auth: 'none' as AuthMethod, tools: ['build_xcode', 'run_simulator', 'debug_ios'] },
+  { id: 'build-macos', name: 'Build macOS Apps', subtitle: 'Build, debug, instrument macOS apps with SwiftUI and AppKit', category: 'Coding', auth: 'none' as AuthMethod, tools: ['build_xcode', 'run_macos', 'debug_macos'] },
+  { id: 'build-web', name: 'Build Web Apps', subtitle: 'Build, review, ship, and scale web apps', category: 'Coding', auth: 'none' as AuthMethod, tools: ['scaffold_app', 'run_review', 'deploy_web'] },
+  { id: 'test-android', name: 'Test Android Apps', subtitle: 'Reproduce issues and inspect Android emulators', category: 'Coding', auth: 'none' as AuthMethod, tools: ['run_emulator', 'capture_screen', 'dump_ui'] },
+  { id: 'expo', name: 'Expo', subtitle: 'Build, deploy, upgrade Expo and React Native apps', category: 'Coding', auth: 'token' as AuthMethod, tools: ['expo_build', 'expo_publish', 'expo_logs'] },
+  { id: 'coderabbit', name: 'CodeRabbit', subtitle: 'Run AI-powered code review for your current changes', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['review_pr', 'summarize_diff', 'suggest_fixes'] },
+  { id: 'neon', name: 'Neon Postgres', subtitle: 'Manage Neon Serverless Postgres projects and databases', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['list_neon_projects', 'run_query', 'create_branch'] },
+  { id: 'plugin-eval', name: 'Plugin Eval', subtitle: 'Start from chat, then evaluate or benchmark locally', category: 'Coding', auth: 'none' as AuthMethod, tools: ['run_eval', 'run_benchmark', 'compare_results'] },
+  { id: 'cloudinary', name: 'Cloudinary', subtitle: 'Manage, search, and transform your media library', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['upload_media', 'search_media', 'transform_image'] },
+  { id: 'hostinger', name: 'Hostinger', subtitle: 'Build websites and apps by describing what you want', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['create_site', 'deploy_site', 'configure_domain'] },
+  { id: 'marcopolo', name: 'MarcoPolo', subtitle: 'Secure container where Claude can work with your data', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['create_sandbox', 'upload_data', 'run_script'] },
+  { id: 'quicknode', name: 'Quicknode', subtitle: 'Manage your Quicknode infrastructure', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['list_endpoints', 'get_stats', 'deploy_function'] },
+  { id: 'sendgrid', name: 'SendGrid', subtitle: 'Connector for the SendGrid email API', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['send_email_sg', 'list_templates', 'get_stats_sg'] },
+  { id: 'statsig', name: 'Statsig', subtitle: 'Bring your Statsig workspace into Codex', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['list_gates', 'get_experiment', 'update_config'] },
+  { id: 'vantage', name: 'Vantage', subtitle: 'Cloud observability and cost optimization', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['get_cost', 'list_recommendations', 'compare_clouds'] },
+  { id: 'yepcode', name: 'YepCode', subtitle: 'Build custom AI tools using your own code', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['create_tool', 'run_tool', 'list_tools'] },
+  { id: 'render', name: 'Render', subtitle: 'Deploy, debug, monitor, and migrate apps on Render', category: 'Coding', auth: 'api_key' as AuthMethod, tools: ['render_deploy', 'render_logs', 'render_list_services'] },
+
+  // ── Design ──
+  { id: 'canva', name: 'Canva', subtitle: 'Search, create, edit designs', category: 'Design', auth: 'oauth' as AuthMethod, tools: ['list_designs', 'create_design', 'export_design'] },
+  { id: 'figma', name: 'Figma', subtitle: 'Design-to-code workflows powered by Figma', category: 'Design', auth: 'token' as AuthMethod, tools: ['get_file', 'get_components', 'export_assets'] },
+  { id: 'remotion', name: 'Remotion', subtitle: 'Create motion graphics from prompts', category: 'Design', auth: 'none' as AuthMethod, tools: ['render_video', 'list_compositions', 'preview_frame'] },
+  { id: 'biorender', name: 'BioRender', subtitle: 'Create professional scientific figures in minutes', category: 'Design', auth: 'api_key' as AuthMethod, tools: ['list_templates', 'create_figure', 'export_figure'] },
+
+  // ── Lifestyle ──
+  { id: 'cogedim', name: 'Cogedim', subtitle: "France's leading real estate developer", category: 'Lifestyle', auth: 'api_key' as AuthMethod, tools: ['search_properties', 'get_property'] },
+  { id: 'finn', name: 'FINN', subtitle: 'Flexible car subscription service', category: 'Lifestyle', auth: 'api_key' as AuthMethod, tools: ['list_vehicles', 'book_subscription'] },
+  { id: 'myregistry', name: 'MyRegistry.com', subtitle: 'Universal gift registry', category: 'Lifestyle', auth: 'api_key' as AuthMethod, tools: ['list_registries', 'add_item', 'share_registry'] },
+  { id: 'setu-billpay', name: 'Setu Bharat Connect BillPay', subtitle: 'Pay utility bills through conversation', category: 'Lifestyle', auth: 'api_key' as AuthMethod, tools: ['list_bills', 'pay_bill', 'get_receipt'] },
+  { id: 'weatherpromise', name: 'WeatherPromise', subtitle: 'Trip protection against rainy weather', category: 'Lifestyle', auth: 'api_key' as AuthMethod, tools: ['get_quote', 'create_policy', 'file_claim'] },
+
+  // ── Productivity ──
+  { id: 'linear', name: 'Linear', subtitle: 'Find and reference issues and projects', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_issues', 'create_issue', 'update_issue', 'list_projects'] },
+  { id: 'atlassian-rovo', name: 'Atlassian Rovo', subtitle: 'Manage Jira and Confluence fast', category: 'Productivity', auth: 'token' as AuthMethod, tools: ['search_issues', 'create_issue', 'search_pages', 'read_page'] },
+  { id: 'google-calendar', name: 'Google Calendar', subtitle: 'Manage Google Calendar events and schedules', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['list_events', 'create_event', 'update_event', 'find_free_time'] },
+  { id: 'gmail', name: 'Gmail', subtitle: 'Read and manage Gmail', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['search_emails', 'read_email', 'send_email', 'create_draft'] },
+  {
+    id: 'slack', name: 'Slack',
+    subtitle: 'Read and manage Slack',
+    category: 'Productivity', auth: 'oauth' as AuthMethod,
+    tools: ['search_messages', 'send_message', 'list_channels', 'read_channel'],
+    developer: 'Salesforce (Slack)',
+    built_by: 'Built by Slack',
+    capabilities: ['Interactive', 'Write', 'Read'],
+    website: 'https://slack.com',
+    privacy_policy: 'https://slack.com/trust/privacy/privacy-policy',
+    terms_url: 'https://slack.com/main-services-agreement',
+    included_mcp: { name: 'Slack MCP', package: '@modelcontextprotocol/server-slack', scope: 'official' },
+    included_skills: [
+      { id: 'slack-channel-digest', name: 'Channel Digest', description: 'Summarize recent activity across channels' },
+      { id: 'slack-draft-announcement', name: 'Draft Announcement', description: 'Compose well-formatted Slack posts as drafts' },
+      { id: 'slack-find-discussions', name: 'Find Discussions', description: 'Search topics across channels and threads' },
+      { id: 'slack-standup', name: 'Standup Update', description: 'Generate a standup summary from your activity' },
+    ],
+  },
+  { id: 'teams', name: 'Teams', subtitle: 'Summarize Teams and draft follow-ups', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['list_teams_chats', 'summarize_thread', 'draft_followup'] },
+  { id: 'sharepoint', name: 'SharePoint', subtitle: 'Summarize SharePoint sites and files', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['list_sp_sites', 'read_sp_file', 'search_sp'] },
+  { id: 'outlook-email', name: 'Outlook Email', subtitle: 'Triage Outlook inboxes and draft replies', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['search_outlook', 'draft_outlook', 'send_outlook'] },
+  { id: 'outlook-calendar', name: 'Outlook Calendar', subtitle: 'Manage Outlook schedules and meetings', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['list_outlook_events', 'create_outlook_event', 'update_outlook_event'] },
+  { id: 'jam', name: 'Jam', subtitle: 'Screen record with context', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_recordings', 'get_recording', 'share_recording'] },
+  { id: 'stripe', name: 'Stripe', subtitle: 'Payments and business tools', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_charges', 'list_subscriptions', 'create_invoice'] },
+  { id: 'box', name: 'Box', subtitle: 'Search and reference your documents', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['search_box', 'read_box_file', 'upload_box'] },
+  { id: 'google-drive', name: 'Google Drive', subtitle: 'Work across Drive, Docs, Sheets, and Slides', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['search_files', 'read_file', 'upload_file', 'list_folders'] },
+  {
+    id: 'notion', name: 'Notion',
+    subtitle: 'Specs, research, meetings, and knowledge capture',
+    category: 'Productivity', auth: 'token' as AuthMethod,
+    tools: ['search_pages', 'read_page', 'create_page', 'query_database'],
+    developer: 'Notion Labs',
+    built_by: 'Built by Notion',
+    capabilities: ['Interactive', 'Write', 'Read'],
+    website: 'https://notion.so',
+    privacy_policy: 'https://www.notion.so/Privacy-Policy-3468d120cf614d4c9014c09f6adc9091',
+    terms_url: 'https://www.notion.so/Terms-and-Privacy-28ffdd083dc3473e9c2da6ec011b58ac',
+    included_mcp: { name: 'Notion MCP', package: '@notionhq/notion-mcp-server', scope: 'official' },
+    included_skills: [
+      { id: 'notion-search', name: 'Workspace Search', description: 'Search across pages, databases, and comments' },
+      { id: 'notion-write', name: 'Page Authoring', description: 'Create and update pages with structured blocks' },
+      { id: 'notion-database', name: 'Database Queries', description: 'Query and update structured Notion databases' },
+      { id: 'notion-meeting-notes', name: 'Meeting Notes', description: 'Capture and organize meeting notes with action items' },
+    ],
+  },
+  { id: 'amplitude', name: 'Amplitude', subtitle: 'Product analytics and funnels', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['query_events', 'list_funnels', 'get_cohort'] },
+  { id: 'attio', name: 'Attio', subtitle: 'Connects Codex directly to your CRM workspace', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_records', 'create_record', 'update_record'] },
+  { id: 'brand24', name: 'Brand24', subtitle: 'Brand mentions, sentiment, and media coverage', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_mentions', 'get_sentiment', 'list_projects_b24'] },
+  { id: 'brex', name: 'Brex', subtitle: 'Review company finances through conversation', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_transactions_brex', 'list_cards', 'get_balance'] },
+  { id: 'carta', name: 'Carta CRM', subtitle: 'Deal flow CRM for investment teams', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_deals', 'get_company', 'update_deal'] },
+  { id: 'channel99', name: 'Channel99', subtitle: 'Real-time go-to-market intelligence', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['get_gtm_metrics', 'list_accounts', 'trace_pipeline'] },
+  { id: 'circleback', name: 'Circleback', subtitle: 'AI-powered meeting notes and action items', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_meetings_cb', 'get_summary', 'list_actions'] },
+  { id: 'clickup', name: 'ClickUp', subtitle: 'Turn Codex into your ClickUp command center', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_tasks_cu', 'create_task_cu', 'update_task_cu'] },
+  { id: 'common-room', name: 'Common Room', subtitle: 'Complete buyer intelligence within Codex', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_signals', 'list_community', 'find_prospect'] },
+  { id: 'conductor', name: 'Conductor', subtitle: 'Brand visibility and sentiment metrics', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['get_visibility', 'get_sentiment_cond', 'list_topics'] },
+  { id: 'coupler', name: 'Coupler.io', subtitle: 'Analyze multi-channel business data', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_importers', 'run_importer', 'list_sources'] },
+  { id: 'coveo', name: 'Coveo', subtitle: 'Search your enterprise content', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_coveo', 'list_sources_coveo', 'get_document'] },
+  { id: 'demandbase', name: 'Demandbase', subtitle: 'B2B data for sales, marketing, and GTM', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_accounts_db', 'get_intent', 'list_campaigns'] },
+  { id: 'docket', name: 'Docket', subtitle: 'Sales knowledge as an instant superpower', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['ask_docket', 'list_playbooks', 'get_answer'] },
+  { id: 'domotz', name: 'Domotz (Preview)', subtitle: 'Monitor and manage network infrastructure', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_devices_net', 'get_alerts', 'ping_device'] },
+  { id: 'dovetail', name: 'Dovetail', subtitle: 'Turn customer feedback into decisions', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_insights', 'list_projects_dt', 'get_theme'] },
+  { id: 'egnyte', name: 'Egnyte', subtitle: 'Work with documents and files in Egnyte', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['search_egnyte', 'read_egnyte', 'upload_egnyte'] },
+  { id: 'fireflies', name: 'Fireflies', subtitle: 'Meetings and knowledge into Codex', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_meetings_ff', 'get_transcript', 'search_meetings'] },
+  { id: 'fyxer', name: 'Fyxer', subtitle: 'Write emails that sound like you', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['draft_email_fx', 'list_templates_fx', 'send_email_fx'] },
+  { id: 'granola', name: 'Granola', subtitle: 'Meeting history and AI notes', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_granola_meetings', 'get_notes', 'search_granola'] },
+  { id: 'happenstance', name: 'Happenstance', subtitle: 'Search your professional network', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_network', 'find_person', 'suggest_intro'] },
+  { id: 'help-scout', name: 'Help Scout', subtitle: 'Sync Help Scout mailboxes and conversations', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['list_hs_conversations', 'reply_hs', 'assign_hs'] },
+  { id: 'highlevel', name: 'HighLevel', subtitle: 'Unified CRM, automation, and client comms', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_hl_contacts', 'send_campaign', 'list_pipelines_hl'] },
+  { id: 'hubspot', name: 'HubSpot', subtitle: 'Work with your HubSpot CRM data', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['search_hubspot', 'create_hs_contact', 'update_hs_deal'] },
+  { id: 'keybid-puls', name: 'KeyBid Puls', subtitle: 'Short-term rental ROI calculator', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['calculate_roi', 'list_properties_kb', 'forecast_income'] },
+  { id: 'mem', name: 'Mem', subtitle: 'Give Codex your second-brain context', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_mem', 'create_mem_note', 'list_mem_collections'] },
+  { id: 'monday', name: 'Monday.com', subtitle: 'Powerful monday.com connector for AI agents', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_boards', 'create_item_mon', 'update_item_mon'] },
+  { id: 'motherduck', name: 'MotherDuck', subtitle: 'Connect AI assistants to your MotherDuck warehouse', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['run_sql_md', 'list_tables_md', 'describe_table_md'] },
+  { id: 'network-solutions', name: 'Network Solutions', subtitle: 'Find available domains conversationally', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['check_domain', 'suggest_domains', 'register_domain'] },
+  { id: 'omni-analytics', name: 'Omni Analytics', subtitle: 'Query your semantic model directly', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['query_omni', 'list_models_omni', 'get_metric'] },
+  { id: 'otter', name: 'Otter.ai', subtitle: 'Meeting intelligence, transcripts, and search', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['list_otter_meetings', 'get_transcript_ot', 'search_otter'] },
+  { id: 'pipedrive', name: 'Pipedrive', subtitle: 'Sync Pipedrive deals and contacts', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['list_deals_pd', 'create_pd_deal', 'update_pd_contact'] },
+  { id: 'pylon', name: 'Pylon', subtitle: 'Customer support platform in Codex', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_pylon_tickets', 'reply_pylon', 'resolve_pylon'] },
+  { id: 'ranked-ai', name: 'Ranked AI', subtitle: 'Industry-leading AI SEO and PPC software', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['run_seo_audit', 'list_campaigns_ra', 'get_ranking'] },
+  { id: 'razorpay', name: 'Razorpay', subtitle: 'Access Razorpay payment data conversationally', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_payments_rz', 'create_refund_rz', 'get_settlement'] },
+  { id: 'read-ai', name: 'Read AI', subtitle: 'Meeting intelligence in your AI workflows', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_read_meetings', 'get_summary_read', 'search_read'] },
+  { id: 'responsive', name: 'Responsive', subtitle: 'Work with your organization data in Codex', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_responsive', 'create_rfp', 'list_projects_rsp'] },
+  { id: 'semrush', name: 'Semrush', subtitle: 'SEO and traffic data for domains and keywords', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['get_domain_overview', 'list_keywords', 'get_backlinks'] },
+  { id: 'signnow', name: 'SignNow', subtitle: 'Get documents signed faster', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['list_documents_sn', 'send_for_signature', 'get_signing_status'] },
+  { id: 'skywatch', name: 'SkyWatch', subtitle: 'Satellite imagery from top providers', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_imagery', 'order_capture', 'list_archive'] },
+  { id: 'streak', name: 'Streak', subtitle: 'CRM built directly into Gmail', category: 'Productivity', auth: 'oauth' as AuthMethod, tools: ['list_pipelines_st', 'create_box_st', 'update_box_st'] },
+  { id: 'teamwork', name: 'Teamwork.com', subtitle: 'Sync Teamwork projects and tasks', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_tw_projects', 'create_tw_task', 'update_tw_task'] },
+  { id: 'united-rentals', name: 'United Rentals', subtitle: 'Get the right equipment for the job', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['search_equipment', 'get_quote_ur', 'place_order'] },
+  { id: 'waldo', name: 'Waldo', subtitle: 'AI-powered strategy for agencies and brands', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['get_strategy', 'list_plans_waldo', 'run_analysis'] },
+  { id: 'windsor', name: 'Windsor.ai', subtitle: 'Connect marketing and business data', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_sources_ws', 'run_sync', 'get_dataset'] },
+
+  // ── Research ──
+  { id: 'life-science-research', name: 'Life Science Research', subtitle: 'Life-sciences research with evidence synthesis', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_papers', 'synthesize_evidence', 'run_parallel_analysis'] },
+  { id: 'alpaca', name: 'Alpaca', subtitle: 'Stop watching the markets', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['get_quote_al', 'list_positions', 'place_order_al'] },
+  { id: 'binance', name: 'Binance', subtitle: 'Explore Binance public market data', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['get_ticker', 'list_pairs', 'get_orderbook'] },
+  { id: 'cb-insights', name: 'CB Insights', subtitle: 'Private-markets research agent', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_companies_cb', 'get_funding', 'list_industries'] },
+  { id: 'cube', name: 'Cube', subtitle: 'Query live Cube data including variances', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['query_cube', 'list_measures', 'list_dimensions'] },
+  { id: 'daloopa', name: 'Daloopa', subtitle: 'High-quality fundamental data from SEC filings', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_filings', 'get_fundamentals', 'list_datasets_da'] },
+  { id: 'factiva', name: 'Dow Jones Factiva', subtitle: 'Search the Factiva global news archive', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_factiva', 'get_article_factiva', 'list_sources_factiva'] },
+  { id: 'govtribe', name: 'GovTribe', subtitle: 'Government contracts, awards, and vendors', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_contracts', 'list_awards', 'get_vendor'] },
+  { id: 'moodys', name: "Moody's", subtitle: 'Credit and risk intelligence', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['get_rating', 'list_issuers', 'get_risk_report'] },
+  { id: 'morningstar', name: 'Morningstar', subtitle: 'Investment and fund research', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_funds', 'get_fund_profile', 'list_holdings'] },
+  { id: 'mt-newswires', name: 'MT Newswires', subtitle: 'Real-time global financial news', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['latest_news', 'search_news_mt', 'get_article_mt'] },
+  { id: 'particl', name: 'Particl Market Research', subtitle: 'E-commerce research answers in Codex', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_products', 'get_price_trend', 'list_competitors'] },
+  { id: 'pitchbook', name: 'PitchBook', subtitle: 'Structured private-capital market data', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_companies_pb', 'get_deal_pb', 'list_funds_pb'] },
+  { id: 'policynote', name: 'PolicyNote', subtitle: 'Structured policy and regulatory intelligence', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_policies', 'get_regulation', 'list_jurisdictions'] },
+  { id: 'quartr', name: 'Quartr', subtitle: 'Structured IR data from 14,500+ companies', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_companies_q', 'get_earnings', 'list_events_q'] },
+  { id: 'readwise', name: 'Readwise', subtitle: 'Official app for Readwise and Reader', category: 'Research', auth: 'oauth' as AuthMethod, tools: ['list_highlights', 'get_book', 'search_readwise'] },
+  { id: 'scite', name: 'Scite', subtitle: 'Answers grounded in peer-reviewed research', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_scite', 'get_citation_context', 'verify_claim'] },
+  { id: 'taxdown', name: 'Taxdown', subtitle: 'Spanish tax guidance for individuals and self-employed', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['ask_tax_es', 'list_deductions_es', 'simulate_return_es'] },
+  { id: 'third-bridge', name: 'Third Bridge', subtitle: 'Expert industry insights for research', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['search_transcripts_tb', 'get_expert', 'list_industries_tb'] },
+  { id: 'tinman-ai', name: 'Tinman AI', subtitle: 'Underwrite home financing scenarios', category: 'Research', auth: 'api_key' as AuthMethod, tools: ['underwrite_scenario', 'list_products_tm', 'get_answer_tm'] },
+
+  // ── Remaining from the original 14 (Communication / Finance) ──
+  { id: 'paypal', name: 'PayPal', subtitle: 'Payments and invoicing', category: 'Productivity', auth: 'api_key' as AuthMethod, tools: ['list_transactions', 'create_invoice', 'send_payment'] },
+  { id: 'intercom', name: 'Intercom', subtitle: 'Customer messaging platform', category: 'Productivity', auth: 'token' as AuthMethod, tools: ['list_conversations', 'send_message', 'search_contacts'] },
+]
+
+// Per-skill descriptions so the Services pane can render each tool
+// in Codex-style "skill" cards (name + one-line description + add-
+// to-workspace control). Keys are the tool ids from CONNECTORS.tools;
+// anything missing falls back to the tool id itself.
+export const SKILL_DESCRIPTIONS: Record<string, string> = {
+  // Google Drive
+  search_files: 'Search files, folders, and shared drives by keyword or metadata.',
+  read_file: 'Read the content of a file you own or have access to.',
+  upload_file: 'Upload a new file or new version to Drive.',
+  list_folders: 'List folders in a drive or parent folder.',
+  // GitHub
+  search_repos: 'Search public and private repositories by name, language, or topic.',
+  list_issues: 'List open or closed issues in a repository.',
+  create_issue: 'Open a new issue with title, body, and labels.',
+  create_pr: 'Create a pull request from a branch to the base.',
+  // Figma
+  get_file: 'Fetch a Figma file tree (pages, frames, components).',
+  get_components: 'List reusable components from a Figma file.',
+  export_assets: 'Export assets (PNG, SVG, PDF) from a Figma file.',
+  // Gmail
+  search_emails: 'Search the inbox by sender, subject, date, or label.',
+  read_email: 'Read the body and metadata of a specific email.',
+  send_email: 'Compose and send an email to one or more recipients.',
+  create_draft: 'Save a draft email without sending.',
+  // Google Calendar
+  list_events: 'List upcoming calendar events in a time window.',
+  create_event: 'Create a new event with attendees and meeting link.',
+  update_event: 'Change time, attendees, or details of an existing event.',
+  find_free_time: 'Find free slots in one or more calendars.',
+  // Hugging Face
+  search_models: 'Search public models by task, library, or author.',
+  model_info: 'Fetch metadata, tags, and usage info for a specific model.',
+  run_inference: 'Run inference against a hosted Hugging Face model.',
+  // Notion
+  search_pages: 'Search pages and databases by keyword.',
+  read_page: 'Read the full content of a page including blocks.',
+  create_page: 'Create a new page under a parent page or database.',
+  query_database: 'Query a Notion database with filters and sorting.',
+  // Slack
+  search_messages: 'Search across channels and DMs for keywords.',
+  send_message: 'Post a message to a channel or thread.',
+  list_channels: 'List channels you are a member of.',
+  read_channel: 'Read recent messages from a specific channel.',
+  // Canva
+  list_designs: 'List designs in your Canva workspace.',
+  create_design: 'Create a new design from a template or blank canvas.',
+  export_design: 'Export a design as PDF, PNG, or other formats.',
+  // PayPal
+  list_transactions: 'List recent PayPal transactions in a time window.',
+  create_invoice: 'Create and send a PayPal invoice to a customer.',
+  send_payment: 'Send a payment to a PayPal account.',
+  // Stripe
+  list_charges: 'List Stripe charges with status, amount, and customer.',
+  list_subscriptions: 'List active subscriptions and their customers.',
+  // Atlassian
+  search_issues: 'Search Jira issues by project, status, or JQL.',
+  // Linear
+  update_issue: 'Update a Linear issue status, assignee, or description.',
+  list_projects: 'List projects in your Linear workspace.',
+  // Intercom
+  list_conversations: 'List recent support conversations.',
+  search_contacts: 'Search Intercom contacts by email or external id.',
+
+  // ── Hugging Face extras ──
+  search_datasets: 'Search datasets by task, license, or language.',
+
+  // ── Netlify ──
+  netlify_deploy: 'Deploy a site or trigger a new build.',
+  netlify_list_sites: 'List sites connected to this Netlify team.',
+  netlify_env: 'Inspect or update environment variables for a site.',
+  netlify_logs: 'Stream deploy logs and function execution traces.',
+
+  // ── Vercel ──
+  vercel_deploy: 'Deploy a project to Vercel production or a preview.',
+  vercel_list_projects: 'List projects accessible to this Vercel account.',
+  vercel_logs: 'Fetch build + runtime logs from a deployment.',
+  vercel_env: 'Manage environment variables across Vercel environments.',
+
+  // ── Game Studio ──
+  prototype_game: 'Scaffold a browser-game prototype from a prompt.',
+  publish_game: 'Build and publish a game to the hosted studio.',
+  list_assets: 'List available sprites, audio, and scene assets.',
+
+  // ── Superpowers ──
+  plan_feature: 'Break a feature request into a TDD plan.',
+  run_tdd: 'Run a red-green-refactor cycle for the current task.',
+  debug_session: 'Start a structured debug session with rubber-ducking.',
+
+  // ── CircleCI ──
+  list_pipelines: 'List recent CircleCI pipelines for a project.',
+  trigger_build: 'Trigger a CircleCI pipeline on a branch or tag.',
+  get_job_logs: 'Fetch logs for a specific CircleCI job.',
+
+  // ── Cloudflare ──
+  list_zones: 'List Cloudflare zones (domains) on this account.',
+  update_dns: 'Add or update a DNS record on a Cloudflare zone.',
+  deploy_worker: 'Deploy a Cloudflare Worker script.',
+  list_tunnels: 'List active Cloudflare Tunnels and their routes.',
+
+  // ── Sentry ──
+  list_issues_sentry: 'List recent Sentry issues with frequency + severity.',
+  get_event: 'Fetch a specific Sentry event with stack trace.',
+  search_events: 'Search Sentry events by query, release, or environment.',
+
+  // ── Build iOS / macOS / Web / Android ──
+  build_xcode: 'Invoke an Xcode build on the current scheme.',
+  run_simulator: 'Launch an iOS simulator for the current target.',
+  debug_ios: 'Attach the debugger and walk the iOS call stack.',
+  run_macos: 'Launch the built macOS app for manual testing.',
+  debug_macos: 'Attach the debugger and inspect macOS app state.',
+  scaffold_app: 'Scaffold a new web app with the chosen stack.',
+  run_review: 'Run the code-review checklist on recent changes.',
+  deploy_web: 'Ship the web app to the configured hosting target.',
+  run_emulator: 'Boot an Android emulator for the active profile.',
+  capture_screen: 'Capture a screenshot of the running Android emulator.',
+  dump_ui: 'Dump the current Android UI hierarchy for inspection.',
+
+  // ── Expo ──
+  expo_build: 'Run an Expo build for the current app.',
+  expo_publish: 'Publish the Expo bundle to the update channel.',
+  expo_logs: 'Tail device / build logs from Expo.',
+
+  // ── CodeRabbit ──
+  review_pr: 'Run AI code review on the currently-open PR.',
+  summarize_diff: 'Summarize the intent of a diff or PR.',
+  suggest_fixes: 'Suggest concrete fixes for review comments.',
+
+  // ── Neon Postgres ──
+  list_neon_projects: 'List Neon projects available to this account.',
+  run_query: 'Run a SQL query against a Neon branch.',
+  create_branch: 'Create a Neon database branch for safe iteration.',
+
+  // ── Plugin Eval ──
+  run_eval: 'Evaluate the current plugin against a dataset.',
+  run_benchmark: 'Run a benchmark suite locally and collect metrics.',
+  compare_results: 'Compare benchmark runs side-by-side.',
+
+  // ── Cloudinary ──
+  upload_media: 'Upload an image or video to Cloudinary.',
+  search_media: 'Search the Cloudinary library by tag or metadata.',
+  transform_image: 'Apply a Cloudinary transformation recipe.',
+
+  // ── Hostinger ──
+  create_site: 'Create a new Hostinger site from a prompt.',
+  deploy_site: 'Deploy the current site to Hostinger.',
+  configure_domain: 'Attach a custom domain to a Hostinger site.',
+
+  // ── MarcoPolo ──
+  create_sandbox: 'Spin up a secure MarcoPolo sandbox.',
+  upload_data: 'Upload a dataset into the sandbox for analysis.',
+  run_script: 'Run a user-supplied script inside the sandbox.',
+
+  // ── Quicknode ──
+  list_endpoints: 'List Quicknode endpoints across networks.',
+  get_stats: 'Fetch usage + performance stats for an endpoint.',
+  deploy_function: 'Deploy a Quicknode Function to an endpoint.',
+
+  // ── SendGrid ──
+  send_email_sg: 'Send an email via SendGrid.',
+  list_templates: 'List dynamic email templates.',
+  get_stats_sg: 'Fetch delivery + engagement stats.',
+
+  // ── Statsig ──
+  list_gates: 'List feature gates configured in Statsig.',
+  get_experiment: 'Fetch an experiment definition and exposure stats.',
+  update_config: 'Update a dynamic config value.',
+
+  // ── Vantage ──
+  get_cost: 'Get current cloud spend broken down by service.',
+  list_recommendations: 'List Vantage cost-saving recommendations.',
+  compare_clouds: 'Compare equivalent resources across cloud providers.',
+
+  // ── YepCode ──
+  create_tool: 'Define a new YepCode tool with code + schema.',
+  run_tool: 'Execute a YepCode tool against live inputs.',
+  list_tools: 'List tools in your YepCode workspace.',
+
+  // ── Render ──
+  render_deploy: 'Trigger a deploy on a Render service.',
+  render_logs: 'Stream logs from a Render service.',
+  render_list_services: 'List services in your Render account.',
+
+  // ── Design extras ──
+  render_video: 'Render a motion-graphics video from a prompt.',
+  list_compositions: 'List Remotion compositions in the project.',
+  preview_frame: 'Render a single preview frame for quick iteration.',
+  create_figure: 'Create a new BioRender figure from a template.',
+  export_figure: 'Export a BioRender figure to PNG or SVG.',
+
+  // ── Lifestyle ──
+  search_properties: 'Search Cogedim real-estate listings.',
+  get_property: 'Fetch details for a Cogedim property.',
+  list_vehicles: 'List vehicles available for FINN subscription.',
+  book_subscription: 'Book a FINN car subscription.',
+  list_registries: 'List MyRegistry.com registries you manage.',
+  add_item: 'Add an item to a MyRegistry.com registry.',
+  share_registry: 'Share a MyRegistry.com registry via link.',
+  list_bills: 'List pending utility bills.',
+  pay_bill: 'Pay a selected utility bill.',
+  get_receipt: 'Fetch the receipt for a paid bill.',
+  get_quote: 'Get a WeatherPromise protection quote.',
+  create_policy: 'Create a WeatherPromise policy for a trip.',
+  file_claim: 'File a weather-based claim on a policy.',
+
+  // ── Productivity extras ──
+  list_teams_chats: 'List Microsoft Teams chats and channels.',
+  summarize_thread: 'Summarize a Teams thread into key points.',
+  draft_followup: 'Draft a follow-up message for a Teams meeting.',
+  list_sp_sites: 'List SharePoint sites accessible to the user.',
+  read_sp_file: 'Read the content of a SharePoint file.',
+  search_sp: 'Search SharePoint sites + documents by keyword.',
+  search_outlook: 'Search the Outlook inbox.',
+  draft_outlook: 'Draft an Outlook email reply.',
+  send_outlook: 'Send an Outlook email.',
+  list_outlook_events: 'List upcoming Outlook calendar events.',
+  create_outlook_event: 'Create a new Outlook calendar event.',
+  update_outlook_event: 'Reschedule or update an Outlook event.',
+  list_recordings: 'List Jam screen recordings.',
+  get_recording: 'Fetch metadata and transcript for a Jam recording.',
+  share_recording: 'Share a Jam recording with a link.',
+  search_box: 'Search Box for documents by keyword.',
+  read_box_file: 'Read the content of a Box file.',
+  upload_box: 'Upload a file to a Box folder.',
+  query_events: 'Query Amplitude events with filters.',
+  list_funnels: 'List defined Amplitude funnels.',
+  get_cohort: 'Fetch an Amplitude cohort definition.',
+  search_records: 'Search CRM records across objects.',
+  create_record: 'Create a new CRM record.',
+  update_record: 'Update fields on an existing CRM record.',
+  search_mentions: 'Search recent brand mentions.',
+  get_sentiment: 'Get sentiment score for a tracked brand.',
+  list_projects_b24: 'List Brand24 tracking projects.',
+  list_transactions_brex: 'List Brex card transactions.',
+  list_cards: 'List Brex cards and their limits.',
+  get_balance: 'Fetch the current Brex account balance.',
+  list_deals: 'List Carta deals in the pipeline.',
+  get_company: 'Fetch Carta company profile and fundraising history.',
+  update_deal: 'Update stage or notes on a Carta deal.',
+  get_gtm_metrics: 'Get real-time go-to-market metrics.',
+  list_accounts: 'List target accounts from Channel99.',
+  trace_pipeline: 'Trace a deal across the GTM pipeline.',
+  list_meetings_cb: 'List meetings tracked by Circleback.',
+  get_summary: 'Fetch AI summary for a meeting.',
+  list_actions: 'List action items extracted from meetings.',
+  list_tasks_cu: 'List ClickUp tasks in a space.',
+  create_task_cu: 'Create a new ClickUp task.',
+  update_task_cu: 'Update a ClickUp task status or assignee.',
+  search_signals: 'Search Common Room community signals.',
+  list_community: 'List community members with filters.',
+  find_prospect: 'Find a prospect matching an ICP profile.',
+  get_visibility: 'Get brand-visibility score for a topic.',
+  get_sentiment_cond: 'Get Conductor sentiment score.',
+  list_topics: 'List monitored topics in Conductor.',
+  list_importers: 'List Coupler.io data importers.',
+  run_importer: 'Run a Coupler.io importer manually.',
+  list_sources: 'List available data sources.',
+  search_coveo: 'Search enterprise content via Coveo.',
+  list_sources_coveo: 'List indexed Coveo sources.',
+  get_document: 'Fetch a Coveo-indexed document.',
+  search_accounts_db: 'Search Demandbase accounts by intent or firmographic.',
+  get_intent: 'Get intent signals for an account.',
+  list_campaigns: 'List active Demandbase campaigns.',
+  ask_docket: 'Ask Docket AI a sales-knowledge question.',
+  list_playbooks: 'List Docket playbooks.',
+  get_answer: 'Get a Docket answer with source citations.',
+  list_devices_net: 'List Domotz-monitored network devices.',
+  get_alerts: 'Get current Domotz alerts.',
+  ping_device: 'Ping a network device to verify reachability.',
+  search_insights: 'Search Dovetail insights by theme.',
+  list_projects_dt: 'List Dovetail projects.',
+  get_theme: 'Fetch a Dovetail theme and related data.',
+  search_egnyte: 'Search Egnyte-stored documents.',
+  read_egnyte: 'Read an Egnyte file.',
+  upload_egnyte: 'Upload a file to an Egnyte folder.',
+  list_meetings_ff: 'List Fireflies meetings.',
+  get_transcript: 'Fetch transcript for a recorded meeting.',
+  search_meetings: 'Search Fireflies meetings by keyword.',
+  draft_email_fx: 'Draft an email in your personal voice.',
+  list_templates_fx: 'List Fyxer email templates.',
+  send_email_fx: 'Send an email composed via Fyxer.',
+  list_granola_meetings: 'List Granola meetings.',
+  get_notes: 'Fetch Granola notes for a meeting.',
+  search_granola: 'Search Granola knowledge base.',
+  search_network: 'Search your professional network.',
+  find_person: 'Find a person matching given criteria.',
+  suggest_intro: 'Suggest an introduction path to a target.',
+  list_hs_conversations: 'List Help Scout conversations.',
+  reply_hs: 'Reply to a Help Scout conversation.',
+  assign_hs: 'Assign a Help Scout conversation to a teammate.',
+  list_hl_contacts: 'List HighLevel CRM contacts.',
+  send_campaign: 'Send a HighLevel campaign.',
+  list_pipelines_hl: 'List HighLevel pipelines.',
+  search_hubspot: 'Search HubSpot CRM records.',
+  create_hs_contact: 'Create a new HubSpot contact.',
+  update_hs_deal: 'Update a HubSpot deal stage or fields.',
+  calculate_roi: 'Calculate ROI for a short-term-rental property.',
+  list_properties_kb: 'List properties tracked in KeyBid Puls.',
+  forecast_income: 'Forecast expected rental income.',
+  search_mem: 'Search your Mem second-brain.',
+  create_mem_note: 'Create a Mem note.',
+  list_mem_collections: 'List Mem collections.',
+  list_boards: 'List monday.com boards.',
+  create_item_mon: 'Create a new monday.com item on a board.',
+  update_item_mon: 'Update a monday.com item.',
+  run_sql_md: 'Run a SQL query against MotherDuck.',
+  list_tables_md: 'List tables in a MotherDuck database.',
+  describe_table_md: 'Describe the schema of a MotherDuck table.',
+  check_domain: 'Check whether a domain is available.',
+  suggest_domains: 'Suggest alternative available domains.',
+  register_domain: 'Register a domain via Network Solutions.',
+  query_omni: 'Query Omni Analytics using the semantic model.',
+  list_models_omni: 'List Omni semantic models.',
+  get_metric: 'Fetch a specific Omni metric value.',
+  list_otter_meetings: 'List Otter.ai meetings.',
+  get_transcript_ot: 'Fetch an Otter.ai meeting transcript.',
+  search_otter: 'Search Otter.ai transcripts.',
+  list_deals_pd: 'List Pipedrive deals.',
+  create_pd_deal: 'Create a new Pipedrive deal.',
+  update_pd_contact: 'Update a Pipedrive contact.',
+  list_pylon_tickets: 'List Pylon support tickets.',
+  reply_pylon: 'Reply to a Pylon ticket.',
+  resolve_pylon: 'Mark a Pylon ticket as resolved.',
+  run_seo_audit: 'Run a Ranked AI SEO audit.',
+  list_campaigns_ra: 'List Ranked AI campaigns.',
+  get_ranking: 'Get current SERP ranking for a keyword.',
+  list_payments_rz: 'List Razorpay payments.',
+  create_refund_rz: 'Issue a Razorpay refund.',
+  get_settlement: 'Get Razorpay settlement details.',
+  list_read_meetings: 'List Read AI meetings.',
+  get_summary_read: 'Fetch a Read AI meeting summary.',
+  search_read: 'Search Read AI intelligence.',
+  search_responsive: 'Search Responsive RFP content library.',
+  create_rfp: 'Create a new RFP in Responsive.',
+  list_projects_rsp: 'List Responsive projects.',
+  get_domain_overview: 'Get Semrush overview for a domain.',
+  list_keywords: 'List tracked keywords in Semrush.',
+  get_backlinks: 'Fetch backlinks for a domain.',
+  list_documents_sn: 'List SignNow documents awaiting signature.',
+  send_for_signature: 'Send a document out for SignNow signature.',
+  get_signing_status: 'Check the signing status of a document.',
+  search_imagery: 'Search satellite imagery archive.',
+  order_capture: 'Order a new satellite capture for a bounding box.',
+  list_archive: 'List available satellite archive entries.',
+  list_pipelines_st: 'List Streak pipelines inside Gmail.',
+  create_box_st: 'Create a new Streak box (deal).',
+  update_box_st: 'Update a Streak box.',
+  list_tw_projects: 'List Teamwork.com projects.',
+  create_tw_task: 'Create a Teamwork.com task.',
+  update_tw_task: 'Update a Teamwork.com task status or assignee.',
+  search_equipment: 'Search United Rentals equipment catalog.',
+  get_quote_ur: 'Get a United Rentals rental quote.',
+  place_order: 'Place a rental order.',
+  get_strategy: 'Get a Waldo strategic recommendation.',
+  list_plans_waldo: 'List Waldo strategy plans.',
+  run_analysis: 'Run a Waldo strategy analysis.',
+  list_sources_ws: 'List Windsor.ai marketing data sources.',
+  run_sync: 'Run a Windsor.ai data sync.',
+  get_dataset: 'Fetch a Windsor.ai dataset.',
+
+  // ── Research ──
+  search_papers: 'Search biomedical / life-sciences literature.',
+  synthesize_evidence: 'Synthesize evidence across multiple papers.',
+  run_parallel_analysis: 'Run parallel subagent analysis on a research question.',
+  get_quote_al: 'Get the current Alpaca market quote.',
+  list_positions: 'List open Alpaca positions.',
+  place_order_al: 'Place an Alpaca trade order.',
+  get_ticker: 'Get Binance ticker data.',
+  list_pairs: 'List available Binance trading pairs.',
+  get_orderbook: 'Fetch the Binance order book snapshot.',
+  search_companies_cb: 'Search CB Insights companies.',
+  get_funding: 'Fetch funding history for a company.',
+  list_industries: 'List CB Insights industries.',
+  query_cube: 'Query Cube data with measures and dimensions.',
+  list_measures: 'List Cube measures.',
+  list_dimensions: 'List Cube dimensions.',
+  search_filings: 'Search Daloopa-indexed SEC filings.',
+  get_fundamentals: 'Fetch structured company fundamentals.',
+  list_datasets_da: 'List Daloopa datasets.',
+  search_factiva: 'Search the Factiva news archive.',
+  get_article_factiva: 'Fetch a Factiva article by id.',
+  list_sources_factiva: 'List Factiva news sources.',
+  search_contracts: 'Search government contracts on GovTribe.',
+  list_awards: 'List awarded government contracts.',
+  get_vendor: 'Fetch a government vendor profile.',
+  get_rating: "Fetch a Moody's credit rating.",
+  list_issuers: "List Moody's-rated issuers.",
+  get_risk_report: "Fetch a Moody's risk report.",
+  search_funds: 'Search Morningstar funds.',
+  get_fund_profile: 'Fetch a Morningstar fund profile.',
+  list_holdings: 'List top holdings for a fund.',
+  latest_news: 'Fetch the latest MT Newswires headlines.',
+  search_news_mt: 'Search MT Newswires by query.',
+  get_article_mt: 'Fetch an MT Newswires article by id.',
+  search_products: 'Search Particl e-commerce product data.',
+  get_price_trend: 'Get price trend for a product.',
+  list_competitors: 'List competing products or brands.',
+  search_companies_pb: 'Search PitchBook companies.',
+  get_deal_pb: 'Fetch a PitchBook deal record.',
+  list_funds_pb: 'List PitchBook funds.',
+  search_policies: 'Search PolicyNote policy + regulatory content.',
+  get_regulation: 'Fetch a specific regulation.',
+  list_jurisdictions: 'List PolicyNote jurisdictions.',
+  search_companies_q: 'Search Quartr-covered public companies.',
+  get_earnings: 'Fetch earnings call data for a company.',
+  list_events_q: 'List upcoming IR events.',
+  list_highlights: 'List Readwise highlights.',
+  get_book: 'Fetch a Readwise book summary.',
+  search_readwise: 'Search Readwise content.',
+  search_scite: 'Search Scite for peer-reviewed answers.',
+  get_citation_context: 'Fetch the citation context around a claim.',
+  verify_claim: 'Verify a claim against peer-reviewed research.',
+  ask_tax_es: 'Ask Taxdown a Spanish-tax question.',
+  list_deductions_es: 'List Spanish tax deductions available to the user.',
+  simulate_return_es: 'Simulate a Spanish tax-return outcome.',
+  search_transcripts_tb: 'Search Third Bridge expert transcripts.',
+  get_expert: 'Fetch a Third Bridge expert profile.',
+  list_industries_tb: 'List Third Bridge industries.',
+  underwrite_scenario: 'Underwrite a home-financing scenario.',
+  list_products_tm: 'List Tinman AI loan products.',
+  get_answer_tm: 'Get a Tinman AI loan-officer answer.',
+}
+
+// ── Browse catalog (Claude Desktop-style marketplace) ──
+
+export const BROWSE_CONNECTORS_CATALOG: BrowseCatalogItem[] = [
+  // Communication
+  { id: 'gmail', name: 'Gmail', description: 'Draft replies, summarize threads, and search your inbox', popularity: 'Most popular', category: 'Communication', authUrl: 'https://mail.google.com' },
+  { id: 'slack', name: 'Slack', description: 'Send messages, create canvases, and fetch Slack data', popularity: '#4 popular', category: 'Communication', authUrl: 'https://slack.com' },
+  { id: 'intercom', name: 'Intercom', description: 'Customer messaging, conversations, and support', category: 'Communication', authUrl: 'https://www.intercom.com' },
+  { id: 'microsoft-teams', name: 'Microsoft Teams', description: 'Chat, meetings, and collaboration in Teams', category: 'Communication', authUrl: 'https://teams.microsoft.com' },
+  // Productivity
+  { id: 'google-calendar', name: 'Google Calendar', description: 'Manage your schedule and coordinate meetings', popularity: '#2 popular', category: 'Productivity', authUrl: 'https://calendar.google.com' },
+  { id: 'google-drive', name: 'Google Drive', description: 'Access files, folders, and shared drives', popularity: '#3 popular', category: 'Productivity', authUrl: 'https://drive.google.com' },
+  { id: 'notion', name: 'Notion', description: 'Connect your Notion workspace to search, update, and power workflows', popularity: '#5 popular', category: 'Productivity', authUrl: 'https://www.notion.so' },
+  { id: 'monday', name: 'monday.com', description: 'Manage projects, boards, and workflows', category: 'Productivity', authUrl: 'https://monday.com' },
+  { id: 'airtable', name: 'Airtable', description: 'Manage databases, tables, and automations', category: 'Productivity', authUrl: 'https://airtable.com' },
+  { id: 'dropbox', name: 'Dropbox', description: 'Cloud storage, file sharing, and sync', category: 'Productivity', authUrl: 'https://www.dropbox.com' },
+  { id: 'box', name: 'Box', description: 'Secure cloud content management and file sharing', category: 'Productivity', authUrl: 'https://www.box.com' },
+  { id: 'wordpress', name: 'WordPress.com', description: 'Manage posts, pages, and site content', category: 'Productivity', authUrl: 'https://wordpress.com' },
+  { id: 'clickup', name: 'ClickUp', description: 'Tasks, docs, goals, and project management', category: 'Productivity', authUrl: 'https://clickup.com' },
+  { id: 'basecamp', name: 'Basecamp', description: 'Project management, team communication, and scheduling', category: 'Productivity', authUrl: 'https://basecamp.com' },
+  // Project Management
+  { id: 'asana', name: 'Asana', description: 'Track projects, manage tasks, and coordinate team work', category: 'Project Management', authUrl: 'https://asana.com' },
+  { id: 'linear', name: 'Linear', description: 'Manage issues, projects, and team workflows', category: 'Project Management', authUrl: 'https://linear.app' },
+  { id: 'atlassian', name: 'Atlassian Rovo', description: 'Access Jira and Confluence from Daena', category: 'Project Management', authUrl: 'https://www.atlassian.com' },
+  // Design
+  { id: 'canva', name: 'Canva', description: 'Search, create, autofill, and export Canva designs', popularity: '#6 popular', category: 'Design', authUrl: 'https://www.canva.com' },
+  { id: 'figma', name: 'Figma', description: 'Generate diagrams and better code from Figma context', popularity: '#7 popular', category: 'Design', authUrl: 'https://www.figma.com' },
+  // Development
+  { id: 'github', name: 'GitHub', description: 'Repositories, issues, pull requests, and actions', popularity: '#8 popular', category: 'Development', authUrl: 'https://github.com' },
+  { id: 'sentry', name: 'Sentry', description: 'Error tracking, performance monitoring, and debugging', category: 'Development', authUrl: 'https://sentry.io' },
+  { id: 'cloudflare', name: 'Cloudflare', description: 'DNS, CDN, security, and Workers management', category: 'Development', authUrl: 'https://dash.cloudflare.com' },
+  { id: 'vercel', name: 'Vercel', description: 'Deploy and manage web applications', category: 'Development', authUrl: 'https://vercel.com' },
+  { id: 'hugging-face', name: 'Hugging Face', description: 'Models, datasets, and spaces for ML', category: 'Development', authUrl: 'https://huggingface.co' },
+  // Data & Analytics
+  { id: 'amplitude', name: 'Amplitude', description: 'Product analytics, user behavior, and insights', category: 'Analytics', authUrl: 'https://amplitude.com' },
+  { id: 'hex', name: 'Hex', description: 'Collaborative data notebooks and analytics', category: 'Analytics', authUrl: 'https://hex.tech' },
+  { id: 'snowflake', name: 'Snowflake', description: 'Cloud data warehouse queries and management', category: 'Analytics', authUrl: 'https://www.snowflake.com' },
+  // Sales & CRM
+  { id: 'hubspot', name: 'HubSpot', description: 'Chat with your CRM data to get personalized insights', category: 'Sales', authUrl: 'https://www.hubspot.com' },
+  { id: 'salesforce', name: 'Salesforce', description: 'Access CRM records, contacts, and opportunities', category: 'Sales', authUrl: 'https://www.salesforce.com' },
+  { id: 'clay', name: 'Clay', description: 'Enrich leads and automate outbound workflows', category: 'Sales', authUrl: 'https://www.clay.com' },
+  // Finance
+  { id: 'stripe', name: 'Stripe', description: 'View payments, subscriptions, and billing data', category: 'Finance', authUrl: 'https://dashboard.stripe.com' },
+  { id: 'paypal', name: 'PayPal', description: 'Payments, invoicing, and transaction history', category: 'Finance', authUrl: 'https://www.paypal.com' },
+  { id: 'square', name: 'Square', description: 'Payment processing, invoicing, and POS', category: 'Finance', authUrl: 'https://squareup.com' },
+  { id: 'plaid', name: 'Plaid', description: 'Connect to bank accounts and financial data', category: 'Finance', authUrl: 'https://plaid.com' },
+  // Automation
+  { id: 'zapier', name: 'Zapier', description: 'Connect 5000+ apps and automate workflows', category: 'Automation', authUrl: 'https://zapier.com' },
+  // Healthcare
+  { id: 'apple-health', name: 'Apple Health', description: 'Access health records and lab results', category: 'Healthcare', authUrl: 'https://www.apple.com/health/' },
+  { id: 'pubmed', name: 'PubMed', description: 'Search biomedical and life sciences literature', category: 'Healthcare', authUrl: 'https://pubmed.ncbi.nlm.nih.gov' },
+  // Knowledge
+  { id: 'gamma', name: 'Gamma', description: 'Create presentations, documents, and webpages with AI', category: 'Productivity', authUrl: 'https://gamma.app' },
+  { id: 'granola', name: 'Granola', description: 'AI meeting notes and conversation summaries', category: 'Productivity', authUrl: 'https://www.granola.ai' },
+]
+
+export const BROWSE_EXTENSIONS_CATALOG: BrowseCatalogItem[] = [
+  // ── System & Files ──
+  { id: 'filesystem', name: 'Filesystem', description: 'Read, write, and manage files on your computer', popularity: 'Most popular', category: 'System' },
+  { id: 'desktop-commander', name: 'Desktop Commander', description: 'Build, explore, and automate on your local machine', popularity: '#2 popular', category: 'System' },
+  { id: 'windows-mcp', name: 'Windows MCP', description: 'Windows OS interaction, screenshots, and automation', category: 'System' },
+  { id: 'macos-defaults', name: 'macOS Defaults', description: 'Read and write macOS system preferences', category: 'System' },
+  { id: 'shell', name: 'Shell', description: 'Execute shell commands with sandboxed access', category: 'System' },
+  // ── Browser & Web ──
+  { id: 'puppeteer', name: 'Puppeteer', description: 'Browser automation, screenshots, and web scraping', popularity: '#3 popular', category: 'Browser' },
+  { id: 'playwright', name: 'Playwright', description: 'Cross-browser testing and automation', category: 'Browser' },
+  { id: 'chrome-devtools', name: 'Chrome DevTools', description: 'Debug, inspect, and profile web pages via Chrome', category: 'Browser' },
+  { id: 'fetch', name: 'Fetch', description: 'Make HTTP requests and fetch web content', category: 'Browser' },
+  // ── Search ──
+  { id: 'brave-search', name: 'Brave Search', description: 'Web search via Brave Search API', popularity: '#4 popular', category: 'Search' },
+  { id: 'tavily', name: 'Tavily', description: 'AI-optimized search engine for agents', category: 'Search' },
+  { id: 'exa', name: 'Exa', description: 'Neural search engine for finding relevant content', category: 'Search' },
+  { id: 'google-search', name: 'Google Search', description: 'Search the web via Google Custom Search API', category: 'Search' },
+  { id: 'serper', name: 'Serper', description: 'Google SERP API for structured search results', category: 'Search' },
+  // ── Design ──
+  { id: 'figma-mcp', name: 'Figma', description: 'Generate code from Figma designs and inspect components', popularity: '#5 popular', category: 'Design' },
+  { id: 'canva-mcp', name: 'Canva', description: 'Create and manage Canva designs programmatically', category: 'Design' },
+  { id: 'magic-mcp', name: '21st.dev Magic', description: 'AI component builder with design system awareness', category: 'Design' },
+  // ── AI & Voice ──
+  { id: 'elevenlabs', name: 'ElevenLabs', description: 'Text-to-speech, voice cloning, and AI voice agents', category: 'AI' },
+  { id: 'openai-mcp', name: 'OpenAI', description: 'GPT models, DALL-E, Whisper, and embeddings', category: 'AI' },
+  { id: 'anthropic-mcp', name: 'Anthropic', description: 'Claude API for reasoning, analysis, and code generation', category: 'AI' },
+  { id: 'replicate', name: 'Replicate', description: 'Run open-source ML models in the cloud', category: 'AI' },
+  { id: 'huggingface-mcp', name: 'Hugging Face', description: 'Models, datasets, spaces, and inference API', category: 'AI' },
+  { id: 'memory', name: 'Memory', description: 'Persistent memory storage across conversations', category: 'AI' },
+  // ── Documents ──
+  { id: 'pdf-tools', name: 'PDF Tools', description: 'Fill forms, analyze, extract text, and annotate PDFs', category: 'Documents' },
+  { id: 'pandoc', name: 'Pandoc', description: 'Convert between document formats (Markdown, DOCX, HTML, PDF)', category: 'Documents' },
+  { id: 'markitdown', name: 'MarkItDown', description: 'Convert any file to Markdown for AI processing', category: 'Documents' },
+  { id: 'google-docs-mcp', name: 'Google Docs', description: 'Read, create, and edit Google Docs', category: 'Documents' },
+  // ── Data & Databases ──
+  { id: 'postgres', name: 'PostgreSQL', description: 'Query and manage PostgreSQL databases', popularity: '#6 popular', category: 'Data' },
+  { id: 'sqlite', name: 'SQLite', description: 'Query and manage local SQLite databases', category: 'Data' },
+  { id: 'mysql', name: 'MySQL', description: 'Query and manage MySQL databases', category: 'Data' },
+  { id: 'redis', name: 'Redis', description: 'In-memory data store, cache, and message broker', category: 'Data' },
+  { id: 'mongodb', name: 'MongoDB', description: 'Query and manage MongoDB document databases', category: 'Data' },
+  { id: 'supabase', name: 'Supabase', description: 'Postgres database, auth, storage, and realtime', category: 'Data' },
+  { id: 'neon', name: 'Neon', description: 'Serverless Postgres with branching and autoscaling', category: 'Data' },
+  { id: 'snowflake-mcp', name: 'Snowflake', description: 'Cloud data warehouse queries and management', category: 'Data' },
+  { id: 'bigquery', name: 'BigQuery', description: 'Google BigQuery data warehouse queries', category: 'Data' },
+  // ── Development ──
+  { id: 'git', name: 'Git', description: 'Read, search, and analyze local Git repositories', popularity: '#7 popular', category: 'Development' },
+  { id: 'github-mcp', name: 'GitHub', description: 'Issues, PRs, repos, actions, and code search', popularity: '#8 popular', category: 'Development' },
+  { id: 'gitlab-mcp', name: 'GitLab', description: 'Merge requests, issues, pipelines, and repositories', category: 'Development' },
+  { id: 'linear-mcp', name: 'Linear', description: 'Issue tracking, project management, and workflows', category: 'Development' },
+  { id: 'jira-mcp', name: 'Jira', description: 'Issue tracking, sprints, and project management', category: 'Development' },
+  { id: 'docker-mcp', name: 'Docker', description: 'Manage containers, images, volumes, and networks', category: 'Development' },
+  { id: 'kubernetes', name: 'Kubernetes', description: 'Manage K8s clusters, pods, deployments, and services', category: 'Development' },
+  { id: 'terraform', name: 'Terraform', description: 'Infrastructure as code management and planning', category: 'Development' },
+  { id: 'vercel-mcp', name: 'Vercel', description: 'Deploy and manage web applications on Vercel', category: 'Development' },
+  { id: 'netlify', name: 'Netlify', description: 'Deploy, manage, and monitor Netlify sites', category: 'Development' },
+  { id: 'cloudflare-mcp', name: 'Cloudflare', description: 'DNS, CDN, Workers, and security management', category: 'Development' },
+  { id: 'aws-mcp', name: 'AWS', description: 'Manage AWS services (S3, Lambda, EC2, CloudWatch)', category: 'Development' },
+  { id: 'gcp-mcp', name: 'Google Cloud', description: 'Manage GCP services (Cloud Run, Storage, BigQuery)', category: 'Development' },
+  { id: 'azure-mcp', name: 'Azure', description: 'Manage Azure services and resources', category: 'Development' },
+  // ── Monitoring & Observability ──
+  { id: 'sentry-mcp', name: 'Sentry', description: 'Error tracking, performance monitoring, and debugging', category: 'Monitoring' },
+  { id: 'datadog-mcp', name: 'Datadog', description: 'Metrics, logs, traces, and infrastructure monitoring', category: 'Monitoring' },
+  { id: 'grafana-mcp', name: 'Grafana', description: 'Dashboards, alerting, and observability', category: 'Monitoring' },
+  { id: 'pagerduty', name: 'PagerDuty', description: 'Incident management and on-call scheduling', category: 'Monitoring' },
+  // ── Communication ──
+  { id: 'slack-mcp', name: 'Slack', description: 'Send messages, search channels, and manage workflows', popularity: '#9 popular', category: 'Communication' },
+  { id: 'discord-mcp', name: 'Discord', description: 'Send messages, manage servers, and moderate channels', category: 'Communication' },
+  { id: 'email-mcp', name: 'Email (SMTP)', description: 'Send and read emails via SMTP/IMAP', category: 'Communication' },
+  { id: 'twilio', name: 'Twilio', description: 'SMS, voice calls, and messaging APIs', category: 'Communication' },
+  // ── Productivity ──
+  { id: 'google-calendar-mcp', name: 'Google Calendar', description: 'Manage events, find free time, and schedule meetings', category: 'Productivity' },
+  { id: 'google-drive-mcp', name: 'Google Drive', description: 'Access, search, and manage files and folders', category: 'Productivity' },
+  { id: 'google-sheets-mcp', name: 'Google Sheets', description: 'Read, write, and analyze spreadsheet data', category: 'Productivity' },
+  { id: 'notion-mcp', name: 'Notion', description: 'Search, create, and update Notion pages and databases', popularity: '#10 popular', category: 'Productivity' },
+  { id: 'todoist', name: 'Todoist', description: 'Task management, projects, and productivity tracking', category: 'Productivity' },
+  { id: 'obsidian', name: 'Obsidian', description: 'Read and write Obsidian vault notes and knowledge graphs', category: 'Productivity' },
+  { id: 'raycast', name: 'Raycast', description: 'macOS productivity launcher and extensions', category: 'Productivity' },
+  // ── Analytics & Data Science ──
+  { id: 'jupyter', name: 'Jupyter', description: 'Execute Python notebooks and data analysis', category: 'Analytics' },
+  { id: 'dbt', name: 'dbt', description: 'Data transformation, testing, and documentation', category: 'Analytics' },
+  { id: 'amplitude-mcp', name: 'Amplitude', description: 'Product analytics and user behavior insights', category: 'Analytics' },
+  { id: 'mixpanel', name: 'Mixpanel', description: 'Event analytics and user engagement tracking', category: 'Analytics' },
+  // ── CRM & Sales ──
+  { id: 'salesforce-mcp', name: 'Salesforce', description: 'CRM records, contacts, opportunities, and reports', category: 'CRM' },
+  { id: 'hubspot-mcp', name: 'HubSpot', description: 'CRM, marketing, sales, and service hub', category: 'CRM' },
+  { id: 'apollo-mcp', name: 'Apollo', description: 'Prospecting, enrichment, and outreach sequences', category: 'CRM' },
+  // ── Maps & Location ──
+  { id: 'google-maps', name: 'Google Maps', description: 'Geocoding, directions, places, and distance matrix', category: 'Maps' },
+  // ── Media ──
+  { id: 'youtube', name: 'YouTube', description: 'Search videos, get transcripts, and channel analytics', category: 'Media' },
+  { id: 'spotify', name: 'Spotify', description: 'Search music, manage playlists, and playback control', category: 'Media' },
+  // ── Security ──
+  { id: 'vault', name: 'HashiCorp Vault', description: 'Secrets management and data protection', category: 'Security' },
+  { id: '1password', name: '1Password', description: 'Secure password and secrets management', category: 'Security' },
+]
+
+// ── Cloud-mode pre-installed extensions (mapped from BROWSE_EXTENSIONS_CATALOG) ──
+
+export const CLOUD_PREINSTALLED_EXTENSIONS: ExtensionData[] = BROWSE_EXTENSIONS_CATALOG.map((item) => ({
+  id: item.id,
+  name: item.name,
+  description: item.description,
+  enabled: true,
+  permission: 'ASK_EACH_TIME',
+}))
+
+// ── Connector -> MCP server map (Session 10) ──
+//
+// For services that have an equivalent community MCP server, surface
+// "Install the MCP server" as the PRIMARY no-configuration path. The
+// MCP server ships with its own OAuth app credentials embedded, so the
+// user doesn't need to register a Google Cloud project or paste client
+// IDs -- exactly the same experience Claude Desktop provides. This is
+// the pattern most Claude Desktop users actually use for Google,
+// Notion, Slack, etc.
+//
+// Values point at official / well-maintained MCP servers. Source URLs
+// go to the GitHub repo so the user can verify before installing.
+export const CONNECTOR_MCP_EQUIVALENT: Record<string, MCPEquivalent> = {
+  'google-drive': {
+    name: 'Google Drive MCP',
+    package: '@modelcontextprotocol/server-gdrive',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-gdrive'],
+    repo_url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive',
+    auth_note: 'Pops a Google sign-in window the first time you use a tool. No Client ID setup.',
+  },
+  'gmail': {
+    name: 'Gmail MCP',
+    package: '@gongrzhe/server-gmail-autoauth-mcp',
+    command: 'npx',
+    args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
+    repo_url: 'https://github.com/GongRzhe/Gmail-MCP-Server',
+    auth_note: 'Auto-launches Google OAuth on first call. No configuration needed.',
+  },
+  'google-calendar': {
+    name: 'Google Calendar MCP',
+    package: '@cocal/google-calendar-mcp',
+    command: 'npx',
+    args: ['-y', '@cocal/google-calendar-mcp'],
+    repo_url: 'https://github.com/nspady/google-calendar-mcp',
+    auth_note: 'Handles Google OAuth inside the MCP server.',
+  },
+  'slack': {
+    name: 'Slack MCP',
+    package: '@modelcontextprotocol/server-slack',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-slack'],
+    repo_url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/slack',
+    auth_note: 'Uses a Slack user token you generate once. Clear setup guide in the repo.',
+  },
+  'github': {
+    name: 'GitHub MCP',
+    package: '@modelcontextprotocol/server-github',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-github'],
+    repo_url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/github',
+    auth_note: 'Uses a GitHub personal access token. Fastest path: 60 seconds.',
+  },
+  'notion': {
+    name: 'Notion MCP',
+    package: '@notionhq/notion-mcp-server',
+    command: 'npx',
+    args: ['-y', '@notionhq/notion-mcp-server'],
+    repo_url: 'https://github.com/makenotion/notion-mcp-server',
+    auth_note: 'Uses a Notion integration token. Official Notion-built server.',
+  },
+  'figma': {
+    name: 'Figma MCP',
+    package: 'figma-developer-mcp',
+    command: 'npx',
+    args: ['-y', 'figma-developer-mcp'],
+    repo_url: 'https://github.com/GLips/Figma-Context-MCP',
+    auth_note: 'Uses a Figma personal access token.',
+  },
+}

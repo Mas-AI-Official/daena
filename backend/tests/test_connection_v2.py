@@ -42,6 +42,7 @@ from app.services.connection_v2 import (
     derive_label,
     release_op_lock,
 )
+from app.services.connection_v2.probe import install_noop_probes_for_tests
 
 KEK_SEED = b"k" * 32
 
@@ -56,6 +57,11 @@ async def seeded_tenant(db_session, test_tenant_id):
 
 @pytest.fixture
 async def registry(db_session, seeded_tenant):
+    # PR-CONNECTIONS-TRUTH-CLEANUP (2026-05-02): probe.py no longer
+    # auto-installs NoopProbe for every kind. Tests in this file
+    # exercise the registry's probe pipeline via _test_probe directives,
+    # so we register NoopProbe explicitly here.
+    install_noop_probes_for_tests()
     return ConnectionRegistryV2(db_session, kek_seed=KEK_SEED)
 
 

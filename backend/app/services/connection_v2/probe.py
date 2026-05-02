@@ -11,6 +11,14 @@ rewrites (claude_code, codex, gemini_cli, grok_cli, mcp_bridge).
 Phase 4b PR 1 deliberately does NOT implement the real probes -- those
 need their own design pass with Founder review (HTTP allowlists,
 DNS rebinding defense, rate limits per V2 §14 + ADR-002).
+
+PR-CONNECTIONS-TRUTH-CLEANUP (2026-05-02): the registry no longer
+auto-installs NoopProbe for every ConnectionKind. NoopProbe defaults
+to ``success=True``, which made every unimplemented kind silently
+report healthy. Now: an unregistered kind returns a structured
+``probe_unavailable`` failure (success=False, failure_dim="callable")
+so the V2 truth surface and audit log show the gap honestly.
+NoopProbe is still available; tests register it explicitly.
 """
 
 from __future__ import annotations
@@ -99,15 +107,32 @@ def register_probe(probe: Probe) -> None:
     PROBE_REGISTRY[key] = probe
 
 
+# Sentinel prefix for the "no real probe implementation yet" failure
+# reason. The frontend can match on this prefix to render a distinct
+# "Probe unavailable" pill (vs. "Probe failed").
+PROBE_UNAVAILABLE_PREFIX = "probe_unavailable: "
+
+
 async def run_probe(row: ConnectionV2) -> ProbeResult:
     """Resolve the probe for ``row.kind`` and run it. Always returns a
-    ProbeResult; never raises (contract requirement)."""
+    ProbeResult; never raises (contract requirement).
+
+    When no probe is registered for ``row.kind`` the result is
+    structured (success=False, failure_dim="callable", failure_reason
+    starts with PROBE_UNAVAILABLE_PREFIX) so the UI can distinguish
+    "no probe implemented yet" from "probe ran and failed". This is
+    the honest replacement for the prior auto-NoopProbe default that
+    silently reported every kind healthy.
+    """
     probe = PROBE_REGISTRY.get(row.kind)
     if probe is None:
         return ProbeResult(
             success=False,
             failure_dim="callable",
-            failure_reason=f"no probe registered for kind {row.kind!r}",
+            failure_reason=(
+                f"{PROBE_UNAVAILABLE_PREFIX}no real probe implementation "
+                f"for kind {row.kind!r} yet -- callable cannot be proven"
+            ),
         )
     try:
         return await probe.run(row)
@@ -119,12 +144,13 @@ async def run_probe(row: ConnectionV2) -> ProbeResult:
         )
 
 
-# Phase 4b PR 1 default registration: NoopProbe for every kind. Phase 4b
-# PR 2 replaces these with real per-kind implementations.
-def _install_default_noop_probes() -> None:
+def install_noop_probes_for_tests() -> None:
+    """Test-only helper: register NoopProbe for every ConnectionKind.
+
+    Production code path MUST NOT call this -- production wires real
+    probes via ``app.services.connection_v2.probes.install_all_probes()``.
+    Calling this from a test fixture lets tests exercise the
+    state-machine + registry plumbing without doing real I/O.
+    """
     for kind in ConnectionKind:
-        if kind.value not in PROBE_REGISTRY:
-            PROBE_REGISTRY[kind.value] = NoopProbe(kind)
-
-
-_install_default_noop_probes()
+        PROBE_REGISTRY[kind.value] = NoopProbe(kind)

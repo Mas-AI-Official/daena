@@ -100,12 +100,14 @@ export default function McpServersV2Panel() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-white/5 bg-white/[0.02] py-12 text-center text-sm text-starlight-400">
-          No MCP servers in V2 registry. Bootstrap them via the legacy
-          install path (they'll mirror to V2 when{' '}
-          <code className="text-starlight-200">USE_CONNECTION_REGISTRY_V2</code>{' '}
-          is on) or import directly via{' '}
+          No MCP servers in V2 registry. Import directly via{' '}
           <code className="text-starlight-200">POST /api/v1/connections/v2</code>{' '}
-          with <code className="text-starlight-200">kind=mcp_server</code>.
+          with <code className="text-starlight-200">kind=mcp_server</code>, or
+          use the <strong className="text-starlight-200">Show legacy / advanced</strong>{' '}
+          toggle in the page header to access the V1 detect / install flow.
+          Mirroring to V2 requires{' '}
+          <code className="text-starlight-200">USE_CONNECTION_REGISTRY_V2</code>{' '}
+          to be on.
         </div>
       ) : (
         <ul className="divide-y divide-white/5 overflow-hidden rounded-lg border border-white/5 bg-midnight-400/20">

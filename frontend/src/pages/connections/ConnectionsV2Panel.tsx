@@ -166,11 +166,13 @@ export default function ConnectionsV2Panel() {
         <div className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
           <AlertTriangle size={16} className="shrink-0" />
           <div>
-            <strong>Legacy mode.</strong>{' '}
-            <code className="text-amber-100">USE_CONNECTION_REGISTRY_V2</code> is
-            off. The V2 surface is mounted for inspection but mutations from
-            legacy routes will not mirror to V2 and statuses fall back to the
-            old <code>_status_for_install</code> heuristic.
+            <strong>V2 read-only mode.</strong>{' '}
+            <code className="text-amber-100">USE_CONNECTION_REGISTRY_V2</code>{' '}
+            is off. You can list, probe, and inspect V2 rows here, but
+            legacy mutations (install / disconnect from the
+            <strong>Show legacy / advanced</strong> reveal) will NOT
+            mirror back to V2. Flip the backend flag in dev to enable
+            full V2 mutation mirroring.
           </div>
         </div>
       )}
@@ -273,8 +275,11 @@ export default function ConnectionsV2Panel() {
       {/* Empty */}
       {!loading && rows.length === 0 && !error && (
         <div className="rounded-lg border border-white/5 bg-white/[0.02] py-12 text-center text-sm text-starlight-400">
-          No V2 connections imported yet. Use the legacy /connections flows
-          (with V2 flag on) to mirror existing rows, or import a connection via{' '}
+          No V2 connections imported yet. Open the{' '}
+          <strong className="text-starlight-200">Plugins</strong> tab and
+          click <strong className="text-starlight-200">Seed providers</strong>{' '}
+          to materialize rows from any API keys configured in Settings, or
+          import directly via{' '}
           <code className="text-starlight-200">POST /api/v1/connections/v2</code>.
         </div>
       )}
