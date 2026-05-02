@@ -516,6 +516,108 @@ class TestListHelpers:
 #      catalog count, so a future schema drift breaks tests, not the UI.
 
 
+# ──────────────────────────────────────────────────────────────────
+# 7a. Founder-required plugin coverage
+# (PR-CONN-PLUGIN-PARITY-UX, 2026-05-02)
+# ──────────────────────────────────────────────────────────────────
+
+
+# Founder's Claude Desktop / Codex parity list. Each entry maps a
+# canonical brand to one or more catalog ids; at least one must be
+# present. If a future PR adds a real Configure flow for a brand that
+# is currently "coming-soon" only, the catalog grows; this test stays
+# green because we accept ANY matching catalog id.
+FOUNDER_REQUIRED_PLUGINS: dict[str, tuple[str, ...]] = {
+    "GitHub": ("mcp-github", "app-github"),
+    "GitLab": ("mcp-gitlab",),
+    "Gmail": ("app-gmail",),
+    "Google Calendar": ("app-google-calendar",),
+    "Google Drive": ("app-google-drive", "mcp-google-drive"),
+    "Slack": ("mcp-slack", "app-slack"),
+    "Notion": ("mcp-notion", "app-notion-oauth"),
+    "Linear": ("mcp-linear",),
+    "Jira": ("mcp-jira",),
+    "Figma": ("mcp-figma", "app-figma"),
+    "Canva": ("app-canva",),
+    "Cloudflare": ("mcp-cloudflare", "app-cloudflare-oauth"),
+    "Sentry": ("mcp-sentry", "app-sentry-oauth"),
+    "Vercel": ("mcp-vercel",),
+    "Netlify": ("mcp-netlify",),
+    "Stripe": ("mcp-stripe", "app-stripe-oauth"),
+    "Shopify": ("mcp-shopify",),
+    "Postgres": ("mcp-postgres",),
+    "SQLite": ("mcp-sqlite",),
+    "MongoDB": ("mcp-mongodb",),
+    "Redis": ("mcp-redis",),
+    "Filesystem": ("mcp-filesystem",),
+    "Fetch / Web": ("mcp-fetch",),
+    "Brave Search": ("mcp-brave-search",),
+    "Perplexity": ("provider-perplexity", "mcp-perplexity"),
+    "Hugging Face": ("mcp-huggingface",),
+    "Ollama": ("local-ollama",),
+    "vLLM / llama-server": ("local-vllm",),
+    "OpenAI": ("provider-openai",),
+    "Anthropic": ("provider-anthropic",),
+    "Gemini": ("provider-google-gemini",),
+    "Groq": ("provider-groq",),
+    "OpenRouter": ("provider-openrouter",),
+    "Together": ("provider-together",),
+    "Claude Code": ("cli-claude-code",),
+    "Codex CLI": ("cli-codex",),
+    "Gemini CLI": ("cli-gemini",),
+    "Playwright": ("mcp-playwright",),
+    "Chrome DevTools": ("mcp-chrome-devtools",),
+    "Desktop Commander": ("mcp-desktop-commander",),
+    "Windows MCP": ("mcp-windows",),
+    "Memory": ("mcp-memory",),
+    "Git": ("mcp-git",),
+    "Time": ("mcp-time",),
+    "Sequential Thinking": ("mcp-sequential-thinking",),
+}
+
+
+class TestFounderRequiredPlugins:
+    """Pin: every founder-required brand has at least one catalog entry."""
+
+    def test_minimum_catalog_size(self):
+        # Founder asked for >50 plugin cards. The catalog ships 55+ today.
+        assert len(CATALOG) >= 50, (
+            f"Catalog should ship at least 50 plugins; got {len(CATALOG)}"
+        )
+
+    @pytest.mark.parametrize(
+        "brand,allowed_ids",
+        sorted(FOUNDER_REQUIRED_PLUGINS.items()),
+        ids=list(FOUNDER_REQUIRED_PLUGINS.keys()),
+    )
+    def test_brand_present(self, brand: str, allowed_ids: tuple[str, ...]):
+        catalog_ids = {e.id for e in CATALOG}
+        present = [aid for aid in allowed_ids if aid in catalog_ids]
+        assert present, (
+            f"Founder-required brand {brand!r} is missing from the catalog. "
+            f"Expected at least one of: {', '.join(allowed_ids)}. "
+            f"Add to marketplace_catalog.py or update FOUNDER_REQUIRED_PLUGINS "
+            f"if the brand was intentionally deferred."
+        )
+
+    def test_no_required_brand_is_silently_dropped(self):
+        # Defense-in-depth: if a future contributor removes a brand, the
+        # parametrized test above fires. This test additionally checks
+        # the count so a typo in allowed_ids cannot mask a removal.
+        catalog_ids = {e.id for e in CATALOG}
+        missing = []
+        for brand, ids in FOUNDER_REQUIRED_PLUGINS.items():
+            if not any(aid in catalog_ids for aid in ids):
+                missing.append(brand)
+        assert not missing, (
+            f"{len(missing)} founder-required brand(s) missing from catalog: "
+            f"{', '.join(missing)}"
+        )
+
+
+# ──────────────────────────────────────────────────────────────────
+# 8. Route registration + live HTTP smoke
+# ──────────────────────────────────────────────────────────────────
 class TestMarketplaceRouteRegistration:
     """Pin: the 3 marketplace endpoints are mounted under /api/v1/connections/v2."""
 
@@ -576,6 +678,9 @@ class TestMarketplaceLiveSmoke:
         assert body["success"] is True
         cards = body["data"]["cards"]
         assert len(cards) == len(CATALOG)
+        # Founder-required minimum -- pins the marketplace stays a real
+        # marketplace, not an empty grid.
+        assert len(cards) > 50, f"Expected >50 cards, got {len(cards)}"
         for card in cards[:3]:
             assert "catalog" in card
             assert "lifecycle" in card
@@ -583,6 +688,32 @@ class TestMarketplaceLiveSmoke:
             # No V2 rows exist for this tenant -> every card is available
             # or needs_setup (coming-soon entries)
             assert card["lifecycle"] in ("available", "needs_setup")
+
+    async def test_no_card_marked_connected_without_v2_truth(
+        self, client, auth_headers, seeded_tenant
+    ):
+        """Honesty pin (project Rule 17): a card cannot show
+        lifecycle=callable / enabled / connected without a real V2 row
+        whose probe proved callable=True. Empty tenant -> zero cards
+        in those states."""
+        _ = seeded_tenant
+        res = await client.get(
+            "/api/v1/connections/v2/marketplace/cards", headers=auth_headers,
+        )
+        assert res.status_code == 200, res.text
+        cards = res.json()["data"]["cards"]
+        for card in cards:
+            if card["lifecycle"] in ("callable", "enabled"):
+                assert card["v2_row_id"] is not None, (
+                    f"Card {card['catalog']['id']} claims callable but has "
+                    f"no V2 row. This violates the honesty contract."
+                )
+                truth = card.get("v2_truth") or {}
+                callable_dim = truth.get("callable") or {}
+                assert callable_dim.get("value") is True, (
+                    f"Card {card['catalog']['id']} claims callable but V2 "
+                    f"truth.callable.value is not True."
+                )
 
     async def test_install_plan_returns_steps_for_known_entry(
         self, client, auth_headers, seeded_tenant

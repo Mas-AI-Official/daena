@@ -19,7 +19,6 @@ import {
   FileText,
   Folder,
   GitBranch,
-  Globe,
   HardDrive,
   Heart,
   Layout,
@@ -38,7 +37,7 @@ import {
 
 // ── CDN-based brand icons ──
 
-interface BrandIconProps {
+export interface BrandIconProps {
   size?: number
   className?: string
 }
@@ -66,6 +65,49 @@ function CdnIcon({ name, color, size = 24, className = '' }: BrandIconProps & { 
       }}
     />
   )
+}
+
+export function BrandAvatarIcon({
+  label,
+  size = 24,
+  className = '',
+}: BrandIconProps & { label: string }) {
+  const cleaned = label.replace(/[^a-zA-Z0-9 ]/g, ' ').trim()
+  const words = cleaned.split(/\s+/).filter(Boolean)
+  const initials = (words.length >= 2 ? `${words[0][0]}${words[1][0]}` : cleaned.slice(0, 2) || '?').toUpperCase()
+  let hash = 0
+  for (const ch of label) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
+  const colors = ['2DD4BF', 'D4A843', '60A5FA', 'A78BFA', '34D399', 'F97316', 'F43F5E']
+  const color = colors[hash % colors.length]
+  return (
+    <span
+      className={className}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: size,
+        height: size,
+        borderRadius: 6,
+        background: `#${color}22`,
+        color: `#${color}`,
+        border: `1px solid #${color}55`,
+        fontWeight: 700,
+        fontSize: Math.max(9, Math.round(size * 0.42)),
+        lineHeight: 1,
+      }}
+    >
+      {initials}
+    </span>
+  )
+}
+
+function simpleIcon(slug: string, color: string): React.ComponentType<BrandIconProps> {
+  const Icon = memo(({ size = 24, className }: BrandIconProps) => (
+    <CdnIcon name={slug} color={color} size={size} className={className} />
+  ))
+  Icon.displayName = `SimpleIcon_${slug}`
+  return Icon
 }
 
 // ── Connector Icons ──
@@ -375,6 +417,16 @@ export const HexIcon = memo(({ size = 24, className }: BrandIconProps) => (
 ))
 HexIcon.displayName = 'HexIcon'
 
+export const NeonPostgresIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <Database size={size} className={className || 'text-emerald-400'} />
+))
+NeonPostgresIcon.displayName = 'NeonPostgresIcon'
+
+export const QuicknodeIcon = memo(({ size = 24, className }: BrandIconProps) => (
+  <Server size={size} className={className || 'text-blue-400'} />
+))
+QuicknodeIcon.displayName = 'QuicknodeIcon'
+
 // ── Icon Registry (lookup by name) ──
 
 export const CONNECTOR_ICONS: Record<string, React.ComponentType<BrandIconProps>> = {
@@ -405,6 +457,9 @@ export const CONNECTOR_ICONS: Record<string, React.ComponentType<BrandIconProps>
   'apple-health': AppleHealthIcon,
   'pubmed': PubMedIcon,
   'hex': HexIcon,
+  'neon': NeonPostgresIcon,
+  'neon-postgres': NeonPostgresIcon,
+  'quicknode': QuicknodeIcon,
   'sentry': SentryIcon,
   'google-drive': GoogleDriveIcon,
   'github': GitHubIcon,
@@ -421,6 +476,69 @@ export const CONNECTOR_ICONS: Record<string, React.ComponentType<BrandIconProps>
   'linear': LinearIcon,
   'intercom': IntercomIcon,
 }
+
+const CONNECTOR_SIMPLE_ICON_ALIASES: Record<string, { slug: string; color: string }> = {
+  'netlify': { slug: 'netlify', color: '00C7B7' },
+  'circleci': { slug: 'circleci', color: '343434' },
+  'expo': { slug: 'expo', color: 'ffffff' },
+  'coderabbit': { slug: 'coderabbit', color: 'FF570A' },
+  'neon-postgres': { slug: 'neon', color: '00E599' },
+  'cloudinary': { slug: 'cloudinary', color: '3448C5' },
+  'hostinger': { slug: 'hostinger', color: '673DE6' },
+  'quicknode': { slug: 'quicknode', color: '2D5BFF' },
+  'render': { slug: 'render', color: '46E3B7' },
+  'remotion': { slug: 'remotion', color: 'ffffff' },
+  'google-calendar': { slug: 'googlecalendar', color: '4285F4' },
+  'google-drive': { slug: 'googledrive', color: '4285F4' },
+  'outlook-email': { slug: 'microsoftoutlook', color: '0078D4' },
+  'outlook-calendar': { slug: 'microsoftoutlook', color: '0078D4' },
+  'sharepoint': { slug: 'microsoftsharepoint', color: '038387' },
+  'teams': { slug: 'microsoftteams', color: '6264A7' },
+  'jam': { slug: 'jamstack', color: 'F0047F' },
+  'attio': { slug: 'attio', color: 'ffffff' },
+  'brex': { slug: 'brex', color: '212121' },
+  'carta-crm': { slug: 'carta', color: '00A9E0' },
+  'clickup': { slug: 'clickup', color: '7B68EE' },
+  'coupler.io': { slug: 'coupler', color: '4D7CFE' },
+  'dovetail': { slug: 'dovetail', color: '190041' },
+  'egnyte': { slug: 'egnyte', color: '00968F' },
+  'fireflies': { slug: 'fireflyiii', color: 'CD5029' },
+  'help-scout': { slug: 'helpscout', color: '1292EE' },
+  'hubspot': { slug: 'hubspot', color: 'FF7A59' },
+  'monday.com': { slug: 'mondaydotcom', color: 'FF3D57' },
+  'pipedrive': { slug: 'pipedrive', color: '017737' },
+  'razorpay': { slug: 'razorpay', color: '0C2451' },
+  'semrush': { slug: 'semrush', color: 'FF642D' },
+  'signnow': { slug: 'signnow', color: '2F80ED' },
+  'teamwork.com': { slug: 'teamwork', color: '6A61FF' },
+  'binance': { slug: 'binance', color: 'F0B90B' },
+  'moody-s': { slug: 'moodys', color: '005AA0' },
+  'morningstar': { slug: 'morningstar', color: 'E31B23' },
+  'paypal': { slug: 'paypal', color: '003087' },
+  'intercom': { slug: 'intercom', color: '6AFDEF' },
+  'vercel': { slug: 'vercel', color: 'ffffff' },
+  'cloudflare': { slug: 'cloudflare', color: 'F38020' },
+  'sentry': { slug: 'sentry', color: '362D59' },
+  'stripe': { slug: 'stripe', color: '635BFF' },
+  'amplitude': { slug: 'amplitude', color: '0060FF' },
+  'box': { slug: 'box', color: '0061D5' },
+  'notion': { slug: 'notion', color: 'ffffff' },
+  'figma': { slug: 'figma', color: 'F24E1E' },
+  'canva': { slug: 'canva', color: '00C4CC' },
+  'github': { slug: 'github', color: 'ffffff' },
+  'gmail': { slug: 'gmail', color: 'EA4335' },
+  'slack': { slug: 'slack', color: '4A154B' },
+  'hugging-face': { slug: 'huggingface', color: 'FFD21E' },
+  'linear': { slug: 'linear', color: '5E6AD2' },
+}
+
+const DYNAMIC_CONNECTOR_ICONS: Record<string, React.ComponentType<BrandIconProps>> =
+  Object.fromEntries(
+    Object.entries(CONNECTOR_SIMPLE_ICON_ALIASES).map(([key, value]) => [
+      key,
+      simpleIcon(value.slug, value.color),
+    ]),
+  ) as Record<string, React.ComponentType<BrandIconProps>>
 
 export const RUNTIME_ICONS: Record<string, React.ComponentType<BrandIconProps>> = {
   'claude_code': AnthropicIcon,
@@ -534,9 +652,62 @@ export function getBrandIcon(
   name: string,
   category: 'connector' | 'runtime' | 'extension' = 'connector',
 ): React.ComponentType<BrandIconProps> {
-  const slug = name.toLowerCase().replace(/[\s_]+/g, '-').replace(/[()]/g, '')
+  const slug = name
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
   const registry = category === 'runtime' ? RUNTIME_ICONS
     : category === 'extension' ? EXTENSION_ICONS
     : CONNECTOR_ICONS
-  return registry[slug] || (() => <Globe size={24} className="text-starlight-400" />)
+  if (registry[slug]) return registry[slug]
+  if (category === 'connector' && DYNAMIC_CONNECTOR_ICONS[slug]) return DYNAMIC_CONNECTOR_ICONS[slug]
+  return ({ size = 24, className }: BrandIconProps) => (
+    <BrandAvatarIcon label={name} size={size} className={className} />
+  )
+}
+
+/**
+ * Resolve a brand icon for an MCP server_key like Daena's bootstrap
+ * registry produces them: ``mcp-google-drive``, ``mcp-github``,
+ * ``gitnexus``, ``chrome-devtools``, ``mcp_docker``, etc.
+ *
+ * The base ``getBrandIcon('foo', 'extension')`` only matches the exact
+ * registered slug. MCP keys come from the npm package name, the
+ * filename of the wrapper, or the user's freeform "name" field — they
+ * don't follow one convention. So we try a series of normalised
+ * candidates and return the first match. Missing ones fall back to a
+ * generic server icon (NOT the world Globe used by getBrandIcon, which
+ * implies "external connector" — wrong for a local MCP).
+ */
+export function getMcpBrandIcon(server_key: string): React.ComponentType<BrandIconProps> {
+  const lower = server_key.toLowerCase().replace(/_/g, '-')
+  const candidates: string[] = []
+
+  // 1. Exact match.
+  candidates.push(lower)
+  // 2. Strip leading mcp- / -mcp suffix (most common shapes).
+  const noLeading = lower.replace(/^mcp-/, '')
+  const noTrailing = lower.replace(/-mcp$/, '')
+  candidates.push(noLeading, noTrailing)
+  // 3. Try with -mcp suffix (the registry above mostly stores ext keys
+  //    with -mcp at the end: 'google-drive-mcp', 'gmail-mcp', ...).
+  candidates.push(`${noLeading.replace(/-mcp$/, '')}-mcp`)
+  // 4. Some MCPs are namespaced like '@cocal/google-calendar-mcp' —
+  //    pick the last segment after the slash.
+  const slashIdx = lower.lastIndexOf('/')
+  if (slashIdx >= 0) {
+    const tail = lower.slice(slashIdx + 1).replace(/^@/, '')
+    candidates.push(tail, tail.replace(/^mcp-/, ''), tail.replace(/-mcp$/, ''), `${tail.replace(/-mcp$/, '')}-mcp`)
+  }
+  // 5. Try the connector registry too (some MCPs share names with
+  //    OAuth connectors: gmail, github, notion, slack, ...).
+  for (const cand of candidates) {
+    if (EXTENSION_ICONS[cand]) return EXTENSION_ICONS[cand]
+  }
+  for (const cand of candidates) {
+    if (CONNECTOR_ICONS[cand]) return CONNECTOR_ICONS[cand]
+  }
+  // 6. Final fallback: generic server icon, not the world Globe.
+  return () => <Server size={24} className="text-accent-cyan" />
 }

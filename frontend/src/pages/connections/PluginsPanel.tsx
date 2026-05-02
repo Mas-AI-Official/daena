@@ -152,14 +152,15 @@ export default function PluginsPanel({
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/5 bg-midnight-400/30 px-4 py-3">
         <div>
           <h2 className="text-base font-semibold text-starlight-100">
-            {counts.connected} of {counts.all} plugins connected
+            {counts.connected} connected · {counts.needs_auth} needs auth ·{' '}
+            {counts.installed} installed · {counts.available} available
           </h2>
           <p className="mt-1 max-w-3xl text-xs text-starlight-500">
-            Browse what Daena can connect to. Each card is a real tool
-            (MCP server, OAuth app, browser automation, local model, ...)
-            wrapped behind a single &ldquo;Plugin&rdquo; concept. A card
-            shows &ldquo;Connected&rdquo; only after a real probe proves
-            it works.
+            Browse plugins. Each card is a real integration -- MCP
+            servers, apps, browser tools, local models, LLM providers,
+            skill bundles. Click a card for details. A card is
+            &ldquo;Connected&rdquo; only when a real probe proves it
+            works. Provider keys live in Settings -&gt; API Keys.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

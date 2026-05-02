@@ -793,6 +793,63 @@ _CODE_PLATFORM: tuple[CatalogEntry, ...] = (
         matches_v2_slug="",
         setup_notes="Netlify MCP coming soon. Use the V1 plugin for now.",
     ),
+    _entry(
+        id="mcp-gitlab",
+        display_name="GitLab",
+        vendor="GitLab community",
+        category="code_platform",
+        kind="mcp_server",
+        short_description="Triage MRs, issues, search projects via GitLab API.",
+        capabilities=(
+            "Search projects",
+            "List + create issues",
+            "Read file contents",
+            "Manage merge requests",
+        ),
+        install_method="coming-soon",
+        command_template="",
+        required_env_vars=("GITLAB_PERSONAL_ACCESS_TOKEN", "GITLAB_API_URL"),
+        auth_type="token",
+        official_url="https://docs.gitlab.com/ee/api/",
+        risk_level="medium",
+        probe_type="none",
+        matches_v2_slug="",
+        setup_notes=(
+            "Community GitLab MCP coming soon. Generate a PAT at "
+            "gitlab.com/-/profile/personal_access_tokens; scope to api + "
+            "read_repository."
+        ),
+    ),
+    _entry(
+        id="mcp-jira",
+        display_name="Jira",
+        vendor="Atlassian community",
+        category="code_platform",
+        kind="mcp_server",
+        short_description="Read + update Jira issues, projects, sprints.",
+        capabilities=(
+            "List issues",
+            "Create issue",
+            "Update issue",
+            "Search projects",
+        ),
+        install_method="coming-soon",
+        command_template="",
+        required_env_vars=(
+            "JIRA_BASE_URL",
+            "JIRA_API_TOKEN",
+            "JIRA_USER_EMAIL",
+        ),
+        auth_type="token",
+        official_url="https://developer.atlassian.com/cloud/jira/platform/rest/",
+        risk_level="medium",
+        probe_type="none",
+        matches_v2_slug="",
+        setup_notes=(
+            "Community Jira MCP coming soon. Create an API token at "
+            "id.atlassian.com/manage-profile/security/api-tokens."
+        ),
+    ),
 )
 
 
@@ -1064,6 +1121,32 @@ _RESEARCH: tuple[CatalogEntry, ...] = (
         matches_v2_slug="",
         setup_notes="Use the Perplexity API provider directly until MCP lands.",
     ),
+    _entry(
+        id="mcp-huggingface",
+        display_name="Hugging Face",
+        vendor="Hugging Face",
+        category="research",
+        kind="mcp_server",
+        short_description="Search models / datasets / spaces; pull paper metadata.",
+        capabilities=(
+            "Search models",
+            "Search datasets",
+            "Inspect spaces",
+            "Paper metadata",
+        ),
+        install_method="coming-soon",
+        command_template="",
+        required_env_vars=("HF_TOKEN",),
+        auth_type="api_key",
+        official_url="https://huggingface.co/docs/hub/security-tokens",
+        risk_level="low",
+        probe_type="none",
+        matches_v2_slug="",
+        setup_notes=(
+            "Hugging Face MCP coming soon. Public catalog calls are anonymous; "
+            "private repos need an HF token (read scope is sufficient)."
+        ),
+    ),
 )
 
 
@@ -1158,6 +1241,31 @@ _DEV_TOOLS: tuple[CatalogEntry, ...] = (
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-memory",
         setup_notes="Daena's NBMF is the canonical memory; this MCP is for cross-tool sharing.",
+    ),
+    _entry(
+        id="mcp-sequential-thinking",
+        display_name="Sequential Thinking",
+        vendor="Anthropic",
+        category="dev_tools",
+        kind="mcp_server",
+        short_description="Step-by-step structured reasoning helper for MCP clients.",
+        capabilities=(
+            "Structured chain-of-thought",
+            "Branching plan revision",
+            "Step replay",
+        ),
+        install_method="npm",
+        command_template="npx -y @modelcontextprotocol/server-sequential-thinking",
+        required_env_vars=(),
+        auth_type="none",
+        official_url="https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+        risk_level="low",
+        probe_type="mcp_initialize",
+        matches_v2_slug="mcp-sequential-thinking",
+        setup_notes=(
+            "Reference reasoning helper. Daena already has its own Council + "
+            "Quintessence reasoning layer; this MCP is for cross-tool parity."
+        ),
     ),
 )
 
