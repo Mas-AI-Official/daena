@@ -132,13 +132,20 @@ async def create_task(
     user: CurrentUser = Depends(get_current_user),
     service: ExecutionService = Depends(get_execution_service),
 ) -> dict:
-    """Create a background task for Autopilot mode."""
+    """Create a background task for Autopilot mode.
+
+    PR-5: when ``also_create_workstream=True`` the response includes a
+    ``workstream_id`` so the frontend can deep-link to the spawned
+    Workstream shell at ``/workstreams/<id>``.
+    """
     task = await service.create_task(
         name=body.name,
         description=body.description,
         user_id=user.id,
         tenant_id=user.tenant_id,
         session_id=body.session_id,
+        also_create_workstream=body.also_create_workstream,
+        department_id=body.department_id,
     )
     return {"success": True, "data": task}
 

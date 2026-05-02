@@ -39,6 +39,17 @@ class CreateTaskRequest(BaseModel):
         default_factory=list,
         description="Planned execution steps for governance pre-approval",
     )
+    # PR-5 (2026-05-02): opt-in spawn of a Workstream shell linked back
+    # to this task via source_type=task / source_ref_id=task.id. Default
+    # False so existing /execution/tasks callers get the legacy behavior.
+    also_create_workstream: bool = False
+    department_id: UUID | None = Field(
+        default=None,
+        description=(
+            "Owner department for the spawned workstream. When omitted, "
+            "the first active department for the tenant is used."
+        ),
+    )
 
 
 class UpdateTaskRequest(BaseModel):
@@ -85,6 +96,10 @@ class TaskResponse(DaenaSchema):
     completed_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # PR-5: present when create_task was called with
+    # also_create_workstream=True. Frontend uses this to navigate to
+    # /workstreams/<id>.
+    workstream_id: UUID | None = None
 
 
 class GovernanceCheckResponse(BaseModel):

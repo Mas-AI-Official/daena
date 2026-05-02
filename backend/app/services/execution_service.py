@@ -548,7 +548,9 @@ class ExecutionService(BaseService):
         tenant_id: UUID,
         description: str | None = None,
         session_id: UUID | None = None,
-    ) -> Task:
+        also_create_workstream: bool = False,
+        department_id: UUID | None = None,
+    ) -> dict:
         """Create a background task for Autopilot mode.
 
         Args:
@@ -557,9 +559,17 @@ class ExecutionService(BaseService):
             tenant_id: Tenant scope.
             description: Optional detailed description.
             session_id: Optional chat session context.
+            also_create_workstream: PR-5 opt-in. When True, also create a
+                Workstream shell with source_type=task and source_ref_id
+                pointing at this task's id. The workstream id is returned
+                in the response dict so the frontend can deep-link.
+            department_id: Owner department for the spawned workstream.
+                Optional even when also_create_workstream=True; falls
+                back to the first active department for the tenant.
 
         Returns:
-            The created Task model instance.
+            Dict shape (matches ``_task_to_dict``) with an extra
+            ``workstream_id`` key when one was spawned.
         """
         task = Task(
             name=name,
@@ -580,7 +590,94 @@ class ExecutionService(BaseService):
             name=name,
             user_id=str(user_id),
         )
-        return self._task_to_dict(task)
+
+        result = self._task_to_dict(task)
+
+        # PR-5: optional workstream spawn. Wrapped so a ws-creation
+        # failure NEVER fails the task -- the task is the contract,
+        # the workstream is the optional observability layer.
+        if also_create_workstream:
+            try:
+                ws_id = await self._spawn_workstream_for_task(
+                    task=task, department_id=department_id,
+                )
+                if ws_id is not None:
+                    result["workstream_id"] = str(ws_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "task.workstream_spawn_failed",
+                    task_id=str(task.id),
+                    error=str(exc),
+                )
+
+        return result
+
+    async def _spawn_workstream_for_task(
+        self,
+        *,
+        task: Task,
+        department_id: UUID | None,
+    ) -> UUID | None:
+        """Create a Workstream shell linked to the task. Returns ws.id.
+
+        Resolves the department: if explicit, validates it. Otherwise
+        falls back to the tenant's first active department by sunflower
+        index. Returns None when no active department is available
+        (caller logs at WARNING; task creation is not affected).
+        """
+        # Local imports keep WorkstreamService out of the global scope
+        # so import order issues do not bite the autopilot path.
+        from sqlalchemy import select
+
+        from app.models.organization import Department
+        from app.models.workstream import WorkstreamSourceType
+        from app.services.workstream_service import (
+            StartParams,
+            WorkstreamService,
+        )
+
+        if department_id is not None:
+            stmt = select(Department).where(
+                Department.id == department_id,
+                Department.tenant_id == task.tenant_id,
+                Department.is_active.is_(True),
+            )
+            row = (await self.db.execute(stmt)).scalar_one_or_none()
+            if row is None:
+                return None
+            resolved_dept_id = row.id
+        else:
+            stmt = (
+                select(Department)
+                .where(
+                    Department.tenant_id == task.tenant_id,
+                    Department.is_active.is_(True),
+                )
+                .order_by(Department.sunflower_index.asc())
+                .limit(1)
+            )
+            row = (await self.db.execute(stmt)).scalar_one_or_none()
+            if row is None:
+                return None
+            resolved_dept_id = row.id
+
+        ws_svc = WorkstreamService(self.db)
+        ws = await ws_svc.start(
+            StartParams(
+                tenant_id=task.tenant_id,
+                user_id=task.user_id,
+                department_id=resolved_dept_id,
+                goal=task.name,
+                next_step_text=task.description,
+                initial_context={
+                    "spawned_from": "manual_task",
+                    "task_id": str(task.id),
+                },
+                source_type=WorkstreamSourceType.TASK,
+                source_ref_id=task.id,
+            ),
+        )
+        return ws.id
 
     async def get_task(self, task_id: UUID, tenant_id: UUID) -> dict:
         """Get a task by ID (serialized dict for API responses)."""
