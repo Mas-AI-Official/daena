@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.core.sse_channels import get_workstream_channel
 from app.models.workstream import (
     Workstream,
     WorkstreamEscalationLevel,
@@ -36,6 +37,113 @@ from app.models.workstream import (
 )
 
 logger = get_logger(__name__)
+
+
+# ── PR-SPINE-06: slim serializers for SSE envelopes ──────────────────
+#
+# These are intentionally smaller than ``api/v1/workstreams._serialize_workstream``
+# so per-event SSE payloads stay tight. The frontend already has the
+# full snapshot from its initial GET; only fields that change during a
+# workstream's lifetime need to ride on every event.
+
+
+def _slim_event(event: "WorkstreamEvent") -> dict[str, Any]:
+    """Compact SSE shape for a WorkstreamEvent.
+
+    Mirrors ``api/v1/workstreams._serialize_event`` so the consumer can
+    hand the dict straight into the timeline render.
+    """
+    return {
+        "id": str(event.id),
+        "kind": event.kind.value,
+        "summary": event.summary,
+        "payload": event.payload,
+        "occurred_at": (
+            event.occurred_at.isoformat() if event.occurred_at else None
+        ),
+    }
+
+
+def _slim_snapshot(ws: "Workstream") -> dict[str, Any]:
+    """Compact SSE snapshot of a Workstream's mutable fields.
+
+    Includes everything that changes during a workstream's lifetime
+    plus the ids the frontend needs for routing. Static fields
+    (department_id, user_id, goal, source_type, source_ref_id,
+    created_at) are intentionally omitted -- the frontend has them from
+    the initial GET and they never change after start.
+    """
+    return {
+        "id": str(ws.id),
+        "status": ws.status.value,
+        "escalation_level": ws.escalation_level.value,
+        "progress_percent": ws.progress_percent,
+        "blocker_text": ws.blocker_text,
+        "next_step_text": ws.next_step_text,
+        "autopilot_paused": ws.autopilot_paused,
+        "last_activity_at": (
+            ws.last_activity_at.isoformat() if ws.last_activity_at else None
+        ),
+        "archived_at": (
+            ws.archived_at.isoformat() if ws.archived_at else None
+        ),
+        "artifact_refs": ws.artifact_refs or {},
+        "audit_event_refs": ws.audit_event_refs or [],
+        "notification_refs": ws.notification_refs or [],
+        "total_tokens": ws.total_tokens,
+        "total_cost_cents": ws.total_cost_cents,
+        "goal": ws.goal,
+    }
+
+
+async def _publish_workstream_event(
+    ws: "Workstream", event: "WorkstreamEvent",
+) -> None:
+    """Best-effort: emit a workstream.event SSE envelope.
+
+    Failures are logged but never raise -- the spine artifact is the
+    source of truth, the SSE channel is the observability layer.
+    """
+    try:
+        ch = await get_workstream_channel(str(ws.id))
+        await ch.publish(
+            "workstream.event",
+            {
+                "workstream_id": str(ws.id),
+                "event": _slim_event(event),
+                "snapshot": _slim_snapshot(ws),
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "workstream.sse_publish_event_failed",
+            workstream_id=str(ws.id),
+            kind=event.kind.value if event else None,
+            error=str(exc),
+        )
+
+
+async def _publish_workstream_snapshot(ws: "Workstream") -> None:
+    """Best-effort: emit a workstream.snapshot envelope (no timeline event).
+
+    Used by methods that mutate informational state (progress, refs,
+    archive) without appending to the WorkstreamEvent table.
+    """
+    try:
+        ch = await get_workstream_channel(str(ws.id))
+        await ch.publish(
+            "workstream.snapshot",
+            {
+                "workstream_id": str(ws.id),
+                "snapshot": _slim_snapshot(ws),
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "workstream.sse_publish_snapshot_failed",
+            workstream_id=str(ws.id),
+            error=str(exc),
+        )
 
 
 # State machine -- which transitions are legal.
@@ -182,7 +290,7 @@ class WorkstreamService:
         )
         self._db.add(ws)
         await self._db.flush()
-        await self._append_event(
+        event = await self._append_event(
             ws,
             kind=WorkstreamEventKind.STARTED,
             summary=f"Workstream started: {params.goal[:140]}",
@@ -195,6 +303,7 @@ class WorkstreamService:
             },
         )
         await self._db.commit()
+        await _publish_workstream_event(ws, event)
         logger.info(
             "workstream.started",
             workstream_id=str(ws.id),
@@ -246,7 +355,7 @@ class WorkstreamService:
         if new_status == WorkstreamStatus.RUNNING and old_status == WorkstreamStatus.BLOCKED:
             ws.blocker_text = None
 
-        await self._append_event(
+        event = await self._append_event(
             ws,
             kind=kind_map[new_status],
             summary=reason,
@@ -257,6 +366,7 @@ class WorkstreamService:
             },
         )
         await self._db.commit()
+        await _publish_workstream_event(ws, event)
         logger.info(
             "workstream.transitioned",
             workstream_id=str(workstream_id),
@@ -276,13 +386,14 @@ class WorkstreamService:
         """Stop autopilot continuation without changing status."""
         ws = await self.get(workstream_id, tenant_id=tenant_id)
         ws.autopilot_paused = True
-        await self._append_event(
+        event = await self._append_event(
             ws,
             kind=WorkstreamEventKind.PAUSED,
             summary=reason,
             payload={"autopilot_paused": True},
         )
         await self._db.commit()
+        await _publish_workstream_event(ws, event)
         logger.info("workstream.paused", workstream_id=str(workstream_id))
         return ws
 
@@ -296,13 +407,14 @@ class WorkstreamService:
         """Re-enable autopilot continuation."""
         ws = await self.get(workstream_id, tenant_id=tenant_id)
         ws.autopilot_paused = False
-        await self._append_event(
+        event = await self._append_event(
             ws,
             kind=WorkstreamEventKind.RESUMED,
             summary=reason,
             payload={"autopilot_paused": False},
         )
         await self._db.commit()
+        await _publish_workstream_event(ws, event)
         logger.info("workstream.resumed", workstream_id=str(workstream_id))
         return ws
 
@@ -354,7 +466,7 @@ class WorkstreamService:
         ws.context = new_context
         ws.last_activity_at = datetime.utcnow()
 
-        await self._append_event(
+        event = await self._append_event(
             ws,
             kind=WorkstreamEventKind.REDIRECTED,
             summary=f"Redirected: {(new_goal or raw_instruction or 'scope updated')[:140]}",
@@ -366,6 +478,7 @@ class WorkstreamService:
             },
         )
         await self._db.commit()
+        await _publish_workstream_event(ws, event)
         logger.info(
             "workstream.redirected",
             workstream_id=str(workstream_id),
@@ -406,7 +519,7 @@ class WorkstreamService:
             )
         ws.escalation_level = new_level
         ws.last_activity_at = datetime.utcnow()
-        await self._append_event(
+        event = await self._append_event(
             ws,
             kind=WorkstreamEventKind.ESCALATED,
             summary=f"Escalated to {new_level.value}: {reason[:160]}",
@@ -416,6 +529,7 @@ class WorkstreamService:
             },
         )
         await self._db.commit()
+        await _publish_workstream_event(ws, event)
         logger.info(
             "workstream.escalated",
             workstream_id=str(workstream_id),
@@ -505,6 +619,10 @@ class WorkstreamService:
         ws.archived_at = datetime.utcnow()
         ws.archived_by = archived_by_user_id
         await self._db.commit()
+        # Snapshot only -- archive is a UI declutter, not a lifecycle
+        # transition. Subscribers see ``archived_at`` flip to a value
+        # and should close their drawers / detach.
+        await _publish_workstream_snapshot(ws)
         logger.info(
             "workstream.archived",
             workstream_id=str(workstream_id),
@@ -532,6 +650,8 @@ class WorkstreamService:
         ws.progress_percent = clamped
         ws.last_activity_at = datetime.utcnow()
         await self._db.commit()
+        # Snapshot only -- progress is informational, no timeline entry.
+        await _publish_workstream_snapshot(ws)
         return ws
 
     async def attach_artifact_ref(
@@ -559,14 +679,22 @@ class WorkstreamService:
         refs[kind] = bucket
         ws.artifact_refs = refs
         ws.last_activity_at = datetime.utcnow()
+        emitted_event: WorkstreamEvent | None = None
         if emit_event:
-            await self._append_event(
+            emitted_event = await self._append_event(
                 ws,
                 kind=WorkstreamEventKind.ARTIFACT,
                 summary=f"Artifact emitted: {kind}={ref_id[:40]}",
                 payload={"artifact_kind": kind, "ref_id": ref_id},
             )
         await self._db.commit()
+        # Publish: workstream.event when a timeline entry was emitted
+        # (carries the new snapshot too); workstream.snapshot otherwise
+        # so subscribers still see the ref-count bump.
+        if emitted_event is not None:
+            await _publish_workstream_event(ws, emitted_event)
+        else:
+            await _publish_workstream_snapshot(ws)
         return ws
 
     async def attach_audit_event_ref(
@@ -588,6 +716,8 @@ class WorkstreamService:
             refs.append(audit_event_id)
         ws.audit_event_refs = refs
         await self._db.commit()
+        # Snapshot only -- audit refs are routine; no timeline entry.
+        await _publish_workstream_snapshot(ws)
         return ws
 
     async def attach_notification_ref(
@@ -608,6 +738,8 @@ class WorkstreamService:
             refs.append(notification_id)
         ws.notification_refs = refs
         await self._db.commit()
+        # Snapshot only -- same anti-flood reason as audit refs.
+        await _publish_workstream_snapshot(ws)
         return ws
 
     # -- dev-safe demo (PR-5) ---------------------------------------------
@@ -708,6 +840,7 @@ class WorkstreamService:
         ws = await self.get(workstream_id, tenant_id=tenant_id)
         event = await self._append_event(ws, kind=kind, summary=summary, payload=payload)
         await self._db.commit()
+        await _publish_workstream_event(ws, event)
         return event
 
     async def _append_event(

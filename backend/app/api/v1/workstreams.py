@@ -18,14 +18,19 @@ All endpoints are tenant-scoped via ``CurrentUser``.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
+from app.core.logging import get_logger
+from app.core.sse_channels import get_workstream_channel
 from app.models.workstream import (
     WorkstreamEscalationLevel,
     WorkstreamSourceType,
@@ -42,6 +47,8 @@ from app.services.workstream_service import (
     WorkstreamService,
     WorkstreamTransitionError,
 )
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -548,3 +555,110 @@ async def create_dev_safe_demo_workstream(
         department_id=department_id,
     )
     return {"success": True, "data": _serialize_workstream(ws)}
+
+
+# ── PR-SPINE-06: live console SSE stream ──────────────────────────────
+
+
+@router.get("/{workstream_id}/stream")
+async def stream_workstream_events(
+    workstream_id: uuid.UUID,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Server-sent events for a single workstream.
+
+    The stream emits two event types:
+
+    * ``workstream.event`` -- a new entry was appended to the timeline.
+      Payload carries the slim event (id, kind, summary, payload,
+      occurred_at) and a slim snapshot (current status, progress,
+      escalation, autopilot_paused, refs, archived_at).
+
+    * ``workstream.snapshot`` -- the workstream's mutable state changed
+      without a timeline entry (progress bump, ref attached, archive
+      flip). Payload carries only the snapshot.
+
+    Before any live event the route emits one ``workstream.bootstrap``
+    envelope containing the full snapshot + last 50 timeline events so a
+    fresh subscriber can render immediately without an extra GET.
+
+    Tenant scoping happens at connection time via ``svc.get`` -- a
+    cross-tenant request gets a 404 before the SSE channel is opened.
+
+    Connection terminates when the client disconnects, when the
+    workstream is archived (drawer should close), or when the request
+    is cancelled.
+    """
+    svc = WorkstreamService(db)
+    try:
+        ws = await svc.get(workstream_id, tenant_id=user.tenant_id)
+        events = await svc.list_events(
+            workstream_id, tenant_id=user.tenant_id, limit=50,
+        )
+    except WorkstreamNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    bootstrap_payload = {
+        "workstream_id": str(workstream_id),
+        "snapshot": _serialize_workstream(ws),
+        "events": [_serialize_event(e) for e in events],
+    }
+    workstream_id_str = str(workstream_id)
+
+    async def _event_stream():
+        # 1. Bootstrap so a fresh subscriber can render immediately.
+        yield (
+            f"event: workstream.bootstrap\n"
+            f"data: {json.dumps(bootstrap_payload)}\n\n"
+        )
+
+        # 2. Live forward.
+        channel = await get_workstream_channel(workstream_id_str)
+        try:
+            async for envelope in channel.subscribe():
+                if await request.is_disconnected():
+                    break
+                event_type = envelope.get("type", "message")
+                # ``ping`` is the SSEChannel idle heartbeat -- serialize
+                # as an SSE comment so it keeps the connection warm
+                # without surfacing in the consumer's onEvent handler.
+                if event_type == "ping":
+                    yield ": heartbeat\n\n"
+                    continue
+                data_payload = envelope.get("data") or {}
+                yield (
+                    f"event: {event_type}\n"
+                    f"data: {json.dumps(data_payload)}\n\n"
+                )
+                # When archive lands, flush + close so the drawer can
+                # detach instead of waiting for the next idle ping.
+                snap = data_payload.get("snapshot") or {}
+                if snap.get("archived_at"):
+                    yield "event: workstream.closed\ndata: {\"reason\": \"archived\"}\n\n"
+                    break
+        except asyncio.CancelledError:
+            # Client disconnect (most common) or app shutdown. The
+            # channel.subscribe finally-block detaches the queue.
+            raise
+        except Exception as exc:
+            logger.warning(
+                "workstream.stream_failed",
+                workstream_id=workstream_id_str,
+                error=str(exc),
+            )
+            yield (
+                "event: workstream.closed\n"
+                f"data: {json.dumps({'reason': 'stream_error'})}\n\n"
+            )
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

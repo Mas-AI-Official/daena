@@ -21,7 +21,7 @@
  *   COMPLETE          -> green    (done, terminal)
  *   FAILED            -> red      (failed, terminal)
  */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Activity,
@@ -34,6 +34,7 @@ import {
   MessageSquare,
   Pause,
   Play,
+  RadioTower,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -45,6 +46,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
+import { useResilientSSE, type SSEStatus } from '@/lib/sse'
 
 type WorkstreamStatus =
   | 'RUNNING'
@@ -413,6 +415,91 @@ function ReferencePanels({ ws }: { ws: Workstream }) {
   )
 }
 
+type StreamSnapshotPayload = {
+  workstream_id: string
+  snapshot: Partial<Workstream>
+}
+
+type StreamEventPayload = {
+  workstream_id: string
+  event: WorkstreamEvent
+  snapshot: Partial<Workstream>
+}
+
+type StreamBootstrapPayload = {
+  workstream_id: string
+  snapshot: Workstream
+  events: WorkstreamEvent[]
+}
+
+/**
+ * Compose a Workstream by merging an SSE snapshot patch into the current
+ * row. Snapshots only carry mutable fields; immutable fields (department,
+ * goal source_type / source_ref_id, created_at) keep their prior values.
+ */
+function applySnapshot(
+  prior: Workstream,
+  patch: Partial<Workstream>,
+): Workstream {
+  return { ...prior, ...patch }
+}
+
+const SSE_STATUS_STYLE: Record<
+  SSEStatus,
+  { label: string; cls: string; icon: React.ReactNode }
+> = {
+  connecting: {
+    label: 'Connecting…',
+    cls: 'text-starlight-500',
+    icon: <RadioTower size={10} className="animate-pulse" />,
+  },
+  connected: {
+    label: 'Live',
+    cls: 'text-emerald-300',
+    icon: <RadioTower size={10} />,
+  },
+  reconnecting: {
+    label: 'Reconnecting…',
+    cls: 'text-amber-300',
+    icon: <RadioTower size={10} className="animate-pulse" />,
+  },
+  fallback: {
+    label: 'Live updates unavailable, use Refresh.',
+    cls: 'text-amber-400',
+    icon: <AlertCircle size={10} />,
+  },
+  closed: {
+    label: 'Stream closed',
+    cls: 'text-starlight-500',
+    icon: <RadioTower size={10} />,
+  },
+}
+
+function LiveStatusBadge({
+  status,
+  reconnectAttempt,
+  maxRetries,
+}: {
+  status: SSEStatus
+  reconnectAttempt: number
+  maxRetries: number
+}) {
+  const meta = SSE_STATUS_STYLE[status]
+  const labelWithAttempt =
+    status === 'reconnecting'
+      ? `Reconnecting (${reconnectAttempt}/${maxRetries})…`
+      : meta.label
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[10px] font-semibold ${meta.cls}`}
+      title={labelWithAttempt}
+    >
+      {meta.icon}
+      <span>{labelWithAttempt}</span>
+    </span>
+  )
+}
+
 function WorkstreamDetailDrawer({
   workstreamId,
   onClose,
@@ -431,12 +518,21 @@ function WorkstreamDetailDrawer({
   const [redirectError, setRedirectError] = useState<string | null>(null)
   const [redirectApplied, setRedirectApplied] = useState<AppliedAction[] | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // Tracks ids we've already appended via SSE so duplicates between
+  // bootstrap + a fast follow-up event can't render twice.
+  const seenEventIdsRef = useRef<Set<string>>(new Set())
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
       const res = await api.get(`/workstreams/${workstreamId}`)
-      setData(res.data?.data ?? null)
+      const next = res.data?.data ?? null
+      if (next) {
+        seenEventIdsRef.current = new Set(
+          (next.events as WorkstreamEvent[]).map((e) => e.id),
+        )
+      }
+      setData(next)
     } catch {
       toast.error('Failed to load workstream')
     } finally {
@@ -447,6 +543,74 @@ function WorkstreamDetailDrawer({
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // PR-SPINE-06: subscribe to per-workstream SSE for live updates.
+  // Bootstrap arrives first (full snapshot + last 50 events), then a
+  // workstream.event for every state change and workstream.snapshot for
+  // informational mutations. ResilientSSE handles bounded reconnect +
+  // fallbackPoll on retry exhaustion.
+  const handleStreamEvent = useCallback(
+    ({ type, data: payload }: { type: string; data: unknown }) => {
+      if (type === 'workstream.bootstrap') {
+        const body = payload as StreamBootstrapPayload
+        if (!body || body.workstream_id !== workstreamId) return
+        seenEventIdsRef.current = new Set(body.events.map((e) => e.id))
+        setData({ workstream: body.snapshot, events: body.events })
+        setLoading(false)
+        return
+      }
+      if (type === 'workstream.event') {
+        const body = payload as StreamEventPayload
+        if (!body || body.workstream_id !== workstreamId) return
+        setData((cur) => {
+          if (!cur) return cur
+          const merged = applySnapshot(cur.workstream, body.snapshot)
+          if (seenEventIdsRef.current.has(body.event.id)) {
+            return { workstream: merged, events: cur.events }
+          }
+          seenEventIdsRef.current.add(body.event.id)
+          return { workstream: merged, events: [...cur.events, body.event] }
+        })
+        return
+      }
+      if (type === 'workstream.snapshot') {
+        const body = payload as StreamSnapshotPayload
+        if (!body || body.workstream_id !== workstreamId) return
+        setData((cur) =>
+          cur
+            ? { workstream: applySnapshot(cur.workstream, body.snapshot), events: cur.events }
+            : cur,
+        )
+        return
+      }
+      if (type === 'workstream.closed') {
+        // Server signaled the workstream was archived (or stream errored).
+        // Trigger an upstream refresh so the list drops the row, then
+        // close the drawer.
+        onMutated()
+        onClose()
+      }
+    },
+    [workstreamId, onMutated, onClose],
+  )
+
+  const fallbackPoll = useCallback(async () => {
+    await refresh()
+  }, [refresh])
+
+  const SSE_MAX_RETRIES = 5
+  const { status: sseStatus, reconnectAttempt } = useResilientSSE({
+    url: `/api/v1/workstreams/${workstreamId}/stream`,
+    eventTypes: [
+      'workstream.bootstrap',
+      'workstream.event',
+      'workstream.snapshot',
+      'workstream.closed',
+    ],
+    onEvent: handleStreamEvent,
+    fallbackPoll,
+    maxRetries: SSE_MAX_RETRIES,
+  })
 
   const submitRedirect = async () => {
     const instruction = redirectInput.trim()
@@ -628,16 +792,23 @@ function WorkstreamDetailDrawer({
 
             {/* Timeline */}
             <div className="space-y-2 pt-3 border-t border-white/10">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="text-[10px] uppercase tracking-wider font-semibold text-starlight-500">
                   Governed execution timeline
                 </div>
-                <button
-                  onClick={() => void refresh()}
-                  className="text-[10px] text-starlight-400 hover:text-starlight-100 inline-flex items-center gap-1"
-                >
-                  <RefreshCw size={10} /> Refresh
-                </button>
+                <div className="flex items-center gap-3">
+                  <LiveStatusBadge
+                    status={sseStatus}
+                    reconnectAttempt={reconnectAttempt}
+                    maxRetries={SSE_MAX_RETRIES}
+                  />
+                  <button
+                    onClick={() => void refresh()}
+                    className="text-[10px] text-starlight-400 hover:text-starlight-100 inline-flex items-center gap-1"
+                  >
+                    <RefreshCw size={10} /> Refresh
+                  </button>
+                </div>
               </div>
               <div className="space-y-1.5">
                 {data.events.length === 0 ? (
@@ -693,6 +864,23 @@ export default function WorkstreamsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  // PR-SPINE-06: honor ?focus=<workstream_id> to deep-link from PR-SCAN-WS-01
+  // ("Create remediation task" success toast) and any future surface that
+  // wants to drop the user straight into the live drawer. We read the
+  // value once on mount and clear the param so a later interaction
+  // (close + reopen) does not silently reopen the same workstream.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const focus = params.get('focus')
+    if (!focus) return
+    setSelectedId(focus)
+    params.delete('focus')
+    const search = params.toString()
+    const next = `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`
+    window.history.replaceState({}, '', next)
+  }, [])
 
   const launchDemo = async () => {
     setDemoLoading(true)
