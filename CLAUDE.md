@@ -454,6 +454,19 @@ Three patterns worth studying for future Daena features:
 14. When modifying chat_orchestrator.py memory enrichment, keep the pattern extendable. Future skill retrieval will hook in at the same point.
 15. Soul vault lives at backend/app/soul/ (inside codebase, gitignored). Memory tiers (T0-T4) stay at D:\Ideas\Daena-Mind\ (outside codebase). Soul deploys with Docker. Memory is runtime data.
 16. Always Parallel, Serial Fallback: All multi-model calls (Council, Quintessence) MUST use asyncio.gather() for parallel execution. Sequential await is fallback only when gather fails. Code never breaks -- always shoot for highest performance.
+17. **Honesty + Persistence + Visibility (locked 2026-04-29 via ADR-001):** Every UI element advertises a real capability backed by persistent state. Every persistent state is auditable. Every failure is visible. Specifically:
+    - **No silent error suppression.** `lib/api.ts` does not toast-spam, but errors MUST be logged + recorded to `errorStore` and surfaced via `ConnectionStatusIndicator`. Per-component inline error state is mandatory.
+    - **No hardcoded "demo data" fallbacks** in production components. If a runtime/registry/list is empty, render an honest "Detecting..." or "Empty" state, never fake "online" pills. (See: deleted `RuntimeSwapper.DEFAULT_RUNTIMES` 2026-04-29.)
+    - **No "ran but did nothing"** scheduled jobs. Cron must invoke a runtime and persist a `CronRun` row. Background queues must DB-back. (See: cron_scheduler real-exec fix + background_queue persistence 2026-04-29.)
+    - **In-memory registries must hydrate from DB on startup.** MCP, runtime, skill caches all rebuild from persistence. (See: `MCPRegistry.hydrate_from_db` 2026-04-29.)
+    - **Never auto-retry destructive operations on restart.** Mark them `failed_due_to_restart` + audit log; let operator decide. (See: BackgroundQueue restart recovery 2026-04-29.)
+    - **No advertised real-time without an SSE channel.** Every "live" claim in the UI must back to `/events` SSE or be relabeled. Polling is honest only if labeled.
+    - **Decision rule:** if a feature cannot answer "where does this persist?" and "how does the user see it fail?", it does not ship. Period.
+18. **Protected files (do not delete) (added 2026-05-02 via PR-DOC-DRIFT-FIX):** the following three files implement vault and OAuth credential storage. Removing any of them breaks asset-shield egress filtering, vault rotation, or OAuth-backed connections respectively. If consolidation is genuinely needed, do it via a DELETE-PR with explicit founder approval and a paired migration that preserves the encrypted blobs. Do not rename, do not move, do not gate behind a feature flag without preserving the import path:
+    - `backend/app/services/security/asset_shield/vault_adapter.py` (AES-GCM envelope vault adapter under Asset Shield; called by `egress_filter.py`, `consent_token.py`, and the secrets table writer).
+    - `backend/app/services/vault_migration.py` (Phase 4a to 4b vault migration helper; required for any future re-encryption pass).
+    - `backend/app/services/integrations/oauth_credentials_store.py` (per-tenant OAuth credential persistence used by `oauth_service.py` for Google / Notion / GitHub / etc. connectors).
+    Earlier drafts of this rule referenced a `backend/app/services/vault.py`, which does not exist on disk. The Backend Blind-Spot Inventory (2026-05-01) confirmed the path; this rule supersedes any prior `vault.py` reference.
 
 ## SESSION MANAGEMENT
 
@@ -468,7 +481,7 @@ Then tell Masoud: "Phase X complete. Context is getting heavy. Consider starting
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Daena** (15301 symbols, 47874 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Daena** (24541 symbols, 63085 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
