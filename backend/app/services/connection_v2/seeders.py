@@ -114,6 +114,11 @@ class DiscoveryReport:
 
     tenant_id: str
     sources: list[SourceReport] = field(default_factory=list)
+    # PR-CONN-UX-RESCUE: per-candidate-path debug for the MCP source.
+    # Populated by ``_import_mcp_servers``. Each entry carries:
+    # cli / path / exists / parse_ok / has_mcp_block / mcp_count /
+    # server_names / skip_reason. NEVER carries env values or secrets.
+    mcp_paths_searched: list[dict] = field(default_factory=list)
 
     @property
     def total_created(self) -> int:
@@ -135,6 +140,7 @@ class DiscoveryReport:
         return {
             "tenant_id": self.tenant_id,
             "sources": [s.to_dict() for s in self.sources],
+            "mcp_paths_searched": list(self.mcp_paths_searched),
             "total_created": self.total_created,
             "total_skipped_existing": self.total_skipped_existing,
             "total_skipped_unconfigured": self.total_skipped_unconfigured,
@@ -212,9 +218,18 @@ class ConnectionDiscoveryService:
         self.registry = ConnectionRegistryV2(db, kek_seed=kek)
 
     async def run_discovery(self) -> DiscoveryReport:
-        """Run every importer in sequence and return an aggregate report."""
+        """Run every importer in sequence and return an aggregate report.
+
+        The MCP importer additionally populates
+        ``report.mcp_paths_searched`` so the UI can render "checked N
+        paths, M had mcpServers" instead of a bare "0 found." Each
+        entry is metadata-only (path / exists / parse_ok / counts /
+        server names) and NEVER carries env values.
+        """
         report = DiscoveryReport(tenant_id=str(self.tenant_id))
-        report.sources.append(await self._import_mcp_servers())
+        mcp_source, mcp_debug = await self._import_mcp_servers_with_debug()
+        report.sources.append(mcp_source)
+        report.mcp_paths_searched = mcp_debug
         report.sources.append(await self._import_cli_runtimes())
         report.sources.append(await self._import_local_models())
         report.sources.append(await self._import_providers())
@@ -227,19 +242,39 @@ class ConnectionDiscoveryService:
             skipped_existing=report.total_skipped_existing,
             skipped_unconfigured=report.total_skipped_unconfigured,
             failed=report.total_failed,
+            mcp_paths_searched=len(mcp_debug),
         )
         return report
 
     # ── MCP servers (Claude Code / Codex / Gemini CLI configs) ──────
 
-    async def _import_mcp_servers(self) -> SourceReport:
+    async def _import_mcp_servers_with_debug(
+        self,
+    ) -> tuple[SourceReport, list[dict]]:
+        """MCP importer that also returns the per-path debug payload.
+
+        Path entries carry NO env values or secret material -- only
+        path string + existence + parse status + count + server names.
+        """
         from app.services.mcp_sync.detector import CLIMCPDetector
 
         out = SourceReport(source="mcp_servers")
+        debug_payload: list[dict] = []
         try:
             detector = CLIMCPDetector()
-            mcps = await detector.discover_all()
+            mcps, probes = await detector.discover_with_debug()
             mcps = CLIMCPDetector.deduplicate(mcps)
+            for probe in probes:
+                debug_payload.append({
+                    "cli": probe.cli,
+                    "path": probe.path,
+                    "exists": probe.exists,
+                    "parse_ok": probe.parse_ok,
+                    "has_mcp_block": probe.has_mcp_block,
+                    "mcp_count": probe.mcp_count,
+                    "server_names": list(probe.server_names),
+                    "skip_reason": probe.skip_reason,
+                })
         except Exception as exc:  # noqa: BLE001 - importer must never crash discovery
             out.failed.append({
                 "slug": "discover_all",
@@ -251,7 +286,7 @@ class ConnectionDiscoveryService:
                 tenant_id=str(self.tenant_id),
                 error_type=type(exc).__name__,
             )
-            return out
+            return out, debug_payload
 
         for m in mcps:
             slug = mcp_slug(m.name)
@@ -297,6 +332,15 @@ class ConnectionDiscoveryService:
                     slug=slug,
                     error_type=type(exc).__name__,
                 )
+        return out, debug_payload
+
+    async def _import_mcp_servers(self) -> SourceReport:
+        """Backward-compat wrapper for the test suite + any external caller.
+
+        New code should use ``_import_mcp_servers_with_debug`` so the
+        per-path probe payload is preserved.
+        """
+        out, _debug = await self._import_mcp_servers_with_debug()
         return out
 
     @staticmethod

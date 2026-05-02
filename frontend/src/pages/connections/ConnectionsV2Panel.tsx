@@ -1,84 +1,53 @@
 /**
- * ConnectionsV2Panel -- Phase 5 PR 1.
+ * ConnectionsV2Panel -- All Connections (canonical truth surface).
  *
- * Renders the V2 truth-backed connections list. Every row shows the
- * 6 truth dimensions (detected/configured/imported/reachable/
+ * PR-CONN-UX-RESCUE: now accepts discoveryReport + onDiscover from the
+ * page-level toolbar so the per-source summary lives here without
+ * duplicating the Discover button. Internal Discover + V2-flag banner
+ * removed (the page header owns Discover; the V2-flag banner is
+ * developer noise and lives only in Advanced now).
+ *
+ * Renders the canonical truth-backed connections list. Every row shows
+ * the 6 truth dimensions (detected/configured/imported/reachable/
  * authenticated/callable). NO row says "connected" unless callable=true.
  * NO dummy buttons: every action calls a real backend endpoint or is
  * disabled with a visible reason.
- *
- * Layout:
- *   - Summary cards strip (one per kind, with healthy/total counters)
- *   - Search + kind filter + refresh
- *   - Grouped table (collapsible per kind)
- *   - Details drawer with truth ladder + per-dim failure reasons
- *
- * Modes:
- *   - V2 flag ON  -> live data via /api/v1/connections/v2
- *   - V2 flag OFF -> "legacy mode" banner; the table still renders V2
- *     rows that exist (for dev exercise) but mutations show a clear
- *     "enable USE_CONNECTION_REGISTRY_V2" hint
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, ChevronDown, ChevronRight, Download, Loader2, Power, RefreshCw,
-  Search, ShieldCheck, Trash2, X, Activity,
+  AlertTriangle, ChevronDown, ChevronRight, Loader2, Power, RefreshCw,
+  Search, Trash2, X, Activity, Download, FolderSearch,
 } from 'lucide-react'
 
-import { api } from '@/lib/api'
-import { toast } from '@/stores/toastStore'
 import {
   type ConnectionKind,
   type ConnectionLabel,
   type ConnectionV2Row,
+  type DiscoveryReport,
   TRUTH_DIM_ORDER,
   kindLabel,
   kindOrder,
   labelTone,
-  runDiscoveryRefresh,
   useConnectionsV2,
 } from '@/hooks/useConnectionsV2'
 
-interface FlagInfo {
-  v2_enabled: boolean | null
-  loading: boolean
+interface ConnectionsV2PanelProps {
+  /** Last discovery report from the page-level toolbar; used to render
+   *  the per-source summary card + MCP path debug list. */
+  discoveryReport?: DiscoveryReport | null
+  /** Trigger the page-level discovery action; rendered as a CTA inside
+   *  the empty state when no rows exist yet. */
+  onDiscover?: () => void
+  /** Page-level discovery in progress (so the empty-state CTA can spin). */
+  discovering?: boolean
 }
 
-function useV2Flag(): FlagInfo {
-  /**
-   * Fetch the V2 flag once via the reconciliation status endpoint
-   * (v2_enabled is included in its response). FOUNDER+ gated -- if the
-   * caller isn't FOUNDER, the request returns 403; we then fall back
-   * to assuming the flag is OFF (the production-safe assumption).
-   */
-  const [info, setInfo] = useState<FlagInfo>({ v2_enabled: null, loading: true })
-
-  useEffect(() => {
-    let cancelled = false
-    api
-      .get<{ v2_enabled: boolean }>('/connections/v2/reconciliation/status', {
-        silent: true,
-      })
-      .then((res) => {
-        if (cancelled) return
-        setInfo({ v2_enabled: !!res.data?.v2_enabled, loading: false })
-      })
-      .catch(() => {
-        if (cancelled) return
-        // 403 (non-founder) or any other failure -- assume OFF.
-        setInfo({ v2_enabled: false, loading: false })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return info
-}
-
-export default function ConnectionsV2Panel() {
-  const { v2_enabled, loading: flagLoading } = useV2Flag()
+export default function ConnectionsV2Panel({
+  discoveryReport = null,
+  onDiscover,
+  discovering = false,
+}: ConnectionsV2PanelProps = {}) {
   const { rows, loading, error, refresh, probe, enable, disable, archive } =
     useConnectionsV2()
   const [search, setSearch] = useState('')
@@ -86,7 +55,6 @@ export default function ConnectionsV2Panel() {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [discovering, setDiscovering] = useState(false)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -162,53 +130,10 @@ export default function ConnectionsV2Panel() {
     if (selectedId === id) setSelectedId(null)
   }
 
-  async function runImport() {
-    setDiscovering(true)
-    try {
-      const res = await runDiscoveryRefresh()
-      if (!res.ok) {
-        toast.error(res.error || 'Discovery refresh failed')
-        return
-      }
-      const summary = res.report?.sources
-        .map((s) => `${s.source}: +${s.total_created}`)
-        .filter((s) => !s.endsWith('+0'))
-        .join(' | ')
-      toast.success(
-        summary ? `Discovery -- ${summary}` : 'Discovery complete -- no new rows',
-      )
-      refresh()
-    } finally {
-      setDiscovering(false)
-    }
-  }
-
   return (
     <div className="space-y-4">
-      {/* Mode banner */}
-      {!flagLoading && v2_enabled === false && (
-        <div className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          <AlertTriangle size={16} className="shrink-0" />
-          <div>
-            <strong>V2 read-only mode.</strong>{' '}
-            <code className="text-amber-100">USE_CONNECTION_REGISTRY_V2</code>{' '}
-            is off. You can list, probe, and inspect V2 rows here, but
-            legacy mutations (install / disconnect from the
-            <strong>Show legacy / advanced</strong> reveal) will NOT
-            mirror back to V2. Flip the backend flag in dev to enable
-            full V2 mutation mirroring.
-          </div>
-        </div>
-      )}
-      {!flagLoading && v2_enabled === true && (
-        <div className="flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-          <ShieldCheck size={16} className="shrink-0" />
-          <div>
-            <strong>V2 truth mode.</strong> Status reflects real probe
-            results. A row is &ldquo;healthy&rdquo; only after a successful
-            round-trip.
-          </div>
-        </div>
+      {discoveryReport && (
+        <DiscoverySummary report={discoveryReport} />
       )}
 
       {/* Summary strip */}
@@ -272,20 +197,6 @@ export default function ConnectionsV2Panel() {
         </select>
         <button
           type="button"
-          onClick={runImport}
-          disabled={discovering}
-          className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50"
-          title="Walk every real source (CLI MCP configs, runtime binaries, local models, providers, OAuth catalog, V1 plugin catalog) and import any new rows. Idempotent. Never reads secret values."
-        >
-          {discovering ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <Download size={12} />
-          )}
-          Import from detected sources
-        </button>
-        <button
-          type="button"
           onClick={refresh}
           disabled={loading}
           className="inline-flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2 text-xs font-medium text-starlight-200 hover:bg-white/5 disabled:opacity-50"
@@ -314,38 +225,30 @@ export default function ConnectionsV2Panel() {
       {!loading && rows.length === 0 && !error && (
         <div className="rounded-lg border border-white/5 bg-white/[0.02] px-6 py-10 text-center text-sm text-starlight-400">
           <p className="mb-3 text-starlight-300">
-            No V2 connections imported yet.
+            No connections imported yet.
           </p>
           <p className="mx-auto max-w-xl text-xs text-starlight-500">
-            Click{' '}
-            <strong className="text-starlight-200">
-              Import from detected sources
-            </strong>{' '}
-            above to scan installed CLI runtimes, MCP server configs, local
-            model endpoints, configured API providers, OAuth catalog, and the
-            V1 plugin catalog. The import is idempotent and never reads
-            secret values.
+            Daena scans your installed CLI runtimes, MCP configs, local model
+            endpoints, configured API providers, OAuth catalog, and skill-pack
+            catalog when you click <strong className="text-starlight-200">Discover
+            installed tools</strong> above. The scan is idempotent and never
+            reads secret values.
           </p>
-          <details className="mx-auto mt-4 max-w-xl text-left">
-            <summary className="cursor-pointer text-xs text-starlight-500 hover:text-starlight-300">
-              Advanced details
-            </summary>
-            <p className="mt-2 text-xs text-starlight-500">
-              Direct API:{' '}
-              <code className="text-starlight-300">
-                POST /api/v1/connections/v2/discovery/refresh
-              </code>{' '}
-              walks every source for the caller's tenant. For per-row inserts,
-              use{' '}
-              <code className="text-starlight-300">
-                POST /api/v1/connections/v2
-              </code>{' '}
-              with{' '}
-              <code className="text-starlight-300">kind=&lt;...&gt;</code>.
-              Truth ladder rules are unchanged: a row is &ldquo;healthy&rdquo;
-              only after a real probe round-trip.
-            </p>
-          </details>
+          {onDiscover && (
+            <button
+              type="button"
+              onClick={onDiscover}
+              disabled={discovering}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg border border-accent-cyan/30 bg-accent-cyan/10 px-4 py-2 text-xs font-medium text-accent-cyan hover:bg-accent-cyan/20 disabled:opacity-50"
+            >
+              {discovering ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Download size={14} />
+              )}
+              Discover installed tools
+            </button>
+          )}
         </div>
       )}
 
@@ -870,4 +773,137 @@ function ConfigDrawerRows({ row }: { row: ConnectionV2Row }) {
   }
 
   return null
+}
+
+// ──────────────────────────────────────────────────────────────────
+// PR-CONN-UX-RESCUE: discovery summary card
+// ──────────────────────────────────────────────────────────────────
+//
+// Renders the per-source breakdown from the most recent discovery run,
+// plus a collapsible "MCP paths checked" debug list. Only the path
+// metadata is shown -- never env values or secrets. Lives at the top
+// of the All Connections tab so the operator sees discovery context
+// without having to dig.
+
+const SOURCE_LABELS: Record<string, string> = {
+  mcp_servers: 'MCP Servers',
+  cli_runtimes: 'CLI Runtimes',
+  local_models: 'Local Models',
+  providers: 'API Providers',
+  oauth_apps: 'OAuth Apps',
+  skill_packs: 'Skill Packs',
+}
+
+function DiscoverySummary({ report }: { report: DiscoveryReport }) {
+  const mcpReport = report.sources.find((s) => s.source === 'mcp_servers')
+  const mcpPathCount = report.mcp_paths_searched.length
+  const mcpPathsExisting = report.mcp_paths_searched.filter((p) => p.exists).length
+  const mcpPathsWithBlock = report.mcp_paths_searched.filter((p) => p.has_mcp_block).length
+  const mcpServersFound = mcpReport ? mcpReport.total_created + mcpReport.total_skipped_existing : 0
+  const mcpEmpty = mcpServersFound === 0
+
+  return (
+    <div className="rounded-lg border border-accent-cyan/20 bg-accent-cyan/5 px-4 py-3">
+      <div className="flex items-start gap-3">
+        <FolderSearch size={16} className="mt-0.5 shrink-0 text-accent-cyan" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="text-xs font-medium uppercase tracking-[0.16em] text-accent-cyan">
+              Last discovery
+            </span>
+            <span className="text-[11px] text-starlight-500">
+              {report.total_created} new, {report.total_skipped_existing} existed,
+              {' '}{report.total_skipped_unconfigured} unconfigured,
+              {' '}{report.total_failed} failed
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {report.sources.map((s) => {
+              const label = SOURCE_LABELS[s.source] || s.source
+              const tone =
+                s.total_failed > 0
+                  ? 'bg-rose-500/15 text-rose-200'
+                  : s.total_created > 0
+                    ? 'bg-emerald-500/15 text-emerald-200'
+                    : 'bg-slate-500/15 text-slate-300'
+              return (
+                <span
+                  key={s.source}
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] ${tone}`}
+                  title={
+                    s.total_failed > 0
+                      ? `${s.total_failed} failures`
+                      : s.total_created > 0
+                        ? `${s.total_created} new rows`
+                        : 'no changes this run'
+                  }
+                >
+                  {label}: +{s.total_created}
+                </span>
+              )
+            })}
+          </div>
+          {mcpEmpty && mcpPathCount > 0 && (
+            <p className="mt-2 text-[11px] text-starlight-400">
+              <strong className="text-starlight-200">
+                No MCP servers found in detected config paths.
+              </strong>{' '}
+              Checked {mcpPathCount} path{mcpPathCount === 1 ? '' : 's'} across
+              Claude Code, Codex, and Gemini CLI -- {mcpPathsExisting} existed,{' '}
+              {mcpPathsWithBlock} contained a{' '}
+              <code className="text-starlight-300">mcpServers</code> block.
+            </p>
+          )}
+          {mcpPathCount > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[11px] text-starlight-500 hover:text-starlight-300">
+                Searched MCP config paths ({mcpPathCount})
+              </summary>
+              <ul className="mt-2 space-y-1 text-[10px]">
+                {report.mcp_paths_searched.map((p) => (
+                  <li
+                    key={`${p.cli}:${p.path}`}
+                    className="flex items-start gap-2 rounded border border-white/5 bg-white/[0.02] px-2 py-1"
+                  >
+                    <span
+                      className={`mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+                        p.has_mcp_block
+                          ? 'bg-emerald-400'
+                          : p.exists
+                            ? 'bg-amber-400'
+                            : 'bg-slate-500'
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-mono text-starlight-300" title={p.path}>
+                        [{p.cli}] {p.path}
+                      </div>
+                      <div className="text-starlight-500">
+                        {p.exists ? 'exists' : 'not found'}
+                        {p.exists && (
+                          <>
+                            {p.parse_ok ? ' / parse_ok' : ' / parse_error'}
+                            {p.has_mcp_block ? ` / ${p.mcp_count} mcpServer entries` : ' / no mcpServers block'}
+                          </>
+                        )}
+                        {p.skip_reason && p.skip_reason !== 'not_found' && (
+                          <span className="ml-2 text-rose-300">
+                            {p.skip_reason}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[10px] text-starlight-500">
+                Path entries carry only existence + parse status + count + server
+                names. Daena does not read env values from these files.
+              </p>
+            </details>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }

@@ -360,9 +360,23 @@ export interface DiscoverySourceResult {
   total_failed: number
 }
 
+// PR-CONN-UX-RESCUE: per-candidate-path debug for the MCP source.
+// NEVER carries env values or secrets -- only path + existence + count.
+export interface McpPathProbe {
+  cli: string
+  path: string
+  exists: boolean
+  parse_ok: boolean
+  has_mcp_block: boolean
+  mcp_count: number
+  server_names: string[]
+  skip_reason: string
+}
+
 export interface DiscoveryReport {
   tenant_id: string
   sources: DiscoverySourceResult[]
+  mcp_paths_searched: McpPathProbe[]
   total_created: number
   total_skipped_existing: number
   total_skipped_unconfigured: number

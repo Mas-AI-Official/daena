@@ -221,8 +221,8 @@ class TestMcpImporter:
             ),
         ]
         with patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=detected),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=(detected, [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -268,8 +268,8 @@ class TestMcpImporter:
             ),
         ]
         with patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=detected),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=(detected, [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -298,8 +298,8 @@ class TestCliRuntimeImporter:
     ):
         # Force shutil.which to return None for every probe.
         with patch.object(shutil, "which", return_value=None), patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=[]),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=([], [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -322,8 +322,8 @@ class TestCliRuntimeImporter:
             return "/fake/bin/claude" if name == "claude" else None
 
         with patch.object(shutil, "which", side_effect=_which), patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=[]),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=([], [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -349,8 +349,8 @@ class TestLocalModelImporter:
         self, db_session, seeded_tenant, test_tenant_id,
     ):
         with patch.object(shutil, "which", return_value=None), patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=[]),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=([], [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -374,8 +374,8 @@ class TestLocalModelImporter:
         self, db_session, seeded_tenant, test_tenant_id,
     ):
         with patch.object(shutil, "which", return_value=None), patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=[]),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=([], [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -416,8 +416,8 @@ class TestOAuthImporter:
         self, db_session, seeded_tenant, test_tenant_id,
     ):
         with patch.object(shutil, "which", return_value=None), patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=[]),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=([], [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -439,8 +439,8 @@ class TestOAuthImporter:
     ):
         sentinel_secret = "client-secret-MUST-NEVER-PERSIST"
         with patch.object(shutil, "which", return_value=None), patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=[]),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=([], [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -484,8 +484,8 @@ class TestSkillPackImporter:
         self, db_session, seeded_tenant, test_tenant_id,
     ):
         with patch.object(shutil, "which", return_value=None), patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=[]),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=([], [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -526,8 +526,8 @@ class TestProviderImporter:
         self, db_session, seeded_tenant, test_tenant_id,
     ):
         with patch.object(shutil, "which", return_value=None), patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=[]),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=([], [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -565,8 +565,8 @@ class TestCrossSourceIdempotency:
         self, db_session, seeded_tenant, test_tenant_id,
     ):
         with patch.object(shutil, "which", return_value=None), patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=[]),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=([], [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
@@ -606,8 +606,8 @@ class TestCrossSourceIdempotency:
             ),
         ]
         with patch.object(shutil, "which", return_value=None), patch(
-            "app.services.mcp_sync.detector.CLIMCPDetector.discover_all",
-            new=AsyncMock(return_value=detected),
+            "app.services.mcp_sync.detector.CLIMCPDetector.discover_with_debug",
+            new=AsyncMock(return_value=(detected, [])),
         ):
             svc = ConnectionDiscoveryService(
                 db_session,
