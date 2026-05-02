@@ -1031,17 +1031,21 @@ async def create_remediation_from_finding(
     """
     workflow = _get_workflow()
 
-    # 1. Verify the scan exists in the in-memory job table AND belongs
-    # to the calling tenant. Cross-tenant access is mapped to 404 (not
-    # 403) so the endpoint does not leak which scan ids exist for other
-    # tenants.
-    job = workflow._jobs.get(scan_id)  # noqa: SLF001
-    if job is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Scan {scan_id} not found",
-        )
-    if str(job.tenant_id) != str(user.tenant_id):
+    # 1. Verify the scan belongs to the calling tenant.
+    #
+    # PR-SCAN-DISK-TENANT (2026-05-02): the lookup now consults
+    # in-memory ``_jobs`` first and falls back to the on-disk
+    # persisted ``tenant_id``, so a scan that survived a process
+    # restart can still be remediated by its owner. Legacy reports
+    # written before this PR have no ``tenant_id`` field; the helper
+    # returns None for those and we 404 -- fail-closed -- so a
+    # restart-recovered scan from before the upgrade cannot be
+    # remediated until it is re-run.
+    #
+    # Cross-tenant access is mapped to 404 (not 403) so the endpoint
+    # does not leak which scan ids exist for other tenants.
+    owner_tenant_id = workflow.get_scan_owner_tenant_id(scan_id)
+    if owner_tenant_id is None or owner_tenant_id != str(user.tenant_id):
         raise HTTPException(
             status_code=404,
             detail=f"Scan {scan_id} not found",

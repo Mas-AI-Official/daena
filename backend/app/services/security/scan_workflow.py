@@ -477,11 +477,19 @@ class ScanWorkflow:
         """Write ``{SECURITY_REPORTS_DIR}/{job_id}.json`` so the report
         survives restart. Shape mirrors the API response plus enough job
         metadata to reconstruct the ScanReport dataclass on load.
+
+        PR-SCAN-DISK-TENANT (2026-05-02): also persists ``tenant_id`` so
+        a process restart can verify ownership before letting an
+        operator create remediation work from a recovered scan. Reports
+        written before this PR have no ``tenant_id`` field; the read
+        path treats that as "ownership unknown" and the remediation
+        endpoint fails closed.
         """
         path = self._report_disk_path(job.id)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         payload = {
             "job_id": report.job_id,
+            "tenant_id": str(job.tenant_id) if job.tenant_id else None,
             "tier": report.tier.value,
             "target": job.target,
             "findings": report.findings,
@@ -506,18 +514,33 @@ class ScanWorkflow:
         os.replace(tmp_path, path)
         logger.info("scan_workflow.persisted", job_id=job.id, path=path)
 
-    def _load_report_from_disk(self, job_id: str) -> ScanReport | None:
-        """Reconstruct a ScanReport from a persisted JSON file, or None
-        if the file does not exist.
+    def _load_report_payload_from_disk(self, job_id: str) -> dict | None:
+        """Read the raw persisted JSON for a scan, or None if missing.
+
+        Centralizes the disk read so both the report reconstructor
+        (``_load_report_from_disk``) and the tenant-ownership lookup
+        (``get_scan_owner_tenant_id``) share one IO path. Returns None
+        on missing file OR malformed JSON OR OS error -- the contract is
+        "this returns a dict iff the file is loadable."
         """
         path = self._report_disk_path(job_id)
         if not os.path.isfile(path):
             return None
         try:
             with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                return json.load(f)
         except (OSError, json.JSONDecodeError) as exc:
-            logger.warning("scan_workflow.load_failed", job_id=job_id, error=str(exc))
+            logger.warning(
+                "scan_workflow.load_failed", job_id=job_id, error=str(exc),
+            )
+            return None
+
+    def _load_report_from_disk(self, job_id: str) -> ScanReport | None:
+        """Reconstruct a ScanReport from a persisted JSON file, or None
+        if the file does not exist.
+        """
+        data = self._load_report_payload_from_disk(job_id)
+        if data is None:
             return None
         try:
             tier = ReportTier(data.get("tier", "SCOUT").upper())
@@ -535,6 +558,37 @@ class ScanWorkflow:
             recommendations=data.get("recommendations", []) or [],
             severity_counts=data.get("severity_counts", {}) or {},
         )
+
+    def get_scan_owner_tenant_id(self, job_id: str) -> str | None:
+        """Return the tenant id that owns a scan, or None if unknown.
+
+        Lookup order:
+
+        1. In-memory ``_jobs[job_id]`` (current-process scans).
+        2. On-disk persisted JSON (restart-recovered scans).
+        3. None (unknown scan OR legacy report written before
+           PR-SCAN-DISK-TENANT).
+
+        The remediation endpoint is the canonical caller; it MUST treat
+        a None return as "no tenant ownership claim is provable" and
+        respond 404 (not 403, to avoid leaking which scan ids exist for
+        other tenants). Operators cannot create remediation work from
+        legacy disk reports until those scans are re-run -- a deliberate
+        fail-closed posture documented in the PR-SCAN-DISK-TENANT
+        report.
+        """
+        job = self._jobs.get(job_id)
+        if job is not None:
+            return str(job.tenant_id) if job.tenant_id else None
+        payload = self._load_report_payload_from_disk(job_id)
+        if payload is None:
+            return None
+        owner = payload.get("tenant_id")
+        # Treat empty string as missing -- defensive against any historic
+        # writer that may have rendered the field but left it blank.
+        if not owner:
+            return None
+        return owner
 
     # -- Internal pipeline execution --
 
@@ -720,8 +774,19 @@ class ScanWorkflow:
 
             scan_opts = dict(job.options or {})
             outcome = await _real_scan_target(job.target, scan_opts)
-            job.files_scanned = outcome.files_scanned
-            job.files_total = max(outcome.files_scanned, 1)
+            # Preserve the profiled file count when the scanner under-
+            # reports (mock scanners or scanners that don't return
+            # per-file telemetry). Without this, comma-separated
+            # multi-file targets collapse to ``files_total=1`` even
+            # though ``_profile_target`` correctly enumerated them.
+            # Take the max of (scanner's count, profiled count, 1).
+            _profiled_count = job.files_total  # set by _profile_target
+            job.files_scanned = max(outcome.files_scanned, _profiled_count, 1)
+            job.files_total = max(
+                outcome.files_scanned,
+                _profiled_count,
+                1,
+            )
             job.progress_pct = 70.0
             job.findings_count = len(outcome.findings)
 

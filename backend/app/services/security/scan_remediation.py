@@ -42,10 +42,66 @@ from app.models.organization import Department
 from app.models.workstream import Workstream, WorkstreamSourceType
 from app.services.audit import AuditService
 from app.services.execution_service import ExecutionService
-from app.services.security.report_tiers import SecurityFinding
+from app.services.security.report_tiers import FindingSeverity, SecurityFinding
 from app.services.workstream_service import StartParams, WorkstreamService
 
 logger = get_logger(__name__)
+
+
+def _coerce_finding(item: Any) -> SecurityFinding:
+    """Accept either a SecurityFinding dataclass or a dict and return a SecurityFinding.
+
+    ``ScanReport.findings`` stores plain dicts in production (via
+    ``ScanWorkflow._finding_to_dict``) so the report can survive JSON
+    serialization to disk. Service-level tests construct SecurityFinding
+    instances directly. This coercion lets ``resolve_finding`` and the
+    rest of the pipeline accept either shape without forcing every
+    caller to choose.
+
+    Unknown-severity strings collapse to ``INFO`` so a malformed disk
+    report never raises here -- the validity of the severity is the
+    scanner's contract, not the remediation pipeline's.
+    """
+    if isinstance(item, SecurityFinding):
+        return item
+    if not isinstance(item, dict):
+        raise TypeError(
+            f"Cannot coerce {type(item).__name__} into SecurityFinding",
+        )
+    severity_raw = item.get("severity", "INFO")
+    if isinstance(severity_raw, FindingSeverity):
+        severity = severity_raw
+    else:
+        try:
+            severity = FindingSeverity(str(severity_raw).upper())
+        except ValueError:
+            severity = FindingSeverity.INFO
+    return SecurityFinding(
+        id=item.get("id", "") or "",
+        title=item.get("title", "") or "",
+        severity=severity,
+        location=item.get("location", "") or "",
+        description=item.get("description", "") or "",
+        explanation=item.get("explanation", "") or "",
+        remediation=item.get("remediation", "") or "",
+        fix_code=item.get("fix_code", "") or "",
+        fix_verified=bool(item.get("fix_verified", False)),
+        exploit_path=item.get("exploit_path", "") or "",
+        confidence=float(item.get("confidence", 0.0) or 0.0),
+        verified_by_models=int(item.get("verified_by_models", 0) or 0),
+        falsification_survived=bool(item.get("falsification_survived", False)),
+        reasoning_chain=list(item.get("reasoning_chain", []) or []),
+        cve_references=list(item.get("cve_references", []) or []),
+        source_tool=item.get("source_tool", "") or "",
+        source_rule=item.get("source_rule", "") or "",
+        raw_line=item.get("raw_line", "") or "",
+        evidence_chain_id=item.get("evidence_chain_id", "") or "",
+    )
+
+
+def _coerce_findings(items: list[Any]) -> list[SecurityFinding]:
+    """Apply ``_coerce_finding`` to each item; pure list comprehension."""
+    return [_coerce_finding(it) for it in items]
 
 
 class ScanNotFoundError(LookupError):
@@ -251,6 +307,11 @@ async def create_remediation(
         NoActiveDepartmentError: when the tenant has no active
             department to own the workstream.
     """
+    # Production callers pass ``ScanReport.findings`` which is a list of
+    # plain dicts (the disk-serializable shape). Service-level tests pass
+    # SecurityFinding objects directly. Coerce once here so the rest of
+    # the pipeline works on a single, typed shape.
+    findings = _coerce_findings(findings)
     finding = resolve_finding(findings, finding_id)
     if finding is None:
         raise FindingNotFoundError(
