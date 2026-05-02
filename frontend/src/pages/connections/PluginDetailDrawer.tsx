@@ -272,11 +272,33 @@ export default function PluginDetailDrawer({
                   )
                 })}
               </ul>
-              {plugin.failure_reason && (
-                <p className="mt-2 text-[11px] text-rose-300">
-                  Last failure: {plugin.failure_reason}
-                </p>
-              )}
+              {/* CLI runtimes: surface auth_unknown with a softer advisory.
+                  PR-CONN-CLI-PROBE matches on failure_reason prefix
+                  ('auth_unknown:') so the operator sees the CLI is
+                  installed + reachable, just that Daena cannot safely
+                  verify login yet (e.g. grok_cli has no documented
+                  status command). */}
+              {plugin.source.catalog.kind === 'cli_runtime' &&
+                plugin.failure_reason &&
+                plugin.failure_reason.startsWith('auth_unknown') && (
+                  <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-100">
+                    <ShieldCheck size={12} className="mt-0.5 shrink-0 text-amber-300" />
+                    <span>
+                      <strong>CLI installed, but Daena cannot safely verify login yet.</strong>{' '}
+                      Run the runtime's own login command in your terminal,
+                      then re-test from this drawer.
+                    </span>
+                  </div>
+                )}
+              {plugin.failure_reason &&
+                !(
+                  plugin.source.catalog.kind === 'cli_runtime' &&
+                  plugin.failure_reason.startsWith('auth_unknown')
+                ) && (
+                  <p className="mt-2 text-[11px] text-rose-300">
+                    Last failure: {plugin.failure_reason}
+                  </p>
+                )}
               {plugin.last_checked && (
                 <p className="mt-1 text-[10px] text-starlight-500">
                   Last checked: {new Date(plugin.last_checked).toLocaleString()}

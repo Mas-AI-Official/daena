@@ -7,6 +7,10 @@ canonical wiring step -- safe to call multiple times.
 
 from __future__ import annotations
 
+from app.services.connection_v2.probes.cli_runtime_probe import (
+    CliRuntimeProbe,
+    install_cli_runtime_probe,
+)
 from app.services.connection_v2.probes.mcp_server_probe import (
     McpServerProbe,
     install_mcp_server_probe,
@@ -26,13 +30,16 @@ def install_all_probes() -> None:
     install_provider_probe()
     install_skill_pack_probe()
     install_mcp_server_probe()
+    install_cli_runtime_probe()
 
 
 __all__ = [
+    "CliRuntimeProbe",
     "McpServerProbe",
     "ProviderProbe",
     "SkillPackProbe",
     "install_all_probes",
+    "install_cli_runtime_probe",
     "install_mcp_server_probe",
     "install_provider_probe",
     "install_skill_pack_probe",
