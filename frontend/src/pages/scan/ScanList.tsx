@@ -152,6 +152,25 @@ export default function ScanList({
                     {job.findings_count > 0 && (
                       <span className="text-xs text-status-warning font-mono">{job.findings_count} findings</span>
                     )}
+                    {/* PR-4: live walkthrough must be reachable WHILE a
+                        scan is running, not only after it completes.
+                        The Manus-style live window is the whole point
+                        of the SSE pipeline; hiding it behind isComplete
+                        defeated that. Now it sits next to every active
+                        job with a visible label, while the icon-only
+                        "Walkthrough" button on completed scans uses the
+                        same handler. */}
+                    {!isComplete && job.status !== 'failed' && (
+                      <button
+                        data-testid="scan-active-walkthrough"
+                        onClick={() => onOpenWalkthrough(job.job_id)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-accent-cyan/10 text-accent-cyan hover:bg-accent-cyan/20 transition-colors cursor-pointer"
+                        title="Open the live phase-by-phase view in a new tab"
+                      >
+                        <ExternalLink size={12} />
+                        Live walkthrough
+                      </button>
+                    )}
                     {isComplete && (
                       <>
                         {/* Phase 10b B2: explicit "Report ready" pill so

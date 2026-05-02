@@ -1,14 +1,22 @@
 /**
- * EngagementConsolePage — Phase G of Roadmap V2.
+ * EngagementConsolePage - DEPRECATED (PR-4, 2026-05-02).
  *
- * Kicks off governed security engagements against a scoped target and
- * shows the live scan progress + completed reports. Backed by
- * /api/v1/engagements (POST to start, GET list, GET {job_id} for
- * status, GET {job_id}/report when done).
+ * The /engagements route at App.tsx:131 redirects to /scan, which is
+ * now the single canonical scan launcher. This component is kept on
+ * disk per CLAUDE.md rule 4 (no deletes during canonicalization) so
+ * git history and any deep links from external systems still resolve
+ * something coherent if the redirect is bypassed (e.g. dev hot reload
+ * mounting the component directly, an old bookmark hitting a build
+ * where Navigate was misconfigured).
  *
- * High-risk tiers (T4 Architect and the founder-gated T5) return an `approval_required`
- * payload in GOVERNED mode. The page surfaces that and routes the
- * user to /governance/approvals instead of treating it as an error.
+ * If you reach this page in normal navigation, that is a bug - file
+ * a ticket. The deprecation banner inside the render tree links to
+ * the canonical /scan page so any operator who lands here can recover.
+ *
+ * Original purpose: kick off governed security engagements against a
+ * scoped target with the same T1-T5 launcher + tier picker + live
+ * progress that /scan now owns. The duplicate state machine led to
+ * operator confusion, so PR-4 collapsed both flows onto /scan.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
@@ -46,7 +54,7 @@ const PUBLIC_TIERS: {
   { value: 'SCOUT',     label: 'T1 Scout',     desc: 'Fast surface scan. Low signal, low risk.',        risk: 'low' },
   { value: 'ANALYST',   label: 'T2 Analyst',   desc: 'Static + enrichment. Typical paid engagement.',   risk: 'medium' },
   { value: 'OPERATOR',  label: 'T3 Operator',  desc: 'Full cognitive scan, deeper analysis.',           risk: 'medium' },
-  { value: 'ARCHITECT', label: 'T4 Architect', desc: 'Post-exploit + proof of impact. Approval-gated.', risk: 'high' },
+  { value: 'ARCHITECT', label: 'T4 Architect', desc: 'Posture review + proof of impact. Approval-gated.', risk: 'high' },
 ]
 
 interface EngagementJob {
@@ -154,7 +162,7 @@ export function EngagementConsolePage() {
     if (!t5Unlocked || !t5WireValue) return PUBLIC_TIERS
     return [
       ...PUBLIC_TIERS,
-      { value: t5WireValue, label: 'T5 Shield (unlocked)', desc: 'Full-spectrum, leaves no trace. Founder approval required.', risk: 'critical' as const },
+      { value: t5WireValue, label: 'T5 Shield (unlocked)', desc: 'Full-spectrum defensive validation. Founder approval required.', risk: 'critical' as const },
     ]
   }, [t5Unlocked, t5WireValue])
 
@@ -216,11 +224,38 @@ export function EngagementConsolePage() {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
     >
+      {/* PR-4 deprecation banner. The /engagements route normally
+          redirects to /scan via App.tsx; this banner only renders when
+          the redirect is bypassed (dev hot reload or misconfigured build).
+          It exists so operators are never stuck on a duplicate launcher. */}
+      <Card className="border border-status-warning/40 bg-status-warning/10 p-3 flex items-start gap-3">
+        <ShieldAlert size={16} className="text-status-warning shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-status-warning font-semibold">
+            This page has been merged into Security Scan
+          </p>
+          <p className="text-[11px] text-starlight-300 mt-0.5">
+            Engagements is now part of the canonical scan launcher at
+            <Link to="/scan" className="ml-1 text-accent-cyan underline">
+              /scan
+            </Link>
+            . Approval-gated tiers (T4 Architect and above) still route through
+            <Link to="/governance/approvals" className="ml-1 text-accent-cyan underline">
+              /governance/approvals
+            </Link>
+            from the canonical launcher.
+          </p>
+        </div>
+        <Link to="/scan" className="shrink-0">
+          <Button variant="ghost"><ExternalLink size={14} /> Go to Security Scan</Button>
+        </Link>
+      </Card>
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Crosshair className="text-accent-amber" size={22} />
-          <h1 className="text-xl font-semibold text-starlight-100">Security Engagements</h1>
-          <Badge variant="warning">Phase G</Badge>
+          <h1 className="text-xl font-semibold text-starlight-100">Security Engagements (legacy)</h1>
+          <Badge variant="warning">Deprecated</Badge>
         </div>
         <Button variant="ghost" onClick={() => void fetchJobs()}>
           <RefreshCw size={14} /> Refresh

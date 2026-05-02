@@ -19,7 +19,7 @@
  *   GET  /security/scans/:id/report/pdf -- Download PDF
  */
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { Crosshair } from 'lucide-react'
+import { Crosshair, FileText, Activity } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
@@ -35,6 +35,7 @@ import { TIERS, T5_TIER } from './scan/tiers'
 import ScanLauncher from './scan/ScanLauncher'
 import ScanList from './scan/ScanList'
 import ScanReport from './scan/ScanReport'
+import ScopeStatusBanner from './scan/ScopeStatusBanner'
 
 export function ScanPage() {
   usePageTitle('Security Scan')
@@ -165,7 +166,21 @@ export function ScanPage() {
       setActiveJobs(prev => [data, ...prev])
       setTarget('')
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to start scan')
+      // PR-4: backend returns structured detail on 403 scope-block:
+      // { code: "target_not_in_scope", target, hint }
+      // Previously we crammed that into setError as [object Object].
+      // Now we surface the hint inline so the operator knows the FIX,
+      // not just the failure.
+      const detail = err?.response?.data?.detail
+      if (detail && typeof detail === 'object' && detail.code === 'target_not_in_scope') {
+        setError(
+          `Target "${detail.target}" is not in your authorized scope. ${detail.hint || ''}`.trim()
+        )
+      } else if (typeof detail === 'string') {
+        setError(detail)
+      } else {
+        setError('Failed to start scan')
+      }
     } finally {
       setLoading(false)
     }
@@ -292,7 +307,14 @@ export function ScanPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
+    <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      {/* PR-4: scope precondition is the FIRST thing the operator sees.
+          Founder + scope empty: warning + Open Scan Scope button.
+          Founder + scope populated: subtle confirmation pill.
+          Non-founder: passive informational copy.
+          Closes the "press Start, surprise 403" gap. */}
+      <ScopeStatusBanner />
+
       <ScanLauncher
         visibleTiers={visibleTiers}
         selectedTier={selectedTier}
@@ -303,6 +325,26 @@ export function ScanPage() {
         loading={loading}
         error={error}
       />
+
+      {/* PR-4: tell the operator where reports actually land. Brief said
+          "improve copy so user knows where reports go" - this paragraph
+          is the answer. No new UI, no new endpoint - just honesty. */}
+      <div className="flex items-start gap-3 text-[11px] text-starlight-500 px-1">
+        <FileText size={13} className="mt-0.5 shrink-0 text-starlight-400" />
+        <p>
+          Reports land below in <span className="text-starlight-300">Recent Scans</span>.
+          Click <span className="text-starlight-300">View Report</span> to read inline,
+          <span className="text-starlight-300"> Open walkthrough</span> for the live phase-by-phase view (opens in a new tab),
+          or <span className="text-starlight-300">Export</span> for a downloadable PDF/Markdown.
+          Archive moves the JSON record to <span className="font-mono">var/security_reports/.archive/</span> - your source files are never touched.
+          <span className="block mt-1 text-starlight-600">
+            <Activity size={10} className="inline mr-1" />
+            Scans run within Daena&apos;s installed tool set. If a tier requires a tool that
+            is not installed (Security Ops &gt; Tools), the scan completes with what is
+            available and the report notes which tools were skipped.
+          </span>
+        </p>
+      </div>
 
       <ScanList
         activeJobs={activeJobs}

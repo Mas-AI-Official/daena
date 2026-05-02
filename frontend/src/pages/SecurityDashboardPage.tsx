@@ -269,15 +269,21 @@ export function SecurityDashboardPage() {
                   : 'Defensive mode -- live shield counters, scan history, threat feed'}
               </p>
               {/*
-                Audit-fix banner (2026-04-xx). Keeps users from confusing
-                this dashboard ("what is being blocked") with Scan Scope
-                in the sidebar ("what should we be scanning"). Do not
-                remove without an explicit re-design ticket -- it was
-                added to resolve cross-page confusion the audit caught.
+                Audit-fix banner (2026-04-xx, expanded by PR-4 2026-05-02).
+                Distinguishes the three security surfaces so operators
+                stop conflating them:
+                  - This page: what is being blocked / monitored.
+                  - Security Scan: launch a scan against a target.
+                  - Scan Scope: declare which targets are authorized.
+                Do not remove without an explicit re-design ticket -- it
+                was added to resolve cross-page confusion the audit caught.
               */}
               <p className="text-xs text-starlight-600 mt-0.5">
-                This page shows WHAT Daena is blocking and monitoring.
-                To declare scan targets, use <span className="text-primary-400">Scan Scope</span> in the sidebar.
+                This page monitors what is blocked.
+                To <a href="/scan" className="text-primary-400 hover:underline">launch a scan</a>,
+                use <span className="text-primary-400">Security Scan</span>.
+                To declare which targets are authorized,
+                use <a href="/security/scope" className="text-primary-400 hover:underline">Scan Scope</a>.
               </p>
             </div>
           </div>
