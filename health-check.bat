@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title Daena Health Check
+title Daena - Health Check
 color 0F
 
 :: ============================================================
@@ -36,7 +36,7 @@ if "!BACKEND_STATUS!"=="200" (
     set /a HEALTHY+=1
 ) else (
     echo        [FAIL] Backend not responding
-    echo               Run start-backend.bat
+    echo               Run start-daena.bat
 )
 
 :: ── 2. Frontend ──
@@ -50,7 +50,7 @@ if "!FRONTEND_STATUS!"=="200" (
     set /a HEALTHY+=1
 ) else (
     echo        [FAIL] Frontend not responding
-    echo               Run start-frontend.bat
+    echo               Run start-daena.bat
 )
 
 :: -- 3. llama.cpp llama-server [replaces Ollama] --

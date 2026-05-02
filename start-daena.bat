@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 :: Daena - Start Development Environment
 :: =============================================================
 
-title Daena - Development Environment
+title Daena - Start Development Environment
 color 0B
 chcp 65001 >NUL 2>NUL
 echo.

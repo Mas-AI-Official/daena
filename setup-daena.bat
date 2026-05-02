@@ -1,10 +1,10 @@
 @echo off
 :: =============================================================
-:: Daena Setup -- Works from any drive, any folder
+:: Daena - Setup -- Works from any drive, any folder
 :: =============================================================
 setlocal enabledelayedexpansion
 
-title Daena -- Setup
+title Daena - Setup
 
 :: Auto-detect where this script lives (works from any clone location)
 set "ROOT=%~dp0"
@@ -29,7 +29,7 @@ echo      ============================================
 echo.
 
 :: --- Check Python ---
-echo  [1/6] Checking Python...
+echo  [1/7] Checking Python...
 python --version >NUL 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo.
@@ -42,7 +42,7 @@ if %ERRORLEVEL% NEQ 0 (
 for /f "tokens=2" %%V in ('python --version 2^>^&1') do echo        Found Python %%V
 
 :: --- Check Node ---
-echo  [2/6] Checking Node.js...
+echo  [2/7] Checking Node.js...
 node --version >NUL 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo.
@@ -54,7 +54,7 @@ if %ERRORLEVEL% NEQ 0 (
 for /f %%V in ('node --version 2^>^&1') do echo        Found Node.js %%V
 
 :: --- Create Python virtual environment ---
-echo  [3/6] Creating Python virtual environment...
+echo  [3/7] Creating Python virtual environment...
 set "VENV=%ROOT%\venv_daena"
 if not exist "%VENV%" (
     python -m venv "%VENV%"
@@ -64,13 +64,13 @@ if not exist "%VENV%" (
 )
 
 :: --- Install backend dependencies ---
-echo  [4/6] Installing backend dependencies...
+echo  [4/7] Installing backend dependencies...
 call "%VENV%\Scripts\activate.bat"
 pip install -e "%BACKEND%[dev]" --quiet --quiet 2>NUL
 echo        Backend dependencies installed
 
 :: --- Install Playwright browsers ---
-echo  [4b/6] Installing Playwright browsers...
+echo  [5/7] Installing Playwright browsers...
 playwright install chromium --with-deps 2>NUL
 if errorlevel 1 (
     echo        [WARN] Playwright browser install failed. Run manually:
@@ -80,13 +80,13 @@ if errorlevel 1 (
 )
 
 :: --- Install frontend dependencies ---
-echo  [5/6] Installing frontend dependencies...
+echo  [6/7] Installing frontend dependencies...
 cd /d "%FRONTEND%"
 call npm install --quiet 2>NUL
 echo        Frontend dependencies installed
 
 :: --- Create .env if missing ---
-echo  [5/6] Setting up environment...
+echo  [7/7] Setting up environment...
 if not exist "%BACKEND%\.env" (
     if exist "%ROOT%\.env.example" (
         copy "%ROOT%\.env.example" "%BACKEND%\.env" >NUL
@@ -131,18 +131,20 @@ echo  ============================================
 echo.
 echo      DAENA IS READY
 echo.
-echo      Start backend:   cd backend
-echo                        ..\venv_daena\Scripts\activate
-echo                        python run.py
+echo      Quick start:
+echo        start-daena.bat       (starts llama-server + backend + frontend)
+echo        health-check.bat      (verifies everything is healthy)
+echo        stop-daena.bat        (clean shutdown)
 echo.
-echo      Start frontend:  cd frontend
-echo                        npm run dev
+echo      Manual start (if you prefer):
+echo        cd backend ^&^& ..\venv_daena\Scripts\activate ^&^& python run.py
+echo        cd frontend ^&^& npm run dev
 echo.
 echo      Then open:        http://127.0.0.1:5173
 echo.
 echo  ============================================
 echo.
-echo  Optional: Install your tools on Daena:
+echo  Optional: install AI runtimes that Daena can orchestrate:
 echo    npm install -g @anthropic-ai/claude-code
 echo    npm install -g @openai/codex
 echo    npm install -g @google/gemini-cli
