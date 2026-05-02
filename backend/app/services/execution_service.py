@@ -727,6 +727,7 @@ class ExecutionService(BaseService):
         to pause/cancel tasks.
         """
         task = await self._get_task_orm(task_id, tenant_id)
+        prior_status = task.status
 
         if status is not None:
             task.status = status
@@ -750,7 +751,131 @@ class ExecutionService(BaseService):
 
         await self.db.commit()
         await self.db.refresh(task)
+
+        # PR-SPINE-04: mirror the status change into a linked Workstream.
+        # Only fires when status was provided AND actually changed; the
+        # helper itself short-circuits on no link / no transition.
+        if status is not None and status != prior_status:
+            await self._sync_linked_workstream(task, status)
+
         return self._task_to_dict(task)
+
+    async def _sync_linked_workstream(
+        self, task: Task, new_status: str,
+    ) -> None:
+        """PR-SPINE-04: mirror a Task status change into its Workstream.
+
+        Lookup priority (see ``find_workstream_linked_to_task``):
+          1. Workstream with source_type=TASK + source_ref_id=task.id
+          2. Workstream with source_type=SCAN + artifact_refs.task_ids
+             contains str(task.id)
+
+        Mapping (lifecycle):
+          - RUNNING  -> bump progress to >=25 (no transition; the workstream
+                        was created in RUNNING by the spawn path)
+          - COMPLETED / SUCCESS -> complete() + progress=100
+          - FAILED / CANCELLED  -> fail() with task.error or task.name reason
+          - PENDING / PAUSED    -> no transition
+
+        Always emits a DECISION timeline event tagged
+        ``payload.kind="task_status_changed"`` so the operator sees the
+        cause on the timeline regardless of whether the workstream
+        actually changed state. Future PR-SPINE-04+ can introduce a
+        dedicated TASK_STATUS_CHANGED enum when an SSE consumer needs to
+        filter on it without parsing payload.
+
+        Best-effort: a workstream sync failure NEVER raises into the
+        Task update path. The Task is the source of truth for its own
+        state; the Workstream is the spine artifact mirror. Failures
+        log at WARNING.
+        """
+        from app.models.workstream import (
+            WorkstreamEventKind, WorkstreamStatus,
+        )
+        from app.services.workstream_service import (
+            TASK_STATUS_TO_WS_INTENT,
+            WorkstreamService,
+            WorkstreamTransitionError,
+            find_workstream_linked_to_task,
+        )
+
+        try:
+            ws = await find_workstream_linked_to_task(
+                self.db, tenant_id=task.tenant_id, task_id=task.id,
+            )
+            if ws is None:
+                return  # No tracked workstream; nothing to sync.
+
+            ws_svc = WorkstreamService(self.db)
+            normalized = (new_status or "").upper()
+            intent = TASK_STATUS_TO_WS_INTENT.get(normalized, "noop")
+
+            # 1. Always emit the timeline marker for operator visibility.
+            await ws_svc.append_timeline_event(
+                ws.id,
+                tenant_id=task.tenant_id,
+                kind=WorkstreamEventKind.DECISION,
+                summary=f"Linked task transitioned to {normalized}",
+                payload={
+                    "kind": "task_status_changed",
+                    "task_id": str(task.id),
+                    "task_name": task.name,
+                    "to_status": normalized,
+                },
+            )
+
+            # 2. Apply the lifecycle change when the intent maps to one.
+            if intent == "running":
+                # Workstream was already RUNNING from spawn; we only bump
+                # progress. The state machine forbids RUNNING -> RUNNING
+                # transition, which is correct.
+                if (
+                    ws.status == WorkstreamStatus.RUNNING
+                    and ws.progress_percent < 25
+                ):
+                    await ws_svc.update_progress(
+                        ws.id, tenant_id=task.tenant_id, percent=25,
+                    )
+            elif intent == "complete":
+                if ws.status not in (
+                    WorkstreamStatus.COMPLETE, WorkstreamStatus.FAILED,
+                ):
+                    try:
+                        await ws_svc.complete(
+                            ws.id,
+                            tenant_id=task.tenant_id,
+                            summary=f"Linked task completed: {task.name}",
+                        )
+                        await ws_svc.update_progress(
+                            ws.id, tenant_id=task.tenant_id, percent=100,
+                        )
+                    except WorkstreamTransitionError:
+                        # Concurrent terminal transition; idempotent skip.
+                        pass
+            elif intent == "fail":
+                if ws.status not in (
+                    WorkstreamStatus.COMPLETE, WorkstreamStatus.FAILED,
+                ):
+                    reason_detail = task.error or task.name
+                    try:
+                        await ws_svc.fail(
+                            ws.id,
+                            tenant_id=task.tenant_id,
+                            reason=(
+                                f"Linked task {normalized.lower()}: "
+                                f"{reason_detail}"
+                            ),
+                        )
+                    except WorkstreamTransitionError:
+                        pass
+            # intent == "noop": only the timeline event was emitted.
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "task.workstream_sync_failed",
+                task_id=str(task.id),
+                new_status=new_status,
+                error=str(exc),
+            )
 
     async def delete_task(self, task_id: UUID, tenant_id: UUID) -> None:
         """Permanently delete a task owned by the tenant."""
@@ -796,6 +921,7 @@ class ExecutionService(BaseService):
 
         # Flip to RUNNING immediately so the UI reflects state on the
         # POST response, not on the next poll.
+        prior_status = task.status
         task.status = TaskStatus.RUNNING.value
         task.started_at = datetime.now(UTC)
         task.completed_at = None
@@ -803,6 +929,11 @@ class ExecutionService(BaseService):
         task.progress = 0
         await self.db.commit()
         await self.db.refresh(task)
+
+        # PR-SPINE-04: mirror the RUNNING flip into the linked Workstream
+        # since this path bypasses ``update_task_status``. Best-effort.
+        if prior_status != TaskStatus.RUNNING.value:
+            await self._sync_linked_workstream(task, TaskStatus.RUNNING.value)
 
         # Snapshot the fields the background task needs BEFORE the
         # request session closes. Re-fetching by id inside the bg task

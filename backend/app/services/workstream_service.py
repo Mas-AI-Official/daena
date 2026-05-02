@@ -750,3 +750,82 @@ class WorkstreamService:
         )
         result = await self._db.execute(stmt)
         return list(result.scalars().all())
+
+
+# ── Module-level helpers (PR-SPINE-04) ────────────────────────────────
+
+
+async def find_workstream_linked_to_task(
+    db: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    task_id: uuid.UUID,
+) -> Workstream | None:
+    """Find the Workstream that references this task as its work output.
+
+    Returns the first match in priority order:
+
+    1. **Direct link** (PR-5): ``source_type=TASK`` AND
+       ``source_ref_id=task_id``. This is what
+       ``ExecutionService.create_task(also_create_workstream=True)`` writes.
+    2. **Indirect link via artifact_refs** (PR-SCAN-WS-01):
+       ``source_type=SCAN`` AND ``artifact_refs.task_ids`` contains
+       ``str(task_id)``. This is what the scan-finding remediation flow
+       writes.
+
+    Archived workstreams are skipped on purpose: a soft-deleted workstream
+    should not silently re-flip back to RUNNING because a long-running
+    task associated with it finally completed.
+
+    The SCAN-sourced lookup is a per-tenant linear scan in Python (the
+    JSON-contains query is dialect-specific). Acceptable cost: SCAN-
+    sourced workstreams stay small per tenant.
+
+    Returns ``None`` when no link is found. Callers MUST treat None as
+    "this task is not part of a tracked workstream; skip the sync."
+    """
+    # 1. Direct TASK -> Workstream link.
+    stmt = (
+        select(Workstream)
+        .where(
+            Workstream.tenant_id == tenant_id,
+            Workstream.source_type == WorkstreamSourceType.TASK,
+            Workstream.source_ref_id == task_id,
+            Workstream.archived_at.is_(None),
+        )
+        .limit(1)
+    )
+    direct = (await db.execute(stmt)).scalar_one_or_none()
+    if direct is not None:
+        return direct
+
+    # 2. Indirect via SCAN artifact_refs.task_ids. Linear scan in Python
+    # so the lookup behaves identically across SQLite and Postgres.
+    stmt = select(Workstream).where(
+        Workstream.tenant_id == tenant_id,
+        Workstream.source_type == WorkstreamSourceType.SCAN,
+        Workstream.archived_at.is_(None),
+    )
+    scans = (await db.execute(stmt)).scalars().all()
+    task_id_str = str(task_id)
+    for ws in scans:
+        refs = ws.artifact_refs or {}
+        task_ids = refs.get("task_ids") or []
+        if task_id_str in task_ids:
+            return ws
+    return None
+
+
+# Mapping from normalized task status -> intent. The intent is what the
+# Workstream's lifecycle sync should attempt; the actual transition may
+# be a no-op when the workstream is already in a compatible state.
+TASK_STATUS_TO_WS_INTENT: dict[str, str] = {
+    "PENDING": "noop",
+    "RUNNING": "running",
+    "COMPLETED": "complete",
+    "COMPLETE": "complete",
+    "SUCCESS": "complete",
+    "FAILED": "fail",
+    "CANCELLED": "fail",
+    "PAUSED": "noop",
+}
