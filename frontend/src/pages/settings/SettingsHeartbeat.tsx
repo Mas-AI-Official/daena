@@ -278,7 +278,7 @@ export function SettingsHeartbeat() {
       </div>
 
       {/* Interval selector */}
-      <div>
+      <div title="Daemon-memory only: clicking an interval calls /heartbeat/configure which mutates the in-process daemon. A backend restart resets to the default 30 minutes. Persistence to a heartbeat_config DB row is Phase 11 PR-H1.">
         <label className="block text-xs font-semibold text-starlight-300 mb-2">
           <Clock size={12} className="inline mr-1.5" />
           Interval
@@ -289,6 +289,7 @@ export function SettingsHeartbeat() {
               key={opt.value}
               onClick={() => handleIntervalChange(opt.value)}
               disabled={actionLoading === 'interval'}
+              title={`Set heartbeat cadence to ${opt.label}. Daemon-memory only; restart resets.`}
               className={`px-3 py-2 rounded-lg text-xs border transition-all cursor-pointer ${
                 status?.interval_minutes === opt.value
                   ? 'bg-primary-500/15 text-primary-400 border-primary-500/20'
@@ -302,25 +303,27 @@ export function SettingsHeartbeat() {
       </div>
 
       {/* Active hours */}
-      <div>
+      <div title="Daemon-memory only: active-hours window is read by daemon._loop on every cycle. A backend restart resets to 07:00-23:00. Persistence to a heartbeat_config DB row is Phase 11 PR-H1.">
         <label className="block text-xs font-semibold text-starlight-300 mb-2">Active Hours</label>
         <div className="flex items-center gap-3">
           <input
             type="time"
             defaultValue={status?.active_hours?.start || '07:00'}
             className="glass-input px-3 py-2 rounded-lg text-xs text-starlight-200"
+            title="Window start. Daemon-memory only; restart resets."
           />
           <span className="text-xs text-starlight-500">to</span>
           <input
             type="time"
             defaultValue={status?.active_hours?.end || '23:00'}
             className="glass-input px-3 py-2 rounded-lg text-xs text-starlight-200"
+            title="Window end. Daemon-memory only; restart resets."
           />
         </div>
       </div>
 
       {/* Checks toggles */}
-      <div>
+      <div title="Daemon-memory only: per-check enabled flag is read by daemon._run_cycle. A backend restart resets to the hardened default set (PR-HB-DAEMON-WIRE: cheap local probes only; expensive/external checks default off). Persistence to a heartbeat_config DB row is Phase 11 PR-H1.">
         <label className="block text-xs font-semibold text-starlight-300 mb-2">Checks</label>
         <div className="space-y-2">
           {Object.entries(CHECK_LABELS).map(([key, label]) => {
@@ -329,6 +332,7 @@ export function SettingsHeartbeat() {
               <label
                 key={key}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer"
+                title={`Toggle ${label}. Daemon-memory only; restart resets to the PR-HB-DAEMON-WIRE default for this check.`}
               >
                 <input
                   type="checkbox"
@@ -344,7 +348,7 @@ export function SettingsHeartbeat() {
       </div>
 
       {/* Cost guard */}
-      <Card variant="glass" padding="md" className="space-y-2">
+      <Card variant="glass" padding="md" className="space-y-2" title="Daemon-memory only: cost guards are read on each cycle. A backend restart resets to defaults (max_cost_per_cycle_usd=0.10, max_cost_per_day_usd=2.00). Persistence is Phase 11 PR-H1.">
         <h3 className="text-xs font-semibold text-starlight-300">Cost Guard</h3>
         <div className="flex items-center gap-3">
           <span className="text-[10px] text-starlight-500">Max tokens per heartbeat:</span>
@@ -352,9 +356,13 @@ export function SettingsHeartbeat() {
             type="number"
             defaultValue={1000}
             className="glass-input w-20 px-2 py-1.5 rounded text-xs text-starlight-200 text-center"
+            title="Daemon-memory only; restart resets."
           />
         </div>
-        <label className="flex items-center gap-2 text-[10px] text-starlight-400 cursor-pointer">
+        <label
+          className="flex items-center gap-2 text-[10px] text-starlight-400 cursor-pointer"
+          title="Daemon-memory only; restart resets."
+        >
           <input
             type="checkbox"
             defaultChecked

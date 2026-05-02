@@ -164,30 +164,51 @@ export function SettingsNotifications() {
           {desktop && (
             <div
               className="pl-4 border-l border-white/10 space-y-3 mt-1"
-              title="Phase 11 PR-S2: per-event toggles enforce in-app row creation. NotificationService.emit reads users.settings.notif_<type> and skips writing the row when the matching flag is False."
+              title="Phase 11 PR-S2 / PR-S2.1: per-event toggles gate in-app row creation. NotificationService.emit reads users.settings.notif_<type> and skips writing the row when the matching flag is False. Three event types have real emitters today; two have the gate but no emitter source yet (Backlog P1-03; PR-NOTIF-FANOUT)."
             >
               <p className="text-[10px] text-status-success flex items-center gap-1.5">
                 <Badge variant="success" size="sm">Enforced by backend</Badge>
                 In-app rows for these events land in the bell. OS notifications still require browser permission above.
               </p>
-              <div className="flex items-center justify-between">
+              <div
+                className="flex items-center justify-between"
+                title="Real emitter: chat_orchestrator emits notif_task_complete on Workstream / task COMPLETE."
+              >
                 <p className="text-xs text-starlight-300">Task completion</p>
                 <Switch checked={taskComplete} onChange={() => toggle('notif_task_complete', taskComplete, setTaskComplete)} label="" size="sm" />
               </div>
-              <div className="flex items-center justify-between">
+              <div
+                className="flex items-center justify-between"
+                title="Real emitter: cost_guard fires budget_alert when spend crosses threshold (PR-S2.1)."
+              >
                 <p className="text-xs text-starlight-300">Budget alerts</p>
                 <Switch checked={budgetAlert} onChange={() => toggle('notif_budget_alert', budgetAlert, setBudgetAlert)} label="" size="sm" />
               </div>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-starlight-300">Daena Heartbeat findings</p>
+              <div
+                className="flex items-center justify-between"
+                title="Backlog P1-03: gate is wired (NotificationService respects the flag) but no service emits with type=heartbeat today; per-tenant fan-out pending PR-NOTIF-FANOUT."
+              >
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-starlight-300">Daena Heartbeat findings</p>
+                  <Badge variant="warning" size="sm">Source pending</Badge>
+                </div>
                 <Switch checked={heartbeat} onChange={() => toggle('notif_heartbeat', heartbeat, setHeartbeat)} label="" size="sm" />
               </div>
-              <div className="flex items-center justify-between">
+              <div
+                className="flex items-center justify-between"
+                title="Real emitter: governance/SecurityGate emits notif_gov_reject when an action is BLOCKED (PR-S2)."
+              >
                 <p className="text-xs text-starlight-300">Governance rejections</p>
                 <Switch checked={govReject} onChange={() => toggle('notif_gov_reject', govReject, setGovReject)} label="" size="sm" />
               </div>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-starlight-300">Runtime disconnection</p>
+              <div
+                className="flex items-center justify-between"
+                title="Backlog P1-03: gate is wired but the runtime health tracker is a process-wide singleton with no per-tenant scope; no service emits notif_runtime_disconnect today. PR-NOTIF-FANOUT closes this."
+              >
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-starlight-300">Runtime disconnection</p>
+                  <Badge variant="warning" size="sm">Source pending</Badge>
+                </div>
                 <Switch checked={runtimeDisc} onChange={() => toggle('notif_runtime_disconnect', runtimeDisc, setRuntimeDisc)} label="" size="sm" />
               </div>
             </div>

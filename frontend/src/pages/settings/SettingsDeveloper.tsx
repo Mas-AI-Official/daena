@@ -1,12 +1,21 @@
 /**
- * Developer settings — API keys, webhooks, debug mode.
+ * Developer settings -- debug toggles, environment readout, deferred
+ * Webhooks panel.
+ *
+ * PR-SETTINGS-CLEANUP (2026-05-02) removed the mock API Keys block
+ * from this tab (it had no real CRUD, just a fake masked placeholder
+ * with a Coming-Soon button) and replaced it with a link to /account
+ * which is the canonical home for API key management (Atlas F.3).
+ * Webhooks block kept but marked as Coming Soon since no webhook
+ * dispatcher exists in the backend (Atlas I.3 - DEAD).
  */
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Card, Switch, Badge, Input, Button } from '@/components/common'
 import { useUiStore, persistUiPref } from '@/stores/uiStore'
 import { toast } from '@/stores/toastStore'
 import { api } from '@/lib/api'
-import { Code, Key, Webhook, Bug } from 'lucide-react'
+import { Code, Key, Webhook, Bug, ChevronRight } from 'lucide-react'
 
 interface SettingsResponse {
   app_env?: string
@@ -73,35 +82,38 @@ export function SettingsDeveloper() {
   return (
     <div className="space-y-6">
       <Card variant="glass" padding="lg">
-        <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
-          <Key size={14} /> API Keys
-        </h3>
-        <div className="space-y-3 max-w-md">
-          <p className="text-xs text-starlight-400">
-            Generate API keys for programmatic access to Daena services.
-          </p>
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-midnight-800/40 border border-white/5">
-            <code className="text-xs text-starlight-300 flex-1 font-mono">dk_••••••••••••••••</code>
-            <Badge variant="success" size="sm">Active</Badge>
-          </div>
-          <div title="Coming in next release">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="opacity-60 cursor-not-allowed"
-              onClick={() => toast.info('API key generation coming in next release')}
-            >
-              Generate New Key
-            </Button>
-          </div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-display font-semibold text-starlight-100 flex items-center gap-2">
+            <Key size={14} /> API Keys
+          </h3>
+          <Link
+            to="/account"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] text-primary-400 border border-primary-500/20 hover:bg-primary-500/10 transition-colors"
+            title="API key management (create / list / revoke) lives at /account."
+          >
+            <Key size={10} /> Manage in Account <ChevronRight size={10} />
+          </Link>
         </div>
+        <p className="text-xs text-starlight-400 max-w-md">
+          API keys for programmatic access to Daena now live on the
+          Account page. Create, copy, and revoke keys there.
+        </p>
       </Card>
 
       <Card variant="glass" padding="lg">
-        <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
-          <Webhook size={14} /> Webhooks
-        </h3>
-        <div className="space-y-3 max-w-md">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-display font-semibold text-starlight-100 flex items-center gap-2">
+            <Webhook size={14} /> Webhooks
+          </h3>
+          <Badge variant="warning" size="sm">Coming soon</Badge>
+        </div>
+        <p
+          className="text-[10px] text-starlight-500 mb-3"
+          title="Atlas I.3 + Phase 10b §3: no webhook dispatcher exists in backend; the URL field, event checkboxes, and Save button persist nothing today."
+        >
+          Webhook dispatcher pending. Saved values would not fire today.
+        </p>
+        <div className="space-y-3 max-w-md opacity-60 pointer-events-none select-none" aria-disabled="true">
           <Input
             label="Webhook URL"
             value=""
@@ -110,13 +122,13 @@ export function SettingsDeveloper() {
           />
           <div className="flex gap-3 text-xs text-starlight-400">
             <label className="flex items-center gap-1">
-              <input type="checkbox" className="rounded" /> Task complete
+              <input type="checkbox" className="rounded" disabled /> Task complete
             </label>
             <label className="flex items-center gap-1">
-              <input type="checkbox" className="rounded" /> Approval needed
+              <input type="checkbox" className="rounded" disabled /> Approval needed
             </label>
             <label className="flex items-center gap-1">
-              <input type="checkbox" className="rounded" /> Errors
+              <input type="checkbox" className="rounded" disabled /> Errors
             </label>
           </div>
           <div title="Coming in next release">
@@ -124,6 +136,7 @@ export function SettingsDeveloper() {
               variant="ghost"
               size="sm"
               className="opacity-60 cursor-not-allowed"
+              disabled
               onClick={() => toast.info('Webhook configuration coming in next release')}
             >
               Save Webhook

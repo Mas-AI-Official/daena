@@ -1,19 +1,30 @@
 /**
- * General settings -- profile, session defaults, appearance (dark/light).
+ * General settings -- session defaults, appearance, data import.
+ *
+ * Profile editing (display name, password, OAuth, avatar) lives at
+ * /account (canonical). PR-SETTINGS-CLEANUP (2026-05-02) removed the
+ * inline display_name editor + Save button from this tab to eliminate
+ * the dual-source-of-truth (Atlas F.2) and replaced it with a
+ * read-only summary that links to /account. Reason: an editor that
+ * lives in two places makes operators uncertain which one is the
+ * canonical write site, and a duplicated PUT /settings/user call site
+ * is one more thing to keep in sync when the schema changes.
  */
-import { useState, useEffect, useCallback } from 'react'
-import { Download } from 'lucide-react'
-import { Card, Input, Button, Badge, Switch } from '@/components/common'
+import { useState, useCallback } from 'react'
+import { Link } from 'react-router-dom'
+import { Download, ChevronRight, User as UserIcon } from 'lucide-react'
+import { Card, Badge, Switch } from '@/components/common'
 import { useAuthStore } from '@/stores/authStore'
 import { useUiStore, persistUiPref } from '@/stores/uiStore'
+import { useBackendHealthStore } from '@/stores/backendHealthStore'
 import { toast } from '@/stores/toastStore'
 import api from '@/lib/api'
 
 export function SettingsGeneral() {
   const { user } = useAuthStore()
   const { chatMode, setChatMode, routingMode, setRoutingMode, persistThinking, togglePersistThinking, darkMode, toggleDarkMode, autopilotActive, toggleAutopilot } = useUiStore()
-  const [displayName, setDisplayName] = useState(user?.display_name || '')
-  const [saving, setSaving] = useState(false)
+  const backendHealthStatus = useBackendHealthStore((s) => s.status)
+  const backendBlocksAutopilot = backendHealthStatus === 'down' || backendHealthStatus === 'degraded'
   const [importData, setImportData] = useState('')
 
   const handleDarkModeToggle = useCallback((_checked: boolean) => {
@@ -21,31 +32,6 @@ export function SettingsGeneral() {
     // After toggle, persist the NEW value
     persistUiPref('dark_mode', useUiStore.getState().darkMode)
   }, [toggleDarkMode])
-
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const res = await api.get('/settings/user')
-        const name = res.data?.data?.display_name
-        if (name) setDisplayName(name)
-      } catch (err) {
-        console.error('Profile load failed, using auth store value:', err)
-      }
-    }
-    loadProfile()
-  }, [])
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      await api.put('/settings/user', { display_name: displayName })
-      toast.success('Display name updated')
-    } catch {
-      toast.error('Failed to save display name')
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const handleChatModeChange = (mode: 'CMD' | 'EXE') => {
     setChatMode(mode)
@@ -59,26 +45,31 @@ export function SettingsGeneral() {
 
   return (
     <div className="space-y-6">
-      {/* Profile */}
+      {/* Profile (read-only summary; canonical editor lives at /account) */}
       <Card variant="glass" padding="lg">
-        <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4">Profile</h3>
-        <div className="space-y-4 max-w-md">
-          <Input
-            label="Display Name"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-          />
-          <div>
-            <label className="block text-xs text-starlight-400 mb-1">Email</label>
-            <p className="text-sm text-starlight-200">{user?.email || '--'}</p>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-display font-semibold text-starlight-100">Profile</h3>
+          <Link
+            to="/account"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] text-primary-400 border border-primary-500/20 hover:bg-primary-500/10 transition-colors"
+            title="Profile editing (display name, password, OAuth, avatar) lives at /account."
+          >
+            <UserIcon size={10} /> Manage in Account <ChevronRight size={10} />
+          </Link>
+        </div>
+        <div className="space-y-3 max-w-md text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-starlight-500">Display name</span>
+            <span className="text-starlight-200">{user?.display_name || '-'}</span>
           </div>
-          <div>
-            <label className="block text-xs text-starlight-400 mb-1">Role</label>
+          <div className="flex items-center justify-between">
+            <span className="text-starlight-500">Email</span>
+            <span className="text-starlight-200">{user?.email || '-'}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-starlight-500">Role</span>
             <Badge variant="purple" size="sm">{user?.role || 'VIEWER'}</Badge>
           </div>
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving...' : 'Save Changes'}
-          </Button>
         </div>
       </Card>
 
@@ -146,12 +137,22 @@ export function SettingsGeneral() {
               </p>
             </div>
             <Switch
-              checked={autopilotActive}
-              onChange={() => { toggleAutopilot(); persistUiPref('autopilot_active', !autopilotActive) }}
+              checked={!backendBlocksAutopilot && autopilotActive}
+              onChange={() => {
+                if (backendBlocksAutopilot) return
+                toggleAutopilot()
+                persistUiPref('autopilot_active', !autopilotActive)
+              }}
               label=""
               size="sm"
+              disabled={backendBlocksAutopilot}
             />
           </div>
+          {backendBlocksAutopilot && (
+            <div className="rounded-lg border border-status-error/20 bg-status-error/5 px-3 py-2 text-xs text-starlight-300">
+              Autopilot is blocked while backend health is failing.
+            </div>
+          )}
         </div>
       </Card>
 
@@ -244,9 +245,12 @@ Format this as a structured document I can import into a new AI assistant. Be th
               onClick={async () => {
                 if (!importData.trim()) return
                 try {
-                  await api.post('/memory', {
+                  await api.post('/memory/memories', {
                     content: importData,
+                    content_type: 'FACT',
                     tier: 2,
+                    scope: 'USER',
+                    confidence: 0.8,
                     tags: ['imported', 'user-context', 'migration'],
                     source: 'user_import',
                   })
