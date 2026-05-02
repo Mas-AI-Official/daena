@@ -7,6 +7,10 @@ canonical wiring step -- safe to call multiple times.
 
 from __future__ import annotations
 
+from app.services.connection_v2.probes.mcp_server_probe import (
+    McpServerProbe,
+    install_mcp_server_probe,
+)
 from app.services.connection_v2.probes.provider_probe import (
     ProviderProbe,
     install_provider_probe,
@@ -21,12 +25,15 @@ def install_all_probes() -> None:
     """Register every per-kind probe. Idempotent."""
     install_provider_probe()
     install_skill_pack_probe()
+    install_mcp_server_probe()
 
 
 __all__ = [
+    "McpServerProbe",
     "ProviderProbe",
     "SkillPackProbe",
     "install_all_probes",
+    "install_mcp_server_probe",
     "install_provider_probe",
     "install_skill_pack_probe",
 ]
