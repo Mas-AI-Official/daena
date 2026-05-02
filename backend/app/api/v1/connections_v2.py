@@ -36,6 +36,14 @@ from app.schemas.connection_v2 import (
 )
 from app.services.connection_v2 import ConnectionRegistryV2
 from app.services.connection_v2.legacy_bridge import is_v2_enabled
+from app.services.connection_v2.marketplace_catalog import (
+    list_catalog,
+    list_categories,
+)
+from app.services.connection_v2.marketplace_service import (
+    MarketplaceService,
+    install_plan,
+)
 from app.services.connection_v2.reconciliation import (
     ConnectionReconciliationService,
 )
@@ -332,6 +340,79 @@ async def discovery_refresh(
         "data": report.to_dict(),
         "v2_enabled": is_v2_enabled(),
     }
+
+
+# ──────────────────────────────────────────────────────────────────
+# Marketplace catalog (PR-CONNECTIONS-MARKETPLACE-UX, 2026-05-02)
+# ──────────────────────────────────────────────────────────────────
+#
+# READ-ONLY: catalog metadata + lifecycle overlay. NEVER:
+#   * Reads or transmits secret values (env values, client_secret, tokens).
+#   * Auto-installs anything; install plans are catalog metadata only.
+#   * Marks anything callable; lifecycle reflects real V2 truth.
+
+
+@router.get("/catalog")
+async def get_catalog(
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return the curated marketplace catalog.
+
+    Static (source-tree-versioned) list of connectors Daena knows how
+    to support. Independent of tenant state -- the operator-specific
+    overlay lives in ``/marketplace/cards``.
+    """
+    _ = user  # auth-only; no tenant filtering on the catalog itself
+    return {
+        "success": True,
+        "data": {
+            "categories": list_categories(),
+            "entries": list_catalog(),
+        },
+    }
+
+
+@router.get("/marketplace/cards")
+async def get_marketplace_cards(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return one card per catalog entry, overlaid with V2 truth.
+
+    Each card carries:
+      * catalog metadata (display, vendor, install plan, capabilities)
+      * lifecycle state (available / installed / configured / reachable
+        / callable / enabled / failed / disabled / archived /
+        skill_pack)
+      * derived primary action (setup_guide / test / enable / open)
+
+    Honesty contract per project Rule 17: no card claims callable=true
+    without a real probe; cards without a V2 row stay "available."
+    """
+    svc = MarketplaceService(db, tenant_id=user.tenant_id)
+    cards = await svc.list_cards()
+    return {
+        "success": True,
+        "data": {"cards": [c.to_dict() for c in cards]},
+    }
+
+
+@router.get("/marketplace/install-plan/{entry_id}")
+async def get_install_plan(
+    entry_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return a Setup-Guide plan for a catalog entry.
+
+    NEVER executes any commands. NEVER returns secret values. The plan
+    is metadata-only -- the operator copy-pastes commands into their
+    own terminal.
+    """
+    _ = user  # auth-only; plan is identical for every tenant
+    plan = install_plan(entry_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="catalog_entry_not_found")
+    return {"success": True, "data": plan}
 
 
 @router.post("/reconciliation/run")

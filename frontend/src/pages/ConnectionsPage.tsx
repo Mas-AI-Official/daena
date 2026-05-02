@@ -1,30 +1,33 @@
 /**
- * ConnectionsPage -- product-grade Connections surface.
+ * ConnectionsPage -- simplified Brain / Plugins / Advanced.
  *
- * PR-CONN-UX-RESCUE (2026-05-02): drops V1/V2 terminology from the
- * default user-facing labels. The page now renders 7 product tabs
- * (All Connections / Main Brain / Runtimes / MCP Servers / Apps /
- * Skill Packs / Local Models) plus a single Advanced reveal that
- * houses migration / debug / legacy. Default view is the V2-truth
- * surface only; no Legacy plugin cards shown without the operator
- * explicitly opening Advanced.
+ * Founder pivot 2026-05-02: collapse the marketplace into a 3-tab UX
+ * modeled on Codex's plugin marketplace. The previous 9 specialized
+ * tabs (MCP / Apps / Browser / Local Models / Skill Packs / etc.) are
+ * removed from the user-facing surface; their concerns now live in
+ * one "Plugins" grid that maps every internal kind onto a unified
+ * PluginCard view-model.
  *
- * Top-level toolbar carries one canonical action: "Discover installed
- * tools". Per-source summary surfaced via toast + the per-tab empty
- * state so 0-MCP cases now read "checked N paths, 0 had mcpServers"
- * instead of the bare "0 found" the founder called out.
+ * Tabs:
+ *   1. Brain     -- pick the active primary runtime / provider
+ *   2. Plugins   -- one Codex-style marketplace grid
+ *   3. Advanced  -- V2 registry, legacy V1 panels, internal kinds,
+ *                   raw discovery payload, USE_CONNECTION_REGISTRY_V2
  *
- * Why this layout:
- *   - The founder's complaint was that the page felt duplicated +
- *     migration-internal. The new layout treats V2 as the product;
- *     V1 lives behind one Advanced tab clearly labelled "migration /
- *     debug." No tab uses the word "V2" or "V1" in its label.
- *   - "Skill packs" gets its own tab so capability bundles never
- *     visually compete with callable connectors.
- *   - "Local Models" gets its own tab so vLLM / Ollama unreachability
- *     can carry the Docker/WSL guidance without crowding the global
- *     summary.
+ * Hard rules honored:
+ *   - No V1 / V2 terminology in normal-mode UI labels
+ *   - "Connected" only when V2 truth says callable=true
+ *   - "Install" never appears unless the backend can safely install;
+ *     today every install path surfaces as "Setup guide"
+ *   - Discovery button NEVER auto-installs anything
+ *   - Skill packs render INSIDE Plugins with a clear caption
+ *
+ * Honesty (project Rule 17):
+ *   - Discovery summary toast carries per-source counts
+ *   - Empty / failed states call out concrete next actions
+ *   - Advanced tab is opt-in (operator must enable Show advanced)
  */
+
 import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
@@ -33,7 +36,7 @@ import {
   BrainCircuit,
   Cpu,
   Download,
-  Layers,
+  Globe,
   Loader2,
   Server,
   Terminal,
@@ -42,27 +45,26 @@ import {
 
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { toast } from '@/stores/toastStore'
-import { runDiscoveryRefresh } from '@/hooks/useConnectionsV2'
-import type { DiscoveryReport } from '@/hooks/useConnectionsV2'
+import {
+  type DiscoveryReport,
+  runDiscoveryRefresh,
+} from '@/hooks/useConnectionsV2'
 
-import AppsPanel from './connections/AppsPanel'
-import ConnectionsV2Panel from './connections/ConnectionsV2Panel'
+import AppsStorePanel from './connections/AppsStorePanel'
+import BrowserComputerUsePanel from './connections/BrowserComputerUsePanel'
 import LocalModelsPanel from './connections/LocalModelsPanel'
 import MainBrainPanel from './connections/MainBrainPanel'
 import McpServersPanel from './connections/McpServersPanel'
-import McpServersV2Panel from './connections/McpServersV2Panel'
+import McpStorePanel from './connections/McpStorePanel'
+import OverviewPanel from './connections/OverviewPanel'
 import PluginsCatalogBrowser from './connections/PluginsCatalogBrowser'
+import PluginsPanel from './connections/PluginsPanel'
 import RuntimesPanel from './connections/RuntimesPanel'
 import SkillPacksPanel from './connections/SkillPacksPanel'
 
 const PRIMARY_TABS = [
-  { key: 'all', label: 'All Connections', icon: Layers },
-  { key: 'main-brain', label: 'Main Brain', icon: BrainCircuit },
-  { key: 'runtimes', label: 'Runtimes', icon: Terminal },
-  { key: 'mcp', label: 'MCP Servers', icon: Server },
-  { key: 'apps', label: 'Apps', icon: AppWindow },
-  { key: 'skill-packs', label: 'Skill Packs', icon: BookOpen },
-  { key: 'local-models', label: 'Local Models', icon: Cpu },
+  { key: 'brain', label: 'Brain', icon: BrainCircuit },
+  { key: 'plugins', label: 'Plugins', icon: AppWindow },
 ] as const
 
 const ADVANCED_TAB = { key: 'advanced', label: 'Advanced', icon: Wrench } as const
@@ -72,10 +74,17 @@ type TabKey = PrimaryKey | typeof ADVANCED_TAB.key
 
 const SHOW_ADVANCED_LS_KEY = 'daena.connections.show_advanced'
 const LAST_DISCOVERY_LS_KEY = 'daena.connections.last_discovery'
+const LAST_DISCOVERY_AT_LS_KEY = 'daena.connections.last_discovery_at'
+const ACTIVE_TAB_LS_KEY = 'daena.connections.active_tab'
 
 export default function ConnectionsPage() {
   usePageTitle('Connections')
-  const [activeTab, setActiveTab] = useState<TabKey>('all')
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    if (typeof window === 'undefined') return 'plugins'
+    const saved = window.localStorage.getItem(ACTIVE_TAB_LS_KEY)
+    if (saved === 'brain' || saved === 'plugins' || saved === 'advanced') return saved
+    return 'plugins'
+  })
   const [discovering, setDiscovering] = useState(false)
   const [lastReport, setLastReport] = useState<DiscoveryReport | null>(() => {
     if (typeof window === 'undefined') return null
@@ -87,6 +96,17 @@ export default function ConnectionsPage() {
       return null
     }
   })
+  const [lastDiscoveryAt, setLastDiscoveryAt] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    return window.localStorage.getItem(LAST_DISCOVERY_AT_LS_KEY)
+  })
+
+  // Persist active tab so reload returns to the last view.
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(ACTIVE_TAB_LS_KEY, activeTab)
+    }
+  }, [activeTab])
 
   // Show-advanced toggle persists per-browser. Auto-flip ON when the
   // operator deep-links into the advanced tab so they're never trapped.
@@ -109,7 +129,7 @@ export default function ConnectionsPage() {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(SHOW_ADVANCED_LS_KEY, String(next))
     }
-    if (!next && activeTab === 'advanced') setActiveTab('all')
+    if (!next && activeTab === 'advanced') setActiveTab('plugins')
   }
 
   async function runDiscover() {
@@ -122,18 +142,35 @@ export default function ConnectionsPage() {
       }
       const report = res.report ?? null
       setLastReport(report)
+      const now = new Date().toISOString()
+      setLastDiscoveryAt(now)
       if (report && typeof window !== 'undefined') {
         window.localStorage.setItem(
           LAST_DISCOVERY_LS_KEY,
           JSON.stringify(report),
         )
+        window.localStorage.setItem(LAST_DISCOVERY_AT_LS_KEY, now)
       }
       const created = report?.total_created ?? 0
       const failed = report?.total_failed ?? 0
+      const pathsSearched = report?.mcp_paths_searched?.length ?? 0
+      const mcpFound = report?.sources?.find((s) => s.source === 'mcp_servers')?.total_created ?? 0
+      // Honest summary toast -- pull per-source counts from the report
+      const sourceSummary = (report?.sources ?? [])
+        .map((s) => `${s.source}: +${s.total_created}`)
+        .filter((line) => !line.endsWith(': +0'))
+        .slice(0, 4)
+        .join(' · ')
+      const mcpHint =
+        mcpFound === 0 && pathsSearched > 0
+          ? ` -- No installed MCP configs found (searched ${pathsSearched} paths). Open Advanced for details.`
+          : ''
       toast.success(
         `Discovery complete: ${created} new, ${
           report?.total_skipped_existing ?? 0
-        } existed${failed > 0 ? `, ${failed} failed` : ''}`,
+        } existed${failed > 0 ? `, ${failed} failed` : ''}${
+          sourceSummary ? ` -- ${sourceSummary}` : ''
+        }${mcpHint}`,
       )
       // Notify any open V2 panel hooks to refetch.
       if (typeof window !== 'undefined') {
@@ -144,7 +181,7 @@ export default function ConnectionsPage() {
     }
   }
 
-  const visibleTabs: ReadonlyArray<{ key: TabKey; label: string; icon: typeof Layers }> =
+  const visibleTabs: ReadonlyArray<{ key: TabKey; label: string; icon: typeof BrainCircuit }> =
     showAdvanced ? [...PRIMARY_TABS, ADVANCED_TAB] : PRIMARY_TABS
 
   return (
@@ -157,13 +194,13 @@ export default function ConnectionsPage() {
                 Connections
               </div>
               <h1 className="text-2xl font-display font-semibold text-starlight-50">
-                Runtimes, MCP Servers, Apps, and Local Models
+                Pick your Brain. Browse Plugins.
               </h1>
               <p className="mt-1 max-w-3xl text-sm text-starlight-400">
-                Daena routes work through whatever you connect here. Click
-                Discover to scan installed CLIs and configured providers --
-                nothing is marked &ldquo;callable&rdquo; until a real probe
-                proves it.
+                Brain decides who orchestrates your work. Plugins are the
+                tools Daena can call -- MCP servers, OAuth apps, browser
+                automation, local models, skill packs. Nothing is marked
+                &ldquo;Connected&rdquo; until a real probe proves it.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -182,7 +219,7 @@ export default function ConnectionsPage() {
               </button>
               <label
                 className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] text-starlight-400 hover:text-starlight-200"
-                title="Show migration / debug / legacy panels. The Advanced tab is operator-only; the live product surface is the primary tabs above."
+                title="Show registry / debug / legacy panels."
               >
                 <input
                   type="checkbox"
@@ -219,83 +256,233 @@ export default function ConnectionsPage() {
                 )
               })}
             </div>
+            {lastDiscoveryAt && (
+              <p className="text-[10px] text-starlight-500">
+                Last discovery: {new Date(lastDiscoveryAt).toLocaleString()}
+              </p>
+            )}
           </div>
         </div>
       </div>
 
       <div className="mx-auto max-w-7xl px-6 py-5">
-        {activeTab === 'all' && (
-          <ConnectionsV2Panel discoveryReport={lastReport} onDiscover={runDiscover} discovering={discovering} />
+        {activeTab === 'brain' && <MainBrainPanel />}
+        {activeTab === 'plugins' && (
+          <PluginsPanel onDiscover={runDiscover} discovering={discovering} />
         )}
-        {activeTab === 'main-brain' && <MainBrainPanel />}
-        {activeTab === 'runtimes' && <RuntimesPanel />}
-        {activeTab === 'mcp' && (
-          <McpServersV2Panel discoveryReport={lastReport} onDiscover={runDiscover} discovering={discovering} />
+        {activeTab === 'advanced' && (
+          <AdvancedPanel
+            discoveryReport={lastReport}
+            onDiscover={runDiscover}
+            discovering={discovering}
+          />
         )}
-        {activeTab === 'apps' && <AppsPanel />}
-        {activeTab === 'skill-packs' && <SkillPacksPanel />}
-        {activeTab === 'local-models' && <LocalModelsPanel />}
-        {activeTab === 'advanced' && <AdvancedPanel />}
       </div>
     </div>
   )
 }
 
 // -----------------------------------------------------------------
-// Advanced -- migration / debug / legacy reveal.
-// Houses both the previous V1 connections panels and any "internal"
-// developer-facing copy. Never the default view; never visually
-// dominant.
+// Advanced -- V2 registry / debug / legacy panels.
+// Houses the per-kind specialized panels (renamed for clarity), the
+// V1 plugin browser + MCP detector, the discovery payload viewer, and
+// internal endpoint references.
 // -----------------------------------------------------------------
 
-function AdvancedPanel() {
+const ADVANCED_SECTIONS = [
+  { key: 'overview', label: 'Registry overview', icon: Wrench },
+  { key: 'runtimes', label: 'Runtimes (V2)', icon: Terminal },
+  { key: 'mcp', label: 'MCP servers (V2)', icon: Server },
+  { key: 'apps', label: 'OAuth apps (V2)', icon: AppWindow },
+  { key: 'browser', label: 'Browser tools (V2)', icon: Globe },
+  { key: 'local', label: 'Local models (V2)', icon: Cpu },
+  { key: 'skill_packs', label: 'Skill packs (V2)', icon: BookOpen },
+  { key: 'legacy_v1', label: 'Legacy V1 panels', icon: AlertTriangle },
+  { key: 'debug', label: 'Discovery + endpoints', icon: Wrench },
+] as const
+
+type AdvancedKey = typeof ADVANCED_SECTIONS[number]['key']
+
+function AdvancedPanel({
+  discoveryReport, onDiscover, discovering,
+}: {
+  discoveryReport: DiscoveryReport | null
+  onDiscover: () => void
+  discovering: boolean
+}) {
+  const [section, setSection] = useState<AdvancedKey>('overview')
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
         <AlertTriangle size={16} className="mt-0.5 shrink-0" />
         <div>
-          <strong>Advanced migration / debug view.</strong> Not the live
-          connection truth.
-          <p className="mt-1 text-[11px] text-amber-200/80">
-            The panels below are the legacy plugin browser and MCP detect /
-            install flow. They use the older &ldquo;credentials present ==
-            connected&rdquo; heuristic and do NOT reflect real probe truth.
-            Use the primary tabs (All Connections / MCP Servers / Apps /
-            Local Models) for the canonical answer to &ldquo;is this actually
-            callable?&rdquo;
-          </p>
+          <strong>Advanced registry / debug view.</strong>{' '}
+          Internal V2 / V1 surfaces. Normal users should use the Plugins
+          tab; this view exposes the per-kind catalog (mcp_server,
+          oauth_app, skill_pack, local_model, provider, cli_runtime),
+          the legacy V1 panels, and the raw discovery payload.
         </div>
       </div>
 
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold text-starlight-100">
-          Legacy plugin browser
-        </h3>
-        <p className="text-[11px] text-starlight-500">
-          Older catalog used for migration debugging. Install + disconnect
-          actions still function but do not mirror to the canonical
-          registry unless the backend migration flag is on.
-        </p>
-        <PluginsCatalogBrowser />
-      </section>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[200px_1fr]">
+        <aside>
+          <p className="mb-2 text-[10px] uppercase tracking-[0.16em] text-starlight-500">
+            Registry sections
+          </p>
+          <ul className="space-y-0.5">
+            {ADVANCED_SECTIONS.map((s) => {
+              const Icon = s.icon
+              const active = section === s.key
+              return (
+                <li key={s.key}>
+                  <button
+                    onClick={() => setSection(s.key)}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] ${
+                      active
+                        ? 'bg-amber-500/15 text-amber-200'
+                        : 'text-starlight-400 hover:bg-white/[0.03] hover:text-starlight-200'
+                    }`}
+                  >
+                    <Icon size={11} />
+                    {s.label}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </aside>
 
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold text-starlight-100">
-          Legacy MCP detector
-        </h3>
-        <p className="text-[11px] text-starlight-500">
-          Original detect / probe / import view. The MCP Servers tab above
-          is the canonical truth surface; this panel is kept for migration
-          debugging.
-        </p>
-        <McpServersPanel />
-      </section>
+        <div>
+          {section === 'overview' && (
+            <OverviewPanel
+              onNavigateTab={(tab) => {
+                // Map old tab keys to advanced sections.
+                if (tab === 'mcp') setSection('mcp')
+                else if (tab === 'apps') setSection('apps')
+                else if (tab === 'browser') setSection('browser')
+                else if (tab === 'local-models') setSection('local')
+                else if (tab === 'skill-packs') setSection('skill_packs')
+                else if (tab === 'runtimes') setSection('runtimes')
+              }}
+              lastDiscoveryAt={null}
+            />
+          )}
+          {section === 'runtimes' && <RuntimesPanel />}
+          {section === 'mcp' && (
+            <McpStorePanel onDiscover={onDiscover} discovering={discovering} />
+          )}
+          {section === 'apps' && <AppsStorePanel />}
+          {section === 'browser' && <BrowserComputerUsePanel />}
+          {section === 'local' && <LocalModelsPanel />}
+          {section === 'skill_packs' && <SkillPacksPanel />}
+          {section === 'legacy_v1' && (
+            <div className="space-y-6">
+              <section className="space-y-2">
+                <h3 className="text-sm font-semibold text-starlight-100">
+                  Legacy plugin browser
+                </h3>
+                <p className="text-[11px] text-starlight-500">
+                  Older catalog used for migration debugging. Install +
+                  disconnect actions still function but do not mirror to
+                  the canonical registry unless the backend migration
+                  flag is on.
+                </p>
+                <PluginsCatalogBrowser />
+              </section>
+              <section className="space-y-2">
+                <h3 className="text-sm font-semibold text-starlight-100">
+                  Legacy MCP detector
+                </h3>
+                <p className="text-[11px] text-starlight-500">
+                  Original detect / probe / import view. The Plugins tab
+                  is the canonical user surface; this panel is kept for
+                  migration debugging.
+                </p>
+                <McpServersPanel />
+              </section>
+            </div>
+          )}
+          {section === 'debug' && (
+            <DebugSection
+              discoveryReport={discoveryReport}
+              onDiscover={onDiscover}
+              discovering={discovering}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DebugSection({
+  discoveryReport, onDiscover, discovering,
+}: {
+  discoveryReport: DiscoveryReport | null
+  onDiscover: () => void
+  discovering: boolean
+}) {
+  return (
+    <div className="space-y-4">
+      <details
+        open
+        className="rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3 text-xs text-starlight-400"
+      >
+        <summary className="cursor-pointer text-starlight-300 hover:text-starlight-100">
+          Discovery report payload (last run)
+        </summary>
+        <div className="mt-2 space-y-2">
+          {!discoveryReport ? (
+            <div className="text-starlight-500">
+              No discovery has been run yet this session.{' '}
+              <button
+                onClick={onDiscover}
+                disabled={discovering}
+                className="ml-1 rounded border border-accent-cyan/30 bg-accent-cyan/10 px-2 py-0.5 text-[11px] text-accent-cyan disabled:opacity-50"
+              >
+                {discovering ? 'Discovering...' : 'Run discovery'}
+              </button>
+            </div>
+          ) : (
+            <>
+              <p className="text-[11px] text-starlight-500">
+                Last run: {discoveryReport.total_created} new ·{' '}
+                {discoveryReport.total_skipped_existing} existed ·{' '}
+                {discoveryReport.total_failed} failed ·{' '}
+                {discoveryReport.mcp_paths_searched?.length ?? 0} MCP paths searched
+              </p>
+              <pre className="overflow-x-auto rounded-md border border-white/5 bg-midnight-900/40 p-2 text-[10px] text-starlight-400">
+                {JSON.stringify(discoveryReport, null, 2)}
+              </pre>
+            </>
+          )}
+        </div>
+      </details>
 
       <details className="rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3 text-xs text-starlight-400">
         <summary className="cursor-pointer text-starlight-300 hover:text-starlight-100">
           Internal endpoints + flags
         </summary>
         <div className="mt-2 space-y-1 text-[11px] text-starlight-500">
+          <div>
+            Catalog API:{' '}
+            <code className="text-starlight-300">
+              GET /api/v1/connections/v2/catalog
+            </code>
+          </div>
+          <div>
+            Marketplace cards:{' '}
+            <code className="text-starlight-300">
+              GET /api/v1/connections/v2/marketplace/cards
+            </code>
+          </div>
+          <div>
+            Install plan:{' '}
+            <code className="text-starlight-300">
+              GET /api/v1/connections/v2/marketplace/install-plan/&lt;id&gt;
+            </code>
+          </div>
           <div>
             Discovery API:{' '}
             <code className="text-starlight-300">
@@ -314,13 +501,20 @@ function AdvancedPanel() {
               POST /api/v1/connections/v2/reconciliation/seed-providers
             </code>
           </div>
-          <div>
+          <div className="mt-2">
+            <strong>Internal kind labels:</strong> mcp_server, oauth_app,
+            skill_pack, local_model, provider, cli_runtime, browser_tool,
+            computer_use, api_provider
+          </div>
+          <div className="mt-2">
             Backend migration flag:{' '}
             <code className="text-starlight-300">
               USE_CONNECTION_REGISTRY_V2
             </code>{' '}
-            (default OFF in dev + production; do not flip without
-            migration plan).
+            (default OFF in dev + production). When on, the V2 registry
+            is the source of truth for the chat orchestrator. When off,
+            V2 is read-only and the V1 connection_service still drives
+            install/probe writes. Do not flip without a migration plan.
           </div>
         </div>
       </details>

@@ -1,0 +1,496 @@
+"""PR-CONNECTIONS-MARKETPLACE-UX tests.
+
+Pins the contract:
+  1. Catalog is non-empty + every entry has the expected shape.
+  2. Catalog covers every founder-listed category (filesystem, browser,
+     code platform, communication, productivity, design, data storage,
+     payment, research, local LLM, AI provider, dev tools, CLI runtime,
+     computer use).
+  3. Catalog NEVER contains a secret value (sentinel-secret audit).
+  4. install_plan_for() returns a Setup-Guide plan with NO secrets,
+     NO auto-execution, and a pinned executable=False flag.
+  5. MarketplaceService overlays catalog with V2 truth honestly:
+     - When no V2 row exists, lifecycle is "available" (or "needs_setup"
+       for coming-soon entries).
+     - When a V2 row exists with callable=True, lifecycle is "callable".
+     - When a V2 row exists with a recent failure, lifecycle is "failed"
+       and v2_failure_reason carries the actionable message.
+     - Skill packs always get lifecycle="skill_pack" regardless of state.
+  6. install_plan() never returns a None plan body for a real entry.
+  7. Per project Rule 17: no card claims callable=True without a probe.
+
+Tests are unit-level: pure-python catalog assertions for #1-#4 and #6,
+plus DB-backed MarketplaceService coverage for #5 and #7. The HTTP
+endpoint is a thin wrapper around these and gets manual smoke
+coverage.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
+
+import pytest
+
+from app.models.connection_v2 import (
+    AuthMethod,
+    ConnectionKind,
+    ConnectionV2,
+)
+from app.models.identity import Tenant
+
+
+def _canonical_key(tenant_id, kind: str, slug: str, auth_method: str) -> str:
+    raw = f"{tenant_id}|{kind}|{slug}|{auth_method}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+from app.services.connection_v2.marketplace_catalog import (
+    CATALOG,
+    CATALOG_BY_ID,
+    CATEGORIES,
+    CatalogEntry,
+    install_plan_for,
+    list_catalog,
+    list_categories,
+)
+from app.services.connection_v2.marketplace_service import (
+    MarketplaceService,
+    install_plan,
+)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Fixtures
+# ──────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+async def seeded_tenant(db_session, test_tenant_id):
+    tenant = Tenant(id=test_tenant_id, name="T", slug="t", settings={})
+    db_session.add(tenant)
+    await db_session.flush()
+    return tenant
+
+
+# ──────────────────────────────────────────────────────────────────
+# 1. Catalog shape
+# ──────────────────────────────────────────────────────────────────
+
+
+class TestCatalogShape:
+    def test_catalog_is_non_empty(self):
+        assert len(CATALOG) >= 30, "Catalog should ship at least 30 entries"
+
+    def test_every_entry_has_required_fields(self):
+        for entry in CATALOG:
+            assert entry.id, f"Empty id: {entry}"
+            assert entry.display_name, f"Empty display_name: {entry.id}"
+            assert entry.vendor, f"Empty vendor: {entry.id}"
+            assert entry.category, f"Empty category: {entry.id}"
+            assert entry.kind, f"Empty kind: {entry.id}"
+            assert entry.short_description, f"Empty description: {entry.id}"
+            assert entry.install_method, f"Empty install_method: {entry.id}"
+            assert entry.auth_type, f"Empty auth_type: {entry.id}"
+            assert entry.risk_level in ("low", "medium", "high"), entry.id
+            assert entry.probe_type, f"Empty probe_type: {entry.id}"
+
+    def test_ids_are_unique(self):
+        ids = [e.id for e in CATALOG]
+        assert len(ids) == len(set(ids)), "Catalog ids must be unique"
+
+    def test_catalog_by_id_lookup_works(self):
+        assert "mcp-github" in CATALOG_BY_ID
+        assert CATALOG_BY_ID["mcp-github"].vendor == "Anthropic"
+
+    def test_to_dict_serializes_to_json(self):
+        for entry in CATALOG[:5]:
+            d = entry.to_dict()
+            json.dumps(d)  # must not raise
+            assert isinstance(d["capabilities"], list)
+            assert isinstance(d["required_env_vars"], list)
+            assert isinstance(d["compatible_os"], list)
+
+    def test_categories_metadata_complete(self):
+        for cat in CATEGORIES:
+            assert cat.id
+            assert cat.display_name
+            assert cat.short_description
+
+
+# ──────────────────────────────────────────────────────────────────
+# 2. Coverage -- every founder-listed category present
+# ──────────────────────────────────────────────────────────────────
+
+
+class TestCatalogCoverage:
+    @pytest.mark.parametrize(
+        "category",
+        [
+            "filesystem",
+            "browser",
+            "computer_use",
+            "code_platform",
+            "communication",
+            "productivity",
+            "design",
+            "data_storage",
+            "payment",
+            "research",
+            "local_llm",
+            "ai_provider",
+            "dev_tools",
+            "cli_runtime",
+        ],
+    )
+    def test_category_has_entries(self, category):
+        matching = [e for e in CATALOG if e.category == category]
+        assert matching, f"No catalog entries for category {category!r}"
+
+    def test_main_brain_runtimes_present(self):
+        kinds = {e.kind for e in CATALOG}
+        assert "cli_runtime" in kinds
+        assert "api_provider" in kinds
+
+    def test_browser_tools_first_class(self):
+        browser_entries = [e for e in CATALOG if e.kind == "browser_tool"]
+        ids = {e.id for e in browser_entries}
+        assert "mcp-playwright" in ids
+        assert "mcp-chrome-devtools" in ids
+
+    def test_high_risk_entries_explicitly_marked(self):
+        # Computer use entries must be high-risk so the UI badges them.
+        for entry in CATALOG:
+            if entry.kind == "computer_use":
+                assert entry.risk_level == "high", (
+                    f"Computer use entry {entry.id} should be risk=high"
+                )
+
+    def test_oauth_apps_match_oauth_service(self):
+        # The Apps tab catalog should mirror oauth_service.OAUTH_PROVIDERS
+        # for the supported set.
+        from app.services.integrations.oauth_service import OAUTH_PROVIDERS
+
+        oauth_entries = [e for e in CATALOG if e.kind == "oauth_app"]
+        # Build a relaxed mapping: any oauth catalog entry whose required
+        # env var matches an OAUTH_PROVIDERS client_id_setting counts.
+        provider_setting_names = {
+            cfg.client_id_setting.upper()
+            for cfg in OAUTH_PROVIDERS.values()
+        }
+        for entry in oauth_entries:
+            if entry.install_method == "coming-soon":
+                continue
+            assert any(
+                env in provider_setting_names
+                for env in entry.required_env_vars
+            ), f"OAuth entry {entry.id} env vars don't match any oauth_service provider"
+
+
+# ──────────────────────────────────────────────────────────────────
+# 3. Sentinel-secret audit
+# ──────────────────────────────────────────────────────────────────
+
+
+class TestNoSecretLeak:
+    """The catalog is source-tree-versioned + public. It MUST NOT carry
+    real secret values. This test plants distinctive sentinel substrings
+    that look secret-like and confirms none made it into the catalog.
+
+    NOTE: this test scans the LITERAL catalog data (no API call). The
+    point is to catch a future contributor who accidentally pastes a
+    real key into setup_notes or command_template.
+    """
+
+    SECRET_INDICATORS = (
+        "sk-",        # OpenAI / Anthropic-style
+        "sk-ant-",    # Anthropic
+        "pplx-",      # Perplexity
+        "xai-",       # xAI / Grok
+        "gsk_",       # Groq
+        "AIza",       # Google API
+        "ghp_",       # GitHub PAT
+        "github_pat_",
+        "ya29.",      # Google OAuth refresh
+        "ASIA",       # AWS access key
+        "AKIA",       # AWS access key
+        "DAEN_",      # Daena-internal sentinel (future)
+    )
+
+    def test_no_obvious_secret_in_catalog(self):
+        for entry in CATALOG:
+            text_to_scan = " ".join(
+                str(s)
+                for s in (
+                    entry.id,
+                    entry.display_name,
+                    entry.vendor,
+                    entry.short_description,
+                    entry.command_template,
+                    entry.setup_notes,
+                    entry.official_url,
+                    *entry.capabilities,
+                    *entry.required_env_vars,
+                )
+            )
+            for indicator in self.SECRET_INDICATORS:
+                assert indicator not in text_to_scan, (
+                    f"Possible secret leak in catalog entry {entry.id!r}: "
+                    f"contains {indicator!r}. Catalog must NEVER carry real secret "
+                    f"values."
+                )
+
+    def test_required_env_vars_are_names_not_values(self):
+        # NAMES contain only uppercase letters + underscores + digits.
+        # Values would contain quotes, colons, dashes, etc.
+        for entry in CATALOG:
+            for env_name in entry.required_env_vars:
+                assert env_name.isupper() or any(c.isdigit() or c == "_" for c in env_name), (
+                    f"required_env_vars must be NAMES only: {env_name!r} in {entry.id}"
+                )
+                assert "=" not in env_name, (
+                    f"env var contains assignment: {env_name!r} in {entry.id}"
+                )
+                assert " " not in env_name, (
+                    f"env var contains space: {env_name!r} in {entry.id}"
+                )
+
+
+# ──────────────────────────────────────────────────────────────────
+# 4. Install plans
+# ──────────────────────────────────────────────────────────────────
+
+
+class TestInstallPlans:
+    def test_every_entry_has_a_plan(self):
+        for entry in CATALOG:
+            plan = install_plan_for(entry)
+            assert plan["entry_id"] == entry.id
+            assert plan["executable"] is False, "Plans must NEVER be auto-executed"
+            assert isinstance(plan["steps"], list)
+
+    def test_coming_soon_plan_includes_link_step(self):
+        coming_soon = [e for e in CATALOG if e.install_method == "coming-soon"]
+        assert coming_soon, "Catalog should have at least one coming-soon entry"
+        for entry in coming_soon:
+            plan = install_plan_for(entry)
+            kinds = {step["kind"] for step in plan["steps"]}
+            assert "info" in kinds, f"coming-soon plan {entry.id} missing info step"
+            assert "link" in kinds or any(
+                step["kind"] == "env" for step in plan["steps"]
+            ), f"coming-soon plan {entry.id} should link out or list env vars"
+
+    def test_npm_plan_includes_command_step(self):
+        npm_entries = [e for e in CATALOG if e.install_method == "npm"]
+        assert npm_entries
+        for entry in npm_entries:
+            plan = install_plan_for(entry)
+            kinds = {step["kind"] for step in plan["steps"]}
+            assert "command" in kinds, f"npm plan {entry.id} missing command step"
+
+    def test_oauth_plan_includes_auth_step(self):
+        oauth_entries = [
+            e for e in CATALOG
+            if e.auth_type == "oauth" and e.install_method != "coming-soon"
+        ]
+        assert oauth_entries
+        for entry in oauth_entries:
+            plan = install_plan_for(entry)
+            kinds = {step["kind"] for step in plan["steps"]}
+            assert "auth" in kinds, f"oauth plan {entry.id} missing auth step"
+
+    def test_install_plan_lookup_by_id(self):
+        plan = install_plan("mcp-github")
+        assert plan is not None
+        assert plan["entry_id"] == "mcp-github"
+        assert plan["executable"] is False
+
+    def test_install_plan_unknown_returns_none(self):
+        assert install_plan("does-not-exist") is None
+
+
+# ──────────────────────────────────────────────────────────────────
+# 5. MarketplaceService overlay
+# ──────────────────────────────────────────────────────────────────
+
+
+class TestMarketplaceServiceOverlay:
+    """End-to-end: catalog + V2 truth -> honest lifecycle."""
+
+    async def test_no_v2_row_yields_available_lifecycle(
+        self, db_session, seeded_tenant
+    ):
+        svc = MarketplaceService(db_session, tenant_id=seeded_tenant.id)
+        cards = await svc.list_cards()
+        assert cards
+        # No V2 rows seeded -> every catalog entry is at most "available"
+        # or "needs_setup" (coming-soon variants).
+        for card in cards:
+            assert card.v2_row_id is None
+            assert card.lifecycle in ("available", "needs_setup")
+            assert card.primary_action == "setup_guide"
+
+    async def test_v2_callable_row_yields_callable_lifecycle(
+        self, db_session, seeded_tenant
+    ):
+        # Insert a V2 row matching mcp-filesystem's slug pattern.
+        now = datetime.now(UTC)
+        row = ConnectionV2(
+            tenant_id=seeded_tenant.id,
+            kind=ConnectionKind.MCP_SERVER.value,
+            slug="mcp-filesystem",
+            display_name="Filesystem",
+            canonical_key=_canonical_key(
+                seeded_tenant.id, "mcp_server", "mcp-filesystem", "none",
+            ),
+            auth_method=AuthMethod.NONE.value,
+            config={"command": "npx", "_seeded_by": "test"},
+            detected=True, detected_at=now,
+            configured=True, configured_at=now,
+            imported=True, imported_at=now,
+            reachable=True, reachable_at=now,
+            authenticated=True, authenticated_at=now,
+            callable=True, callable_at=now,
+        )
+        db_session.add(row)
+        await db_session.flush()
+
+        svc = MarketplaceService(db_session, tenant_id=seeded_tenant.id)
+        cards = await svc.list_cards()
+        fs_card = next(c for c in cards if c.catalog["id"] == "mcp-filesystem")
+        assert fs_card.v2_row_id == str(row.id)
+        assert fs_card.lifecycle == "callable"
+        assert fs_card.primary_action == "test"
+        assert fs_card.v2_truth is not None
+        assert fs_card.v2_truth["callable"]["value"] is True
+
+    async def test_v2_failed_row_yields_failed_lifecycle(
+        self, db_session, seeded_tenant
+    ):
+        now = datetime.now(UTC)
+        # Probe ran but failed at reachable -- failure_at > at means recent failure.
+        row = ConnectionV2(
+            tenant_id=seeded_tenant.id,
+            kind=ConnectionKind.MCP_SERVER.value,
+            slug="mcp-github",
+            display_name="GitHub",
+            canonical_key=_canonical_key(
+                seeded_tenant.id, "mcp_server", "mcp-github", "api_token",
+            ),
+            auth_method=AuthMethod.API_TOKEN.value,
+            config={"command": "npx", "_seeded_by": "test"},
+            detected=True, detected_at=now,
+            configured=True, configured_at=now,
+            imported=True, imported_at=now,
+            reachable=False,
+            reachable_at=now - timedelta(minutes=10),
+            reachable_failure_at=now,
+            reachable_failure_reason="ECONNREFUSED 127.0.0.1:3000",
+        )
+        db_session.add(row)
+        await db_session.flush()
+
+        svc = MarketplaceService(db_session, tenant_id=seeded_tenant.id)
+        cards = await svc.list_cards()
+        gh_card = next(c for c in cards if c.catalog["id"] == "mcp-github")
+        assert gh_card.lifecycle == "failed"
+        assert gh_card.primary_action == "test"
+        assert gh_card.v2_failure_reason == "ECONNREFUSED 127.0.0.1:3000"
+
+    async def test_v2_disabled_row_yields_disabled_lifecycle(
+        self, db_session, seeded_tenant
+    ):
+        now = datetime.now(UTC)
+        row = ConnectionV2(
+            tenant_id=seeded_tenant.id,
+            kind=ConnectionKind.MCP_SERVER.value,
+            slug="mcp-fetch",
+            display_name="Fetch",
+            canonical_key=_canonical_key(
+                seeded_tenant.id, "mcp_server", "mcp-fetch", "none",
+            ),
+            auth_method=AuthMethod.NONE.value,
+            config={"command": "npx", "_seeded_by": "test"},
+            detected=True, detected_at=now,
+            configured=True, configured_at=now,
+            imported=True, imported_at=now,
+            reachable=True, reachable_at=now,
+            authenticated=True, authenticated_at=now,
+            callable=True, callable_at=now,
+            disabled=True,
+        )
+        db_session.add(row)
+        await db_session.flush()
+
+        svc = MarketplaceService(db_session, tenant_id=seeded_tenant.id)
+        cards = await svc.list_cards()
+        fetch_card = next(c for c in cards if c.catalog["id"] == "mcp-fetch")
+        assert fetch_card.lifecycle == "disabled"
+        assert fetch_card.primary_action == "enable"
+
+    async def test_skill_pack_always_skill_pack_lifecycle(
+        self, db_session, seeded_tenant
+    ):
+        now = datetime.now(UTC)
+        # Use a skill_pack slug that does NOT exist in the curated
+        # marketplace catalog (skill packs come from PLUGIN_CATALOG +
+        # ConnectionDiscoveryService.skill_pack_slug). The lifecycle
+        # rule still kicks in for any V2 row of kind=skill_pack -- even
+        # if no catalog entry matches by slug, the test confirms the
+        # lifecycle derivation rule fires when a row IS present.
+        row = ConnectionV2(
+            tenant_id=seeded_tenant.id,
+            kind=ConnectionKind.SKILL_PACK.value,
+            slug="skill-some-pack",
+            display_name="Some Skill Pack",
+            canonical_key=_canonical_key(
+                seeded_tenant.id, "skill_pack", "skill-some-pack", "none",
+            ),
+            auth_method=AuthMethod.NONE.value,
+            config={"_seeded_by": "test"},
+            detected=True, detected_at=now,
+            configured=True, configured_at=now,
+            imported=True, imported_at=now,
+        )
+        db_session.add(row)
+        await db_session.flush()
+
+        # Verify the row exists; the marketplace service won't surface
+        # it as a catalog entry (no matching slug), but if a future
+        # catalog entry does match, lifecycle should always collapse to
+        # skill_pack. We exercise the rule directly via _derive_lifecycle.
+        from app.services.connection_v2.marketplace_service import (
+            _derive_lifecycle,
+        )
+        from app.services.connection_v2.marketplace_catalog import CATALOG
+
+        # Pick any catalog entry as a stand-in for the matcher hit.
+        sample_entry = next(e for e in CATALOG if e.kind == "mcp_server")
+        lifecycle, action, label = _derive_lifecycle(sample_entry, row)
+        assert lifecycle == "skill_pack"
+        assert action == "open"
+        assert label == "Open"
+
+
+# ──────────────────────────────────────────────────────────────────
+# 6. JSON list helpers
+# ──────────────────────────────────────────────────────────────────
+
+
+class TestListHelpers:
+    def test_list_catalog_returns_dicts(self):
+        data = list_catalog()
+        assert isinstance(data, list)
+        assert len(data) == len(CATALOG)
+        for d in data[:3]:
+            assert isinstance(d, dict)
+            assert "id" in d
+            assert "display_name" in d
+
+    def test_list_categories_returns_dicts(self):
+        data = list_categories()
+        assert isinstance(data, list)
+        assert len(data) == len(CATEGORIES)
+        for d in data[:3]:
+            assert "id" in d
+            assert "display_name" in d
