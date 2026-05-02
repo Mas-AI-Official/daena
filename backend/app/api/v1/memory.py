@@ -288,6 +288,101 @@ async def memory_stats(
     }
 
 
+@router.get("/status")
+async def memory_status(
+    user: CurrentUser = Depends(get_current_user),
+    service: MemoryService = Depends(get_memory_service),
+):
+    """Get honest Memory/RAG/Obsidian availability for the frontend.
+
+    Memory is backed by NBMF and SQL persistence. RAG/vector retrieval is not
+    exposed as a dedicated service in this build, so it is reported as
+    not_configured instead of pretending to be online. Obsidian status is based
+    on the Daena-Mind archive/vault path used by the NBMF archive service.
+    """
+    stats = await memory_stats(user=user, service=service)
+    memory_data = stats.get("data", {})
+
+    try:
+        from app.services.nbmf_archive import VAULT_ROOT
+
+        vault_path = VAULT_ROOT
+        vault_exists = vault_path.exists()
+        obsidian = {
+            "status": "available" if vault_exists else "not_configured",
+            "enabled": vault_exists,
+            "vault_path": str(vault_path),
+            "reason": (
+                "Obsidian-compatible Daena-Mind vault detected."
+                if vault_exists
+                else "Daena-Mind vault path does not exist yet."
+            ),
+        }
+    except Exception as exc:
+        obsidian = {
+            "status": "error",
+            "enabled": False,
+            "vault_path": None,
+            "reason": f"Could not inspect Daena-Mind vault: {type(exc).__name__}",
+        }
+
+    # PR-RAG-HONEST: surface what the actual chat-recall algorithm IS,
+    # not just what it isn't. The Atlas previously said "RAG NOT
+    # IMPLEMENTED" which is true (no embeddings) but understated the
+    # real recall path. recall_for_chat blends keyword Jaccard
+    # relevance, NBMF tier, entry confidence, and recency decay -- all
+    # deterministic, all honest, no hallucinated semantic similarity.
+    # Operators can read these fields and know exactly what runs.
+    recall_descriptor = {
+        "mode": "keyword_jaccard_blend",
+        "embeddings_enabled": False,
+        "function_path": "app.services.memory.MemoryService.recall_for_chat",
+        "scoring": {
+            "keyword_relevance": 0.50,
+            "tier_normalized": 0.20,
+            "confidence": 0.20,
+            "recency_decay": 0.10,
+        },
+        "scope_priority": ["SESSION", "USER", "TENANT"],
+        "filters": [
+            "non_quarantined",
+            "non_expired",
+            "tier_>=_LONG_TERM",
+        ],
+        "tokenizer": (
+            "ASCII alphanumeric with dash/underscore separators, "
+            "min length 2, English stopwords stripped"
+        ),
+        "default_top_k": 5,
+        "reason": (
+            "Chat recall is a deterministic blend of keyword Jaccard "
+            "overlap, NBMF tier, entry confidence, and recency decay. "
+            "No vector/embedding retrieval is configured in this build."
+        ),
+    }
+
+    return {
+        "success": True,
+        "data": {
+            "memory": {
+                "status": "online",
+                "enabled": True,
+                **memory_data,
+            },
+            "rag": {
+                "status": "not_configured",
+                "enabled": False,
+                "reason": (
+                    "No dedicated vector/RAG retrieval endpoint is registered in this build. "
+                    "NBMF recall remains available through /memory/memories."
+                ),
+            },
+            "recall": recall_descriptor,
+            "obsidian": obsidian,
+        },
+    }
+
+
 # ── Dream Engine Endpoints ──
 
 

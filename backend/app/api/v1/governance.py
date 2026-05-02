@@ -1,18 +1,21 @@
 """Governance endpoints: evaluation, approvals, audit trail.
 
-Thin router layer — all business logic lives in GovernanceEngine,
+Thin router layer -- all business logic lives in GovernanceEngine,
 ApprovalService, and AuditService.
 """
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_role
 from app.core.database import get_db
+from app.core.sse_channels import approval_channel
 from app.schemas.governance import (
     ApprovalDecisionRequest,
     ApprovalResponse,
@@ -24,6 +27,15 @@ from app.services.audit import AuditService
 from app.services.governance import GovernanceEngine
 
 router = APIRouter()
+
+
+# Standard SSE response headers; matches the chat + scan stream
+# convention so frontend EventSource clients see consistent framing.
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 
 # ── Dependency factories ──
@@ -159,6 +171,56 @@ async def list_pending_approvals(
     return {"success": True, **result}
 
 
+@router.get("/approvals/events")
+async def stream_approval_events(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+) -> StreamingResponse:
+    """Server-sent events for governance approval lifecycle.
+
+    Subscribes to ``approval_channel`` and yields each envelope as a
+    formatted SSE event. Decoupled from the chat SSE so approvals are
+    live whether or not a chat session is open.
+
+    Tenant filter: only events whose ``data.tenant_id`` matches the
+    caller's tenant are forwarded. Cross-tenant isolation matches the
+    rest of the governance API surface.
+
+    Emits the following event types:
+
+    - ``approval.pending`` ``{approval_id, tenant_id, tier, risk_level,
+      action_type, session_id, expires_at, created_at}`` -- a new
+      approval was created and is awaiting decision.
+    - ``approval.resolved`` ``{approval_id, tenant_id, decision,
+      resolver_user_id, decided_at, reason}`` -- approve or reject
+      landed. ``decision`` is ``"APPROVED"`` or ``"REJECTED"``.
+    - ``approval.expired`` ``{approval_id, tenant_id, expired_at}``
+      Sweeper marked a stale pending request EXPIRED.
+    - ``ping`` synthetic heartbeat every 25s of idle time.
+    """
+    tenant_id = str(user.tenant_id)
+
+    async def _event_stream():
+        async for envelope in approval_channel.subscribe():
+            if await request.is_disconnected():
+                break
+            # Forward heartbeats unconditionally (no tenant on a ping)
+            # and tenant-scope every domain event so cross-tenant
+            # approvals never leak across the wire.
+            payload = envelope.get("data") or {}
+            if envelope.get("type") != "ping":
+                if payload.get("tenant_id") and payload.get("tenant_id") != tenant_id:
+                    continue
+            data = json.dumps(envelope)
+            yield f"event: {envelope['type']}\ndata: {data}\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
 @router.get("/approvals/{request_id}")
 async def get_approval(
     request_id: UUID,
@@ -243,15 +305,48 @@ async def get_audit_trail(
 
 @router.get("/audit/verify")
 async def verify_audit_integrity(
+    deep: bool = Query(
+        False,
+        description=(
+            "When true, also recompute SHA-256 from each row's payload "
+            "and compare to the stored entry_hash. Catches content "
+            "tampering (e.g. result flipped post-write) that the "
+            "structural chain walk misses. Slower (one sha256 per row) "
+            "but is the only way to detect tamper that did not break "
+            "the prev_hash links."
+        ),
+    ),
     user: CurrentUser = Depends(require_role("ADMIN")),
     service: AuditService = Depends(get_audit_service),
 ):
     """Verify the hash chain integrity of the audit trail.
 
     Requires ADMIN role. Walks the entire chain for the tenant
-    and reports any breaks.
+    and reports any breaks. With ``?deep=true`` also recomputes each
+    row's payload hash and reports any content corruption -- distinct
+    from structural breaks so the operator can tell a chain split apart
+    from a row whose payload was modified after the fact.
+
+    Response shape:
+
+    .. code-block:: json
+
+        {
+          "success": true,
+          "data": {
+            "valid": true,
+            "total_entries": 12,
+            "first_broken_id": null,
+            "first_corrupt_id": null
+          }
+        }
+
+    ``first_corrupt_id`` is always ``null`` when ``deep=false`` is in
+    effect (it cannot be detected without the recompute pass).
     """
-    result = await service.verify_chain_integrity(tenant_id=user.tenant_id)
+    result = await service.verify_chain_integrity(
+        tenant_id=user.tenant_id, deep=deep,
+    )
     return {"success": True, "data": result}
 
 

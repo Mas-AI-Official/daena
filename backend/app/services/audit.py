@@ -167,27 +167,42 @@ class AuditService(BaseService):
             },
         }
 
-    async def verify_chain_integrity(self, *, tenant_id: UUID) -> dict:
+    async def verify_chain_integrity(
+        self, *, tenant_id: UUID, deep: bool = False,
+    ) -> dict:
         """Verify the hash chain integrity for a tenant's audit trail.
 
-        AUD-001 fix: walks the chain by following ``prev_hash`` links
-        rather than by sorting on ``created_at``. This is correct by
-        construction because the chain IS defined by the prev_hash
-        pointers, and it removes the dependency on timestamp
-        monotonicity that broke tests on Windows (datetime.utcnow()
-        has ~15.6ms resolution, so rapid successive inserts can tie
-        on created_at and yield a non-deterministic walk order).
+        Two checks compose:
 
-        Algorithm:
-            1. Load every event for the tenant (any order).
-            2. Index them by entry_hash.
-            3. Find the GENESIS entry (prev_hash=None).
-            4. Walk forward: next = events[last.entry_hash].
-            5. Break or succeed when the chain ends or loops.
+        1. **Structural walk** (always): follow ``prev_hash`` links from
+           GENESIS (the AUD-001 algorithm). Catches tampering that breaks
+           the chain topology -- mutated ``prev_hash``, missing entries,
+           injected entries, forked chains, multiple GENESIS rows.
+
+        2. **Payload recompute** (``deep=True`` only): re-derive
+           SHA-256(actor_id|action_type|result|prev_hash|timestamp) for
+           each row and compare to the stored ``entry_hash``. Catches
+           content tampering that the structural walk misses -- e.g. an
+           attacker who flips ``result`` from BLOCKED to ALLOWED while
+           leaving the chain links untouched. The structural walker has
+           no way to detect this because the prev_hash pointers still
+           form a valid chain; only recomputing the hash from payload
+           reveals the lie.
+
+        ``deep=False`` is the default for backwards compatibility with
+        existing callers (frontend bell, GovernanceAuditPage) that
+        pre-date this PR. PR-AUDIT-VERIFY frontend now calls with
+        ``deep=true``; CLI / future operators should also.
 
         Returns:
-            Dict with valid (bool), total_entries, first_broken_id
-            (the id of the first structural defect, or None).
+            {
+                valid: bool,                    # both checks pass
+                total_entries: int,
+                first_broken_id: str | None,    # structural defect id, or None
+                first_corrupt_id: str | None,   # content tamper id (deep only),
+                                                # None when deep=False or all
+                                                # payloads recompute correctly
+            }
         """
         stmt = select(GoaAuditEvent).where(
             GoaAuditEvent.tenant_id == tenant_id
@@ -196,58 +211,79 @@ class AuditService(BaseService):
         events = list(result.scalars().all())
 
         if not events:
-            return {"valid": True, "total_entries": 0, "first_broken_id": None}
+            return {
+                "valid": True,
+                "total_entries": 0,
+                "first_broken_id": None,
+                "first_corrupt_id": None,
+            }
 
         total = len(events)
+        structural = self._structural_walk(events)
 
-        # Index events by prev_hash: for each event, record it as the
-        # successor of its prev_hash. Multiple successors for one
-        # prev_hash = the chain forked, which is a tamper indicator.
+        # Deep payload check (additive). Sort by (created_at, id) so the
+        # "first" corrupt id is deterministic across SQLite + Postgres
+        # even when timestamps tie on Windows' low-resolution clock.
+        first_corrupt_id: str | None = None
+        if deep:
+            ordered = sorted(
+                events,
+                key=lambda e: (e.created_at or datetime.min, str(e.id)),
+            )
+            for event in ordered:
+                recomputed = self._recompute_event_hash(event)
+                if recomputed != event.entry_hash:
+                    first_corrupt_id = str(event.id)
+                    break
+
+        return {
+            "valid": structural["valid"] and first_corrupt_id is None,
+            "total_entries": total,
+            "first_broken_id": structural["first_broken_id"],
+            "first_corrupt_id": first_corrupt_id,
+        }
+
+    @staticmethod
+    def _structural_walk(events: list[GoaAuditEvent]) -> dict:
+        """Walk the chain via prev_hash links (AUD-001 algorithm).
+
+        Pulled out of ``verify_chain_integrity`` so the deep mode can
+        compose structural + payload checks without duplicating the walk
+        logic. Returns ``{valid, first_broken_id}`` -- ``total_entries``
+        is supplied by the caller (it already has ``len(events)`` in
+        scope).
+
+        Detects:
+            * Zero GENESIS entries (every row claims a predecessor)
+            * >1 GENESIS entries (chain forked at the root)
+            * Forks mid-chain (>1 successor for some prev_hash)
+            * Orphans (entries whose prev_hash points outside the chain)
+        """
+        # Index events by prev_hash: each row is the successor of its
+        # prev_hash. Multiple successors = fork = tamper.
         successors_by_prev: dict[str | None, list[GoaAuditEvent]] = {}
         for ev in events:
             successors_by_prev.setdefault(ev.prev_hash, []).append(ev)
 
-        # Must be exactly one GENESIS entry (prev_hash=None).
         genesis_list = successors_by_prev.get(None, [])
         if len(genesis_list) == 0:
-            # No GENESIS means every entry expects a predecessor, so
-            # the oldest visible one is the broken link.
-            return {
-                "valid": False,
-                "total_entries": total,
-                "first_broken_id": str(events[0].id),
-            }
+            # No GENESIS = oldest visible row is the broken link.
+            return {"valid": False, "first_broken_id": str(events[0].id)}
         if len(genesis_list) > 1:
-            # Multiple GENESIS entries = chain forked at the root.
-            return {
-                "valid": False,
-                "total_entries": total,
-                "first_broken_id": str(genesis_list[0].id),
-            }
+            return {"valid": False, "first_broken_id": str(genesis_list[0].id)}
 
-        # Walk the chain from GENESIS following prev_hash links.
         current = genesis_list[0]
         visited = 1
         while True:
             next_list = successors_by_prev.get(current.entry_hash, [])
             if len(next_list) == 0:
-                # End of chain.
                 break
             if len(next_list) > 1:
-                # Fork: more than one entry claims current as its predecessor.
-                return {
-                    "valid": False,
-                    "total_entries": total,
-                    "first_broken_id": str(next_list[0].id),
-                }
+                return {"valid": False, "first_broken_id": str(next_list[0].id)}
             current = next_list[0]
             visited += 1
 
-        # Walked entries must equal total: orphan entries (entries whose
-        # prev_hash points to nothing in this tenant's chain) are a
-        # tamper indicator.
-        if visited != total:
-            # Find the first orphan: any entry we did not visit.
+        if visited != len(events):
             walked_hashes: set[str] = set()
             cur2 = genesis_list[0]
             walked_hashes.add(cur2.entry_hash)
@@ -258,17 +294,38 @@ class AuditService(BaseService):
                 cur2 = nxt[0]
                 walked_hashes.add(cur2.entry_hash)
             orphans = [e for e in events if e.entry_hash not in walked_hashes]
-            return {
-                "valid": False,
-                "total_entries": total,
-                "first_broken_id": str(orphans[0].id),
-            }
+            return {"valid": False, "first_broken_id": str(orphans[0].id)}
 
-        return {
-            "valid": True,
-            "total_entries": total,
-            "first_broken_id": None,
-        }
+        return {"valid": True, "first_broken_id": None}
+
+    @staticmethod
+    def _recompute_event_hash(event: GoaAuditEvent) -> str:
+        """Recompute SHA-256 from event payload (deep-mode primitive).
+
+        Uses the same payload format as ``log_decision`` (pipe-joined
+        actor_id | action_type | result | prev_hash | timestamp). When
+        the recomputed value differs from ``event.entry_hash``, the row
+        was tampered with after the original write -- regardless of
+        whether the structural chain still walks cleanly.
+
+        Cross-dialect timestamp normalization: ``log_decision`` writes
+        ``datetime.utcnow()`` (naive). SQLite round-trips naive;
+        Postgres returns tz-aware. Strip tz info on read so isoformat()
+        produces the same string the original hash consumed.
+        """
+        timestamp = ""
+        if event.created_at is not None:
+            ts = event.created_at
+            if ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
+            timestamp = ts.isoformat()
+        return AuditService._compute_hash(
+            actor_id=event.actor_id,
+            action_type=event.action_type,
+            result=event.result,
+            prev_hash=event.prev_hash,
+            timestamp=timestamp,
+        )
 
     async def _get_last_hash(self, tenant_id: UUID) -> str | None:
         """Get the entry_hash of the most recent audit event for a tenant.

@@ -484,3 +484,233 @@ async def test_chain_integrity_across_larger_sequence(
     result = await svc.verify_chain_integrity(tenant_id=t)
     assert result["valid"] is True
     assert result["total_entries"] == 15
+
+
+# ----------------------------------------------------------------------
+# PR-AUDIT-VERIFY: deep mode (recompute every payload hash)
+# ----------------------------------------------------------------------
+#
+# The structural walker (default mode) follows prev_hash -> entry_hash
+# links and catches any tamper that breaks the chain topology. It does
+# NOT recompute SHA-256 from each row's payload, so it cannot detect a
+# tamper that leaves the chain links intact -- e.g. an attacker who
+# flips ``result`` from BLOCKED to ALLOWED but does not touch
+# ``prev_hash`` or ``entry_hash``. PR-AUDIT-VERIFY adds the
+# ``deep=True`` mode which closes that gap.
+
+
+@pytest.mark.asyncio
+async def test_chain_integrity_deep_mode_passes_clean_chain(
+    db_session: AsyncSession,
+    seeded_tenant_user: tuple[uuid.UUID, uuid.UUID],
+):
+    """Happy path: deep recompute matches every stored entry_hash."""
+    test_tenant_id, test_user_id = seeded_tenant_user
+    svc = AuditService(db_session)
+    for i in range(4):
+        await svc.log_decision(
+            tenant_id=test_tenant_id, actor_id=test_user_id, actor_type="USER",
+            action_type=f"D{i}", result="ALLOWED",
+            risk_level="LOW", governance_tier=1,
+        )
+    result = await svc.verify_chain_integrity(tenant_id=test_tenant_id, deep=True)
+    assert result["valid"] is True
+    assert result["total_entries"] == 4
+    assert result["first_broken_id"] is None
+    assert result["first_corrupt_id"] is None  # New field, no tamper
+
+
+@pytest.mark.asyncio
+async def test_chain_integrity_deep_mode_catches_content_tamper(
+    db_session: AsyncSession,
+    seeded_tenant_user: tuple[uuid.UUID, uuid.UUID],
+):
+    """The whole point of deep mode: catch a tamper that the structural
+    walker cannot see.
+
+    Setup: write 3 entries forming a clean chain. Then mutate the
+    middle row's ``result`` field WITHOUT touching ``prev_hash`` or
+    ``entry_hash``. The structural walker still walks cleanly because
+    every prev_hash still points at a valid entry_hash. But the deep
+    recompute finds that SHA-256(actor|action|RESULT|prev|ts) no longer
+    equals the stored entry_hash.
+    """
+    test_tenant_id, test_user_id = seeded_tenant_user
+    svc = AuditService(db_session)
+    for i in range(3):
+        await svc.log_decision(
+            tenant_id=test_tenant_id, actor_id=test_user_id, actor_type="USER",
+            action_type=f"C{i}", result="ALLOWED",
+            risk_level="LOW", governance_tier=1,
+        )
+    await db_session.commit()
+
+    # Read rows back, mutate middle row's result only.
+    from sqlalchemy import select
+    rows = (await db_session.execute(
+        select(GoaAuditEvent)
+        .where(GoaAuditEvent.tenant_id == test_tenant_id)
+        .order_by(GoaAuditEvent.created_at.asc())
+    )).scalars().all()
+    assert len(rows) == 3
+    middle = rows[1]
+    middle.result = "BLOCKED"  # Flip ALLOWED -> BLOCKED. Do NOT touch hashes.
+    await db_session.commit()
+
+    # Structural mode still passes (chain links untouched).
+    structural = await svc.verify_chain_integrity(
+        tenant_id=test_tenant_id, deep=False,
+    )
+    assert structural["valid"] is True, (
+        "Structural-only walker should miss this content tamper -- "
+        "if it does not, the test is no longer pinning the gap."
+    )
+    assert structural["first_corrupt_id"] is None  # Always None when deep=False
+
+    # Deep mode catches it.
+    deep = await svc.verify_chain_integrity(
+        tenant_id=test_tenant_id, deep=True,
+    )
+    assert deep["valid"] is False
+    assert deep["first_corrupt_id"] == str(middle.id)
+    assert deep["first_broken_id"] is None  # Structure remains intact
+
+
+@pytest.mark.asyncio
+async def test_chain_integrity_default_mode_misses_content_tamper(
+    db_session: AsyncSession,
+    seeded_tenant_user: tuple[uuid.UUID, uuid.UUID],
+):
+    """Regression guard: structural-only walker cannot detect content
+    tampering (this is by-design; the limitation is what justifies deep
+    mode existing).
+
+    If this test ever fails because structural also catches it, the
+    structural walker has gained payload validation -- in which case
+    deep mode is no longer needed and the rationale in
+    PR_AUDIT_VERIFY_AND_RAG_HONEST_REPORT.md should be revisited.
+    """
+    test_tenant_id, test_user_id = seeded_tenant_user
+    svc = AuditService(db_session)
+    for i in range(3):
+        await svc.log_decision(
+            tenant_id=test_tenant_id, actor_id=test_user_id, actor_type="USER",
+            action_type=f"X{i}", result="ALLOWED",
+            risk_level="LOW", governance_tier=1,
+        )
+    await db_session.commit()
+
+    from sqlalchemy import select
+    rows = (await db_session.execute(
+        select(GoaAuditEvent)
+        .where(GoaAuditEvent.tenant_id == test_tenant_id)
+        .order_by(GoaAuditEvent.created_at.asc())
+    )).scalars().all()
+    rows[0].result = "TAMPERED"
+    rows[2].action_type = "DOPED"
+    await db_session.commit()
+
+    # Default (deep=False) returns valid -- the gap is real.
+    result = await svc.verify_chain_integrity(tenant_id=test_tenant_id)
+    assert result["valid"] is True
+    assert result["first_broken_id"] is None
+    assert result["first_corrupt_id"] is None  # Field exists but unused
+
+
+# ----------------------------------------------------------------------
+# PR-AUDIT-VERIFY: response shape stability
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chain_integrity_response_shape_includes_corrupt_field(
+    db_session: AsyncSession,
+):
+    """``first_corrupt_id`` must always appear in the response dict so
+    frontend interfaces can rely on the key existing regardless of
+    deep flag. Empty chain is the simplest case.
+    """
+    svc = AuditService(db_session)
+    fresh_tenant = uuid.uuid4()
+    for deep_flag in (False, True):
+        result = await svc.verify_chain_integrity(
+            tenant_id=fresh_tenant, deep=deep_flag,
+        )
+        assert "first_corrupt_id" in result
+        assert result["first_corrupt_id"] is None
+        # Existing keys preserved
+        assert "valid" in result
+        assert "total_entries" in result
+        assert "first_broken_id" in result
+
+
+# ----------------------------------------------------------------------
+# PR-AUDIT-VERIFY: _recompute_event_hash determinism
+# ----------------------------------------------------------------------
+
+
+def test_recompute_event_hash_matches_log_decision_hash():
+    """Pure function: recompute output for a freshly built event must
+    equal the hash log_decision would have written. Validates the
+    payload ordering + tz-strip normalization match.
+    """
+    actor = uuid.uuid4()
+    now_dt = datetime(2026, 5, 1, 12, 34, 56, 789012)  # naive, microsecond precision
+    expected = AuditService._compute_hash(
+        actor_id=actor,
+        action_type="READ",
+        result="ALLOWED",
+        prev_hash=None,
+        timestamp=now_dt.isoformat(),
+    )
+
+    ev = GoaAuditEvent(
+        id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        actor_id=actor,
+        actor_type="USER",
+        action_type="READ",
+        result="ALLOWED",
+        risk_level="LOW",
+        governance_tier=1,
+        prev_hash=None,
+        entry_hash=expected,
+        created_at=now_dt,
+    )
+
+    assert AuditService._recompute_event_hash(ev) == expected
+
+
+def test_recompute_event_hash_strips_timezone():
+    """Postgres returns tz-aware datetimes; SQLite returns naive. Strip
+    tz before isoformat so both dialects produce the same hash input.
+    """
+    from datetime import timezone
+
+    actor = uuid.uuid4()
+    naive_dt = datetime(2026, 5, 1, 12, 34, 56, 789012)
+    aware_dt = naive_dt.replace(tzinfo=timezone.utc)
+
+    naive_event = GoaAuditEvent(
+        id=uuid.uuid4(), tenant_id=uuid.uuid4(),
+        actor_id=actor, actor_type="USER",
+        action_type="READ", result="ALLOWED",
+        risk_level="LOW", governance_tier=1,
+        prev_hash=None,
+        entry_hash="x" * 64,
+        created_at=naive_dt,
+    )
+    aware_event = GoaAuditEvent(
+        id=uuid.uuid4(), tenant_id=uuid.uuid4(),
+        actor_id=actor, actor_type="USER",
+        action_type="READ", result="ALLOWED",
+        risk_level="LOW", governance_tier=1,
+        prev_hash=None,
+        entry_hash="x" * 64,
+        created_at=aware_dt,
+    )
+
+    assert (
+        AuditService._recompute_event_hash(naive_event)
+        == AuditService._recompute_event_hash(aware_event)
+    )

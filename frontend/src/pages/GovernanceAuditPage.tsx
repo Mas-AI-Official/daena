@@ -16,16 +16,33 @@ import {
   Calendar,
   CheckSquare,
   Square,
-  Archive,
-  Trash2,
   Download,
   CheckCircle2,
+  ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Shimmer, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
-import { confirmDialog } from '@/stores/confirmStore'
 import type { AuditEntryResponse, ApiResponse, RiskLevel } from '@/types/api'
+
+const REVIEWED_STORAGE_KEY = 'daena:auditReviewedIds'
+
+interface AuditVerifyResponse {
+  success: boolean
+  data: {
+    valid: boolean
+    total_entries: number
+    first_broken_id: string | null
+    // PR-AUDIT-VERIFY: present in deep mode (?deep=true). Distinct
+    // from first_broken_id because content tampering does not
+    // necessarily break the chain links -- an attacker can flip
+    // ``result`` and leave prev_hash/entry_hash intact, in which case
+    // the structural walker still passes but the payload-recompute
+    // catches the lie.
+    first_corrupt_id?: string | null
+  }
+}
 
 // Risk level color mapping
 const RISK_COLORS: Record<string, string> = {
@@ -264,11 +281,74 @@ export function GovernanceAuditPage() {
   usePageTitle('Audit Log')
   const [entries, setEntries] = useState<AuditEntryResponse[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // Selection + batch actions
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set())
+
+  // "Reviewed" is a per-operator UI annotation, NOT a backend mutation.
+  // The audit log itself is immutable (hash-chained); persisting reviewed
+  // ids client-side gives the operator a triage view without breaking
+  // chain integrity.
+  const [reviewedIds, setReviewedIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(REVIEWED_STORAGE_KEY)
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
+    } catch {
+      return new Set()
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(REVIEWED_STORAGE_KEY, JSON.stringify([...reviewedIds]))
+    } catch {
+      // localStorage full or unavailable — annotation just won't persist
+    }
+  }, [reviewedIds])
+
+  // Chain integrity status — verified against backend, NOT hardcoded.
+  // PR-AUDIT-VERIFY: now distinguishes structural break (chain links
+  // damaged) from content corruption (row payload modified post-write
+  // while chain links untouched). Both are tamper but they need
+  // different recovery: structural break may be a rolled-back commit;
+  // content corruption is an intentional lie about what happened.
+  const [chainStatus, setChainStatus] = useState<
+    'verifying' | 'ok' | 'broken' | 'corrupt' | 'unknown'
+  >('unknown')
+  const [chainBrokenAt, setChainBrokenAt] = useState<string | null>(null)
+  const [chainCorruptAt, setChainCorruptAt] = useState<string | null>(null)
+
+  const verifyChain = async () => {
+    setChainStatus('verifying')
+    try {
+      // deep=true triggers payload recompute on the backend (PR-AUDIT-VERIFY).
+      // Structural-only verification cannot catch content tampering that
+      // leaves the chain links intact.
+      const { data } = await api.get<AuditVerifyResponse>(
+        '/governance/audit/verify?deep=true',
+      )
+      const inner = data.data
+      if (inner?.valid) {
+        setChainStatus('ok')
+        setChainBrokenAt(null)
+        setChainCorruptAt(null)
+      } else if (inner?.first_corrupt_id) {
+        // Content tamper takes precedence in display: it is a quieter
+        // attack than a chain break and the operator should know.
+        setChainStatus('corrupt')
+        setChainCorruptAt(inner.first_corrupt_id ?? null)
+        setChainBrokenAt(inner?.first_broken_id ?? null)
+      } else {
+        setChainStatus('broken')
+        setChainBrokenAt(inner?.first_broken_id ?? null)
+        setChainCorruptAt(null)
+      }
+    } catch {
+      setChainStatus('unknown')
+    }
+  }
 
   // ── Filter state ──
   const [searchQuery, setSearchQuery] = useState('')
@@ -284,8 +364,16 @@ export function GovernanceAuditPage() {
     try {
       const { data } = await api.get<ApiResponse<AuditEntryResponse[]>>('/governance/audit')
       setEntries(data.data || [])
-    } catch {
+      setLoadError(null)
+    } catch (err: unknown) {
       setEntries([])
+      const msg =
+        (err as { response?: { data?: { detail?: string; error?: { message?: string } } } })
+          ?.response?.data?.detail ||
+        (err as { response?: { data?: { error?: { message?: string } } } })
+          ?.response?.data?.error?.message ||
+        'Audit trail unavailable. Check backend health and auditor permissions.'
+      setLoadError(msg)
     } finally {
       setLoading(false)
     }
@@ -293,6 +381,7 @@ export function GovernanceAuditPage() {
 
   useEffect(() => {
     fetchAudit()
+    verifyChain()
   }, [])
 
   // Derive unique action types from data for the dropdown
@@ -330,6 +419,9 @@ export function GovernanceAuditPage() {
   const clearSelection = () => setSelectedIds(new Set())
 
   // ── Batch actions ──
+  // The audit log is hash-chained and immutable by design. The only
+  // operator-facing mutation is "mark reviewed", which is a local
+  // annotation persisted to localStorage (not the backend).
   const handleMarkReviewed = () => {
     setReviewedIds((prev) => {
       const next = new Set(prev)
@@ -338,21 +430,12 @@ export function GovernanceAuditPage() {
     })
     clearSelection()
   }
-  const handleArchive = () => {
-    // Move to archived (filter out from view)
-    setEntries((prev) => prev.filter((e) => !selectedIds.has(e.id)))
-    clearSelection()
-  }
-  const handleDelete = async () => {
-    const count = selectedIds.size
-    const ok = await confirmDialog({
-      title: `Delete ${count} audit ${count === 1 ? 'entry' : 'entries'}?`,
-      message: 'This cannot be undone.',
-      confirmLabel: 'Delete',
-      variant: 'danger',
+  const handleUnmarkReviewed = () => {
+    setReviewedIds((prev) => {
+      const next = new Set(prev)
+      selectedIds.forEach((id) => next.delete(id))
+      return next
     })
-    if (!ok) return
-    setEntries((prev) => prev.filter((e) => !selectedIds.has(e.id)))
     clearSelection()
   }
   const handleExportJson = () => {
@@ -417,11 +500,51 @@ export function GovernanceAuditPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Chain integrity badge */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-status-success/10 border border-status-success/20">
-              <Lock size={12} className="text-status-success" />
-              <span className="text-[10px] font-mono text-status-success">Chain intact</span>
-            </div>
+            {/* Chain integrity badge — verified against /governance/audit/verify
+                in deep mode (PR-AUDIT-VERIFY). 'corrupt' = payload tamper that
+                the structural walker would have missed. 'broken' = chain link
+                damage. Both render red but with distinct copy + tooltip so the
+                operator can tell which class of tamper occurred. */}
+            <button
+              onClick={verifyChain}
+              title={
+                chainStatus === 'corrupt'
+                  ? 'Content tamper detected: a row\'s payload no longer matches its stored entry_hash. Click to re-verify.'
+                  : chainStatus === 'broken'
+                  ? 'Structural break detected: a row\'s prev_hash link is invalid. Click to re-verify.'
+                  : 'Click to re-verify hash-chain integrity (deep payload recompute).'
+              }
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                chainStatus === 'ok'
+                  ? 'bg-status-success/10 border-status-success/20 hover:bg-status-success/15'
+                  : chainStatus === 'broken' || chainStatus === 'corrupt'
+                  ? 'bg-status-error/10 border-status-error/30 hover:bg-status-error/15'
+                  : chainStatus === 'verifying'
+                  ? 'bg-white/5 border-white/10'
+                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              {chainStatus === 'ok' && <ShieldCheck size={12} className="text-status-success" />}
+              {(chainStatus === 'broken' || chainStatus === 'corrupt') && (
+                <ShieldAlert size={12} className="text-status-error" />
+              )}
+              {(chainStatus === 'verifying' || chainStatus === 'unknown') && (
+                <Lock size={12} className={`text-starlight-400 ${chainStatus === 'verifying' ? 'animate-pulse' : ''}`} />
+              )}
+              <span
+                className={`text-[10px] font-mono ${
+                  chainStatus === 'ok' ? 'text-status-success'
+                  : chainStatus === 'broken' || chainStatus === 'corrupt' ? 'text-status-error'
+                  : 'text-starlight-400'
+                }`}
+              >
+                {chainStatus === 'ok' && 'Chain intact'}
+                {chainStatus === 'broken' && (chainBrokenAt ? `Broken at ${chainBrokenAt.slice(0, 8)}` : 'Chain broken')}
+                {chainStatus === 'corrupt' && (chainCorruptAt ? `Corrupt at ${chainCorruptAt.slice(0, 8)}` : 'Content tamper')}
+                {chainStatus === 'verifying' && 'Verifying...'}
+                {chainStatus === 'unknown' && 'Verify chain'}
+              </span>
+            </button>
             <button
               onClick={fetchAudit}
               className="p-2 rounded-lg text-starlight-400 hover:text-starlight-100 hover:bg-white/5 transition-colors cursor-pointer"
@@ -563,6 +686,16 @@ export function GovernanceAuditPage() {
           </AnimatePresence>
         </div>
 
+        {loadError && !loading && (
+          <Card variant="glass" padding="sm" className="border-status-error/20 bg-status-error/5 flex items-start gap-2">
+            <ShieldAlert size={14} className="text-status-error shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-semibold text-status-error">Audit log not loaded</p>
+              <p className="text-[11px] text-starlight-400 mt-0.5">{loadError}</p>
+            </div>
+          </Card>
+        )}
+
         {/* Batch action bar */}
         {filtered.length > 0 && (
           <div className="flex items-center gap-3 px-1">
@@ -579,12 +712,12 @@ export function GovernanceAuditPage() {
                 <button onClick={handleMarkReviewed} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-status-success/10 text-status-success hover:bg-status-success/20 transition-colors cursor-pointer">
                   <CheckCircle2 size={11} /> Mark reviewed
                 </button>
-                <button onClick={handleArchive} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-amber/10 text-accent-amber hover:bg-accent-amber/20 transition-colors cursor-pointer">
-                  <Archive size={11} /> Archive
+                <button onClick={handleUnmarkReviewed} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-white/5 text-starlight-400 hover:bg-white/10 transition-colors cursor-pointer">
+                  <Square size={11} /> Unmark
                 </button>
-                <button onClick={handleDelete} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-red/10 text-accent-red hover:bg-accent-red/20 transition-colors cursor-pointer">
-                  <Trash2 size={11} /> Delete
-                </button>
+                <span className="text-[10px] text-starlight-600 italic ml-1" title="Audit log is hash-chained and immutable. Use filters to narrow your view; entries cannot be deleted.">
+                  (audit log is immutable by design)
+                </span>
               </>
             )}
 
