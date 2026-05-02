@@ -31,6 +31,15 @@ interface ServiceStatus {
   experience_count?: number
   quarantined_count?: number
   avg_trust_score?: number
+  // PR-AUDIT-VERIFY+RAG-HONEST PR #2: real retrieval probe fields.
+  // configured=true requires the probe to actually succeed -- a bare
+  // path-exists check is NOT enough. document_count and last_test_at
+  // are populated only when the probe ran end-to-end without raising.
+  configured?: boolean
+  reachable?: boolean
+  document_count?: number | null
+  last_test_at?: string | null
+  error?: string | null
 }
 
 // PR-RAG-HONEST: the actual chat-recall algorithm (keyword Jaccard
@@ -52,7 +61,14 @@ interface MemoryStatusResponse {
   memory?: ServiceStatus
   rag?: ServiceStatus
   obsidian?: ServiceStatus
+  // Live recall probe result (separate from the algorithm descriptor
+  // in ``recall``): tells the operator whether retrieval is currently
+  // REACHABLE for this tenant. configured=false here means recall
+  // raised an error during the probe; the algorithm descriptor below
+  // still describes what would run if it were reachable.
+  recall_status?: ServiceStatus
   recall?: RecallDescriptor
+  tested_at?: string
 }
 
 function statusVariant(status?: string): 'success' | 'warning' | 'danger' | 'info' {
@@ -162,22 +178,66 @@ export function SettingsMemory() {
             <p className="text-xs text-starlight-300">{loadError}</p>
           </div>
         )}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             { label: 'NBMF Memory', item: memoryStatus?.memory, fallback: 'loading' },
             { label: 'RAG Retrieval', item: memoryStatus?.rag, fallback: 'unknown' },
             { label: 'Obsidian Vault', item: memoryStatus?.obsidian, fallback: 'unknown' },
+            // PR-AUDIT-VERIFY+RAG-HONEST PR #2: live recall probe result
+            // (distinct from the algorithm descriptor card below). This
+            // is the "is recall actually working RIGHT NOW for this
+            // tenant" signal. configured=false here = the probe raised.
+            { label: 'Recall (live)', item: memoryStatus?.recall_status, fallback: 'unknown' },
           ].map(({ label, item, fallback }) => {
-            const status = loadingStats ? fallback : item?.status ?? (loadError ? 'unavailable' : 'unknown')
+            // Honest gating: if the backend probe explicitly says
+            // configured=false, render "Not configured" regardless of
+            // any other inferred signal. A bare path-exists or
+            // env-var-set check is NOT enough to claim "available" --
+            // the probe must have succeeded end-to-end.
+            const inferredStatus = item?.configured === false
+              ? 'not_configured'
+              : item?.status
+            const status = loadingStats
+              ? fallback
+              : inferredStatus ?? (loadError ? 'unavailable' : 'unknown')
+
+            // Format last_test_at as "Xs ago" / "Xm ago" for compact
+            // display; full ISO is in tooltip.
+            const lastTest = item?.last_test_at
+            const lastTestRelative = lastTest
+              ? (() => {
+                  const ms = Date.now() - new Date(lastTest).getTime()
+                  const sec = Math.max(0, Math.round(ms / 1000))
+                  if (sec < 60) return `${sec}s ago`
+                  const min = Math.round(sec / 60)
+                  if (min < 60) return `${min}m ago`
+                  const hr = Math.round(min / 60)
+                  return `${hr}h ago`
+                })()
+              : null
+
             return (
               <div key={label} className="px-3 py-3 rounded-lg bg-midnight-800/40 border border-white/5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-semibold text-starlight-200">{label}</p>
                   <Badge variant={statusVariant(status)} size="sm" dot>{status}</Badge>
                 </div>
-                <p className="text-[10px] text-starlight-500 mt-2">
-                  {item?.reason || (loadingStats ? 'Checking backend status...' : 'No status detail returned.')}
+                <p className="text-[10px] text-starlight-500 mt-2 leading-relaxed">
+                  {item?.error || item?.reason || (loadingStats ? 'Checking backend status...' : 'No status detail returned.')}
                 </p>
+                {item?.document_count != null && (
+                  <p className="text-[10px] text-starlight-400 mt-1">
+                    Documents: <span className="font-mono text-starlight-300">{item.document_count}</span>
+                  </p>
+                )}
+                {lastTestRelative && (
+                  <p
+                    className="text-[10px] text-starlight-600 mt-0.5"
+                    title={lastTest ?? undefined}
+                  >
+                    Tested {lastTestRelative}
+                  </p>
+                )}
                 {item?.vault_path && (
                   <p className="text-[10px] text-starlight-600 mt-1 truncate font-mono">{item.vault_path}</p>
                 )}

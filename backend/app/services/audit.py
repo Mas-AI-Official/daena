@@ -298,6 +298,175 @@ class AuditService(BaseService):
 
         return {"valid": True, "first_broken_id": None}
 
+    async def verify_chain_with_diagnostic(
+        self, *, tenant_id: UUID,
+    ) -> dict:
+        """Walk the chain in order and on the first break return rich
+        diagnostic info: row_id, kind (structural/content), previous_hash,
+        expected_hash, actual_hash, plus the chain index of the break.
+
+        Distinct from ``verify_chain_integrity``: that returns minimal
+        boolean+id results for the existing GET endpoint and frontend
+        badge. This method is the engine behind the new POST endpoint
+        and surfaces the diagnostic fields an operator needs to triage
+        a tamper (which row, which kind, what was expected).
+
+        Walks in chain order (genesis -> ... -> tail) and combines
+        structural + content checks in a single pass:
+
+        1. Find GENESIS (prev_hash IS NULL). Zero or many GENESIS rows
+           are themselves structural breaks.
+        2. For the current row, recompute SHA-256 from payload. Mismatch
+           = content break at this index.
+        3. Look up the successor by ``successors_by_prev[entry_hash]``.
+           Zero successors = end of chain. Two+ successors = fork =
+           structural break.
+        4. After the walk, ``visited != total`` indicates orphans
+           (entries whose prev_hash doesn't link into the walked set).
+
+        Returns:
+            {
+                verified: bool,
+                total_entries: int,
+                tenant_id: str,
+                first_break_index: int | None,
+                first_break: {
+                    row_id: str,
+                    kind: "structural" | "content",
+                    previous_hash: str | None,
+                    expected_hash: str,
+                    actual_hash: str,
+                } | None,
+            }
+        """
+        stmt = select(GoaAuditEvent).where(
+            GoaAuditEvent.tenant_id == tenant_id
+        )
+        result = await self.db.execute(stmt)
+        events = list(result.scalars().all())
+        total = len(events)
+
+        if not events:
+            return {
+                "verified": True,
+                "total_entries": 0,
+                "tenant_id": str(tenant_id),
+                "first_break_index": None,
+                "first_break": None,
+            }
+
+        successors_by_prev: dict[str | None, list[GoaAuditEvent]] = {}
+        for ev in events:
+            successors_by_prev.setdefault(ev.prev_hash, []).append(ev)
+
+        # Genesis check.
+        genesis_list = successors_by_prev.get(None, [])
+        if len(genesis_list) == 0:
+            first = events[0]
+            return {
+                "verified": False,
+                "total_entries": total,
+                "tenant_id": str(tenant_id),
+                "first_break_index": 0,
+                "first_break": {
+                    "row_id": str(first.id),
+                    "kind": "structural",
+                    "previous_hash": first.prev_hash,
+                    "expected_hash": "<no predecessor row found>",
+                    "actual_hash": first.entry_hash,
+                },
+            }
+        if len(genesis_list) > 1:
+            first = genesis_list[0]
+            return {
+                "verified": False,
+                "total_entries": total,
+                "tenant_id": str(tenant_id),
+                "first_break_index": 0,
+                "first_break": {
+                    "row_id": str(first.id),
+                    "kind": "structural",
+                    "previous_hash": None,
+                    "expected_hash": "<single GENESIS expected>",
+                    "actual_hash": first.entry_hash,
+                },
+            }
+
+        # Walk from genesis, content-check each row, structural-check edges.
+        current = genesis_list[0]
+        index = 0
+        while True:
+            recomputed = self._recompute_event_hash(current)
+            if recomputed != current.entry_hash:
+                return {
+                    "verified": False,
+                    "total_entries": total,
+                    "tenant_id": str(tenant_id),
+                    "first_break_index": index,
+                    "first_break": {
+                        "row_id": str(current.id),
+                        "kind": "content",
+                        "previous_hash": current.prev_hash,
+                        "expected_hash": recomputed,
+                        "actual_hash": current.entry_hash,
+                    },
+                }
+
+            next_list = successors_by_prev.get(current.entry_hash, [])
+            if len(next_list) == 0:
+                break  # End of chain.
+            if len(next_list) > 1:
+                offender = next_list[0]
+                return {
+                    "verified": False,
+                    "total_entries": total,
+                    "tenant_id": str(tenant_id),
+                    "first_break_index": index + 1,
+                    "first_break": {
+                        "row_id": str(offender.id),
+                        "kind": "structural",
+                        "previous_hash": offender.prev_hash,
+                        "expected_hash": "<single successor expected>",
+                        "actual_hash": offender.entry_hash,
+                    },
+                }
+            current = next_list[0]
+            index += 1
+
+        visited = index + 1
+        if visited != total:
+            walked_hashes: set[str] = {genesis_list[0].entry_hash}
+            cur2 = genesis_list[0]
+            while True:
+                nxt = successors_by_prev.get(cur2.entry_hash, [])
+                if not nxt:
+                    break
+                cur2 = nxt[0]
+                walked_hashes.add(cur2.entry_hash)
+            orphans = [e for e in events if e.entry_hash not in walked_hashes]
+            first = orphans[0]
+            return {
+                "verified": False,
+                "total_entries": total,
+                "tenant_id": str(tenant_id),
+                "first_break_index": visited,
+                "first_break": {
+                    "row_id": str(first.id),
+                    "kind": "structural",
+                    "previous_hash": first.prev_hash,
+                    "expected_hash": "<entry_hash matching this row's prev_hash>",
+                    "actual_hash": first.entry_hash,
+                },
+            }
+
+        return {
+            "verified": True,
+            "total_entries": total,
+            "tenant_id": str(tenant_id),
+            "first_break_index": None,
+            "first_break": None,
+        }
+
     @staticmethod
     def _recompute_event_hash(event: GoaAuditEvent) -> str:
         """Recompute SHA-256 from event payload (deep-mode primitive).

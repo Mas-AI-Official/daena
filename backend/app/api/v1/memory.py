@@ -288,51 +288,269 @@ async def memory_stats(
     }
 
 
-@router.get("/status")
-async def memory_status(
-    user: CurrentUser = Depends(get_current_user),
-    service: MemoryService = Depends(get_memory_service),
-):
-    """Get honest Memory/RAG/Obsidian availability for the frontend.
+async def _probe_rag(now_iso: str) -> dict:
+    """Retrieval probe for the vector RAG layer.
 
-    Memory is backed by NBMF and SQL persistence. RAG/vector retrieval is not
-    exposed as a dedicated service in this build, so it is reported as
-    not_configured instead of pretending to be online. Obsidian status is based
-    on the Daena-Mind archive/vault path used by the NBMF archive service.
+    No vector engine is registered in this build, so this is a hardcoded
+    not-configured probe. The shape mirrors the obsidian and recall
+    probes so the frontend renders all three surfaces uniformly.
+
+    A future build that wires a vector retrieval engine should:
+        1. Replace this body with a real probe (issue a tiny similarity
+           query against the configured store, count documents, capture
+           latency).
+        2. Update the assertion in
+           ``test_memory_status_retrieval_test_rag_not_configured`` to
+           reflect the new truth.
     """
-    stats = await memory_stats(user=user, service=service)
-    memory_data = stats.get("data", {})
+    return {
+        "configured": False,
+        "reachable": False,
+        "document_count": None,
+        "last_test_at": now_iso,
+        "error": (
+            "No vector retrieval engine registered in this build. "
+            "NBMF keyword recall remains available via /memory/memories."
+        ),
+    }
 
+
+async def _probe_obsidian(now_iso: str) -> dict:
+    """Retrieval probe for the Daena-Mind Obsidian vault.
+
+    Honest: ``configured=True`` requires (a) the vault path resolves AND
+    (b) we can list its contents. A bare ``Path.exists()`` check (the
+    previous implementation) returned ``True`` for an empty or
+    permission-denied path, which let the UI claim "available" even
+    when no retrieval was actually possible.
+
+    document_count is the live count of ``*.md`` files under the vault
+    root. Zero is honest -- the operator can see the vault is wired but
+    contains nothing yet.
+    """
     try:
         from app.services.nbmf_archive import VAULT_ROOT
 
         vault_path = VAULT_ROOT
-        vault_exists = vault_path.exists()
-        obsidian = {
-            "status": "available" if vault_exists else "not_configured",
-            "enabled": vault_exists,
+        if not vault_path.exists():
+            return {
+                "configured": False,
+                "reachable": False,
+                "document_count": None,
+                "last_test_at": now_iso,
+                "error": (
+                    f"Daena-Mind vault path does not exist: {vault_path}"
+                ),
+                "vault_path": str(vault_path),
+            }
+        # Real retrieval test: glob the vault for markdown files.
+        # If the path is unreadable, this raises and we fall through
+        # to the except branch with an honest error.
+        md_files = list(vault_path.glob("**/*.md"))
+        return {
+            "configured": True,
+            "reachable": True,
+            "document_count": len(md_files),
+            "last_test_at": now_iso,
+            "error": None,
             "vault_path": str(vault_path),
-            "reason": (
-                "Obsidian-compatible Daena-Mind vault detected."
-                if vault_exists
-                else "Daena-Mind vault path does not exist yet."
-            ),
         }
     except Exception as exc:
-        obsidian = {
-            "status": "error",
-            "enabled": False,
+        return {
+            "configured": False,
+            "reachable": False,
+            "document_count": None,
+            "last_test_at": now_iso,
+            "error": f"Vault probe failed: {type(exc).__name__}: {exc}",
             "vault_path": None,
-            "reason": f"Could not inspect Daena-Mind vault: {type(exc).__name__}",
         }
 
-    # PR-RAG-HONEST: surface what the actual chat-recall algorithm IS,
-    # not just what it isn't. The Atlas previously said "RAG NOT
-    # IMPLEMENTED" which is true (no embeddings) but understated the
-    # real recall path. recall_for_chat blends keyword Jaccard
-    # relevance, NBMF tier, entry confidence, and recency decay -- all
-    # deterministic, all honest, no hallucinated semantic similarity.
-    # Operators can read these fields and know exactly what runs.
+
+async def _probe_recall(
+    db: AsyncSession,
+    service: MemoryService,
+    tenant_id: UUID,
+    user_id: UUID,
+) -> dict:
+    """Retrieval probe for the keyword-Jaccard chat recall path.
+
+    Counts non-archived MemoryEntry rows for the tenant (the corpus
+    available to recall) and runs a tiny ``recall_for_chat`` call
+    against a sentinel session id. The call should return without
+    raising regardless of corpus size; if it does raise, recall is
+    NOT honestly reachable and we report the error verbatim.
+    """
+    from datetime import datetime as _dt
+    from uuid import uuid4
+    from sqlalchemy import func, select
+
+    from app.models.memory import MemoryEntry
+
+    now_iso = _dt.utcnow().isoformat()
+    try:
+        # Corpus size: non-archived memory rows for this tenant.
+        count_stmt = select(func.count()).where(
+            MemoryEntry.tenant_id == tenant_id,
+            MemoryEntry.archived_at.is_(None),
+        )
+        count_result = await db.execute(count_stmt)
+        doc_count = int(count_result.scalar() or 0)
+
+        # Real probe: tiny recall call. Sentinel session id never
+        # matches anything; ``query`` is a probe token unlikely to
+        # collide with real content. Ask for at most 1 result so this
+        # stays cheap.
+        await service.recall_for_chat(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            session_id=uuid4(),
+            query="retrieval-test-probe",
+            page_size=1,
+        )
+        return {
+            "configured": True,
+            "reachable": True,
+            "document_count": doc_count,
+            "last_test_at": now_iso,
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "configured": False,
+            "reachable": False,
+            "document_count": None,
+            "last_test_at": now_iso,
+            "error": f"Recall probe failed: {type(exc).__name__}: {exc}",
+        }
+
+
+@router.get("/retrieval-test")
+async def retrieval_test(
+    user: CurrentUser = Depends(get_current_user),
+    service: MemoryService = Depends(get_memory_service),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run live retrieval probes against the three retrieval surfaces.
+
+    Each probe returns ``{configured, reachable, document_count,
+    last_test_at, error}``. Distinct from ``/memory/status`` because
+    that endpoint blends probe results with NBMF tier counts and the
+    recall-algorithm descriptor; this endpoint is the focused
+    operator-facing health check for retrieval.
+
+    Honest gating rule: ``configured=true`` requires the probe to
+    actually succeed (vault listed, recall returned without raising).
+    A bare path-exists or env-var-set check is NOT enough -- those
+    were the source of the "RAG sync working" hallucination this PR
+    closes.
+    """
+    from datetime import datetime as _dt
+
+    now_iso = _dt.utcnow().isoformat()
+    return {
+        "success": True,
+        "data": {
+            "rag": await _probe_rag(now_iso),
+            "obsidian": await _probe_obsidian(now_iso),
+            "recall": await _probe_recall(db, service, user.tenant_id, user.id),
+            "tested_at": now_iso,
+        },
+    }
+
+
+@router.get("/status")
+async def memory_status(
+    user: CurrentUser = Depends(get_current_user),
+    service: MemoryService = Depends(get_memory_service),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get honest Memory/RAG/Obsidian availability for the frontend.
+
+    Memory is backed by NBMF and SQL persistence. RAG/vector retrieval
+    is not exposed as a dedicated service in this build, so it is
+    reported as not_configured instead of pretending to be online.
+    Obsidian status comes from a real glob of the Daena-Mind vault --
+    NOT a bare path-exists check (the previous implementation reported
+    "available" for any path that happened to exist on disk, which let
+    the UI claim retrieval was working when no document had ever been
+    listed).
+
+    Each retrieval surface (rag/obsidian/recall) carries the same five
+    diagnostic fields the operator needs to triage: configured,
+    reachable, document_count, last_test_at, error.
+    """
+    from datetime import datetime as _dt
+
+    stats = await memory_stats(user=user, service=service)
+    memory_data = stats.get("data", {})
+
+    now_iso = _dt.utcnow().isoformat()
+    rag_probe = await _probe_rag(now_iso)
+    obsidian_probe = await _probe_obsidian(now_iso)
+    recall_probe = await _probe_recall(db, service, user.tenant_id, user.id)
+
+    # Backward-compat: the prior shape had ``status`` ("online" /
+    # "not_configured" / "available" / "error") + ``enabled`` (bool) +
+    # ``reason`` (str). Frontend SettingsMemory.tsx still reads those
+    # for the badge. Map the new probe fields into those legacy fields
+    # so the existing UI keeps working without churn.
+    #
+    # Distinguishes intentional "not configured" (no engine wired,
+    # vault path doesn't exist yet) from runtime "error" (probe raised
+    # an exception). Probes flag exceptions with the literal "probe
+    # failed:" prefix in their error string.
+    def _legacy_status(probe: dict) -> str:
+        if probe.get("configured") and probe.get("reachable"):
+            return "available"
+        err = (probe.get("error") or "").lower()
+        if "probe failed:" in err:
+            return "error"
+        return "not_configured"
+
+    def _legacy_reason(probe: dict, ok_reason: str) -> str:
+        return probe.get("error") or ok_reason
+
+    rag_block = {
+        # Legacy fields (preserved for existing frontend consumers)
+        "status": _legacy_status(rag_probe),
+        "enabled": bool(rag_probe.get("configured") and rag_probe.get("reachable")),
+        "reason": _legacy_reason(
+            rag_probe,
+            "Vector RAG retrieval engine is reachable.",
+        ),
+        # New retrieval-test fields (PR-AUDIT-VERIFY+RAG-HONEST PR #2)
+        **rag_probe,
+    }
+    obsidian_block = {
+        "status": _legacy_status(obsidian_probe),
+        "enabled": bool(
+            obsidian_probe.get("configured") and obsidian_probe.get("reachable"),
+        ),
+        "reason": _legacy_reason(
+            obsidian_probe,
+            f"Vault listed: {obsidian_probe.get('document_count', 0)} markdown file(s).",
+        ),
+        # vault_path is preserved at the top level for the existing UI
+        "vault_path": obsidian_probe.get("vault_path"),
+        **{k: v for k, v in obsidian_probe.items() if k != "vault_path"},
+    }
+    recall_block_status = {
+        "status": _legacy_status(recall_probe),
+        "enabled": bool(
+            recall_probe.get("configured") and recall_probe.get("reachable"),
+        ),
+        "reason": _legacy_reason(
+            recall_probe,
+            f"Recall corpus available: {recall_probe.get('document_count', 0)} memory entries.",
+        ),
+        **recall_probe,
+    }
+
+    # PR-RAG-HONEST (PR #1) recall-algorithm descriptor: surfaces what
+    # the chat-recall algorithm actually does, separate from the live
+    # probe result above. The descriptor describes the formula
+    # ('keyword Jaccard blend' with 0.50/0.20/0.20/0.10 weights); the
+    # probe describes whether it currently works for THIS tenant.
     recall_descriptor = {
         "mode": "keyword_jaccard_blend",
         "embeddings_enabled": False,
@@ -369,16 +587,11 @@ async def memory_status(
                 "enabled": True,
                 **memory_data,
             },
-            "rag": {
-                "status": "not_configured",
-                "enabled": False,
-                "reason": (
-                    "No dedicated vector/RAG retrieval endpoint is registered in this build. "
-                    "NBMF recall remains available through /memory/memories."
-                ),
-            },
+            "rag": rag_block,
+            "obsidian": obsidian_block,
+            "recall_status": recall_block_status,
             "recall": recall_descriptor,
-            "obsidian": obsidian,
+            "tested_at": now_iso,
         },
     }
 

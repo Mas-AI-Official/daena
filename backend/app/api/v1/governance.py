@@ -303,6 +303,62 @@ async def get_audit_trail(
     return {"success": True, **result}
 
 
+@router.post("/audit/verify")
+async def verify_audit_integrity_post(
+    user: CurrentUser = Depends(require_role("ADMIN")),
+    service: AuditService = Depends(get_audit_service),
+):
+    """Run a full chain verification (structural + content) and return
+    a rich diagnostic if a break is detected.
+
+    Distinct from ``GET /audit/verify`` which is the lightweight badge
+    endpoint used by the audit page header. This POST is the operator /
+    incident-response endpoint: it always runs in deep mode and emits
+    diagnostic detail for the FIRST break encountered (chain index,
+    row id, break kind, previous_hash, expected_hash, actual_hash). It
+    does NOT mutate any audit row -- the audit ledger is append-only
+    by design (Hard Law #9) and even verification must read-only.
+
+    POST is the right verb because verification is an action with
+    measurable cost (one SHA-256 recompute per row), is not safely
+    cacheable (chain state mutates over time), and may evolve to
+    accept future filter parameters (since_id, since_ts, max_rows)
+    via a request body without breaking the URL shape.
+
+    Requires ADMIN role. Tenant-scoped: caller's tenant_id is the
+    only chain walked; cross-tenant tamper cannot be detected from
+    one tenant's POST.
+
+    Response shape:
+
+    .. code-block:: json
+
+        {
+          "success": true,
+          "data": {
+            "verified": false,
+            "total_entries": 12,
+            "tenant_id": "...",
+            "first_break_index": 3,
+            "first_break": {
+              "row_id": "...",
+              "kind": "content",
+              "previous_hash": "...",
+              "expected_hash": "...",
+              "actual_hash": "..."
+            }
+          }
+        }
+
+    When the chain verifies, ``first_break_index`` and ``first_break``
+    are both ``null``.
+    """
+    result = await service.verify_chain_with_diagnostic(
+        tenant_id=user.tenant_id,
+    )
+    return {"success": True, "data": result}
+
+
 @router.get("/audit/verify")
 async def verify_audit_integrity(
     deep: bool = Query(
