@@ -19,9 +19,18 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
 
 from app.api.deps import CurrentUser, get_current_user
+from app.core.database import get_db
 from app.core.logging import get_logger
+from app.services.security.scan_remediation import (
+    FindingNotFoundError,
+    NoActiveDepartmentError,
+    create_remediation,
+    serialize_result,
+)
 from app.services.security.yellow_runtime_gate import (
     load_authorized_scope,
     target_matches_scope,
@@ -980,6 +989,98 @@ async def delete_all_scans(hard: bool = False) -> dict[str, Any]:
         "hard": hard,
         "results": results,
     }
+
+
+# ---------------------------------------------------------------------------
+# PR-SCAN-WS-01: scan finding -> remediation Task + Workstream
+# ---------------------------------------------------------------------------
+
+
+class CreateRemediationRequest(BaseModel):
+    """Optional inputs for the create-remediation endpoint."""
+
+    department_id: UUID | None = None
+
+
+@router.post("/scans/{scan_id}/findings/{finding_id}/create-remediation")
+async def create_remediation_from_finding(
+    scan_id: str,
+    finding_id: str,
+    body: CreateRemediationRequest | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Create a remediation Task + Workstream for a single scan finding.
+
+    Closes the PR-4 debt: scan reports surface remediation guidance
+    text but cannot turn it into trackable work. This endpoint accepts
+    a (scan_id, finding_id) pair, creates a Task in the autopilot queue
+    AND a Workstream shell linked back to the scan via PR-5
+    artifact_refs. Idempotent: a second call with the same pair returns
+    the existing Workstream rather than duplicating.
+
+    Path params:
+        scan_id: The ScanWorkflow job id (workflow-generated string).
+        finding_id: Either the SecurityFinding.id (when populated) or
+            the positional fallback ``"idx-N"`` for findings whose id
+            is empty.
+
+    Returns the standard ``{success, data}`` envelope. ``data`` carries
+    ``task_id``, ``workstream_id``, the finding metadata, and an
+    ``idempotent`` boolean for the frontend toast copy.
+    """
+    workflow = _get_workflow()
+
+    # 1. Verify the scan exists in the in-memory job table AND belongs
+    # to the calling tenant. Cross-tenant access is mapped to 404 (not
+    # 403) so the endpoint does not leak which scan ids exist for other
+    # tenants.
+    job = workflow._jobs.get(scan_id)  # noqa: SLF001
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Scan {scan_id} not found",
+        )
+    if str(job.tenant_id) != str(user.tenant_id):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Scan {scan_id} not found",
+        )
+
+    # 2. Fetch the report (handles in-memory cache + disk fallback).
+    try:
+        report = await workflow.get_scan_report(scan_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 3. Hand off to the service layer (also testable directly).
+    requested_dept = body.department_id if body is not None else None
+    try:
+        result = await create_remediation(
+            db,
+            tenant_id=user.tenant_id,
+            user_id=user.id,
+            scan_id=scan_id,
+            finding_id=finding_id,
+            findings=report.findings,
+            department_id=requested_dept,
+        )
+    except FindingNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NoActiveDepartmentError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": {
+                    "code": "NO_ACTIVE_DEPARTMENT",
+                    "message": str(exc),
+                },
+            },
+        ) from exc
+
+    return {"success": True, "data": serialize_result(result)}
 
 
 # ---------------------------------------------------------------------------

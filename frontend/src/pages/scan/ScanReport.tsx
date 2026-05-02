@@ -1,8 +1,10 @@
 /**
  * ScanReport -- the completed-scan report viewer. Renders the
  * summary card, empty-clean-scan state, and the per-finding cards
- * (with PoC artifact embeds).
+ * (with PoC artifact embeds + per-finding "Create remediation task"
+ * action wired in PR-SCAN-WS-01).
  */
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   FileText,
@@ -11,11 +13,17 @@ import {
   DollarSign,
   Brain,
   CheckCircle2,
+  ExternalLink,
+  Loader2,
   Shield,
+  Wrench,
 } from 'lucide-react'
 import { Card } from '@/components/common'
+import { api } from '@/lib/api'
+import { toast } from '@/stores/toastStore'
 import PocArtifactBlock from './ScanArtifacts'
 import {
+  type ScanFinding,
   type ScanJob,
   type ScanReport as ScanReportData,
   SEVERITY_COLORS,
@@ -25,6 +33,143 @@ import {
 interface Props {
   report: ScanReportData
   selectedJob: ScanJob | null
+}
+
+interface RemediationCreated {
+  task_id: string | null
+  workstream_id: string
+  idempotent: boolean
+}
+
+/**
+ * Per-finding "Create remediation task" button. Hits
+ * POST /security/scans/{scan_id}/findings/{finding_id}/create-remediation
+ * which spawns a Task + Workstream linked back to the scan via PR-5
+ * artifact_refs. Idempotent on the server side so a second click
+ * returns the same workstream.
+ *
+ * Honest disabled state when the finding lacks both a stable id AND a
+ * positional index (should never happen because we synthesize "idx-N"
+ * from the array index, but the guard documents the contract).
+ *
+ * Wording rule: "Create remediation task" -- never "auto-fix". Daena
+ * is opening trackable work, not promising a one-click fix.
+ */
+function CreateRemediationButton({
+  scanId,
+  finding,
+  fallbackId,
+}: {
+  scanId: string
+  finding: ScanFinding
+  fallbackId: string
+}) {
+  const [busy, setBusy] = useState(false)
+  const [created, setCreated] = useState<RemediationCreated | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // Resolve the id we send to the backend: stable finding.id when
+  // populated, else the positional fallback "idx-N" the parent passes
+  // in. The backend understands both shapes via resolve_finding().
+  const findingId = (finding.id && finding.id.length > 0)
+    ? finding.id
+    : fallbackId
+
+  const idMissing = !findingId
+  const disabledReason = idMissing
+    ? 'This finding has no stable id; remediation tracking requires a backend field upgrade.'
+    : ''
+
+  const onClick = async () => {
+    if (busy || idMissing) return
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await api.post(
+        `/security/scans/${encodeURIComponent(scanId)}/findings/${encodeURIComponent(findingId)}/create-remediation`,
+        {},
+      )
+      const data = res.data?.data as RemediationCreated | undefined
+      if (!data || !data.workstream_id) {
+        throw new Error('Backend did not return a workstream_id')
+      }
+      setCreated(data)
+      toast.success(
+        data.idempotent
+          ? 'Remediation already tracked'
+          : 'Remediation task created',
+      )
+    } catch (err) {
+      const detail =
+        (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+      const msg =
+        typeof detail === 'string'
+          ? detail
+          : typeof detail === 'object' && detail !== null
+            ? JSON.stringify(detail)
+            : (err instanceof Error ? err.message : 'Failed to create remediation')
+      setError(msg)
+      toast.error(msg)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (created) {
+    return (
+      <div className="mt-3 flex items-center gap-2 text-[11px] text-status-success">
+        <CheckCircle2 size={12} />
+        <span>
+          {created.idempotent ? 'Already tracked as ' : 'Created '}
+          <a
+            href={`/workstreams?focus=${encodeURIComponent(created.workstream_id)}`}
+            className="underline hover:text-status-success/80 inline-flex items-center gap-0.5"
+            title={`Workstream ${created.workstream_id}`}
+          >
+            workstream
+            <ExternalLink size={10} />
+          </a>
+          {created.task_id && (
+            <>
+              {' + '}
+              <a
+                href="/tasks"
+                className="underline hover:text-status-success/80"
+                title={`Task ${created.task_id}`}
+              >
+                task
+              </a>
+            </>
+          )}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => void onClick()}
+        disabled={busy || idMissing}
+        title={idMissing ? disabledReason : 'Spawn a remediation Task + Workstream linked to this finding'}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] bg-primary-500/15 text-primary-300 border border-primary-500/30 hover:bg-primary-500/25 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+      >
+        {busy ? <Loader2 size={11} className="animate-spin" /> : <Wrench size={11} />}
+        {busy ? 'Creating…' : 'Create remediation task'}
+      </button>
+      {error && (
+        <p className="mt-1 text-[10px] text-status-error" role="alert">
+          {error}
+        </p>
+      )}
+      {idMissing && (
+        <p className="mt-1 text-[10px] text-starlight-500 italic">
+          {disabledReason}
+        </p>
+      )}
+    </div>
+  )
 }
 
 export default function ScanReport({ report, selectedJob }: Props) {
@@ -219,6 +364,15 @@ export default function ScanReport({ report, selectedJob }: Props) {
                       <CheckCircle2 size={10} /> Fix verified by pipeline retest
                     </div>
                   )}
+
+                  {/* PR-SCAN-WS-01: per-finding action to spawn a
+                      remediation Task + Workstream. Wording locked to
+                      "Create remediation task" -- never "auto-fix". */}
+                  <CreateRemediationButton
+                    scanId={report.job_id}
+                    finding={finding}
+                    fallbackId={`idx-${i}`}
+                  />
                 </div>
               </div>
             </motion.div>
