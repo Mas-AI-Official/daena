@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -292,6 +292,45 @@ async def get_user_preferences(
     return {"success": True, "data": prefs.model_dump()}
 
 
+# PR-GOV-01: Field-level Founder guard.
+#
+# Hard Law 8 (hard_laws.py:83-91) requires governance mode toggles to
+# go through the FOUNDER role. PUT /settings/user previously had no
+# role check, so any authenticated user could flip default_governance_mode
+# from GOVERNED to UNLEASHED via the API. This set defends the relevant
+# fields at the impl layer (not the endpoint layer) so non-Founders can
+# still update their normal preferences (theme, notifications, display
+# name) on the same endpoint.
+#
+# default_routing_mode is included because COUNCIL/QUINTESSENCE multiply
+# LLM cost per request; cost preflight enforces tenant ceilings at chat
+# time, but the *default* should not be self-elevated by non-Founders.
+SENSITIVE_PREF_FIELDS: frozenset[str] = frozenset({
+    "default_governance_mode",
+    "default_governance_slider",  # deprecated; mirrors default_governance_mode
+    "default_routing_mode",       # Council/Quintessence cost multiplier
+})
+
+
+def _check_governance_field_permissions(
+    body: UserPreferencesUpdate,
+    user: CurrentUser,
+) -> list[str]:
+    """Return sorted list of sensitive field names a non-Founder is trying
+    to set. Empty list means the request passes the role check.
+
+    FOUNDER always bypasses (per Hard Law 4: Founder Override). All other
+    roles -- including ADMIN -- are gated on these fields.
+    """
+    if user.role == "FOUNDER":
+        return []
+    rejected: list[str] = []
+    for field in SENSITIVE_PREF_FIELDS:
+        if getattr(body, field, None) is not None:
+            rejected.append(field)
+    return sorted(rejected)
+
+
 @router.put("/user")
 async def update_user_preferences(
     body: UserPreferencesUpdate,
@@ -304,6 +343,10 @@ async def update_user_preferences(
     try:
         prefs = await _update_user_preferences_impl(body, user, db)
         return {"success": True, "data": prefs.model_dump()}
+    except HTTPException:
+        # Field-level guard rejection -- already logged via audit ledger.
+        # Re-raise without the noisy stacktrace from the generic except.
+        raise
     except Exception as exc:
         _log.exception("settings PUT failed: %s", exc)
         raise
@@ -317,6 +360,56 @@ async def _update_user_preferences_impl(
     from sqlalchemy import select
 
     from app.models.identity import User
+
+    # PR-GOV-01: Field-level Founder guard runs FIRST, before any DB write.
+    # All-or-nothing reject: if any sensitive field is in the payload and
+    # the actor is not FOUNDER, fail the entire request. Do not partially
+    # apply the non-sensitive fields (avoids ambiguity about what the
+    # client thinks landed).
+    rejected_fields = _check_governance_field_permissions(body, user)
+    if rejected_fields:
+        # Audit the attempt before raising. Field NAMES are logged but
+        # attempted VALUES are NOT (a malicious payload value could
+        # itself be a probe vector or contain PII).
+        try:
+            from app.services.audit import AuditService
+            audit = AuditService(db)
+            await audit.log_decision(
+                tenant_id=user.tenant_id,
+                actor_id=user.id,
+                actor_type="USER",
+                action_type="GOVERNANCE_PREF_UPDATE_REJECTED",
+                action_params={
+                    "attempted_fields": rejected_fields,
+                    "user_role": user.role,
+                },
+                result="BLOCKED",
+                risk_level="HIGH",
+                governance_tier=4,
+            )
+        except Exception:
+            # Audit failure must NOT silently allow the request through.
+            # We still raise the 403 below. The audit miss is logged
+            # locally so an operator can reconcile.
+            import logging
+            logging.getLogger("settings.guard").exception(
+                "audit log failed during governance guard rejection "
+                "(rejection still enforced)"
+            )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": {
+                    "code": "FOUNDER_ROLE_REQUIRED",
+                    "message": (
+                        "These preference fields can only be changed by "
+                        "the Founder. Hard Law 8 governs governance mode "
+                        "and routing-mode defaults."
+                    ),
+                    "rejected_fields": rejected_fields,
+                }
+            },
+        )
 
     # Load the full User row so we can update display_name and settings
     stmt = select(User).where(User.id == user.id)
