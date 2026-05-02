@@ -14,7 +14,7 @@ from typing import Iterable
 
 from app.models.connection_v2 import ConnectionV2
 
-# 14 labels per V2 §3 amendment.
+# 15 labels per V2 §3 amendment + PR-CONN-V2-SEED-IMPORT (skill_pack).
 LABELS = (
     "unknown",
     "installable",
@@ -30,6 +30,7 @@ LABELS = (
     "failed",
     "disabled",
     "archived",
+    "skill_pack",
 )
 
 # Default TTL for "callable" freshness. Beyond this, derive_label returns
@@ -79,6 +80,13 @@ def derive_label(row: ConnectionV2, active_ops: Iterable[str] = ()) -> str:
         return "needs_config"
     if not row.imported:
         return "installable"
+
+    # PR-CONN-V2-SEED-IMPORT: skill packs are never callable. Once
+    # detected/configured/imported, render as the terminal "skill_pack"
+    # label so the UI can show "not callable, instructional bundle"
+    # without lying about reachable / authenticated / callable dims.
+    if row.kind == "skill_pack":
+        return "skill_pack"
 
     # Most-recent-failure tests use per-dim failure_at, not a single triple.
     if _failure_is_fresh(row.reachable_at, row.reachable_failure_at):

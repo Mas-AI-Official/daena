@@ -70,9 +70,23 @@ class LocalModelConfig(BaseModel):
 
 
 class PluginConfig(BaseModel):
-    """Skill pack: no install path, no callable target."""
+    """Plugin: a callable connector (probe runs handshake or HTTP check)."""
     kind: Literal["plugin"] = "plugin"
     skill_pack_path: str | None = None
+
+
+class SkillPackConfig(BaseModel):
+    """Skill pack: capability/instruction bundle, never callable.
+
+    PR-CONN-V2-SEED-IMPORT (2026-05-02): plugin entries that ship only
+    instructions / docs / prompt templates land here so the V2 surface
+    can mark them clearly as "not a callable connector". Probe always
+    returns failure_dim=callable for this kind.
+    """
+    kind: Literal["skill_pack"] = "skill_pack"
+    pack_path: str | None = None
+    source_plugin_id: str | None = None
+    skill_count: int = 0
 
 
 # Discriminated union -- the validator picks shape by ``kind`` field.
@@ -88,6 +102,7 @@ ConnectionConfigUnion = Annotated[
         OAuthAppConfig,
         LocalModelConfig,
         PluginConfig,
+        SkillPackConfig,
     ],
     Field(discriminator="kind"),
 ]

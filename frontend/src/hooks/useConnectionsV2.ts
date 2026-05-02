@@ -33,6 +33,7 @@ export type ConnectionKind =
   | 'plugin'
   | 'oauth_app'
   | 'local_model'
+  | 'skill_pack'
 
 export type ConnectionLabel =
   | 'unknown'
@@ -49,6 +50,7 @@ export type ConnectionLabel =
   | 'failed'
   | 'disabled'
   | 'archived'
+  | 'skill_pack'
 
 export interface TruthDim {
   value: boolean
@@ -243,6 +245,7 @@ const KIND_ORDER: ConnectionKind[] = [
   'oauth_app',
   'plugin',
   'local_model',
+  'skill_pack',
 ]
 
 const KIND_LABEL: Record<ConnectionKind, string> = {
@@ -250,8 +253,9 @@ const KIND_LABEL: Record<ConnectionKind, string> = {
   mcp_server: 'MCP Servers',
   provider: 'API Providers',
   oauth_app: 'OAuth Apps',
-  plugin: 'Plugins / Skills',
+  plugin: 'Plugins',
   local_model: 'Local Models',
+  skill_pack: 'Skill Packs (not callable)',
 }
 
 export function kindLabel(k: ConnectionKind): string {
@@ -322,6 +326,10 @@ const LABEL_TONE: Record<
     dot: 'bg-slate-500', text: 'text-slate-400',
     bg: 'bg-slate-500/5', border: 'border-slate-500/20',
   },
+  skill_pack: {
+    dot: 'bg-violet-400', text: 'text-violet-200',
+    bg: 'bg-violet-500/10', border: 'border-violet-500/30',
+  },
 }
 
 export function labelTone(label: ConnectionLabel) {
@@ -334,3 +342,51 @@ export const TRUTH_DIM_ORDER = [
 ] as const
 
 export type TruthDimName = typeof TRUTH_DIM_ORDER[number]
+
+// PR-CONN-V2-SEED-IMPORT (2026-05-02): manual discovery import.
+// Walks real sources (CLI MCP configs, runtimes, local models, OAuth
+// catalog, V1 plugin catalog) and materializes V2 rows for the
+// caller's tenant. Idempotent. Never reads secrets, never auto-installs.
+
+export interface DiscoverySourceResult {
+  source: string
+  created: string[]
+  skipped_existing: string[]
+  skipped_unconfigured: string[]
+  failed: Array<{ slug: string; error_type: string; error: string }>
+  total_created: number
+  total_skipped_existing: number
+  total_skipped_unconfigured: number
+  total_failed: number
+}
+
+export interface DiscoveryReport {
+  tenant_id: string
+  sources: DiscoverySourceResult[]
+  total_created: number
+  total_skipped_existing: number
+  total_skipped_unconfigured: number
+  total_failed: number
+}
+
+export async function runDiscoveryRefresh(): Promise<{
+  ok: boolean
+  report?: DiscoveryReport
+  v2_enabled?: boolean
+  error?: string
+}> {
+  try {
+    const res = await api.post<{
+      success: boolean
+      data: DiscoveryReport
+      v2_enabled: boolean
+    }>('/connections/v2/discovery/refresh', undefined, { silent: false })
+    return {
+      ok: true,
+      report: res.data?.data,
+      v2_enabled: !!res.data?.v2_enabled,
+    }
+  } catch (err) {
+    return { ok: false, error: readError(err) }
+  }
+}

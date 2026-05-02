@@ -604,36 +604,41 @@ async def _run_deferred_initialization(app: FastAPI) -> None:
     await _step("tlm", _tlm_init)
 
     async def _provider_v2_seed() -> None:
-        """Phase 7-A: Install real provider probes + idempotent seed.
+        """Phase 7-A + PR-CONN-V2-SEED-IMPORT: install probes always; seed
+        per the V2 flag.
 
-        Installs ProviderProbe for kind=provider (replacing NoopProbe).
-        Then seeds ConnectionV2(kind=provider) rows for every existing
-        tenant whose API key is configured. Probes are NOT auto-run --
-        the operator triggers them via POST /api/v1/connections/v2/{id}/probe
-        (or by visiting the V2 panels in the UI).
+        Probes are installed unconditionally so the manual
+        ``POST /api/v1/connections/v2/discovery/refresh`` endpoint can
+        immediately probe newly-imported rows (otherwise every probe
+        returns ``probe_unavailable``). Probe registration is in-process
+        and side-effect-free; it does not write to disk or hit the
+        network.
 
-        Gated on USE_CONNECTION_REGISTRY_V2 to keep production safe.
-        Production default is False, so seeding is a no-op there until
-        the founder flips the flag with full migration context.
+        The bulk seeding step (auto-creating provider rows for every
+        tenant) stays gated on USE_CONNECTION_REGISTRY_V2 to keep
+        production safe. In dev, operators trigger discovery on demand
+        via the new endpoint, which calls ``ConnectionDiscoveryService``
+        for the caller's tenant only.
         """
+        from app.services.connection_v2.probes import install_all_probes
+
+        # Install real probes unconditionally so the discovery endpoint
+        # in dev can immediately probe newly-imported rows. Idempotent.
+        install_all_probes()
+
         from app.core.config import get_settings as _gs
         if not _gs().use_connection_registry_v2:
             logger.info(
                 "provider_v2_seed_skipped",
                 reason="USE_CONNECTION_REGISTRY_V2=false",
+                probes_installed=True,
             )
             return
 
         from app.core.database import async_session_factory
-        from app.services.connection_v2.probes import install_all_probes
         from app.services.connection_v2.provider_seeder import (
             seed_providers_all_tenants,
         )
-
-        # Install real probes (idempotent; replaces NoopProbe for
-        # kind=provider). Other kinds keep their NoopProbe until
-        # Phase 7+ adds real ones.
-        install_all_probes()
 
         try:
             async with async_session_factory() as db:

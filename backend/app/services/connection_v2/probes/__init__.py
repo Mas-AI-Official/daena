@@ -11,11 +11,22 @@ from app.services.connection_v2.probes.provider_probe import (
     ProviderProbe,
     install_provider_probe,
 )
+from app.services.connection_v2.probes.skill_pack_probe import (
+    SkillPackProbe,
+    install_skill_pack_probe,
+)
 
 
 def install_all_probes() -> None:
     """Register every per-kind probe. Idempotent."""
     install_provider_probe()
+    install_skill_pack_probe()
 
 
-__all__ = ["ProviderProbe", "install_all_probes", "install_provider_probe"]
+__all__ = [
+    "ProviderProbe",
+    "SkillPackProbe",
+    "install_all_probes",
+    "install_provider_probe",
+    "install_skill_pack_probe",
+]

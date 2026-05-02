@@ -17,8 +17,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Activity, AlertTriangle, ChevronRight, Loader2, Package, RefreshCw,
-  Search, Sparkles,
+  Activity, AlertTriangle, BookOpen, ChevronRight, Download, Loader2,
+  Package, RefreshCw, Search, Sparkles,
 } from 'lucide-react'
 
 import { api } from '@/lib/api'
@@ -28,14 +28,16 @@ import {
   type ConnectionV2Row,
   TRUTH_DIM_ORDER,
   labelTone,
+  runDiscoveryRefresh,
   useConnectionsV2,
 } from '@/hooks/useConnectionsV2'
 
-const PLUGIN_KINDS: ConnectionKind[] = ['plugin', 'oauth_app', 'provider']
+const PLUGIN_KINDS: ConnectionKind[] = ['plugin', 'oauth_app', 'provider', 'skill_pack']
 const KIND_LABELS: Record<ConnectionKind, string> = {
   plugin: 'Plugin',
   oauth_app: 'OAuth App',
   provider: 'API Provider',
+  skill_pack: 'Skill Pack',
   cli_runtime: '',
   mcp_server: '',
   local_model: '',
@@ -50,26 +52,31 @@ interface UseAllKindsResult {
 }
 
 function useAllPluginKinds(): UseAllKindsResult {
-  // Phase 6 simple union: poll three kinds independently and merge.
+  // PR-CONN-V2-SEED-IMPORT: poll four kinds (added skill_pack) and merge.
   // Each hook instance has its own poll timer; merge keeps it cheap.
   const a = useConnectionsV2('plugin')
   const b = useConnectionsV2('oauth_app')
   const c = useConnectionsV2('provider')
-  const rows = useMemo(() => [...a.rows, ...b.rows, ...c.rows], [a.rows, b.rows, c.rows])
-  const loading = a.loading || b.loading || c.loading
-  const error = a.error || b.error || c.error
+  const d = useConnectionsV2('skill_pack')
+  const rows = useMemo(
+    () => [...a.rows, ...b.rows, ...c.rows, ...d.rows],
+    [a.rows, b.rows, c.rows, d.rows],
+  )
+  const loading = a.loading || b.loading || c.loading || d.loading
+  const error = a.error || b.error || c.error || d.error
   function refresh() {
     a.refresh()
     b.refresh()
     c.refresh()
+    d.refresh()
   }
   async function probe(id: string) {
     // Probe goes against any kind via the shared /v2/{id}/probe endpoint.
     // We hit each hook's probe in turn until one succeeds (the row will
-    // only exist in exactly one of them, so two will fail with 404
+    // only exist in exactly one of them, so the others fail with 404
     // silently).
     const results = await Promise.all([
-      a.probe(id), b.probe(id), c.probe(id),
+      a.probe(id), b.probe(id), c.probe(id), d.probe(id),
     ])
     const ok = results.find((r) => r.ok)
     return ok ?? results[0]
@@ -104,6 +111,7 @@ export default function PluginsV2Panel() {
       cli_runtime: { total: 0, healthy: 0 },
       mcp_server: { total: 0, healthy: 0 },
       local_model: { total: 0, healthy: 0 },
+      skill_pack: { total: 0, healthy: 0 },
     }
     for (const r of rows) {
       out[r.kind].total += 1
@@ -116,6 +124,24 @@ export default function PluginsV2Panel() {
     setBusyId(id)
     await probe(id)
     setBusyId(null)
+  }
+
+  async function runImport() {
+    setSeeding(true)
+    try {
+      const res = await runDiscoveryRefresh()
+      if (!res.ok) {
+        toast.error(res.error || 'Discovery refresh failed')
+        return
+      }
+      const summary = res.report?.sources
+        .map((s) => `${s.source}: +${s.total_created}`)
+        .join(' | ')
+      toast.success(`Discovery complete -- ${summary || 'no new rows'}`)
+      refresh()
+    } finally {
+      setSeeding(false)
+    }
   }
 
   async function seedProviders() {
@@ -160,13 +186,26 @@ export default function PluginsV2Panel() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
+              onClick={runImport}
+              disabled={seeding}
+              className="inline-flex items-center gap-2 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50"
+              title="Import plugins, providers, OAuth apps, skill packs, and MCP servers from real sources. Idempotent. Never reads secrets."
+            >
+              {seeding ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Download size={12} />
+              )}
+              Import from detected configs
+            </button>
+            <button
               onClick={seedProviders}
               disabled={seeding}
               className="inline-flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-500/20 disabled:opacity-50"
-              title="Seed provider rows from configured API keys (FOUNDER+)"
+              title="Seed provider rows from configured API keys (FOUNDER+ only)"
             >
-              {seeding ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-              Seed providers
+              <Sparkles size={12} />
+              Seed providers (FOUNDER+)
             </button>
             <button
               onClick={refresh}
@@ -215,10 +254,35 @@ export default function PluginsV2Panel() {
           Loading plugins from V2 registry...
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-lg border border-white/5 bg-white/[0.02] py-12 text-center text-sm text-starlight-400">
-          No plugins / providers / OAuth apps in V2 registry. Click{' '}
-          <strong className="text-starlight-200">Seed providers</strong> to
-          materialize rows for any API keys you've configured in Settings.
+        <div className="rounded-lg border border-white/5 bg-white/[0.02] px-6 py-10 text-center text-sm text-starlight-400">
+          <p className="mb-3 text-starlight-300">
+            No plugins, providers, OAuth apps, or skill packs in V2 registry yet.
+          </p>
+          <p className="mx-auto max-w-xl text-xs text-starlight-500">
+            Click{' '}
+            <strong className="text-starlight-200">Import from detected configs</strong>{' '}
+            above to scan your installed CLI runtimes, configured API providers,
+            OAuth catalog, and the V1 plugin catalog and materialize them as V2
+            rows. Skill packs (capability/instruction bundles) are imported as
+            a distinct kind and are never marked callable.
+          </p>
+          <details className="mx-auto mt-4 max-w-xl text-left">
+            <summary className="cursor-pointer text-xs text-starlight-500 hover:text-starlight-300">
+              Advanced details
+            </summary>
+            <p className="mt-2 text-xs text-starlight-500">
+              Direct API:{' '}
+              <code className="text-starlight-300">
+                POST /api/v1/connections/v2/discovery/refresh
+              </code>{' '}
+              imports across every source for the caller's tenant.{' '}
+              <code className="text-starlight-300">
+                POST /api/v1/connections/v2/reconciliation/seed-providers
+              </code>{' '}
+              (FOUNDER+ only) materializes provider rows from configured API
+              keys. Both are idempotent and never read secret values.
+            </p>
+          </details>
         </div>
       ) : (
         <ul className="divide-y divide-white/5 overflow-hidden rounded-lg border border-white/5 bg-midnight-400/20">
@@ -240,6 +304,7 @@ function PluginRow({
   row, busy, onProbe,
 }: { row: ConnectionV2Row; busy: boolean; onProbe: () => void }) {
   const tone = labelTone(row.label)
+  const isSkillPack = row.kind === 'skill_pack'
   const callable = row.truth.callable.value
   const failureReason =
     (!callable &&
@@ -247,10 +312,18 @@ function PluginRow({
         row.truth.authenticated.failure_reason ||
         row.truth.reachable.failure_reason)) ||
     null
+  const skillCount = isSkillPack
+    ? Number((row.config as Record<string, unknown>)?.skill_count ?? 0)
+    : 0
+
   return (
     <li className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white/5">
-        <Package size={16} />
+      <div
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${
+          isSkillPack ? 'bg-violet-500/15 text-violet-200' : 'bg-white/5'
+        }`}
+      >
+        {isSkillPack ? <BookOpen size={16} /> : <Package size={16} />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -264,44 +337,73 @@ function PluginRow({
             <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
             {row.label.replace(/_/g, ' ')}
           </span>
+          {isSkillPack && (
+            <span
+              className="rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-violet-200"
+              title="Capability or instruction bundle. Not a callable connector. Skill packs ship docs / prompts / playbooks for the LLM to use as context."
+            >
+              not callable
+            </span>
+          )}
+          {isSkillPack && skillCount > 0 && (
+            <span className="text-[11px] text-starlight-500">
+              {skillCount} skill{skillCount === 1 ? '' : 's'}
+            </span>
+          )}
         </div>
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {TRUTH_DIM_ORDER.map((d) => {
-            const v = row.truth[d]
-            const ok = v?.value === true
-            const failed = !!v?.failure_at && (!v.at || v.failure_at >= v.at)
-            return (
-              <span
-                key={d}
-                title={v?.failure_reason || (ok ? `${d} ok` : `${d} not yet proven`)}
-                className={`rounded px-1.5 py-0.5 text-[10px] ${
-                  ok
-                    ? 'bg-emerald-500/15 text-emerald-200'
-                    : failed
-                      ? 'bg-rose-500/15 text-rose-200'
-                      : 'bg-slate-500/15 text-slate-300'
-                }`}
-              >
-                {d}
-              </span>
-            )
-          })}
-        </div>
-        {failureReason && (
+        {isSkillPack ? (
+          <p className="mt-1 text-[11px] text-starlight-500">
+            Skill pack only. Not a callable connector. The LLM uses the
+            packaged skills as context; nothing is invoked over the network.
+          </p>
+        ) : (
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {TRUTH_DIM_ORDER.map((d) => {
+              const v = row.truth[d]
+              const ok = v?.value === true
+              const failed = !!v?.failure_at && (!v.at || v.failure_at >= v.at)
+              return (
+                <span
+                  key={d}
+                  title={v?.failure_reason || (ok ? `${d} ok` : `${d} not yet proven`)}
+                  className={`rounded px-1.5 py-0.5 text-[10px] ${
+                    ok
+                      ? 'bg-emerald-500/15 text-emerald-200'
+                      : failed
+                        ? 'bg-rose-500/15 text-rose-200'
+                        : 'bg-slate-500/15 text-slate-300'
+                  }`}
+                >
+                  {d}
+                </span>
+              )
+            })}
+          </div>
+        )}
+        {!isSkillPack && failureReason && (
           <div className="mt-1 text-xs text-rose-300">
             <ChevronRight size={11} className="inline" />
             {failureReason}
           </div>
         )}
       </div>
-      <button
-        onClick={onProbe}
-        disabled={busy}
-        className="inline-flex items-center gap-1.5 rounded-md border border-primary-500/30 bg-primary-500/10 px-3 py-1.5 text-xs font-medium text-primary-200 hover:bg-primary-500/20 disabled:opacity-50"
-      >
-        {busy ? <Loader2 size={12} className="animate-spin" /> : <Activity size={12} />}
-        Probe
-      </button>
+      {isSkillPack ? (
+        <span
+          className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-1.5 text-xs text-violet-200/70"
+          title="Skill packs are not callable, so probing returns 'skill_pack: not a callable surface'."
+        >
+          No probe
+        </span>
+      ) : (
+        <button
+          onClick={onProbe}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-md border border-primary-500/30 bg-primary-500/10 px-3 py-1.5 text-xs font-medium text-primary-200 hover:bg-primary-500/20 disabled:opacity-50"
+        >
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Activity size={12} />}
+          Probe
+        </button>
+      )}
     </li>
   )
 }

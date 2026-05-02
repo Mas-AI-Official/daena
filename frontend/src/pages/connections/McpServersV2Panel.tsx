@@ -13,13 +13,16 @@
 
 import { useMemo, useState } from 'react'
 import {
-  Activity, AlertTriangle, ChevronRight, Loader2, RefreshCw, Search, Server,
+  Activity, AlertTriangle, ChevronRight, Download, Loader2, RefreshCw,
+  Search, Server,
 } from 'lucide-react'
 
+import { toast } from '@/stores/toastStore'
 import {
   type ConnectionV2Row,
   TRUTH_DIM_ORDER,
   labelTone,
+  runDiscoveryRefresh,
   useConnectionsV2,
 } from '@/hooks/useConnectionsV2'
 
@@ -28,6 +31,7 @@ export default function McpServersV2Panel() {
     useConnectionsV2('mcp_server')
   const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [discovering, setDiscovering] = useState(false)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -43,6 +47,28 @@ export default function McpServersV2Panel() {
     setBusyId(id)
     await probe(id)
     setBusyId(null)
+  }
+
+  async function runImport() {
+    setDiscovering(true)
+    try {
+      const res = await runDiscoveryRefresh()
+      if (!res.ok) {
+        toast.error(res.error || 'Discovery refresh failed')
+        return
+      }
+      const mcpReport = res.report?.sources.find((s) => s.source === 'mcp_servers')
+      if (mcpReport) {
+        toast.success(
+          `MCP discovery: ${mcpReport.total_created} new, ${mcpReport.total_skipped_existing} existed, ${mcpReport.total_failed} failed`,
+        )
+      } else {
+        toast.success('Discovery refresh complete')
+      }
+      refresh()
+    } finally {
+      setDiscovering(false)
+    }
   }
 
   const callableCount = filtered.filter((r) => r.label === 'healthy' || r.label === 'healthy_stale').length
@@ -65,14 +91,29 @@ export default function McpServersV2Panel() {
               JSON-RPC handshake. Binary present is not the same as callable.
             </p>
           </div>
-          <button
-            onClick={refresh}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-starlight-200 hover:bg-white/10 disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={runImport}
+              disabled={discovering}
+              className="inline-flex items-center gap-2 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50"
+              title="Scan Claude Code / Codex / Gemini CLI configs and import their MCP servers into V2. Idempotent and never reads env values."
+            >
+              {discovering ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Download size={12} />
+              )}
+              Import from detected configs
+            </button>
+            <button
+              onClick={refresh}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-starlight-200 hover:bg-white/10 disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -99,15 +140,41 @@ export default function McpServersV2Panel() {
           Loading MCP servers from V2 registry...
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-lg border border-white/5 bg-white/[0.02] py-12 text-center text-sm text-starlight-400">
-          No MCP servers in V2 registry. Import directly via{' '}
-          <code className="text-starlight-200">POST /api/v1/connections/v2</code>{' '}
-          with <code className="text-starlight-200">kind=mcp_server</code>, or
-          use the <strong className="text-starlight-200">Show legacy / advanced</strong>{' '}
-          toggle in the page header to access the V1 detect / install flow.
-          Mirroring to V2 requires{' '}
-          <code className="text-starlight-200">USE_CONNECTION_REGISTRY_V2</code>{' '}
-          to be on.
+        <div className="rounded-lg border border-white/5 bg-white/[0.02] px-6 py-10 text-center text-sm text-starlight-400">
+          <p className="mb-3 text-starlight-300">
+            No MCP servers in V2 registry yet.
+          </p>
+          <p className="mx-auto max-w-xl text-xs text-starlight-500">
+            Daena can scan Claude Code, Codex, and Gemini CLI configs to find
+            MCP servers you have already installed elsewhere. Click{' '}
+            <strong className="text-starlight-200">
+              Import from detected configs
+            </strong>{' '}
+            above to materialize them as V2 rows. The import is idempotent and
+            never reads env-var values from the source configs.
+          </p>
+          <details className="mx-auto mt-4 max-w-xl text-left">
+            <summary className="cursor-pointer text-xs text-starlight-500 hover:text-starlight-300">
+              Advanced details
+            </summary>
+            <p className="mt-2 text-xs text-starlight-500">
+              Direct API:{' '}
+              <code className="text-starlight-300">
+                POST /api/v1/connections/v2/discovery/refresh
+              </code>{' '}
+              (per-tenant; idempotent). For per-row inserts, use{' '}
+              <code className="text-starlight-300">
+                POST /api/v1/connections/v2
+              </code>{' '}
+              with{' '}
+              <code className="text-starlight-300">kind=mcp_server</code>. The
+              legacy V1 detect / install flow is available behind{' '}
+              <strong className="text-starlight-200">
+                Show legacy / advanced
+              </strong>{' '}
+              in the page header.
+            </p>
+          </details>
         </div>
       ) : (
         <ul className="divide-y divide-white/5 overflow-hidden rounded-lg border border-white/5 bg-midnight-400/20">

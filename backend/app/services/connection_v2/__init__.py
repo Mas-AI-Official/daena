@@ -27,6 +27,11 @@ from app.services.connection_v2.probe import (
     run_probe,
 )
 from app.services.connection_v2.registry import ConnectionRegistryV2
+from app.services.connection_v2.seeders import (
+    ConnectionDiscoveryService,
+    DiscoveryReport,
+    SourceReport,
+)
 from app.services.connection_v2.state_machine import LABELS, derive_label
 
 __all__ = [
@@ -43,4 +48,7 @@ __all__ = [
     "register_probe",
     "run_probe",
     "ConnectionRegistryV2",
+    "ConnectionDiscoveryService",
+    "DiscoveryReport",
+    "SourceReport",
 ]

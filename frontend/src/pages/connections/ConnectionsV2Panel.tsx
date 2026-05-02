@@ -22,11 +22,12 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  AlertTriangle, ChevronDown, ChevronRight, Power, RefreshCw,
+  AlertTriangle, ChevronDown, ChevronRight, Download, Loader2, Power, RefreshCw,
   Search, ShieldCheck, Trash2, X, Activity,
 } from 'lucide-react'
 
 import { api } from '@/lib/api'
+import { toast } from '@/stores/toastStore'
 import {
   type ConnectionKind,
   type ConnectionLabel,
@@ -35,6 +36,7 @@ import {
   kindLabel,
   kindOrder,
   labelTone,
+  runDiscoveryRefresh,
   useConnectionsV2,
 } from '@/hooks/useConnectionsV2'
 
@@ -84,6 +86,7 @@ export default function ConnectionsV2Panel() {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [discovering, setDiscovering] = useState(false)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -157,6 +160,27 @@ export default function ConnectionsV2Panel() {
     await archive(id)
     setBusyId(null)
     if (selectedId === id) setSelectedId(null)
+  }
+
+  async function runImport() {
+    setDiscovering(true)
+    try {
+      const res = await runDiscoveryRefresh()
+      if (!res.ok) {
+        toast.error(res.error || 'Discovery refresh failed')
+        return
+      }
+      const summary = res.report?.sources
+        .map((s) => `${s.source}: +${s.total_created}`)
+        .filter((s) => !s.endsWith('+0'))
+        .join(' | ')
+      toast.success(
+        summary ? `Discovery -- ${summary}` : 'Discovery complete -- no new rows',
+      )
+      refresh()
+    } finally {
+      setDiscovering(false)
+    }
   }
 
   return (
@@ -248,6 +272,20 @@ export default function ConnectionsV2Panel() {
         </select>
         <button
           type="button"
+          onClick={runImport}
+          disabled={discovering}
+          className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50"
+          title="Walk every real source (CLI MCP configs, runtime binaries, local models, providers, OAuth catalog, V1 plugin catalog) and import any new rows. Idempotent. Never reads secret values."
+        >
+          {discovering ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Download size={12} />
+          )}
+          Import from detected sources
+        </button>
+        <button
+          type="button"
           onClick={refresh}
           disabled={loading}
           className="inline-flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2 text-xs font-medium text-starlight-200 hover:bg-white/5 disabled:opacity-50"
@@ -274,13 +312,40 @@ export default function ConnectionsV2Panel() {
 
       {/* Empty */}
       {!loading && rows.length === 0 && !error && (
-        <div className="rounded-lg border border-white/5 bg-white/[0.02] py-12 text-center text-sm text-starlight-400">
-          No V2 connections imported yet. Open the{' '}
-          <strong className="text-starlight-200">Plugins</strong> tab and
-          click <strong className="text-starlight-200">Seed providers</strong>{' '}
-          to materialize rows from any API keys configured in Settings, or
-          import directly via{' '}
-          <code className="text-starlight-200">POST /api/v1/connections/v2</code>.
+        <div className="rounded-lg border border-white/5 bg-white/[0.02] px-6 py-10 text-center text-sm text-starlight-400">
+          <p className="mb-3 text-starlight-300">
+            No V2 connections imported yet.
+          </p>
+          <p className="mx-auto max-w-xl text-xs text-starlight-500">
+            Click{' '}
+            <strong className="text-starlight-200">
+              Import from detected sources
+            </strong>{' '}
+            above to scan installed CLI runtimes, MCP server configs, local
+            model endpoints, configured API providers, OAuth catalog, and the
+            V1 plugin catalog. The import is idempotent and never reads
+            secret values.
+          </p>
+          <details className="mx-auto mt-4 max-w-xl text-left">
+            <summary className="cursor-pointer text-xs text-starlight-500 hover:text-starlight-300">
+              Advanced details
+            </summary>
+            <p className="mt-2 text-xs text-starlight-500">
+              Direct API:{' '}
+              <code className="text-starlight-300">
+                POST /api/v1/connections/v2/discovery/refresh
+              </code>{' '}
+              walks every source for the caller's tenant. For per-row inserts,
+              use{' '}
+              <code className="text-starlight-300">
+                POST /api/v1/connections/v2
+              </code>{' '}
+              with{' '}
+              <code className="text-starlight-300">kind=&lt;...&gt;</code>.
+              Truth ladder rules are unchanged: a row is &ldquo;healthy&rdquo;
+              only after a real probe round-trip.
+            </p>
+          </details>
         </div>
       )}
 
@@ -428,14 +493,23 @@ function ConnectionRow({
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
-        <RowButton
-          onClick={onProbe}
-          busy={busy}
-          icon={<Activity size={12} />}
-          label="Probe"
-          tone="primary"
-          tooltip="Run a real round-trip probe (alias of Test)"
-        />
+        {row.kind === 'skill_pack' ? (
+          <span
+            className="inline-flex items-center gap-1 rounded border border-violet-500/30 bg-violet-500/5 px-2 py-1 text-[11px] text-violet-200/80"
+            title="Skill packs are capability/instruction bundles, not callable surfaces. Probe always returns 'skill_pack: not a callable surface'."
+          >
+            Skill pack
+          </span>
+        ) : (
+          <RowButton
+            onClick={onProbe}
+            busy={busy}
+            icon={<Activity size={12} />}
+            label="Probe"
+            tone="primary"
+            tooltip="Run a real round-trip probe (alias of Test)"
+          />
+        )}
         {row.disabled ? (
           <RowButton
             onClick={onEnable}
@@ -566,7 +640,38 @@ function DetailsDrawer({ row, onClose, onProbe, busy }: DrawerProps) {
           <DrawerRow label="Capabilities" value={`${row.capabilities_count} discovered`} />
           <DrawerRow label="Healthy ratio" value={(row.healthy_call_ratio * 100).toFixed(0) + '%'} />
           <DrawerRow label="Governance tier" value={`T${row.governance_tier}`} />
+          <ConfigDrawerRows row={row} />
         </dl>
+
+        {/* PR-CONN-V2-SEED-IMPORT: local-model truth + Docker/WSL guidance.
+            For local_model rows whose probe failed on the reachable dim,
+            show the configured base_url verbatim plus the common cause
+            (127.0.0.1 inside Docker / WSL refers to the container, not
+            the Windows host). The base URL is config, not secret -- safe
+            to print. */}
+        {row.kind === 'local_model' &&
+          row.truth.reachable.failure_at &&
+          !row.truth.reachable.value && (
+            <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+              <div className="flex items-center gap-2 font-semibold">
+                <AlertTriangle size={12} />
+                Local endpoint unreachable
+              </div>
+              <p className="mt-1.5 text-amber-200/90">
+                Configured base URL:{' '}
+                <code className="text-amber-100">
+                  {String((row.config as Record<string, unknown>)?.base_url || '(unset)')}
+                </code>
+              </p>
+              <p className="mt-1.5 text-amber-200/80">
+                If the backend runs in Docker / WSL,{' '}
+                <code className="text-amber-100">127.0.0.1</code> resolves to
+                the container, not the Windows host. Try{' '}
+                <code className="text-amber-100">host.docker.internal</code> or
+                the configured bridge IP, or run the backend natively.
+              </p>
+            </div>
+          )}
 
         <h3 className="mt-6 text-xs font-semibold uppercase tracking-wider text-starlight-400">
           Truth ladder
@@ -631,4 +736,138 @@ function DrawerRow({ label, value }: { label: string; value: React.ReactNode }) 
       <dd className="text-starlight-200">{value}</dd>
     </div>
   )
+}
+
+// PR-CONN-V2-SEED-IMPORT: kind-specific config rows. Only renders
+// fields that are config (not secret) -- never reads vault material.
+function ConfigDrawerRows({ row }: { row: ConnectionV2Row }) {
+  const cfg = (row.config || {}) as Record<string, unknown>
+
+  if (row.kind === 'local_model') {
+    return (
+      <>
+        <DrawerRow
+          label="Base URL"
+          value={
+            <code className="text-starlight-200">
+              {String(cfg.base_url || '(unset)')}
+            </code>
+          }
+        />
+        {cfg.default_model ? (
+          <DrawerRow label="Default model" value={String(cfg.default_model)} />
+        ) : null}
+      </>
+    )
+  }
+
+  if (row.kind === 'mcp_server') {
+    const envCount = Number(cfg.env_var_count ?? 0)
+    return (
+      <>
+        {cfg.command ? (
+          <DrawerRow
+            label="Command"
+            value={
+              <code className="text-starlight-200">
+                {String(cfg.command)} {Array.isArray(cfg.args) ? (cfg.args as unknown[]).join(' ') : ''}
+              </code>
+            }
+          />
+        ) : cfg.url ? (
+          <DrawerRow
+            label="URL"
+            value={<code className="text-starlight-200">{String(cfg.url)}</code>}
+          />
+        ) : null}
+        {cfg._source_cli ? (
+          <DrawerRow label="Detected in" value={String(cfg._source_cli)} />
+        ) : null}
+        {envCount > 0 ? (
+          <DrawerRow
+            label="Env vars expected"
+            value={
+              <span
+                title={(cfg.env_var_names as string[] | undefined)?.join(', ') || ''}
+              >
+                {envCount} (names only -- values never read by Daena)
+              </span>
+            }
+          />
+        ) : null}
+      </>
+    )
+  }
+
+  if (row.kind === 'oauth_app') {
+    return (
+      <>
+        <DrawerRow
+          label="Client ID"
+          value={
+            <code className="text-starlight-200">
+              {String(cfg.client_id || '(unset)')}
+            </code>
+          }
+        />
+        <DrawerRow
+          label="Client secret configured"
+          value={cfg._client_secret_set ? 'yes' : 'no (set in Settings)'}
+        />
+        {Array.isArray(cfg.scopes) && (cfg.scopes as string[]).length > 0 ? (
+          <DrawerRow
+            label="Scopes"
+            value={(cfg.scopes as string[]).length + ' requested'}
+          />
+        ) : null}
+      </>
+    )
+  }
+
+  if (row.kind === 'cli_runtime') {
+    return (
+      <>
+        {cfg.binary ? (
+          <DrawerRow
+            label="Binary"
+            value={<code className="text-starlight-200">{String(cfg.binary)}</code>}
+          />
+        ) : null}
+        {cfg._runtime_id ? (
+          <DrawerRow label="Runtime ID" value={String(cfg._runtime_id)} />
+        ) : null}
+        {cfg._provider_enum ? (
+          <DrawerRow label="Provider slot" value={String(cfg._provider_enum)} />
+        ) : null}
+      </>
+    )
+  }
+
+  if (row.kind === 'skill_pack') {
+    return (
+      <>
+        {cfg.source_plugin_id ? (
+          <DrawerRow label="Source plugin" value={String(cfg.source_plugin_id)} />
+        ) : null}
+        {cfg._category ? (
+          <DrawerRow label="Category" value={String(cfg._category)} />
+        ) : null}
+        <DrawerRow label="Skills bundled" value={String(cfg.skill_count ?? 0)} />
+        <DrawerRow
+          label="Callable"
+          value={
+            <span className="text-violet-200">
+              No (capability bundle, not a connector)
+            </span>
+          }
+        />
+      </>
+    )
+  }
+
+  if (row.kind === 'provider' && cfg._provider_enum) {
+    return <DrawerRow label="Provider" value={String(cfg._provider_enum)} />
+  }
+
+  return null
 }

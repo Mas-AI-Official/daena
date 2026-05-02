@@ -39,6 +39,7 @@ from app.services.connection_v2.legacy_bridge import is_v2_enabled
 from app.services.connection_v2.reconciliation import (
     ConnectionReconciliationService,
 )
+from app.services.connection_v2.seeders import ConnectionDiscoveryService
 
 router = APIRouter()
 
@@ -296,6 +297,41 @@ async def seed_providers(
     report = await seed_providers_for_tenant(db, tenant_id=user.tenant_id)
     await db.commit()
     return {"success": True, "data": report.to_dict()}
+
+
+@router.post("/discovery/refresh")
+async def discovery_refresh(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """PR-CONN-V2-SEED-IMPORT: import the real connection inventory.
+
+    Walks the same real sources V1 already reads (CLI MCP configs, CLI
+    runtime binaries, local model endpoints, API providers, OAuth
+    catalog, V1 plugin catalog) and materializes V2 rows for the
+    caller's tenant. Idempotent: re-running adds nothing new when
+    nothing has changed on disk.
+
+    NEVER:
+      * Reads MCP env values, OAuth client_secret, or API keys.
+      * Marks anything callable. The truth ladder still requires a
+        real probe to flip callable=true.
+      * Auto-installs anything; only writes V2 rows.
+
+    Available to any logged-in user (not founder-gated) because the
+    V2 panel is the canonical UI for everyone in dev. The endpoint
+    runs against the caller's own tenant only -- it cannot be used to
+    mutate other tenants' rows.
+    """
+    svc = ConnectionDiscoveryService(db, tenant_id=user.tenant_id)
+    report = await svc.run_discovery()
+    if report.total_created > 0:
+        await db.commit()
+    return {
+        "success": True,
+        "data": report.to_dict(),
+        "v2_enabled": is_v2_enabled(),
+    }
 
 
 @router.post("/reconciliation/run")

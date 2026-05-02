@@ -43,7 +43,15 @@ from app.models.base import GUID, Base, JSONBCompat, TenantMixin, TimestampMixin
 
 
 class ConnectionKind(str, enum.Enum):
-    """One row per kind. Discriminator for per-kind config validation."""
+    """One row per kind. Discriminator for per-kind config validation.
+
+    PR-CONN-V2-SEED-IMPORT (2026-05-02): added SKILL_PACK for
+    capability/instruction bundles that are NOT callable by themselves.
+    Probes for SKILL_PACK rows return a structured "not a callable
+    surface" failure rather than ever flipping callable=true. Frontend
+    renders these with a distinct "Skill pack only" badge so the
+    operator never confuses a packaged-doc row with a real connector.
+    """
 
     CLI_RUNTIME = "cli_runtime"
     MCP_SERVER = "mcp_server"
@@ -51,6 +59,7 @@ class ConnectionKind(str, enum.Enum):
     PLUGIN = "plugin"
     OAUTH_APP = "oauth_app"
     LOCAL_MODEL = "local_model"
+    SKILL_PACK = "skill_pack"
 
 
 class AuthMethod(str, enum.Enum):
