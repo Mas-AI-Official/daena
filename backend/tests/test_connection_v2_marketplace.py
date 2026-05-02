@@ -494,3 +494,129 @@ class TestListHelpers:
         for d in data[:3]:
             assert "id" in d
             assert "display_name" in d
+
+
+# ──────────────────────────────────────────────────────────────────
+# 7. Route registration + live HTTP smoke
+# ──────────────────────────────────────────────────────────────────
+#
+# PR-CONNECTIONS-MARKETPLACE-404-FIX (2026-05-02): the 404 the founder
+# hit was caused by a stale backend process (uptime 25h+) running
+# pre-commit code that did not yet have these endpoints. The routes
+# WERE correctly registered in the source. To prevent this regression
+# from masking future actual route-registration breakage, the tests
+# below pin three contracts:
+#   1. The 3 marketplace routes ARE present in app.routes after
+#      `create_app()` returns -- if a future contributor accidentally
+#      drops the router import or removes the endpoint, this fails
+#      loud at test time, not at the operator's "Backend error: Not
+#      Found" toast.
+#   2. The endpoints respond 200 OK with the auth fixture.
+#   3. The catalog response shape is non-empty + matches the in-process
+#      catalog count, so a future schema drift breaks tests, not the UI.
+
+
+class TestMarketplaceRouteRegistration:
+    """Pin: the 3 marketplace endpoints are mounted under /api/v1/connections/v2."""
+
+    REQUIRED_ROUTES = (
+        ("GET", "/api/v1/connections/v2/catalog"),
+        ("GET", "/api/v1/connections/v2/marketplace/cards"),
+        ("GET", "/api/v1/connections/v2/marketplace/install-plan/{entry_id}"),
+    )
+
+    def test_routes_registered_in_app(self, app):
+        registered: set[tuple[str, str]] = set()
+        for r in app.routes:
+            methods = getattr(r, "methods", None)
+            path = getattr(r, "path", None)
+            if methods and path:
+                for m in methods:
+                    registered.add((m, path))
+        for method, path in self.REQUIRED_ROUTES:
+            assert (method, path) in registered, (
+                f"Route {method} {path} is NOT registered in the FastAPI app. "
+                "Did the connections_v2 router get unmounted, or did the "
+                "marketplace endpoint get removed by accident?"
+            )
+
+
+class TestMarketplaceLiveSmoke:
+    """Pin: the 3 marketplace endpoints respond 200 with auth + valid shape."""
+
+    async def test_catalog_endpoint_returns_entries(
+        self, client, auth_headers, seeded_tenant
+    ):
+        _ = seeded_tenant  # ensure tenant FK is satisfied for any auth lookup
+        res = await client.get(
+            "/api/v1/connections/v2/catalog", headers=auth_headers,
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["success"] is True
+        data = body["data"]
+        assert "categories" in data
+        assert "entries" in data
+        assert len(data["entries"]) == len(CATALOG)
+        assert len(data["categories"]) == len(CATEGORIES)
+        # Smoke: entries carry the expected keys
+        first = data["entries"][0]
+        for key in ("id", "display_name", "vendor", "category", "kind", "auth_type"):
+            assert key in first, f"Catalog entry missing key {key!r}"
+
+    async def test_marketplace_cards_returns_one_per_entry(
+        self, client, auth_headers, seeded_tenant
+    ):
+        _ = seeded_tenant
+        res = await client.get(
+            "/api/v1/connections/v2/marketplace/cards", headers=auth_headers,
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["success"] is True
+        cards = body["data"]["cards"]
+        assert len(cards) == len(CATALOG)
+        for card in cards[:3]:
+            assert "catalog" in card
+            assert "lifecycle" in card
+            assert "primary_action" in card
+            # No V2 rows exist for this tenant -> every card is available
+            # or needs_setup (coming-soon entries)
+            assert card["lifecycle"] in ("available", "needs_setup")
+
+    async def test_install_plan_returns_steps_for_known_entry(
+        self, client, auth_headers, seeded_tenant
+    ):
+        _ = seeded_tenant
+        res = await client.get(
+            "/api/v1/connections/v2/marketplace/install-plan/mcp-github",
+            headers=auth_headers,
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["success"] is True
+        plan = body["data"]
+        assert plan["entry_id"] == "mcp-github"
+        assert plan["executable"] is False
+        assert isinstance(plan["steps"], list)
+        assert len(plan["steps"]) > 0
+
+    async def test_install_plan_returns_404_for_unknown_entry(
+        self, client, auth_headers, seeded_tenant
+    ):
+        _ = seeded_tenant
+        res = await client.get(
+            "/api/v1/connections/v2/marketplace/install-plan/does-not-exist",
+            headers=auth_headers,
+        )
+        assert res.status_code == 404
+
+    async def test_marketplace_routes_require_auth(self, client, seeded_tenant):
+        _ = seeded_tenant
+        for path in (
+            "/api/v1/connections/v2/catalog",
+            "/api/v1/connections/v2/marketplace/cards",
+            "/api/v1/connections/v2/marketplace/install-plan/mcp-github",
+        ):
+            res = await client.get(path)
+            assert res.status_code == 401, f"{path} should require auth, got {res.status_code}"
