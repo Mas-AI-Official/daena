@@ -46,6 +46,15 @@ from app.services.heartbeat.heartbeat_config import (
 
 logger = get_logger(__name__)
 
+CHECK_TIMEOUT_SECONDS: dict[CheckType, float] = {
+    CheckType.GIT_STATUS: 4.0,
+    CheckType.TEST_SUITE: 6.0,
+    CheckType.GITHUB_ISSUES: 6.0,
+    CheckType.OLLAMA_HEALTH: 5.0,
+    CheckType.OLLAMA_MODEL_UPDATES: 6.0,
+}
+DEFAULT_CHECK_TIMEOUT_SECONDS = 8.0
+
 
 @dataclass
 class HeartbeatCycleLog:
@@ -105,9 +114,21 @@ class HeartbeatDaemon:
         return cls._instance
 
     async def start(self) -> None:
-        """Start the heartbeat loop."""
-        if self.config.state == HeartbeatState.RUNNING:
-            logger.warning("heartbeat.already_running")
+        """Start the heartbeat loop.
+
+        Idempotent: if a loop task is already alive (RUNNING or PAUSED),
+        returns without creating a duplicate. The previous check guarded
+        only on RUNNING state, which left a hole where calling start()
+        on a PAUSED daemon would overwrite ``self._task`` and orphan the
+        original loop. PR-HB-DAEMON-WIRE (2026-05-02) tightened the
+        guard so a repeat lifespan boot or stray operator call cannot
+        spawn a second loop.
+        """
+        if self._task is not None and not self._task.done():
+            logger.warning(
+                "heartbeat.already_running",
+                state=self.config.state.value,
+            )
             return
 
         self.config.state = HeartbeatState.RUNNING
@@ -189,6 +210,15 @@ class HeartbeatDaemon:
             self.config.max_cost_per_cycle_usd = float(updates["max_cost_per_cycle_usd"])
         if "max_cost_per_day_usd" in updates:
             self.config.max_cost_per_day_usd = float(updates["max_cost_per_day_usd"])
+        if "checks" in updates and isinstance(updates["checks"], dict):
+            enabled_by_type = {
+                str(check_type): bool(enabled)
+                for check_type, enabled in updates["checks"].items()
+            }
+            for check_cfg in self.config.checks:
+                key = check_cfg.check_type.value
+                if key in enabled_by_type:
+                    check_cfg.enabled = enabled_by_type[key]
 
         logger.info("heartbeat.configured", updates=updates)
 
@@ -238,8 +268,15 @@ class HeartbeatDaemon:
             if not check_cfg.enabled:
                 continue
 
+            timeout_seconds = CHECK_TIMEOUT_SECONDS.get(
+                check_cfg.check_type,
+                DEFAULT_CHECK_TIMEOUT_SECONDS,
+            )
             try:
-                result = await self._run_check(check_cfg.check_type, check_cfg)
+                result = await asyncio.wait_for(
+                    self._run_check(check_cfg.check_type, check_cfg),
+                    timeout=timeout_seconds,
+                )
                 cycle.results.append(result)
                 cycle.total_cost_usd += result.cost_usd
 
@@ -259,11 +296,32 @@ class HeartbeatDaemon:
                             "queued_for_approval": True,
                         })
 
+            except asyncio.TimeoutError:
+                result = HeartbeatCheckResult(
+                    check_type=check_cfg.check_type.value,
+                    status="error",
+                    summary=f"Heartbeat check timed out after {timeout_seconds:g} seconds",
+                    cost_usd=0.0,
+                )
+                cycle.results.append(result)
+                logger.warning(
+                    "heartbeat.check_timeout",
+                    check_type=check_cfg.check_type.value,
+                    timeout_seconds=timeout_seconds,
+                )
             except Exception as exc:
                 logger.warning(
                     "heartbeat.check_failed",
                     check_type=check_cfg.check_type.value,
                     error=str(exc),
+                )
+                cycle.results.append(
+                    HeartbeatCheckResult(
+                        check_type=check_cfg.check_type.value,
+                        status="error",
+                        summary=f"Heartbeat check failed: {exc}",
+                        cost_usd=0.0,
+                    )
                 )
 
         # Run reflection if enabled

@@ -87,7 +87,32 @@ class HeartbeatConfig:
 
     @classmethod
     def default(cls) -> HeartbeatConfig:
-        """Create default configuration with standard checks."""
+        """Create default configuration with standard checks.
+
+        Default-enabled checks are limited to cheap local probes
+        (CLI / file read / git status / DB query) so the daemon is
+        safe to auto-start in lifespan without surprising the operator
+        with paid LLM calls, network egress, or external CLI hits.
+
+        Default-disabled checks (the operator can re-enable each one
+        per-check from SettingsHeartbeat.tsx):
+
+          - TEST_SUITE          slow pytest run, can take many seconds
+          - GITHUB_ISSUES       network egress via the `gh` CLI
+          - OLLAMA_HEALTH       Ollama is deprecated in favour of llama-server
+                                (OLLAMA_ENABLED defaults to false per project
+                                CLAUDE.md); leaving it on produces noise
+          - OLLAMA_MODEL_UPDATES  network egress to the model registry
+          - DAILY_REPORT        writes files to D:/Ideas/Daena-Mind and may
+                                invoke a paid runtime
+          - DEPARTMENT_WORKFLOWS  runs real department workflows that may
+                                  trigger external actions
+          - AUTONOMOUS_WORK     AGI-mode LLM calls, max $0.50 per cycle
+
+        Hardened by PR-HB-DAEMON-WIRE (2026-05-02). The shape exists
+        so an auto-start daemon does not begin spending money or
+        making external calls until the operator says so.
+        """
         return cls(
             checks=[
                 HeartbeatCheck(
@@ -123,11 +148,13 @@ class HeartbeatConfig:
                 HeartbeatCheck(
                     check_type=CheckType.TEST_SUITE,
                     description="Run pytest to detect regressions",
+                    enabled=False,  # Slow; opt-in per PR-HB-DAEMON-WIRE
                 ),
                 HeartbeatCheck(
                     check_type=CheckType.GITHUB_ISSUES,
                     description="Check Mas-AI-Official/daena for new bug reports",
                     command="gh issue list --repo Mas-AI-Official/daena --state open --label bug --json number,title,createdAt --limit 10",
+                    enabled=False,  # Network egress; opt-in per PR-HB-DAEMON-WIRE
                 ),
                 HeartbeatCheck(
                     check_type=CheckType.FAILED_TASKS,
@@ -136,27 +163,28 @@ class HeartbeatConfig:
                 HeartbeatCheck(
                     check_type=CheckType.OLLAMA_HEALTH,
                     description="Verify all Ollama models are loaded and responsive",
+                    enabled=False,  # Ollama deprecated (llama-server canonical); opt-in
                 ),
                 HeartbeatCheck(
                     check_type=CheckType.DAILY_REPORT,
                     description="Generate daily engineering status to Daena-Mind/reports/",
-                    enabled=True,
+                    enabled=False,  # Writes files + may use paid runtime; opt-in
                 ),
                 HeartbeatCheck(
                     check_type=CheckType.DEPARTMENT_WORKFLOWS,
                     description="Run scheduled department workflows (briefings, reports, tasks)",
-                    enabled=True,
+                    enabled=False,  # May trigger external actions; opt-in
                 ),
                 HeartbeatCheck(
                     check_type=CheckType.OLLAMA_MODEL_UPDATES,
                     description="Check installed Ollama models for available updates (weekly)",
-                    enabled=True,
+                    enabled=False,  # Network egress + Ollama deprecated; opt-in
                     max_cost_usd=0.0,
                 ),
                 HeartbeatCheck(
                     check_type=CheckType.AUTONOMOUS_WORK,
                     description="AGI mode: pick up pending tasks, decompose via SwarmPlanner, execute in parallel",
-                    enabled=True,
+                    enabled=False,  # Paid LLM calls up to $0.50/cycle; opt-in
                     max_cost_usd=0.50,
                 ),
             ],

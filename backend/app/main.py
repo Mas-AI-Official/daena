@@ -524,6 +524,34 @@ async def _run_deferred_initialization(app: FastAPI) -> None:
 
     await _step("cron_scheduler", _cron_scheduler)
 
+    # PR-HB-DAEMON-WIRE (2026-05-02): start the HeartbeatDaemon so the
+    # SettingsHeartbeat Pause / Resume / Stop / Run-now controls reflect
+    # a real loop instead of a decorative absence (Backlog P0-09;
+    # Atlas Appendix B.3; Rule 17). The daemon's start() is idempotent
+    # against task aliveness so a repeat lifespan boot or stray operator
+    # call cannot duplicate the loop. Default check set is hardened to
+    # cheap local probes only (TEST_SUITE / GITHUB_ISSUES /
+    # OLLAMA_* / DAILY_REPORT / DEPARTMENT_WORKFLOWS / AUTONOMOUS_WORK
+    # are all enabled=False by default per HeartbeatConfig.default()),
+    # so auto-start does not begin spending money or making external
+    # calls until the operator opts in via SettingsHeartbeat.tsx.
+    async def _heartbeat_daemon() -> None:
+        from app.services.heartbeat.heartbeat_daemon import HeartbeatDaemon
+
+        daemon = HeartbeatDaemon.get_instance()
+        await daemon.start()
+        app.state.heartbeat_daemon = daemon
+        logger.info(
+            "heartbeat_daemon_ready",
+            interval_minutes=daemon.config.interval_minutes,
+            autopilot_level=daemon.config.autopilot_level.value,
+            checks_enabled=[
+                c.check_type.value for c in daemon.config.checks if c.enabled
+            ],
+        )
+
+    await _step("heartbeat_daemon", _heartbeat_daemon)
+
     async def _dream_engine() -> None:
         from app.services.dream_engine import get_dream_engine
 
@@ -940,6 +968,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("cron_scheduler_stopped")
     except Exception:
         logger.debug("cron_scheduler_stop_skipped")
+
+    # PR-HB-DAEMON-WIRE (2026-05-02): stop the heartbeat daemon if it
+    # was started by deferred init. Mirrors the cron scheduler shutdown
+    # pattern: try the call, swallow exceptions so a missed start does
+    # not stall shutdown.
+    try:
+        daemon_ref = getattr(app.state, "heartbeat_daemon", None)
+        if daemon_ref is not None:
+            await daemon_ref.stop()
+            logger.info("heartbeat_daemon_stopped")
+    except Exception:
+        logger.debug("heartbeat_daemon_stop_skipped")
 
     # Stop the background queue worker.
     try:

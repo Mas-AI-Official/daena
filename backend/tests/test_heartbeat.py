@@ -22,7 +22,13 @@ from app.services.heartbeat.heartbeat_config import (
     HeartbeatState,
 )
 from app.services.heartbeat.heartbeat_daemon import HeartbeatDaemon
-from app.services.heartbeat.cron_scheduler import CronFrequency, CronJob, CronScheduler
+from app.services.heartbeat.cron_scheduler import (
+    CronFrequency,
+    CronJob,
+    CronScheduler,
+    get_cron_scheduler,
+    reset_cron_scheduler_singleton,
+)
 
 
 # ── Config tests ──
@@ -192,6 +198,16 @@ class TestCronScheduler:
         assert any(j["job_id"] == "morning_briefing" for j in jobs)
         assert any(j["job_id"] == "weekly_review" for j in jobs)
 
+    def test_api_uses_process_wide_scheduler_singleton(self):
+        from app.api.v1 import heartbeat as heartbeat_api
+
+        reset_cron_scheduler_singleton()
+        try:
+            scheduler = get_cron_scheduler()
+            assert heartbeat_api._get_scheduler() is scheduler
+        finally:
+            reset_cron_scheduler_singleton()
+
     def test_add_remove_job(self):
         scheduler = CronScheduler()
         job = CronJob(
@@ -225,15 +241,21 @@ class TestCronScheduler:
         assert job.is_due() is False
 
     def test_job_not_due_wrong_time(self):
+        # Pick run_at 6 hours offset from now so the +/-5 min window
+        # in is_due() never overlaps the wall clock. The previous
+        # implementation hardcoded 3 AM and only skipped when
+        # now.hour == 3, but is_due() uses a +/-5 min window so
+        # 02:55-03:05 also matches. This caused a flake at 02:59
+        # during the 2026-04-29 audit-repair run.
+        now = datetime.now()
+        offset_hour = (now.hour + 6) % 24
         job = CronJob(
             job_id="test",
             name="Test",
             frequency=CronFrequency.DAILY,
-            run_at=time(3, 0),  # 3 AM -- unlikely to be current time in tests
+            run_at=time(offset_hour, now.minute),
         )
-        now = datetime.now()
-        if now.hour != 3:  # Skip if actually 3 AM
-            assert job.is_due() is False
+        assert job.is_due() is False
 
     def test_weekly_job_wrong_day(self):
         job = CronJob(
@@ -311,3 +333,206 @@ class TestHeartbeatAPI:
     async def test_cron_list(self, client, auth_headers):
         resp = await client.get("/api/v1/heartbeat/cron", headers=auth_headers)
         assert resp.status_code == 200
+
+
+# ── PR-HB-DAEMON-WIRE (2026-05-02): lifecycle truth tests ──
+#
+# These tests pin the contract that the lifespan deferred init step
+# (`_heartbeat_daemon` in `backend/app/main.py`) starts the daemon
+# exactly once, that repeated calls do not orphan the loop task, and
+# that status read-backs reflect real state across the start / pause
+# / resume / stop transitions. The default-config tests pin the
+# hardened check set so an auto-started daemon does not begin
+# spending money or making external calls until the operator opts in.
+
+
+class TestHeartbeatDaemonIdempotency:
+    """Pins start() against duplicate-loop creation."""
+
+    @pytest.mark.asyncio
+    async def test_start_is_idempotent_against_repeated_calls(self):
+        """Calling start() twice must keep one task and one loop."""
+        daemon = HeartbeatDaemon()
+        try:
+            await daemon.start()
+            first_task = daemon._task
+            assert first_task is not None
+            assert not first_task.done()
+            assert daemon.config.state == HeartbeatState.RUNNING
+
+            await daemon.start()  # idempotent re-call
+            second_task = daemon._task
+            assert second_task is first_task, (
+                "Repeat start() must reuse the existing task; got a new one"
+            )
+            assert daemon.config.state == HeartbeatState.RUNNING
+        finally:
+            await daemon.stop()
+
+    @pytest.mark.asyncio
+    async def test_start_does_not_orphan_task_when_paused(self):
+        """start() while PAUSED must not overwrite the live task.
+
+        Pre-PR-HB-DAEMON-WIRE the guard checked only state == RUNNING,
+        so calling start() while the daemon was PAUSED would set state
+        back to RUNNING AND assign a fresh task to self._task,
+        orphaning the original loop. The hardened guard keys on task
+        aliveness, not state.
+        """
+        daemon = HeartbeatDaemon()
+        try:
+            await daemon.start()
+            await daemon.pause()
+            paused_task = daemon._task
+            assert daemon.config.state == HeartbeatState.PAUSED
+
+            await daemon.start()  # second start; must not orphan paused_task
+            assert daemon._task is paused_task, (
+                "start() while PAUSED orphaned the original loop task"
+            )
+            # State stays as it was; the guard short-circuits before
+            # mutating state. Operator should call resume() to unpause.
+            assert daemon.config.state == HeartbeatState.PAUSED
+        finally:
+            await daemon.stop()
+
+    @pytest.mark.asyncio
+    async def test_stop_after_start_clears_task_and_state(self):
+        """stop() must cancel the task and report STOPPED via get_status()."""
+        daemon = HeartbeatDaemon()
+        await daemon.start()
+        assert daemon._task is not None
+
+        await daemon.stop()
+        assert daemon._task is None
+        assert daemon.config.state == HeartbeatState.STOPPED
+        assert daemon.get_status()["state"] == "stopped"
+
+
+class TestHeartbeatStatusTruth:
+    """Pins get_status() truth across pause / resume / stop transitions."""
+
+    @pytest.mark.asyncio
+    async def test_status_after_start_is_running(self):
+        daemon = HeartbeatDaemon()
+        try:
+            await daemon.start()
+            assert daemon.get_status()["state"] == "running"
+        finally:
+            await daemon.stop()
+
+    @pytest.mark.asyncio
+    async def test_status_after_pause_is_paused(self):
+        daemon = HeartbeatDaemon()
+        try:
+            await daemon.start()
+            await daemon.pause()
+            assert daemon.get_status()["state"] == "paused"
+        finally:
+            await daemon.stop()
+
+    @pytest.mark.asyncio
+    async def test_status_after_resume_is_running(self):
+        daemon = HeartbeatDaemon()
+        try:
+            await daemon.start()
+            await daemon.pause()
+            await daemon.resume()
+            assert daemon.get_status()["state"] == "running"
+        finally:
+            await daemon.stop()
+
+    @pytest.mark.asyncio
+    async def test_status_after_stop_is_stopped(self):
+        daemon = HeartbeatDaemon()
+        await daemon.start()
+        await daemon.stop()
+        assert daemon.get_status()["state"] == "stopped"
+
+
+class TestHeartbeatDefaultsHardened:
+    """Pins the default check set against accidental re-enabling.
+
+    PR-HB-DAEMON-WIRE (2026-05-02) flipped the expensive / external
+    checks to ``enabled=False`` so the auto-started daemon stays cheap
+    and local. Re-enabling any of these by editing
+    ``HeartbeatConfig.default()`` should fail this test loud and
+    require an explicit founder-approved follow-up PR.
+    """
+
+    EXPECTED_DISABLED_BY_DEFAULT = {
+        CheckType.QUEUE,
+        CheckType.TEST_SUITE,
+        CheckType.GITHUB_ISSUES,
+        CheckType.OLLAMA_HEALTH,
+        CheckType.OLLAMA_MODEL_UPDATES,
+        CheckType.DAILY_REPORT,
+        CheckType.DEPARTMENT_WORKFLOWS,
+        CheckType.AUTONOMOUS_WORK,
+    }
+
+    EXPECTED_ENABLED_BY_DEFAULT = {
+        CheckType.RUNTIME_HEALTH,
+        CheckType.TASKS,
+        CheckType.INBOX,
+        CheckType.PROJECT_STATE,
+        CheckType.GIT_STATUS,
+        CheckType.FAILED_TASKS,
+    }
+
+    def test_default_config_disables_expensive_checks(self):
+        cfg = HeartbeatConfig.default()
+        by_type = {c.check_type: c for c in cfg.checks}
+        for check_type in self.EXPECTED_DISABLED_BY_DEFAULT:
+            assert check_type in by_type, (
+                f"Default config missing {check_type.value}; "
+                "did the check list shrink?"
+            )
+            assert by_type[check_type].enabled is False, (
+                f"{check_type.value} must default to disabled per "
+                "PR-HB-DAEMON-WIRE; flipping it on requires founder approval"
+            )
+
+    def test_default_config_keeps_cheap_local_checks_enabled(self):
+        cfg = HeartbeatConfig.default()
+        by_type = {c.check_type: c for c in cfg.checks}
+        for check_type in self.EXPECTED_ENABLED_BY_DEFAULT:
+            assert check_type in by_type, (
+                f"Default config missing {check_type.value}"
+            )
+            assert by_type[check_type].enabled is True, (
+                f"{check_type.value} should default to enabled "
+                "(cheap local probe). If you intentionally disabled it, "
+                "update EXPECTED_ENABLED_BY_DEFAULT."
+            )
+
+
+class TestHeartbeatLifespanWiring:
+    """Smoke-tests the deferred init wiring in main.py.
+
+    Reads the source rather than booting the full app to keep the
+    test cheap. Existing FastAPI test client tests cover the full
+    lifecycle integration; this just pins that the new step exists
+    and uses the right symbol so a future refactor cannot silently
+    drop the daemon start.
+    """
+
+    def test_main_lifespan_includes_heartbeat_daemon_step(self):
+        from pathlib import Path
+
+        main_path = (
+            Path(__file__).resolve().parents[1] / "app" / "main.py"
+        )
+        source = main_path.read_text(encoding="utf-8")
+        assert '_step("heartbeat_daemon"' in source, (
+            "main.py lifespan deferred init must include a "
+            'heartbeat_daemon step (look for `_step("heartbeat_daemon", ...)`)'
+        )
+        assert "HeartbeatDaemon.get_instance()" in source, (
+            "Lifespan must call HeartbeatDaemon.get_instance() so the "
+            "API endpoints + frontend share the same singleton"
+        )
+        assert "heartbeat_daemon_stopped" in source or "heartbeat_daemon_stop_skipped" in source, (
+            "Shutdown handler must call daemon.stop() so a clean uvicorn "
+            "shutdown drains the loop instead of orphaning the task"
+        )
