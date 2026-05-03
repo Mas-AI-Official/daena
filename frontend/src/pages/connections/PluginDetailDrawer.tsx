@@ -334,6 +334,77 @@ export default function PluginDetailDrawer({
                     Last failure: {plugin.failure_reason}
                   </p>
                 )}
+              {/* PR-CONN-LOCAL-MODEL-PROBE (2026-05-03): WSL / Docker
+                  localhost guidance. Local model probes use a
+                  structured failure_reason prefix ("connection_failed:"
+                  / "timeout:" / "no_models:"), so we only surface the
+                  WSL hint for the connect-failure case where the
+                  operator probably hit the cross-host localhost gotcha. */}
+              {plugin.source.catalog.kind === 'local_model' &&
+                plugin.failure_reason &&
+                (plugin.failure_reason.startsWith('connection_failed:')
+                 || plugin.failure_reason.startsWith('timeout:')) && (
+                  <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-100">
+                    <ShieldAlert size={12} className="mt-0.5 shrink-0 text-amber-300" />
+                    <div className="space-y-1">
+                      <p>
+                        <strong>Cannot reach the local model server.</strong>{' '}
+                        Check that the server is running and listening on the
+                        configured base URL.
+                      </p>
+                      <ul className="list-disc pl-4 text-[10px] text-amber-100/80">
+                        <li>
+                          <strong>WSL / Docker:</strong> "localhost" inside a
+                          container points at the container itself. From WSL,
+                          use the Windows host IP (or
+                          <code className="mx-1">host.docker.internal</code>)
+                          instead of <code>127.0.0.1</code>.
+                        </li>
+                        <li>
+                          <strong>Windows firewall:</strong> first run of
+                          <code className="mx-1">ollama serve</code> /
+                          <code className="mx-1">llama-server</code> may
+                          prompt for network permission -- accept it.
+                        </li>
+                        <li>
+                          <strong>Port:</strong> Ollama defaults to
+                          <code className="mx-1">11434</code>, llama-server
+                          to <code className="mx-1">8080</code>.
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              {/* "no_models" is reachable but empty -- different action
+                  (pull a model), so a different hint. */}
+              {plugin.source.catalog.kind === 'local_model' &&
+                plugin.failure_reason &&
+                plugin.failure_reason.startsWith('no_models:') && (
+                  <div className="mt-2 flex items-start gap-1.5 rounded-md border border-cyan-500/30 bg-cyan-500/5 px-2 py-1.5 text-[11px] text-cyan-100">
+                    <ShieldCheck size={12} className="mt-0.5 shrink-0 text-cyan-300" />
+                    <span>
+                      <strong>Server reachable, but no models loaded.</strong>{' '}
+                      Pull or load a model in the local server's CLI, then
+                      re-probe. Examples:
+                      <code className="mx-1">ollama pull llama3.1:8b</code>
+                      or launch llama-server with a GGUF file.
+                    </span>
+                  </div>
+                )}
+              {/* Connected local model: confirm what Daena sees. The
+                  probe stores model names in ConnectionV2Capability;
+                  surfacing them inline needs a separate
+                  marketplace-card payload extension that's out of
+                  scope for this PR. For now the green "callable" pill
+                  in the truth ladder above is the operator's
+                  confirmation. */}
+              {plugin.source.catalog.kind === 'local_model' &&
+                plugin.status === 'connected' && (
+                  <p className="mt-2 text-[10px] text-emerald-200/80">
+                    Local model server reachable + at least one model
+                    loaded. Brain selector can route to it.
+                  </p>
+                )}
               {plugin.last_checked && (
                 <p className="mt-1 text-[10px] text-starlight-500">
                   Last checked: {new Date(plugin.last_checked).toLocaleString()}

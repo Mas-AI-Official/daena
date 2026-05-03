@@ -11,6 +11,10 @@ from app.services.connection_v2.probes.cli_runtime_probe import (
     CliRuntimeProbe,
     install_cli_runtime_probe,
 )
+from app.services.connection_v2.probes.local_model_probe import (
+    LocalModelProbe,
+    install_local_model_probe,
+)
 from app.services.connection_v2.probes.mcp_server_probe import (
     McpServerProbe,
     install_mcp_server_probe,
@@ -36,16 +40,23 @@ def install_all_probes() -> None:
     install_mcp_server_probe()
     install_cli_runtime_probe()
     install_oauth_app_probe()
+    # PR-CONN-LOCAL-MODEL-PROBE (2026-05-03): real probe for
+    # kind=local_model rows (Ollama / vLLM-llama-server). Before this
+    # wiring, local model rows fell through to ``probe_unavailable``
+    # which kept the Brain selector blind to local-LLM truth.
+    install_local_model_probe()
 
 
 __all__ = [
     "CliRuntimeProbe",
+    "LocalModelProbe",
     "McpServerProbe",
     "OAuthAppProbe",
     "ProviderProbe",
     "SkillPackProbe",
     "install_all_probes",
     "install_cli_runtime_probe",
+    "install_local_model_probe",
     "install_mcp_server_probe",
     "install_oauth_app_probe",
     "install_provider_probe",
