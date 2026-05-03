@@ -520,6 +520,138 @@ export function officialityLabel(o: Officiality | undefined) {
   return OFFICIALITY_LABEL[o ?? 'community']
 }
 
+// ── Skill-lock truth (PR-CONN-PLUGIN-SKILLS-UX-WIRING) ──
+//
+// Single source of truth for "are this plugin's bundled skills
+// executable?" Both PluginCardView (chip rendering) and
+// PluginDetailDrawer (chip + click behaviour) consult this so they
+// can never disagree about whether a skill is ready.
+//
+// Honesty rules (founder rule 11):
+//   - Skill packs are content + metadata: they advertise prompts but
+//     never gate on a probe -- treat as "ready_metadata_only" so the
+//     chip shows the skill name without lying about callable tools.
+//   - Every other plugin requires the V2 lifecycle to be `callable`
+//     OR `enabled` AND no recent failure (status !== 'failed').
+//   - Anything else (available / installed / needs_auth / failed /
+//     not_supported_on_os) is locked. Click shows a "Connect first"
+//     hint, never invokes a tool.
+
+export type SkillReadiness =
+  | 'ready'                  // plugin probed callable; tools wireable
+  | 'ready_metadata_only'    // skill pack: prompts visible, no tool
+  | 'locked_needs_setup'     // available / installed
+  | 'locked_needs_auth'      // configured but not authenticated
+  | 'locked_failed'          // last probe failed
+  | 'locked_unsupported'     // OS gate
+  | 'locked'                 // catch-all: never executable
+
+export function skillReadiness(plugin: PluginCard): SkillReadiness {
+  if (plugin.is_skill_pack) return 'ready_metadata_only'
+  switch (plugin.status) {
+    case 'connected':
+      return 'ready'
+    case 'failed':
+      return 'locked_failed'
+    case 'needs_auth':
+      return 'locked_needs_auth'
+    case 'installed':
+    case 'available':
+      return 'locked_needs_setup'
+    case 'not_supported_on_os':
+      return 'locked_unsupported'
+    default:
+      return 'locked'
+  }
+}
+
+export const SKILL_READINESS_TONE: Record<
+  SkillReadiness,
+  { dot: string; text: string; bg: string; border: string; hex: string }
+> = {
+  // Ready -- emerald (matches "Connected" pill so the operator's eye
+  // groups callable plugin + executable skills together).
+  ready: {
+    dot: 'bg-emerald-400',
+    text: 'text-emerald-100',
+    bg: 'bg-emerald-500/10',
+    border: 'border-emerald-500/40',
+    hex: 'text-emerald-400',
+  },
+  // Skill-pack metadata: violet (matches the "skill pack" tag pill).
+  ready_metadata_only: {
+    dot: 'bg-violet-400',
+    text: 'text-violet-100',
+    bg: 'bg-violet-500/10',
+    border: 'border-violet-500/30',
+    hex: 'text-violet-400',
+  },
+  // Locked variants -- intentionally muted so the operator visually
+  // groups them as "not ready yet" (no false hope of execution).
+  locked_needs_auth: {
+    dot: 'bg-amber-300',
+    text: 'text-amber-200/70',
+    bg: 'bg-amber-500/5',
+    border: 'border-amber-500/20',
+    hex: 'text-amber-300/60',
+  },
+  locked_needs_setup: {
+    dot: 'bg-cyan-300',
+    text: 'text-cyan-200/70',
+    bg: 'bg-cyan-500/5',
+    border: 'border-cyan-500/20',
+    hex: 'text-cyan-300/60',
+  },
+  locked_failed: {
+    dot: 'bg-rose-400',
+    text: 'text-rose-200/70',
+    bg: 'bg-rose-500/5',
+    border: 'border-rose-500/20',
+    hex: 'text-rose-400/60',
+  },
+  locked_unsupported: {
+    dot: 'bg-slate-500',
+    text: 'text-slate-400/80',
+    bg: 'bg-slate-500/5',
+    border: 'border-slate-500/20',
+    hex: 'text-slate-500',
+  },
+  locked: {
+    dot: 'bg-slate-500',
+    text: 'text-slate-400/80',
+    bg: 'bg-slate-500/5',
+    border: 'border-slate-500/20',
+    hex: 'text-slate-500',
+  },
+}
+
+export function skillReadinessTone(r: SkillReadiness) {
+  return SKILL_READINESS_TONE[r]
+}
+
+/** Plain-English copy that explains a locked skill chip. Used in the
+ * drawer's inline message + the card chip tooltip so the operator
+ * always sees the same reason. */
+export function skillReadinessReason(plugin: PluginCard): string {
+  const r = skillReadiness(plugin)
+  switch (r) {
+    case 'ready':
+      return `Skill ready. ${plugin.name} is connected; execution wiring lands in the next PR.`
+    case 'ready_metadata_only':
+      return 'Skill pack content. Pair with a runtime, MCP, or app that exposes the matching tool.'
+    case 'locked_needs_auth':
+      return `Connect ${plugin.name} first to enable this skill.`
+    case 'locked_needs_setup':
+      return `Install or set up ${plugin.name} first to enable this skill.`
+    case 'locked_failed':
+      return `${plugin.name} probe is failing. Re-test from the drawer, then this skill becomes ready.`
+    case 'locked_unsupported':
+      return `${plugin.name} is not supported on this operating system.`
+    default:
+      return `Skill locked: connect ${plugin.name} first.`
+  }
+}
+
 // Re-export for convenience
 export type {
   CatalogCategory,

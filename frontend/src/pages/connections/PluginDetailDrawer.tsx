@@ -26,8 +26,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Activity, AlertTriangle, BookOpen, ExternalLink, Loader2, Power,
-  ShieldAlert, ShieldCheck, X,
+  Activity, AlertTriangle, BookOpen, CheckCircle2, ChevronDown,
+  ChevronRight, ExternalLink, KeyRound, Loader2, MessageSquare,
+  Power, Server, ShieldAlert, ShieldCheck, Sparkles, X,
 } from 'lucide-react'
 
 import {
@@ -36,7 +37,14 @@ import {
   fetchInstallPlan,
   runBrowserProbe,
 } from '@/hooks/useMarketplace'
-import { type PluginCard, pluginStatusTone } from './pluginCard'
+import {
+  type PluginCard,
+  officialityLabel,
+  officialityTone,
+  pluginStatusTone,
+  skillReadiness,
+} from './pluginCard'
+import SkillBundleSection from './SkillBundleSection'
 import { pluginIconFor, pluginIconTone } from './pluginIcons'
 
 interface PluginDetailDrawerProps {
@@ -151,6 +159,23 @@ export default function PluginDetailDrawer({
                 <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
                 {plugin.status_label}
               </span>
+              {/* Officiality badge: trust signal pulled from
+                  PR-CONN-MCP-CATALOG-SKILL-BUNDLES so the operator can
+                  distinguish vendor-shipped from community-curated
+                  inside the drawer too (the card already shows it). */}
+              {(() => {
+                const oTone = officialityTone(plugin.officiality)
+                const oLabel = officialityLabel(plugin.officiality)
+                return (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${oTone.border} ${oTone.bg} ${oTone.text}`}
+                    title={`Source tier: ${oLabel}`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${oTone.dot}`} />
+                    {oLabel}
+                  </span>
+                )
+              })()}
               <RiskInline risk={plugin.risk_level} />
               {plugin.is_skill_pack && (
                 <span className="rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-200">
@@ -181,60 +206,44 @@ export default function PluginDetailDrawer({
         </header>
 
         <div className="space-y-5 p-5">
-          {/* ── What this plugin does ── */}
-          <Section title="What this plugin lets Daena do">
-            <p className="text-sm text-starlight-200">{plugin.description}</p>
-            {plugin.is_skill_pack_caption && (
-              <div className="mt-2 flex items-start gap-1.5 rounded-md border border-violet-500/30 bg-violet-500/5 px-2 py-1.5 text-[11px] text-violet-100">
-                <BookOpen size={12} className="mt-0.5 shrink-0" />
-                <span>{plugin.is_skill_pack_caption}</span>
-              </div>
-            )}
-            {plugin.is_skill_pack && (
-              <p className="mt-2 text-[11px] text-starlight-500">
-                Pair this skill pack with a runtime, MCP, or app that
-                exposes the corresponding tools to make it actionable.
-              </p>
-            )}
+          {/* ── What Daena can do ──
+              PR-CONN-PLUGIN-SKILLS-UX-WIRING (2026-05-03): leads with
+              concrete suggested_prompts when the catalog has them
+              (Codex-style "Triage open issues for me"); falls back to
+              the one-line short_description otherwise. This is the
+              first thing the operator reads -- it should answer "what
+              does Daena USE this plugin to do?" in plain English. */}
+          <Section title="What Daena can do">
+            <DaenaIntent plugin={plugin} />
           </Section>
 
-          {/* ── Capabilities / included skills ── */}
-          {plugin.included_skills.length > 0 && (
-            <Section title="Included capabilities">
-              <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {plugin.included_skills.map((cap) => (
-                  <li
-                    key={cap}
-                    className="flex items-start gap-1.5 rounded-md bg-white/[0.03] px-2 py-1 text-[11px] text-starlight-200"
-                  >
-                    <ShieldCheck size={11} className="mt-0.5 text-emerald-300" />
-                    {cap}
-                  </li>
-                ))}
-              </ul>
+          {/* ── Connection steps (4-rung ladder) ──
+              Visual ladder showing where the plugin currently sits:
+              MCP install -> Auth -> Test -> Skills ready. Each rung
+              tints based on the V2 truth ladder so the operator sees
+              exactly which step is blocking. */}
+          {!plugin.is_skill_pack && (
+            <Section title="Connection steps">
+              <ConnectionLadder plugin={plugin} />
             </Section>
           )}
 
-          {/* ── Required permissions / env vars ── */}
-          {plugin.required_env_vars.length > 0 && (
-            <Section title="Required permissions">
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200">
-                <strong>Env var NAMES (Daena never reads the values):</strong>
-                <ul className="mt-1.5 grid grid-cols-1 gap-1 sm:grid-cols-2">
-                  {plugin.required_env_vars.map((env) => (
-                    <li key={env}>
-                      <code className="rounded bg-amber-500/10 px-1.5 py-0.5 text-amber-100">
-                        {env}
-                      </code>
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-2 text-[10px] text-amber-200/70">
-                  Set these in Settings -&gt; API Keys (vault-backed) or in the
-                  source CLI's own env. Daena's Configure flow never asks
-                  you to paste secrets into the catalog UI.
-                </p>
-              </div>
+          {/* ── Skills (honeycomb cluster) ──
+              Replaces the legacy flat "Included capabilities" list.
+              Chips are LOCKED until lifecycle reaches callable; click
+              shows a "Connect first" message instead of executing. */}
+          <Section title="Skills">
+            <SkillBundleSection plugin={plugin} />
+          </Section>
+
+          {/* ── Permissions ──
+              Combines the catalog's permissions_summary (Read/Write/
+              Network) with the env-var NAMES the plugin needs. We
+              never display secret VALUES -- the operator pastes them
+              in the API Keys page or the source CLI's own env. */}
+          {(plugin.permissions_summary.length > 0 || plugin.required_env_vars.length > 0) && (
+            <Section title="Permissions">
+              <PermissionsBlock plugin={plugin} />
             </Section>
           )}
 
@@ -475,6 +484,14 @@ export default function PluginDetailDrawer({
             </Section>
           )}
 
+          {/* ── Source & trust ──
+              Officiality + source URLs + last-verified date. Community
+              entries get a "Review source before install" hint so the
+              operator can self-vet before any install action. */}
+          <Section title="Source & trust">
+            <SourceTrustBlock plugin={plugin} />
+          </Section>
+
           {/* ── Compatibility ── */}
           <Section title="Compatibility">
             <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
@@ -560,6 +577,252 @@ function ProbeKv({ label, value, ok }: { label: string; value: string; ok: boole
     <div className={`flex items-center justify-between gap-2 rounded-md border px-2 py-1 ${tone}`}>
       <span className="text-[10px] uppercase tracking-wider opacity-80">{label}</span>
       <span className="text-[11px]">{value}</span>
+    </div>
+  )
+}
+
+// ── PR-CONN-PLUGIN-SKILLS-UX-WIRING (2026-05-03): drawer-only blocks ──
+
+/** "What Daena can do" -- prefers `suggested_prompts` (Codex-style
+ * concrete intents) and falls back to the catalog short_description.
+ * Keeps the copy honest: never claims execution that hasn't happened. */
+function DaenaIntent({ plugin }: { plugin: PluginCard }) {
+  const prompts = plugin.suggested_prompts ?? []
+  if (prompts.length === 0) {
+    return (
+      <p className="text-sm text-starlight-200">
+        {plugin.description}
+      </p>
+    )
+  }
+  return (
+    <>
+      <p className="mb-2 text-[12px] text-starlight-300">{plugin.description}</p>
+      <ul className="space-y-1.5">
+        {prompts.slice(0, 5).map((prompt) => (
+          <li
+            key={prompt}
+            className="flex items-start gap-2 rounded-md border border-white/5 bg-white/[0.02] px-2.5 py-1.5 text-[12px] text-starlight-100"
+          >
+            <MessageSquare size={11} className="mt-0.5 shrink-0 text-accent-cyan" />
+            <span>&ldquo;{prompt}&rdquo;</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[10px] text-starlight-500">
+        These are example intents Daena will route through {plugin.name} once
+        connected. Skill execution wiring lands in the next PR.
+      </p>
+    </>
+  )
+}
+
+/** ConnectionLadder -- visual 4-rung ladder driven by V2 truth.
+ * MCP install / Auth / Test / Skills-ready. Each rung tints based on
+ * the corresponding lifecycle dimension (configured / authenticated /
+ * callable). The "skills ready" rung mirrors the callable rung so the
+ * operator sees explicitly when chips will unlock. */
+function ConnectionLadder({ plugin }: { plugin: PluginCard }) {
+  const truth = plugin.source.v2_truth
+  const lifecycle = plugin.source.lifecycle
+  const isProvider = plugin.source.catalog.kind === 'api_provider'
+  const isOAuth = plugin.auth_type === 'oauth'
+  const isMcp = plugin.source.catalog.kind === 'mcp_server'
+
+  // Step 1: Install (or "configured" for non-MCP kinds)
+  const step1Done = !!truth?.configured.value || !!truth?.imported.value
+    || ['installed', 'configured', 'reachable', 'callable', 'enabled'].includes(lifecycle)
+  const step1Label = isMcp
+    ? 'MCP server installed'
+    : isProvider
+      ? 'API key configured'
+      : 'Plugin configured'
+
+  // Step 2: Auth (only if the plugin needs auth)
+  const needsAuthStep = isOAuth || plugin.auth_type === 'api_key' || plugin.auth_type === 'token'
+  const step2Done = !!truth?.authenticated.value
+    || lifecycle === 'callable' || lifecycle === 'enabled'
+  const step2Label = isOAuth
+    ? 'Account connected'
+    : 'Credential present'
+
+  // Step 3: Test / probe
+  const step3Done = !!truth?.callable.value
+    || lifecycle === 'callable' || lifecycle === 'enabled'
+  const step3Label = 'Probe successful'
+
+  // Step 4: Skills ready (mirrors callable so the operator can see
+  // EXPLICITLY when chips unlock).
+  const step4Done = step3Done && skillReadiness(plugin) === 'ready'
+  const step4Label = 'Skills ready'
+
+  const steps: Array<{ label: string; done: boolean; show: boolean; icon: typeof Server }> = [
+    { label: step1Label, done: step1Done, show: true, icon: isMcp ? Server : KeyRound },
+    { label: step2Label, done: step2Done, show: needsAuthStep, icon: KeyRound },
+    { label: step3Label, done: step3Done, show: true, icon: Activity },
+    { label: step4Label, done: step4Done, show: true, icon: Sparkles },
+  ]
+  const visible = steps.filter((s) => s.show)
+
+  return (
+    <ol className="space-y-1">
+      {visible.map((step, idx) => {
+        const Icon = step.icon
+        return (
+          <li
+            key={`${step.label}-${idx}`}
+            className={`flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 text-[11px] ${
+              step.done
+                ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-100'
+                : 'border-white/5 bg-white/[0.02] text-starlight-400'
+            }`}
+          >
+            <span
+              className={`flex h-5 w-5 items-center justify-center rounded-full ${
+                step.done
+                  ? 'bg-emerald-500/20 text-emerald-200'
+                  : 'bg-white/[0.05] text-starlight-500'
+              }`}
+            >
+              {step.done ? <CheckCircle2 size={11} /> : <Icon size={10} />}
+            </span>
+            <span className="text-[10px] font-medium uppercase tracking-wider opacity-70">
+              {idx + 1}.
+            </span>
+            <span>{step.label}</span>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+/** PermissionsBlock -- merges catalog permissions_summary with the
+ * env-var NAMES Daena needs. Highlights high-risk plugins with an
+ * Asset Shield reminder. */
+function PermissionsBlock({ plugin }: { plugin: PluginCard }) {
+  const summary = plugin.permissions_summary ?? []
+  return (
+    <div className="space-y-2">
+      {summary.length > 0 && (
+        <div className="rounded-md border border-white/5 bg-white/[0.02] px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wider text-starlight-500">
+            Scope
+          </p>
+          <ul className="mt-1.5 flex flex-wrap gap-1.5">
+            {summary.map((perm) => (
+              <li
+                key={perm}
+                className="inline-flex items-center gap-1 rounded bg-white/[0.04] px-1.5 py-0.5 text-[11px] text-starlight-200"
+              >
+                <ShieldCheck size={10} className="text-accent-cyan" />
+                {perm}
+              </li>
+            ))}
+          </ul>
+          {plugin.risk_level === 'high' && (
+            <p className="mt-2 flex items-start gap-1.5 text-[10px] text-rose-200">
+              <ShieldAlert size={10} className="mt-0.5 shrink-0" />
+              High-risk plugin. Asset Shield governance still gates every
+              call regardless of OAuth scope.
+            </p>
+          )}
+        </div>
+      )}
+      {plugin.required_env_vars.length > 0 && (
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
+          <p className="text-[10px] uppercase tracking-wider opacity-80">
+            Env var NAMES (Daena never reads the values)
+          </p>
+          <ul className="mt-1.5 flex flex-wrap gap-1">
+            {plugin.required_env_vars.map((env) => (
+              <li key={env}>
+                <code className="rounded bg-amber-500/10 px-1.5 py-0.5 text-amber-100">
+                  {env}
+                </code>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[10px] text-amber-200/70">
+            Set these in Settings -&gt; API Keys (vault-backed) or in the
+            source CLI&rsquo;s own env. Daena&rsquo;s Configure flow never
+            asks you to paste secrets into the catalog UI.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** SourceTrustBlock -- collapsible source attribution section.
+ * Open by default for community entries (operator should self-vet);
+ * collapsed for high-trust tiers (vendor-official etc) where the
+ * badge already conveys safety. */
+function SourceTrustBlock({ plugin }: { plugin: PluginCard }) {
+  const officiality = plugin.officiality
+  const sources = plugin.source_refs ?? []
+  const lastVerified = plugin.last_verified_at
+  const isCommunity = officiality === 'community' || officiality === 'archived'
+  const [open, setOpen] = useState(isCommunity || sources.length === 0)
+  const oTone = officialityTone(officiality)
+  const oLabel = officialityLabel(officiality)
+
+  return (
+    <div className="rounded-md border border-white/5 bg-white/[0.02]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${oTone.border} ${oTone.bg} ${oTone.text}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${oTone.dot}`} />
+            {oLabel}
+          </span>
+          {lastVerified && (
+            <span className="text-[10px] text-starlight-500">
+              Verified {lastVerified}
+            </span>
+          )}
+        </div>
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+      </button>
+      {open && (
+        <div className="border-t border-white/5 px-3 py-2 text-[11px] text-starlight-300">
+          {isCommunity && (
+            <p className="mb-2 flex items-start gap-1.5 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-amber-100">
+              <ShieldAlert size={11} className="mt-0.5 shrink-0" />
+              <span>
+                Community-maintained. Review the source repository before
+                installing -- Daena does not vet third-party MCP code.
+              </span>
+            </p>
+          )}
+          {sources.length === 0 ? (
+            <p className="text-starlight-500">
+              No source URLs declared yet for this catalog entry.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {sources.map((url) => (
+                <li key={url}>
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-accent-cyan hover:underline"
+                  >
+                    <ExternalLink size={10} />
+                    {url}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   )
 }
