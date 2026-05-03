@@ -27,7 +27,8 @@
  */
 
 import { useState } from 'react'
-import { Lock, Sparkles } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { ArrowRight, Lock, ShieldAlert, Sparkles } from 'lucide-react'
 
 import {
   type PluginCard,
@@ -36,12 +37,27 @@ import {
   skillReadinessReason,
   skillReadinessTone,
 } from './pluginCard'
+// PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE1 (2026-05-03): chip clicks now
+// resolve through a typed action registry. Phase 1 only drafts into
+// chat -- never executes a tool, never sends external messages.
+import {
+  resolveSkillAction,
+  type ResolvedSkillAction,
+} from './skillActionRegistry'
+import { draftMessage } from '@/lib/composerBridge'
+import { toast } from '@/stores/toastStore'
 
 interface SkillBundleSectionProps {
   plugin: PluginCard
+  /** Optional: parent (drawer) hands us its onClose so a successful
+   * draft hand-off can close the drawer before navigating to /chat,
+   * mirroring the suggested-prompt button flow. */
+  onCloseParent?: () => void
 }
 
-export default function SkillBundleSection({ plugin }: SkillBundleSectionProps) {
+export default function SkillBundleSection({
+  plugin, onCloseParent,
+}: SkillBundleSectionProps) {
   // Prefer bundle skills (Codex-style snake_case names); fall back to
   // legacy capabilities so entries that haven't been bumped to the
   // new schema still render something. The catalog adapter already
@@ -52,6 +68,7 @@ export default function SkillBundleSection({ plugin }: SkillBundleSectionProps) 
   const tone = skillReadinessTone(readiness)
   const reason = skillReadinessReason(plugin)
   const [activeChip, setActiveChip] = useState<string | null>(null)
+  const navigate = useNavigate()
 
   if (skills.length === 0) {
     return (
@@ -76,6 +93,31 @@ export default function SkillBundleSection({ plugin }: SkillBundleSectionProps) 
   function handleChipClick(skill: string) {
     // Toggle the inline reveal under the chip. Never invokes a tool.
     setActiveChip((cur) => (cur === skill ? null : skill))
+  }
+
+  /** PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE1: drop the resolved
+   * draft_text into the chat composer and navigate. NEVER auto-sends.
+   * Mirrors the suggested-prompt flow in PluginDetailDrawer.DaenaIntent. */
+  function handleUseInChat(skill: string, resolved: ResolvedSkillAction) {
+    if (!resolved.draft_text) {
+      // Defensive: if a registry entry has no template (shouldn't
+      // happen for allowed entries; would happen for unsupported)
+      // surface a toast and bail rather than silently doing nothing.
+      toast.info('No draft template registered for this skill yet.')
+      return
+    }
+    draftMessage(resolved.draft_text, {
+      surface: 'connections.skill_chip',
+      plugin_id: plugin.id,
+      plugin_name: plugin.name,
+    })
+    const fromLabel =
+      resolved.effective_action === 'blocked_high_risk_consent_missing'
+        ? `Drafted plan from ${plugin.name}: opening chat...`
+        : `Drafted skill from ${plugin.name}: opening chat...`
+    toast.success(fromLabel)
+    onCloseParent?.()
+    setTimeout(() => navigate('/chat'), 80)
   }
 
   return (
@@ -119,44 +161,59 @@ export default function SkillBundleSection({ plugin }: SkillBundleSectionProps) 
                 )}
               </button>
 
-              {isActive && (
-                <div
-                  role="status"
-                  className="absolute left-0 right-auto top-full z-10 mt-1.5 w-64 rounded-md border border-white/10 bg-midnight-900/95 px-2.5 py-2 text-[11px] text-starlight-200 shadow-xl"
-                >
-                  {readiness === 'ready' ? (
-                    <>
+              {isActive && (() => {
+                // PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE1: chip click
+                // opens the registry-driven popover. The popover
+                // surfaces an action button when the registry has a
+                // safe draft for this (plugin, skill) pair; falls
+                // back to an explanatory locked / pending state
+                // otherwise.
+                const resolved = resolveSkillAction(plugin, skill, readiness)
+                const isBlocked =
+                  resolved.effective_action === 'blocked_high_risk_consent_missing'
+                const isPlan = resolved.effective_action === 'action_plan'
+                const isDraft = resolved.effective_action === 'composer_draft'
+                const offersChatAction = isDraft || isPlan || (isBlocked && resolved.draft_text)
+                const buttonLabel = isBlocked
+                  ? 'Draft plan in chat'
+                  : isPlan
+                    ? 'Draft action plan'
+                    : 'Use in chat'
+                return (
+                  <div
+                    role="status"
+                    className="absolute left-0 right-auto top-full z-10 mt-1.5 w-72 rounded-md border border-white/10 bg-midnight-900/95 px-2.5 py-2 text-[11px] text-starlight-200 shadow-xl"
+                  >
+                    <div className="flex items-start justify-between gap-2">
                       <p className="font-medium text-starlight-100">
                         {humanize(skill)}
                       </p>
-                      <p className="mt-1 text-starlight-400">
-                        Skill execution wiring pending. Use a suggested
-                        prompt above (one click drafts it into the
-                        chat composer) or open chat and ask
-                        {' '}{plugin.name}{' '} directly.
-                      </p>
-                    </>
-                  ) : readiness === 'ready_metadata_only' ? (
-                    <>
-                      <p className="font-medium text-starlight-100">
-                        {humanize(skill)}
-                      </p>
-                      <p className="mt-1 text-starlight-400">
-                        This is a skill-pack prompt. Pair with a
-                        runtime, MCP, or app that exposes the matching
-                        tool to actually run it.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="font-medium text-starlight-100">
-                        Locked: {humanize(skill)}
-                      </p>
-                      <p className="mt-1 text-starlight-400">{reason}</p>
-                    </>
-                  )}
-                </div>
-              )}
+                      {isBlocked && (
+                        <ShieldAlert size={11} className="mt-0.5 shrink-0 text-amber-300" />
+                      )}
+                    </div>
+                    <p className="mt-1 text-starlight-400">
+                      {resolved.inline_message}
+                    </p>
+                    {offersChatAction && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleUseInChat(skill, resolved)
+                        }}
+                        className={`mt-2 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors ${
+                          isBlocked
+                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
+                            : 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan hover:bg-accent-cyan/20'
+                        }`}
+                      >
+                        {buttonLabel} <ArrowRight size={9} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })()}
             </li>
           )
         })}

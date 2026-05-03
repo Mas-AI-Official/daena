@@ -236,9 +236,14 @@ export default function PluginDetailDrawer({
           {/* ── Skills (honeycomb cluster) ──
               Replaces the legacy flat "Included capabilities" list.
               Chips are LOCKED until lifecycle reaches callable; click
-              shows a "Connect first" message instead of executing. */}
+              shows a "Connect first" message instead of executing.
+              PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE1: ready chips with
+              a registered Phase 1 action also surface a "Use in chat"
+              button that drafts a safe template into the composer.
+              The drawer's onClose is passed so a successful draft
+              tear-down before navigating to /chat. */}
           <Section title="Skills">
-            <SkillBundleSection plugin={plugin} />
+            <SkillBundleSection plugin={plugin} onCloseParent={onClose} />
           </Section>
 
           {/* ── Permissions ──
