@@ -122,17 +122,56 @@ def test_every_allowlist_entry_is_read_only():
         )
 
 
-def test_every_allowlist_entry_is_planned_only():
-    """Phase 2 ships PLANNED ONLY. No entry may declare execution_mode
-    of 'mcp_tool' until follow-up PRs verify each integration
-    end-to-end. This test fails the moment someone tries to flip it."""
+# Phase 2.x integration arms: each entry promoted from planned_only
+# to mcp_tool MUST be listed here with its promoting-PR reference.
+# A future maintainer who flips an entry without updating this set
+# fails the invariant test below.
+PROMOTED_TO_MCP_TOOL: dict[tuple[str, str], str] = {
+    # PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY (2026-05-03):
+    ("mcp-filesystem", "find_files"):
+        "PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY",
+    ("mcp-filesystem", "summarize_directory"):
+        "PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY",
+    ("mcp-huggingface", "find_model"):
+        "PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY",
+    ("mcp-huggingface", "inspect_paper"):
+        "PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY",
+}
+
+
+def test_every_allowlist_entry_is_planned_or_explicitly_promoted():
+    """Default execution_mode=planned_only. Any entry promoted to
+    mcp_tool MUST be in PROMOTED_TO_MCP_TOOL with the promoting-PR
+    reference. This catches stealth promotions in code review."""
     for entry in PHASE2_ALLOWLIST:
-        assert entry.execution_mode == "planned_only", (
-            f"Phase 2 entry {entry.plugin_id}:{entry.skill_id} has "
-            f"execution_mode={entry.execution_mode!r}. Phase 2 ships "
-            f"planned_only for ALL entries -- promotion happens in "
-            f"separate per-integration PRs after safety verification."
-        )
+        key = (entry.plugin_id, entry.skill_id)
+        if entry.execution_mode == "mcp_tool":
+            assert key in PROMOTED_TO_MCP_TOOL, (
+                f"Entry {key} has execution_mode='mcp_tool' but is not "
+                f"in PROMOTED_TO_MCP_TOOL. Either revert to "
+                f"planned_only or add the promoting PR id."
+            )
+        else:
+            assert entry.execution_mode == "planned_only", (
+                f"Entry {key} has unknown execution_mode "
+                f"{entry.execution_mode!r}. Allowed: 'planned_only' "
+                f"or 'mcp_tool' (with PROMOTED_TO_MCP_TOOL entry)."
+            )
+
+
+def test_pr1_promotion_set_is_exactly_filesystem_and_huggingface():
+    """PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY promotes EXACTLY
+    these four skills -- catches accidental promotion of other entries."""
+    pr1_keys = {
+        k for k, pr in PROMOTED_TO_MCP_TOOL.items()
+        if pr == "PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY"
+    }
+    assert pr1_keys == {
+        ("mcp-filesystem", "find_files"),
+        ("mcp-filesystem", "summarize_directory"),
+        ("mcp-huggingface", "find_model"),
+        ("mcp-huggingface", "inspect_paper"),
+    }, f"PR-1 promotion set drifted: {pr1_keys}"
 
 
 def test_every_allowlist_entry_has_required_inputs_declared():
@@ -577,3 +616,434 @@ async def test_execute_endpoint_requires_auth(client):
 async def test_get_allowlist_requires_auth(client):
     res = await client.get("/api/v1/connections/v2/skills/allowlist")
     assert res.status_code in (401, 403)
+
+
+# ──────────────────────────────────────────────────────────────────
+# PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY (2026-05-03)
+# Real MCP execution path tests. Each promoted skill (filesystem +
+# huggingface) gets coverage for: server_key resolution, arg builder,
+# success path (audit + summary), MCP error, MCP timeout, and the
+# secret-leak canary on actual MCP responses.
+# ──────────────────────────────────────────────────────────────────
+
+
+from unittest.mock import patch  # noqa: E402
+
+from app.services.connection_v2.skill_executor import (  # noqa: E402
+    _build_mcp_arguments,
+    _flatten_mcp_content,
+    _resolve_mcp_server_key,
+    _summarize_mcp_result,
+    get_allowlist_entry as _get_entry,
+)
+
+
+# Sentinel for canary tests against real MCP RESPONSES (distinct
+# from the operator-input canary above so we can prove independence).
+MCP_RESULT_CANARY = "PHASE2X-MCP-RESULT-CANARY-44556677"
+
+
+# ── Server key resolver ──
+
+def test_resolve_server_key_filesystem_returns_first_candidate_when_none_installed(monkeypatch):
+    """When no candidate is installed, the resolver still returns the
+    FIRST candidate so the operator-facing error names a real target."""
+    monkeypatch.setattr(
+        "app.services.connection_v2.skill_executor.get_installed_mcp",
+        lambda key: None,
+    ) if False else None
+    # The real resolver imports get_installed_mcp lazily; patch the
+    # source module instead.
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: None,
+    )
+    assert _resolve_mcp_server_key("mcp-filesystem") == "filesystem"
+
+
+def test_resolve_server_key_huggingface_default_first(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: None,
+    )
+    assert _resolve_mcp_server_key("mcp-huggingface") == "huggingface-mcp"
+
+
+def test_resolve_server_key_unknown_plugin(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: None,
+    )
+    # Falls back to plugin_id itself as the candidate.
+    assert _resolve_mcp_server_key("mcp-totally-fake") == "mcp-totally-fake"
+
+
+# ── Arg builders ──
+
+def test_arg_builder_filesystem_search_files():
+    entry = _get_entry("mcp-filesystem", "find_files")
+    assert entry is not None
+    args = _build_mcp_arguments(entry, {
+        "root_path": "D:/projects/foo",
+        "name_or_glob": "*.py",
+    })
+    assert args == {"path": "D:/projects/foo", "pattern": "*.py"}
+
+
+def test_arg_builder_filesystem_list_directory():
+    entry = _get_entry("mcp-filesystem", "summarize_directory")
+    args = _build_mcp_arguments(entry, {"root_path": "D:/projects"})
+    assert args == {"path": "D:/projects"}
+
+
+def test_arg_builder_huggingface_find_model():
+    entry = _get_entry("mcp-huggingface", "find_model")
+    args = _build_mcp_arguments(entry, {"task_or_keywords": "embedding small"})
+    assert args == {"query": "embedding small"}
+
+
+def test_arg_builder_huggingface_inspect_paper():
+    entry = _get_entry("mcp-huggingface", "inspect_paper")
+    args = _build_mcp_arguments(entry, {"arxiv_id_or_title": "2604.02460"})
+    assert args == {"query": "2604.02460"}
+
+
+# ── Result helpers ──
+
+def test_flatten_mcp_content_concatenates_text_parts():
+    parts = [
+        {"type": "text", "text": "first"},
+        {"type": "text", "text": "second"},
+        {"type": "image"},  # no text -- skipped
+    ]
+    out = _flatten_mcp_content(parts)
+    assert "first" in out and "second" in out
+    assert "image" not in out
+
+
+def test_summarize_mcp_result_short_text_kept_whole():
+    entry = _get_entry("mcp-filesystem", "find_files")
+    out = _summarize_mcp_result(entry, "small payload")
+    assert "small payload" in out
+    assert "(truncated)" not in out
+
+
+def test_summarize_mcp_result_long_text_is_trimmed():
+    entry = _get_entry("mcp-filesystem", "find_files")
+    big = "x" * 5000
+    out = _summarize_mcp_result(entry, big)
+    assert "(truncated)" in out
+    # Total summary respects limit + small framing overhead.
+    assert len(out) < 6000
+
+
+def test_summarize_mcp_result_empty_text_explained():
+    entry = _get_entry("mcp-huggingface", "find_model")
+    out = _summarize_mcp_result(entry, "")
+    assert "no content" in out.lower() or "empty" in out.lower()
+
+
+# ── End-to-end: real-exec path with mocked invoker ──
+
+
+@pytest.fixture
+async def callable_huggingface_v2_row(
+    db_session, seeded_tenant_user: tuple[UUID, UUID],
+) -> ConnectionV2:
+    """Insert a callable=true V2 row matching mcp-huggingface."""
+    tenant_id, _ = seeded_tenant_user
+    row = ConnectionV2(
+        tenant_id=tenant_id,
+        kind=ConnectionKind.MCP_SERVER.value,
+        slug="mcp-huggingface",
+        canonical_key="mcp-huggingface",
+        display_name="Hugging Face MCP",
+        config={},
+        auth_method="api_key",
+        detected=True, configured=True, imported=True,
+        reachable=True, authenticated=True, callable=True,
+        detected_at=datetime.now(UTC), configured_at=datetime.now(UTC),
+        imported_at=datetime.now(UTC), reachable_at=datetime.now(UTC),
+        authenticated_at=datetime.now(UTC), callable_at=datetime.now(UTC),
+    )
+    db_session.add(row)
+    await db_session.flush()
+    return row
+
+
+@pytest.mark.asyncio
+async def test_promoted_skill_with_uninstalled_mcp_returns_needs_connection(
+    db_session, callable_huggingface_v2_row,
+    seeded_tenant_user: tuple[UUID, UUID], monkeypatch,
+):
+    """Plugin V2 row says callable=True, but the bootstrap registry
+    has no MCP server installed for it. Phase 2.x exec path returns
+    needs_connection (NOT executed, NOT a fake success)."""
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: None,
+    )
+    executor = SkillExecutor(db_session)
+    result = await executor.execute(
+        plugin_id="mcp-huggingface",
+        skill_id="find_model",
+        tenant_id=seeded_tenant_user[0],
+        user_id=seeded_tenant_user[1],
+        operator_inputs={"task_or_keywords": "embedding"},
+    )
+    assert result.status == "needs_connection"
+    assert result.blocked_reason == "mcp_not_installed"
+    assert result.audit_event_id
+
+
+@pytest.mark.asyncio
+async def test_promoted_skill_success_returns_executed_with_summary(
+    db_session, callable_huggingface_v2_row,
+    seeded_tenant_user: tuple[UUID, UUID], monkeypatch,
+):
+    """Mock mcp_invoker.call_server_tool to return success + content.
+    Executor returns status=executed with operator-facing summary."""
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: object(),  # truthy = installed
+    )
+
+    async def fake_call(server_key, tool_name, arguments, *, timeout):
+        assert server_key == "huggingface-mcp"
+        assert tool_name == "hub_repo_search"
+        return {
+            "success": True,
+            "content": [
+                {"type": "text", "text": "BAAI/bge-small-en-v1.5\nsentence-transformers/all-MiniLM-L6-v2"},
+            ],
+            "is_error": False,
+        }
+
+    monkeypatch.setattr(
+        "app.services.mcp_invoker.call_server_tool", fake_call,
+    )
+    executor = SkillExecutor(db_session)
+    result = await executor.execute(
+        plugin_id="mcp-huggingface",
+        skill_id="find_model",
+        tenant_id=seeded_tenant_user[0],
+        user_id=seeded_tenant_user[1],
+        operator_inputs={"task_or_keywords": "embedding small"},
+    )
+    assert result.status == "executed"
+    assert result.accepted is True
+    assert "bge-small-en" in result.summary
+    assert "hub_repo_search" in result.summary
+    assert result.audit_event_id
+
+
+@pytest.mark.asyncio
+async def test_promoted_skill_mcp_error_returns_blocked(
+    db_session, callable_huggingface_v2_row,
+    seeded_tenant_user: tuple[UUID, UUID], monkeypatch,
+):
+    """MCP returns success=False -> status=blocked + reason=mcp_tool_error."""
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: object(),
+    )
+
+    async def fake_call(*args, **kwargs):
+        return {"success": False, "error": "tool not found"}
+
+    monkeypatch.setattr(
+        "app.services.mcp_invoker.call_server_tool", fake_call,
+    )
+    executor = SkillExecutor(db_session)
+    result = await executor.execute(
+        plugin_id="mcp-huggingface",
+        skill_id="find_model",
+        tenant_id=seeded_tenant_user[0],
+        user_id=seeded_tenant_user[1],
+        operator_inputs={"task_or_keywords": "x"},
+    )
+    assert result.status == "blocked"
+    assert result.blocked_reason == "mcp_tool_error"
+
+
+@pytest.mark.asyncio
+async def test_promoted_skill_mcp_timeout_returns_blocked_with_timeout_reason(
+    db_session, callable_huggingface_v2_row,
+    seeded_tenant_user: tuple[UUID, UUID], monkeypatch,
+):
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: object(),
+    )
+
+    async def fake_call(*args, **kwargs):
+        return {"success": False, "error": "huggingface-mcp.hub_repo_search timed out after 12s"}
+
+    monkeypatch.setattr(
+        "app.services.mcp_invoker.call_server_tool", fake_call,
+    )
+    executor = SkillExecutor(db_session)
+    result = await executor.execute(
+        plugin_id="mcp-huggingface",
+        skill_id="find_model",
+        tenant_id=seeded_tenant_user[0],
+        user_id=seeded_tenant_user[1],
+        operator_inputs={"task_or_keywords": "x"},
+    )
+    assert result.status == "blocked"
+    assert result.blocked_reason == "mcp_tool_timeout"
+
+
+@pytest.mark.asyncio
+async def test_promoted_skill_audit_records_outcome_and_hash_not_content(
+    db_session, callable_huggingface_v2_row,
+    seeded_tenant_user: tuple[UUID, UUID], monkeypatch,
+):
+    """Audit row carries outcome + result_content_hash_prefix +
+    result_summary_length, but NEVER raw MCP content text."""
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: object(),
+    )
+
+    async def fake_call(*args, **kwargs):
+        return {
+            "success": True,
+            "content": [{"type": "text", "text": MCP_RESULT_CANARY + " in raw content"}],
+            "is_error": False,
+        }
+
+    monkeypatch.setattr(
+        "app.services.mcp_invoker.call_server_tool", fake_call,
+    )
+    executor = SkillExecutor(db_session)
+    await executor.execute(
+        plugin_id="mcp-huggingface",
+        skill_id="inspect_paper",
+        tenant_id=seeded_tenant_user[0],
+        user_id=seeded_tenant_user[1],
+        operator_inputs={"arxiv_id_or_title": "anything"},
+    )
+    from sqlalchemy import select
+    from app.models.governance import GoaAuditEvent
+    row = (
+        await db_session.execute(
+            select(GoaAuditEvent)
+            .where(GoaAuditEvent.tenant_id == seeded_tenant_user[0])
+            .where(GoaAuditEvent.action_type == "plugin.skill_invocation")
+            .order_by(GoaAuditEvent.id.desc())
+        )
+    ).scalars().first()
+    assert row is not None
+    params = row.action_params or {}
+    assert params.get("outcome") == "success"
+    assert params.get("execution_mode") == "mcp_tool"
+    assert params.get("executed_tool") == "paper_search"
+    assert params.get("server_key")  # non-empty
+    assert isinstance(params.get("result_summary_length"), int)
+    assert params.get("result_summary_length") > 0
+    assert params.get("result_content_hash_prefix")
+    # Critical: raw content NOT in audit row.
+    assert MCP_RESULT_CANARY not in json.dumps(params), (
+        "Raw MCP content leaked into audit row -- only hash + summary "
+        "are allowed."
+    )
+
+
+@pytest.mark.asyncio
+async def test_promoted_skill_response_carries_summary_for_operator(
+    db_session, callable_huggingface_v2_row,
+    seeded_tenant_user: tuple[UUID, UUID], monkeypatch,
+):
+    """The operator-facing response DOES include the summary (which
+    quotes the raw MCP content). This is fine -- the summary is what
+    the operator asked Daena to read. Pin the contract so future
+    refactors don't accidentally drop it."""
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: object(),
+    )
+
+    async def fake_call(*args, **kwargs):
+        return {
+            "success": True,
+            "content": [{"type": "text", "text": "model-XYZ has 100 downloads"}],
+            "is_error": False,
+        }
+
+    monkeypatch.setattr(
+        "app.services.mcp_invoker.call_server_tool", fake_call,
+    )
+    executor = SkillExecutor(db_session)
+    result = await executor.execute(
+        plugin_id="mcp-huggingface",
+        skill_id="find_model",
+        tenant_id=seeded_tenant_user[0],
+        user_id=seeded_tenant_user[1],
+        operator_inputs={"task_or_keywords": "x"},
+    )
+    assert "model-XYZ" in result.summary
+    assert result.result_preview == result.summary
+
+
+@pytest.mark.asyncio
+async def test_promoted_filesystem_uses_search_files_tool(
+    db_session, seeded_tenant_user: tuple[UUID, UUID], monkeypatch,
+):
+    """Filesystem path: ensure the right tool name + arg shape go into
+    the invoker. Uses a fresh fixture (no mcp-github row) so we add a
+    callable mcp-filesystem V2 row inline."""
+    tenant_id, user_id = seeded_tenant_user
+    fs_row = ConnectionV2(
+        tenant_id=tenant_id,
+        kind=ConnectionKind.MCP_SERVER.value,
+        slug="mcp-filesystem",
+        canonical_key="mcp-filesystem",
+        display_name="Filesystem MCP",
+        config={},
+        auth_method="none",
+        detected=True, configured=True, imported=True,
+        reachable=True, authenticated=True, callable=True,
+        detected_at=datetime.now(UTC), configured_at=datetime.now(UTC),
+        imported_at=datetime.now(UTC), reachable_at=datetime.now(UTC),
+        authenticated_at=datetime.now(UTC), callable_at=datetime.now(UTC),
+    )
+    db_session.add(fs_row)
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: object(),
+    )
+
+    captured: dict = {}
+
+    async def fake_call(server_key, tool_name, arguments, *, timeout):
+        captured["server_key"] = server_key
+        captured["tool_name"] = tool_name
+        captured["arguments"] = arguments
+        return {
+            "success": True,
+            "content": [{"type": "text", "text": "found 3 matches"}],
+            "is_error": False,
+        }
+
+    monkeypatch.setattr(
+        "app.services.mcp_invoker.call_server_tool", fake_call,
+    )
+    executor = SkillExecutor(db_session)
+    result = await executor.execute(
+        plugin_id="mcp-filesystem",
+        skill_id="find_files",
+        tenant_id=tenant_id,
+        user_id=user_id,
+        operator_inputs={
+            "root_path": "D:/Ideas/Daena",
+            "name_or_glob": "*.py",
+        },
+    )
+    assert result.status == "executed"
+    assert captured["tool_name"] == "search_files"
+    assert captured["arguments"] == {"path": "D:/Ideas/Daena", "pattern": "*.py"}
+    # The summary mentions the actual MCP tool, helpful for operator.
+    assert "search_files" in result.summary

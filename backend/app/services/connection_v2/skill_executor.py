@@ -1,14 +1,23 @@
 """Phase 2 read-only skill executor.
 
-PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE2-READONLY (2026-05-03).
+PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE2-READONLY (2026-05-03):
+shipped the spine + audit + UI scaffold; every entry was
+``execution_mode="planned_only"``.
 
-Phase 2 ships the EXECUTOR SPINE -- a typed allowlist + audit log
-parent row + frontend "Run read-only skill" affordance -- but NEVER
-fires a real MCP ``tools/call`` in this PR. Every allowlisted skill
-returns ``status="planned"`` with a full preview of which tool would
-be invoked and what arguments would be derived. Actual execution
-arms in follow-up PRs as each integration is individually proven safe
-end-to-end.
+PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY (2026-05-03):
+arms real MCP ``tools/call`` execution for the FOUR safest
+read-only skills:
+
+  * mcp-filesystem:find_files       -> search_files
+  * mcp-filesystem:summarize_directory -> list_directory
+  * mcp-huggingface:find_model      -> hub_repo_search
+  * mcp-huggingface:inspect_paper   -> paper_search
+
+These four were chosen because they avoid OAuth complexity entirely,
+read public data only (HuggingFace) or sandboxed local paths
+(filesystem), and have zero write surface in their MCP servers.
+ALL OTHER allowlist entries remain ``planned_only`` -- promotion
+happens one integration at a time after end-to-end verification.
 
 Why "spine, not engine":
   * The founder's brief explicitly says: "if actual connector
@@ -49,8 +58,9 @@ Honesty (project Rule 17):
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +69,19 @@ from app.core.logging import get_logger
 from app.services.audit import AuditService
 
 logger = get_logger(__name__)
+
+
+# Real-execution timeout for promoted skills. Keep modest -- a single
+# read-only MCP call should resolve well inside this window. Beyond
+# this, we return blocked(reason=mcp_tool_timeout) so the operator
+# never sees a hung Run button.
+_MCP_EXEC_TIMEOUT_SECONDS: float = 12.0
+
+
+# Trim the operator-facing summary to keep responses small and avoid
+# carrying multi-MB MCP payloads back through the API. Full content
+# stays inside the MCP boundary -- only a hash + summary cross.
+_RESULT_SUMMARY_MAX_CHARS: int = 1200
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -351,12 +374,15 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
     ),
 
     # ── Hugging Face (mcp-huggingface, LOW risk, READ skills) ──
+    # PROMOTED in PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY:
+    # both find_model + inspect_paper run real tools/call now. Public
+    # Hub data; no private repos; no weight downloads triggered.
     SkillToolMapping(
         plugin_id="mcp-huggingface",
         skill_id="find_model",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="hub_repo_search",
         required_inputs=("task_or_keywords",),
         reads_summary=(
@@ -370,7 +396,7 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="inspect_paper",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="paper_search",
         required_inputs=("arxiv_id_or_title",),
         reads_summary=(
@@ -380,12 +406,16 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
     ),
 
     # ── Filesystem (mcp-filesystem, MEDIUM risk -- sandboxed, READ skills) ──
+    # PROMOTED in PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY:
+    # both find_files + summarize_directory run real tools/call now.
+    # The MCP server itself enforces the sandbox root; the operator's
+    # root_path input is the search root within that sandbox.
     SkillToolMapping(
         plugin_id="mcp-filesystem",
         skill_id="find_files",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="search_files",
         required_inputs=("root_path", "name_or_glob"),
         reads_summary=(
@@ -399,7 +429,7 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="summarize_directory",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="list_directory",
         required_inputs=("root_path",),
         reads_summary=(
@@ -647,7 +677,18 @@ class SkillExecutor:
                 ),
             )
 
-        # Step 5 + 6 + 7: build the planned preview, write audit, return.
+        # Step 5: branch on execution_mode.
+        #   * planned_only -> existing spine path (write planned audit row)
+        #   * mcp_tool     -> real MCP tools/call (Phase 2.x promotions)
+        if entry.execution_mode == "mcp_tool":
+            return await self._execute_real_mcp_tool(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+            )
+
+        # Default planned-only path (vast majority of allowlist).
         return await self._record_planned_or_blocked(
             entry=entry,
             tenant_id=tenant_id,
@@ -818,6 +859,356 @@ class SkillExecutor:
             result_preview=result_preview if final_status == "planned" else "",
         )
 
+    # ──────────────────────────────────────────────────────────
+    # Real MCP execution path (Phase 2.x promotions)
+    # ──────────────────────────────────────────────────────────
+
+    async def _execute_real_mcp_tool(
+        self,
+        *,
+        entry: SkillToolMapping,
+        tenant_id: UUID,
+        user_id: UUID,
+        operator_inputs: dict[str, str],
+    ) -> SkillExecutionResult:
+        """Run a promoted Phase 2.x MCP skill end-to-end.
+
+        Five outcomes:
+          1. MCP not installed in bootstrap registry -> needs_connection
+          2. MCP call succeeded -> status=executed + summary + result_hash
+          3. MCP call returned is_error=True -> blocked + reason=mcp_tool_error
+          4. MCP call timed out -> blocked + reason=mcp_tool_timeout
+          5. Unexpected exception -> blocked + reason=mcp_tool_exception
+
+        Audit row carries:
+          * outcome           = executed / mcp_error / mcp_timeout / needs_connection
+          * executed_tool     = the actual MCP tool name we asked to call
+          * server_key        = the bootstrap registry key we resolved
+          * result_summary_length    = chars in operator-facing summary
+          * result_content_hash_prefix = SHA256[:8] of joined raw text
+            (proves we did receive content without storing the content)
+
+        NEVER carries the raw MCP content into the audit row. The hash
+        + summary lets us prove a call succeeded without persisting
+        possibly-sensitive read data into governance audit storage.
+        """
+        # Late import to keep skill_executor import-light at module load
+        # (mcp_invoker pulls in the MCP SDK + asyncio plumbing).
+        from app.services.mcp_invoker import call_server_tool
+        from app.services.mcp_bootstrap import get_installed_mcp
+
+        # 1. Resolve which bootstrap registry key serves this plugin.
+        server_key = _resolve_mcp_server_key(entry.plugin_id)
+        if server_key is None or get_installed_mcp(server_key) is None:
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="needs_connection",
+                outcome="needs_connection",
+                summary=(
+                    f"Plugin {entry.plugin_id} maps to MCP server "
+                    f"'{server_key or '?'}' but that server is not installed "
+                    f"in the local MCP registry. Install it via the "
+                    f"Connections > Plugins UI, then retry."
+                ),
+                blocked_reason="mcp_not_installed",
+                executed_tool=entry.target_tool,
+                server_key=server_key or "",
+                result_text="",
+            )
+
+        # 2. Build the MCP arguments from operator inputs.
+        mcp_args = _build_mcp_arguments(entry, operator_inputs)
+
+        # 3. Invoke the tool. mcp_invoker enforces its own timeout but
+        #    we pin a tighter ceiling for read-only skills here.
+        try:
+            invoke_result = await call_server_tool(
+                server_key,
+                entry.target_tool,
+                mcp_args,
+                timeout=_MCP_EXEC_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:  # pragma: no cover - belt + suspenders
+            logger.warning(
+                "skill_executor.mcp_call_exception",
+                plugin_id=entry.plugin_id,
+                skill_id=entry.skill_id,
+                server_key=server_key,
+                tool_name=entry.target_tool,
+                error=str(exc),
+            )
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="blocked",
+                outcome="mcp_exception",
+                summary=(
+                    f"Calling {entry.plugin_id}:{entry.skill_id} failed "
+                    f"unexpectedly. The MCP server raised before completing."
+                ),
+                blocked_reason="mcp_tool_exception",
+                executed_tool=entry.target_tool,
+                server_key=server_key,
+                result_text="",
+            )
+
+        # 4. Classify the invoker outcome.
+        if not invoke_result.get("success"):
+            err = str(invoke_result.get("error") or "MCP call failed")
+            timed_out = "timed out" in err.lower()
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="blocked",
+                outcome=("mcp_timeout" if timed_out else "mcp_error"),
+                summary=(
+                    f"{entry.plugin_id}:{entry.skill_id} could not run -- "
+                    f"the MCP server returned: {err}"
+                ),
+                blocked_reason=("mcp_tool_timeout" if timed_out else "mcp_tool_error"),
+                executed_tool=entry.target_tool,
+                server_key=server_key,
+                result_text="",
+            )
+
+        # 5. Success path: build summary, hash content, record.
+        raw_text = _flatten_mcp_content(invoke_result.get("content") or [])
+        summary_text = _summarize_mcp_result(entry, raw_text)
+        return await self._record_real_outcome(
+            entry=entry,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            operator_inputs=operator_inputs,
+            final_status="executed",
+            outcome="success",
+            summary=summary_text,
+            blocked_reason="",
+            executed_tool=entry.target_tool,
+            server_key=server_key,
+            result_text=raw_text,
+        )
+
+    async def _record_real_outcome(
+        self,
+        *,
+        entry: SkillToolMapping,
+        tenant_id: UUID,
+        user_id: UUID,
+        operator_inputs: dict[str, str],
+        final_status: SkillExecutionStatus,
+        outcome: str,
+        summary: str,
+        blocked_reason: str,
+        executed_tool: str,
+        server_key: str,
+        result_text: str,
+    ) -> SkillExecutionResult:
+        """Common audit + response builder for the real-exec path.
+
+        Records the *parent* plugin.skill_invocation audit row with the
+        execution outcome metadata. Never stores raw content -- only
+        hash + length so we can prove "a real read happened" without
+        persisting possibly-sensitive read data.
+        """
+        # Argument shape (provenance only, no values).
+        argument_shape: dict[str, str] = {}
+        for f in entry.required_inputs:
+            argument_shape[f] = (
+                "operator-input"
+                if operator_inputs.get(f, "").strip()
+                else "MISSING"
+            )
+        if entry.backend_surface == "oauth":
+            argument_shape["_auth_scope"] = "tenant-scoped"
+
+        # Hash the result text so the audit row carries proof-of-content
+        # without the content itself. SHA-256[:8] is enough for an
+        # operator-readable fingerprint; collisions don't matter here.
+        result_hash_prefix = (
+            hashlib.sha256(result_text.encode("utf-8", errors="ignore")).hexdigest()[:8]
+            if result_text
+            else ""
+        )
+
+        planned = PlannedToolCall(
+            backend_surface=entry.backend_surface,
+            tool_name=entry.target_tool,
+            argument_shape=argument_shape,
+            read_only=entry.read_only,
+            plugin_id=entry.plugin_id,
+            skill_id=entry.skill_id,
+        )
+
+        audit = await self._audit.log_decision(
+            tenant_id=tenant_id,
+            actor_id=user_id,
+            actor_type="USER",
+            action_type="plugin.skill_invocation",
+            action_params={
+                "plugin_id": entry.plugin_id,
+                "skill_id": entry.skill_id,
+                "phase": "phase2x_readonly_real_exec",
+                "outcome": outcome,
+                "allowlist_match": True,
+                "read_only": entry.read_only,
+                "execution_mode": entry.execution_mode,
+                "backend_surface": entry.backend_surface,
+                "target_tool": entry.target_tool,
+                "executed_tool": executed_tool,
+                "server_key": server_key,
+                "argument_shape": argument_shape,
+                # ^ shape only; never values
+                "blocked_reason": blocked_reason or None,
+                "result_summary_length": len(summary or ""),
+                "result_content_hash_prefix": result_hash_prefix or None,
+                # NEVER include result_text. Operator-facing summary OK.
+            },
+            result=("ALLOWED" if final_status == "executed" else "BLOCKED"),
+            risk_level="LOW",
+            governance_tier=2,
+        )
+
+        return SkillExecutionResult(
+            accepted=(final_status == "executed"),
+            status=final_status,
+            summary=summary,
+            audit_event_id=str(audit.get("id") or ""),
+            tool_calls=[planned],
+            result_preview=summary if final_status == "executed" else "",
+            blocked_reason=blocked_reason,
+        )
+
+
+# ──────────────────────────────────────────────────────────────────
+# MCP wiring helpers (server_key resolution + arg builder + summarizer)
+# ──────────────────────────────────────────────────────────────────
+
+
+# Map plugin_id -> bootstrap registry server_key. The bootstrap key
+# comes from the user's claude_desktop_config.json mcpServers map
+# (see app/services/mcp_bootstrap.py). When multiple npm packages can
+# serve the same plugin we pick the most-installed one; future PRs
+# can resolve dynamically by reading catalog.mcp_servers and picking
+# the first installed match.
+_PLUGIN_TO_SERVER_KEY: dict[str, tuple[str, ...]] = {
+    # Filesystem reference MCP. Two common keys -- try the canonical
+    # first, then the npm-package key, then the catalog mcp_servers tag.
+    "mcp-filesystem": (
+        "filesystem",                 # common claude_desktop_config key
+        "mcp-filesystem",
+        "server-filesystem",          # catalog mcp_servers tag
+        "@modelcontextprotocol/server-filesystem",
+    ),
+    # Hugging Face MCP. Local npm package OR HTTP-mode (huggingface.co/mcp)
+    # would register under different keys; prefer the user's existing key.
+    "mcp-huggingface": (
+        "huggingface-mcp",            # what the user has in their config
+        "mcp-huggingface",
+        "huggingface",
+    ),
+}
+
+
+def _resolve_mcp_server_key(plugin_id: str) -> str | None:
+    """Return the first bootstrap registry key that resolves to an
+    installed MCP for this plugin. Returns None if no candidate is
+    installed."""
+    from app.services.mcp_bootstrap import get_installed_mcp
+
+    candidates = _PLUGIN_TO_SERVER_KEY.get(plugin_id, (plugin_id,))
+    for key in candidates:
+        if get_installed_mcp(key) is not None:
+            return key
+    # No candidate installed; return the FIRST candidate (preferred)
+    # so the operator-facing error message names a sensible target.
+    return candidates[0] if candidates else None
+
+
+# Per-skill argument builders. Each function takes the operator_inputs
+# dict (already validated for presence by the executor) and returns
+# the dict shape the underlying MCP tool expects. We keep these small
+# and explicit -- a generic mapper would obscure the per-skill contract.
+def _args_filesystem_search_files(operator_inputs: dict[str, str]) -> dict[str, Any]:
+    """@modelcontextprotocol/server-filesystem search_files args:
+    path, pattern, excludePatterns?"""
+    return {
+        "path": operator_inputs["root_path"],
+        "pattern": operator_inputs["name_or_glob"],
+    }
+
+
+def _args_filesystem_list_directory(operator_inputs: dict[str, str]) -> dict[str, Any]:
+    """server-filesystem list_directory args: path"""
+    return {"path": operator_inputs["root_path"]}
+
+
+def _args_huggingface_find_model(operator_inputs: dict[str, str]) -> dict[str, Any]:
+    """HF MCP hub_repo_search args: query (free text)."""
+    return {"query": operator_inputs["task_or_keywords"]}
+
+
+def _args_huggingface_inspect_paper(operator_inputs: dict[str, str]) -> dict[str, Any]:
+    """HF MCP paper_search args: query (arxiv id or title)."""
+    return {"query": operator_inputs["arxiv_id_or_title"]}
+
+
+_ARG_BUILDERS: dict[tuple[str, str], Any] = {
+    ("mcp-filesystem", "find_files"): _args_filesystem_search_files,
+    ("mcp-filesystem", "summarize_directory"): _args_filesystem_list_directory,
+    ("mcp-huggingface", "find_model"): _args_huggingface_find_model,
+    ("mcp-huggingface", "inspect_paper"): _args_huggingface_inspect_paper,
+}
+
+
+def _build_mcp_arguments(
+    entry: SkillToolMapping, operator_inputs: dict[str, str],
+) -> dict[str, Any]:
+    """Dispatch to the per-skill arg builder. Falls back to passing
+    operator_inputs as-is for any future entry that hasn't registered a
+    custom builder yet (defensive default)."""
+    builder = _ARG_BUILDERS.get((entry.plugin_id, entry.skill_id))
+    if builder is None:
+        return dict(operator_inputs)
+    return builder(operator_inputs)
+
+
+def _flatten_mcp_content(content_parts: list[dict[str, Any]]) -> str:
+    """Concatenate all text-bearing content parts into a single string."""
+    chunks: list[str] = []
+    for part in content_parts or []:
+        text = part.get("text") if isinstance(part, dict) else None
+        if isinstance(text, str) and text:
+            chunks.append(text)
+    return "\n\n".join(chunks)
+
+
+def _summarize_mcp_result(entry: SkillToolMapping, raw_text: str) -> str:
+    """Build a small operator-facing summary of the MCP response.
+
+    For Phase 2.x we keep this very simple: trim to a max length,
+    prefix with the skill identifier so the operator knows which call
+    produced this summary. Future PRs can run a per-skill structured
+    summarizer (e.g. parse search_files output into a path table).
+    """
+    if not raw_text:
+        return (
+            f"{entry.plugin_id}:{entry.skill_id} returned no content. "
+            f"The tool ran successfully but produced an empty result."
+        )
+    trimmed = raw_text[:_RESULT_SUMMARY_MAX_CHARS]
+    truncated = " (truncated)" if len(raw_text) > _RESULT_SUMMARY_MAX_CHARS else ""
+    return (
+        f"{entry.plugin_id}:{entry.skill_id} executed via MCP tool "
+        f"'{entry.target_tool}'. Result{truncated}:\n\n{trimmed}"
+    )
+
 
 __all__ = [
     "PHASE2_ALLOWLIST",
@@ -826,6 +1217,10 @@ __all__ = [
     "SkillExecutionStatus",
     "SkillExecutor",
     "SkillToolMapping",
+    "_build_mcp_arguments",
+    "_flatten_mcp_content",
+    "_resolve_mcp_server_key",
+    "_summarize_mcp_result",
     "get_allowlist_entry",
     "is_allowlisted",
     "list_allowlist_for_api",
