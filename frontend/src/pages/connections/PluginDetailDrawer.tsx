@@ -44,6 +44,7 @@ import {
   pluginStatusTone,
   skillReadiness,
 } from './pluginCard'
+import OAuthLifecyclePanel from './OAuthLifecyclePanel'
 import SkillBundleSection from './SkillBundleSection'
 import { pluginIconFor, pluginIconTone } from './pluginIcons'
 // PR-CONN-UI-GHOSTS-AND-PROMPT-WIRING (2026-05-03): writing into the
@@ -250,6 +251,14 @@ export default function PluginDetailDrawer({
           <Section title="Skills">
             <SkillBundleSection plugin={plugin} onCloseParent={onClose} />
           </Section>
+
+          {/* ── OAuth lifecycle (refresh / disconnect / archive) ──
+              PR-CONN-OAUTH-LIFECYCLE-FRONTEND (2026-05-03):
+              Renders only for OAuth-backed plugins (auth_type=oauth)
+              with a CONNECTED ConnectorInstance. Otherwise the panel
+              returns null -- no clutter on plugins that have nothing
+              to manage. */}
+          <OAuthLifecyclePanel plugin={plugin} />
 
           {/* ── Permissions ──
               Combines the catalog's permissions_summary (Read/Write/
