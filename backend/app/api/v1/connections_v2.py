@@ -31,6 +31,7 @@ from app.schemas.connection_v2 import (
     ConnectionTruthOut,
     ConnectionV2Out,
     ImportConnectionRequest,
+    McpBackupRestoreRequest,
     McpInstallTarget,
     OAuthStartRequest,
     OAuthStartResponse,
@@ -438,6 +439,92 @@ async def apply_mcp_install(
     return {
         "success": report.failure_reason is None,
         "data": out,
+    }
+
+
+# ──────────────────────────────────────────────────────────────────
+# MCP install-backup restore
+# (PR-CONN-MCP-INSTALL-RESTORE, 2026-05-02)
+# ──────────────────────────────────────────────────────────────────
+#
+# Counterpart to /marketplace/install-plan/.../apply: lists every
+# Daena-written .daena-backup-<TS>.json file next to a target's config
+# and restores a chosen backup. Never returns file contents. Never
+# restores from outside the config directory. Always creates a
+# pre-restore backup so the operator can roll forward.
+
+
+@router.get("/marketplace/install-backups")
+async def list_mcp_install_backups(
+    target: str = Query(..., description="One of claude_desktop / claude_code / codex / gemini_cli"),
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """List every Daena backup file found next to the target's config.
+
+    Returns ``{filename, timestamp, size_bytes, valid_json}`` per
+    backup, newest first. NEVER returns file contents. The backup
+    filenames carry only the timestamp + the (already-public) basename
+    of the target config -- no secrets land in this payload.
+    """
+    _ = user  # auth-only; backups are per-host, not per-tenant
+    from app.services.connection_v2.cli_mcp_backups import list_backups
+
+    if target not in SUPPORTED_TARGETS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported_target: {target!r} not in {SUPPORTED_TARGETS}",
+        )
+
+    report = list_backups(target=target)
+    return {
+        "success": report.failure_reason is None,
+        "data": report.to_dict(),
+    }
+
+
+@router.post("/marketplace/install-backups/restore")
+async def restore_mcp_install_backup(
+    body: McpBackupRestoreRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Restore a chosen backup over the target's current config.
+
+    Sequence (every step fail-closed):
+      1. Validate target + backup_filename pattern (refuses path
+         components, refuses filenames outside the strict
+         ``<config>.daena-backup-<TS>.json`` form).
+      2. Confirm the backup file lives in the SAME directory as the
+         target config (defense against symlink trickery).
+      3. Validate backup parses as JSON; refuse on parse error.
+      4. Write a pre-restore backup of the CURRENT config (atomic).
+      5. Atomically rename the parsed backup into place.
+      6. Return ``{config_path, restored_from, pre_restore_backup}``.
+
+    NEVER returns file contents. NEVER overwrites a config without a
+    fresh pre-restore backup. NEVER follows the request's filename
+    outside the config directory.
+
+    Founder rule 12: never expose secret values from the restored
+    config in the response. The endpoint payload carries paths +
+    filenames + a success flag -- nothing from inside the JSON blobs.
+    """
+    _ = db  # not needed today; reserved for future row re-import
+    from app.services.connection_v2.cli_mcp_backups import restore_backup
+
+    if body.target not in SUPPORTED_TARGETS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported_target: {body.target!r} not in {SUPPORTED_TARGETS}",
+        )
+
+    report = restore_backup(
+        target=body.target, backup_filename=body.backup_filename,
+    )
+    return {
+        "success": report.success,
+        "data": report.to_dict(),
+        "_restored_by_user_id": str(user.id),
     }
 
 

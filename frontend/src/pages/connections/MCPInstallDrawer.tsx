@@ -24,7 +24,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Activity, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2,
-  FileWarning, Loader2, ShieldCheck, X,
+  FileWarning, Loader2, RotateCcw, ShieldCheck, X,
 } from 'lucide-react'
 
 import {
@@ -34,6 +34,7 @@ import {
   type McpInstallTarget,
   previewMcpInstall,
 } from '@/hooks/useMarketplace'
+import MCPRestoreDrawer from './MCPRestoreDrawer'
 import { type PluginCard } from './pluginCard'
 
 interface MCPInstallDrawerProps {
@@ -83,6 +84,7 @@ export default function MCPInstallDrawer({
   const [applyResult, setApplyResult] = useState<McpInstallApply | null>(null)
   const [applyLoading, setApplyLoading] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
+  const [restoreOpen, setRestoreOpen] = useState(false)
 
   // Re-fetch preview whenever (target | allowCreate) change.
   useEffect(() => {
@@ -167,8 +169,45 @@ export default function MCPInstallDrawer({
           {step === 'test' && applyResult && (
             <TestStep result={applyResult} onClose={onClose} />
           )}
+
+          {/* PR-CONN-MCP-INSTALL-RESTORE: every step that touches an
+              existing config offers a "Restore previous backup" link.
+              Only enabled once the operator has picked a target so we
+              know which CLI's backups to list. */}
+          {target && step !== 'test' && (
+            <div className="pt-2 text-right">
+              <button
+                onClick={() => setRestoreOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] text-starlight-500 hover:text-starlight-300"
+                title="List + restore Daena backups for this CLI's config"
+              >
+                <RotateCcw size={10} />
+                Restore previous backup...
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {restoreOpen && target && (
+        <MCPRestoreDrawer
+          target={target}
+          targetDisplayName={
+            TARGET_OPTIONS.find((o) => o.id === target)?.label ?? target
+          }
+          onClose={() => setRestoreOpen(false)}
+          onComplete={() => {
+            // After a successful restore, refresh marketplace cards
+            // so the V2 row truth re-flects the restored config.
+            window.dispatchEvent(new Event('daena:retry-pending'))
+            setRestoreOpen(false)
+            // Bounce the install flow back to preview so the operator
+            // sees the new (restored) state.
+            setStep('preview')
+            setPreview(null)
+          }}
+        />
+      )}
     </div>
   )
 }

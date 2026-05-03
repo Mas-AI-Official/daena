@@ -467,6 +467,65 @@ export async function runBrowserProbe(
   }
 }
 
+// ── MCP install backups (PR-CONN-MCP-INSTALL-RESTORE) ──────────────
+//
+// List + restore Daena backup files created by the MCP install flow.
+// Never returns file contents -- only filename, timestamp, size, and
+// JSON validity. Restore creates a pre-restore backup of the current
+// config before overwriting (atomic rename).
+
+export interface BackupEntry {
+  filename: string
+  timestamp: string
+  size_bytes: number
+  valid_json: boolean
+}
+
+export interface BackupListReport {
+  target: McpInstallTarget
+  target_display_name: string
+  config_path: string | null
+  backups: BackupEntry[]
+  failure_reason: string | null
+}
+
+export interface BackupRestoreReport {
+  target: McpInstallTarget
+  target_display_name: string
+  config_path: string | null
+  restored_from: string | null
+  pre_restore_backup: string | null
+  success: boolean
+  failure_reason: string | null
+}
+
+export async function listMcpBackups(
+  target: McpInstallTarget,
+): Promise<{ ok: boolean; data?: BackupListReport; error?: string }> {
+  try {
+    const res = await api.get<{ success: boolean; data: BackupListReport }>(
+      `/connections/v2/marketplace/install-backups?target=${encodeURIComponent(target)}`,
+    )
+    return { ok: true, data: res.data?.data }
+  } catch (err) {
+    return { ok: false, error: readError(err) }
+  }
+}
+
+export async function restoreMcpBackup(
+  body: { target: McpInstallTarget; backup_filename: string },
+): Promise<{ ok: boolean; data?: BackupRestoreReport; error?: string }> {
+  try {
+    const res = await api.post<{ success: boolean; data: BackupRestoreReport }>(
+      "/connections/v2/marketplace/install-backups/restore",
+      body,
+    )
+    return { ok: true, data: res.data?.data }
+  } catch (err) {
+    return { ok: false, error: readError(err) }
+  }
+}
+
 // ── Lifecycle display tone ──
 
 export const LIFECYCLE_TONE: Record<

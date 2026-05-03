@@ -234,3 +234,21 @@ class OAuthStartResponse(BaseModel):
     scopes: list[str] = Field(default_factory=list)
     state_ref: str | None = None
     failure_reason: str | None = None
+
+
+# ──────────────────────────────────────────────────────────────────
+# MCP backup restore (PR-CONN-MCP-INSTALL-RESTORE, 2026-05-02)
+# ──────────────────────────────────────────────────────────────────
+
+
+class McpBackupRestoreRequest(BaseModel):
+    """POST body for /marketplace/install-backups/restore.
+
+    target = which CLI's config to restore (claude_desktop / claude_code /
+             codex / gemini_cli)
+    backup_filename = basename of the backup file (NEVER a path; the
+                      restore endpoint refuses anything containing /
+                      or \\)
+    """
+    target: Literal["claude_desktop", "claude_code", "codex", "gemini_cli"]
+    backup_filename: str
