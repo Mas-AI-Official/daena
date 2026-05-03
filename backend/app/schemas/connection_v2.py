@@ -209,3 +209,28 @@ class McpInstallTarget(BaseModel):
     target: Literal["claude_desktop", "claude_code", "codex", "gemini_cli"]
     allow_create: bool = False
     probe_after_apply: bool = False
+
+
+# ──────────────────────────────────────────────────────────────────
+# OAuth marketplace (PR-CONN-OAUTH-CONNECT, 2026-05-02)
+# ──────────────────────────────────────────────────────────────────
+
+
+class OAuthStartRequest(BaseModel):
+    """POST body for /marketplace/oauth/{entry_id}/start.
+
+    Empty for now -- redirect URI is computed server-side from the
+    request base URL so a misconfigured client cannot trick Daena into
+    sending consent to a third-party callback.
+    """
+
+
+class OAuthStartResponse(BaseModel):
+    """Sanitized OAuth start payload. NEVER includes secrets."""
+    success: bool
+    provider: str | None = None
+    authorization_url: str | None = None
+    redirect_uri: str | None = None
+    scopes: list[str] = Field(default_factory=list)
+    state_ref: str | None = None
+    failure_reason: str | None = None

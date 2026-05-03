@@ -401,6 +401,39 @@ export async function applyMcpInstall(
   }
 }
 
+// ── OAuth marketplace start (preview-only; the consent + callback
+// happens out-of-band on the provider side) ────────────────────────
+//
+// PR-CONN-OAUTH-CONNECT: returns an authorization URL and an opaque
+// state token. NEVER returns secret material. The frontend opens the
+// URL in a popup; the provider's consent screen redirects back to
+// /api/v1/connectors/oauth/callback which writes tokens (V1) AND
+// imports the V2 oauth_app row (PR-CONN-OAUTH-CONNECT bridge).
+
+export interface OAuthStartResponse {
+  success: boolean
+  provider: string | null
+  authorization_url: string | null
+  redirect_uri: string | null
+  scopes: string[]
+  state_ref: string | null
+  failure_reason: string | null
+}
+
+export async function startMarketplaceOAuth(
+  entryId: string,
+): Promise<{ ok: boolean; data?: OAuthStartResponse; error?: string }> {
+  try {
+    const res = await api.post<OAuthStartResponse>(
+      `/connections/v2/marketplace/oauth/${encodeURIComponent(entryId)}/start`,
+      {},
+    )
+    return { ok: true, data: res.data }
+  } catch (err) {
+    return { ok: false, error: readError(err) }
+  }
+}
+
 // ── Lifecycle display tone ──
 
 export const LIFECYCLE_TONE: Record<

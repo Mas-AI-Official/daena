@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_role
@@ -32,6 +32,8 @@ from app.schemas.connection_v2 import (
     ConnectionV2Out,
     ImportConnectionRequest,
     McpInstallTarget,
+    OAuthStartRequest,
+    OAuthStartResponse,
     ProbeOutcome,
     TruthDimOut,
 )
@@ -437,6 +439,82 @@ async def apply_mcp_install(
         "success": report.failure_reason is None,
         "data": out,
     }
+
+
+# ──────────────────────────────────────────────────────────────────
+# OAuth marketplace start (PR-CONN-OAUTH-CONNECT, 2026-05-02)
+# ──────────────────────────────────────────────────────────────────
+#
+# Generates an OAuth authorization URL for an oauth_app catalog entry
+# by reusing the existing ConnectorOAuthService. State is stored in
+# the SAME in-memory dict as the V1 authorize endpoint so the existing
+# /connectors/oauth/callback handles the rest of the flow + tags it
+# for V2 row import via the _v2_marketplace flag.
+#
+# This route is mounted UNDER /marketplace/oauth so it falls within
+# the static-prefix block and is matched before the dynamic
+# /{connection_id} route below.
+
+
+@router.post(
+    "/marketplace/oauth/{entry_id}/start",
+    response_model=OAuthStartResponse,
+)
+async def start_oauth_for_marketplace_entry(
+    entry_id: str,
+    request: Request,
+    _body: OAuthStartRequest = OAuthStartRequest(),  # noqa: B008
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> OAuthStartResponse:
+    """Start an OAuth Connect flow for an oauth_app marketplace entry.
+
+    Returns the consent URL + scopes + redirect URI. NEVER returns
+    secrets. Founder rule 14: only providers with a known OAuth config
+    AND callback path are accepted; everything else returns
+    ``unsupported_provider``.
+
+    State is stashed in the existing ``_oauth_states`` dict (same one
+    V1 uses) with ``_v2_marketplace=True`` so the existing callback
+    knows to also import a V2 row after writing tokens to V1's
+    ConnectorInstance.
+    """
+    entry = _entry_for(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="catalog_entry_not_found")
+    if entry.kind != "oauth_app":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "entry_not_oauth: only oauth_app catalog entries can start "
+                f"an OAuth flow (kind={entry.kind!r})"
+            ),
+        )
+
+    from app.api.v1.connector_oauth import _oauth_states
+    from app.services.connection_v2.oauth_marketplace import (
+        start_oauth_for_marketplace,
+    )
+
+    base_url = str(request.base_url)
+    report = start_oauth_for_marketplace(
+        db=db,
+        catalog_entry_id=entry_id,
+        base_url=base_url,
+        state_store=_oauth_states,
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+    )
+
+    return OAuthStartResponse(
+        success=report.success,
+        provider=report.provider,
+        authorization_url=report.authorization_url,
+        redirect_uri=report.redirect_uri,
+        scopes=list(report.scopes),
+        state_ref=report.state_ref,
+        failure_reason=report.failure_reason,
+    )
 
 
 @router.get("/{connection_id}", response_model=ConnectionV2Out)

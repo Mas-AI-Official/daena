@@ -31,6 +31,16 @@ router = APIRouter(prefix="/connectors", tags=["connector-oauth"])
 # In-memory state store (production: use Redis or DB)
 _oauth_states: dict[str, dict] = {}
 
+_PROVIDER_TO_CONNECTOR_NAME = {
+    "gmail": "Gmail",
+    "google-calendar": "Google Calendar",
+    "google-drive": "Google Drive",
+    "github": "GitHub",
+    "figma": "Figma",
+    "slack": "Slack",
+    "canva": "Canva",
+}
+
 
 @router.get("/oauth/providers")
 async def list_providers(
@@ -151,28 +161,49 @@ async def oauth_callback(
         if account_identity:
             tokens = {**tokens, "account_identity": account_identity}
 
-        # Find or create connector instance
+        # Find or create the catalog-backed connector instance.
+        #
+        # Previous code compared ConnectorInstance.connector_id (UUID)
+        # directly to the provider slug string ("google-drive") and then
+        # tried to create fields that do not exist on ConnectorInstance.
+        # That meant OAuth could succeed at the provider and still not
+        # wire Daena's installed connector. Resolve provider slug ->
+        # Connector row first, then promote the user's instance.
         from sqlalchemy import select
-        from app.models.connections import ConnectorInstance
+        from app.core.constants import ConnectorStatus
+        from app.core.vault import encrypt_dict
+        from app.models.connections import Connector, ConnectorInstance
+
+        connector_name = _PROVIDER_TO_CONNECTOR_NAME.get(
+            connector_id,
+            connector_id.replace("-", " ").title(),
+        )
+        connector = (
+            await db.execute(select(Connector).where(Connector.name == connector_name))
+        ).scalar_one_or_none()
+        if connector is None:
+            raise ValueError(f"Connector catalog row not found for OAuth provider: {connector_id}")
 
         stmt = select(ConnectorInstance).where(
-            ConnectorInstance.connector_id == connector_id,
+            ConnectorInstance.connector_id == connector.id,
             ConnectorInstance.tenant_id == tenant_id,
+            ConnectorInstance.user_id == user_id,
         )
         result = await db.execute(stmt)
         instance = result.scalar_one_or_none()
+        encrypted_tokens = encrypt_dict(tokens)
 
         if instance:
-            instance.credentials = tokens
-            instance.status = "connected"
+            instance.credentials = encrypted_tokens
+            instance.status = ConnectorStatus.CONNECTED.value
             await db.commit()
         else:
             instance = ConnectorInstance(
-                connector_id=connector_id,
+                connector_id=connector.id,
                 tenant_id=tenant_id,
-                display_name=f"{connector_id} (OAuth)",
-                credentials=tokens,
-                status="connected",
+                user_id=user_id,
+                credentials=encrypted_tokens,
+                status=ConnectorStatus.CONNECTED.value,
             )
             db.add(instance)
             await db.commit()
@@ -183,6 +214,32 @@ async def oauth_callback(
             user_id=str(user_id),
             account_identity=account_identity or "(not fetched)",
         )
+
+        # PR-CONN-OAUTH-CONNECT (2026-05-02): when this callback was
+        # initiated from the V2 marketplace start endpoint, ALSO import
+        # a V2 oauth_app row so the Plugins grid surface reflects the
+        # new connection without waiting for the next discovery refresh.
+        # The V2 row carries vault_ref = str(instance.id) so the
+        # OAuthAppProbe can dereference back to THIS encrypted blob --
+        # never duplicates token storage.
+        if state_data.get("_v2_marketplace"):
+            try:
+                from app.services.connection_v2.oauth_marketplace import (
+                    import_v2_row_after_callback,
+                )
+                await import_v2_row_after_callback(
+                    db=db,
+                    tenant_id=tenant_id,
+                    provider=connector_id,
+                    connector_instance_id=instance.id,
+                    account_identity=account_identity,
+                )
+            except Exception as v2_exc:  # noqa: BLE001 -- callback success > V2 nicety
+                logger.warning(
+                    "connector_oauth.v2_marketplace_import_failed",
+                    error=str(v2_exc),
+                    connector_id=connector_id,
+                )
 
         # Display name for the success page
         display_name = connector_id.replace("-", " ").title()
@@ -250,7 +307,11 @@ async def refresh_tokens(
     if not instance:
         return JSONResponse(status_code=404, content={"error": "Instance not found"})
 
+    from app.core.vault import decrypt_dict, encrypt_dict
+
     credentials = instance.credentials or {}
+    if isinstance(credentials, str):
+        credentials = decrypt_dict(credentials)
     refresh_tok = credentials.get("refresh_token")
     provider = credentials.get("provider", "gmail")
 
@@ -262,7 +323,7 @@ async def refresh_tokens(
         new_tokens = await service.refresh_token(refresh_tok, provider=provider)
         credentials["access_token"] = new_tokens["access_token"]
         credentials["expires_at"] = new_tokens["expires_at"]
-        instance.credentials = credentials
+        instance.credentials = encrypt_dict(credentials)
         await db.commit()
 
         return JSONResponse(content={
@@ -271,6 +332,8 @@ async def refresh_tokens(
         })
     except Exception as exc:
         # Mark as expired if refresh fails
-        instance.status = "expired"
+        from app.core.constants import ConnectorStatus
+
+        instance.status = ConnectorStatus.NEEDS_REAUTH.value
         await db.commit()
         return JSONResponse(status_code=500, content={"error": str(exc)})

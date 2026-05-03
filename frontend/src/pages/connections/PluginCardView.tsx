@@ -44,6 +44,7 @@ import {
   pluginStatusTone,
 } from './pluginCard'
 import MCPInstallDrawer from './MCPInstallDrawer'
+import OAuthConnectDrawer from './OAuthConnectDrawer'
 import PluginDetailDrawer from './PluginDetailDrawer'
 import { pluginIconFor, pluginIconTone } from './pluginIcons'
 
@@ -75,6 +76,7 @@ export default function PluginCardView({
   const navigate = useNavigate()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [installDrawerOpen, setInstallDrawerOpen] = useState(false)
+  const [oauthDrawerOpen, setOauthDrawerOpen] = useState(false)
 
   // PR-CONN-MCP-INSTALL-INTO-CLI: MCP catalog entries with a real
   // command_template open the new install drawer instead of the
@@ -83,6 +85,14 @@ export default function PluginCardView({
     plugin.source.catalog.kind === 'mcp_server' &&
     plugin.install_method !== 'coming-soon' &&
     plugin.source.catalog.command_template.length > 0
+
+  // PR-CONN-OAUTH-CONNECT: oauth_app entries open the OAuth Connect
+  // drawer (which gates on whether the operator has configured the
+  // OAuth client_id/secret in Settings -> API Keys). Coming-soon
+  // entries fall through to the read-only Setup Guide.
+  const supportsOauthConnect =
+    plugin.source.catalog.kind === 'oauth_app' &&
+    plugin.install_method !== 'coming-soon'
 
   function handleAction(e: React.MouseEvent) {
     e.stopPropagation()
@@ -95,9 +105,19 @@ export default function PluginCardView({
         setDrawerOpen(true)
         return
       case 'connect':
+        if (supportsOauthConnect) {
+          setOauthDrawerOpen(true)
+          return
+        }
+        setDrawerOpen(true)
+        return
       case 'setup_guide':
         if (supportsMcpInstall) {
           setInstallDrawerOpen(true)
+          return
+        }
+        if (supportsOauthConnect) {
+          setOauthDrawerOpen(true)
           return
         }
         setDrawerOpen(true)
@@ -248,6 +268,18 @@ export default function PluginCardView({
           onComplete={() => {
             // After a successful apply, refresh the marketplace card
             // grid so the new V2 row's status pill reflects truth.
+            window.dispatchEvent(new Event('daena:retry-pending'))
+          }}
+        />
+      )}
+
+      {oauthDrawerOpen && (
+        <OAuthConnectDrawer
+          plugin={plugin}
+          onClose={() => setOauthDrawerOpen(false)}
+          onComplete={() => {
+            // Tokens received -- refresh marketplace cards so the new
+            // V2 oauth_app row's authenticated state surfaces.
             window.dispatchEvent(new Event('daena:retry-pending'))
           }}
         />

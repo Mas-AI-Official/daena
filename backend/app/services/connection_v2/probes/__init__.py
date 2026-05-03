@@ -15,6 +15,10 @@ from app.services.connection_v2.probes.mcp_server_probe import (
     McpServerProbe,
     install_mcp_server_probe,
 )
+from app.services.connection_v2.probes.oauth_app_probe import (
+    OAuthAppProbe,
+    install_oauth_app_probe,
+)
 from app.services.connection_v2.probes.provider_probe import (
     ProviderProbe,
     install_provider_probe,
@@ -31,16 +35,19 @@ def install_all_probes() -> None:
     install_skill_pack_probe()
     install_mcp_server_probe()
     install_cli_runtime_probe()
+    install_oauth_app_probe()
 
 
 __all__ = [
     "CliRuntimeProbe",
     "McpServerProbe",
+    "OAuthAppProbe",
     "ProviderProbe",
     "SkillPackProbe",
     "install_all_probes",
     "install_cli_runtime_probe",
     "install_mcp_server_probe",
+    "install_oauth_app_probe",
     "install_provider_probe",
     "install_skill_pack_probe",
 ]
