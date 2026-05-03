@@ -132,7 +132,11 @@ export default function PluginCardView({
         // API keys. Other configures (oauth_app etc) still open the
         // Setup-guide drawer.
         if (plugin.source.catalog.kind === 'api_provider') {
-          navigate('/account/api-keys#provider-keys')
+          // PR-CONN-PHASE2-PREFLIGHT-GREEN (2026-05-03): canonical
+          // anchor /account#provider-keys. The legacy /account/api-keys
+          // prefix wasn't a real React Router route -- AccountPage owns
+          // /account with section anchors only.
+          navigate('/account#provider-keys')
           return
         }
         setDrawerOpen(true)

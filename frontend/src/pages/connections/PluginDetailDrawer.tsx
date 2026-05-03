@@ -112,7 +112,12 @@ export default function PluginDetailDrawer({
     switch (plugin.primary_action) {
       case 'configure':
         if (isProvider) {
-          navigate('/account/api-keys')
+          // PR-CONN-PHASE2-PREFLIGHT-GREEN (2026-05-03): canonical
+          // anchor target. /account/api-keys is not a registered React
+          // Router path -- AccountPage owns /account with section
+          // anchors (#provider-keys / #oauth-clients). Same fix shape
+          // as OAuthConnectDrawer.handleConfigure().
+          navigate('/account#provider-keys')
           onClose()
           return
         }
@@ -264,19 +269,22 @@ export default function PluginDetailDrawer({
                 <ShieldCheck size={12} className="mt-0.5 text-accent-cyan" />
                 <div className="flex-1">
                   <p>
-                    <strong className="text-starlight-100">Configure keys in Settings.</strong>{' '}
-                    Connections shows whether Daena can call the provider; the
-                    actual API key lives in the vault-backed Settings -&gt;
-                    API Keys page.
+                    <strong className="text-starlight-100">Configure keys in Account.</strong>{' '}
+                    Connections shows whether Daena can call the provider;
+                    the actual API key lives in the vault-backed Account
+                    -&gt; Provider Keys section.
                   </p>
                   <button
                     onClick={() => {
-                      navigate('/account/api-keys#provider-keys')
+                      // PR-CONN-PHASE2-PREFLIGHT-GREEN (2026-05-03):
+                      // canonical anchor /account#provider-keys (the
+                      // /account/api-keys path is not a real route).
+                      navigate('/account#provider-keys')
                       onClose()
                     }}
                     className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-accent-cyan/30 bg-accent-cyan/10 px-3 py-1.5 text-[11px] font-medium text-accent-cyan hover:bg-accent-cyan/20"
                   >
-                    Open Settings -&gt; API Keys
+                    Open Account -&gt; Provider Keys
                     <ExternalLink size={11} />
                   </button>
                 </div>

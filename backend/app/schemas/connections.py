@@ -41,6 +41,22 @@ class ConnectRequest(BaseModel):
     )
 
 
+class InstallConnectorRequest(BaseModel):
+    """Install a connector locally without authenticating an external account."""
+
+    connector_id: UUID
+
+
+class ConnectAccountRequest(BaseModel):
+    """Attach account credentials to an already-installed connector instance."""
+
+    credentials: dict = Field(
+        ...,
+        min_length=1,
+        description="Auth credentials to encrypt at rest",
+    )
+
+
 class SetPermissionRequest(BaseModel):
     """Set permission level for a specific tool in a connector instance."""
 

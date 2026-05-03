@@ -11,6 +11,7 @@ import uuid
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 # ── Helpers ──
 
@@ -166,6 +167,79 @@ async def test_double_connect_fails(client: AsyncClient) -> None:
         headers=auth["headers"],
     )
     assert resp2.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_install_without_credentials_is_installed_not_connected(client: AsyncClient) -> None:
+    """Install is local setup only; it must not claim account auth exists."""
+    auth = await _register_and_login(client)
+    connector = await _create_connector(client, auth["headers"])
+
+    resp = await client.post(
+        "/api/v1/connections/instances/install",
+        json={"connector_id": connector["id"]},
+        headers=auth["headers"],
+    )
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert data["status"] == "INSTALLED"
+    assert data["credentials"] is None
+
+
+@pytest.mark.asyncio
+async def test_connect_account_promotes_installed_connector(client: AsyncClient) -> None:
+    """Account credentials are attached after install via a separate endpoint."""
+    auth = await _register_and_login(client)
+    connector = await _create_connector(client, auth["headers"])
+
+    install_resp = await client.post(
+        "/api/v1/connections/instances/install",
+        json={"connector_id": connector["id"]},
+        headers=auth["headers"],
+    )
+    instance_id = install_resp.json()["data"]["id"]
+
+    connect_resp = await client.post(
+        f"/api/v1/connections/instances/{instance_id}/connect",
+        json={"credentials": {"api_key": "sk-after-install"}},
+        headers=auth["headers"],
+    )
+    assert connect_resp.status_code == 200
+    data = connect_resp.json()["data"]
+    assert data["status"] == "CONNECTED"
+    assert data["credentials"]["api_key"] == "sk-after-install"
+
+
+@pytest.mark.asyncio
+async def test_install_no_auth_connector_is_connected(client: AsyncClient) -> None:
+    """No-auth connectors do not need a second account-auth step."""
+    auth = await _register_and_login(client)
+    resp = await client.post(
+        "/api/v1/connections/connectors",
+        json={
+            "name": f"NoAuth-{uuid.uuid4().hex[:6]}",
+            "description": "Public connector",
+            "auth_type": "NONE",
+            "tools": [{"name": "lookup"}],
+            "category": "public",
+            # ConnectionService._is_no_auth_connector requires the catalog
+            # to explicitly opt in to "callable without auth" before an
+            # install is auto-promoted to CONNECTED. Without this flag the
+            # row stays INSTALLED -- the catalog might be a documentation
+            # entry for an external resource Daena doesn't actually call.
+            "config_schema": {"callable_without_auth": True},
+        },
+        headers=auth["headers"],
+    )
+    connector = resp.json()["data"]
+
+    install_resp = await client.post(
+        "/api/v1/connections/instances/install",
+        json={"connector_id": connector["id"]},
+        headers=auth["headers"],
+    )
+    assert install_resp.status_code == 201
+    assert install_resp.json()["data"]["status"] == "CONNECTED"
 
 
 @pytest.mark.asyncio
@@ -422,6 +496,61 @@ async def test_extensions_install_triggers_bootstrap_refresh(
 
 
 @pytest.mark.asyncio
+async def test_extensions_install_persists_tenant_mcp_server(
+    client: AsyncClient, db_session, tmp_path, monkeypatch
+) -> None:
+    """UI extension installs must survive backend restart via DB persistence."""
+    import importlib
+    from pathlib import Path
+
+    from app.models.mcp_server import McpServer, STATUS_ACTIVE
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    # mcp_bootstrap caches Claude config paths at module import time. Without
+    # reloading after the Path.home monkeypatch, bootstrap_installed_mcps() in
+    # the install endpoint reads from the REAL home dir, mcp-persist-me never
+    # appears in the registry, and status falls back to DISCOVERED. The
+    # sibling test_extensions_install_triggers_bootstrap_refresh applies the
+    # same reload for the same reason.
+    from app.services import mcp_bootstrap as boot_mod
+    importlib.reload(boot_mod)
+
+    auth = await _register_and_login(client)
+
+    resp = await client.post(
+        "/api/v1/connections/extensions/install",
+        headers=auth["headers"],
+        json={
+            "id": "mcp-persist-me",
+            "name": "Persist Me",
+            "description": "Persistence regression fixture",
+            "command": "npx",
+            "args": ["-y", "@example/persist-me"],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()["data"]
+    assert data["mcp_persisted"] is True
+    assert data["status"] == "installed"
+    assert data["persistence_error"] is None
+
+    row = (
+        await db_session.execute(
+            select(McpServer).where(McpServer.server_key == "mcp-persist-me")
+        )
+    ).scalar_one()
+    assert row.display_name == "Persist Me"
+    assert row.command == "npx"
+    assert row.args == ["-y", "@example/persist-me"]
+    assert row.package == "@example/persist-me"
+    assert row.status == STATUS_ACTIVE
+    # auth["user"] is the UserResponse schema (auth.py UserResponse) whose
+    # id field is named user_id, not id. Earlier WIP draft of this test
+    # used auth["user"]["id"] which never existed in the response shape.
+    assert str(row.created_by_user_id) == auth["user"]["user_id"]
+
+
+@pytest.mark.asyncio
 async def test_extensions_uninstall_roundtrip(
     client: AsyncClient, tmp_path, monkeypatch
 ) -> None:
@@ -457,6 +586,49 @@ async def test_extensions_uninstall_roundtrip(
 
     installed_keys = [m.server_key for m in boot_mod.list_installed_mcps()]
     assert "mcp-delete-me" not in installed_keys
+
+
+@pytest.mark.asyncio
+async def test_extensions_uninstall_soft_deletes_tenant_mcp_server(
+    client: AsyncClient, db_session, tmp_path, monkeypatch
+) -> None:
+    """Uninstall must remove live config and disable the persisted MCP row."""
+    from pathlib import Path
+
+    from app.models.mcp_server import McpServer, STATUS_DISABLED
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    auth = await _register_and_login(client)
+
+    install_resp = await client.post(
+        "/api/v1/connections/extensions/install",
+        headers=auth["headers"],
+        json={
+            "id": "mcp-disable-me",
+            "name": "Disable Me",
+            "command": "npx",
+            "args": ["-y", "@example/disable-me"],
+        },
+    )
+    assert install_resp.status_code == 201
+
+    resp = await client.post(
+        "/api/v1/connections/extensions/uninstall",
+        headers=auth["headers"],
+        json={"id": "disable-me"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["removed"] is True
+    assert data["mcp_persisted_removed"] is True
+    assert data["persistence_error"] is None
+
+    row = (
+        await db_session.execute(
+            select(McpServer).where(McpServer.server_key == "mcp-disable-me")
+        )
+    ).scalar_one()
+    assert row.status == STATUS_DISABLED
 
 
 @pytest.mark.asyncio
