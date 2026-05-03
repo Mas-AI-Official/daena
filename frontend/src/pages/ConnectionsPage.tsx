@@ -275,6 +275,7 @@ export default function ConnectionsPage() {
             discoveryReport={lastReport}
             onDiscover={runDiscover}
             discovering={discovering}
+            onBackToPlugins={() => setActiveTab('plugins')}
           />
         )}
       </div>
@@ -304,11 +305,12 @@ const ADVANCED_SECTIONS = [
 type AdvancedKey = typeof ADVANCED_SECTIONS[number]['key']
 
 function AdvancedPanel({
-  discoveryReport, onDiscover, discovering,
+  discoveryReport, onDiscover, discovering, onBackToPlugins,
 }: {
   discoveryReport: DiscoveryReport | null
   onDiscover: () => void
   discovering: boolean
+  onBackToPlugins: () => void
 }) {
   const [section, setSection] = useState<AdvancedKey>('overview')
 
@@ -316,13 +318,19 @@ function AdvancedPanel({
     <div className="space-y-4">
       <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
         <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-        <div>
+        <div className="flex-1">
           <strong>Advanced registry / debug view.</strong>{' '}
           Internal V2 / V1 surfaces. Normal users should use the Plugins
           tab; this view exposes the per-kind catalog (mcp_server,
           oauth_app, skill_pack, local_model, provider, cli_runtime),
           the legacy V1 panels, and the raw discovery payload.
         </div>
+        <button
+          onClick={onBackToPlugins}
+          className="shrink-0 rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-[11px] font-medium text-amber-100 hover:bg-amber-400/20"
+        >
+          Back to Plugins marketplace
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[200px_1fr]">

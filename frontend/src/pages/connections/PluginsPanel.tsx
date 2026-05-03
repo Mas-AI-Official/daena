@@ -269,7 +269,7 @@ export default function PluginsPanel({
                 <PluginCardView
                   key={plugin.id}
                   plugin={plugin}
-                  busy={busyId === plugin.v2_row_id}
+                  busy={busyId !== null && busyId === plugin.v2_row_id}
                   onProbe={handleProbe}
                   onEnable={handleEnable}
                 />

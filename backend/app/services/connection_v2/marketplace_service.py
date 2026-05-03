@@ -213,7 +213,21 @@ def _has_recent_failure(row: ConnectionV2) -> bool:
 
 
 def _failure_reason(row: ConnectionV2) -> str | None:
-    """Pick the most-actionable failure reason across the truth ladder."""
+    """Pick the most-actionable failure reason across the truth ladder.
+
+    PR-CONN-LIVE-PARITY-REPAIR (2026-05-03): suppress stale
+    ``probe_unavailable`` messages once a real probe is registered for
+    the row's kind. Without this guard, a row probed BEFORE
+    ``install_all_probes`` ran keeps surfacing the legacy
+    "no real probe implementation" pill in Advanced > Runtimes (V2)
+    forever, even though the next probe call will succeed. The truth
+    is "not probed yet since registration", not "no probe".
+    """
+    from app.services.connection_v2.probe import (
+        PROBE_REGISTRY,
+        PROBE_UNAVAILABLE_PREFIX,
+    )
+    probe_now_registered = PROBE_REGISTRY.get(row.kind) is not None
     candidates = (
         row.callable_failure_reason,
         row.authenticated_failure_reason,
@@ -221,8 +235,11 @@ def _failure_reason(row: ConnectionV2) -> str | None:
         row.configured_failure_reason,
     )
     for reason in candidates:
-        if reason:
-            return reason
+        if not reason:
+            continue
+        if probe_now_registered and reason.startswith(PROBE_UNAVAILABLE_PREFIX):
+            continue
+        return reason
     return None
 
 
