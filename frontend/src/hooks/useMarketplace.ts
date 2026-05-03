@@ -434,6 +434,39 @@ export async function startMarketplaceOAuth(
   }
 }
 
+// ── Browser / computer-use local probe ────────────────────────────
+//
+// PR-CONN-BROWSER-PROBE: pre-install local check for catalog entries
+// with kind=browser_tool / computer_use. Returns whether the
+// operator's machine can actually run the tool BEFORE the MCP install
+// flow lands the row as kind=mcp_server. Never persists state.
+
+export interface BrowserProbeReport {
+  success: boolean
+  tool_id: string
+  tool_display_name: string
+  strategy: string
+  package_status: 'installed' | 'not_found' | 'unknown'
+  browser_status: 'ready' | 'not_installed' | 'not_required' | 'unknown'
+  capabilities: string[]
+  failure_reason: string | null
+  safety_notes: string[]
+}
+
+export async function runBrowserProbe(
+  entryId: string,
+): Promise<{ ok: boolean; report?: BrowserProbeReport; error?: string }> {
+  try {
+    const res = await api.post<{ success: boolean; data: BrowserProbeReport }>(
+      `/connections/v2/marketplace/browser-probe/${encodeURIComponent(entryId)}`,
+      {},
+    )
+    return { ok: true, report: res.data?.data }
+  } catch (err) {
+    return { ok: false, error: readError(err) }
+  }
+}
+
 // ── Lifecycle display tone ──
 
 export const LIFECYCLE_TONE: Record<

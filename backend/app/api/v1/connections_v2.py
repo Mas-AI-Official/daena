@@ -442,6 +442,59 @@ async def apply_mcp_install(
 
 
 # ──────────────────────────────────────────────────────────────────
+# Browser / computer-use local probe
+# (PR-CONN-BROWSER-PROBE, 2026-05-02)
+# ──────────────────────────────────────────────────────────────────
+#
+# Pre-install local check for catalog entries with kind=browser_tool
+# or kind=computer_use. Returns whether the operator's machine can
+# actually run the tool BEFORE they install it via the MCP install
+# flow. NEVER mutates V2 rows; pure inspection. NEVER opens external
+# websites; Playwright targets about:blank only. NEVER auto-installs
+# packages; missing playwright / chromium returns a clean
+# package_not_found.
+
+
+@router.post("/marketplace/browser-probe/{entry_id}")
+async def browser_probe_for_marketplace_entry(
+    entry_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Run the per-tool local check for a browser / computer-use entry.
+
+    Returns a structured ``BrowserProbeReport`` (success, tool_id,
+    package_status, browser_status, capabilities, failure_reason,
+    safety_notes). Never persists anything; the operator can re-run
+    this freely.
+
+    Founder rule 11: success here means the LOCAL pre-install check
+    passed. The plugin card's "Connected" pill still requires a real
+    V2 probe (McpServerProbe after PR-CONN-MCP-INSTALL-INTO-CLI lands
+    the entry as kind=mcp_server).
+    """
+    _ = user  # auth-only; report is per-host, not per-tenant
+    entry = _entry_for(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="catalog_entry_not_found")
+    if entry.kind not in ("browser_tool", "computer_use"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "browser_probe_unsupported_kind: only browser_tool / "
+                f"computer_use entries can be browser-probed (kind={entry.kind!r})"
+            ),
+        )
+
+    from app.services.connection_v2.browser_probe import probe_browser_tool
+
+    report = await probe_browser_tool(entry=entry)
+    return {
+        "success": report.success,
+        "data": report.to_dict(),
+    }
+
+
+# ──────────────────────────────────────────────────────────────────
 # OAuth marketplace start (PR-CONN-OAUTH-CONNECT, 2026-05-02)
 # ──────────────────────────────────────────────────────────────────
 #

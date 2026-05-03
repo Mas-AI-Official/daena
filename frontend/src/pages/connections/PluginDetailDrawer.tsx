@@ -31,8 +31,10 @@ import {
 } from 'lucide-react'
 
 import {
+  type BrowserProbeReport,
   type InstallPlan,
   fetchInstallPlan,
+  runBrowserProbe,
 } from '@/hooks/useMarketplace'
 import { type PluginCard, pluginStatusTone } from './pluginCard'
 import { pluginIconFor, pluginIconTone } from './pluginIcons'
@@ -52,6 +54,25 @@ export default function PluginDetailDrawer({
   const [plan, setPlan] = useState<InstallPlan | null>(null)
   const [planLoading, setPlanLoading] = useState(true)
   const [planError, setPlanError] = useState<string | null>(null)
+  const [browserProbe, setBrowserProbe] = useState<BrowserProbeReport | null>(null)
+  const [browserProbeLoading, setBrowserProbeLoading] = useState(false)
+  const [browserProbeError, setBrowserProbeError] = useState<string | null>(null)
+
+  const isBrowserOrComputerUse =
+    plugin.source.catalog.kind === 'browser_tool' ||
+    plugin.source.catalog.kind === 'computer_use'
+
+  async function handleVerifyLocally() {
+    setBrowserProbeLoading(true)
+    setBrowserProbeError(null)
+    const res = await runBrowserProbe(plugin.id)
+    setBrowserProbeLoading(false)
+    if (res.ok && res.report) {
+      setBrowserProbe(res.report)
+    } else {
+      setBrowserProbeError(res.error ?? 'Local probe failed')
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -307,6 +328,91 @@ export default function PluginDetailDrawer({
             </Section>
           )}
 
+          {/* ── Verify locally (browser / computer-use) ──
+              PR-CONN-BROWSER-PROBE: lets the operator run a SAFE
+              local check (Playwright launches headless to about:blank,
+              other tools just check launcher binary on PATH) before
+              installing. Never opens external sites. */}
+          {isBrowserOrComputerUse && (
+            <Section title="Verify locally">
+              <p className="text-[11px] text-starlight-400">
+                Run a SAFE pre-install check on this machine. Playwright
+                launches a headless browser to <code>about:blank</code> and
+                evaluates a tiny harmless expression; other tools just
+                verify the launcher binary is present.
+              </p>
+              <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-100">
+                <ShieldAlert size={11} className="mt-0.5 shrink-0 text-amber-300" />
+                <span>
+                  Browser tools run locally and require explicit permission
+                  per call. Daena does <strong>not</strong> bypass anti-bot
+                  systems and never claims stealth or evasion.
+                </span>
+              </div>
+              <button
+                onClick={() => void handleVerifyLocally()}
+                disabled={browserProbeLoading}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-primary-500/30 bg-primary-500/10 px-3 py-1.5 text-[11px] font-medium text-primary-200 hover:bg-primary-500/20 disabled:opacity-50"
+              >
+                {browserProbeLoading ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <Activity size={11} />
+                )}
+                {browserProbeLoading ? 'Probing...' : 'Verify locally'}
+              </button>
+
+              {browserProbeError && (
+                <div className="mt-2 flex items-start gap-1.5 rounded-md border border-rose-500/30 bg-rose-500/5 px-2 py-1.5 text-[11px] text-rose-200">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  <span>{browserProbeError}</span>
+                </div>
+              )}
+
+              {browserProbe && (
+                <div className="mt-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <ProbeKv
+                      label="Package"
+                      value={browserProbe.package_status}
+                      ok={browserProbe.package_status === 'installed'}
+                    />
+                    <ProbeKv
+                      label="Browser"
+                      value={browserProbe.browser_status}
+                      ok={
+                        browserProbe.browser_status === 'ready' ||
+                        browserProbe.browser_status === 'not_required'
+                      }
+                    />
+                  </div>
+                  {browserProbe.success && browserProbe.capabilities.length > 0 && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-starlight-500">
+                        Safe local capabilities
+                      </p>
+                      <ul className="mt-1 flex flex-wrap gap-1">
+                        {browserProbe.capabilities.map((cap) => (
+                          <li
+                            key={cap}
+                            className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-200"
+                          >
+                            {cap}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {!browserProbe.success && browserProbe.failure_reason && (
+                    <div className="rounded-md border border-rose-500/30 bg-rose-500/5 px-2 py-1.5 text-[11px] text-rose-200">
+                      <code>{browserProbe.failure_reason}</code>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Section>
+          )}
+
           {/* ── Install / setup steps ── */}
           {!plugin.is_skill_pack && (
             <Section title={`Install / setup (${plugin.install_method})`}>
@@ -442,6 +548,18 @@ function KV({ label, value }: { label: string; value: string }) {
     <div className="rounded-md border border-white/5 bg-white/[0.02] px-2.5 py-1.5">
       <p className="text-[10px] uppercase tracking-wider text-starlight-500">{label}</p>
       <p className="mt-0.5 truncate text-xs text-starlight-200">{value}</p>
+    </div>
+  )
+}
+
+function ProbeKv({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  const tone = ok
+    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+    : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+  return (
+    <div className={`flex items-center justify-between gap-2 rounded-md border px-2 py-1 ${tone}`}>
+      <span className="text-[10px] uppercase tracking-wider opacity-80">{label}</span>
+      <span className="text-[11px]">{value}</span>
     </div>
   )
 }
