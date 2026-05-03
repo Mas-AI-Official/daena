@@ -1,7 +1,7 @@
 # PR-CONN-OAUTH-LIFECYCLE-FRONTEND — Report
 
 **Branch:** `rebuild-connections-mcp-runtime`
-**Commit:** _to be filled in after squash_
+**Commit:** `ce6e244`
 **Date:** 2026-05-03
 **Sprint:** DAENA-LOCAL-USABILITY-SPRINT-2 (PR-1 of 4)
 

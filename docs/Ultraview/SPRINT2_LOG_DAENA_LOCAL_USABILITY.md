@@ -39,7 +39,7 @@
 
 | # | PR | Status | Commit | Tests | Notes |
 |---|---|---|---|---|---|
-| 1 | PR-CONN-OAUTH-LIFECYCLE-FRONTEND | _pending_ | — | — | — |
+| 1 | PR-CONN-OAUTH-LIFECYCLE-FRONTEND | shipped | `ce6e244` | tsc clean + 76/76 backend | live UI verify deferred (no real OAuth instance on dev box) |
 | 2 | PR-CONN-MCP-INSTALL-OPERATOR-GUIDE | _pending_ | — | — | — |
 | 3 | PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY | _pending_ | — | — | — |
 | 4 | PR-LOCAL-DAENA-USABILITY-SMOKE | _pending_ | — | — | — |
@@ -49,3 +49,4 @@
 ## Append log (one line per commit)
 
 <!-- HH:MM | PR-N | <commit> | <one-line-summary> -->
+- 19:55 | PR-1 | ce6e244 | OAuthLifecyclePanel + slot in PluginDetailDrawer (Refresh / Disconnect / Archive buttons + ConfirmDialog), tsc clean + 76/76 backend
