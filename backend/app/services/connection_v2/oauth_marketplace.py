@@ -178,7 +178,7 @@ def start_oauth_for_marketplace(
             failure_reason=(
                 f"{FAIL_CONFIGURE_REQUIRED}: {exc.missing_field} not set "
                 f"-- paste your {provider} OAuth client credentials in "
-                f"Settings -> API Keys before starting Connect."
+                f"Account -> OAuth Client Config before starting Connect."
             ),
         )
     except ValueError as exc:

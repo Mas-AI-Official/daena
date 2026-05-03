@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-03
 **Branch:** `rebuild-connections-mcp-runtime`
-**Commit:** (to be filled in after squash)
+**Commit:** `1da1eae` — `fix: add OAuth client config input for plugin connections`
 **Predecessor:** [PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE1](./PR_CONN_PLUGIN_SKILLS_EXECUTION_PHASE1_REPORT.md) — `ad0df5e`
 **Next per founder plan:** PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE2-READONLY
 
