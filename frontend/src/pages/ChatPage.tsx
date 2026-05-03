@@ -23,6 +23,16 @@ import { InteractivePromptDisplay } from '@/components/chat/InteractivePrompt'
 import { PeerSignalsPane } from '@/components/chat/PeerSignalsPane'
 import { api } from '@/lib/api'
 import type { SubTaskResponse } from '@/types/api'
+// PR-CONN-UI-GHOSTS-AND-PROMPT-WIRING (2026-05-03): the composer-draft
+// bridge lets non-chat surfaces (today: Connections plugin drawer)
+// pre-fill the chat composer with a safe draft. Read-side lives here;
+// write-side is `lib/composerBridge.ts`.
+import { useComposerDraftStore } from '@/stores/composerDraftStore'
+import {
+  COMPOSER_DRAFT_EVENT,
+  isComposerDraftEvent,
+} from '@/lib/composerBridge'
+import { toast } from '@/stores/toastStore'
 
 const SessionList = lazy(() => import('@/components/chat/SessionList'))
 
@@ -30,6 +40,67 @@ export function ChatPage() {
   usePageTitle('Chat')
   const { sessionId } = useParams()
   const navigate = useNavigate()
+
+  // PR-CONN-UI-GHOSTS-AND-PROMPT-WIRING (2026-05-03): composer-draft
+  // pipeline. Two paths feed the same state:
+  //   1. Cross-page (most common): user clicks a suggested prompt on
+  //      /connections, drawer writes to the store + navigates. ChatPage
+  //      mounts, the post-mount effect drains the store ONCE.
+  //   2. Same-page: user is already on /chat (e.g. plugin link from
+  //      another open tab). The bridge dispatches a CustomEvent the
+  //      effect listens to + applies in real time.
+  //
+  // We deliberately drain the store from a useEffect (not a render-
+  // body ref-init pattern) so React 18 StrictMode's double-mount in
+  // dev does NOT consume the draft twice (first mount would drain it,
+  // second mount would land on an empty store and the prefill would
+  // silently disappear).
+  const [pendingComposerDraft, setPendingComposerDraft] = useState<{
+    text: string
+    pluginName?: string
+  } | null>(null)
+  // Lingering plugin attribution: shown as a thin caption above the
+  // composer for ~5 seconds AFTER the prefill is consumed. Lets the
+  // operator see "Drafted from GitHub" even though the prefill state
+  // was already cleared by the textarea on first render.
+  const [recentDraftPluginName, setRecentDraftPluginName] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Drain whatever was in the store at mount (cross-page case).
+    const seed = useComposerDraftStore.getState().consumeDraft()
+    if (seed) {
+      setPendingComposerDraft({
+        text: seed.text,
+        pluginName: seed.source.plugin_name,
+      })
+      const name = seed.source.plugin_name
+      if (name) setRecentDraftPluginName(name)
+      const fromLabel = name ? `Drafted from ${name}` : 'Draft ready in composer'
+      toast.success(fromLabel)
+    }
+    // Listen for in-page events (same-page case).
+    function onComposerDraft(ev: Event) {
+      if (!isComposerDraftEvent(ev)) return
+      const { text, source } = ev.detail
+      setPendingComposerDraft({ text, pluginName: source.plugin_name })
+      // Consume the store entry too so a later remount of ChatPage
+      // doesn't re-apply the same draft.
+      useComposerDraftStore.getState().consumeDraft()
+      const name = source.plugin_name
+      if (name) setRecentDraftPluginName(name)
+      const fromLabel = name ? `Drafted from ${name}` : 'Draft ready in composer'
+      toast.success(fromLabel)
+    }
+    window.addEventListener(COMPOSER_DRAFT_EVENT, onComposerDraft)
+    return () => window.removeEventListener(COMPOSER_DRAFT_EVENT, onComposerDraft)
+  }, [])
+
+  useEffect(() => {
+    if (recentDraftPluginName === null) return
+    const t = setTimeout(() => setRecentDraftPluginName(null), 5000)
+    return () => clearTimeout(t)
+  }, [recentDraftPluginName])
+
   const {
     messages,
     messagesLoading,
@@ -390,11 +461,30 @@ export function ChatPage() {
           onDismiss={dismissPrompt}
         />
 
+        {/* PR-CONN-UI-GHOSTS-AND-PROMPT-WIRING: lingering inline hint
+            shown above the composer when a plugin drafted into it.
+            Persists for 5s AFTER the textarea consumed the draft so
+            the operator sees the source attribution even though the
+            prefill state was cleared. Pure presentation, no behavior. */}
+        {recentDraftPluginName && (
+          <div className="mx-auto max-w-3xl px-4 -mb-1 text-[10px] text-accent-cyan/70">
+            Drafted from {recentDraftPluginName} -- review and send when ready.
+          </div>
+        )}
+
         {/* Input */}
         <ChatInput
           onSend={handleSend}
           onCancel={cancelStream}
           isStreaming={stream.isStreaming}
+          prefillValue={pendingComposerDraft?.text}
+          onPrefillConsumed={() => {
+            // Capture the plugin attribution BEFORE clearing state so
+            // the lingering hint stays visible for ~5s afterwards.
+            const fromName = pendingComposerDraft?.pluginName ?? null
+            setPendingComposerDraft(null)
+            if (fromName) setRecentDraftPluginName(fromName)
+          }}
         />
       </div>
 

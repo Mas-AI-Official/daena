@@ -226,3 +226,61 @@ def test_skill_pack_entries_have_prompts_or_skills():
     assert not bad, (
         f"Skill-pack entries without prompts OR skills: {bad}"
     )
+
+
+# ──────────────────────────────────────────────────────────────────
+# 8. Composer-draft template safety
+#    (PR-CONN-UI-GHOSTS-AND-PROMPT-WIRING)
+# ──────────────────────────────────────────────────────────────────
+
+
+def test_suggested_prompts_are_single_line():
+    """The composer-draft helper templates each prompt into a single
+    sentence: ``Use the <plugin> plugin to <prompt>.`` If a prompt
+    contains a newline, the templated draft renders as two ragged
+    lines in the textarea. Catch this at the catalog layer rather
+    than escaping at the frontend.
+    """
+    bad: list[tuple[str, str]] = []
+    for entry in CATALOG:
+        for prompt in entry.suggested_prompts:
+            if "\n" in prompt or "\r" in prompt:
+                bad.append((entry.id, prompt))
+    assert not bad, (
+        f"suggested_prompts must be single-line; got newlines in: {bad}"
+    )
+
+
+def test_suggested_prompts_are_short_enough_for_composer():
+    """Each prompt becomes a one-liner in the textarea. Anything
+    >200 chars looks awkward and triggers ChatInput's
+    long-paste-collapse heuristic the operator does not want here
+    (the chip pattern is for *user* paste, not for our drafts).
+    """
+    too_long: list[tuple[str, int]] = []
+    for entry in CATALOG:
+        for prompt in entry.suggested_prompts:
+            if len(prompt) > 200:
+                too_long.append((entry.id, len(prompt)))
+    assert not too_long, (
+        f"suggested_prompts longer than 200 chars: {too_long}"
+    )
+
+
+def test_suggested_prompts_have_no_template_metacharacters():
+    """Defense in depth: no prompt should contain template
+    metacharacters that would change meaning when interpolated into
+    the draft. Today the JS template is plain string concat (no
+    eval), so this is precautionary -- but if someone refactors to
+    template literals or `.replace()` with a function callback later,
+    a prompt containing ``$0``, ``${`` or ``\\b`` could break.
+    """
+    bad: list[tuple[str, str]] = []
+    pat = re.compile(r"(\$\{|\\\d|\$0|\$\d)")
+    for entry in CATALOG:
+        for prompt in entry.suggested_prompts:
+            if pat.search(prompt):
+                bad.append((entry.id, prompt))
+    assert not bad, (
+        f"suggested_prompts contain template metacharacters: {bad}"
+    )

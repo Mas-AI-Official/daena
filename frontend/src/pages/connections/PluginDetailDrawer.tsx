@@ -26,9 +26,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Activity, AlertTriangle, BookOpen, CheckCircle2, ChevronDown,
-  ChevronRight, ExternalLink, KeyRound, Loader2, MessageSquare,
-  Power, Server, ShieldAlert, ShieldCheck, Sparkles, X,
+  Activity, AlertTriangle, ArrowRight, BookOpen, CheckCircle2,
+  ChevronDown, ChevronRight, ExternalLink, KeyRound, Loader2,
+  MessageSquare, Power, Server, ShieldAlert, ShieldCheck, Sparkles, X,
 } from 'lucide-react'
 
 import {
@@ -46,6 +46,11 @@ import {
 } from './pluginCard'
 import SkillBundleSection from './SkillBundleSection'
 import { pluginIconFor, pluginIconTone } from './pluginIcons'
+// PR-CONN-UI-GHOSTS-AND-PROMPT-WIRING (2026-05-03): writing into the
+// chat composer is the FIRST safe execution path -- click a suggested
+// prompt and a draft lands in the textarea (no auto-send, no tools).
+import { draftFromSuggestedPrompt } from '@/lib/composerBridge'
+import { toast } from '@/stores/toastStore'
 
 interface PluginDetailDrawerProps {
   plugin: PluginCard
@@ -214,7 +219,7 @@ export default function PluginDetailDrawer({
               first thing the operator reads -- it should answer "what
               does Daena USE this plugin to do?" in plain English. */}
           <Section title="What Daena can do">
-            <DaenaIntent plugin={plugin} />
+            <DaenaIntent plugin={plugin} navigate={navigate} onClose={onClose} />
           </Section>
 
           {/* ── Connection steps (4-rung ladder) ──
@@ -585,8 +590,23 @@ function ProbeKv({ label, value, ok }: { label: string; value: string; ok: boole
 
 /** "What Daena can do" -- prefers `suggested_prompts` (Codex-style
  * concrete intents) and falls back to the catalog short_description.
- * Keeps the copy honest: never claims execution that hasn't happened. */
-function DaenaIntent({ plugin }: { plugin: PluginCard }) {
+ *
+ * PR-CONN-UI-GHOSTS-AND-PROMPT-WIRING (2026-05-03): each prompt is now
+ * a clickable button. Click drafts a safe message into the chat
+ * composer ("Use the <plugin> plugin to <prompt>") and navigates to
+ * /chat. NEVER auto-sends. NEVER calls a tool. The composer-bridge
+ * draft store survives the navigation; ChatPage hydrates from it on
+ * mount. Honesty: this is the FIRST safe execution path -- it bridges
+ * UI to chat without any side-effects. */
+function DaenaIntent({
+  plugin,
+  navigate,
+  onClose,
+}: {
+  plugin: PluginCard
+  navigate: ReturnType<typeof useNavigate>
+  onClose: () => void
+}) {
   const prompts = plugin.suggested_prompts ?? []
   if (prompts.length === 0) {
     return (
@@ -595,23 +615,58 @@ function DaenaIntent({ plugin }: { plugin: PluginCard }) {
       </p>
     )
   }
+
+  function handleUseInChat(prompt: string, index: number) {
+    // Build the draft + drop it into the composer-draft store +
+    // dispatch the daena:composer-draft event in one call. The
+    // store survives navigation so ChatPage picks it up on mount.
+    const drafted = draftFromSuggestedPrompt(prompt, plugin.name, {
+      surface: 'connections.plugin_drawer',
+      plugin_id: plugin.id,
+      plugin_name: plugin.name,
+      prompt_index: index,
+    })
+    toast.success(`Drafted from ${plugin.name}: opening chat...`)
+    onClose()
+    // Slight defer so the toast renders before navigation tears it
+    // down. Pure-CSS animations would still fire, but mounting Chat
+    // immediately makes the toast feel like it belongs to /chat
+    // rather than the closing drawer.
+    setTimeout(() => navigate('/chat'), 80)
+    // Defensive log only (no PII): drafted text length so the
+    // operator can confirm the draft made it across without exposing
+    // the prompt contents in console (the prompt itself is safe but
+    // we keep the log surface tight by habit).
+    if (typeof console !== 'undefined') {
+      console.debug('[connections] composer draft length:', drafted.length)
+    }
+  }
+
   return (
     <>
       <p className="mb-2 text-[12px] text-starlight-300">{plugin.description}</p>
       <ul className="space-y-1.5">
-        {prompts.slice(0, 5).map((prompt) => (
-          <li
-            key={prompt}
-            className="flex items-start gap-2 rounded-md border border-white/5 bg-white/[0.02] px-2.5 py-1.5 text-[12px] text-starlight-100"
-          >
-            <MessageSquare size={11} className="mt-0.5 shrink-0 text-accent-cyan" />
-            <span>&ldquo;{prompt}&rdquo;</span>
+        {prompts.slice(0, 5).map((prompt, index) => (
+          <li key={prompt}>
+            <button
+              type="button"
+              onClick={() => handleUseInChat(prompt, index)}
+              className="group flex w-full items-start gap-2 rounded-md border border-white/5 bg-white/[0.02] px-2.5 py-1.5 text-left text-[12px] text-starlight-100 transition-colors hover:border-accent-cyan/30 hover:bg-accent-cyan/5"
+              title="Open in chat composer as a draft (does not auto-send)"
+            >
+              <MessageSquare size={11} className="mt-0.5 shrink-0 text-accent-cyan" />
+              <span className="flex-1">&ldquo;{prompt}&rdquo;</span>
+              <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded bg-accent-cyan/10 px-1.5 py-0.5 text-[9px] font-medium text-accent-cyan opacity-0 transition-opacity group-hover:opacity-100">
+                Use in chat <ArrowRight size={9} />
+              </span>
+            </button>
           </li>
         ))}
       </ul>
       <p className="mt-2 text-[10px] text-starlight-500">
-        These are example intents Daena will route through {plugin.name} once
-        connected. Skill execution wiring lands in the next PR.
+        Click any prompt to draft it in the chat composer. Daena does
+        NOT auto-send -- review first, then send when ready. Tool
+        execution still lands in a later PR.
       </p>
     </>
   )

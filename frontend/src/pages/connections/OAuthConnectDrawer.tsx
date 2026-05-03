@@ -92,11 +92,21 @@ export default function OAuthConnectDrawer({
     function onMessage(ev: MessageEvent) {
       const msg = ev.data as { type?: string; connector?: string; error?: string }
       if (!msg || typeof msg.type !== 'string') return
-      if (msg.type === 'oauth_success' && msg.connector === start?.provider) {
+      // PR-CONN-UI-GHOSTS-AND-PROMPT-WIRING (2026-05-03): hoist
+      // msg.connector into a local string-narrowed variable BEFORE
+      // either branch runs. The `=== start?.provider` comparison
+      // does not narrow undefined out (string | undefined === string
+      // | undefined is still string | undefined in TS), so the prior
+      // call to `onComplete?.(msg.connector)` failed strict-null
+      // checks. Guarding on typeof gives onComplete a guaranteed
+      // string and keeps the equality check honest.
+      const connector = msg.connector
+      if (typeof connector !== 'string' || connector !== start?.provider) return
+      if (msg.type === 'oauth_success') {
         setStep('success')
         try { popupRef?.close() } catch (_) { /* may already be closed */ }
-        onComplete?.(msg.connector)
-      } else if (msg.type === 'oauth_error' && msg.connector === start?.provider) {
+        onComplete?.(connector)
+      } else if (msg.type === 'oauth_error') {
         setStep('failed')
         setCallbackError(msg.error ?? 'OAuth callback reported an error')
       }

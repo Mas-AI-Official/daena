@@ -130,9 +130,10 @@ export default function SkillBundleSection({ plugin }: SkillBundleSectionProps) 
                         {humanize(skill)}
                       </p>
                       <p className="mt-1 text-starlight-400">
-                        Skill execution wiring pending. The next PR
-                        connects this skill name to a prompt template
-                        + tool call against {plugin.name}.
+                        Skill execution wiring pending. Use a suggested
+                        prompt above (one click drafts it into the
+                        chat composer) or open chat and ask
+                        {' '}{plugin.name}{' '} directly.
                       </p>
                     </>
                   ) : readiness === 'ready_metadata_only' ? (
