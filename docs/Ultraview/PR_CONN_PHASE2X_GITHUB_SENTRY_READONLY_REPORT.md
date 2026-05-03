@@ -1,7 +1,7 @@
 # PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY — Report
 
 **Branch:** `rebuild-connections-mcp-runtime`
-**Commit:** _to be filled in after squash_
+**Commit:** `4f367b3`
 **Date:** 2026-05-03
 **Sprint:** DAENA-AUTONOMOUS-LOCAL-PRODUCTION-SPRINT (PR-2 of 4)
 
@@ -174,7 +174,7 @@ Until installed, all 4 promoted skills return `needs_connection` with the instal
 ## 10. Branch state after PR
 
 ```
-<this commit>  canonicalization: execute GitHub and Sentry read-only skills
+4f367b3        canonicalization: execute GitHub and Sentry read-only skills
 7d370d4        docs: pin PR-1 commit hash and update sprint log
 bdb1ca8        canonicalization: execute filesystem and HuggingFace read-only skills
 5c0b4f2        docs: pin launcher stability report commit hash
