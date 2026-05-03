@@ -43,7 +43,7 @@
 |---|---|---|---|---|---|
 | 1 | PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY | shipped | `bdb1ca8` | 39/39 phase2 | in-process E2E vs installed huggingface-mcp -> blocked(mcp_tool_error) as designed |
 | 2 | PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY | shipped | `4f367b3` | 50/50 phase2 | in-process E2E vs absent github-mcp -> needs_connection (distinct from PR-1's mcp_tool_error) |
-| 3 | PR-CONN-OAUTH-REFRESH-DISCONNECT | _pending_ | — | — | — |
+| 3 | PR-CONN-OAUTH-REFRESH-DISCONNECT | shipped | `da23dd7` | 76/76 connections+executor | live verify deferred (no real OAuth instance on dev backend; backend half fully test-covered) |
 | 4 | PR-CONN-LAPTOP-PRODUCTION-SMOKE | _pending_ | — | — | — |
 
 Status legend: _pending_ → _in_progress_ → _shipped_ / _hard_stop_ / _deferred_
@@ -55,6 +55,7 @@ Status legend: _pending_ → _in_progress_ → _shipped_ / _hard_stop_ / _deferr
 <!-- Each entry: HH:MM | PR-N | <commit-sha> | <one-line-summary> -->
 - 19:13 | PR-1 | bdb1ca8 | promote 4 FS+HF skills to mcp_tool, add real-exec path, 13 new tests, in-process E2E verified
 - 19:21 | PR-2 | 4f367b3 | promote 4 GH+Sentry skills, read-narrowing pinnings (state=open / age:-window), 11 new tests + 2 retargeted, write-skill name-list defenses
+- 19:31 | PR-3 | da23dd7 | OAuth refresh + disconnect/revoke/archive lifecycle, confirmation gates, RFC-7009 best-effort revoke, ARCHIVED status, 5 new tests, 76/76 suite green
 
 ---
 

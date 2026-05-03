@@ -1,7 +1,7 @@
 # PR-CONN-OAUTH-REFRESH-DISCONNECT — Report
 
 **Branch:** `rebuild-connections-mcp-runtime`
-**Commit:** _to be filled in after squash_
+**Commit:** `da23dd7`
 **Date:** 2026-05-03
 **Sprint:** DAENA-AUTONOMOUS-LOCAL-PRODUCTION-SPRINT (PR-3 of 4)
 
@@ -170,7 +170,7 @@ revoke didn't happen.
 ## 10. Branch state after PR
 
 ```
-<this commit>  fix: add OAuth refresh and disconnect for plugin cards
+da23dd7        fix: add OAuth refresh and disconnect for plugin cards
 4fb23fe        docs: pin PR-2 commit hash and update sprint log
 4f367b3        canonicalization: execute GitHub and Sentry read-only skills
 7d370d4        docs: pin PR-1 commit hash and update sprint log
