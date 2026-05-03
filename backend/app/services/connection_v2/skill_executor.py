@@ -29,8 +29,23 @@ NEVER cross the executor boundary.
   * mcp-github:inspect_ci_failure  -> get_workflow_run_logs
   * mcp-sentry:summarize_errors    -> list_issues
 
-ALL OTHER allowlist entries remain ``planned_only`` -- promotion
-happens one integration at a time after end-to-end verification.
+PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY (2026-05-03):
+arms real MCP execution for the TWO Slack reads. Gmail + Drive
+intentionally STAY planned_only -- their backend_surface is OAuth
+(direct HTTP to Google APIs) and Daena does not yet have an
+oauth-mode execution path. Promoting them today would require
+either:
+  (a) an OAuthInvoker service that knows how to translate the
+      planned tool name (e.g. messages.list_unread) into Gmail API
+      calls, OR
+  (b) a stdio MCP package that wraps Gmail/Drive APIs locally.
+Neither is in scope for this PR. Returning ``planned`` is the
+HONEST status (per Rule 17) until one of those lands.
+
+  * mcp-slack:summarize_channel    -> conversations_history
+  * mcp-slack:find_decisions       -> conversations_history
+
+ALL OTHER allowlist entries remain ``planned_only``.
 
 Why "spine, not engine":
   * The founder's brief explicitly says: "if actual connector
@@ -342,15 +357,17 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
     ),
 
     # ── Slack (mcp-slack, MEDIUM risk, READ skills) ──
-    # NOTE: draft_reply is NOT in Phase 2 allowlist even though it's
-    # a "draft" skill -- founder rule 7 (no message drafts that risk
-    # auto-send) keeps it Phase 1 chat-draft only.
+    # PROMOTED in PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY (2026-05-03):
+    # both summarize_channel + find_decisions run real tools/call now
+    # via the existing stdio MCP path. The MCP server itself owns the
+    # Slack token via SLACK_BOT_TOKEN env -- executor never sees it.
+    # NOTE: draft_reply is NOT in Phase 2 allowlist (founder rule 7).
     SkillToolMapping(
         plugin_id="mcp-slack",
         skill_id="summarize_channel",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="conversations_history",
         required_inputs=("channel", "time_window"),
         reads_summary=(
@@ -364,7 +381,7 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="find_decisions",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="conversations_history",
         required_inputs=("channel", "time_window"),
         reads_summary=(
@@ -1152,6 +1169,14 @@ _PLUGIN_TO_SERVER_KEY: dict[str, tuple[str, ...]] = {
         "mcp-sentry",
         "@sentry/mcp-server",
     ),
+    # Slack MCP (modelcontextprotocol/server-slack). Typical keys:
+    # 'slack', 'slack-mcp', 'mcp-slack'.
+    "mcp-slack": (
+        "slack",
+        "slack-mcp",
+        "mcp-slack",
+        "@modelcontextprotocol/server-slack",
+    ),
 }
 
 
@@ -1240,6 +1265,29 @@ def _args_sentry_list_issues(operator_inputs: dict[str, str]) -> dict[str, Any]:
     }
 
 
+def _args_slack_conversations_history(
+    operator_inputs: dict[str, str],
+) -> dict[str, Any]:
+    """server-slack conversations_history args: channel (id or name) +
+    optional limit. We translate the operator's time_window into a
+    'limit' parameter heuristically (last N messages) since the
+    Slack MCP doesn't accept a wall-clock window directly. Pinning
+    a small upper bound (200) keeps the read narrow."""
+    raw = operator_inputs.get("time_window", "100").strip()
+    # Heuristic: '7d' -> 200 messages cap; numeric N -> use as limit.
+    try:
+        limit = max(1, min(200, int(raw)))
+    except ValueError:
+        # Time-window strings ('7d', '24h', etc.) collapse to a sane
+        # default cap. Fine-grained age filtering happens in the MCP
+        # consumer's downstream summarizer.
+        limit = 100
+    return {
+        "channel": operator_inputs["channel"],
+        "limit": limit,
+    }
+
+
 _ARG_BUILDERS: dict[tuple[str, str], Any] = {
     ("mcp-filesystem", "find_files"): _args_filesystem_search_files,
     ("mcp-filesystem", "summarize_directory"): _args_filesystem_list_directory,
@@ -1249,6 +1297,8 @@ _ARG_BUILDERS: dict[tuple[str, str], Any] = {
     ("mcp-github", "triage_issues"): _args_github_list_issues,
     ("mcp-github", "inspect_ci_failure"): _args_github_workflow_run_logs,
     ("mcp-sentry", "summarize_errors"): _args_sentry_list_issues,
+    ("mcp-slack", "summarize_channel"): _args_slack_conversations_history,
+    ("mcp-slack", "find_decisions"): _args_slack_conversations_history,
 }
 
 

@@ -145,6 +145,13 @@ PROMOTED_TO_MCP_TOOL: dict[tuple[str, str], str] = {
         "PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY",
     ("mcp-sentry", "summarize_errors"):
         "PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY",
+    # PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY (2026-05-03):
+    # Slack only -- Gmail + Drive intentionally stay planned_only
+    # because their backend_surface is OAuth (no executor support yet).
+    ("mcp-slack", "summarize_channel"):
+        "PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY",
+    ("mcp-slack", "find_decisions"):
+        "PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY",
 }
 
 
@@ -233,6 +240,58 @@ def test_pr2_no_sentry_write_skills_promoted():
         if plug == "mcp-sentry"
     }
     assert promoted_skills_for_sentry & forbidden_sentry_writes == set()
+
+
+def test_pr3_promotion_set_is_exactly_slack_two_skills():
+    """PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY promotes EXACTLY
+    the two Slack skills. Gmail + Drive STAY planned_only because
+    their backend_surface is OAuth (HTTP) and Daena's executor only
+    speaks stdio MCP today. Promoting them would require an
+    OAuthInvoker that doesn't exist yet."""
+    pr3_keys = {
+        k for k, pr in PROMOTED_TO_MCP_TOOL.items()
+        if pr == "PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY"
+    }
+    assert pr3_keys == {
+        ("mcp-slack", "summarize_channel"),
+        ("mcp-slack", "find_decisions"),
+    }, f"PR-3 promotion set drifted: {pr3_keys}"
+
+
+def test_pr3_gmail_and_drive_remain_planned_only():
+    """Gmail (app-gmail) + Drive (app-google-drive) read skills MUST
+    stay planned_only after PR-3. Promoting them now would lie about
+    capability -- the OAuth executor surface doesn't exist."""
+    expected_planned = {
+        ("app-gmail", "summarize_unread"),
+        ("app-gmail", "search_email_context"),
+        ("app-google-drive", "find_documents"),
+        ("app-google-drive", "summarize_file"),
+    }
+    for plug, skill in expected_planned:
+        entry = _get_entry(plug, skill)
+        assert entry is not None, f"{plug}:{skill} missing from allowlist"
+        assert entry.execution_mode == "planned_only", (
+            f"{plug}:{skill} promoted to {entry.execution_mode!r} but "
+            f"the OAuth executor surface doesn't exist. Either build "
+            f"OAuthInvoker first or revert to planned_only."
+        )
+
+
+def test_pr3_no_slack_write_skills_promoted():
+    """Slack write surfaces MUST stay out of Phase 2 (founder rule 7)."""
+    forbidden_slack_writes = {
+        "draft_reply", "send_message", "post_message",
+        "extract_tasks", "schedule_message",
+        "set_topic", "set_purpose",
+        "invite_to_channel", "kick_from_channel",
+        "create_channel", "archive_channel",
+    }
+    promoted_skills_for_slack = {
+        skill_id for (plug, skill_id) in PROMOTED_TO_MCP_TOOL
+        if plug == "mcp-slack"
+    }
+    assert promoted_skills_for_slack & forbidden_slack_writes == set()
 
 
 def test_every_allowlist_entry_has_required_inputs_declared():
@@ -328,22 +387,31 @@ async def callable_github_v2_row(
 
 
 @pytest.fixture
-async def callable_slack_v2_row(
+async def callable_planned_v2_row(
     db_session, seeded_tenant_user: tuple[UUID, UUID],
 ) -> ConnectionV2:
-    """Slack V2 row used by tests that need a callable plugin pointing
-    at a STILL-PLANNED skill (after PR-2 GitHub got promoted to
-    real exec). mcp-slack:summarize_channel stays planned_only, so
-    it's the right subject for generic planned-path semantics tests."""
+    """V2 row pointing at a still-PLANNED skill. After PR-3 promoted
+    Slack, the next still-planned subject we can rely on is Drive
+    (app-google-drive:find_documents -- OAuth surface stays planned
+    until an OAuthInvoker ships).
+
+    Renamed from callable_slack_v2_row (PR-2 era) to make the intent
+    clear: this fixture is for testing the GENERIC planned path,
+    using whatever plugin is still on it."""
     tenant_id, _ = seeded_tenant_user
+    # NOTE: catalog's app-google-drive entry has matches_v2_slug=
+    # "oauth-google-drive" (Drive shares the same OAuth-app slug
+    # convention used by Gmail). The V2 row's slug field MUST match
+    # the catalog's matches_v2_slug for the executor's callable check
+    # to succeed.
     row = ConnectionV2(
         tenant_id=tenant_id,
-        kind=ConnectionKind.MCP_SERVER.value,
-        slug="mcp-slack",
-        canonical_key="mcp-slack",
-        display_name="Slack MCP",
+        kind=ConnectionKind.OAUTH_APP.value,
+        slug="oauth-google-drive",
+        canonical_key="oauth-google-drive",
+        display_name="Google Drive",
         config={},
-        auth_method="api_token",
+        auth_method="oauth",
         detected=True, configured=True, imported=True,
         reachable=True, authenticated=True, callable=True,
         detected_at=datetime.now(UTC), configured_at=datetime.now(UTC),
@@ -362,23 +430,24 @@ SENTINEL_VALUE = "PHASE2-LEAK-CANARY-99887766"
 
 @pytest.mark.asyncio
 async def test_allowlisted_callable_skill_returns_planned(
-    db_session, callable_slack_v2_row, seeded_tenant_user: tuple[UUID, UUID],
+    db_session, callable_planned_v2_row, seeded_tenant_user: tuple[UUID, UUID],
 ):
     """Happy path for the planned-only branch: callable plugin +
     still-planned allowlisted skill + all required inputs supplied
     -> status=planned with full preview.
 
-    Uses mcp-slack:summarize_channel because it's still planned_only
-    after PR-2 (mcp-github skills now go through the real-exec path)."""
+    Uses app-google-drive:find_documents because OAuth-surface plugins
+    intentionally stay planned_only (no OAuthInvoker yet) and Drive's
+    plugin slug is the still-planned subject after PR-3 promoted Slack."""
     executor = SkillExecutor(db_session)
     result = await executor.execute(
-        plugin_id="mcp-slack",
-        skill_id="summarize_channel",
+        plugin_id="app-google-drive",
+        skill_id="find_documents",
         tenant_id=seeded_tenant_user[0],
         user_id=seeded_tenant_user[1],
         operator_inputs={
-            "channel": "#engineering",
-            "time_window": SENTINEL_VALUE,
+            "query": "design specs",
+            "folder_id_or_root": SENTINEL_VALUE,
         },
     )
     assert result.accepted is True
@@ -386,12 +455,14 @@ async def test_allowlisted_callable_skill_returns_planned(
     assert result.audit_event_id
     assert len(result.tool_calls) == 1
     tc = result.tool_calls[0]
-    assert tc.tool_name == "conversations_history"
+    assert tc.tool_name == "files.list"
     assert tc.read_only is True
-    assert tc.backend_surface == "mcp"
+    assert tc.backend_surface == "oauth"
     # The argument shape declares each input as "operator-input"
     # (provenance), but NEVER carries the value itself.
-    assert tc.argument_shape["time_window"] == "operator-input"
+    assert tc.argument_shape["folder_id_or_root"] == "operator-input"
+    # OAuth surface gets the implicit tenant-scope marker.
+    assert tc.argument_shape.get("_auth_scope") == "tenant-scoped"
 
 
 @pytest.mark.asyncio
@@ -571,25 +642,25 @@ async def test_partial_inputs_returns_only_missing_fields(
 
 @pytest.mark.asyncio
 async def test_audit_row_records_outcome_and_no_secret_values(
-    db_session, callable_slack_v2_row, seeded_tenant_user: tuple[UUID, UUID],
+    db_session, callable_planned_v2_row, seeded_tenant_user: tuple[UUID, UUID],
 ):
     """Audit row contract for the still-PLANNED path. Carries
     action_type=plugin.skill_invocation, allowlist_match + read_only +
     outcome=planned + phase=phase2_readonly. action_params NEVER
     contains operator_inputs values.
 
-    Uses mcp-slack:summarize_channel because it remains planned_only
-    after PR-2 (github + sentry now go through the real-exec path,
-    which uses phase=phase2x_readonly_real_exec)."""
+    Uses app-google-drive:find_documents because Drive remains
+    planned_only after PR-3 (Slack now goes through real-exec which
+    uses phase=phase2x_readonly_real_exec)."""
     executor = SkillExecutor(db_session)
     await executor.execute(
-        plugin_id="mcp-slack",
-        skill_id="summarize_channel",
+        plugin_id="app-google-drive",
+        skill_id="find_documents",
         tenant_id=seeded_tenant_user[0],
         user_id=seeded_tenant_user[1],
         operator_inputs={
-            "channel": SENTINEL_VALUE,
-            "time_window": SENTINEL_VALUE,
+            "query": SENTINEL_VALUE,
+            "folder_id_or_root": SENTINEL_VALUE,
         },
     )
 
@@ -605,16 +676,16 @@ async def test_audit_row_records_outcome_and_no_secret_values(
     ).scalars().first()
     assert row is not None
     params = row.action_params or {}
-    assert params.get("plugin_id") == "mcp-slack"
-    assert params.get("skill_id") == "summarize_channel"
+    assert params.get("plugin_id") == "app-google-drive"
+    assert params.get("skill_id") == "find_documents"
     assert params.get("phase") == "phase2_readonly"
     assert params.get("allowlist_match") is True
     assert params.get("read_only") is True
     assert params.get("outcome") == "planned"
     # Argument shape carries provenance NOT values.
     shape = params.get("argument_shape") or {}
-    assert shape.get("channel") == "operator-input"
-    assert shape.get("time_window") == "operator-input"
+    assert shape.get("query") == "operator-input"
+    assert shape.get("folder_id_or_root") == "operator-input"
     # Final canary: dump and verify sentinel absent.
     assert SENTINEL_VALUE not in json.dumps(params)
 
@@ -866,6 +937,49 @@ def test_resolve_server_key_sentry_default_first(monkeypatch):
         lambda key: None,
     )
     assert _resolve_mcp_server_key("mcp-sentry") == "sentry"
+
+
+def test_resolve_server_key_slack_default_first(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: None,
+    )
+    assert _resolve_mcp_server_key("mcp-slack") == "slack"
+
+
+def test_arg_builder_slack_summarize_channel_uses_limit_heuristic():
+    """Slack MCP doesn't accept wall-clock time windows -- the executor
+    translates the operator's time_window into a 'limit' parameter
+    bounded at [1, 200]. Numeric inputs pass through; '7d' / '24h'
+    style strings collapse to the safe default 100."""
+    entry = _get_entry("mcp-slack", "summarize_channel")
+    assert entry is not None
+    # Numeric -> bounded limit
+    args = _build_mcp_arguments(
+        entry, {"channel": "#engineering", "time_window": "50"},
+    )
+    assert args == {"channel": "#engineering", "limit": 50}
+    # Out-of-range numeric clamped
+    args_big = _build_mcp_arguments(
+        entry, {"channel": "C123", "time_window": "9999"},
+    )
+    assert args_big["limit"] == 200
+    # Non-numeric -> default 100
+    args_window = _build_mcp_arguments(
+        entry, {"channel": "C123", "time_window": "7d"},
+    )
+    assert args_window["limit"] == 100
+
+
+def test_arg_builder_slack_find_decisions_uses_same_history_call():
+    """find_decisions reads channel history (same MCP tool); the
+    decision-extraction summarizer is downstream of the executor."""
+    entry = _get_entry("mcp-slack", "find_decisions")
+    assert entry is not None
+    args = _build_mcp_arguments(
+        entry, {"channel": "C123", "time_window": "150"},
+    )
+    assert args == {"channel": "C123", "limit": 150}
 
 
 # ── Result helpers ──
@@ -1249,6 +1363,70 @@ async def test_promoted_sentry_summarize_errors_query_window(
     assert result.status == "executed"
     assert captured["arguments"]["projectSlug"] == "daena-backend"
     assert captured["arguments"]["query"] == "age:-30d"
+
+
+@pytest.mark.asyncio
+async def test_promoted_slack_summarize_channel_dispatches_history(
+    db_session, seeded_tenant_user: tuple[UUID, UUID], monkeypatch,
+):
+    """Slack summarize_channel end-to-end: tool=conversations_history,
+    args carry channel + bounded limit, NO Slack token in args
+    (token lives in the MCP server env)."""
+    tenant_id, user_id = seeded_tenant_user
+    slack_row = ConnectionV2(
+        tenant_id=tenant_id,
+        kind=ConnectionKind.MCP_SERVER.value,
+        slug="mcp-slack",
+        canonical_key="mcp-slack",
+        display_name="Slack MCP",
+        config={},
+        auth_method="api_token",
+        detected=True, configured=True, imported=True,
+        reachable=True, authenticated=True, callable=True,
+        detected_at=datetime.now(UTC), configured_at=datetime.now(UTC),
+        imported_at=datetime.now(UTC), reachable_at=datetime.now(UTC),
+        authenticated_at=datetime.now(UTC), callable_at=datetime.now(UTC),
+    )
+    db_session.add(slack_row)
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: object(),
+    )
+    captured: dict = {}
+
+    async def fake_call(server_key, tool_name, arguments, *, timeout):
+        captured["server_key"] = server_key
+        captured["tool_name"] = tool_name
+        captured["arguments"] = arguments
+        return {
+            "success": True,
+            "content": [{"type": "text", "text": "msg1; msg2; msg3"}],
+            "is_error": False,
+        }
+
+    monkeypatch.setattr(
+        "app.services.mcp_invoker.call_server_tool", fake_call,
+    )
+    executor = SkillExecutor(db_session)
+    result = await executor.execute(
+        plugin_id="mcp-slack",
+        skill_id="summarize_channel",
+        tenant_id=tenant_id,
+        user_id=user_id,
+        operator_inputs={"channel": "C12345", "time_window": "75"},
+    )
+    assert result.status == "executed"
+    assert captured["tool_name"] == "conversations_history"
+    assert captured["arguments"]["channel"] == "C12345"
+    assert captured["arguments"]["limit"] == 75
+    # Token must NOT appear in the arguments dict.
+    args_text = json.dumps(captured["arguments"])
+    for forbidden in ("token", "secret", "auth", "password", "key"):
+        assert forbidden not in args_text.lower(), (
+            f"Suspicious field {forbidden!r} in MCP args: {args_text}"
+        )
 
 
 @pytest.mark.asyncio
