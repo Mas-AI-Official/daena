@@ -16,6 +16,19 @@ read-only skills:
 These four were chosen because they avoid OAuth complexity entirely,
 read public data only (HuggingFace) or sandboxed local paths
 (filesystem), and have zero write surface in their MCP servers.
+
+PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY (2026-05-03):
+arms real MCP ``tools/call`` execution for FOUR more read-only skills
+covering GitHub + Sentry. These take tokens/OAuth, so the MCP server
+itself owns the auth surface -- the executor only forwards operator
+inputs (repo_owner, repo_name, project_slug, ...). Token values
+NEVER cross the executor boundary.
+
+  * mcp-github:summarize_repo      -> get_repository
+  * mcp-github:triage_issues       -> list_issues
+  * mcp-github:inspect_ci_failure  -> get_workflow_run_logs
+  * mcp-sentry:summarize_errors    -> list_issues
+
 ALL OTHER allowlist entries remain ``planned_only`` -- promotion
 happens one integration at a time after end-to-end verification.
 
@@ -224,12 +237,17 @@ class SkillExecutionResult:
 #   Databases: describe_schema only (safe_query stays plan-only forever)
 PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
     # ── GitHub (mcp-github, MEDIUM risk plugin, READ skills) ──
+    # PROMOTED in PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY:
+    # all three read-only GitHub skills now run real tools/call. The
+    # MCP server itself owns auth via GITHUB_PERSONAL_ACCESS_TOKEN
+    # in its env -- executor only forwards operator inputs (owner,
+    # repo, run_id), never the token.
     SkillToolMapping(
         plugin_id="mcp-github",
         skill_id="summarize_repo",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="get_repository",
         required_inputs=("repo_owner", "repo_name"),
         reads_summary=(
@@ -242,7 +260,7 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="triage_issues",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="list_issues",
         required_inputs=("repo_owner", "repo_name"),
         reads_summary=(
@@ -255,7 +273,7 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="inspect_ci_failure",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="get_workflow_run_logs",
         required_inputs=("repo_owner", "repo_name", "run_id_or_sha"),
         reads_summary=(
@@ -357,12 +375,16 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
     ),
 
     # ── Sentry (mcp-sentry, LOW risk, READ skill) ──
+    # PROMOTED in PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY: real exec.
+    # Sentry MCP owns auth via SENTRY_AUTH_TOKEN in its env -- the
+    # executor never sees the token. Required org_slug+project_slug
+    # are operator-supplied; the MCP enforces tenant scoping.
     SkillToolMapping(
         plugin_id="mcp-sentry",
         skill_id="summarize_errors",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="list_issues",
         required_inputs=("project_slug", "time_window"),
         reads_summary=(
@@ -1113,6 +1135,23 @@ _PLUGIN_TO_SERVER_KEY: dict[str, tuple[str, ...]] = {
         "mcp-huggingface",
         "huggingface",
     ),
+    # GitHub MCP (github/github-mcp-server -- official). Typical
+    # claude_desktop_config keys: 'github', 'github-mcp', 'github-mcp-server'.
+    "mcp-github": (
+        "github",
+        "github-mcp",
+        "github-mcp-server",
+        "mcp-github",
+        "@modelcontextprotocol/server-github",
+    ),
+    # Sentry MCP (@sentry/mcp-server). Typical keys:
+    # 'sentry', 'sentry-mcp', 'mcp-sentry'.
+    "mcp-sentry": (
+        "sentry",
+        "sentry-mcp",
+        "mcp-sentry",
+        "@sentry/mcp-server",
+    ),
 }
 
 
@@ -1159,11 +1198,57 @@ def _args_huggingface_inspect_paper(operator_inputs: dict[str, str]) -> dict[str
     return {"query": operator_inputs["arxiv_id_or_title"]}
 
 
+def _args_github_get_repository(operator_inputs: dict[str, str]) -> dict[str, Any]:
+    """github-mcp-server get_repository args: owner, repo."""
+    return {
+        "owner": operator_inputs["repo_owner"],
+        "repo": operator_inputs["repo_name"],
+    }
+
+
+def _args_github_list_issues(operator_inputs: dict[str, str]) -> dict[str, Any]:
+    """github-mcp-server list_issues args: owner, repo, state.
+    We pin state='open' for triage_issues so the executor never asks
+    the MCP for closed/all-issue history (read-narrowing)."""
+    return {
+        "owner": operator_inputs["repo_owner"],
+        "repo": operator_inputs["repo_name"],
+        "state": "open",
+    }
+
+
+def _args_github_workflow_run_logs(operator_inputs: dict[str, str]) -> dict[str, Any]:
+    """github-mcp-server get_workflow_run_logs args: owner, repo, run_id.
+    The operator may supply either a numeric run id or a sha; the MCP
+    accepts both (the server resolves sha -> run_id internally)."""
+    return {
+        "owner": operator_inputs["repo_owner"],
+        "repo": operator_inputs["repo_name"],
+        "run_id": operator_inputs["run_id_or_sha"],
+    }
+
+
+def _args_sentry_list_issues(operator_inputs: dict[str, str]) -> dict[str, Any]:
+    """@sentry/mcp-server list_issues args: organizationSlug + projectSlug
+    (+ optional query). We pass the operator's project_slug as
+    projectSlug; time_window becomes a Sentry query filter
+    (e.g. age:-7d). This keeps the read narrow + scoped."""
+    return {
+        "organizationSlug": operator_inputs.get("organization_slug", ""),
+        "projectSlug": operator_inputs["project_slug"],
+        "query": f"age:-{operator_inputs['time_window']}",
+    }
+
+
 _ARG_BUILDERS: dict[tuple[str, str], Any] = {
     ("mcp-filesystem", "find_files"): _args_filesystem_search_files,
     ("mcp-filesystem", "summarize_directory"): _args_filesystem_list_directory,
     ("mcp-huggingface", "find_model"): _args_huggingface_find_model,
     ("mcp-huggingface", "inspect_paper"): _args_huggingface_inspect_paper,
+    ("mcp-github", "summarize_repo"): _args_github_get_repository,
+    ("mcp-github", "triage_issues"): _args_github_list_issues,
+    ("mcp-github", "inspect_ci_failure"): _args_github_workflow_run_logs,
+    ("mcp-sentry", "summarize_errors"): _args_sentry_list_issues,
 }
 
 

@@ -136,6 +136,15 @@ PROMOTED_TO_MCP_TOOL: dict[tuple[str, str], str] = {
         "PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY",
     ("mcp-huggingface", "inspect_paper"):
         "PR-CONN-PHASE2X-FILESYSTEM-HUGGINGFACE-READONLY",
+    # PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY (2026-05-03):
+    ("mcp-github", "summarize_repo"):
+        "PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY",
+    ("mcp-github", "triage_issues"):
+        "PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY",
+    ("mcp-github", "inspect_ci_failure"):
+        "PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY",
+    ("mcp-sentry", "summarize_errors"):
+        "PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY",
 }
 
 
@@ -172,6 +181,58 @@ def test_pr1_promotion_set_is_exactly_filesystem_and_huggingface():
         ("mcp-huggingface", "find_model"),
         ("mcp-huggingface", "inspect_paper"),
     }, f"PR-1 promotion set drifted: {pr1_keys}"
+
+
+def test_pr2_promotion_set_is_exactly_github_and_sentry():
+    """PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY promotes EXACTLY these
+    four skills (3 GitHub reads + 1 Sentry read). Catches stealth
+    promotion of GitHub WRITE skills (issues create, branch create,
+    PR create) which MUST stay out of Phase 2."""
+    pr2_keys = {
+        k for k, pr in PROMOTED_TO_MCP_TOOL.items()
+        if pr == "PR-CONN-PHASE2X-GITHUB-SENTRY-READONLY"
+    }
+    assert pr2_keys == {
+        ("mcp-github", "summarize_repo"),
+        ("mcp-github", "triage_issues"),
+        ("mcp-github", "inspect_ci_failure"),
+        ("mcp-sentry", "summarize_errors"),
+    }, f"PR-2 promotion set drifted: {pr2_keys}"
+
+
+def test_pr2_no_github_write_skills_promoted():
+    """Defense in depth: even if a future PR mis-categorizes a GitHub
+    write skill as read-only, this test guards by name. Pinning the
+    forbidden GitHub WRITE skill names lets a code reviewer catch
+    the slip in the diff."""
+    forbidden_github_writes = {
+        "create_issue", "update_issue", "close_issue",
+        "create_pull_request", "merge_pull_request",
+        "create_branch", "delete_branch",
+        "create_release", "delete_release",
+        "add_comment", "delete_comment",
+        "fork_repository",
+    }
+    promoted_skills_for_github = {
+        skill_id for (plug, skill_id) in PROMOTED_TO_MCP_TOOL
+        if plug == "mcp-github"
+    }
+    assert promoted_skills_for_github & forbidden_github_writes == set()
+
+
+def test_pr2_no_sentry_write_skills_promoted():
+    """Same defense for Sentry: assign / resolve / create_bug_task /
+    set_release / delete_event MUST never promote in Phase 2."""
+    forbidden_sentry_writes = {
+        "assign_issue", "resolve_issue", "ignore_issue",
+        "create_bug_task", "delete_event",
+        "set_release", "create_team", "create_project",
+    }
+    promoted_skills_for_sentry = {
+        skill_id for (plug, skill_id) in PROMOTED_TO_MCP_TOOL
+        if plug == "mcp-sentry"
+    }
+    assert promoted_skills_for_sentry & forbidden_sentry_writes == set()
 
 
 def test_every_allowlist_entry_has_required_inputs_declared():
@@ -238,9 +299,7 @@ async def callable_github_v2_row(
 ) -> ConnectionV2:
     """Insert a callable=true V2 row matching the mcp-github catalog
     entry's matches_v2_slug. Required so the executor's
-    _is_plugin_callable check returns True. The tenant_id matches the
-    seeded_tenant_user fixture so executor finds the row scoped to
-    the same tenant the audit row will use."""
+    _is_plugin_callable check returns True."""
     tenant_id, _ = seeded_tenant_user
     row = ConnectionV2(
         tenant_id=tenant_id,
@@ -268,6 +327,34 @@ async def callable_github_v2_row(
     return row
 
 
+@pytest.fixture
+async def callable_slack_v2_row(
+    db_session, seeded_tenant_user: tuple[UUID, UUID],
+) -> ConnectionV2:
+    """Slack V2 row used by tests that need a callable plugin pointing
+    at a STILL-PLANNED skill (after PR-2 GitHub got promoted to
+    real exec). mcp-slack:summarize_channel stays planned_only, so
+    it's the right subject for generic planned-path semantics tests."""
+    tenant_id, _ = seeded_tenant_user
+    row = ConnectionV2(
+        tenant_id=tenant_id,
+        kind=ConnectionKind.MCP_SERVER.value,
+        slug="mcp-slack",
+        canonical_key="mcp-slack",
+        display_name="Slack MCP",
+        config={},
+        auth_method="api_token",
+        detected=True, configured=True, imported=True,
+        reachable=True, authenticated=True, callable=True,
+        detected_at=datetime.now(UTC), configured_at=datetime.now(UTC),
+        imported_at=datetime.now(UTC), reachable_at=datetime.now(UTC),
+        authenticated_at=datetime.now(UTC), callable_at=datetime.now(UTC),
+    )
+    db_session.add(row)
+    await db_session.flush()
+    return row
+
+
 # Sentinel marker to scan response bodies for accidental leak of
 # operator_inputs values into responses or audit trails.
 SENTINEL_VALUE = "PHASE2-LEAK-CANARY-99887766"
@@ -275,32 +362,36 @@ SENTINEL_VALUE = "PHASE2-LEAK-CANARY-99887766"
 
 @pytest.mark.asyncio
 async def test_allowlisted_callable_skill_returns_planned(
-    db_session, callable_github_v2_row, seeded_tenant_user: tuple[UUID, UUID],
+    db_session, callable_slack_v2_row, seeded_tenant_user: tuple[UUID, UUID],
 ):
-    """Happy path: callable plugin + allowlisted skill + all required
-    inputs supplied -> status=planned with full preview."""
+    """Happy path for the planned-only branch: callable plugin +
+    still-planned allowlisted skill + all required inputs supplied
+    -> status=planned with full preview.
+
+    Uses mcp-slack:summarize_channel because it's still planned_only
+    after PR-2 (mcp-github skills now go through the real-exec path)."""
     executor = SkillExecutor(db_session)
     result = await executor.execute(
-        plugin_id="mcp-github",
-        skill_id="summarize_repo",
+        plugin_id="mcp-slack",
+        skill_id="summarize_channel",
         tenant_id=seeded_tenant_user[0],
         user_id=seeded_tenant_user[1],
         operator_inputs={
-            "repo_owner": "anthropic",
-            "repo_name": SENTINEL_VALUE,
+            "channel": "#engineering",
+            "time_window": SENTINEL_VALUE,
         },
     )
     assert result.accepted is True
     assert result.status == "planned"
-    assert result.audit_event_id  # non-empty
+    assert result.audit_event_id
     assert len(result.tool_calls) == 1
     tc = result.tool_calls[0]
-    assert tc.tool_name == "get_repository"
+    assert tc.tool_name == "conversations_history"
     assert tc.read_only is True
     assert tc.backend_surface == "mcp"
     # The argument shape declares each input as "operator-input"
     # (provenance), but NEVER carries the value itself.
-    assert tc.argument_shape["repo_name"] == "operator-input"
+    assert tc.argument_shape["time_window"] == "operator-input"
 
 
 @pytest.mark.asyncio
@@ -480,20 +571,25 @@ async def test_partial_inputs_returns_only_missing_fields(
 
 @pytest.mark.asyncio
 async def test_audit_row_records_outcome_and_no_secret_values(
-    db_session, callable_github_v2_row, seeded_tenant_user: tuple[UUID, UUID],
+    db_session, callable_slack_v2_row, seeded_tenant_user: tuple[UUID, UUID],
 ):
-    """Audit row carries action_type=plugin.skill_invocation and the
-    allowlist_match + read_only + outcome fields. action_params NEVER
-    contains operator_inputs values."""
+    """Audit row contract for the still-PLANNED path. Carries
+    action_type=plugin.skill_invocation, allowlist_match + read_only +
+    outcome=planned + phase=phase2_readonly. action_params NEVER
+    contains operator_inputs values.
+
+    Uses mcp-slack:summarize_channel because it remains planned_only
+    after PR-2 (github + sentry now go through the real-exec path,
+    which uses phase=phase2x_readonly_real_exec)."""
     executor = SkillExecutor(db_session)
     await executor.execute(
-        plugin_id="mcp-github",
-        skill_id="triage_issues",
+        plugin_id="mcp-slack",
+        skill_id="summarize_channel",
         tenant_id=seeded_tenant_user[0],
         user_id=seeded_tenant_user[1],
         operator_inputs={
-            "repo_owner": SENTINEL_VALUE,
-            "repo_name": SENTINEL_VALUE,
+            "channel": SENTINEL_VALUE,
+            "time_window": SENTINEL_VALUE,
         },
     )
 
@@ -509,16 +605,16 @@ async def test_audit_row_records_outcome_and_no_secret_values(
     ).scalars().first()
     assert row is not None
     params = row.action_params or {}
-    assert params.get("plugin_id") == "mcp-github"
-    assert params.get("skill_id") == "triage_issues"
+    assert params.get("plugin_id") == "mcp-slack"
+    assert params.get("skill_id") == "summarize_channel"
     assert params.get("phase") == "phase2_readonly"
     assert params.get("allowlist_match") is True
     assert params.get("read_only") is True
     assert params.get("outcome") == "planned"
     # Argument shape carries provenance NOT values.
     shape = params.get("argument_shape") or {}
-    assert shape.get("repo_owner") == "operator-input"
-    assert shape.get("repo_name") == "operator-input"
+    assert shape.get("channel") == "operator-input"
+    assert shape.get("time_window") == "operator-input"
     # Final canary: dump and verify sentinel absent.
     assert SENTINEL_VALUE not in json.dumps(params)
 
@@ -706,6 +802,70 @@ def test_arg_builder_huggingface_inspect_paper():
     entry = _get_entry("mcp-huggingface", "inspect_paper")
     args = _build_mcp_arguments(entry, {"arxiv_id_or_title": "2604.02460"})
     assert args == {"query": "2604.02460"}
+
+
+def test_arg_builder_github_summarize_repo():
+    entry = _get_entry("mcp-github", "summarize_repo")
+    args = _build_mcp_arguments(
+        entry, {"repo_owner": "anthropic", "repo_name": "claude-code"},
+    )
+    assert args == {"owner": "anthropic", "repo": "claude-code"}
+
+
+def test_arg_builder_github_triage_issues_pins_state_open():
+    """Triage MUST narrow to open issues only -- the executor never
+    asks the GitHub MCP for closed/all history (that's a Phase 3
+    surface). Pin this contract."""
+    entry = _get_entry("mcp-github", "triage_issues")
+    args = _build_mcp_arguments(
+        entry, {"repo_owner": "anthropic", "repo_name": "claude-code"},
+    )
+    assert args == {"owner": "anthropic", "repo": "claude-code", "state": "open"}
+
+
+def test_arg_builder_github_inspect_ci_failure():
+    entry = _get_entry("mcp-github", "inspect_ci_failure")
+    args = _build_mcp_arguments(
+        entry,
+        {
+            "repo_owner": "anthropic", "repo_name": "claude-code",
+            "run_id_or_sha": "12345",
+        },
+    )
+    assert args == {"owner": "anthropic", "repo": "claude-code", "run_id": "12345"}
+
+
+def test_arg_builder_sentry_summarize_errors():
+    """Sentry: org_slug optional but project_slug required;
+    time_window becomes a Sentry query filter (age:-7d)."""
+    entry = _get_entry("mcp-sentry", "summarize_errors")
+    args = _build_mcp_arguments(
+        entry,
+        {
+            "organization_slug": "mas-ai",
+            "project_slug": "daena-backend",
+            "time_window": "7d",
+        },
+    )
+    assert args["projectSlug"] == "daena-backend"
+    assert args["organizationSlug"] == "mas-ai"
+    assert args["query"] == "age:-7d"
+
+
+def test_resolve_server_key_github_default_first(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: None,
+    )
+    assert _resolve_mcp_server_key("mcp-github") == "github"
+
+
+def test_resolve_server_key_sentry_default_first(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: None,
+    )
+    assert _resolve_mcp_server_key("mcp-sentry") == "sentry"
 
 
 # ── Result helpers ──
@@ -984,6 +1144,111 @@ async def test_promoted_skill_response_carries_summary_for_operator(
     )
     assert "model-XYZ" in result.summary
     assert result.result_preview == result.summary
+
+
+@pytest.mark.asyncio
+async def test_promoted_github_triage_issues_dispatches_state_open(
+    db_session, callable_github_v2_row,
+    seeded_tenant_user: tuple[UUID, UUID], monkeypatch,
+):
+    """GitHub triage_issues end-to-end: the MCP receives state='open'
+    and never receives a token in the arguments dict. Token lives in
+    the MCP server process env, not in the arg payload."""
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: object(),
+    )
+    captured: dict = {}
+
+    async def fake_call(server_key, tool_name, arguments, *, timeout):
+        captured["server_key"] = server_key
+        captured["tool_name"] = tool_name
+        captured["arguments"] = arguments
+        return {
+            "success": True,
+            "content": [{"type": "text", "text": "issue #1: bug; issue #2: feature"}],
+            "is_error": False,
+        }
+
+    monkeypatch.setattr(
+        "app.services.mcp_invoker.call_server_tool", fake_call,
+    )
+    executor = SkillExecutor(db_session)
+    result = await executor.execute(
+        plugin_id="mcp-github",
+        skill_id="triage_issues",
+        tenant_id=seeded_tenant_user[0],
+        user_id=seeded_tenant_user[1],
+        operator_inputs={"repo_owner": "anthropic", "repo_name": "claude-code"},
+    )
+    assert result.status == "executed"
+    assert captured["tool_name"] == "list_issues"
+    assert captured["arguments"]["state"] == "open"
+    # Token must NOT appear in the arguments dict (it lives in the
+    # MCP server's env, not in the arg payload).
+    args_text = json.dumps(captured["arguments"])
+    for forbidden in ("token", "secret", "auth", "password", "key"):
+        assert forbidden not in args_text.lower(), (
+            f"Suspicious field {forbidden!r} in MCP args: {args_text}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_promoted_sentry_summarize_errors_query_window(
+    db_session, seeded_tenant_user: tuple[UUID, UUID], monkeypatch,
+):
+    """Sentry summarize_errors end-to-end: the MCP receives a Sentry
+    age:-window query filter so the read is narrowed to recent issues."""
+    tenant_id, user_id = seeded_tenant_user
+    sentry_row = ConnectionV2(
+        tenant_id=tenant_id,
+        kind=ConnectionKind.MCP_SERVER.value,
+        slug="mcp-sentry",
+        canonical_key="mcp-sentry",
+        display_name="Sentry MCP",
+        config={},
+        auth_method="oauth",
+        detected=True, configured=True, imported=True,
+        reachable=True, authenticated=True, callable=True,
+        detected_at=datetime.now(UTC), configured_at=datetime.now(UTC),
+        imported_at=datetime.now(UTC), reachable_at=datetime.now(UTC),
+        authenticated_at=datetime.now(UTC), callable_at=datetime.now(UTC),
+    )
+    db_session.add(sentry_row)
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        "app.services.mcp_bootstrap.get_installed_mcp",
+        lambda key: object(),
+    )
+    captured: dict = {}
+
+    async def fake_call(server_key, tool_name, arguments, *, timeout):
+        captured["arguments"] = arguments
+        return {
+            "success": True,
+            "content": [{"type": "text", "text": "Top issue: NullPointer in handler"}],
+            "is_error": False,
+        }
+
+    monkeypatch.setattr(
+        "app.services.mcp_invoker.call_server_tool", fake_call,
+    )
+    executor = SkillExecutor(db_session)
+    result = await executor.execute(
+        plugin_id="mcp-sentry",
+        skill_id="summarize_errors",
+        tenant_id=tenant_id,
+        user_id=user_id,
+        operator_inputs={
+            "organization_slug": "mas-ai",
+            "project_slug": "daena-backend",
+            "time_window": "30d",
+        },
+    )
+    assert result.status == "executed"
+    assert captured["arguments"]["projectSlug"] == "daena-backend"
+    assert captured["arguments"]["query"] == "age:-30d"
 
 
 @pytest.mark.asyncio
