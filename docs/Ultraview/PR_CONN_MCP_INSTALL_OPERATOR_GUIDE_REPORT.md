@@ -1,7 +1,7 @@
 # PR-CONN-MCP-INSTALL-OPERATOR-GUIDE — Report
 
 **Branch:** `rebuild-connections-mcp-runtime`
-**Commit:** _to be filled in after squash_
+**Commit:** `46e1db6`
 **Date:** 2026-05-03
 **Sprint:** DAENA-LOCAL-USABILITY-SPRINT-2 (PR-2 of 4)
 
