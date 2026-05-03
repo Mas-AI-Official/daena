@@ -25,6 +25,12 @@ backend/.daena_oauth_overrides.json
 # Contains plaintext API keys -- never commit.
 backend/.daena_provider_overrides.json
 
+# Sidecar metadata for OAuth client config (last_updated per provider
+# slug). Written by POST /account/oauth-clients/{slug}. Does NOT contain
+# secret values -- those live in .daena_oauth_overrides.json above.
+# Ignored anyway because metadata is local-only state.
+backend/.daena_oauth_client_metadata.json
+
 # SQLite dev DB + recovery artifacts.
 # The .db itself is ignored; repair-db*.sh can create timestamped
 # backup files that we also keep out of git.

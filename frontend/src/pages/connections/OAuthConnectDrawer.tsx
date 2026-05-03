@@ -127,7 +127,12 @@ export default function OAuthConnectDrawer({
   }
 
   function handleConfigure() {
-    navigate('/account/api-keys')
+    // PR-CONN-OAUTH-CLIENT-CONFIG-IN-SETTINGS (2026-05-03): deep-link
+    // to the new OAuth client config section. Previously navigated to
+    // /account/api-keys, a path that doesn't exist -- /account is a
+    // single page with section anchors. The new #oauth-clients anchor
+    // is owned by AccountPage and triggers a smooth scroll on mount.
+    navigate('/account#oauth-clients')
     onClose()
   }
 
@@ -266,8 +271,8 @@ function PreflightBlock({
 
       <FooterRow>
         <span className="text-[11px] text-starlight-500">
-          Your client_id + client_secret live in Settings -&gt; API Keys.
-          Daena never asks you to paste them here.
+          Your client_id + client_secret live in Account -&gt; OAuth
+          Client Config. Daena never asks you to paste them here.
         </span>
         <button
           onClick={onOpenConsent}
@@ -338,7 +343,8 @@ function FailureBlock({
             <p className="mt-1 text-[11px] text-amber-200/80">
               Daena needs the client_id + client_secret you registered
               with the provider before it can start the consent flow.
-              These live in Settings -&gt; API Keys (vault-backed).
+              Click <strong>Configure in Settings</strong> below to
+              paste them into Account -&gt; OAuth Client Config.
             </p>
             <p className="mt-1 text-[11px] text-amber-200/60">
               Reason: <code>{error}</code>

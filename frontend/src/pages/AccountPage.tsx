@@ -13,6 +13,7 @@ import { Settings as SettingsIcon, ChevronLeft } from 'lucide-react'
 const AccountDetails = lazy(() => import('./account/AccountDetails').then(m => ({ default: m.AccountDetails })))
 const AccountApiKeys = lazy(() => import('./account/AccountApiKeys').then(m => ({ default: m.AccountApiKeys })))
 const AccountProviderKeys = lazy(() => import('./account/AccountProviderKeys').then(m => ({ default: m.AccountProviderKeys })))
+const AccountOAuthClients = lazy(() => import('./account/AccountOAuthClients').then(m => ({ default: m.AccountOAuthClients })))
 
 function AccountLoader() {
   return (
@@ -85,6 +86,21 @@ export function AccountPage() {
           <h2 className="text-sm font-display font-semibold text-starlight-100 mb-3">Provider Keys</h2>
           <Suspense fallback={<AccountLoader />}>
             <AccountProviderKeys />
+          </Suspense>
+        </section>
+
+        {/* OAuth client config -- client_id + client_secret for Google /
+            GitHub / Slack / Figma / Canva. Without these, OAuth-backed
+            plugin cards stay stuck on "Configure". Anchor id
+            "oauth-clients" is the deep-link target from the OAuth
+            connect drawer's "Configure in Settings" button. */}
+        <section
+          id="oauth-clients"
+          className="pt-4 border-t border-white/5 scroll-mt-24"
+        >
+          <h2 className="text-sm font-display font-semibold text-starlight-100 mb-3">OAuth Client Config</h2>
+          <Suspense fallback={<AccountLoader />}>
+            <AccountOAuthClients />
           </Suspense>
         </section>
       </div>

@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    account_oauth_clients,
     account_provider_keys,
     agent_ops,
     agents,
@@ -142,6 +143,16 @@ router.include_router(
     account_provider_keys.router,
     prefix="/account/provider-keys",
     tags=["account-provider-keys"],
+)
+# PR-CONN-OAUTH-CLIENT-CONFIG-IN-SETTINGS (2026-05-03): paste-and-save
+# OAuth client_id + client_secret for Google / GitHub / Slack / Figma /
+# Canva. Persists via oauth_client_config_store (which writes through to
+# the existing oauth_credentials_store that oauth_service already reads).
+# Sibling of /account/provider-keys (LLM API keys). NEVER returns secrets.
+router.include_router(
+    account_oauth_clients.router,
+    prefix="/account/oauth-clients",
+    tags=["account-oauth-clients"],
 )
 router.include_router(org.router, prefix="/org", tags=["org"])
 router.include_router(security_dashboard.router, prefix="/security", tags=["security-dashboard"])
