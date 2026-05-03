@@ -41,7 +41,7 @@
 |---|---|---|---|---|---|
 | 1 | PR-CONN-OAUTH-LIFECYCLE-FRONTEND | shipped | `ce6e244` | tsc clean + 76/76 backend | live UI verify deferred (no real OAuth instance on dev box) |
 | 2 | PR-CONN-MCP-INSTALL-OPERATOR-GUIDE | shipped | `46e1db6` | n/a (docs only) | covers FS+HF+GitHub+Sentry; HF flagged as blocked-until-HTTP-adapter |
-| 3 | PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY | _pending_ | — | — | — |
+| 3 | PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY | shipped | `8541c30` | 83/83 phase2+connections | Slack 2 promoted; Gmail+Drive deliberately stay planned (need OAuthInvoker first) |
 | 4 | PR-LOCAL-DAENA-USABILITY-SMOKE | _pending_ | — | — | — |
 
 ---
@@ -51,3 +51,4 @@
 <!-- HH:MM | PR-N | <commit> | <one-line-summary> -->
 - 19:55 | PR-1 | ce6e244 | OAuthLifecyclePanel + slot in PluginDetailDrawer (Refresh / Disconnect / Archive buttons + ConfirmDialog), tsc clean + 76/76 backend
 - 20:02 | PR-2 | 46e1db6 | MCP setup guide for FS+HF+GitHub+Sentry promoted skills (4-step Install->Test->Connected->Run framing)
+- 20:09 | PR-3 | 8541c30 | promote 2 Slack skills to mcp_tool, defend Gmail+Drive as planned-only-until-OAuthInvoker, 7 new tests + 2 retargeted, 83/83 suite green
