@@ -1,7 +1,7 @@
 # PR-DEV-BACKEND-LAUNCHER-STABILITY — Report
 
 **Branch:** `rebuild-connections-mcp-runtime`
-**Commit:** _to be filled in after squash_
+**Commit:** `8544e48`
 **Date:** 2026-05-03
 **Scope:** dev-only tooling. Backend runtime behavior unchanged.
 
@@ -257,7 +257,7 @@ modified.
 ## 11. Branch state after PR
 
 ```
-<this commit>  chore: stabilize local backend launcher on Windows
+8544e48        chore: stabilize local backend launcher on Windows
 160bb19        docs/fix: complete Phase 2 live smoke verification
 707b662        canonicalization: execute read-only plugin skills with audit gate
 6dd840f        chore: clean Connections baseline before Phase 2
