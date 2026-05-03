@@ -59,6 +59,7 @@ from app.api.v1 import (
     security_mode,
     self_improvement,
     settings,
+    skill_execution,
     skill_refinery,
     skills,
     souls,
@@ -87,6 +88,16 @@ router.include_router(department_messages.router, prefix="/department-messages",
 router.include_router(department_policies.router, prefix="/department-policies", tags=["department-policies"])
 router.include_router(skills.router, prefix="/skills", tags=["skills"])
 router.include_router(skill_refinery.router, prefix="/skills/refinery", tags=["skill-refinery"])
+# PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE2-READONLY (2026-05-03):
+# Phase 2 read-only skill execution spine. GET /allowlist returns the
+# display-safe allowlist; POST /execute runs the planned-only spine
+# (no real tool invocation in Phase 2 -- status is always one of
+# planned / blocked / needs_connection / needs_inputs / unsupported).
+router.include_router(
+    skill_execution.router,
+    prefix="/connections/v2/skills",
+    tags=["connections-v2-skills"],
+)
 # Department Minds (souls) -- persona overlays for the 10 departments +
 # founder-gated refinement pipeline (/souls list/get, /souls/{dept}/refine,
 # /souls/proposals/{id}/approve|reject). Mounted BEFORE /security so the

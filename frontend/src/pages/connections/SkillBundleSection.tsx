@@ -28,7 +28,7 @@
 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Lock, ShieldAlert, Sparkles } from 'lucide-react'
+import { ArrowRight, Lock, Play, ShieldAlert, Sparkles } from 'lucide-react'
 
 import {
   type PluginCard,
@@ -46,6 +46,15 @@ import {
 } from './skillActionRegistry'
 import { draftMessage } from '@/lib/composerBridge'
 import { toast } from '@/stores/toastStore'
+// PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE2-READONLY (2026-05-03):
+// Phase 2 surfaces a "Run read-only skill" button on chips whose
+// (plugin, skill) pair is in the backend allowlist AND whose plugin
+// readiness is "ready". Phase 1 chat-draft path stays available
+// regardless -- Phase 2 is additive.
+import SkillExecuteModal, {
+  type Phase2AllowlistRow,
+} from './SkillExecuteModal'
+import { usePhase2SkillAllowlist } from '@/hooks/usePhase2SkillAllowlist'
 
 interface SkillBundleSectionProps {
   plugin: PluginCard
@@ -68,7 +77,12 @@ export default function SkillBundleSection({
   const tone = skillReadinessTone(readiness)
   const reason = skillReadinessReason(plugin)
   const [activeChip, setActiveChip] = useState<string | null>(null)
+  const [phase2Modal, setPhase2Modal] = useState<{
+    skill_id: string
+    row: Phase2AllowlistRow
+  } | null>(null)
   const navigate = useNavigate()
+  const { lookup: lookupPhase2 } = usePhase2SkillAllowlist()
 
   if (skills.length === 0) {
     return (
@@ -179,6 +193,15 @@ export default function SkillBundleSection({
                   : isPlan
                     ? 'Draft action plan'
                     : 'Use in chat'
+                // PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE2-READONLY:
+                // surface "Run read-only skill" only when the backend
+                // allowlist returns an entry AND the plugin is callable
+                // (readiness === 'ready'). Phase 2 NEVER offers Run on
+                // a locked / not-callable plugin.
+                const phase2Row = readiness === 'ready'
+                  ? lookupPhase2(plugin.id, skill)
+                  : undefined
+                const offersPhase2Run = !!phase2Row
                 return (
                   <div
                     role="status"
@@ -195,22 +218,38 @@ export default function SkillBundleSection({
                     <p className="mt-1 text-starlight-400">
                       {resolved.inline_message}
                     </p>
-                    {offersChatAction && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleUseInChat(skill, resolved)
-                        }}
-                        className={`mt-2 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors ${
-                          isBlocked
-                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
-                            : 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan hover:bg-accent-cyan/20'
-                        }`}
-                      >
-                        {buttonLabel} <ArrowRight size={9} />
-                      </button>
-                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {offersChatAction && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleUseInChat(skill, resolved)
+                          }}
+                          className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors ${
+                            isBlocked
+                              ? 'border-amber-500/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
+                              : 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan hover:bg-accent-cyan/20'
+                          }`}
+                        >
+                          {buttonLabel} <ArrowRight size={9} />
+                        </button>
+                      )}
+                      {offersPhase2Run && phase2Row && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setPhase2Modal({ skill_id: skill, row: phase2Row })
+                            setActiveChip(null)
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/15 px-2 py-1 text-[10px] font-medium text-primary-100 hover:bg-primary-500/25"
+                          title="Phase 2 read-only: opens a confirmation modal with required inputs"
+                        >
+                          <Play size={9} /> Run read-only skill
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )
               })()}
@@ -226,6 +265,19 @@ export default function SkillBundleSection({
         <code className="rounded bg-white/[0.04] px-1">callable</code>{' '}
         in the probe ladder above.
       </p>
+
+      {/* PR-CONN-PLUGIN-SKILLS-EXECUTION-PHASE2-READONLY: confirmation
+          modal for the Run button. Mounted at section root so its
+          fixed-position overlay isn't trapped inside the chip popover. */}
+      {phase2Modal && (
+        <SkillExecuteModal
+          pluginId={plugin.id}
+          pluginName={plugin.name}
+          skillId={phase2Modal.skill_id}
+          allowlistRow={phase2Modal.row}
+          onClose={() => setPhase2Modal(null)}
+        />
+      )}
     </div>
   )
 }
