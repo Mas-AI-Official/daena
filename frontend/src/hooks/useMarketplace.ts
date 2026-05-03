@@ -123,6 +123,7 @@ export type LifecycleState =
 
 export type PrimaryAction =
   | 'setup_guide'
+  | 'configure'
   | 'test'
   | 'enable'
   | 'open'
@@ -153,6 +154,16 @@ export interface MarketplaceCard {
   v2_archived: boolean
   v2_last_probe_at: string | null
   v2_failure_reason: string | null
+  /**
+   * PR-CONN-PROVIDER-KEY-VISIBILITY (2026-05-03): tri-state.
+   * - true: settings has a non-empty value for this card's credential
+   * - false: settings attribute is empty / unset
+   * - null: this card kind does not use a settings credential
+   *   (oauth_app, mcp_server, browser_tool, computer_use, cli_runtime,
+   *   skill_pack -- truth lives in the V2 probe instead)
+   * Never carries the credential VALUE -- only the presence bit.
+   */
+  provider_key_present: boolean | null
   lifecycle: LifecycleState
   primary_action: PrimaryAction
   primary_action_label: string

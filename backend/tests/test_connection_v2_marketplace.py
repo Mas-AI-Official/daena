@@ -323,12 +323,23 @@ class TestMarketplaceServiceOverlay:
         svc = MarketplaceService(db_session, tenant_id=seeded_tenant.id)
         cards = await svc.list_cards()
         assert cards
-        # No V2 rows seeded -> every catalog entry is at most "available"
-        # or "needs_setup" (coming-soon variants).
+        # No V2 rows seeded -> every catalog entry is at most "available",
+        # "needs_setup" (coming-soon variants), or "configured"
+        # (PR-CONN-PROVIDER-KEY-VISIBILITY 2026-05-03: api_provider /
+        # local_model entries with provider_key_present=True render as
+        # "configured" -> Test before discovery imports a V2 row).
         for card in cards:
             assert card.v2_row_id is None
-            assert card.lifecycle in ("available", "needs_setup")
-            assert card.primary_action == "setup_guide"
+            assert card.lifecycle in ("available", "needs_setup", "configured")
+            # Action vocabulary (PR-CONN-PROVIDER-KEY-VISIBILITY):
+            #   setup_guide -- non-credentialed kind OR provider with no
+            #                  V2 row and key state unknown
+            #   configure   -- api_provider with provider_key_present=False
+            #   test        -- any kind with provider_key_present=True
+            #                  (lifecycle bumped to "configured")
+            assert card.primary_action in ("setup_guide", "configure", "test")
+            # Tri-state shape contract: provider_key_present is bool|None
+            assert card.provider_key_present in (True, False, None)
 
     async def test_v2_callable_row_yields_callable_lifecycle(
         self, db_session, seeded_tenant

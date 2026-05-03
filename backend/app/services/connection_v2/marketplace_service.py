@@ -87,6 +87,18 @@ class MarketplaceCard:
     v2_last_probe_at: str | None = None
     v2_failure_reason: str | None = None
 
+    # PR-CONN-PROVIDER-KEY-VISIBILITY (2026-05-03):
+    # ``provider_key_present`` is a tri-state for cards whose backing is
+    # an API key / endpoint URL the operator configures in settings:
+    #   * True  -- ``getattr(settings, key, "")`` returned a non-empty value
+    #   * False -- the setting is empty / unset
+    #   * None  -- this card kind does not use a settings key (cli_runtime,
+    #             oauth_app, mcp_server, browser_tool, computer_use,
+    #             skill_pack). Truth lives in the V2 probe instead.
+    # The boolean is leak-safe: the value is NEVER read or transmitted,
+    # only the presence bit is computed.
+    provider_key_present: bool | None = None
+
     # Derived
     lifecycle: str = "available"
     primary_action: str = "setup_guide"
@@ -102,10 +114,63 @@ class MarketplaceCard:
             "v2_archived": self.v2_archived,
             "v2_last_probe_at": self.v2_last_probe_at,
             "v2_failure_reason": self.v2_failure_reason,
+            "provider_key_present": self.provider_key_present,
             "lifecycle": self.lifecycle,
             "primary_action": self.primary_action,
             "primary_action_label": self.primary_action_label,
         }
+
+
+# ──────────────────────────────────────────────────────────────────
+# Provider-key truth (PR-CONN-PROVIDER-KEY-VISIBILITY)
+# ──────────────────────────────────────────────────────────────────
+
+
+# Maps catalog entry id -> the Settings attribute that holds its
+# credential. When the attribute resolves to a truthy value, the
+# provider is considered configured. The value itself is never read
+# or transmitted -- only the presence bit (bool) leaves this module.
+#
+# CLI runtimes, OAuth apps, MCP servers, browser/computer-use tools
+# and skill packs are NOT in this map: their truth lives in the V2
+# probe (binary_check / oauth_token / mcp_initialize) and the OAuth
+# token table, not in a settings attribute.
+_PROVIDER_KEY_BY_ENTRY_ID: dict[str, str] = {
+    # Cloud AI providers (api_key auth)
+    "provider-anthropic": "anthropic_api_key",
+    "provider-openai": "openai_api_key",
+    "provider-google-gemini": "gemini_api_key",
+    "provider-perplexity": "perplexity_api_key",
+    "provider-groq": "groq_api_key",
+    "provider-openrouter": "openrouter_api_key",
+    "provider-together": "together_api_key",
+    # Local LLM endpoints (URL configuration; defaults exist but the
+    # operator can disable Ollama via OLLAMA_ENABLED=false in which case
+    # the URL is meaningless. We mirror the model_registry skip rule).
+    "local-ollama": "ollama_base_url",
+    "local-vllm": "vllm_base_url",
+}
+
+
+def _resolve_provider_key_present(entry: CatalogEntry) -> bool | None:
+    """Return tri-state presence of the credential for this entry.
+
+    None when the entry is not credentialed via settings (e.g. OAuth
+    apps, CLI runtimes, MCP servers). Otherwise a leak-safe bool.
+
+    Special case: Ollama with OLLAMA_ENABLED=false should report False
+    even if the URL has a default. The local llama-server adapter
+    (vllm) is the canonical local runtime per project CLAUDE.md.
+    """
+    settings_attr = _PROVIDER_KEY_BY_ENTRY_ID.get(entry.id)
+    if settings_attr is None:
+        return None
+    settings = get_settings()
+    if entry.id == "local-ollama":
+        if not getattr(settings, "ollama_enabled", False):
+            return False
+    value = getattr(settings, settings_attr, "")
+    return bool(value)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -151,16 +216,41 @@ def _truth_to_dict(row: ConnectionV2) -> dict:
 def _derive_lifecycle(
     entry: CatalogEntry,
     row: ConnectionV2 | None,
+    *,
+    provider_key_present: bool | None = None,
 ) -> tuple[str, str, str]:
     """Return (lifecycle, primary_action, primary_action_label).
 
     Walks the truth ladder from MOST specific to LEAST specific. Per
     project Rule 17: never advertises callable=True without a probe.
+
+    PR-CONN-PROVIDER-KEY-VISIBILITY (2026-05-03): for cards where
+    ``provider_key_present`` is non-None (i.e. api_provider /
+    local_model entries credentialed via settings), promote a card with
+    a present key but no V2 row yet from "available" -> "configured"
+    so the marketplace surfaces a Test action instead of the useless
+    Setup Guide. Discovery + first probe will create the V2 row
+    momentarily; until then the catalog truth is the honest answer.
     """
     # No V2 row -- catalog only
     if row is None:
         if entry.install_method == "coming-soon":
             return "needs_setup", "setup_guide", "Setup guide"
+        if provider_key_present is True:
+            # Credential is on disk; discovery hasn't created a V2 row
+            # yet. Render as "configured" so the operator sees a Test
+            # button rather than a redundant Setup Guide.
+            return "configured", "test", "Test"
+        if provider_key_present is False and entry.kind == "api_provider":
+            # We KNOW this card needs a key and the key is empty.
+            # Only api_provider entries route to "configure" -- their
+            # missing config is a paste-in API key. local_model entries
+            # need an env var (OLLAMA_BASE_URL / VLLM_BASE_URL) which is
+            # an operator-side change, so they keep the Setup Guide
+            # path with the env-var instructions. This keeps backend
+            # primary_action aligned with the frontend pluginCard.ts
+            # adapter (see deriveAction comment block).
+            return "available", "configure", "Configure"
         return "available", "setup_guide", "Setup guide"
 
     # Skill pack always wins (it never advances past skill_pack)
@@ -302,6 +392,11 @@ class MarketplaceService:
             row = _match_v2_row(entry, rows_by_slug)
             card = MarketplaceCard(catalog=entry.to_dict())
 
+            # Compute provider-key presence (None for non-credentialed
+            # kinds). Done up front so it can flow into both the card
+            # payload AND _derive_lifecycle.
+            card.provider_key_present = _resolve_provider_key_present(entry)
+
             if row is not None:
                 card.v2_row_id = str(row.id)
                 card.v2_truth = _truth_to_dict(row)
@@ -327,7 +422,9 @@ class MarketplaceService:
 
                 card.v2_failure_reason = _failure_reason(row)
 
-            lifecycle, action, action_label = _derive_lifecycle(entry, row)
+            lifecycle, action, action_label = _derive_lifecycle(
+                entry, row, provider_key_present=card.provider_key_present,
+            )
             card.lifecycle = lifecycle
             card.primary_action = action
             card.primary_action_label = action_label

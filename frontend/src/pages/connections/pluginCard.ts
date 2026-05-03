@@ -238,6 +238,17 @@ function deriveAction(
   // Needs auth -> Connect (OAuth) or Configure (api_key/token) or Test (none)
   if (status === 'needs_auth') {
     if (entry.auth_type === 'oauth') return { action: 'connect', enabled: true }
+    // PR-CONN-PROVIDER-KEY-VISIBILITY (2026-05-03): an api_provider /
+    // local_model card whose credential is ALREADY present in
+    // settings (provider_key_present === true) is ready to probe.
+    // Show Test instead of Configure so the operator can verify the
+    // key works without bouncing through the API-keys UI.
+    if (
+      (entry.kind === 'api_provider' || entry.kind === 'local_model')
+      && card.provider_key_present === true
+    ) {
+      return { action: 'test', enabled: true }
+    }
     if (entry.auth_type === 'api_key' || entry.auth_type === 'token') {
       return { action: 'configure', enabled: true }
     }
@@ -247,6 +258,13 @@ function deriveAction(
   // Installed (V2 row exists, not yet configured) -> Configure
   if (status === 'installed') {
     if (entry.auth_type === 'oauth') return { action: 'connect', enabled: true }
+    // Same provider-key truth guard as the needs_auth branch above.
+    if (
+      (entry.kind === 'api_provider' || entry.kind === 'local_model')
+      && card.provider_key_present === true
+    ) {
+      return { action: 'test', enabled: true }
+    }
     if (entry.auth_type === 'api_key' || entry.auth_type === 'token') {
       return { action: 'configure', enabled: true }
     }
@@ -266,6 +284,21 @@ function deriveAction(
   // for those; everything else still routes to Setup guide.
   if (entry.install_method === 'coming-soon') {
     return { action: 'setup_guide', enabled: true }
+  }
+  // PR-CONN-PROVIDER-KEY-VISIBILITY (2026-05-03): API providers
+  // whose credential is missing in settings get "Configure" -- a
+  // deep-link into the API key surface instead of a generic Setup
+  // guide. provider_key_present === false is the honest signal
+  // (None = not credentialed via settings; True is handled upstream
+  // by the lifecycle bump to "configured" -> "test").
+  //
+  // Local-model endpoints also use provider_key_present, but their
+  // missing config is an env var (OLLAMA_BASE_URL / VLLM_BASE_URL),
+  // not a paste-in key -- we keep them on Setup guide so the drawer
+  // shows the correct env-var instructions instead of routing to the
+  // API-key UI which would confuse the operator.
+  if (entry.kind === 'api_provider' && card.provider_key_present === false) {
+    return { action: 'configure', enabled: true }
   }
   if (entry.auth_type === 'oauth') {
     // No V2 row yet, but the catalog knows the OAuth provider. Point
