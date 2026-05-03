@@ -19,6 +19,12 @@ backend/app/soul/
 # Contains plaintext client secrets -- never commit.
 backend/.daena_oauth_overrides.json
 
+# Runtime LLM provider API-key overrides (user-pasted Anthropic /
+# OpenAI / Gemini / Groq / Perplexity / OpenRouter / Together keys).
+# Written by POST /account/provider-keys/{slug}, chmod 0600 on POSIX.
+# Contains plaintext API keys -- never commit.
+backend/.daena_provider_overrides.json
+
 # SQLite dev DB + recovery artifacts.
 # The .db itself is ignored; repair-db*.sh can create timestamped
 # backup files that we also keep out of git.

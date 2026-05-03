@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    account_provider_keys,
     agent_ops,
     agents,
     analytics,
@@ -132,6 +133,16 @@ router.include_router(mobile.router)
 router.include_router(benchmark.router)
 router.include_router(files.router, prefix="/files", tags=["files"])
 router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])
+# PR-CONN-PROVIDER-KEY-INPUT-IN-ACCOUNT (2026-05-03): paste-and-save
+# LLM provider keys (Anthropic, OpenAI, Gemini, Groq, Perplexity,
+# OpenRouter, Together). Persists via provider_keys_store + applies
+# live via DynamicModelService. Sibling of /api-keys (which manages
+# Daena's outbound dna_ keys for the public API surface).
+router.include_router(
+    account_provider_keys.router,
+    prefix="/account/provider-keys",
+    tags=["account-provider-keys"],
+)
 router.include_router(org.router, prefix="/org", tags=["org"])
 router.include_router(security_dashboard.router, prefix="/security", tags=["security-dashboard"])
 # Note: authorized_scope router is NOT mounted under /security prefix

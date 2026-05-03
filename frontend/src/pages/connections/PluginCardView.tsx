@@ -123,12 +123,14 @@ export default function PluginCardView({
         setDrawerOpen(true)
         return
       case 'configure':
-        // Provider cards (api_provider kind) deep-link to /account/api-keys
-        // so the operator manages secrets in the existing vault-backed UI
-        // instead of a duplicate field. Other configures (oauth_app etc)
-        // open the Setup-guide drawer.
+        // PR-CONN-PROVIDER-KEY-INPUT-IN-ACCOUNT (2026-05-03): provider
+        // cards (api_provider kind) deep-link to the new Provider Keys
+        // section on /account, anchored so the operator lands directly
+        // on the input row instead of scrolling past Profile + outbound
+        // API keys. Other configures (oauth_app etc) still open the
+        // Setup-guide drawer.
         if (plugin.source.catalog.kind === 'api_provider') {
-          navigate('/account/api-keys')
+          navigate('/account/api-keys#provider-keys')
           return
         }
         setDrawerOpen(true)

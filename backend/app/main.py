@@ -927,6 +927,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _ts = _time.perf_counter()
     from app.services.model_registry import ModelRegistry
 
+    # PR-CONN-PROVIDER-KEY-INPUT-IN-ACCOUNT (2026-05-03): hydrate
+    # runtime-pasted provider keys onto the live settings instance
+    # BEFORE ModelRegistry.initialize() reads them. Without this, a key
+    # the operator saved via /account/provider-keys would be lost on
+    # every restart and the marketplace would flip back to Configure.
+    # NOTE: do NOT add `from app.core.config import get_settings` here
+    # -- it shadows the module-level import for the rest of this
+    # function and breaks downstream references. get_settings is
+    # already imported at the top of this module.
+    try:
+        from app.services.integrations.provider_keys_store import (
+            hydrate_settings as _hydrate_provider_keys,
+        )
+        _applied = _hydrate_provider_keys(get_settings())
+        if _applied:
+            logger.info(
+                "essentials.provider_keys_hydrated",
+                fields=_applied,
+                count=len(_applied),
+            )
+    except Exception:
+        # Hydration is best-effort; the operator can still re-save
+        # in-product if the override file is unreadable.
+        logger.exception("essentials.provider_keys_hydration_failed")
+
     registry = ModelRegistry()
     await registry.initialize()
     app.state.model_registry = registry

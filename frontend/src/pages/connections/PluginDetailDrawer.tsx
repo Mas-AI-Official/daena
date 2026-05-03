@@ -252,7 +252,7 @@ export default function PluginDetailDrawer({
                   </p>
                   <button
                     onClick={() => {
-                      navigate('/account/api-keys')
+                      navigate('/account/api-keys#provider-keys')
                       onClose()
                     }}
                     className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-accent-cyan/30 bg-accent-cyan/10 px-3 py-1.5 text-[11px] font-medium text-accent-cyan hover:bg-accent-cyan/20"
