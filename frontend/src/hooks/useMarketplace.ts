@@ -310,6 +310,97 @@ export async function fetchInstallPlan(entryId: string): Promise<{
   }
 }
 
+// ── MCP install (preview + apply) ──────────────────────────────────
+//
+// PR-CONN-MCP-INSTALL-INTO-CLI: write an MCP catalog entry into a
+// supported CLI's own config file (Claude Desktop / Claude Code /
+// Codex / Gemini CLI). preview NEVER touches disk; apply does the
+// actual backup + atomic write.
+
+export type McpInstallTarget =
+  | 'claude_desktop'
+  | 'claude_code'
+  | 'codex'
+  | 'gemini_cli'
+
+export interface McpInstallPreviewBody {
+  target: McpInstallTarget
+  allow_create?: boolean
+  probe_after_apply?: boolean
+}
+
+export interface McpServerBlock {
+  command: string
+  args: string[]
+}
+
+export interface McpInstallPreview {
+  target: McpInstallTarget
+  target_display_name: string
+  config_path: string | null
+  config_exists: boolean
+  parse_ok: boolean
+  candidates_tried: string[]
+  server_name: string
+  proposed_block: McpServerBlock | null
+  existing_block: McpServerBlock | null
+  action: 'create' | 'update' | 'skip' | 'create_file' | 'failed'
+  backup_path: string | null
+  required_env_vars: string[]
+  risk_warnings: string[]
+  apply_allowed: boolean
+  failure_reason: string | null
+}
+
+export interface McpInstallApply {
+  target: McpInstallTarget
+  target_display_name: string
+  config_path: string | null
+  server_name: string
+  action: 'created' | 'updated' | 'skipped' | 'create_file' | 'failed'
+  backup_path: string | null
+  failure_reason: string | null
+  required_env_vars: string[]
+  v2_row_id: string | null
+  v2_label: string | null
+  post_apply_probe: {
+    success: boolean
+    label_after: string
+    failure_dim: string | null
+    failure_reason: string | null
+  } | null
+}
+
+export async function previewMcpInstall(
+  entryId: string,
+  body: McpInstallPreviewBody,
+): Promise<{ ok: boolean; preview?: McpInstallPreview; error?: string }> {
+  try {
+    const res = await api.post<{ success: boolean; data: McpInstallPreview }>(
+      `/connections/v2/marketplace/install-plan/${encodeURIComponent(entryId)}/preview`,
+      body,
+    )
+    return { ok: true, preview: res.data?.data }
+  } catch (err) {
+    return { ok: false, error: readError(err) }
+  }
+}
+
+export async function applyMcpInstall(
+  entryId: string,
+  body: McpInstallPreviewBody,
+): Promise<{ ok: boolean; result?: McpInstallApply; error?: string }> {
+  try {
+    const res = await api.post<{ success: boolean; data: McpInstallApply }>(
+      `/connections/v2/marketplace/install-plan/${encodeURIComponent(entryId)}/apply`,
+      body,
+    )
+    return { ok: true, result: res.data?.data }
+  } catch (err) {
+    return { ok: false, error: readError(err) }
+  }
+}
+
 // ── Lifecycle display tone ──
 
 export const LIFECYCLE_TONE: Record<

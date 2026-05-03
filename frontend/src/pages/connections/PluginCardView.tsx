@@ -43,6 +43,7 @@ import {
   type PluginAction,
   pluginStatusTone,
 } from './pluginCard'
+import MCPInstallDrawer from './MCPInstallDrawer'
 import PluginDetailDrawer from './PluginDetailDrawer'
 import { pluginIconFor, pluginIconTone } from './pluginIcons'
 
@@ -73,13 +74,32 @@ export default function PluginCardView({
   const tone = pluginStatusTone(plugin.status)
   const navigate = useNavigate()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [installDrawerOpen, setInstallDrawerOpen] = useState(false)
+
+  // PR-CONN-MCP-INSTALL-INTO-CLI: MCP catalog entries with a real
+  // command_template open the new install drawer instead of the
+  // read-only Setup Guide. Other plugin types keep the existing flow.
+  const supportsMcpInstall =
+    plugin.source.catalog.kind === 'mcp_server' &&
+    plugin.install_method !== 'coming-soon' &&
+    plugin.source.catalog.command_template.length > 0
 
   function handleAction(e: React.MouseEvent) {
     e.stopPropagation()
     switch (plugin.primary_action) {
       case 'install':
+        if (supportsMcpInstall) {
+          setInstallDrawerOpen(true)
+          return
+        }
+        setDrawerOpen(true)
+        return
       case 'connect':
       case 'setup_guide':
+        if (supportsMcpInstall) {
+          setInstallDrawerOpen(true)
+          return
+        }
         setDrawerOpen(true)
         return
       case 'configure':
@@ -218,6 +238,18 @@ export default function PluginCardView({
           onProbe={onProbe}
           onEnable={onEnable}
           busy={busy}
+        />
+      )}
+
+      {installDrawerOpen && (
+        <MCPInstallDrawer
+          plugin={plugin}
+          onClose={() => setInstallDrawerOpen(false)}
+          onComplete={() => {
+            // After a successful apply, refresh the marketplace card
+            // grid so the new V2 row's status pill reflects truth.
+            window.dispatchEvent(new Event('daena:retry-pending'))
+          }}
         />
       )}
     </>

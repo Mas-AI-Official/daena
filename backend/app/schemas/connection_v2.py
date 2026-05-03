@@ -188,3 +188,24 @@ class ProbeOutcome(BaseModel):
     callable_at: datetime | None = None
     failure_dim: str | None = None
     failure_reason: str | None = None
+
+
+# ──────────────────────────────────────────────────────────────────
+# MCP install (PR-CONN-MCP-INSTALL-INTO-CLI, 2026-05-02)
+# ──────────────────────────────────────────────────────────────────
+
+
+class McpInstallTarget(BaseModel):
+    """POST body for /marketplace/install-plan/{entry_id}/preview|apply.
+
+    target = which CLI gets the MCP entry written into its config.
+    allow_create = create the config file if no candidate exists yet.
+                   Default False (safer: refuse the write and tell the
+                   operator their CLI's config file is missing).
+    probe_after_apply = run McpServerProbe against the imported V2 row
+                        immediately after a successful apply, so the UI
+                        can show "Connected" without a second round-trip.
+    """
+    target: Literal["claude_desktop", "claude_code", "codex", "gemini_cli"]
+    allow_create: bool = False
+    probe_after_apply: bool = False

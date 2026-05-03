@@ -31,12 +31,20 @@ from app.schemas.connection_v2 import (
     ConnectionTruthOut,
     ConnectionV2Out,
     ImportConnectionRequest,
+    McpInstallTarget,
     ProbeOutcome,
     TruthDimOut,
 )
 from app.services.connection_v2 import ConnectionRegistryV2
+from app.services.connection_v2.cli_mcp_writer import (
+    SUPPORTED_TARGETS,
+    apply_install,
+    preview_install,
+    server_name_for,
+)
 from app.services.connection_v2.legacy_bridge import is_v2_enabled
 from app.services.connection_v2.marketplace_catalog import (
+    CATALOG,
     list_catalog,
     list_categories,
 )
@@ -216,6 +224,219 @@ async def get_install_plan(
     if plan is None:
         raise HTTPException(status_code=404, detail="catalog_entry_not_found")
     return {"success": True, "data": plan}
+
+
+# ──────────────────────────────────────────────────────────────────
+# MCP install (PR-CONN-MCP-INSTALL-INTO-CLI, 2026-05-02)
+# ──────────────────────────────────────────────────────────────────
+#
+# These two endpoints land an MCP catalog entry into the supported
+# CLI's own config file (claude_desktop / claude_code / codex /
+# gemini_cli). The writer (``cli_mcp_writer.py``) does the actual
+# IO with backup + atomic rename. The preview endpoint NEVER touches
+# the filesystem; the apply endpoint backs up + atomically writes.
+#
+# Founder rules pinned at this layer:
+#   * mcp_server kind only (rejected for any other catalog kind).
+#   * Env values NEVER written; required_env_vars surfaced as a
+#     warning so the operator sets them in their shell.
+#   * V2 row imported after a successful apply so the new MCP appears
+#     in the Plugins grid immediately.
+#   * Optional post-apply probe runs the McpServerProbe against the
+#     imported row -- only when the operator opted in and the entry
+#     has probe_type="mcp_initialize".
+
+
+def _entry_for(entry_id: str):
+    """Look up a catalog entry by id; None if not found."""
+    return next((e for e in CATALOG if e.id == entry_id), None)
+
+
+@router.post("/marketplace/install-plan/{entry_id}/preview")
+async def preview_mcp_install(
+    entry_id: str,
+    body: McpInstallTarget,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Compute what installing this MCP into the chosen CLI would do.
+
+    NEVER touches the filesystem. Returns the existing config block (if
+    any), the proposed block, the action (create/update/skip/create_file),
+    and risk warnings. UI uses ``apply_allowed`` to enable the Confirm
+    button.
+    """
+    _ = user  # auth-only; preview is per-host, not per-tenant
+    entry = _entry_for(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="catalog_entry_not_found")
+    if entry.kind != "mcp_server":
+        raise HTTPException(
+            status_code=400,
+            detail=f"install_unsupported_kind: only mcp_server entries can be installed (kind={entry.kind!r})",
+        )
+    if body.target not in SUPPORTED_TARGETS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported_target: {body.target!r} not in {SUPPORTED_TARGETS}",
+        )
+
+    report = preview_install(
+        target=body.target, entry=entry, allow_create=body.allow_create,
+    )
+    return {
+        "success": report.failure_reason is None,
+        "data": {
+            "target": report.target,
+            "target_display_name": report.target_display_name,
+            "config_path": report.config_path,
+            "config_exists": report.config_exists,
+            "parse_ok": report.parse_ok,
+            "candidates_tried": report.candidates_tried,
+            "server_name": report.server_name,
+            "proposed_block": report.proposed_block,
+            "existing_block": report.existing_block,
+            "action": report.action,
+            "backup_path": report.backup_path,
+            "required_env_vars": report.required_env_vars,
+            "risk_warnings": report.risk_warnings,
+            "apply_allowed": report.apply_allowed,
+            "failure_reason": report.failure_reason,
+        },
+    }
+
+
+@router.post("/marketplace/install-plan/{entry_id}/apply")
+async def apply_mcp_install(
+    entry_id: str,
+    body: McpInstallTarget,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Write the MCP entry into the chosen CLI's config + import V2 row.
+
+    Sequence:
+      1. Validate entry + target.
+      2. Run preview to confirm apply_allowed.
+      3. Backup existing config (if present).
+      4. Atomic rename of new config into place.
+      5. Import / update the matching ConnectionV2(kind=mcp_server) row.
+      6. Optionally probe (when body.probe_after_apply=true).
+
+    Returns:
+      action -- created / updated / skipped / create_file / failed
+      backup_path -- present when an existing file was backed up
+      v2_row_id / v2_label -- the imported / updated row
+      post_apply_probe -- ProbeOutcome shape when probe_after_apply=true
+
+    Idempotent: re-running on an unchanged config returns
+    ``action="skipped"`` with no backup.
+    """
+    entry = _entry_for(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="catalog_entry_not_found")
+    if entry.kind != "mcp_server":
+        raise HTTPException(
+            status_code=400,
+            detail=f"install_unsupported_kind: only mcp_server entries can be installed (kind={entry.kind!r})",
+        )
+    if body.target not in SUPPORTED_TARGETS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported_target: {body.target!r} not in {SUPPORTED_TARGETS}",
+        )
+
+    report = apply_install(
+        target=body.target, entry=entry, allow_create=body.allow_create,
+    )
+
+    out: dict = {
+        "target": report.target,
+        "target_display_name": report.target_display_name,
+        "config_path": report.config_path,
+        "server_name": report.server_name,
+        "action": report.action,
+        "backup_path": report.backup_path,
+        "failure_reason": report.failure_reason,
+        "required_env_vars": list(entry.required_env_vars),
+        "v2_row_id": None,
+        "v2_label": None,
+        "post_apply_probe": None,
+    }
+
+    if report.action in ("created", "updated", "skipped", "create_file"):
+        # Import / update a V2 row so the new MCP shows up in Plugins
+        # without requiring a discovery refresh. Idempotent on
+        # (tenant_id, kind, slug).
+        from app.services.connection_v2.cli_mcp_writer import build_mcp_block
+
+        block = build_mcp_block(entry) or {}
+        from app.services.connection_v2.seeders import mcp_slug
+        slug = mcp_slug(report.server_name)
+        config = {
+            "kind": "mcp_stdio",
+            "command": block.get("command", ""),
+            "args": block.get("args", []),
+            "env_var_names": list(entry.required_env_vars),
+            "env_var_count": len(entry.required_env_vars),
+            "_source_cli": body.target,
+            "_source_path": report.config_path,
+            "_seeded_by": "install_apply",
+        }
+        config = {k: v for k, v in config.items() if v not in (None, "")}
+        reg = await _registry(db)
+        try:
+            result = await reg.import_connection(
+                tenant_id=user.tenant_id,
+                kind=ConnectionKind.MCP_SERVER,
+                slug=slug,
+                display_name=entry.display_name,
+                auth_method=AuthMethod.NONE,
+                config=config,
+            )
+            await db.commit()
+            label = await reg.label_for(result.connection)
+            out["v2_row_id"] = str(result.connection.id)
+            out["v2_label"] = label
+
+            # Optional post-apply probe (only for entries that should
+            # be probeable; skill-pack-style entries fall through).
+            if (
+                body.probe_after_apply
+                and entry.probe_type == "mcp_initialize"
+            ):
+                try:
+                    _row, probe_label, probe_outcome = await reg.probe_and_record(
+                        tenant_id=user.tenant_id,
+                        connection_id=result.connection.id,
+                    )
+                    await db.commit()
+                    out["v2_label"] = probe_label
+                    out["post_apply_probe"] = {
+                        "success": probe_outcome.get("success", False),
+                        "label_after": probe_label,
+                        "failure_dim": probe_outcome.get("failure_dim"),
+                        "failure_reason": probe_outcome.get("failure_reason"),
+                    }
+                except Exception as exc:  # noqa: BLE001 -- probe must never raise into apply
+                    out["post_apply_probe"] = {
+                        "success": False,
+                        "label_after": label,
+                        "failure_dim": "callable",
+                        "failure_reason": (
+                            f"post_apply_probe_failed: {type(exc).__name__}"
+                        ),
+                    }
+        except Exception as exc:  # noqa: BLE001
+            # The CLI config write succeeded; only the V2 import failed.
+            # Surface this honestly so the UI can offer a manual refresh.
+            out["v2_failure_reason"] = (
+                f"v2_import_failed: {type(exc).__name__}"
+            )
+
+    return {
+        "success": report.failure_reason is None,
+        "data": out,
+    }
 
 
 @router.get("/{connection_id}", response_model=ConnectionV2Out)

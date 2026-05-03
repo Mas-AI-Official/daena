@@ -260,9 +260,10 @@ function deriveAction(
   //    backend can safely write config."
   //   "If backend only has instructions, button says 'Setup guide.'"
   //
-  // Backend reality today: no safe install endpoint exists. install_plan
-  // returns instructions only. So every "Available" entry surfaces as
-  // Setup guide unless it is OAuth (where we point to the Connect flow).
+  // PR-CONN-MCP-INSTALL-INTO-CLI (2026-05-02): MCP entries with a
+  // resolvable command_template DO have a safe install endpoint now
+  // (preview + apply with backup + atomic write). Surface "Install"
+  // for those; everything else still routes to Setup guide.
   if (entry.install_method === 'coming-soon') {
     return { action: 'setup_guide', enabled: true }
   }
@@ -272,6 +273,13 @@ function deriveAction(
     // up after they paste OAuth client credentials in Settings and
     // discovery imports the row.
     return { action: 'setup_guide', enabled: true }
+  }
+  if (
+    entry.kind === 'mcp_server'
+    && entry.command_template
+    && entry.command_template.length > 0
+  ) {
+    return { action: 'install', enabled: true }
   }
   return { action: 'setup_guide', enabled: true }
 }
