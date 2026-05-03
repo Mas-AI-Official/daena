@@ -260,26 +260,55 @@ $ cd frontend && npx tsc -b
 (silent — clean)
 ```
 
-### 7.4 Live UI verification — DEFERRED
+### 7.4 Live UI verification — COMPLETED
 
-Live chrome-devtools verification of the Run button + modal + endpoint
-flow is **deferred** because the operator's local backend on port 8000
-has lingering processes from prior sessions (TIME_WAIT sockets + reloader
-worker subprocess pattern from the `run.py` reload feature). The new
-routes are confirmed registered via direct `python -c "from app.api.v1
-import router"` import:
+Hard-reset (kill all `python.exe` matching `run.py|uvicorn|app.main|spawn_main`)
+followed by no-reload uvicorn launch:
 
 ```
-phase2 routes in router (direct import): 2
-  /connections/v2/skills/allowlist
-  /connections/v2/skills/execute
+.venv/Scripts/python.exe -m uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
-The 20/20 backend tests already prove the executor + audit + endpoint
-works end-to-end against a real DB. Operator can verify the UI by
-killing all `python.exe` processes whose CommandLine matches `run.py`,
-then running `cd backend && .venv/Scripts/python.exe run.py` from a
-clean shell.
+**Why no-reload:** uvicorn's `reload=True` (default for `DEBUG=True`)
+spawns the worker via `multiprocessing.spawn` which on Windows resolves
+to `C:\Python311\python.exe` (system Python, no `sqlalchemy`). The
+worker silently crashes during import; uvicorn keeps the prior worker
+alive, serving stale code. Bypassing reload makes the .venv Python
+serve directly. Documented in §10 tech-debt as a separate `.bat`
+launcher follow-up.
+
+Chrome-devtools live verifications against the freshly-restarted
+backend:
+
+| Check | Result |
+|---|---|
+| `GET /connections/v2/skills/allowlist` shape | ✅ 200, 19 entries, `phase=phase2_readonly`, `execution_mode_default=planned_only` |
+| Allowlist `no_secret_fields` scan | ✅ no field matches `/secret/i`, `/token/i`, `/api_key/i`, `/password/i` |
+| Sentinel canary on `/execute` (sent `repo_owner = repo_name = "PHASE2-LIVE-CANARY-EXEC-555"`) | ✅ `sentinel_in_body: false` — operator inputs scrubbed even on `needs_connection` failure path |
+| Write-skill block (`mcp-notion:update_page`) | ✅ `status=blocked`, `blocked_reason=not_in_phase2_allowlist` |
+| Run button suppressed when plugin NOT callable | ✅ GitHub plugin (lifecycle=available) chip popover shows only "Connect the plugin first to enable this skill" — no Run button rendered |
+| `/connections` layout unchanged | ✅ Brain / Plugins / Advanced (no new tabs) |
+
+**Positive UI case (Run button DOES surface for a callable + allowlisted
+plugin)** could not be smoke-tested because the dev tenant has zero
+callable plugins (`callable_count: 0` across 57 cards;
+`{available: 43, configured: 4, needs_setup: 10}`). The visibility
+logic is enforced by a single short condition in
+`SkillBundleSection.tsx`:
+
+```ts
+const phase2Row = readiness === 'ready'
+  ? lookupPhase2(plugin.id, skill)
+  : undefined
+const offersPhase2Run = !!phase2Row
+```
+
+— and `test_allowlisted_callable_skill_returns_planned` covers the
+backend half of the contract end-to-end (with a `callable=True` V2
+row fixture). Operator can validate the positive case by connecting
+GitHub via PAT through the existing `mcp-github` install flow, then
+re-clicking any of the 3 GitHub allowlist skills.
 
 ---
 
