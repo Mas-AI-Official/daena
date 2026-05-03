@@ -80,6 +80,26 @@ export type ProbeType =
 
 export type RiskLevel = 'low' | 'medium' | 'high'
 
+/**
+ * PR-CONN-MCP-CATALOG-SKILL-BUNDLES (2026-05-03): officiality drives
+ * the trust badge on the marketplace card.
+ *   official        -- MCP steering group reference servers
+ *   vendor-official -- First-party MCP shipped by the app's vendor
+ *   vendor-blessed  -- Community but vendor-affiliated org
+ *   verified        -- Manually reviewed by Daena
+ *   community       -- Third-party, surfaced with caveat
+ *   archived        -- Was reference, no longer maintained
+ *   coming-soon     -- No MCP shipping yet
+ */
+export type Officiality =
+  | 'official'
+  | 'vendor-official'
+  | 'vendor-blessed'
+  | 'verified'
+  | 'community'
+  | 'archived'
+  | 'coming-soon'
+
 export interface CatalogEntry {
   id: string
   display_name: string
@@ -98,6 +118,15 @@ export interface CatalogEntry {
   compatible_os: string[]
   matches_v2_slug: string
   setup_notes: string
+  /** PR-CONN-MCP-CATALOG-SKILL-BUNDLES: optional plugin-bundle metadata.
+   * Backwards-compatible defaults: empty arrays + "community" tier. */
+  officiality?: Officiality
+  default_skills?: string[]
+  suggested_prompts?: string[]
+  permissions_summary?: string[]
+  mcp_servers?: string[]
+  source_refs?: string[]
+  last_verified_at?: string
 }
 
 export interface CategoryDefinition {

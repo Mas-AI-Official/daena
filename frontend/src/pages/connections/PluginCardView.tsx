@@ -41,6 +41,8 @@ import {
 import {
   type PluginCard,
   type PluginAction,
+  officialityLabel,
+  officialityTone,
   pluginStatusTone,
 } from './pluginCard'
 import MCPInstallDrawer from './MCPInstallDrawer'
@@ -198,7 +200,7 @@ export default function PluginCardView({
         )}
 
         <div className="mt-auto space-y-2">
-          {/* Status pill row */}
+          {/* Status + officiality pill row */}
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tone.border} ${tone.bg} ${tone.text}`}
@@ -206,7 +208,23 @@ export default function PluginCardView({
               <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
               {plugin.status_label}
             </span>
-            {plugin.install_method === 'coming-soon' && (
+            {/* Officiality badge: trust signal from PR-CONN-MCP-CATALOG-SKILL-BUNDLES.
+                Always rendered so the operator can distinguish vendor-shipped
+                from community-curated entries at a glance. */}
+            {(() => {
+              const oTone = officialityTone(plugin.officiality)
+              const oLabel = officialityLabel(plugin.officiality)
+              return (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${oTone.border} ${oTone.bg} ${oTone.text}`}
+                  title={`Source tier: ${oLabel}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${oTone.dot}`} />
+                  {oLabel}
+                </span>
+              )
+            })()}
+            {plugin.install_method === 'coming-soon' && plugin.officiality !== 'coming-soon' && (
               <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-200">
                 coming soon
               </span>

@@ -101,7 +101,10 @@ class TestCatalogShape:
 
     def test_catalog_by_id_lookup_works(self):
         assert "mcp-github" in CATALOG_BY_ID
-        assert CATALOG_BY_ID["mcp-github"].vendor == "Anthropic"
+        # PR-CONN-MCP-CATALOG-SKILL-BUNDLES (2026-05-03): vendor is now
+        # GitHub itself (research confirmed github/github-mcp-server is
+        # vendor-shipped, not an Anthropic-published reference server).
+        assert CATALOG_BY_ID["mcp-github"].vendor == "GitHub"
 
     def test_to_dict_serializes_to_json(self):
         for entry in CATALOG[:5]:

@@ -86,6 +86,17 @@ export interface PluginCard {
   risk_level: CatalogEntry['risk_level']
   official_url: string
   compatible_os: string[]
+  /** PR-CONN-MCP-CATALOG-SKILL-BUNDLES (2026-05-03): bundle metadata
+   * surfaced on the card. ``default_skills`` are NOT executable until
+   * the plugin's lifecycle reaches ``callable`` -- the UI shows them
+   * with the "Skill ready. Requires <plugin> connection." caption
+   * until then. ``officiality`` drives the trust badge. */
+  officiality: import('@/hooks/useMarketplace').Officiality
+  default_skills: string[]
+  suggested_prompts: string[]
+  permissions_summary: string[]
+  source_refs: string[]
+  last_verified_at: string
   // Pass-through of the source card so callers can call probe / enable
   // via existing V2 endpoints without re-fetching.
   v2_row_id: string | null
@@ -351,7 +362,14 @@ export function pluginCardFromMarketplaceCard(card: MarketplaceCard): PluginCard
     category: entry.category,
     category_label: CATEGORY_LABEL[entry.category] ?? entry.category,
     description: entry.short_description,
-    included_skills: entry.capabilities,
+    // PR-CONN-MCP-CATALOG-SKILL-BUNDLES (2026-05-03): prefer bundle
+    // default_skills (Codex-style names) over the legacy
+    // capabilities field for the included-skills chip list. Fall
+    // back to capabilities for entries that haven't been bumped to
+    // the new schema yet.
+    included_skills: (entry.default_skills && entry.default_skills.length > 0)
+      ? entry.default_skills
+      : entry.capabilities,
     backing_types: [KIND_TO_BACKING[entry.kind]],
     status,
     status_label: STATUS_LABELS[status],
@@ -371,6 +389,12 @@ export function pluginCardFromMarketplaceCard(card: MarketplaceCard): PluginCard
     risk_level: entry.risk_level,
     official_url: entry.official_url,
     compatible_os: entry.compatible_os,
+    officiality: entry.officiality ?? 'community',
+    default_skills: entry.default_skills ?? [],
+    suggested_prompts: entry.suggested_prompts ?? [],
+    permissions_summary: entry.permissions_summary ?? [],
+    source_refs: entry.source_refs ?? [],
+    last_verified_at: entry.last_verified_at ?? '',
     v2_row_id: card.v2_row_id,
     source: card,
   }
@@ -422,6 +446,78 @@ export const PLUGIN_STATUS_TONE: Record<
 
 export function pluginStatusTone(status: PluginStatus) {
   return PLUGIN_STATUS_TONE[status] ?? PLUGIN_STATUS_TONE.available
+}
+
+// ── Officiality badge (PR-CONN-MCP-CATALOG-SKILL-BUNDLES) ──
+
+import type { Officiality } from '@/hooks/useMarketplace'
+
+export const OFFICIALITY_LABEL: Record<Officiality, string> = {
+  'official': 'Official',
+  'vendor-official': 'Vendor official',
+  'vendor-blessed': 'Vendor blessed',
+  'verified': 'Verified',
+  'community': 'Community',
+  'archived': 'Archived',
+  'coming-soon': 'Coming soon',
+}
+
+export const OFFICIALITY_TONE: Record<
+  Officiality,
+  { dot: string; text: string; bg: string; border: string }
+> = {
+  // Top trust tiers: green
+  'official': {
+    dot: 'bg-emerald-400',
+    text: 'text-emerald-200',
+    bg: 'bg-emerald-500/10',
+    border: 'border-emerald-500/30',
+  },
+  'vendor-official': {
+    dot: 'bg-emerald-400',
+    text: 'text-emerald-200',
+    bg: 'bg-emerald-500/10',
+    border: 'border-emerald-500/30',
+  },
+  'vendor-blessed': {
+    dot: 'bg-cyan-300',
+    text: 'text-cyan-200',
+    bg: 'bg-cyan-500/10',
+    border: 'border-cyan-500/30',
+  },
+  'verified': {
+    dot: 'bg-cyan-300',
+    text: 'text-cyan-200',
+    bg: 'bg-cyan-500/10',
+    border: 'border-cyan-500/30',
+  },
+  // Caveat tiers: amber/slate
+  'community': {
+    dot: 'bg-amber-300',
+    text: 'text-amber-200',
+    bg: 'bg-amber-500/10',
+    border: 'border-amber-500/30',
+  },
+  'archived': {
+    dot: 'bg-slate-400',
+    text: 'text-slate-300',
+    bg: 'bg-slate-500/10',
+    border: 'border-slate-500/30',
+  },
+  'coming-soon': {
+    dot: 'bg-slate-500',
+    text: 'text-slate-400',
+    bg: 'bg-slate-500/5',
+    border: 'border-slate-500/20',
+  },
+}
+
+export function officialityTone(o: Officiality | undefined) {
+  return OFFICIALITY_TONE[o ?? 'community']
+}
+
+export function officialityLabel(o: Officiality | undefined) {
+  return OFFICIALITY_LABEL[o ?? 'community']
 }
 
 // Re-export for convenience

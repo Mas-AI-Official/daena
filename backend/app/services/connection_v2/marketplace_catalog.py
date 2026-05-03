@@ -98,6 +98,34 @@ RiskLevel = Literal["low", "medium", "high"]
 CompatibleOs = Literal["windows", "wsl", "docker", "mac", "linux"]
 
 
+# PR-CONN-MCP-CATALOG-SKILL-BUNDLES (2026-05-03): officiality is the
+# trust signal that drives the marketplace badge + the install-time
+# friction (community/unverified plugins surface a "Review source
+# before install" CTA, official ones surface a clean install button).
+#
+# Tier semantics (from CONNECTIONS_MCP_PLUGIN_ECOSYSTEM_RESEARCH.md):
+#   * official        -- MCP steering group reference servers
+#                        (modelcontextprotocol/servers main branch)
+#   * vendor-official -- First-party MCP shipped by the app's vendor
+#                        (e.g. github/github-mcp-server)
+#   * vendor-blessed  -- Community but vendor-affiliated org (e.g.
+#                        supabase-community/supabase-mcp)
+#   * verified        -- Manually reviewed by Daena, third-party
+#   * community       -- Third-party, surfaced with caveat
+#   * archived        -- Was reference, no longer maintained by MCP
+#                        org but still installable
+#   * coming-soon     -- No MCP shipping yet; render Setup Guide only
+Officiality = Literal[
+    "official",
+    "vendor-official",
+    "vendor-blessed",
+    "verified",
+    "community",
+    "archived",
+    "coming-soon",
+]
+
+
 # ──────────────────────────────────────────────────────────────────
 # Dataclasses
 # ──────────────────────────────────────────────────────────────────
@@ -138,6 +166,48 @@ class CatalogEntry:
     # Notes shown in the install drawer (kept short; no marketing copy)
     setup_notes: str = ""
 
+    # ────────────────────────────────────────────────────────────────
+    # PR-CONN-MCP-CATALOG-SKILL-BUNDLES (2026-05-03): Plugin-bundle
+    # metadata. All optional with safe defaults so existing entries
+    # need only opt-in fields they care about.
+    # ────────────────────────────────────────────────────────────────
+
+    # Trust tier from research (default community = surface "Review
+    # source before install" CTA). See Officiality docstring above.
+    officiality: Officiality = "community"
+
+    # Plugin-bundle composition (Codex inspiration).
+    # default_skills: skill NAMES this plugin provides once connected.
+    # Skills are descriptive metadata -- they do NOT execute
+    # autonomously. Per founder rule: skills become "available" only
+    # when lifecycle == callable; the UI surfaces them as "Skill ready.
+    # Requires <plugin> connection." until then.
+    default_skills: tuple[str, ...] = ()
+
+    # Composer seed prompts ("Try: ..."). Codex pattern.
+    suggested_prompts: tuple[str, ...] = ()
+
+    # High-level permission summary for the install dialog. Not a per-
+    # tool breakdown -- the operator-facing "this plugin can read your
+    # email and send messages" preview. Mirrors Codex's
+    # interface.capabilities = ["Read","Write"].
+    permissions_summary: tuple[str, ...] = ()
+
+    # Plugins that bundle multiple MCP servers. Most have one (often
+    # equal to the catalog id); Cloudflare-style multi-endpoint
+    # plugins list each.
+    mcp_servers: tuple[str, ...] = ()
+
+    # Source attribution -- transparency about where this curation came
+    # from. URLs to vendor docs, official repos, MCP registry entries.
+    # Required by tests for any non-coming-soon entry.
+    source_refs: tuple[str, ...] = ()
+
+    # ISO8601 timestamp of when a human last verified this entry's
+    # vendor status. Drives the "freshness" pill on the marketplace
+    # card -- entries older than 90 days could be flagged for re-check.
+    last_verified_at: str = ""
+
     def to_dict(self) -> dict:
         d = asdict(self)
         # Convert tuples to lists for JSON serialization.
@@ -145,6 +215,11 @@ class CatalogEntry:
             "capabilities",
             "required_env_vars",
             "compatible_os",
+            "default_skills",
+            "suggested_prompts",
+            "permissions_summary",
+            "mcp_servers",
+            "source_refs",
         ):
             d[key] = list(d[key])
         return d
@@ -515,10 +590,10 @@ _FILESYSTEM: tuple[CatalogEntry, ...] = (
     _entry(
         id="mcp-filesystem",
         display_name="Filesystem",
-        vendor="Anthropic",
+        vendor="MCP Steering Group",
         category="filesystem",
         kind="mcp_server",
-        short_description="Permissioned filesystem read / write inside operator-allowed roots.",
+        short_description="Reference filesystem MCP — sandboxed read/write within allowed roots.",
         capabilities=(
             "List directory",
             "Read file",
@@ -538,6 +613,14 @@ _FILESYSTEM: tuple[CatalogEntry, ...] = (
             "Pass an allowed root directory as the last arg. The server "
             "refuses operations outside that root."
         ),
+        officiality="official",
+        default_skills=("find_files", "read_file", "summarize_directory"),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("server-filesystem",),
+        source_refs=(
+            "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+        ),
+        last_verified_at="2026-05-03",
     ),
 )
 
@@ -550,16 +633,19 @@ _BROWSER: tuple[CatalogEntry, ...] = (
         vendor="Microsoft",
         category="browser",
         kind="browser_tool",
-        short_description="Browser automation via Playwright. Open, click, fill, observe.",
+        short_description="Official Microsoft Playwright MCP — 60+ tools for accessibility-snapshot browser automation.",
         capabilities=(
-            "Navigate",
-            "Click + type",
-            "Take screenshot",
-            "Read network requests",
-            "Wait for selector",
+            "Accessibility-snapshot interaction",
+            "Tabs + navigation",
+            "Network mocking",
+            "Storage management",
+            "DevTools tracing",
+            "Vision (coords) mode",
+            "PDF + screenshots",
+            "Test assertions",
         ),
         install_method="npm",
-        command_template="npx -y @microsoft/playwright-mcp",
+        command_template="npx -y @playwright/mcp@latest",
         required_env_vars=(),
         auth_type="none",
         official_url="https://github.com/microsoft/playwright-mcp",
@@ -569,24 +655,47 @@ _BROWSER: tuple[CatalogEntry, ...] = (
         setup_notes=(
             "Browser tools open pages and click elements. Daena does not "
             "bypass anti-bot systems and never claims stealth or evasion. "
-            "Browsers run in your local environment with explicit consent."
+            "Browsers run in your local environment with explicit consent. "
+            "Env: PLAYWRIGHT_MCP_BROWSER, PLAYWRIGHT_MCP_HEADLESS, "
+            "PLAYWRIGHT_MCP_USER_DATA_DIR (optional persistent profile)."
         ),
+        officiality="vendor-official",
+        default_skills=(
+            "open_page",
+            "inspect_ui",
+            "fill_form_safe",
+            "capture_screenshot",
+            "run_smoke_test",
+        ),
+        suggested_prompts=(
+            "Open the staging dashboard and report what you see.",
+            "Run a smoke test against the login flow.",
+        ),
+        permissions_summary=("Read", "Write", "Network"),
+        mcp_servers=("playwright-mcp",),
+        source_refs=(
+            "https://github.com/microsoft/playwright-mcp",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-chrome-devtools",
         display_name="Chrome DevTools",
-        vendor="Google",
+        vendor="Google (Chrome team)",
         category="browser",
         kind="browser_tool",
-        short_description="Talk to Chrome via DevTools protocol -- inspect, profile, snapshot.",
+        short_description="Official Chrome DevTools MCP — 33+ tools for perf, debugging, snapshots.",
         capabilities=(
-            "DOM snapshot",
+            "Input automation + navigation",
+            "Performance tracing",
             "Network inspection",
             "Console messages",
-            "Performance trace",
+            "Lighthouse audits",
+            "Memory snapshots",
+            "Emulation + extensions",
         ),
         install_method="npm",
-        command_template="npx -y chrome-devtools-mcp",
+        command_template="npx -y chrome-devtools-mcp@latest",
         required_env_vars=(),
         auth_type="none",
         official_url="https://github.com/ChromeDevTools/chrome-devtools-mcp",
@@ -595,8 +704,27 @@ _BROWSER: tuple[CatalogEntry, ...] = (
         matches_v2_slug="mcp-chrome-devtools",
         setup_notes=(
             "Requires Chrome / Chromium running with --remote-debugging-port. "
-            "Best for inspect-and-observe workflows."
+            "Best for inspect-and-observe workflows. Env: "
+            "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS, "
+            "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS."
         ),
+        officiality="vendor-official",
+        default_skills=(
+            "inspect_dom",
+            "read_network",
+            "analyze_perf",
+            "capture_screenshot",
+        ),
+        suggested_prompts=(
+            "Profile the page load and report bottlenecks.",
+            "Capture a Lighthouse audit for accessibility.",
+        ),
+        permissions_summary=("Read", "Network"),
+        mcp_servers=("chrome-devtools-mcp",),
+        source_refs=(
+            "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-browserbase",
@@ -686,28 +814,52 @@ _CODE_PLATFORM: tuple[CatalogEntry, ...] = (
     _entry(
         id="mcp-github",
         display_name="GitHub",
-        vendor="Anthropic",
+        vendor="GitHub",
         category="code_platform",
         kind="mcp_server",
-        short_description="Triage PRs, issues, search repos via GitHub MCP.",
+        short_description="Triage PRs, issues, search repos via GitHub's official MCP.",
         capabilities=(
             "Search repositories",
             "List + create issues",
             "Read file contents",
             "Create pull requests",
+            "Inspect Actions runs",
+            "Read Code Security + Dependabot",
         ),
         install_method="npm",
         command_template="npx -y @modelcontextprotocol/server-github",
         required_env_vars=("GITHUB_PERSONAL_ACCESS_TOKEN",),
         auth_type="token",
-        official_url="https://github.com/modelcontextprotocol/servers/tree/main/src/github",
+        official_url="https://github.com/github/github-mcp-server",
         risk_level="medium",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-github",
         setup_notes=(
-            "Create a fine-grained PAT at github.com/settings/personal-access-tokens. "
-            "Scope to specific repos. Set GITHUB_PERSONAL_ACCESS_TOKEN in env."
+            "GitHub now ships an official MCP at github/github-mcp-server. "
+            "Local: pass GITHUB_PERSONAL_ACCESS_TOKEN. Remote OAuth-backed "
+            "endpoint also available at https://api.githubcopilot.com/mcp/."
         ),
+        officiality="vendor-official",
+        default_skills=(
+            "triage_issues",
+            "review_pull_request",
+            "summarize_repo",
+            "draft_release_notes",
+            "inspect_ci_failure",
+        ),
+        suggested_prompts=(
+            "Triage the open issues in this repo by priority.",
+            "Review the latest pull request and summarize concerns.",
+            "Draft release notes for the last 10 merged PRs.",
+        ),
+        permissions_summary=("Read", "Write", "Network"),
+        mcp_servers=("github-mcp-server",),
+        source_refs=(
+            "https://github.com/github/github-mcp-server",
+            "https://api.githubcopilot.com/mcp/",
+            "https://registry.modelcontextprotocol.io/",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-cloudflare",
@@ -715,25 +867,54 @@ _CODE_PLATFORM: tuple[CatalogEntry, ...] = (
         vendor="Cloudflare",
         category="code_platform",
         kind="mcp_server",
-        short_description="Cloudflare platform guidance + DNS / Workers / R2 admin.",
+        short_description="6 official Cloudflare MCP endpoints: docs, bindings, observability, radar, browser, AI gateway.",
         capabilities=(
-            "List zones",
-            "Update DNS",
-            "Deploy Workers",
-            "Inspect R2 buckets",
+            "Search Cloudflare docs",
+            "Manage Workers bindings (R2 / KV / D1 / AI)",
+            "Read logs + analytics",
+            "Internet traffic insights (Radar)",
+            "Headless browser fetch + screenshots",
+            "Inspect AI Gateway prompt logs",
         ),
-        install_method="npm",
-        command_template="npx -y @cloudflare/mcp-server-cloudflare",
+        install_method="manual",
+        command_template="https://mcp.cloudflare.com/mcp",
         required_env_vars=("CLOUDFLARE_API_TOKEN",),
-        auth_type="token",
-        official_url="https://github.com/cloudflare/mcp-server-cloudflare",
+        auth_type="oauth",
+        official_url="https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/",
         risk_level="high",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-cloudflare",
         setup_notes=(
-            "Create a scoped API token at dash.cloudflare.com/profile/api-tokens. "
+            "Cloudflare ships 6 hosted MCP endpoints. Primary: "
+            "https://mcp.cloudflare.com/mcp. OAuth via Cloudflare account. "
             "Avoid Global API Key tokens; use scoped tokens only."
         ),
+        officiality="vendor-official",
+        default_skills=(
+            "inspect_dns",
+            "review_workers",
+            "check_security_headers",
+            "summarize_zone_config",
+        ),
+        suggested_prompts=(
+            "Show DNS records for my domain.",
+            "Summarize traffic patterns in the last 7 days.",
+            "Review my Workers bindings for security issues.",
+        ),
+        permissions_summary=("Read", "Write", "Network"),
+        mcp_servers=(
+            "cloudflare-docs",
+            "cloudflare-bindings",
+            "cloudflare-observability",
+            "cloudflare-radar",
+            "cloudflare-browser",
+            "cloudflare-ai-gateway",
+        ),
+        source_refs=(
+            "https://github.com/cloudflare/mcp-server-cloudflare",
+            "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-sentry",
@@ -741,21 +922,44 @@ _CODE_PLATFORM: tuple[CatalogEntry, ...] = (
         vendor="Sentry",
         category="code_platform",
         kind="mcp_server",
-        short_description="Inspect Sentry issues, events, and releases.",
+        short_description="Official Sentry MCP for issue triage, error analysis, and Seer AI search.",
         capabilities=(
             "List recent issues",
             "Get event detail",
-            "Search events",
+            "Search events with NL",
+            "Trace release regressions",
+            "Seer AI analysis",
         ),
         install_method="npm",
         command_template="npx -y @sentry/mcp-server",
-        required_env_vars=("SENTRY_AUTH_TOKEN", "SENTRY_ORG"),
-        auth_type="token",
-        official_url="https://docs.sentry.io",
+        required_env_vars=("SENTRY_AUTH_TOKEN", "SENTRY_HOST"),
+        auth_type="oauth",
+        official_url="https://docs.sentry.io/product/sentry-mcp/",
         risk_level="low",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-sentry",
-        setup_notes="Create an Internal Integration token in your Sentry org settings.",
+        setup_notes=(
+            "Hosted endpoint: https://mcp.sentry.dev/mcp (OAuth device-code). "
+            "Self-hosted: SENTRY_AUTH_TOKEN + SENTRY_HOST. Required scopes: "
+            "org:read, project:read/write, team:read/write, event:write."
+        ),
+        officiality="vendor-official",
+        default_skills=(
+            "summarize_errors",
+            "trace_release_regression",
+            "create_bug_task",
+        ),
+        suggested_prompts=(
+            "Summarize the top errors in production this week.",
+            "Did the latest release introduce any new errors?",
+        ),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("sentry-mcp",),
+        source_refs=(
+            "https://docs.sentry.io/product/sentry-mcp/",
+            "https://mcp.sentry.dev/mcp",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-vercel",
@@ -763,17 +967,44 @@ _CODE_PLATFORM: tuple[CatalogEntry, ...] = (
         vendor="Vercel",
         category="code_platform",
         kind="mcp_server",
-        short_description="Deploy + inspect Vercel projects.",
-        capabilities=("List projects", "Trigger deploy", "Read logs", "Manage env vars"),
-        install_method="coming-soon",
-        command_template="",
-        required_env_vars=("VERCEL_TOKEN",),
-        auth_type="token",
-        official_url="https://vercel.com/docs",
+        short_description="Official Vercel MCP for deployment management + log analysis.",
+        capabilities=(
+            "Search Vercel docs",
+            "List projects",
+            "Inspect deployments",
+            "Analyze deployment logs",
+            "Manage env vars",
+        ),
+        install_method="manual",
+        command_template="https://mcp.vercel.com",
+        required_env_vars=(),
+        auth_type="oauth",
+        official_url="https://vercel.com/docs/agent-resources/vercel-mcp",
         risk_level="medium",
-        probe_type="none",
-        matches_v2_slug="",
-        setup_notes="Vercel official MCP not yet GA. Use the V1 plugin until then.",
+        probe_type="mcp_initialize",
+        matches_v2_slug="mcp-vercel",
+        setup_notes=(
+            "Hosted at https://mcp.vercel.com (OAuth via MCP Authorization "
+            "2025-06-18 spec, Streamable HTTP). Allowlisted clients only "
+            "(Claude, Codex, Cursor, Daena requires registration)."
+        ),
+        officiality="vendor-official",
+        default_skills=(
+            "summarize_deployment",
+            "inspect_logs",
+            "review_env_config",
+        ),
+        suggested_prompts=(
+            "Show me the failed deployments in the last 24 hours.",
+            "Summarize the production log for the latest deploy.",
+        ),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("vercel-mcp",),
+        source_refs=(
+            "https://vercel.com/docs/agent-resources/vercel-mcp",
+            "https://mcp.vercel.com",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-netlify",
@@ -822,33 +1053,48 @@ _CODE_PLATFORM: tuple[CatalogEntry, ...] = (
     ),
     _entry(
         id="mcp-jira",
-        display_name="Jira",
-        vendor="Atlassian community",
+        display_name="Atlassian (Jira + Confluence)",
+        vendor="Atlassian",
         category="code_platform",
         kind="mcp_server",
-        short_description="Read + update Jira issues, projects, sprints.",
+        short_description="Official Atlassian Rovo MCP — Jira tickets + Confluence pages.",
         capabilities=(
-            "List issues",
-            "Create issue",
-            "Update issue",
-            "Search projects",
+            "Search Jira issues",
+            "Bulk-create Jira work items",
+            "Search + create Confluence pages",
+            "Permission-aware queries",
         ),
-        install_method="coming-soon",
-        command_template="",
-        required_env_vars=(
-            "JIRA_BASE_URL",
-            "JIRA_API_TOKEN",
-            "JIRA_USER_EMAIL",
-        ),
-        auth_type="token",
-        official_url="https://developer.atlassian.com/cloud/jira/platform/rest/",
+        install_method="manual",
+        command_template="https://mcp.atlassian.com/v1/sse",
+        required_env_vars=(),
+        auth_type="oauth",
+        official_url="https://www.atlassian.com/platform/remote-mcp-server",
         risk_level="medium",
-        probe_type="none",
-        matches_v2_slug="",
+        probe_type="mcp_initialize",
+        matches_v2_slug="mcp-atlassian",
         setup_notes=(
-            "Community Jira MCP coming soon. Create an API token at "
-            "id.atlassian.com/manage-profile/security/api-tokens."
+            "Atlassian Rovo MCP. Streamable HTTP at "
+            "https://mcp.atlassian.com/v1/sse. OAuth-managed; admin can "
+            "customize allowed-AI-domains. Free tier: 500 req/hr."
         ),
+        officiality="vendor-official",
+        default_skills=(
+            "triage_tickets",
+            "summarize_sprint",
+            "draft_release_notes",
+            "find_blockers",
+        ),
+        suggested_prompts=(
+            "Triage the open tickets in this sprint by priority.",
+            "Summarize the last two weeks of work for standup.",
+        ),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("atlassian-rovo-mcp",),
+        source_refs=(
+            "https://www.atlassian.com/platform/remote-mcp-server",
+            "https://mcp.atlassian.com/v1/sse",
+        ),
+        last_verified_at="2026-05-03",
     ),
 )
 
@@ -858,28 +1104,49 @@ _COMMUNICATION: tuple[CatalogEntry, ...] = (
     _entry(
         id="mcp-slack",
         display_name="Slack",
-        vendor="Anthropic",
+        vendor="Slack",
         category="communication",
         kind="mcp_server",
-        short_description="Read channels, search messages, post to threads.",
+        short_description="Official Slack MCP (hosted-only, requires workspace admin approval).",
         capabilities=(
-            "Search messages",
-            "Send message to channel",
-            "List channels",
-            "Read channel history",
+            "Search messages, files, users, channels",
+            "Send messages",
+            "Read history + threads",
+            "Create + read canvases",
+            "Profile info",
         ),
-        install_method="npm",
-        command_template="npx -y @modelcontextprotocol/server-slack",
-        required_env_vars=("SLACK_BOT_TOKEN", "SLACK_TEAM_ID"),
-        auth_type="token",
-        official_url="https://github.com/modelcontextprotocol/servers/tree/main/src/slack",
+        install_method="manual",
+        command_template="https://mcp.slack.com/mcp",
+        required_env_vars=("SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"),
+        auth_type="oauth",
+        official_url="https://docs.slack.dev/ai/slack-mcp-server/",
         risk_level="medium",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-slack",
         setup_notes=(
-            "Create a Slack app at api.slack.com/apps. Add bot scopes: "
-            "channels:read, chat:write, channels:history. Install to workspace."
+            "Hosted-only at https://mcp.slack.com/mcp. Workspace admin must "
+            "approve MCP integration before users can connect. OAuth scopes: "
+            "search:read.*, chat:write, channels:history, groups:history, "
+            "mpim:history, im:history, canvases:read/write, users:read."
         ),
+        officiality="vendor-official",
+        default_skills=(
+            "summarize_channel",
+            "draft_reply",
+            "find_decisions",
+            "extract_tasks",
+        ),
+        suggested_prompts=(
+            "Summarize what was discussed in #engineering today.",
+            "Find decisions made in this thread.",
+        ),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("slack-mcp",),
+        source_refs=(
+            "https://docs.slack.dev/ai/slack-mcp-server/",
+            "https://mcp.slack.com/mcp",
+        ),
+        last_verified_at="2026-05-03",
     ),
 )
 
@@ -889,67 +1156,125 @@ _PRODUCTIVITY: tuple[CatalogEntry, ...] = (
     _entry(
         id="mcp-notion",
         display_name="Notion",
-        vendor="Anthropic",
+        vendor="Notion",
         category="productivity",
         kind="mcp_server",
-        short_description="Search + read + write Notion pages and databases.",
+        short_description="Official Notion MCP — pages, databases, search, comments.",
         capabilities=(
             "Search pages",
-            "Read page",
-            "Create page",
-            "Query database",
+            "Read + create + update pages",
+            "Query + create databases",
+            "Comments + teams + users",
         ),
-        install_method="npm",
-        command_template="npx -y @modelcontextprotocol/server-notion",
-        required_env_vars=("NOTION_API_KEY",),
-        auth_type="token",
-        official_url="https://developers.notion.com",
+        install_method="manual",
+        command_template="",
+        required_env_vars=(),
+        auth_type="oauth",
+        official_url="https://developers.notion.com/docs/mcp",
         risk_level="medium",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-notion",
         setup_notes=(
-            "Create an Internal Integration at notion.so/my-integrations. "
-            "Share the relevant pages / databases with the integration."
+            "Notion ships an official OAuth-managed hosted MCP. "
+            "Connect via the Notion integrations panel."
         ),
+        officiality="vendor-official",
+        default_skills=(
+            "find_page",
+            "summarize_database",
+            "extract_action_items",
+            "update_page",
+        ),
+        suggested_prompts=(
+            "Find pages mentioning the Q2 roadmap.",
+            "Summarize the action items from yesterday's meeting notes.",
+        ),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("notion-mcp",),
+        source_refs=(
+            "https://developers.notion.com/docs/mcp",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-linear",
         display_name="Linear",
-        vendor="Linear community",
+        vendor="Linear",
         category="productivity",
         kind="mcp_server",
-        short_description="Find + create + update Linear issues.",
-        capabilities=("List issues", "Create issue", "Update issue", "List projects"),
-        install_method="npm",
-        command_template="npx -y mcp-linear",
-        required_env_vars=("LINEAR_API_KEY",),
-        auth_type="api_key",
-        official_url="https://developers.linear.app",
+        short_description="Official Linear MCP — issues, projects, cycles.",
+        capabilities=(
+            "List + find issues",
+            "Create + update issues",
+            "List projects + cycles",
+            "Comments",
+        ),
+        install_method="manual",
+        command_template="https://mcp.linear.app/mcp",
+        required_env_vars=(),
+        auth_type="oauth",
+        official_url="https://linear.app/docs/mcp",
         risk_level="medium",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-linear",
-        setup_notes="Create a personal API key at linear.app/settings/api.",
+        setup_notes=(
+            "Hosted at https://mcp.linear.app/mcp. OAuth 2.1 with dynamic "
+            "client registration. Add via: claude mcp add --transport http "
+            "linear-server https://mcp.linear.app/mcp."
+        ),
+        officiality="vendor-official",
+        default_skills=(
+            "triage_issues",
+            "summarize_cycle",
+            "draft_status_update",
+            "find_blockers",
+        ),
+        suggested_prompts=(
+            "Triage the open issues in the Daena project by priority.",
+            "Draft a status update for this cycle's work.",
+        ),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("linear-mcp",),
+        source_refs=(
+            "https://linear.app/docs/mcp",
+            "https://mcp.linear.app/mcp",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-google-drive",
-        display_name="Google Drive",
-        vendor="Anthropic",
+        display_name="Google Drive (MCP)",
+        vendor="Anthropic (archived ref)",
         category="productivity",
         kind="mcp_server",
-        short_description="Search + read Google Drive files (read-only by default).",
+        short_description="Archived reference Drive MCP — search + read files (read-only by default).",
         capabilities=("Search files", "Read file content", "List folders"),
         install_method="npm",
         command_template="npx -y @modelcontextprotocol/server-gdrive",
         required_env_vars=("GDRIVE_OAUTH_CLIENT_ID", "GDRIVE_OAUTH_CLIENT_SECRET"),
         auth_type="oauth",
-        official_url="https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive",
+        official_url="https://github.com/modelcontextprotocol/servers-archived/tree/main/src/gdrive",
         risk_level="medium",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-gdrive",
         setup_notes=(
-            "Create OAuth client credentials in Google Cloud Console. "
-            "Or connect via Apps -> Google Drive (managed OAuth)."
+            "Reference Drive MCP is archived (no longer maintained by MCP "
+            "org). Still installable. For a managed flow, use Apps -> "
+            "Google Drive OAuth instead."
         ),
+        officiality="archived",
+        default_skills=(
+            "find_documents",
+            "summarize_file",
+            "compare_docs",
+            "extract_tables",
+        ),
+        permissions_summary=("Read",),
+        mcp_servers=("server-gdrive",),
+        source_refs=(
+            "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/gdrive",
+        ),
+        last_verified_at="2026-05-03",
     ),
 )
 
@@ -958,21 +1283,48 @@ _PRODUCTIVITY: tuple[CatalogEntry, ...] = (
 _DESIGN: tuple[CatalogEntry, ...] = (
     _entry(
         id="mcp-figma",
-        display_name="Figma",
+        display_name="Figma (Dev Mode)",
         vendor="Figma",
         category="design",
         kind="mcp_server",
-        short_description="Design-to-code workflows via Figma's developer API.",
-        capabilities=("Get file tree", "List components", "Export assets"),
-        install_method="npm",
-        command_template="npx -y figma-mcp",
-        required_env_vars=("FIGMA_PERSONAL_ACCESS_TOKEN",),
-        auth_type="token",
-        official_url="https://www.figma.com/developers/api",
+        short_description="Official Figma Dev Mode MCP (beta) — code generation, image extraction, variables.",
+        capabilities=(
+            "Generate React/Tailwind code from designs",
+            "Extract images + variables",
+            "List components",
+            "Code Connect mapping",
+            "Write to Figma + FigJam canvases",
+        ),
+        install_method="manual",
+        command_template="https://mcp.figma.com/mcp",
+        required_env_vars=(),
+        auth_type="oauth",
+        official_url="https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Dev-Mode-MCP-Server",
         risk_level="low",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-figma",
-        setup_notes="Generate a personal access token at figma.com/settings/personal-access-tokens.",
+        setup_notes=(
+            "Figma's official Dev Mode MCP. Remote: https://mcp.figma.com/mcp "
+            "(free during beta, all seats). Desktop variant requires Dev/Full "
+            "seat on a paid plan. Per-client OAuth setup."
+        ),
+        officiality="vendor-official",
+        default_skills=(
+            "inspect_design",
+            "summarize_components",
+            "generate_frontend_plan",
+        ),
+        suggested_prompts=(
+            "Generate React + Tailwind for the selected frame.",
+            "Summarize the components used in this file.",
+        ),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("figma-dev-mode-mcp",),
+        source_refs=(
+            "https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Dev-Mode-MCP-Server",
+            "https://mcp.figma.com/mcp",
+        ),
+        last_verified_at="2026-05-03",
     ),
 )
 
@@ -982,59 +1334,146 @@ _DATA_STORAGE: tuple[CatalogEntry, ...] = (
     _entry(
         id="mcp-postgres",
         display_name="Postgres",
-        vendor="Anthropic",
+        vendor="MCP Steering Group (archived)",
         category="data_storage",
         kind="mcp_server",
-        short_description="Read-only Postgres access for schema + query exploration.",
+        short_description="Archived reference Postgres MCP — read-only schema + query exploration.",
         capabilities=("List tables", "Describe schema", "Run SELECT", "EXPLAIN"),
         install_method="npm",
         command_template="npx -y @modelcontextprotocol/server-postgres <DATABASE_URL>",
         required_env_vars=("POSTGRES_URL",),
         auth_type="api_key",
-        official_url="https://github.com/modelcontextprotocol/servers/tree/main/src/postgres",
+        official_url="https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres",
         risk_level="medium",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-postgres",
         setup_notes=(
-            "Pass a connection string with read-only credentials. "
-            "Use a dedicated read-only role; do NOT pass admin creds."
+            "Reference Postgres MCP is now archived (still installable). "
+            "Pass a connection string with read-only credentials. Use a "
+            "dedicated read-only role; do NOT pass admin creds. Consider "
+            "Neon or Supabase first-party MCPs which include Postgres tools."
         ),
+        officiality="archived",
+        default_skills=("describe_schema", "safe_query", "explain_query"),
+        permissions_summary=("Read",),
+        mcp_servers=("server-postgres",),
+        source_refs=(
+            "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-sqlite",
         display_name="SQLite",
-        vendor="Anthropic",
+        vendor="MCP Steering Group (archived)",
         category="data_storage",
         kind="mcp_server",
-        short_description="Read + write a local SQLite database file.",
+        short_description="Archived reference SQLite MCP — local DB read/write.",
         capabilities=("List tables", "Run query", "Schema inspection"),
-        install_method="npm",
-        command_template="npx -y @modelcontextprotocol/server-sqlite <PATH>",
+        install_method="manual",
+        command_template="uvx mcp-server-sqlite --db-path <PATH>",
         required_env_vars=(),
         auth_type="none",
-        official_url="https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+        official_url="https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite",
         risk_level="medium",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-sqlite",
-        setup_notes="Pass the SQLite file path as last arg.",
+        setup_notes="Reference SQLite MCP archived. Python (uvx). Pass --db-path.",
+        officiality="archived",
+        default_skills=("describe_schema", "safe_query", "explain_query"),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("mcp-server-sqlite",),
+        source_refs=(
+            "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-mongodb",
         display_name="MongoDB",
-        vendor="Community",
+        vendor="MongoDB Inc.",
         category="data_storage",
         kind="mcp_server",
-        short_description="Query + inspect MongoDB collections.",
+        short_description="Vendor-blessed MongoDB MCP — query + inspect collections.",
         capabilities=("List collections", "Query documents", "Inspect indexes"),
-        install_method="coming-soon",
-        command_template="",
+        install_method="npm",
+        command_template="npx -y mongodb-mcp-server",
         required_env_vars=("MONGODB_URI",),
         auth_type="api_key",
         official_url="https://www.mongodb.com",
         risk_level="medium",
-        probe_type="none",
-        matches_v2_slug="",
-        setup_notes="Community MongoDB MCP. Verify before use.",
+        probe_type="mcp_initialize",
+        matches_v2_slug="mcp-mongodb",
+        setup_notes=(
+            "MongoDB Inc. has shipped a vendor-blessed MCP. Pass connection "
+            "string with read-only credentials when possible."
+        ),
+        officiality="vendor-blessed",
+        default_skills=("describe_collections", "safe_query"),
+        permissions_summary=("Read",),
+        mcp_servers=("mongodb-mcp-server",),
+        source_refs=("https://www.mongodb.com",),
+        last_verified_at="2026-05-03",
+    ),
+    _entry(
+        id="mcp-supabase",
+        display_name="Supabase",
+        vendor="Supabase",
+        category="data_storage",
+        kind="mcp_server",
+        short_description="Vendor-blessed Supabase MCP — Postgres + Auth + Storage + Functions.",
+        capabilities=(
+            "Run SQL on Supabase Postgres",
+            "Inspect schemas + tables",
+            "Manage Storage buckets",
+            "Inspect Auth users",
+        ),
+        install_method="npm",
+        command_template="npx -y supabase-mcp",
+        required_env_vars=("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"),
+        auth_type="api_key",
+        official_url="https://github.com/supabase-community/supabase-mcp",
+        risk_level="medium",
+        probe_type="mcp_initialize",
+        matches_v2_slug="mcp-supabase",
+        setup_notes=(
+            "Vendor-blessed via supabase-community org. Use a service role "
+            "key only in server-side / admin contexts."
+        ),
+        officiality="vendor-blessed",
+        default_skills=("describe_schema", "safe_query", "summarize_storage"),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("supabase-mcp",),
+        source_refs=("https://github.com/supabase-community/supabase-mcp",),
+        last_verified_at="2026-05-03",
+    ),
+    _entry(
+        id="mcp-neon",
+        display_name="Neon",
+        vendor="Neon",
+        category="data_storage",
+        kind="mcp_server",
+        short_description="Official Neon MCP — serverless Postgres branches + Postgres tools.",
+        capabilities=(
+            "List + create branches",
+            "Run SQL on a branch",
+            "Inspect schemas",
+        ),
+        install_method="npm",
+        command_template="npx -y @neondatabase/mcp-server-neon",
+        required_env_vars=("NEON_API_KEY",),
+        auth_type="api_key",
+        official_url="https://github.com/neondatabase/mcp-server-neon",
+        risk_level="medium",
+        probe_type="mcp_initialize",
+        matches_v2_slug="mcp-neon",
+        setup_notes="Vendor-published from neondatabase org. Ideal for branching workflows.",
+        officiality="vendor-official",
+        default_skills=("describe_schema", "safe_query", "list_branches"),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("mcp-server-neon",),
+        source_refs=("https://github.com/neondatabase/mcp-server-neon",),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-redis",
@@ -1065,20 +1504,43 @@ _PAYMENT: tuple[CatalogEntry, ...] = (
         vendor="Stripe",
         category="payment",
         kind="mcp_server",
-        short_description="List charges + subscriptions, create invoices.",
-        capabilities=("List charges", "List subscriptions", "Create invoice"),
+        short_description="Official Stripe MCP — 20+ tools for payments, subs, invoicing, docs.",
+        capabilities=(
+            "Customers, invoices, subscriptions",
+            "Payment intents, products, pricing",
+            "Refunds + disputes + analytics",
+            "Docs search",
+        ),
         install_method="npm",
-        command_template="npx -y @stripe/mcp-server",
+        command_template="npx -y @stripe/mcp@latest",
         required_env_vars=("STRIPE_SECRET_KEY",),
-        auth_type="api_key",
-        official_url="https://docs.stripe.com",
+        auth_type="oauth",
+        official_url="https://docs.stripe.com/mcp",
         risk_level="high",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-stripe",
         setup_notes=(
-            "Use a restricted API key (stripe.com/docs/keys#restricted). "
+            "Hosted: https://mcp.stripe.com (OAuth recommended). Local: "
+            "use a RESTRICTED API key (stripe.com/docs/keys#restricted). "
             "Default to read-only scopes; never paste live secret keys."
         ),
+        officiality="vendor-official",
+        default_skills=(
+            "summarize_payments",
+            "inspect_customer",
+            "reconcile_subscriptions",
+        ),
+        suggested_prompts=(
+            "Summarize this month's payment activity.",
+            "Show all subscriptions for customer X.",
+        ),
+        permissions_summary=("Read", "Write"),
+        mcp_servers=("stripe-mcp",),
+        source_refs=(
+            "https://docs.stripe.com/mcp",
+            "https://mcp.stripe.com",
+        ),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-shopify",
@@ -1127,25 +1589,45 @@ _RESEARCH: tuple[CatalogEntry, ...] = (
         vendor="Hugging Face",
         category="research",
         kind="mcp_server",
-        short_description="Search models / datasets / spaces; pull paper metadata.",
+        short_description="Official HF MCP — search models / datasets / spaces / papers, fetch docs.",
         capabilities=(
-            "Search models",
-            "Search datasets",
-            "Inspect spaces",
-            "Paper metadata",
+            "Search models, datasets, spaces",
+            "Paper search",
+            "Hub repo details",
+            "Doc search + fetch",
+            "Spaces invocation",
         ),
-        install_method="coming-soon",
-        command_template="",
+        install_method="manual",
+        command_template="https://huggingface.co/mcp",
         required_env_vars=("HF_TOKEN",),
         auth_type="api_key",
-        official_url="https://huggingface.co/docs/hub/security-tokens",
+        official_url="https://github.com/huggingface/hf-mcp-server",
         risk_level="low",
-        probe_type="none",
-        matches_v2_slug="",
+        probe_type="mcp_initialize",
+        matches_v2_slug="mcp-huggingface",
         setup_notes=(
-            "Hugging Face MCP coming soon. Public catalog calls are anonymous; "
-            "private repos need an HF token (read scope is sufficient)."
+            "Hosted at https://huggingface.co/mcp. Settings UI at "
+            "huggingface.co/settings/mcp. Public catalog calls are anonymous; "
+            "HF_TOKEN required for private repos (read scope sufficient)."
         ),
+        officiality="vendor-official",
+        default_skills=(
+            "find_model",
+            "summarize_dataset",
+            "compare_models",
+            "inspect_paper",
+        ),
+        suggested_prompts=(
+            "Find a recent embedding model under 1B parameters.",
+            "Summarize this paper for me.",
+        ),
+        permissions_summary=("Read",),
+        mcp_servers=("huggingface-mcp",),
+        source_refs=(
+            "https://github.com/huggingface/hf-mcp-server",
+            "https://huggingface.co/docs/hub/en/hf-mcp-server",
+        ),
+        last_verified_at="2026-05-03",
     ),
 )
 
@@ -1155,10 +1637,10 @@ _DEV_TOOLS: tuple[CatalogEntry, ...] = (
     _entry(
         id="mcp-fetch",
         display_name="Fetch",
-        vendor="Anthropic",
+        vendor="MCP Steering Group",
         category="dev_tools",
         kind="mcp_server",
-        short_description="HTTP GET to retrieve web content as markdown.",
+        short_description="Reference fetch MCP — HTTP GET + HTML→markdown extraction.",
         capabilities=("Fetch URL", "Markdown extraction"),
         install_method="npm",
         command_template="npx -y @modelcontextprotocol/server-fetch",
@@ -1169,17 +1651,22 @@ _DEV_TOOLS: tuple[CatalogEntry, ...] = (
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-fetch",
         setup_notes="No setup required. Daena governance gates external HTTP egress.",
+        officiality="official",
+        permissions_summary=("Network",),
+        mcp_servers=("server-fetch",),
+        source_refs=("https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-brave-search",
         display_name="Brave Search",
-        vendor="Anthropic",
+        vendor="Brave",
         category="dev_tools",
         kind="mcp_server",
-        short_description="Web search via Brave Search API.",
+        short_description="Brave-shipped web search MCP (replaced the archived reference server).",
         capabilities=("Web search", "News search"),
         install_method="npm",
-        command_template="npx -y @modelcontextprotocol/server-brave-search",
+        command_template="npx -y brave-search-mcp",
         required_env_vars=("BRAVE_API_KEY",),
         auth_type="api_key",
         official_url="https://brave.com/search/api",
@@ -1187,14 +1674,19 @@ _DEV_TOOLS: tuple[CatalogEntry, ...] = (
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-brave-search",
         setup_notes="Get a free API key at api.search.brave.com.",
+        officiality="vendor-official",
+        permissions_summary=("Network",),
+        mcp_servers=("brave-search-mcp",),
+        source_refs=("https://brave.com/search/api",),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-time",
         display_name="Time",
-        vendor="Anthropic",
+        vendor="MCP Steering Group",
         category="dev_tools",
         kind="mcp_server",
-        short_description="Current time + timezone conversion.",
+        short_description="Reference time MCP — current time + timezone conversion.",
         capabilities=("Get current time", "Timezone conversion"),
         install_method="npm",
         command_template="npx -y @modelcontextprotocol/server-time",
@@ -1205,32 +1697,41 @@ _DEV_TOOLS: tuple[CatalogEntry, ...] = (
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-time",
         setup_notes="No setup required.",
+        officiality="official",
+        mcp_servers=("server-time",),
+        source_refs=("https://github.com/modelcontextprotocol/servers/tree/main/src/time",),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-git",
         display_name="Git",
-        vendor="Anthropic",
+        vendor="MCP Steering Group",
         category="dev_tools",
         kind="mcp_server",
-        short_description="Local git repo inspection (log, diff, blame).",
+        short_description="Reference git MCP (Python) — local repo inspection.",
         capabilities=("Git log", "Git diff", "Git blame", "Show commit"),
-        install_method="npm",
-        command_template="npx -y @modelcontextprotocol/server-git",
+        install_method="manual",
+        command_template="uvx mcp-server-git --repository <path>",
         required_env_vars=(),
         auth_type="none",
         official_url="https://github.com/modelcontextprotocol/servers/tree/main/src/git",
         risk_level="low",
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-git",
-        setup_notes="Read-only by default; safe for repo exploration.",
+        setup_notes="Python-based (uvx). Pass --repository <path>. Read-only by default.",
+        officiality="official",
+        permissions_summary=("Read",),
+        mcp_servers=("mcp-server-git",),
+        source_refs=("https://github.com/modelcontextprotocol/servers/tree/main/src/git",),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-memory",
         display_name="Memory",
-        vendor="Anthropic",
+        vendor="MCP Steering Group",
         category="dev_tools",
         kind="mcp_server",
-        short_description="Reference knowledge-graph memory provider for MCP clients.",
+        short_description="Reference KG-based memory MCP for cross-tool persistent recall.",
         capabilities=("Add memory", "Query memory graph", "Cross-session recall"),
         install_method="npm",
         command_template="npx -y @modelcontextprotocol/server-memory",
@@ -1241,14 +1742,18 @@ _DEV_TOOLS: tuple[CatalogEntry, ...] = (
         probe_type="mcp_initialize",
         matches_v2_slug="mcp-memory",
         setup_notes="Daena's NBMF is the canonical memory; this MCP is for cross-tool sharing.",
+        officiality="official",
+        mcp_servers=("server-memory",),
+        source_refs=("https://github.com/modelcontextprotocol/servers/tree/main/src/memory",),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="mcp-sequential-thinking",
         display_name="Sequential Thinking",
-        vendor="Anthropic",
+        vendor="MCP Steering Group",
         category="dev_tools",
         kind="mcp_server",
-        short_description="Step-by-step structured reasoning helper for MCP clients.",
+        short_description="Reference reasoning-scaffold MCP — step-by-step structured thinking.",
         capabilities=(
             "Structured chain-of-thought",
             "Branching plan revision",
@@ -1266,6 +1771,12 @@ _DEV_TOOLS: tuple[CatalogEntry, ...] = (
             "Reference reasoning helper. Daena already has its own Council + "
             "Quintessence reasoning layer; this MCP is for cross-tool parity."
         ),
+        officiality="official",
+        mcp_servers=("server-sequential-thinking",),
+        source_refs=(
+            "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+        ),
+        last_verified_at="2026-05-03",
     ),
 )
 
@@ -1278,7 +1789,7 @@ _OAUTH_APPS: tuple[CatalogEntry, ...] = (
         vendor="Google",
         category="productivity",
         kind="oauth_app",
-        short_description="Send + search + draft emails via Gmail OAuth.",
+        short_description="Send + search + draft emails via Gmail OAuth (Daena-managed).",
         capabilities=("Search emails", "Read email", "Send email", "Create draft"),
         install_method="local",
         command_template="",
@@ -1290,8 +1801,25 @@ _OAUTH_APPS: tuple[CatalogEntry, ...] = (
         matches_v2_slug="oauth-gmail",
         setup_notes=(
             "Configure GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET in Settings, "
-            "then use the OAuth flow to grant Gmail access."
+            "then use the OAuth flow to grant Gmail access. Google has not "
+            "shipped a first-party Gmail MCP -- Daena's OAuth integration "
+            "is the canonical path."
         ),
+        officiality="verified",
+        default_skills=(
+            "summarize_unread",
+            "draft_reply",
+            "extract_action_items",
+            "search_email_context",
+        ),
+        suggested_prompts=(
+            "Summarize unread emails from this week.",
+            "Draft a reply to the latest message from <person>.",
+            "Extract action items from emails this morning.",
+        ),
+        permissions_summary=("Read", "Write"),
+        source_refs=("https://developers.google.com/gmail/api",),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="app-google-calendar",
@@ -1310,6 +1838,20 @@ _OAUTH_APPS: tuple[CatalogEntry, ...] = (
         probe_type="oauth_token",
         matches_v2_slug="oauth-google-calendar",
         setup_notes="Reuses GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET from Gmail.",
+        officiality="verified",
+        default_skills=(
+            "list_today",
+            "find_free_time",
+            "schedule_meeting",
+            "summarize_week",
+        ),
+        suggested_prompts=(
+            "What does my afternoon look like?",
+            "Find a 30-minute slot tomorrow with X.",
+        ),
+        permissions_summary=("Read", "Write"),
+        source_refs=("https://developers.google.com/calendar",),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="app-google-drive",
@@ -1328,6 +1870,20 @@ _OAUTH_APPS: tuple[CatalogEntry, ...] = (
         probe_type="oauth_token",
         matches_v2_slug="oauth-google-drive",
         setup_notes="Reuses GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET from Gmail.",
+        officiality="verified",
+        default_skills=(
+            "find_documents",
+            "summarize_file",
+            "compare_docs",
+            "extract_tables",
+        ),
+        suggested_prompts=(
+            "Find docs about the Q2 launch plan.",
+            "Summarize the Drive file titled <name>.",
+        ),
+        permissions_summary=("Read", "Write"),
+        source_refs=("https://developers.google.com/drive",),
+        last_verified_at="2026-05-03",
     ),
     _entry(
         id="app-github",
