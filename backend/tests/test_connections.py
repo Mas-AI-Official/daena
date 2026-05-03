@@ -244,7 +244,10 @@ async def test_install_no_auth_connector_is_connected(client: AsyncClient) -> No
 
 @pytest.mark.asyncio
 async def test_disconnect_clears_credentials(client: AsyncClient) -> None:
-    """POST /instances/{id}/disconnect sets DISCONNECTED and wipes creds."""
+    """POST /instances/{id}/disconnect sets DISCONNECTED and wipes creds.
+
+    PR-CONN-OAUTH-REFRESH-DISCONNECT (2026-05-03):
+    body now requires ``{"confirm": true}``."""
     auth = await _register_and_login(client)
     connector = await _create_connector(client, auth["headers"])
 
@@ -260,11 +263,180 @@ async def test_disconnect_clears_credentials(client: AsyncClient) -> None:
 
     disconnect_resp = await client.post(
         f"/api/v1/connections/instances/{instance_id}/disconnect",
+        json={"confirm": True},
         headers=auth["headers"],
     )
     assert disconnect_resp.status_code == 200
     body = disconnect_resp.json()
     assert body["data"]["status"] == "DISCONNECTED"
+
+
+# ── PR-CONN-OAUTH-REFRESH-DISCONNECT (2026-05-03) ──
+
+
+@pytest.mark.asyncio
+async def test_disconnect_without_confirm_returns_400(client: AsyncClient) -> None:
+    """Disconnect REQUIRES {"confirm": true}. No body or confirm=false
+    returns 400 with code=confirmation_required so a misclick / stale
+    tab can never accidentally drop OAuth credentials."""
+    auth = await _register_and_login(client)
+    connector = await _create_connector(client, auth["headers"])
+    connect_resp = await client.post(
+        "/api/v1/connections/instances",
+        json={"connector_id": connector["id"], "credentials": {"api_key": "x"}},
+        headers=auth["headers"],
+    )
+    instance_id = connect_resp.json()["data"]["id"]
+
+    # No body at all.
+    no_body = await client.post(
+        f"/api/v1/connections/instances/{instance_id}/disconnect",
+        headers=auth["headers"],
+    )
+    assert no_body.status_code == 400
+    detail = no_body.json().get("detail", {})
+    assert detail.get("code") == "confirmation_required"
+
+    # Body with confirm=false.
+    explicit_no = await client.post(
+        f"/api/v1/connections/instances/{instance_id}/disconnect",
+        json={"confirm": False},
+        headers=auth["headers"],
+    )
+    assert explicit_no.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_archive_requires_confirm(client: AsyncClient) -> None:
+    """POST /instances/{id}/archive same confirm contract."""
+    auth = await _register_and_login(client)
+    connector = await _create_connector(client, auth["headers"])
+    connect_resp = await client.post(
+        "/api/v1/connections/instances",
+        json={"connector_id": connector["id"]},
+        headers=auth["headers"],
+    )
+    instance_id = connect_resp.json()["data"]["id"]
+    no_body = await client.post(
+        f"/api/v1/connections/instances/{instance_id}/archive",
+        headers=auth["headers"],
+    )
+    assert no_body.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_archive_sets_status_and_hides_from_default_list(
+    client: AsyncClient,
+) -> None:
+    """Archived instances vanish from default GET /instances. Pass
+    ?status=ARCHIVED to see them again."""
+    auth = await _register_and_login(client)
+    connector = await _create_connector(client, auth["headers"])
+    connect_resp = await client.post(
+        "/api/v1/connections/instances",
+        json={"connector_id": connector["id"]},
+        headers=auth["headers"],
+    )
+    instance_id = connect_resp.json()["data"]["id"]
+
+    archive_resp = await client.post(
+        f"/api/v1/connections/instances/{instance_id}/archive",
+        json={"confirm": True},
+        headers=auth["headers"],
+    )
+    assert archive_resp.status_code == 200
+    assert archive_resp.json()["data"]["status"] == "ARCHIVED"
+
+    def _items_from(payload: dict) -> list:
+        """List endpoint may return a list directly or a paginated dict
+        with `items`. Handle both shapes for forward-compat."""
+        d = payload.get("data", payload)
+        if isinstance(d, list):
+            return d
+        return d.get("items", [])
+
+    # Default list excludes archived rows.
+    default_list = await client.get(
+        "/api/v1/connections/instances", headers=auth["headers"],
+    )
+    assert default_list.status_code == 200
+    items = _items_from(default_list.json())
+    assert all(item["status"] != "ARCHIVED" for item in items), (
+        f"Default list leaked ARCHIVED rows: {items}"
+    )
+
+    # Explicit ?status=ARCHIVED includes them again.
+    archived_list = await client.get(
+        "/api/v1/connections/instances?status=ARCHIVED",
+        headers=auth["headers"],
+    )
+    assert archived_list.status_code == 200
+    archived_ids = [item["id"] for item in _items_from(archived_list.json())]
+    assert instance_id in archived_ids
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_no_refresh_token_returns_failure(
+    client: AsyncClient,
+) -> None:
+    """POST /instances/{id}/refresh-token on an instance with no stored
+    refresh_token returns success=False reason=no_refresh_token (does
+    NOT raise -- failure is a status, not an exception)."""
+    auth = await _register_and_login(client)
+    connector = await _create_connector(client, auth["headers"])
+    connect_resp = await client.post(
+        "/api/v1/connections/instances",
+        json={
+            "connector_id": connector["id"],
+            "credentials": {"api_key": "x"},  # no refresh_token field
+        },
+        headers=auth["headers"],
+    )
+    instance_id = connect_resp.json()["data"]["id"]
+
+    refresh_resp = await client.post(
+        f"/api/v1/connections/instances/{instance_id}/refresh-token",
+        headers=auth["headers"],
+    )
+    assert refresh_resp.status_code == 200
+    body = refresh_resp.json()
+    assert body["success"] is False
+    assert body["data"]["reason"] == "no_refresh_token"
+    # Response must not echo any token-shaped field.
+    body_text = str(body)
+    for forbidden in ("api_key", "secret", "token_value"):
+        assert forbidden not in body_text.lower() or forbidden == "no_refresh_token", (
+            f"Token-like field leaked: {forbidden}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_outcome_shape_only_has_safe_keys(
+    client: AsyncClient,
+) -> None:
+    """The /refresh-token response must carry only success + expires_at
+    + reason. No token-shaped key may ever appear (covers all paths
+    by integration test rather than source inspection)."""
+    auth = await _register_and_login(client)
+    connector = await _create_connector(client, auth["headers"])
+    connect_resp = await client.post(
+        "/api/v1/connections/instances",
+        json={"connector_id": connector["id"]},
+        headers=auth["headers"],
+    )
+    instance_id = connect_resp.json()["data"]["id"]
+    refresh_resp = await client.post(
+        f"/api/v1/connections/instances/{instance_id}/refresh-token",
+        headers=auth["headers"],
+    )
+    assert refresh_resp.status_code == 200
+    body = refresh_resp.json()
+    data = body.get("data", {})
+    assert set(data.keys()) <= {"success", "expires_at", "reason"}, (
+        f"refresh-token outcome dict has unexpected keys: {set(data.keys())}"
+    )
+    forbidden = {"access_token", "refresh_token", "token", "api_key", "secret"}
+    assert set(data.keys()).isdisjoint(forbidden)
 
 
 # ── Per-tool Permissions ──

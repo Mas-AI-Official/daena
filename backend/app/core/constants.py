@@ -276,6 +276,10 @@ class ConnectorStatus(str, enum.Enum):
     DISCONNECTED = "DISCONNECTED"
     ERROR = "ERROR"
     NEEDS_REAUTH = "NEEDS_REAUTH"
+    # PR-CONN-OAUTH-REFRESH-DISCONNECT (2026-05-03):
+    # Soft-archive lane. Hidden from default list views but the row
+    # is preserved (per founder rule "never delete -- archive instead").
+    ARCHIVED = "ARCHIVED"
 
 
 class PermissionLevel(str, enum.Enum):

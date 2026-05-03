@@ -502,23 +502,259 @@ class ConnectionService(BaseService):
         return installed
 
     async def disconnect(
-        self, instance_id: UUID, tenant_id: UUID
+        self,
+        instance_id: UUID,
+        tenant_id: UUID,
+        *,
+        confirm: bool = False,
+        actor_user_id: UUID | None = None,
     ) -> dict:
-        """Disconnect a connector instance (soft — sets status)."""
+        """Disconnect a connector instance (soft — sets status).
+
+        PR-CONN-OAUTH-REFRESH-DISCONNECT (2026-05-03):
+        ``confirm=True`` is now REQUIRED. The endpoint layer surfaces
+        a 400 with reason ``confirmation_required`` if the operator
+        attempts to disconnect without explicit consent.
+
+        Best-effort revoke at the provider runs BEFORE local creds are
+        cleared. Network or HTTP failure is logged but never blocks
+        disconnect (operator intent is "stop using this token", not
+        "guarantee server-side revoke" -- the provider may not support
+        an RFC-7009 revoke endpoint at all).
+
+        Audit row written either way (with revoke outcome captured).
+        """
+        if not confirm:
+            raise ValueError(
+                "confirmation_required: disconnect must be called with "
+                "confirm=True. Pass {\"confirm\": true} in the request body."
+            )
+
         instance = await self._get_or_404(
             ConnectorInstance, instance_id, "Connector instance",
             tenant_id=tenant_id,
         )
+
+        # Best-effort provider revoke BEFORE clearing local creds.
+        revoke_outcome: dict = {"attempted": False, "reason": "no_token"}
+        try:
+            from app.core.vault import decrypt_dict
+            from app.services.integrations.oauth_service import (
+                ConnectorOAuthService,
+            )
+            decrypted = (
+                decrypt_dict(instance.credentials)
+                if instance.credentials
+                else {}
+            )
+            access_token = decrypted.get("access_token")
+            if access_token:
+                provider = (instance.connector_id or "").split("-")[0] or "gmail"
+                # Allow exact provider match first.
+                if instance.connector_id in ("gmail", "github", "slack",
+                                             "figma", "canva",
+                                             "google-calendar", "google-drive"):
+                    provider = instance.connector_id
+                oauth = ConnectorOAuthService(self.db)
+                outcome = await oauth.revoke_token(provider, access_token)
+                revoke_outcome = {"attempted": True, **outcome}
+        except Exception as exc:
+            logger.warning(
+                "connector_disconnect.revoke_skipped",
+                instance_id=str(instance_id),
+                error=str(exc),
+            )
+            revoke_outcome = {"attempted": False, "reason": "exception"}
+
         instance.status = ConnectorStatus.DISCONNECTED.value
         instance.credentials = None  # Clear credentials on disconnect
         await self.db.commit()
         await self.db.refresh(instance)
 
+        # Audit -- best-effort, failure must not block the disconnect.
+        try:
+            from app.services.audit import AuditService
+            audit = AuditService(self.db)
+            await audit.log_decision(
+                tenant_id=tenant_id,
+                actor_id=actor_user_id,
+                actor_type="USER",
+                action_type="connector.disconnect",
+                action_params={
+                    "instance_id": str(instance_id),
+                    "connector_id": str(instance.connector_id),
+                    "revoke_attempted": revoke_outcome.get("attempted", False),
+                    "revoke_reason": revoke_outcome.get("reason", ""),
+                    # Never log token values; only outcome metadata.
+                },
+                result="ALLOWED",
+                risk_level="LOW",
+                governance_tier=2,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.warning(
+                "connector_disconnect.audit_failed",
+                instance_id=str(instance_id),
+                error=str(exc),
+            )
+
         logger.info(
             "connector_disconnected",
             instance_id=str(instance_id),
+            revoke=revoke_outcome,
         )
         return self._instance_to_dict(instance)
+
+    async def archive(
+        self,
+        instance_id: UUID,
+        tenant_id: UUID,
+        *,
+        confirm: bool = False,
+        actor_user_id: UUID | None = None,
+    ) -> dict:
+        """Archive a connector instance (soft -- preserves the row).
+
+        PR-CONN-OAUTH-REFRESH-DISCONNECT (2026-05-03).
+
+        Like disconnect but moves to ARCHIVED status so default list
+        queries hide the instance. Useful for tidying up old OAuth
+        connections without losing audit history. Per founder rule
+        ``never delete``, archive is the strongest soft-removal lane.
+        """
+        if not confirm:
+            raise ValueError(
+                "confirmation_required: archive must be called with "
+                "confirm=True."
+            )
+        instance = await self._get_or_404(
+            ConnectorInstance, instance_id, "Connector instance",
+            tenant_id=tenant_id,
+        )
+        instance.status = ConnectorStatus.ARCHIVED.value
+        instance.credentials = None
+        await self.db.commit()
+        await self.db.refresh(instance)
+        try:
+            from app.services.audit import AuditService
+            audit = AuditService(self.db)
+            await audit.log_decision(
+                tenant_id=tenant_id,
+                actor_id=actor_user_id,
+                actor_type="USER",
+                action_type="connector.archive",
+                action_params={
+                    "instance_id": str(instance_id),
+                    "connector_id": str(instance.connector_id),
+                },
+                result="ALLOWED",
+                risk_level="LOW",
+                governance_tier=2,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.warning(
+                "connector_archive.audit_failed",
+                instance_id=str(instance_id), error=str(exc),
+            )
+        logger.info("connector_archived", instance_id=str(instance_id))
+        return self._instance_to_dict(instance)
+
+    async def refresh_token_for_instance(
+        self,
+        instance_id: UUID,
+        tenant_id: UUID,
+        *,
+        actor_user_id: UUID | None = None,
+    ) -> dict:
+        """Operator-triggered OAuth token refresh.
+
+        PR-CONN-OAUTH-REFRESH-DISCONNECT (2026-05-03).
+
+        Loads the instance, decrypts current credentials, asks the
+        OAuth service to refresh against the provider, encrypts and
+        re-stores. Returns refreshed metadata WITHOUT exposing tokens.
+
+        Returns:
+            {"success": bool, "expires_at": iso8601 | None, "reason": str}
+        """
+        from app.core.vault import decrypt_dict, encrypt_dict
+        from app.services.integrations.oauth_service import (
+            ConnectorOAuthService,
+        )
+        from app.services.audit import AuditService
+
+        instance = await self._get_or_404(
+            ConnectorInstance, instance_id, "Connector instance",
+            tenant_id=tenant_id,
+        )
+        decrypted = (
+            decrypt_dict(instance.credentials)
+            if instance.credentials else {}
+        )
+        refresh_token_value = decrypted.get("refresh_token")
+        if not refresh_token_value:
+            return {"success": False, "reason": "no_refresh_token"}
+
+        provider = instance.connector_id or "gmail"
+        if provider not in (
+            "gmail", "github", "slack", "figma", "canva",
+            "google-calendar", "google-drive",
+        ):
+            provider = (instance.connector_id or "").split("-")[0] or "gmail"
+
+        try:
+            oauth = ConnectorOAuthService(self.db)
+            new_tokens = await oauth.refresh_token(
+                refresh_token_value, provider=provider,
+            )
+            decrypted["access_token"] = new_tokens["access_token"]
+            decrypted["expires_at"] = new_tokens["expires_at"]
+            instance.credentials = encrypt_dict(decrypted)
+            instance.status = ConnectorStatus.CONNECTED.value
+            await self.db.commit()
+            await self.db.refresh(instance)
+            outcome = {
+                "success": True,
+                "expires_at": new_tokens["expires_at"],
+                "reason": "ok",
+            }
+        except Exception as exc:
+            logger.warning(
+                "connector_refresh.failed",
+                instance_id=str(instance_id),
+                provider=provider,
+                error=str(exc),
+            )
+            outcome = {
+                "success": False,
+                "expires_at": None,
+                "reason": f"refresh_failed: {str(exc)[:120]}",
+            }
+
+        try:
+            audit = AuditService(self.db)
+            await audit.log_decision(
+                tenant_id=tenant_id,
+                actor_id=actor_user_id,
+                actor_type="USER",
+                action_type="connector.refresh_token",
+                action_params={
+                    "instance_id": str(instance_id),
+                    "connector_id": str(instance.connector_id),
+                    "provider": provider,
+                    "outcome": outcome["reason"],
+                    # Never log token values.
+                },
+                result="ALLOWED" if outcome["success"] else "BLOCKED",
+                risk_level="LOW",
+                governance_tier=2,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.warning(
+                "connector_refresh.audit_failed",
+                instance_id=str(instance_id), error=str(exc),
+            )
+        return outcome
 
     async def get_instance(
         self, instance_id: UUID, tenant_id: UUID
@@ -556,6 +792,13 @@ class ConnectionService(BaseService):
         )
         if status is not None:
             stmt = stmt.where(ConnectorInstance.status == status)
+        else:
+            # PR-CONN-OAUTH-REFRESH-DISCONNECT: by default hide ARCHIVED
+            # instances. Operator can pass ?status=ARCHIVED explicitly to
+            # see them (or "any" via a future ?include_archived=true).
+            stmt = stmt.where(
+                ConnectorInstance.status != ConnectorStatus.ARCHIVED.value,
+            )
         stmt = stmt.order_by(ConnectorInstance.created_at.desc())
 
         result = await self._paginate(

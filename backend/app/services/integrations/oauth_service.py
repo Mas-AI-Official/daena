@@ -431,6 +431,90 @@ class ConnectorOAuthService:
                 "expires_at": expires_at.isoformat(),
             }
 
+    async def revoke_token(
+        self,
+        provider: str,
+        token: str,
+        token_type_hint: str = "access_token",
+    ) -> dict[str, Any]:
+        """Best-effort revoke at the provider's revoke endpoint.
+
+        PR-CONN-OAUTH-REFRESH-DISCONNECT (2026-05-03).
+
+        Per RFC 7009 each OAuth provider MAY expose a revoke endpoint.
+        Google does (https://oauth2.googleapis.com/revoke), GitHub does
+        (DELETE /applications/{id}/grant), Slack does (auth.revoke),
+        Figma + Canva do not yet expose RFC-7009 endpoints.
+
+        This is BEST-EFFORT: a 4xx/5xx response, network error, or
+        provider-not-supported case logs + returns success=False but
+        does NOT raise. Disconnect proceeds either way -- the operator
+        intent is "stop using this token", not "guarantee server-side
+        revoke" (which the provider may not even support).
+
+        The token value crosses the network to the provider but is
+        never logged, returned, or persisted -- only the outcome is.
+        """
+        config = self._get_provider(provider)
+        # RFC-7009 endpoint mapping. None means "provider has no revoke API".
+        revoke_endpoints: dict[str, str] = {
+            "gmail": "https://oauth2.googleapis.com/revoke",
+            "google-calendar": "https://oauth2.googleapis.com/revoke",
+            "google-drive": "https://oauth2.googleapis.com/revoke",
+            "slack": "https://slack.com/api/auth.revoke",
+            # github + figma + canva have no RFC-7009 standard revoke
+            # endpoint readily callable from a server-side client_secret;
+            # operator-side revoke happens via their settings pages.
+        }
+        revoke_url = revoke_endpoints.get(provider)
+        if revoke_url is None:
+            logger.info(
+                "connector_oauth.revoke_unsupported_by_provider",
+                provider=provider,
+                hint="Local credentials cleared; remote token stays "
+                     "valid until natural expiry. Operator can revoke "
+                     "manually at the provider's settings page.",
+            )
+            return {"success": False, "reason": "provider_no_revoke_endpoint"}
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                if provider in ("gmail", "google-calendar", "google-drive"):
+                    # Google: token in body, no client_secret needed
+                    resp = await client.post(
+                        revoke_url, data={"token": token},
+                    )
+                elif provider == "slack":
+                    # Slack: Bearer token in header
+                    resp = await client.post(
+                        revoke_url,
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                else:  # pragma: no cover - covered by mapping above
+                    return {"success": False, "reason": "unsupported_provider"}
+            ok = 200 <= resp.status_code < 300
+            logger.info(
+                "connector_oauth.revoke_attempted",
+                provider=provider,
+                http_status=resp.status_code,
+                success=ok,
+            )
+            return {
+                "success": ok,
+                "http_status": resp.status_code,
+                "reason": (
+                    "ok" if ok
+                    else f"provider_returned_{resp.status_code}"
+                ),
+            }
+        except Exception as exc:
+            logger.warning(
+                "connector_oauth.revoke_network_error",
+                provider=provider,
+                error=str(exc),
+            )
+            return {"success": False, "reason": "network_error"}
+
     async def store_tokens(
         self,
         connector_instance_id: UUID,
@@ -440,15 +524,17 @@ class ConnectorOAuthService:
 
         Encrypts sensitive fields before storage.
         """
-        from sqlalchemy import select, update
+        from sqlalchemy import update
+        from app.core.constants import ConnectorStatus
+        from app.core.vault import encrypt_dict
         from app.models.connections import ConnectorInstance
 
         stmt = (
             update(ConnectorInstance)
             .where(ConnectorInstance.id == connector_instance_id)
             .values(
-                credentials=tokens,
-                status="connected",
+                credentials=encrypt_dict(tokens),
+                status=ConnectorStatus.CONNECTED.value,
             )
         )
         await self._db.execute(stmt)

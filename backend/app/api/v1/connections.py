@@ -369,19 +369,107 @@ async def get_instance(
     return {"success": True, "data": instance}
 
 
+class ConfirmActionRequest(BaseModel):
+    """PR-CONN-OAUTH-REFRESH-DISCONNECT: explicit-consent payload.
+
+    Disconnect + archive endpoints REQUIRE confirm=True. The frontend
+    surfaces a confirmation modal; the backend rejects unconfirmed
+    requests with 400 ``confirmation_required`` so a misclick or stale
+    tab cannot accidentally drop credentials."""
+
+    confirm: bool = False
+
+
 @router.post("/instances/{instance_id}/disconnect")
 async def disconnect(
     instance_id: UUID,
+    body: ConfirmActionRequest | None = None,
     user: CurrentUser = Depends(get_current_user),
     service: ConnectionService = Depends(get_connection_service),
 ) -> dict:
     """Disconnect a connector instance.
 
-    Soft-disconnect: sets status to DISCONNECTED and clears
-    stored credentials for security.
+    PR-CONN-OAUTH-REFRESH-DISCONNECT (2026-05-03):
+    - Body now REQUIRES ``{"confirm": true}`` (400 otherwise).
+    - Best-effort revoke at the provider runs BEFORE local credentials
+      are cleared (never blocks disconnect).
+    - Audit row written with revoke outcome metadata.
     """
-    instance = await service.disconnect(instance_id, user.tenant_id)
+    confirm = bool(body and body.confirm)
+    try:
+        instance = await service.disconnect(
+            instance_id, user.tenant_id,
+            confirm=confirm, actor_user_id=user.id,
+        )
+    except ValueError as exc:
+        if "confirmation_required" in str(exc):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "confirmation_required",
+                    "message": "Disconnect requires explicit confirmation. "
+                               "POST {\"confirm\": true} to proceed.",
+                },
+            ) from exc
+        raise
     return {"success": True, "data": instance}
+
+
+@router.post("/instances/{instance_id}/archive")
+async def archive(
+    instance_id: UUID,
+    body: ConfirmActionRequest | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    service: ConnectionService = Depends(get_connection_service),
+) -> dict:
+    """Archive a connector instance (preserves the row, hides from list).
+
+    PR-CONN-OAUTH-REFRESH-DISCONNECT (2026-05-03).
+    Same confirmation contract as disconnect. Per founder rule the row
+    is never deleted -- archive moves to ARCHIVED status so default
+    list queries hide it but audit history + per-tool permissions stay.
+    """
+    confirm = bool(body and body.confirm)
+    try:
+        instance = await service.archive(
+            instance_id, user.tenant_id,
+            confirm=confirm, actor_user_id=user.id,
+        )
+    except ValueError as exc:
+        if "confirmation_required" in str(exc):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "confirmation_required",
+                    "message": "Archive requires explicit confirmation. "
+                               "POST {\"confirm\": true} to proceed.",
+                },
+            ) from exc
+        raise
+    return {"success": True, "data": instance}
+
+
+@router.post("/instances/{instance_id}/refresh-token")
+async def refresh_token(
+    instance_id: UUID,
+    user: CurrentUser = Depends(get_current_user),
+    service: ConnectionService = Depends(get_connection_service),
+) -> dict:
+    """Operator-triggered OAuth token refresh.
+
+    PR-CONN-OAUTH-REFRESH-DISCONNECT (2026-05-03).
+
+    Loads the stored credentials, asks the OAuth service to refresh
+    against the provider, encrypts and re-stores. Response carries
+    only outcome metadata + new ``expires_at`` -- never token values.
+
+    Idempotent: re-running on a fresh token just returns success with
+    the same expires_at (the provider may issue a new access_token but
+    operator-visible behavior is identical)."""
+    outcome = await service.refresh_token_for_instance(
+        instance_id, user.tenant_id, actor_user_id=user.id,
+    )
+    return {"success": outcome["success"], "data": outcome}
 
 
 # ── Per-tool Permissions ──
