@@ -69,6 +69,7 @@ export interface SkillExecutionResultDTO {
   status:
     | 'planned' | 'executed' | 'blocked'
     | 'needs_connection' | 'needs_inputs' | 'unsupported'
+    | 'needs_consent'
   summary: string
   audit_event_id: string | null
   required_inputs: string[]
@@ -83,6 +84,19 @@ export interface SkillExecutionResultDTO {
   result_preview: string
   blocked_reason: string
 }
+
+// PR-CONN-CONSENT-API-AND-UI (Sprint-5 PR-4):
+// 6 categories the operator can grant consent against. Mirrors the
+// backend SkillConsentCategory enum exactly. Default category for the
+// modal is write_external (the executor's categorize_skill default).
+const CONSENT_CATEGORIES = [
+  { code: 'read_sensitive', label: 'Read sensitive data' },
+  { code: 'write_external', label: 'Write external resource' },
+  { code: 'send_message', label: 'Send a message' },
+  { code: 'payment', label: 'Payment / financial' },
+  { code: 'browser_action', label: 'Browser automation' },
+  { code: 'security_scan', label: 'Security scan' },
+] as const
 
 interface SkillExecuteModalProps {
   pluginId: string
@@ -123,6 +137,15 @@ export default function SkillExecuteModal({
   const [accountsLoading, setAccountsLoading] = useState(false)
   const [selectedOwnerEmail, setSelectedOwnerEmail] = useState<string | null>(null)
 
+  // PR-CONN-CONSENT-API-AND-UI (Sprint-5 PR-4):
+  // when result.status === 'needs_consent' the modal exposes a small
+  // form letting the operator pick the right category and mint a
+  // single-use grant. Phase 2 still blocks writes -- the UI states
+  // this explicitly so the operator never thinks consent unblocks.
+  const [consentCategory, setConsentCategory] = useState<string>('write_external')
+  const [grantingConsent, setGrantingConsent] = useState(false)
+  const [consentNotice, setConsentNotice] = useState<string | null>(null)
+
   // Reset state on (plugin, skill) change so reusing the same modal
   // for a different skill doesn't carry old inputs across.
   useEffect(() => {
@@ -132,6 +155,9 @@ export default function SkillExecuteModal({
     setError(null)
     setAccounts(null)
     setSelectedOwnerEmail(null)
+    setConsentCategory('write_external')
+    setGrantingConsent(false)
+    setConsentNotice(null)
   }, [pluginId, skillId])
 
   // Fetch OAuth accounts when the plugin is OAuth-backed.
@@ -212,6 +238,36 @@ export default function SkillExecuteModal({
       setError(String(msg))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleGrantConsent() {
+    setGrantingConsent(true)
+    setError(null)
+    setConsentNotice(null)
+    try {
+      const grantRes = await api.post<{ data: {
+        grant_id: string; expires_at: number;
+        write_blocking_active: boolean; operator_notice: string;
+      }}>('/connections/v2/skill-consent/grant', {
+        plugin_id: pluginId,
+        skill_id: skillId,
+        category: consentCategory,
+      })
+      setConsentNotice(grantRes.data?.data?.operator_notice ?? 'Consent recorded.')
+      // Re-run the skill so the executor consumes the grant. If the
+      // skill is write-class, the read_only defense will still block;
+      // the operator will see the new blocked_reason explaining that
+      // consent alone doesn't unblock writes.
+      setResult(null)
+      await handleRun()
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response
+          ?.data?.detail ?? 'Grant failed'
+      setError(String(msg))
+    } finally {
+      setGrantingConsent(false)
     }
   }
 
@@ -449,6 +505,63 @@ export default function SkillExecuteModal({
                   <Lock size={11} className="mt-0.5 shrink-0" />
                   {result.blocked_reason}
                 </p>
+              )}
+              {/* PR-CONN-CONSENT-API-AND-UI (Sprint-5 PR-4): mint a
+                  consent grant when status === 'needs_consent'. Phase 2
+                  still blocks writes -- the notice + the post-grant
+                  re-run make this transparent to the operator. */}
+              {result.status === 'needs_consent' && (
+                <div
+                  data-testid="consent-grant-form"
+                  className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/[0.05] px-3 py-2 text-[11px] text-amber-100 space-y-2"
+                >
+                  <div className="flex items-start gap-1.5">
+                    <ShieldCheck size={11} className="mt-0.5 shrink-0" />
+                    <p>
+                      <strong>This skill needs consent.</strong>{' '}
+                      Granting consent records your approval and lets the
+                      executor pass the consent gate. <em>It does NOT
+                      enable writes</em> -- Phase 2 still blocks any
+                      non-read-only skill via the read_only defense.
+                    </p>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="consent-category"
+                      className="text-[10px] uppercase tracking-wider text-starlight-500"
+                    >
+                      Risk category
+                    </label>
+                    <select
+                      id="consent-category"
+                      value={consentCategory}
+                      onChange={(e) => setConsentCategory(e.target.value)}
+                      className="mt-0.5 w-full rounded-md border border-white/10 bg-midnight-500/50 px-2 py-1 text-[11px] text-starlight-100"
+                      disabled={grantingConsent}
+                    >
+                      {CONSENT_CATEGORIES.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={() => void handleGrantConsent()}
+                    disabled={grantingConsent}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-[11px] font-medium text-amber-50 hover:bg-amber-500/25 disabled:opacity-40"
+                  >
+                    {grantingConsent
+                      ? <Loader2 size={11} className="animate-spin" />
+                      : <ShieldCheck size={11} />}
+                    Grant consent (Phase 2 still blocks writes)
+                  </button>
+                  {consentNotice && (
+                    <p className="text-[10px] text-amber-200">
+                      {consentNotice}
+                    </p>
+                  )}
+                </div>
               )}
             </section>
           )}

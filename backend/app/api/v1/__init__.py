@@ -59,6 +59,7 @@ from app.api.v1 import (
     security_mode,
     self_improvement,
     settings,
+    skill_consent_api,
     skill_execution,
     skill_refinery,
     skills,
@@ -97,6 +98,16 @@ router.include_router(
     skill_execution.router,
     prefix="/connections/v2/skills",
     tags=["connections-v2-skills"],
+)
+# PR-CONN-CONSENT-API-AND-UI (Sprint-5 PR-4, 2026-05-03):
+# operator-facing surface for the Asset Shield consent gate. Mints
+# short-lived grants the executor consumes; metadata-only categories
+# endpoint for the modal copy. Phase 2 read_only defense remains the
+# actual hard wall on writes -- consent only flips the consent gate.
+router.include_router(
+    skill_consent_api.router,
+    prefix="/connections/v2/skill-consent",
+    tags=["connections-v2-skill-consent"],
 )
 # Department Minds (souls) -- persona overlays for the 10 departments +
 # founder-gated refinement pipeline (/souls list/get, /souls/{dept}/refine,
