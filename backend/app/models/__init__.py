@@ -37,6 +37,7 @@ from app.models.consent_grant import ConsentGrant
 from app.models.cron_run import CronRun
 from app.models.mcp_server import McpServer
 from app.models.notification import Notification
+from app.models.plugin_policy_override import PluginPolicyOverride
 from app.models.secret import Secret
 from app.models.waitlist import WaitlistEntry
 from app.models.workstream import (
@@ -70,6 +71,7 @@ __all__ = [
     "CronRun",
     "McpServer",
     "Notification",
+    "PluginPolicyOverride",
     "Secret",
     "WaitlistEntry",
     "Workstream", "WorkstreamEvent",

@@ -1073,15 +1073,44 @@ function humanizeClass(c: string): string {
   return c.replace(/_/g, ' ')
 }
 
+// Sprint-6 PR-6: per-tenant overrides on top of the static baseline.
+// Loaded once per drawer open; not cached at module level because the
+// override set is per-tenant and per-session.
+interface PolicyOverride {
+  plugin_id: string
+  skill_class: string
+  tier: string
+  rationale: string | null
+  updated_at: string | null
+  updated_by: string | null
+}
+
+async function loadOverridesForPlugin(pluginId: string): Promise<PolicyOverride[]> {
+  try {
+    const { api } = await import('@/lib/api')
+    const res = await api.get<{ data: { overrides: PolicyOverride[] } }>(
+      '/connections/v2/governance/plugin-policy-overrides',
+    )
+    const all = res.data?.data?.overrides ?? []
+    return all.filter((o) => o.plugin_id === pluginId)
+  } catch {
+    return []
+  }
+}
+
 function GovernancePresetsBlock({ pluginId }: { pluginId: string }) {
   const [presets, setPresets] = useState<GovernancePreset[] | null>(null)
+  const [overrides, setOverrides] = useState<PolicyOverride[]>([])
   useEffect(() => {
     let cancelled = false
     loadPresets().then((p) => {
       if (!cancelled) setPresets(p)
     })
+    loadOverridesForPlugin(pluginId).then((ov) => {
+      if (!cancelled) setOverrides(ov)
+    })
     return () => { cancelled = true }
-  }, [])
+  }, [pluginId])
 
   if (presets === null) {
     return (
@@ -1103,8 +1132,17 @@ function GovernancePresetsBlock({ pluginId }: { pluginId: string }) {
     )
   }
 
+  // Sprint-6 PR-6: build the merged view (override wins on read).
+  const overrideByClass: Record<string, PolicyOverride> = {}
+  for (const o of overrides) overrideByClass[o.skill_class] = o
+  const mergedTiers: Record<string, string> = { ...preset.tiers }
+  for (const [cls, ov] of Object.entries(overrideByClass)) {
+    mergedTiers[cls] = ov.tier
+  }
+
   const isFallback = !!preset._is_fallback
-  const hasDeny = Object.values(preset.tiers).includes('deny')
+  const hasDeny = Object.values(mergedTiers).includes('deny')
+  const hasOverride = overrides.length > 0
 
   return (
     <div
@@ -1116,23 +1154,39 @@ function GovernancePresetsBlock({ pluginId }: { pluginId: string }) {
           ? 'No specific recommendation in the vendor table -- showing the default baseline. The operator policy editor can override these.'
           : preset.rationale}
       </p>
+      {hasOverride && (
+        <p
+          data-testid="governance-overrides-active"
+          className="inline-flex items-start gap-1 rounded-md border border-cyan-500/30 bg-cyan-500/[0.06] px-2 py-1 text-[10px] text-cyan-200"
+        >
+          Tenant overrides active for {overrides.length} skill class{overrides.length === 1 ? '' : 'es'}.
+        </p>
+      )}
       {hasDeny && !isFallback && (
         <p className="inline-flex items-start gap-1 rounded-md border border-rose-500/30 bg-rose-500/[0.06] px-2 py-1 text-[10px] text-rose-200">
           <ShieldAlert size={11} className="mt-0.5 shrink-0" />
-          High-risk plugin: at least one skill class is recommended DENY by default.
+          High-risk plugin: at least one skill class is set to DENY.
         </p>
       )}
       <div className="flex flex-wrap gap-1.5">
-        {Object.entries(preset.tiers).map(([cls, tier]) => {
+        {Object.entries(mergedTiers).map(([cls, tier]) => {
           const tone = tierTone(tier)
+          const isOverridden = !!overrideByClass[cls]
           return (
             <span
               key={cls}
-              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] ${tone.border} ${tone.bg} ${tone.text}`}
-              title={`Vendor recommends ${tier.toUpperCase()} for ${humanizeClass(cls)} on this plugin`}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] ${tone.border} ${tone.bg} ${tone.text} ${isOverridden ? 'ring-1 ring-cyan-400/40' : ''}`}
+              title={
+                isOverridden
+                  ? `Tenant override: ${tier.toUpperCase()} for ${humanizeClass(cls)} (vendor baseline: ${preset.tiers[cls]?.toUpperCase() ?? 'ASK'})`
+                  : `Vendor recommends ${tier.toUpperCase()} for ${humanizeClass(cls)} on this plugin`
+              }
             >
               <span className="opacity-60 uppercase tracking-wider">{humanizeClass(cls)}</span>
               <span className="font-semibold uppercase">{tier}</span>
+              {isOverridden && (
+                <span className="text-[8px] text-cyan-300">(override)</span>
+              )}
             </span>
           )
         })}
