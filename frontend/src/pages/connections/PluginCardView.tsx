@@ -49,6 +49,7 @@ import MCPInstallDrawer from './MCPInstallDrawer'
 import OAuthConnectDrawer from './OAuthConnectDrawer'
 import PluginDetailDrawer from './PluginDetailDrawer'
 import { pluginIconFor, pluginIconTone } from './pluginIcons'
+import { toast } from '@/stores/toastStore'
 
 interface PluginCardViewProps {
   plugin: PluginCard
@@ -269,7 +270,12 @@ export default function PluginCardView({
               className="inline-flex items-center gap-1.5 rounded-md border border-primary-500/30 bg-primary-500/10 px-3 py-1.5 text-[11px] font-medium text-primary-200 hover:bg-primary-500/20 disabled:opacity-50"
             >
               {busy ? <Loader2 size={11} className="animate-spin" /> : <ActionIcon size={11} />}
-              {plugin.primary_action_label}
+              {/* PR-CONN-PLUGIN-INSTALL-UX-POLISH (2026-05-03): make
+                  in-flight feedback explicit. The only action that
+                  flips parent busy=true on this card is Probe (Test);
+                  Configure / Install / Connect open drawers without
+                  setting busy. So a busy card == probe in flight. */}
+              {busy ? 'Probing...' : plugin.primary_action_label}
             </button>
           </div>
         </div>
@@ -289,10 +295,26 @@ export default function PluginCardView({
         <MCPInstallDrawer
           plugin={plugin}
           onClose={() => setInstallDrawerOpen(false)}
-          onComplete={() => {
+          onComplete={(result) => {
             // After a successful apply, refresh the marketplace card
             // grid so the new V2 row's status pill reflects truth.
             window.dispatchEvent(new Event('daena:retry-pending'))
+            // PR-CONN-PLUGIN-INSTALL-UX-POLISH (2026-05-03):
+            // Make the next step OBVIOUS even after the operator
+            // dismisses the install drawer. The drawer itself shows
+            // the post-apply probe inline, but if they hit Done
+            // before reading it, this toast is the safety net.
+            const probedOk = result?.post_apply_probe?.success === true
+            if (probedOk) {
+              toast.success(
+                `${plugin.name} installed and probe succeeded. Skills are ready.`,
+              )
+            } else {
+              const envHint = result?.required_env_vars?.length
+                ? ` Set env vars (${result.required_env_vars.join(', ')}) and click Test on the card.`
+                : ' Click Test on the card to probe it.'
+              toast.info(`${plugin.name} installed. Next step:${envHint}`)
+            }
           }}
         />
       )}
@@ -305,6 +327,9 @@ export default function PluginCardView({
             // Tokens received -- refresh marketplace cards so the new
             // V2 oauth_app row's authenticated state surfaces.
             window.dispatchEvent(new Event('daena:retry-pending'))
+            toast.success(
+              `${plugin.name} connected. Click Test on the card to verify the token.`,
+            )
           }}
         />
       )}

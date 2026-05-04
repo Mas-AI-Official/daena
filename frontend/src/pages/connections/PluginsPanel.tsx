@@ -30,6 +30,7 @@ import {
   useMarketplaceCards,
 } from '@/hooks/useMarketplace'
 import { useConnectionsV2 } from '@/hooks/useConnectionsV2'
+import { toast } from '@/stores/toastStore'
 
 import PluginCardView from './PluginCardView'
 import {
@@ -128,9 +129,28 @@ export default function PluginsPanel({
   }, [plugins])
 
   async function handleProbe(rowId: string) {
+    // PR-CONN-PLUGIN-INSTALL-UX-POLISH (2026-05-03):
+    // Surface probe outcome with a toast so the operator does not have
+    // to read the badge color to know what happened. Look up the plugin
+    // by row id so the toast carries the human name. The result of
+    // `probe()` is structured (success / outcome with failure_dim+reason
+    // / network error) so we match all three branches honestly.
     setBusyId(rowId)
+    const target = plugins.find((p) => p.v2_row_id === rowId)
+    const name = target?.name ?? 'plugin'
     try {
-      await probe(rowId)
+      const res = await probe(rowId)
+      if (res.ok && res.outcome?.success) {
+        toast.success(
+          `${name} probe succeeded. Skills are ready -- click them to draft a chat.`,
+        )
+      } else if (res.ok && res.outcome) {
+        const dim = res.outcome.failure_dim ?? 'callable'
+        const reason = res.outcome.failure_reason ?? 'no reason returned'
+        toast.error(`${name} probe failed at ${dim}: ${reason}`)
+      } else {
+        toast.error(`${name} probe could not run: ${res.error ?? 'unknown error'}`)
+      }
       refresh()
     } finally {
       setBusyId(null)
@@ -139,8 +159,15 @@ export default function PluginsPanel({
 
   async function handleEnable(rowId: string) {
     setBusyId(rowId)
+    const target = plugins.find((p) => p.v2_row_id === rowId)
+    const name = target?.name ?? 'plugin'
     try {
-      await enable(rowId)
+      const res = await enable(rowId)
+      if (res.ok) {
+        toast.success(`${name} enabled. Probe it next to confirm it works.`)
+      } else {
+        toast.error(`Could not enable ${name}: ${res.error ?? 'unknown error'}`)
+      }
       refresh()
     } finally {
       setBusyId(null)
