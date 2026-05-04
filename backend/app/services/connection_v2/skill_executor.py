@@ -60,6 +60,26 @@ test pins this decision so a future PR cannot stealth-promote it.
   * mcp-supabase:describe_schema   -> list_tables  (schemas=['public'])
   * mcp-neon:describe_schema       -> get_database_tables
 
+PR-CONN-OAUTH-EXECUTOR-WIRE-UP (2026-05-03):
+wires the OAuthInvoker foundation (Sprint-3 PR-4) into
+``SkillExecutor.execute()``. When an allowlist entry has
+``backend_surface="oauth"`` AND ``execution_mode="mcp_tool"`` the
+dispatch routes to ``_execute_real_oauth`` which:
+
+  - resolves provider -> Connector via ``_OAUTH_PROVIDER_TO_CONNECTOR_NAME``
+  - finds the user's CONNECTED ConnectorInstance (else needs_connection)
+  - invokes ``OAuthInvoker.invoke()``
+  - maps the InvokeOutcome.reason prefix to a stable blocked_reason
+  - records the audit row with extra fields (oauth_provider,
+    oauth_refreshed bit, oauth_truncated, oauth_status_code) -- the
+    extra_audit_fields pass-through HARDCODES rejection of any field
+    name containing token/secret/bearer.
+
+This PR ships the WIRING ONLY -- no Phase 2 OAuth allowlist entry
+is yet ``execution_mode="mcp_tool"``. The Sprint-2 PR-3 invariant
+``test_pr3_gmail_and_drive_remain_planned_only`` still passes; the
+follow-up PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY flips them.
+
 ALL OTHER allowlist entries remain ``planned_only``.
 
 Why "spine, not engine":
@@ -758,10 +778,19 @@ class SkillExecutor:
                 ),
             )
 
-        # Step 5: branch on execution_mode.
-        #   * planned_only -> existing spine path (write planned audit row)
-        #   * mcp_tool     -> real MCP tools/call (Phase 2.x promotions)
+        # Step 5: branch on execution_mode + backend_surface.
+        #   * planned_only         -> existing spine path (write planned audit row)
+        #   * mcp_tool + mcp       -> real MCP tools/call (Phase 2.x promotions)
+        #   * mcp_tool + oauth     -> real OAuth GET via OAuthInvoker
+        #     (PR-CONN-OAUTH-EXECUTOR-WIRE-UP, 2026-05-03)
         if entry.execution_mode == "mcp_tool":
+            if entry.backend_surface == "oauth":
+                return await self._execute_real_oauth(
+                    entry=entry,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    operator_inputs=operator_inputs,
+                )
             return await self._execute_real_mcp_tool(
                 entry=entry,
                 tenant_id=tenant_id,
@@ -1076,6 +1105,288 @@ class SkillExecutor:
             result_text=raw_text,
         )
 
+    # ──────────────────────────────────────────────────────────
+    # Real OAuth execution path (Phase 2.x promotions, oauth surface)
+    # ──────────────────────────────────────────────────────────
+
+    async def _execute_real_oauth(
+        self,
+        *,
+        entry: SkillToolMapping,
+        tenant_id: UUID,
+        user_id: UUID,
+        operator_inputs: dict[str, str],
+    ) -> SkillExecutionResult:
+        """Run a promoted Phase 2.x OAuth-mode skill end-to-end via
+        :class:`OAuthInvoker`.
+
+        PR-CONN-OAUTH-EXECUTOR-WIRE-UP (2026-05-03). Mirrors
+        ``_execute_real_mcp_tool`` outcome shape for audit parity:
+
+          1. Method not in OAuthInvoker.OAUTH_METHOD_ALLOWLIST
+             -> blocked + reason=oauth_method_not_allowlisted (this is a
+             code-author bug; the executor should never reach here for
+             a non-allowlisted entry, defense-in-depth)
+          2. No ConnectorInstance for (tenant, user, provider)
+             -> needs_connection + reason=oauth_not_connected
+          3. Instance exists but credentials missing access_token
+             -> needs_connection + reason=oauth_credentials_missing
+          4. 401-then-refresh-then-401
+             -> blocked + reason=oauth_auth_expired
+          5. Vendor 5xx / network error
+             -> blocked + reason=oauth_vendor_error
+          6. Response too large (above byte cap)
+             -> blocked + reason=oauth_response_too_large
+          7. Success
+             -> executed + summary + content hash; refreshed_token bit
+             stored in audit's ``oauth_refreshed`` field
+
+        NEVER carries the OAuth access_token into the audit row, the
+        return value, or any log line. The ``extra_audit_fields``
+        passthrough on ``_record_real_outcome`` is hardened against
+        token-shaped field names.
+        """
+        from app.services.connection_v2.oauth_invoker import (
+            OAuthCredentialsMissingError,
+            OAuthInstanceNotFoundError,
+            OAuthInvoker,
+            OAuthInvokerError,
+            OAuthMethodNotAllowedError,
+        )
+
+        # 1. Resolve the OAuth method spec.
+        method = OAuthInvoker.get_method(entry.plugin_id, entry.target_tool)
+        if method is None:
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="blocked",
+                outcome="oauth_method_not_allowlisted",
+                summary=(
+                    f"{entry.plugin_id}:{entry.skill_id} is promoted but "
+                    f"its target_tool '{entry.target_tool}' has no entry in "
+                    f"OAUTH_METHOD_ALLOWLIST. Code bug: add the method "
+                    f"to the invoker before promoting the skill."
+                ),
+                blocked_reason="oauth_method_not_allowlisted",
+                executed_tool=entry.target_tool,
+                server_key=method.provider if method else "",
+                result_text="",
+            )
+
+        # 2. Find the operator's ConnectorInstance for this provider.
+        instance = await self._find_oauth_instance(
+            tenant_id=tenant_id, user_id=user_id, provider=method.provider,
+        )
+        if instance is None:
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="needs_connection",
+                outcome="oauth_not_connected",
+                summary=(
+                    f"Connect {method.provider} via Plugins -> "
+                    f"{entry.plugin_id} before running this skill."
+                ),
+                blocked_reason="oauth_not_connected",
+                executed_tool=entry.target_tool,
+                server_key=method.provider,
+                result_text="",
+            )
+
+        # 3. Invoke through the foundation.
+        invoker = OAuthInvoker(self.db)
+        try:
+            outcome = await invoker.invoke(
+                tenant_id=tenant_id,
+                instance_id=instance.id,
+                plugin_id=entry.plugin_id,
+                method_id=entry.target_tool,
+                operator_inputs=operator_inputs,
+            )
+        except OAuthCredentialsMissingError:
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="needs_connection",
+                outcome="oauth_credentials_missing",
+                summary=(
+                    f"Your {method.provider} connection is missing an "
+                    f"access token. Reconnect via Plugins -> "
+                    f"{entry.plugin_id} -> Refresh."
+                ),
+                blocked_reason="oauth_credentials_missing",
+                executed_tool=entry.target_tool,
+                server_key=method.provider,
+                result_text="",
+            )
+        except OAuthInstanceNotFoundError:
+            # Race: instance disappeared between _find_oauth_instance
+            # and invoke. Treat as needs_connection.
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="needs_connection",
+                outcome="oauth_not_connected",
+                summary=(
+                    f"Your {method.provider} connection was removed "
+                    f"mid-call. Reconnect to retry."
+                ),
+                blocked_reason="oauth_not_connected",
+                executed_tool=entry.target_tool,
+                server_key=method.provider,
+                result_text="",
+            )
+        except OAuthMethodNotAllowedError:
+            # Should be impossible (we resolved the method above);
+            # belt + suspenders.
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="blocked",
+                outcome="oauth_method_not_allowlisted",
+                summary="Internal error: method not allowlisted at invoke time.",
+                blocked_reason="oauth_method_not_allowlisted",
+                executed_tool=entry.target_tool,
+                server_key=method.provider,
+                result_text="",
+            )
+        except OAuthInvokerError as exc:
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="blocked",
+                outcome="oauth_invoker_error",
+                summary=(
+                    f"{entry.plugin_id}:{entry.skill_id} could not run -- "
+                    f"{exc!s}"
+                ),
+                blocked_reason="oauth_invoker_error",
+                executed_tool=entry.target_tool,
+                server_key=method.provider,
+                result_text="",
+            )
+
+        # 4. Classify outcome.
+        if not outcome.ok:
+            reason = outcome.reason or "unknown"
+            # Map invoker reason prefix to a stable blocked_reason.
+            if reason.startswith("auth_expired"):
+                final_status: SkillExecutionStatus = "needs_connection"
+                br = "oauth_auth_expired"
+            elif reason.startswith("response_too_large"):
+                final_status = "blocked"
+                br = "oauth_response_too_large"
+            elif reason.startswith("vendor_error"):
+                final_status = "blocked"
+                br = "oauth_vendor_error"
+            elif reason.startswith("timeout"):
+                final_status = "blocked"
+                br = "oauth_timeout"
+            elif reason.startswith("network_error"):
+                final_status = "blocked"
+                br = "oauth_network_error"
+            else:
+                final_status = "blocked"
+                br = "oauth_invoker_error"
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status=final_status,
+                outcome=br,
+                summary=(
+                    f"{entry.plugin_id}:{entry.skill_id} could not run: "
+                    f"{reason}"
+                ),
+                blocked_reason=br,
+                executed_tool=entry.target_tool,
+                server_key=method.provider,
+                result_text="",
+                extra_audit_fields={
+                    "oauth_provider": method.provider,
+                    "oauth_refreshed": bool(outcome.refreshed_token),
+                    "oauth_truncated": bool(outcome.truncated),
+                    "oauth_status_code": outcome.status_code,
+                },
+            )
+
+        # 5. Success path. Hash a JSON serialization of the payload so
+        # the audit row carries proof-of-content. We cap the JSON-string
+        # length at 8KB BEFORE hashing so a payload that grew right at
+        # the response cap can't bloat the hash input.
+        import json
+        payload_json = json.dumps(outcome.payload, sort_keys=True, default=str)[:8192]
+        summary_text = _summarize_oauth_payload(entry, outcome)
+
+        return await self._record_real_outcome(
+            entry=entry,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            operator_inputs=operator_inputs,
+            final_status="executed",
+            outcome="success",
+            summary=summary_text,
+            blocked_reason="",
+            executed_tool=entry.target_tool,
+            server_key=method.provider,
+            result_text=payload_json,
+            extra_audit_fields={
+                "oauth_provider": method.provider,
+                "oauth_refreshed": bool(outcome.refreshed_token),
+                "oauth_truncated": bool(outcome.truncated),
+                "oauth_status_code": outcome.status_code,
+            },
+        )
+
+    async def _find_oauth_instance(
+        self, *, tenant_id: UUID, user_id: UUID, provider: str,
+    ) -> "ConnectorInstance | None":
+        """Resolve the user's ConnectorInstance for a given OAuth
+        provider name. Maps short provider keys (``gmail``,
+        ``google-drive``, ``google-calendar``, ``slack``) to the
+        seeded Connector ``name`` field which uses friendly casing.
+        Returns None when the operator has not yet connected.
+        """
+        from sqlalchemy import select
+        from app.models.connections import Connector, ConnectorInstance
+
+        connector_name = _OAUTH_PROVIDER_TO_CONNECTOR_NAME.get(
+            provider, provider,
+        )
+        connector = (await self.db.execute(
+            select(Connector).where(Connector.name == connector_name)
+        )).scalar_one_or_none()
+        if connector is None:
+            return None
+        instance = (await self.db.execute(
+            select(ConnectorInstance).where(
+                ConnectorInstance.tenant_id == tenant_id,
+                ConnectorInstance.user_id == user_id,
+                ConnectorInstance.connector_id == connector.id,
+            )
+        )).scalar_one_or_none()
+        if instance is None:
+            return None
+        # Status gate: only CONNECTED instances are eligible. A
+        # DISCONNECTED / ARCHIVED row means the operator removed it.
+        if instance.status != "CONNECTED":
+            return None
+        return instance
+
     async def _record_real_outcome(
         self,
         *,
@@ -1090,6 +1401,7 @@ class SkillExecutor:
         executed_tool: str,
         server_key: str,
         result_text: str,
+        extra_audit_fields: dict[str, Any] | None = None,
     ) -> SkillExecutionResult:
         """Common audit + response builder for the real-exec path.
 
@@ -1127,30 +1439,47 @@ class SkillExecutor:
             skill_id=entry.skill_id,
         )
 
+        action_params: dict[str, Any] = {
+            "plugin_id": entry.plugin_id,
+            "skill_id": entry.skill_id,
+            "phase": "phase2x_readonly_real_exec",
+            "outcome": outcome,
+            "allowlist_match": True,
+            "read_only": entry.read_only,
+            "execution_mode": entry.execution_mode,
+            "backend_surface": entry.backend_surface,
+            "target_tool": entry.target_tool,
+            "executed_tool": executed_tool,
+            "server_key": server_key,
+            "argument_shape": argument_shape,
+            # ^ shape only; never values
+            "blocked_reason": blocked_reason or None,
+            "result_summary_length": len(summary or ""),
+            "result_content_hash_prefix": result_hash_prefix or None,
+            # NEVER include result_text. Operator-facing summary OK.
+        }
+        # PR-CONN-OAUTH-EXECUTOR-WIRE-UP (2026-05-03): OAuth path uses
+        # extra_audit_fields to record provider + refreshed-token bit
+        # without bloating the MCP path's shape. Stored fields MUST be
+        # leak-safe (no token, no expires_at value -- those are
+        # secret-adjacent).
+        if extra_audit_fields:
+            for k, v in extra_audit_fields.items():
+                # Defense: forbid any field name that smells like a token.
+                lower = k.lower()
+                forbidden_substrings = (
+                    "access_token", "refresh_token", "bearer", "secret",
+                )
+                if any(s in lower for s in forbidden_substrings):
+                    continue
+                action_params[k] = v
+
         audit = await self._audit.log_decision(
             tenant_id=tenant_id,
             actor_id=user_id,
             actor_type="USER",
             action_type="plugin.skill_invocation",
-            action_params={
-                "plugin_id": entry.plugin_id,
-                "skill_id": entry.skill_id,
-                "phase": "phase2x_readonly_real_exec",
-                "outcome": outcome,
-                "allowlist_match": True,
-                "read_only": entry.read_only,
-                "execution_mode": entry.execution_mode,
-                "backend_surface": entry.backend_surface,
-                "target_tool": entry.target_tool,
-                "executed_tool": executed_tool,
-                "server_key": server_key,
-                "argument_shape": argument_shape,
-                # ^ shape only; never values
-                "blocked_reason": blocked_reason or None,
-                "result_summary_length": len(summary or ""),
-                "result_content_hash_prefix": result_hash_prefix or None,
-                # NEVER include result_text. Operator-facing summary OK.
-            },
+            action_params=action_params,
             result=("ALLOWED" if final_status == "executed" else "BLOCKED"),
             risk_level="LOW",
             governance_tier=2,
@@ -1469,6 +1798,89 @@ def _summarize_mcp_result(entry: SkillToolMapping, raw_text: str) -> str:
     )
 
 
+# ──────────────────────────────────────────────────────────────────
+# OAuth surface helpers (PR-CONN-OAUTH-EXECUTOR-WIRE-UP, 2026-05-03)
+# ──────────────────────────────────────────────────────────────────
+
+# Maps OAuthMethod.provider keys (lowercase, kebab) to the seeded
+# Connector.name field (friendly casing). Adding a provider here MUST
+# be matched by a Connector row of that name; the
+# ``test_oauth_provider_mapping_is_consistent`` invariant pins this.
+_OAUTH_PROVIDER_TO_CONNECTOR_NAME: dict[str, str] = {
+    "gmail": "Gmail",
+    "google-drive": "Google Drive",
+    "google-calendar": "Google Calendar",
+    "slack": "Slack",
+}
+
+
+def _summarize_oauth_payload(
+    entry: SkillToolMapping, outcome: Any,
+) -> str:
+    """Operator-facing summary of an OAuth invoker outcome.
+
+    The invoker returns a structured payload (Gmail message list,
+    Drive file list, Drive metadata blob). We render a SHAPE-FIRST
+    summary -- counts + first few labels -- not the body. NEVER
+    includes message bodies, file contents, or any header that could
+    leak PII. The shape-only stance matches the rest of the audit
+    contract (proof-of-content via hash, not the content itself).
+    """
+    payload = outcome.payload
+    truncated_note = " (truncated by invoker cap)" if outcome.truncated else ""
+    refresh_note = " (token refreshed mid-call)" if outcome.refreshed_token else ""
+
+    # Drive files.list / files.get_metadata
+    if isinstance(payload, dict) and "files" in payload:
+        files = payload.get("files") or []
+        names = [
+            (f.get("name") or f.get("id") or "?")[:80]
+            for f in files[:5]
+            if isinstance(f, dict)
+        ]
+        head = ", ".join(names) if names else "(none)"
+        return (
+            f"{entry.plugin_id}:{entry.skill_id} returned "
+            f"{len(files)} file(s){truncated_note}. "
+            f"First few: {head}.{refresh_note}"
+        )
+    if isinstance(payload, dict) and payload.get("mimeType"):
+        # Drive get_metadata single-file shape
+        name = str(payload.get("name") or payload.get("id") or "?")[:120]
+        mime = str(payload.get("mimeType") or "")[:80]
+        return (
+            f"{entry.plugin_id}:{entry.skill_id} returned metadata for "
+            f"file '{name}' (mime: {mime}).{refresh_note}"
+        )
+
+    # Gmail messages.list_unread / messages.search
+    if isinstance(payload, dict) and "messages" in payload:
+        msgs = payload.get("messages") or []
+        ids = [
+            (m.get("id") or "?")[:30] for m in msgs[:3] if isinstance(m, dict)
+        ]
+        head = ", ".join(ids) if ids else "(none)"
+        return (
+            f"{entry.plugin_id}:{entry.skill_id} returned "
+            f"{len(msgs)} message id(s){truncated_note}. "
+            f"First few ids: {head}.{refresh_note}"
+        )
+
+    # Generic / unknown shape
+    if payload is None:
+        body = "no payload"
+    elif isinstance(payload, list):
+        body = f"list of {len(payload)} items"
+    elif isinstance(payload, dict):
+        body = f"dict with keys: {list(payload.keys())[:6]}"
+    else:
+        body = type(payload).__name__
+    return (
+        f"{entry.plugin_id}:{entry.skill_id} executed via OAuth "
+        f"({body}){truncated_note}.{refresh_note}"
+    )
+
+
 __all__ = [
     "PHASE2_ALLOWLIST",
     "PlannedToolCall",
@@ -1476,10 +1888,12 @@ __all__ = [
     "SkillExecutionStatus",
     "SkillExecutor",
     "SkillToolMapping",
+    "_OAUTH_PROVIDER_TO_CONNECTOR_NAME",
     "_build_mcp_arguments",
     "_flatten_mcp_content",
     "_resolve_mcp_server_key",
     "_summarize_mcp_result",
+    "_summarize_oauth_payload",
     "get_allowlist_entry",
     "is_allowlisted",
     "list_allowlist_for_api",
