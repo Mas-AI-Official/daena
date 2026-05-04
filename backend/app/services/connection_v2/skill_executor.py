@@ -1211,9 +1211,61 @@ class SkillExecutor:
             )
 
         # 2. Find the operator's ConnectorInstance for this provider.
-        instance = await self._find_oauth_instance(
-            tenant_id=tenant_id, user_id=user_id, provider=method.provider,
+        # PR-CONN-GOOGLE-ACCOUNT-PROFILES (Sprint-4 PR-3, 2026-05-03):
+        # operator can select between multiple Google accounts via
+        # operator_inputs['_owner_email']. If multiple instances exist
+        # and no hint is supplied, we refuse to silently pick.
+        owner_email_hint = (operator_inputs.get("_owner_email") or "").strip() or None
+        instance, ambiguity_code = await self._find_oauth_instance(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            provider=method.provider,
+            owner_email_hint=owner_email_hint,
         )
+        if instance is None and ambiguity_code == "ambiguous_account_profile":
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="needs_connection",
+                outcome="oauth_account_profile_required",
+                summary=(
+                    f"Multiple {method.provider} accounts are connected "
+                    f"for this user. Pass _owner_email in operator_inputs "
+                    f"to pick which account runs this skill."
+                ),
+                blocked_reason="oauth_account_profile_required",
+                executed_tool=entry.target_tool,
+                server_key=method.provider,
+                result_text="",
+                extra_audit_fields={
+                    "oauth_provider": method.provider,
+                    "oauth_account_ambiguity": "multiple_connected_no_hint",
+                },
+            )
+        if instance is None and ambiguity_code == "owner_email_no_match":
+            return await self._record_real_outcome(
+                entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                operator_inputs=operator_inputs,
+                final_status="needs_connection",
+                outcome="oauth_account_profile_no_match",
+                summary=(
+                    f"No {method.provider} connection found for the "
+                    f"requested account. Connect that profile first or "
+                    f"pick a different _owner_email."
+                ),
+                blocked_reason="oauth_account_profile_no_match",
+                executed_tool=entry.target_tool,
+                server_key=method.provider,
+                result_text="",
+                extra_audit_fields={
+                    "oauth_provider": method.provider,
+                    "oauth_account_ambiguity": "owner_email_no_match",
+                },
+            )
         if instance is None:
             return await self._record_real_outcome(
                 entry=entry,
@@ -1387,13 +1439,40 @@ class SkillExecutor:
         )
 
     async def _find_oauth_instance(
-        self, *, tenant_id: UUID, user_id: UUID, provider: str,
-    ) -> "ConnectorInstance | None":
+        self,
+        *,
+        tenant_id: UUID,
+        user_id: UUID,
+        provider: str,
+        owner_email_hint: str | None = None,
+    ) -> "tuple[ConnectorInstance | None, str | None]":
         """Resolve the user's ConnectorInstance for a given OAuth
-        provider name. Maps short provider keys (``gmail``,
-        ``google-drive``, ``google-calendar``, ``slack``) to the
-        seeded Connector ``name`` field which uses friendly casing.
-        Returns None when the operator has not yet connected.
+        provider name + optional account hint.
+
+        PR-CONN-GOOGLE-ACCOUNT-PROFILES (Sprint-4 PR-3, 2026-05-03):
+        the founder's "no mixing identities" rule means a single user
+        may eventually hold MULTIPLE ConnectorInstance rows for the
+        same Google provider (one per Google account: personal
+        masoud.masoori@... vs company daena@...). When more than one
+        CONNECTED instance exists for a provider, this method now
+        REFUSES to silently pick one -- it returns
+        ``(None, "ambiguous_account_profile")`` so the executor can
+        surface a "which account?" needs_connection outcome.
+
+        Returns ``(instance, failure_code)``:
+          * ``(instance, None)`` -- one match, dispatch.
+          * ``(None, None)`` -- zero instances; needs_connection.
+          * ``(None, "ambiguous_account_profile")`` -- multiple
+            CONNECTED instances exist, no hint provided; operator
+            must select via ``operator_inputs['_owner_email']``.
+          * ``(None, "owner_email_no_match")`` -- a hint was provided
+            but no instance carries that owner_email.
+
+        Account profiles today live in ``ConnectorInstance.credentials
+        ['_owner_email']`` (JSONB, already encrypted by the existing
+        credential storage pathway). A follow-up PR can promote this
+        to a dedicated column with indexed lookup once the OAuth
+        callback captures it automatically.
         """
         from sqlalchemy import select
         from app.models.connections import Connector, ConnectorInstance
@@ -1405,21 +1484,50 @@ class SkillExecutor:
             select(Connector).where(Connector.name == connector_name)
         )).scalar_one_or_none()
         if connector is None:
-            return None
-        instance = (await self.db.execute(
+            return None, None
+
+        # Pull ALL CONNECTED instances for (tenant, user, connector)
+        # so we can detect ambiguity rather than silently grab the
+        # first one.
+        rows = (await self.db.execute(
             select(ConnectorInstance).where(
                 ConnectorInstance.tenant_id == tenant_id,
                 ConnectorInstance.user_id == user_id,
                 ConnectorInstance.connector_id == connector.id,
+                ConnectorInstance.status == "CONNECTED",
             )
-        )).scalar_one_or_none()
-        if instance is None:
-            return None
-        # Status gate: only CONNECTED instances are eligible. A
-        # DISCONNECTED / ARCHIVED row means the operator removed it.
-        if instance.status != "CONNECTED":
-            return None
-        return instance
+        )).scalars().all()
+
+        if not rows:
+            return None, None
+
+        if len(rows) == 1 and owner_email_hint is None:
+            # Single-instance / no-hint -- back-compat path.
+            return rows[0], None
+
+        # Multi-instance OR explicit hint provided -- match by
+        # owner_email. Reads from the dedicated column FIRST (added
+        # by Sprint-4 PR-3 schema change) and falls back to the
+        # credentials._owner_email JSONB field for instances created
+        # before the column existed.
+        def _instance_owner_email(inst: "ConnectorInstance") -> str:
+            col = (inst.owner_email or "").strip().lower()
+            if col:
+                return col
+            creds = inst.credentials or {}
+            return (creds.get("_owner_email") or "").strip().lower()
+
+        if owner_email_hint is not None:
+            target = owner_email_hint.strip().lower()
+            for inst in rows:
+                if _instance_owner_email(inst) == target:
+                    return inst, None
+            # Hint provided but nothing matched.
+            return None, "owner_email_no_match"
+
+        # Multi-instance + no hint = ambiguity. Refuse rather than
+        # silently picking. Operator must pass _owner_email.
+        return None, "ambiguous_account_profile"
 
     async def _record_real_outcome(
         self,

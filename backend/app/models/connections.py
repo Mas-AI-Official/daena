@@ -35,13 +35,37 @@ class Connector(Base, TimestampMixin):
 
 
 class ConnectorInstance(Base, TenantMixin, TimestampMixin):
-    """A user's connection to a specific connector."""
+    """A user's connection to a specific connector.
+
+    PR-CONN-GOOGLE-ACCOUNT-PROFILES (Sprint-4 PR-3, 2026-05-03):
+    added ``owner_email`` so a single user can hold multiple
+    ConnectorInstance rows for the same provider -- one per account
+    profile (e.g. masoud.masoori@... personal Gmail vs daena@...
+    company Gmail). The relaxed unique constraint
+    ``(tenant_id, connector_id, user_id, owner_email)`` permits this
+    without losing the intent of the original
+    ``(tenant_id, connector_id, user_id)`` rule (which prevented
+    duplicates accidentally; that intent is preserved per-profile).
+
+    For non-Google providers (GitHub, Sentry, Slack, ...) ``owner_email``
+    stays NULL; SQL NULL-equality semantics mean two NULLs do NOT
+    violate the constraint, so application-level dedup in
+    ``connection_service.connect_user_to_connector`` is what prevents
+    duplicate non-Google instances per user. That dedup pre-dates this
+    PR -- we do not regress it here.
+
+    PRODUCTION MIGRATION NOTE: dev SQLite picks up the new column on
+    a fresh ``create_all``. Existing dev DB rows survive because the
+    column is nullable. Production deployment must add an Alembic
+    migration before this lands; that is OUT OF SCOPE for the
+    foundation PR.
+    """
 
     __tablename__ = "connector_instances"
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "connector_id", "user_id",
-            name="uq_connector_instances_tenant_connector_user",
+            "tenant_id", "connector_id", "user_id", "owner_email",
+            name="uq_connector_instances_tenant_connector_user_email",
         ),
     )
 
@@ -62,6 +86,17 @@ class ConnectorInstance(Base, TenantMixin, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="DISCONNECTED")
     credentials: Mapped[dict | None] = mapped_column(JSONBCompat, nullable=True)
     last_used: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # PR-CONN-GOOGLE-ACCOUNT-PROFILES (Sprint-4 PR-3, 2026-05-03):
+    # the account identifier this instance authenticates as. NULL for
+    # non-Google providers (kept for back-compat). For Google
+    # providers the OAuth callback should populate this from the
+    # provider's userinfo endpoint -- a follow-up PR wires that
+    # capture path. Until then the executor reads from
+    # ``credentials._owner_email`` as a fallback for instances
+    # created before the column existed.
+    owner_email: Mapped[str | None] = mapped_column(
+        String(254), nullable=True, index=True,
+    )
 
     # Relationships
     connector: Mapped[Connector] = relationship()
