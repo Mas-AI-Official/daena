@@ -423,6 +423,54 @@ class ChatOrchestrator:
                 yield {"type": "error", "message": "Message blocked by security policy."}
                 return
 
+        # ── Stage 0c: Self-diagnostic short-circuit (Sprint-7 PR-2) ──
+        # When the operator asks Daena about her own runtime state
+        # ("are you OK?", "what's broken?", "why 0 callable?"), skip
+        # the LLM/governance/routing pipeline entirely and answer
+        # from the deterministic self-diagnostic. The answer is
+        # generated locally (no LLM, no external network beyond the
+        # diagnostic's own loopback probes), persisted like any other
+        # ASSISTANT turn, and ALWAYS ends with the SAFETY_BOUNDARY so
+        # the operator sees Daena's diagnose-only contract on every
+        # diagnostic response. Defensively wrapped: any failure here
+        # falls through to the normal pipeline.
+        try:
+            from app.services.self_diagnostic_advisor import (
+                gather_and_compose,
+                is_self_diagnostic_question,
+            )
+            if is_self_diagnostic_question(user_content):
+                logger.info(
+                    "self_diagnostic.short_circuit",
+                    session_id=str(session_id),
+                )
+                _diag_text = await gather_and_compose(self._db, tenant_id)
+                _CHUNK = 64
+                for _i in range(0, len(_diag_text), _CHUNK):
+                    yield {"type": "chunk", "content": _diag_text[_i:_i + _CHUNK]}
+                try:
+                    await self._chat.add_message(
+                        session_id=session_id,
+                        tenant_id=tenant_id,
+                        role="ASSISTANT",
+                        content=_diag_text,
+                        model_used="daena-self-diagnostic",
+                        provider_used="daena-internal",
+                    )
+                    await self._db.commit()
+                except Exception as _persist_exc:  # noqa: BLE001
+                    logger.warning(
+                        "self_diagnostic.persist_failed",
+                        error=str(_persist_exc),
+                    )
+                yield {"type": "done", "data": {"self_diagnostic": True}}
+                return
+        except Exception as _diag_exc:  # noqa: BLE001 -- never break chat
+            logger.warning(
+                "self_diagnostic.short_circuit_failed",
+                error=str(_diag_exc),
+            )
+
         # ── Stage 1: Load session + context ───────────────────
         session_stmt = select(ChatSession).where(ChatSession.id == session_id)
         session_result = await self._db.execute(session_stmt)
