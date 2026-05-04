@@ -28,6 +28,7 @@ import {
   labelTone,
   useConnectionsV2,
 } from '@/hooks/useConnectionsV2'
+import GoogleAccountSetupGuide from './GoogleAccountSetupGuide'
 
 const APP_KINDS: ConnectionKind[] = ['oauth_app', 'plugin']
 
@@ -108,6 +109,10 @@ export default function AppsPanel() {
           <span>Backend error: {error}</span>
         </div>
       )}
+
+      {/* Sprint-7 PR-5: explain the founder vs agent Google account split.
+          Static informational block; never starts an OAuth flow. */}
+      <GoogleAccountSetupGuide />
 
       <div className="relative max-w-md">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-starlight-500" />
