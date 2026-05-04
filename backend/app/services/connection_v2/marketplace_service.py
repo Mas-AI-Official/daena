@@ -267,6 +267,28 @@ def _derive_lifecycle(
     if _has_recent_failure(row):
         return "failed", "test", "Retry probe"
 
+    # PR-CONN-VLLM-BRAIN-PROBE-FIX (2026-05-03):
+    # A local_model row whose probe has never run is configured but NOT
+    # proven reachable. Falling through to the "configured" branch below
+    # causes the frontend's auth_type==none mapping to badge it
+    # "Installed" -- the exact "fake online pill" pattern Rule 17 forbids.
+    # Truth ladder: we know where the server SHOULD be (configured) but
+    # we have not proven anything responds (reachable=False, no failure
+    # recorded yet). Surface as "available" + Probe so the operator runs
+    # the real LocalModelProbe instead of trusting an env var.
+    #
+    # After a successful probe, registry.py marks reachable=True AND
+    # callable=True simultaneously, so the row jumps directly to the
+    # "callable" rung above. After a failed probe, _has_recent_failure
+    # already routes to "failed". This guard only catches the never-
+    # probed gap.
+    if (
+        row.kind == "local_model"
+        and row.configured
+        and not row.reachable
+    ):
+        return "available", "test", "Probe"
+
     # Happy path -- climb the ladder
     if row.callable:
         return "callable", "test", "Re-test"

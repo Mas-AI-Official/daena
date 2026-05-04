@@ -442,6 +442,205 @@ class TestMarketplaceServiceOverlay:
         assert fetch_card.lifecycle == "disabled"
         assert fetch_card.primary_action == "enable"
 
+    # ──────────────────────────────────────────────────────────────────
+    # PR-CONN-VLLM-BRAIN-PROBE-FIX (2026-05-03)
+    #
+    # Pin the local_model honesty guard. Three states matter:
+    #   1. Configured + never probed -> lifecycle="available", action="test"
+    #      label="Probe"  (was "configured"/"Installed" — the lie)
+    #   2. Configured + probed callable -> lifecycle="callable" (truth via
+    #      registry.update_probe which sets reachable+callable together)
+    #   3. Configured + probed and failed -> lifecycle="failed" (existing
+    #      _has_recent_failure path)
+    # ──────────────────────────────────────────────────────────────────
+
+    async def test_local_model_unprobed_yields_available_not_installed(
+        self, db_session, seeded_tenant
+    ):
+        """vLLM/Ollama row with base_url configured but no probe yet must
+        surface as available + Probe button, NOT "Installed" (the lie)."""
+        now = datetime.now(UTC)
+        row = ConnectionV2(
+            tenant_id=seeded_tenant.id,
+            kind=ConnectionKind.LOCAL_MODEL.value,
+            slug="local-vllm",
+            display_name="vLLM / llama-server",
+            canonical_key=_canonical_key(
+                seeded_tenant.id, "local_model", "local-vllm", "none",
+            ),
+            auth_method=AuthMethod.NONE.value,
+            config={
+                "kind": "local_model",
+                "base_url": "http://127.0.0.1:8080/v1",
+                "_provider_id": "vllm",
+                "_seeded_by": "test",
+            },
+            detected=True, detected_at=now,
+            configured=True, configured_at=now,
+            # Probe NEVER ran -- both reachable and callable stay False with
+            # NO failure reasons recorded.
+            reachable=False,
+            callable=False,
+        )
+        db_session.add(row)
+        await db_session.flush()
+
+        svc = MarketplaceService(db_session, tenant_id=seeded_tenant.id)
+        cards = await svc.list_cards()
+        vllm_card = next(c for c in cards if c.catalog["id"] == "local-vllm")
+        assert vllm_card.v2_row_id == str(row.id)
+        # The honesty guard. Without it lifecycle was "configured" and
+        # the FE adapter mapped (auth_type=none + lifecycle=configured)
+        # to "Installed" -- the fake online pill Rule 17 forbids.
+        assert vllm_card.lifecycle == "available"
+        assert vllm_card.primary_action == "test"
+        assert vllm_card.primary_action_label == "Probe"
+
+    async def test_local_model_probed_callable_yields_callable_lifecycle(
+        self, db_session, seeded_tenant
+    ):
+        """A LocalModelProbe success advances reachable+callable together
+        (registry.update_probe), so lifecycle climbs to callable."""
+        now = datetime.now(UTC)
+        row = ConnectionV2(
+            tenant_id=seeded_tenant.id,
+            kind=ConnectionKind.LOCAL_MODEL.value,
+            slug="local-vllm",
+            display_name="vLLM / llama-server",
+            canonical_key=_canonical_key(
+                seeded_tenant.id, "local_model", "local-vllm", "none",
+            ),
+            auth_method=AuthMethod.NONE.value,
+            config={
+                "kind": "local_model",
+                "base_url": "http://127.0.0.1:8080/v1",
+                "_provider_id": "vllm",
+                "_seeded_by": "test",
+            },
+            detected=True, detected_at=now,
+            configured=True, configured_at=now,
+            reachable=True, reachable_at=now,
+            callable=True, callable_at=now,
+        )
+        db_session.add(row)
+        await db_session.flush()
+
+        svc = MarketplaceService(db_session, tenant_id=seeded_tenant.id)
+        cards = await svc.list_cards()
+        vllm_card = next(c for c in cards if c.catalog["id"] == "local-vllm")
+        assert vllm_card.lifecycle == "callable"
+        assert vllm_card.primary_action == "test"
+        assert vllm_card.primary_action_label == "Re-test"
+
+    async def test_local_model_probed_and_failed_yields_failed_lifecycle(
+        self, db_session, seeded_tenant
+    ):
+        """When a probe ran and could not connect, the row carries a
+        recent reachable_failure_at -> lifecycle="failed" overrides our
+        new honesty guard. The honesty guard ONLY catches never-probed."""
+        now = datetime.now(UTC)
+        row = ConnectionV2(
+            tenant_id=seeded_tenant.id,
+            kind=ConnectionKind.LOCAL_MODEL.value,
+            slug="local-vllm",
+            display_name="vLLM / llama-server",
+            canonical_key=_canonical_key(
+                seeded_tenant.id, "local_model", "local-vllm", "none",
+            ),
+            auth_method=AuthMethod.NONE.value,
+            config={
+                "kind": "local_model",
+                "base_url": "http://127.0.0.1:8080/v1",
+                "_provider_id": "vllm",
+                "_seeded_by": "test",
+            },
+            detected=True, detected_at=now,
+            configured=True, configured_at=now,
+            reachable=False,
+            reachable_at=now - timedelta(minutes=10),
+            reachable_failure_at=now,
+            reachable_failure_reason=(
+                "connection_failed: ConnectError reaching vllm -- is the "
+                "local server listening on the configured port?"
+            ),
+            callable=False,
+        )
+        db_session.add(row)
+        await db_session.flush()
+
+        svc = MarketplaceService(db_session, tenant_id=seeded_tenant.id)
+        cards = await svc.list_cards()
+        vllm_card = next(c for c in cards if c.catalog["id"] == "local-vllm")
+        assert vllm_card.lifecycle == "failed"
+        assert vllm_card.primary_action == "test"
+        assert vllm_card.primary_action_label == "Retry probe"
+        assert vllm_card.v2_failure_reason is not None
+        assert "connection_failed" in vllm_card.v2_failure_reason
+
+    async def test_local_model_honesty_guard_unit(self):
+        """Direct unit on _derive_lifecycle: confirms the configured-but-
+        unprobed local_model row routes to (available, test, Probe). This
+        is the smallest possible test of the new branch."""
+        from app.services.connection_v2.marketplace_service import (
+            _derive_lifecycle,
+        )
+        from app.services.connection_v2.marketplace_catalog import CATALOG
+
+        entry = next(e for e in CATALOG if e.id == "local-vllm")
+
+        # Build a minimal row by hand (no DB round-trip).
+        now = datetime.now(UTC)
+        row = ConnectionV2(
+            tenant_id=UUID("00000000-0000-0000-0000-000000000001"),
+            kind=ConnectionKind.LOCAL_MODEL.value,
+            slug="local-vllm",
+            display_name="vLLM / llama-server",
+            canonical_key="x",
+            auth_method=AuthMethod.NONE.value,
+            config={"_provider_id": "vllm"},
+            detected=True, detected_at=now,
+            configured=True, configured_at=now,
+            reachable=False,
+            callable=False,
+        )
+
+        lifecycle, action, label = _derive_lifecycle(entry, row)
+        assert lifecycle == "available"
+        assert action == "test"
+        assert label == "Probe"
+
+    async def test_local_model_honesty_guard_does_not_apply_to_other_kinds(
+        self,
+    ):
+        """Defense-in-depth: non-local_model rows that are configured but
+        not reachable still climb to "configured" via the existing ladder.
+        Only local_model gets the honesty downgrade."""
+        from app.services.connection_v2.marketplace_service import (
+            _derive_lifecycle,
+        )
+        from app.services.connection_v2.marketplace_catalog import CATALOG
+
+        entry = next(e for e in CATALOG if e.id == "mcp-filesystem")
+        now = datetime.now(UTC)
+        row = ConnectionV2(
+            tenant_id=UUID("00000000-0000-0000-0000-000000000001"),
+            kind=ConnectionKind.MCP_SERVER.value,  # NOT local_model
+            slug="mcp-filesystem",
+            display_name="Filesystem",
+            canonical_key="x",
+            auth_method=AuthMethod.NONE.value,
+            config={"command": "npx"},
+            detected=True, detected_at=now,
+            configured=True, configured_at=now,
+            reachable=False,
+            callable=False,
+        )
+
+        lifecycle, action, label = _derive_lifecycle(entry, row)
+        # No honesty guard for mcp_server -- still "configured"
+        assert lifecycle == "configured"
+        assert action == "test"
+
     async def test_skill_pack_always_skill_pack_lifecycle(
         self, db_session, seeded_tenant
     ):

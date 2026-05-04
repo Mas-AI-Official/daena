@@ -311,6 +311,16 @@ function deriveAction(
   if (entry.kind === 'api_provider' && card.provider_key_present === false) {
     return { action: 'configure', enabled: true }
   }
+  // PR-CONN-VLLM-BRAIN-PROBE-FIX (2026-05-03): a local_model card whose
+  // base_url env var IS set (provider_key_present===true) but whose
+  // backend lifecycle is "available" arrives here via the local_model
+  // honesty guard in marketplace_service._derive_lifecycle. The truth
+  // is: env is configured but no probe has proven reachability yet.
+  // Show Probe so the operator runs LocalModelProbe instead of bouncing
+  // to Setup guide for env-var instructions they already followed.
+  if (entry.kind === 'local_model' && card.provider_key_present === true) {
+    return { action: 'test', enabled: true }
+  }
   if (entry.auth_type === 'oauth') {
     // No V2 row yet, but the catalog knows the OAuth provider. Point
     // the operator at the Setup guide; the actual Connect button lights
