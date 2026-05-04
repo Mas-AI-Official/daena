@@ -42,6 +42,40 @@ _PROVIDER_TO_CONNECTOR_NAME = {
 }
 
 
+def _normalize_owner_email(identity: str | None) -> str | None:
+    """Normalize a fetched account identity for storage in
+    ``ConnectorInstance.owner_email``.
+
+    PR-CONN-GOOGLE-ACCOUNT-PROFILES-CAPTURE (Sprint-5 PR-1, 2026-05-03):
+    Sprint-4 PR-3 added the column but left it null. This Sprint-5 PR
+    auto-populates it from the provider's userinfo endpoint after
+    successful token exchange so the operator never has to
+    hand-pick which Google account a ConnectorInstance maps to.
+
+    Rules (all enforced by tests):
+      * Lowercased + whitespace-stripped (case-insensitive matching).
+      * 254-char cap (RFC 5321 SMTP local+domain limit) -- column is
+        ``String(254)`` so over-long values would otherwise raise on
+        insert. We truncate defensively rather than crash the OAuth
+        callback over a provider returning a weird payload.
+      * Empty / whitespace-only / falsy -> ``None`` so SQL NULL
+        semantics still let multi-NULL rows coexist (matches the
+        Sprint-4 PR-3 test pin).
+      * NEVER returns the access token, refresh token, or any
+        substring that smells token-shaped. The function only sees
+        the identity string fetched by ``fetch_account_identity``,
+        which is provider userinfo response (email / handle), not
+        token material -- defense-in-depth for the executor's audit
+        layer.
+    """
+    if not identity:
+        return None
+    normalized = identity.strip().lower()
+    if not normalized:
+        return None
+    return normalized[:254]
+
+
 @router.get("/oauth/providers")
 async def list_providers(
     db: AsyncSession = Depends(get_db),
@@ -161,6 +195,13 @@ async def oauth_callback(
         if account_identity:
             tokens = {**tokens, "account_identity": account_identity}
 
+        # PR-CONN-GOOGLE-ACCOUNT-PROFILES-CAPTURE (Sprint-5 PR-1):
+        # normalize the fetched identity for the indexed top-level
+        # column. None -> column stays NULL, account picker UI must
+        # fall back to manual selection (covered by Sprint-4 PR-3
+        # _find_oauth_instance ambiguity gate).
+        normalized_owner_email = _normalize_owner_email(account_identity)
+
         # Find or create the catalog-backed connector instance.
         #
         # Previous code compared ConnectorInstance.connector_id (UUID)
@@ -184,10 +225,17 @@ async def oauth_callback(
         if connector is None:
             raise ValueError(f"Connector catalog row not found for OAuth provider: {connector_id}")
 
+        # PR-CONN-GOOGLE-ACCOUNT-PROFILES-CAPTURE (Sprint-5 PR-1):
+        # match on (tenant, connector, user, owner_email) so two
+        # Google accounts under the same operator user get separate
+        # rows. The Sprint-4 PR-3 unique constraint already permits
+        # this; the lookup must mirror it or we'd UPDATE the wrong
+        # row when the operator adds a second account.
         stmt = select(ConnectorInstance).where(
             ConnectorInstance.connector_id == connector.id,
             ConnectorInstance.tenant_id == tenant_id,
             ConnectorInstance.user_id == user_id,
+            ConnectorInstance.owner_email == normalized_owner_email,
         )
         result = await db.execute(stmt)
         instance = result.scalar_one_or_none()
@@ -204,6 +252,7 @@ async def oauth_callback(
                 user_id=user_id,
                 credentials=encrypted_tokens,
                 status=ConnectorStatus.CONNECTED.value,
+                owner_email=normalized_owner_email,
             )
             db.add(instance)
             await db.commit()
