@@ -621,20 +621,35 @@ async def test_vendor_5xx_returns_safe_outcome(
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_phase2_oauth_entries_still_planned():
-    """Wire-up safety: PR-4 ships the OAuth invoker FOUNDATION but
-    does NOT yet promote any backend_surface=oauth allowlist entry.
-    This invariant fails the moment a future PR flips Gmail/Drive
-    without first wiring the executor to call OAuthInvoker."""
+def test_phase2_oauth_entries_now_route_through_invoker():
+    """Sprint-3 PR-4 shipped the foundation. Sprint-4 PR-1 wired it
+    into the executor. Sprint-4 PR-2 promoted the 4 Gmail/Drive
+    entries. This invariant REPLACES the prior "still_planned" check
+    and pins that every promoted oauth entry has a matching method
+    in OAUTH_METHOD_ALLOWLIST -- otherwise the executor returns
+    oauth_method_not_allowlisted at runtime.
+    """
     from app.services.connection_v2.skill_executor import PHASE2_ALLOWLIST
 
     oauth_entries = [
         e for e in PHASE2_ALLOWLIST if e.backend_surface == "oauth"
     ]
     assert oauth_entries, "Phase2 allowlist has no oauth entries"
+
+    invoker_keys = {
+        (m.plugin_id, m.method_id) for m in OAUTH_METHOD_ALLOWLIST
+    }
     for e in oauth_entries:
-        assert e.execution_mode == "planned_only", (
-            f"{e.plugin_id}:{e.skill_id} promoted to {e.execution_mode!r} "
-            f"but the executor does NOT yet route through OAuthInvoker. "
-            f"Wire the dispatch first, THEN promote."
-        )
+        if e.execution_mode == "mcp_tool":
+            key = (e.plugin_id, e.target_tool)
+            assert key in invoker_keys, (
+                f"{e.plugin_id}:{e.skill_id} target_tool="
+                f"{e.target_tool!r} is promoted but has no matching "
+                f"OAuthInvoker entry. Add it to OAUTH_METHOD_ALLOWLIST "
+                f"or revert the promotion."
+            )
+        elif e.execution_mode != "planned_only":
+            raise AssertionError(
+                f"{e.plugin_id}:{e.skill_id} has unknown execution_mode "
+                f"{e.execution_mode!r}. Allowed: planned_only / mcp_tool."
+            )

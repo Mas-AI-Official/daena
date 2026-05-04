@@ -165,6 +165,20 @@ PROMOTED_TO_MCP_TOOL: dict[tuple[str, str], str] = {
         "PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE",
     ("mcp-neon", "describe_schema"):
         "PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE",
+    # PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY (Sprint-4 PR-2, 2026-05-03):
+    # 4 OAuth read skills promoted now that PR-CONN-OAUTH-EXECUTOR-WIRE-UP
+    # (Sprint-4 PR-1) wires OAuthInvoker into _execute_real_oauth.
+    # Tokens are loaded from ConnectorInstance.credentials and NEVER
+    # cross the executor boundary; bodies + write surfaces stay
+    # explicitly out of scope (see per-entry reads_summary).
+    ("app-gmail", "summarize_unread"):
+        "PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY",
+    ("app-gmail", "search_email_context"):
+        "PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY",
+    ("app-google-drive", "find_documents"):
+        "PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY",
+    ("app-google-drive", "summarize_file"):
+        "PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY",
 }
 
 
@@ -271,24 +285,100 @@ def test_pr3_promotion_set_is_exactly_slack_two_skills():
     }, f"PR-3 promotion set drifted: {pr3_keys}"
 
 
-def test_pr3_gmail_and_drive_remain_planned_only():
-    """Gmail (app-gmail) + Drive (app-google-drive) read skills MUST
-    stay planned_only after PR-3. Promoting them now would lie about
-    capability -- the OAuth executor surface doesn't exist."""
-    expected_planned = {
+def test_sprint4_gmail_and_drive_now_promoted():
+    """Sprint-4 PR-2 (PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY) flips the
+    4 Gmail+Drive read skills from planned_only -> mcp_tool now that
+    Sprint-4 PR-1 wired OAuthInvoker into the executor. This invariant
+    REPLACES the Sprint-2 PR-3 ``test_pr3_gmail_and_drive_remain_planned_only``
+    invariant -- a future PR that reverts to planned_only without
+    explicit reasoning will fail this check.
+    """
+    expected_promoted = {
         ("app-gmail", "summarize_unread"),
         ("app-gmail", "search_email_context"),
         ("app-google-drive", "find_documents"),
         ("app-google-drive", "summarize_file"),
     }
-    for plug, skill in expected_planned:
+    for plug, skill in expected_promoted:
         entry = _get_entry(plug, skill)
         assert entry is not None, f"{plug}:{skill} missing from allowlist"
-        assert entry.execution_mode == "planned_only", (
-            f"{plug}:{skill} promoted to {entry.execution_mode!r} but "
-            f"the OAuth executor surface doesn't exist. Either build "
-            f"OAuthInvoker first or revert to planned_only."
+        assert entry.execution_mode == "mcp_tool", (
+            f"{plug}:{skill} reverted to {entry.execution_mode!r}. "
+            f"Sprint-4 PR-2 promoted these to mcp_tool. If you must "
+            f"revert, document the reason and remove the entry from "
+            f"PROMOTED_TO_MCP_TOOL."
         )
+        assert entry.backend_surface == "oauth", (
+            f"{plug}:{skill} backend_surface drifted to "
+            f"{entry.backend_surface!r}; Gmail/Drive are OAuth-backed."
+        )
+
+
+def test_sprint4_gmail_drive_target_tools_match_invoker_allowlist():
+    """Promotion is only safe if every Phase 2 entry's target_tool is
+    a method_id present in OAuthInvoker.OAUTH_METHOD_ALLOWLIST.
+    Otherwise _execute_real_oauth returns oauth_method_not_allowlisted."""
+    from app.services.connection_v2.oauth_invoker import (
+        OAUTH_METHOD_ALLOWLIST,
+    )
+
+    invoker_keys = {(m.plugin_id, m.method_id) for m in OAUTH_METHOD_ALLOWLIST}
+    for plug, skill in (
+        ("app-gmail", "summarize_unread"),
+        ("app-gmail", "search_email_context"),
+        ("app-google-drive", "find_documents"),
+        ("app-google-drive", "summarize_file"),
+    ):
+        entry = _get_entry(plug, skill)
+        key = (entry.plugin_id, entry.target_tool)
+        assert key in invoker_keys, (
+            f"{plug}:{skill} target_tool='{entry.target_tool}' has no "
+            f"matching OAuthInvoker entry. Either add it to "
+            f"OAUTH_METHOD_ALLOWLIST or fix the target_tool. Without a "
+            f"match the executor returns oauth_method_not_allowlisted."
+        )
+
+
+def test_sprint4_no_gmail_drive_write_skills_promoted():
+    """Defense in depth: Gmail/Drive write surfaces MUST stay out of
+    Phase 2. Forbidden by name."""
+    forbidden_writes = {
+        # Gmail writes
+        "send_message", "send_email", "draft_reply", "draft_email",
+        "modify_label", "trash_message", "delete_message",
+        "create_filter", "modify_filter",
+        # Drive writes
+        "files.create", "files.update", "files.delete", "files.copy",
+        "files.move", "files.upload",
+        "permissions.create", "permissions.update", "permissions.delete",
+        "comments.create", "comments.delete",
+        "files.get_content",  # held back deliberately until size+perm caps
+    }
+    google_plugins = {"app-gmail", "app-google-drive", "app-google-calendar"}
+    promoted_targets = {
+        entry.target_tool
+        for entry in PHASE2_ALLOWLIST
+        if entry.plugin_id in google_plugins
+        and entry.execution_mode == "mcp_tool"
+    }
+    bad = promoted_targets & forbidden_writes
+    assert not bad, f"Forbidden Gmail/Drive write target_tool(s) promoted: {bad}"
+
+
+def test_sprint4_promotion_set_is_exactly_four():
+    """PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY promotes EXACTLY these
+    four skills. A future PR that adds a fifth without an explicit
+    PROMOTED_TO_MCP_TOOL pinning fails this set check."""
+    pr_keys = {
+        k for k, pr in PROMOTED_TO_MCP_TOOL.items()
+        if pr == "PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY"
+    }
+    assert pr_keys == {
+        ("app-gmail", "summarize_unread"),
+        ("app-gmail", "search_email_context"),
+        ("app-google-drive", "find_documents"),
+        ("app-google-drive", "summarize_file"),
+    }, f"Sprint-4 PR-2 promotion set drifted: {pr_keys}"
 
 
 def test_pr4_db_describe_promotion_set_is_exactly_four():
@@ -538,28 +628,28 @@ async def callable_github_v2_row(
 async def callable_planned_v2_row(
     db_session, seeded_tenant_user: tuple[UUID, UUID],
 ) -> ConnectionV2:
-    """V2 row pointing at a still-PLANNED skill. After PR-3 promoted
-    Slack, the next still-planned subject we can rely on is Drive
-    (app-google-drive:find_documents -- OAuth surface stays planned
-    until an OAuthInvoker ships).
+    """V2 row pointing at a still-PLANNED skill. After Sprint-4 PR-2
+    promoted Gmail/Drive, the still-planned subject we can rely on is
+    mcp-postgres:describe_schema -- the archived ref Postgres MCP only
+    ships a generic `query` tool (no discrete schema introspection),
+    so its describe_schema entry intentionally stays planned_only
+    (Sprint-3 PR-3 decision; defended by
+    test_pr4_postgres_stays_planned_only).
 
-    Renamed from callable_slack_v2_row (PR-2 era) to make the intent
-    clear: this fixture is for testing the GENERIC planned path,
-    using whatever plugin is still on it."""
+    Lineage: callable_slack_v2_row (Sprint-1 PR-2 era) ->
+    callable_drive_v2_row (Sprint-2 PR-3 era) -> callable_postgres_v2_row
+    (Sprint-4 PR-2 era). Renamed in spirit but keeping the same
+    intent: a callable plugin pointing at a STILL-PLANNED skill."""
     tenant_id, _ = seeded_tenant_user
-    # NOTE: catalog's app-google-drive entry has matches_v2_slug=
-    # "oauth-google-drive" (Drive shares the same OAuth-app slug
-    # convention used by Gmail). The V2 row's slug field MUST match
-    # the catalog's matches_v2_slug for the executor's callable check
-    # to succeed.
+    # The catalog's mcp-postgres entry has matches_v2_slug="mcp-postgres".
     row = ConnectionV2(
         tenant_id=tenant_id,
-        kind=ConnectionKind.OAUTH_APP.value,
-        slug="oauth-google-drive",
-        canonical_key="oauth-google-drive",
-        display_name="Google Drive",
+        kind=ConnectionKind.MCP_SERVER.value,
+        slug="mcp-postgres",
+        canonical_key="mcp-postgres",
+        display_name="Postgres MCP",
         config={},
-        auth_method="oauth",
+        auth_method="api_token",
         detected=True, configured=True, imported=True,
         reachable=True, authenticated=True, callable=True,
         detected_at=datetime.now(UTC), configured_at=datetime.now(UTC),
@@ -584,18 +674,18 @@ async def test_allowlisted_callable_skill_returns_planned(
     still-planned allowlisted skill + all required inputs supplied
     -> status=planned with full preview.
 
-    Uses app-google-drive:find_documents because OAuth-surface plugins
-    intentionally stay planned_only (no OAuthInvoker yet) and Drive's
-    plugin slug is the still-planned subject after PR-3 promoted Slack."""
+    Uses mcp-postgres:describe_schema because mcp-postgres stays
+    planned_only by design (Sprint-3 PR-3): the archived ref Postgres
+    MCP exposes only `query`, no discrete schema-introspection tool.
+    Defended by test_pr4_postgres_stays_planned_only."""
     executor = SkillExecutor(db_session)
     result = await executor.execute(
-        plugin_id="app-google-drive",
-        skill_id="find_documents",
+        plugin_id="mcp-postgres",
+        skill_id="describe_schema",
         tenant_id=seeded_tenant_user[0],
         user_id=seeded_tenant_user[1],
         operator_inputs={
-            "query": "design specs",
-            "folder_id_or_root": SENTINEL_VALUE,
+            "database": SENTINEL_VALUE,
         },
     )
     assert result.accepted is True
@@ -603,14 +693,14 @@ async def test_allowlisted_callable_skill_returns_planned(
     assert result.audit_event_id
     assert len(result.tool_calls) == 1
     tc = result.tool_calls[0]
-    assert tc.tool_name == "files.list"
+    assert tc.tool_name == "describe_schema"
     assert tc.read_only is True
-    assert tc.backend_surface == "oauth"
+    assert tc.backend_surface == "mcp"
     # The argument shape declares each input as "operator-input"
     # (provenance), but NEVER carries the value itself.
-    assert tc.argument_shape["folder_id_or_root"] == "operator-input"
-    # OAuth surface gets the implicit tenant-scope marker.
-    assert tc.argument_shape.get("_auth_scope") == "tenant-scoped"
+    assert tc.argument_shape["database"] == "operator-input"
+    # mcp surface does NOT carry the OAuth tenant-scope marker.
+    assert "_auth_scope" not in tc.argument_shape
 
 
 @pytest.mark.asyncio
@@ -797,18 +887,18 @@ async def test_audit_row_records_outcome_and_no_secret_values(
     outcome=planned + phase=phase2_readonly. action_params NEVER
     contains operator_inputs values.
 
-    Uses app-google-drive:find_documents because Drive remains
-    planned_only after PR-3 (Slack now goes through real-exec which
-    uses phase=phase2x_readonly_real_exec)."""
+    Uses mcp-postgres:describe_schema because mcp-postgres remains
+    planned_only by design after Sprint-3 PR-3 (archived ref MCP
+    only ships generic `query`; SQL construction at executor layer
+    forbidden by founder rule)."""
     executor = SkillExecutor(db_session)
     await executor.execute(
-        plugin_id="app-google-drive",
-        skill_id="find_documents",
+        plugin_id="mcp-postgres",
+        skill_id="describe_schema",
         tenant_id=seeded_tenant_user[0],
         user_id=seeded_tenant_user[1],
         operator_inputs={
-            "query": SENTINEL_VALUE,
-            "folder_id_or_root": SENTINEL_VALUE,
+            "database": SENTINEL_VALUE,
         },
     )
 
@@ -824,16 +914,15 @@ async def test_audit_row_records_outcome_and_no_secret_values(
     ).scalars().first()
     assert row is not None
     params = row.action_params or {}
-    assert params.get("plugin_id") == "app-google-drive"
-    assert params.get("skill_id") == "find_documents"
+    assert params.get("plugin_id") == "mcp-postgres"
+    assert params.get("skill_id") == "describe_schema"
     assert params.get("phase") == "phase2_readonly"
     assert params.get("allowlist_match") is True
     assert params.get("read_only") is True
     assert params.get("outcome") == "planned"
     # Argument shape carries provenance NOT values.
     shape = params.get("argument_shape") or {}
-    assert shape.get("query") == "operator-input"
-    assert shape.get("folder_id_or_root") == "operator-input"
+    assert shape.get("database") == "operator-input"
     # Final canary: dump and verify sentinel absent.
     assert SENTINEL_VALUE not in json.dumps(params)
 

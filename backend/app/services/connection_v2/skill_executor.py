@@ -333,18 +333,29 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
     ),
 
     # ── Gmail (app-gmail, OAuth, READ skills) ──
+    # PROMOTED in PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY (2026-05-03):
+    # both summarize_unread + search_email_context now route through
+    # OAuthInvoker (Sprint-3 PR-4) wired into SkillExecutor by
+    # PR-CONN-OAUTH-EXECUTOR-WIRE-UP (Sprint-4 PR-1). The OAuth token
+    # is loaded from the user's ConnectorInstance.credentials and
+    # NEVER crosses the executor boundary. Response capped at 20
+    # messages by OAuthMethod.response_cap_items.
     SkillToolMapping(
         plugin_id="app-gmail",
         skill_id="summarize_unread",
         backend_surface="oauth",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="messages.list_unread",
-        required_inputs=("label_or_query", "time_window"),
+        # OAuthInvoker's messages.list_unread takes NO operator inputs
+        # (q="is:unread" is hardcoded). Aligning required_inputs=()
+        # so the executor's input check matches the invoker's contract.
+        required_inputs=(),
         reads_summary=(
-            "Subject + sender + snippet of unread Gmail messages within "
-            "the requested label/time window. Does not mark messages "
-            "read; does not send anything."
+            "First 20 unread Gmail message ids (capped by invoker). "
+            "Does not read message bodies, does not mark messages read, "
+            "does not send anything. Body summarization arrives in a "
+            "follow-up PR with size + content caps."
         ),
     ),
     SkillToolMapping(
@@ -352,29 +363,44 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="search_email_context",
         backend_surface="oauth",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="messages.search",
-        required_inputs=("query", "time_window"),
+        # OAuthInvoker's messages.search takes operator-supplied query;
+        # passes through to Gmail API q parameter. No time_window field
+        # because Gmail's q syntax accepts time filters inline (e.g.
+        # "from:foo newer_than:7d"); the operator constructs them.
+        required_inputs=("query",),
         reads_summary=(
-            "Search Gmail by query string + time window. Returns "
-            "matching message metadata + snippets for the operator "
-            "to summarize. Does not modify or send."
+            "First 20 matching Gmail message ids for an operator-supplied "
+            "Gmail search query (q syntax: 'from:foo', 'newer_than:7d', "
+            "etc.). Returns ids only -- never reads message bodies."
         ),
     ),
 
     # ── Google Drive (app-google-drive, OAuth, READ skills) ──
+    # PROMOTED in PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY (2026-05-03):
+    # both find_documents + summarize_file route through OAuthInvoker.
+    # Drive list capped at 30 files; file metadata read returns name +
+    # mimeType + size + modifiedTime (NEVER the body in this PR --
+    # body summarization is a separate follow-up with content caps).
     SkillToolMapping(
         plugin_id="app-google-drive",
         skill_id="find_documents",
         backend_surface="oauth",
         read_only=True,
-        execution_mode="planned_only",
+        execution_mode="mcp_tool",
         target_tool="files.list",
-        required_inputs=("query", "folder_id_or_root"),
+        # OAuthInvoker's files.list does NOT yet accept an operator
+        # query (Drive's q syntax has injection surface that needs a
+        # dedicated PR). Today returns the first 30 files (most recent
+        # by Drive's default ordering). Operator query support arrives
+        # in a follow-up PR with allowlisted q-syntax patterns.
+        required_inputs=(),
         reads_summary=(
-            "Drive files matching query (name, fullText, owners, "
-            "lastModifiedTime). Returns metadata only -- does not open, "
-            "share, or modify any file."
+            "First 30 Drive files (Drive's default ordering, capped by "
+            "invoker). Returns metadata only (name, id, mimeType). Does "
+            "not open, share, or modify any file. Operator query "
+            "support arrives in a follow-up PR."
         ),
     ),
     SkillToolMapping(
@@ -382,12 +408,20 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="summarize_file",
         backend_surface="oauth",
         read_only=True,
-        execution_mode="planned_only",
-        target_tool="files.get_content",
-        required_inputs=("file_id_or_url",),
+        execution_mode="mcp_tool",
+        # NOTE: target_tool is files.get_metadata (NOT get_content).
+        # OAuthInvoker comment: content download has its own size +
+        # permission surface that deserves a dedicated PR. For PR-2
+        # of Sprint-4 we surface metadata-only (name + mime + size +
+        # modifiedTime). The skill_id stays "summarize_file" for
+        # catalog stability; reads_summary explains the limit.
+        target_tool="files.get_metadata",
+        required_inputs=("file_id",),
         reads_summary=(
-            "Read text content of a Google Doc or supported file type "
-            "for summarization. Does not write back, comment, or share."
+            "Returns metadata for the named Drive file (name, mimeType, "
+            "size, modifiedTime). Body content summarization arrives "
+            "in a follow-up PR with size + permission caps. Does not "
+            "write back, comment, or share."
         ),
     ),
 
