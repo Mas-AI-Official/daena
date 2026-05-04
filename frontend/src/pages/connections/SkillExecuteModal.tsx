@@ -421,6 +421,24 @@ export default function SkillExecuteModal({
                   })}
                 </div>
               )}
+
+              {/* Sprint-6 PR-4: orphan account reclaim. owner_email=NULL
+                  rows are usually leftovers from a failed userinfo fetch
+                  during the OAuth callback, or pre-Sprint-5 legacy
+                  instances. Surface them so the operator can choose to
+                  reconnect (safer) or archive the orphan (no row delete;
+                  just hides from default lists). */}
+              {!accountsLoading && accounts !== null && accounts.some(a => a.owner_email === null) && (
+                <OrphanReclaimSection
+                  oauthProvider={oauthProvider}
+                  accounts={accounts}
+                  onArchived={(archivedId) => {
+                    setAccounts((prev) =>
+                      prev ? prev.filter(a => a.instance_id !== archivedId) : prev,
+                    )
+                  }}
+                />
+              )}
             </section>
           )}
 
@@ -616,6 +634,112 @@ export default function SkillExecuteModal({
           </footer>
         </div>
       </div>
+    </div>
+  )
+}
+
+
+// ──────────────────────────────────────────────────────────────────
+// Sprint-6 PR-4: OrphanReclaimSection
+// ──────────────────────────────────────────────────────────────────
+//
+// Renders one row per ConnectorInstance with owner_email=NULL. The
+// operator can:
+//   * Reconnect: opens the existing OAuth start endpoint in a new
+//     tab (same-tab redirect would lose modal state).
+//   * Archive orphan: posts to the existing
+//     /connections/instances/{id}/archive endpoint with
+//     {confirm: true}. The backend marks the row ARCHIVED (no row
+//     deletion -- per founder rule, archive is the strongest
+//     soft-removal lane).
+//
+// Confirmation: an inline window.confirm() is the simplest two-step
+// gate that still works inside the modal context. The backend ALSO
+// requires {confirm: true} -- two-layer defense, same as the
+// existing OAuthLifecyclePanel disconnect/archive flow.
+
+function OrphanReclaimSection({
+  oauthProvider, accounts, onArchived,
+}: {
+  oauthProvider: string
+  accounts: OAuthAccount[]
+  onArchived: (archivedInstanceId: string) => void
+}) {
+  const orphans = accounts.filter(a => a.owner_email === null)
+  if (orphans.length === 0) return null
+
+  async function handleArchive(instanceId: string) {
+    const ok = window.confirm(
+      'Archive this orphan account? It will be hidden from default lists '
+      + 'but the row is preserved (no delete).',
+    )
+    if (!ok) return
+    try {
+      await api.post(`/connections/instances/${instanceId}/archive`, {
+        confirm: true,
+      })
+      onArchived(instanceId)
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })
+          ?.response?.data?.detail ?? 'Archive failed'
+      window.alert(`Archive failed: ${msg}`)
+    }
+  }
+
+  function handleReconnect() {
+    // Open a new tab so the modal state is preserved. The existing
+    // OAuth start endpoint redirects through the provider; on
+    // success a new ConnectorInstance is created with the captured
+    // owner_email (Sprint-5 PR-1).
+    const url = `/api/v1/connectors/${encodeURIComponent(oauthProvider)}/oauth/start`
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  return (
+    <div
+      data-testid="orphan-reclaim-section"
+      className="mt-3 rounded-md border border-slate-500/20 bg-slate-500/[0.04] px-3 py-2"
+    >
+      <h4 className="text-[10px] uppercase tracking-wider text-slate-300">
+        Orphan accounts ({orphans.length})
+      </h4>
+      <p className="mt-1 text-[11px] text-starlight-400">
+        These rows lost their account profile (failed userinfo fetch
+        or pre-Sprint-5 legacy). Reconnect to capture the email, or
+        archive to hide them from the picker.
+      </p>
+      <ul className="mt-2 space-y-1">
+        {orphans.map((o) => (
+          <li
+            key={o.instance_id}
+            className="flex items-center justify-between gap-2 rounded-md border border-white/5 bg-white/[0.02] px-2 py-1.5"
+          >
+            <div className="min-w-0">
+              <p className="text-[11px] text-starlight-200">
+                Unknown account profile
+              </p>
+              <p className="truncate text-[10px] text-starlight-500">
+                {o.instance_id} - status: {o.status}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                onClick={handleReconnect}
+                className="rounded-md border border-accent-cyan/30 bg-accent-cyan/10 px-2 py-0.5 text-[10px] text-accent-cyan hover:bg-accent-cyan/20"
+              >
+                Reconnect
+              </button>
+              <button
+                onClick={() => void handleArchive(o.instance_id)}
+                className="rounded-md border border-rose-500/30 bg-rose-500/[0.08] px-2 py-0.5 text-[10px] text-rose-200 hover:bg-rose-500/[0.15]"
+              >
+                Archive orphan
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
