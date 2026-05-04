@@ -464,6 +464,227 @@ class MarketplaceService:
                 out[cat].append(card.to_dict())
         return out
 
+    async def diagnostic_summary(self) -> dict[str, Any]:
+        """Return a structured diagnostic of WHY connectors aren't callable.
+
+        Sprint-6 PR-2: the operator's "0 of 57 callable" pain point. The
+        Overview already shows the count, but doesn't explain WHY zero.
+        This summary buckets the catalog into actionable blocker reasons
+        + suggested next actions, ranked by count descending.
+
+        The output is deliberately READ-ONLY metadata: counts + small
+        example slices (entry_id + display_name only). It NEVER carries
+        config blobs, env values, secrets, or token state. Use it to
+        render the diagnostic block and a friendly empty-state copy.
+        """
+        cards = await self.list_cards()
+        return build_diagnostic_summary(cards)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Diagnostic summary (Sprint-6 PR-2)
+# ──────────────────────────────────────────────────────────────────
+
+
+# Stable blocker reason taxonomy. The frontend keys off these strings
+# for copy + iconography, so renames here are breaking changes.
+BLOCKER_REASON_NOT_IMPORTED = "not_imported"
+BLOCKER_REASON_COMING_SOON = "coming_soon"
+BLOCKER_REASON_NEEDS_API_KEY = "needs_api_key"
+BLOCKER_REASON_NEEDS_OAUTH = "needs_oauth"
+BLOCKER_REASON_NEEDS_PROBE = "needs_probe"
+BLOCKER_REASON_PROBE_FAILED = "probe_failed"
+BLOCKER_REASON_DISABLED = "disabled"
+BLOCKER_REASON_ARCHIVED = "archived"
+BLOCKER_REASON_SKILL_PACK = "skill_pack"
+
+
+_BLOCKER_LABEL = {
+    BLOCKER_REASON_NOT_IMPORTED: "Not imported yet (catalog metadata only)",
+    BLOCKER_REASON_COMING_SOON: "Coming soon (no local probe yet)",
+    BLOCKER_REASON_NEEDS_API_KEY: "Missing API key",
+    BLOCKER_REASON_NEEDS_OAUTH: "Not connected (OAuth flow not started)",
+    BLOCKER_REASON_NEEDS_PROBE: "Configured but never probed",
+    BLOCKER_REASON_PROBE_FAILED: "Last probe failed",
+    BLOCKER_REASON_DISABLED: "Disabled by operator",
+    BLOCKER_REASON_ARCHIVED: "Archived",
+    BLOCKER_REASON_SKILL_PACK: "Skill pack (not callable on its own)",
+}
+
+
+_BLOCKER_NEXT_ACTION = {
+    BLOCKER_REASON_NOT_IMPORTED: (
+        "Click Discover installed tools, then Probe to flip callable=true."
+    ),
+    BLOCKER_REASON_COMING_SOON: (
+        "On the roadmap. Daena cannot install or probe this connector yet."
+    ),
+    BLOCKER_REASON_NEEDS_API_KEY: (
+        "Paste the provider API key in Settings > Account > Provider keys."
+    ),
+    BLOCKER_REASON_NEEDS_OAUTH: (
+        "Open the App card and click Connect to start the OAuth flow."
+    ),
+    BLOCKER_REASON_NEEDS_PROBE: (
+        "Open the connector and click Probe to confirm the install works."
+    ),
+    BLOCKER_REASON_PROBE_FAILED: (
+        "Open the connector to see the failure_reason, then Retry probe."
+    ),
+    BLOCKER_REASON_DISABLED: (
+        "Re-enable from the connector card if you still want to use it."
+    ),
+    BLOCKER_REASON_ARCHIVED: (
+        "Restore from the Advanced > Archived view if needed."
+    ),
+    BLOCKER_REASON_SKILL_PACK: (
+        "Skill packs ride on top of other connectors and are never callable alone."
+    ),
+}
+
+
+def _classify_card_blocker(card: MarketplaceCard) -> str | None:
+    """Return the blocker reason for a card, or None if it is callable.
+
+    The classification reflects the lifecycle truth ladder:
+      * lifecycle in {callable, enabled} -> None (no blocker)
+      * archived / disabled / skill_pack / failed -> direct mapping
+      * coming-soon catalog entries that have no V2 row -> COMING_SOON
+      * api_provider missing key -> NEEDS_API_KEY
+      * oauth_app with no V2 row or unauthenticated -> NEEDS_OAUTH
+      * configured / installed / reachable but not callable -> NEEDS_PROBE
+      * available + no V2 row + not coming-soon -> NOT_IMPORTED
+    """
+    lifecycle = card.lifecycle
+    if lifecycle in ("callable", "enabled"):
+        return None
+    if lifecycle == "archived":
+        return BLOCKER_REASON_ARCHIVED
+    if lifecycle == "disabled":
+        return BLOCKER_REASON_DISABLED
+    if lifecycle == "skill_pack":
+        return BLOCKER_REASON_SKILL_PACK
+    if lifecycle == "failed":
+        return BLOCKER_REASON_PROBE_FAILED
+
+    catalog = card.catalog or {}
+    install_method = catalog.get("install_method", "")
+    kind = catalog.get("kind", "")
+    has_v2_row = card.v2_row_id is not None
+
+    if install_method == "coming-soon" and not has_v2_row:
+        return BLOCKER_REASON_COMING_SOON
+
+    if kind == "api_provider" and card.provider_key_present is False:
+        return BLOCKER_REASON_NEEDS_API_KEY
+
+    if kind == "oauth_app":
+        if not has_v2_row:
+            return BLOCKER_REASON_NEEDS_OAUTH
+        truth = card.v2_truth or {}
+        auth_dim = truth.get("authenticated") or {}
+        if not auth_dim.get("value"):
+            return BLOCKER_REASON_NEEDS_OAUTH
+
+    if lifecycle in ("configured", "installed", "reachable"):
+        return BLOCKER_REASON_NEEDS_PROBE
+
+    if lifecycle == "available" and not has_v2_row:
+        return BLOCKER_REASON_NOT_IMPORTED
+
+    # Catch-all: configured/intermediate state without a clear blocker
+    return BLOCKER_REASON_NEEDS_PROBE
+
+
+def build_diagnostic_summary(
+    cards: list[MarketplaceCard],
+    *,
+    examples_per_blocker: int = 3,
+) -> dict[str, Any]:
+    """Build the diagnostic summary dict from a list of marketplace cards.
+
+    Output shape (stable; frontend pins these keys):
+
+        {
+          "totals": {
+            "catalog": int,        # total cards
+            "callable": int,       # lifecycle in {callable, enabled}
+            "configured": int,     # lifecycle in {configured, reachable, installed}
+            "failed": int,         # lifecycle == failed
+            "skill_packs": int,    # lifecycle == skill_pack
+            "coming_soon": int,    # install_method == coming-soon
+            "available": int,      # lifecycle == available (no V2 row)
+            "blocked": int,        # catalog - callable
+          },
+          "top_blockers": [
+            {
+              "reason": str,              # one of BLOCKER_REASON_* constants
+              "label": str,               # operator-facing
+              "next_action": str,         # operator-facing
+              "count": int,
+              "examples": [ {entry_id, display_name}, ... ]
+            },
+            ...
+          ]
+        }
+    """
+    totals = {
+        "catalog": len(cards),
+        "callable": 0,
+        "configured": 0,
+        "failed": 0,
+        "skill_packs": 0,
+        "coming_soon": 0,
+        "available": 0,
+        "blocked": 0,
+    }
+    blocker_groups: dict[str, list[MarketplaceCard]] = {}
+
+    for card in cards:
+        lifecycle = card.lifecycle
+        if lifecycle in ("callable", "enabled"):
+            totals["callable"] += 1
+        if lifecycle in ("configured", "installed", "reachable"):
+            totals["configured"] += 1
+        if lifecycle == "failed":
+            totals["failed"] += 1
+        if lifecycle == "skill_pack":
+            totals["skill_packs"] += 1
+        if (card.catalog or {}).get("install_method") == "coming-soon":
+            totals["coming_soon"] += 1
+        if lifecycle == "available":
+            totals["available"] += 1
+
+        reason = _classify_card_blocker(card)
+        if reason is not None:
+            blocker_groups.setdefault(reason, []).append(card)
+
+    totals["blocked"] = totals["catalog"] - totals["callable"]
+
+    blockers_out = []
+    for reason, group in blocker_groups.items():
+        examples = [
+            {
+                "entry_id": (c.catalog or {}).get("id", ""),
+                "display_name": (c.catalog or {}).get("display_name", ""),
+            }
+            for c in group[:examples_per_blocker]
+        ]
+        blockers_out.append({
+            "reason": reason,
+            "label": _BLOCKER_LABEL.get(reason, reason),
+            "next_action": _BLOCKER_NEXT_ACTION.get(reason, ""),
+            "count": len(group),
+            "examples": examples,
+        })
+
+    blockers_out.sort(key=lambda b: (-b["count"], b["reason"]))
+
+    return {
+        "totals": totals,
+        "top_blockers": blockers_out,
+    }
+
 
 # ──────────────────────────────────────────────────────────────────
 # Install-plan helper (catalog-only; never executes)

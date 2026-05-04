@@ -211,6 +211,27 @@ async def get_marketplace_cards(
     }
 
 
+@router.get("/marketplace/diagnostic")
+async def get_marketplace_diagnostic(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Sprint-6 PR-2: Why aren't my connectors callable?
+
+    Returns aggregated blocker reasons + counts + 3 example entries
+    per blocker (entry_id + display_name only). The frontend renders
+    this as the "Top blockers" diagnostic block on the Connections
+    Overview when callable < total.
+
+    Read-only metadata. NEVER carries config blobs, env values,
+    secrets, or token state. The classification logic lives in
+    ``marketplace_service.build_diagnostic_summary``.
+    """
+    svc = MarketplaceService(db, tenant_id=user.tenant_id)
+    summary = await svc.diagnostic_summary()
+    return {"success": True, "data": summary}
+
+
 @router.get("/marketplace/install-plan/{entry_id}")
 async def get_install_plan(
     entry_id: str,

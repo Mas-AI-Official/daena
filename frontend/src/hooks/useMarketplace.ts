@@ -334,6 +334,97 @@ export function useMarketplaceCatalog(): UseMarketplaceCatalogResult {
   return { catalog, categories, loading, error }
 }
 
+// ──────────────────────────────────────────────────────────────────
+// Diagnostic summary (Sprint-6 PR-2)
+// ──────────────────────────────────────────────────────────────────
+//
+// Backed by GET /api/v1/connections/v2/marketplace/diagnostic. The
+// classification logic (which cards are blocked and why) lives in the
+// backend so frontend + backend never drift on what counts as
+// "callable". The hook is read-only metadata; never carries config /
+// secret / token data per the endpoint's contract.
+
+export type BlockerReason =
+  | 'not_imported'
+  | 'coming_soon'
+  | 'needs_api_key'
+  | 'needs_oauth'
+  | 'needs_probe'
+  | 'probe_failed'
+  | 'disabled'
+  | 'archived'
+  | 'skill_pack'
+
+export interface DiagnosticTotals {
+  catalog: number
+  callable: number
+  configured: number
+  failed: number
+  skill_packs: number
+  coming_soon: number
+  available: number
+  blocked: number
+}
+
+export interface DiagnosticBlocker {
+  reason: BlockerReason
+  label: string
+  next_action: string
+  count: number
+  examples: { entry_id: string; display_name: string }[]
+}
+
+export interface DiagnosticSummary {
+  totals: DiagnosticTotals
+  top_blockers: DiagnosticBlocker[]
+}
+
+export interface UseMarketplaceDiagnosticResult {
+  summary: DiagnosticSummary | null
+  loading: boolean
+  error: string | null
+  refresh: () => void
+}
+
+export function useMarketplaceDiagnostic(): UseMarketplaceDiagnosticResult {
+  const [summary, setSummary] = useState<DiagnosticSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const mounted = useRef(true)
+
+  const fetchOnce = useCallback(async () => {
+    try {
+      const res = await api.get<{
+        success: boolean
+        data: DiagnosticSummary
+      }>('/connections/v2/marketplace/diagnostic')
+      if (!mounted.current) return
+      setSummary(res.data?.data ?? null)
+      setError(null)
+    } catch (err) {
+      if (!mounted.current) return
+      setError(readError(err))
+    } finally {
+      if (mounted.current) setLoading(false)
+    }
+  }, [])
+
+  const refresh = useCallback(() => {
+    void fetchOnce()
+  }, [fetchOnce])
+
+  useEffect(() => {
+    mounted.current = true
+    void fetchOnce()
+    return () => {
+      mounted.current = false
+    }
+  }, [fetchOnce])
+
+  return { summary, loading, error, refresh }
+}
+
+
 export async function fetchInstallPlan(entryId: string): Promise<{
   ok: boolean
   plan?: InstallPlan

@@ -18,10 +18,13 @@ import {
 } from 'lucide-react'
 
 import {
+  type BlockerReason,
   type CatalogCategory,
+  type DiagnosticBlocker,
   type LifecycleState,
   type MarketplaceCard,
   useMarketplaceCards,
+  useMarketplaceDiagnostic,
 } from '@/hooks/useMarketplace'
 
 interface OverviewPanelProps {
@@ -50,6 +53,8 @@ const CATEGORY_TO_TAB: Record<string, string> = {
 
 export default function OverviewPanel({ onNavigateTab, lastDiscoveryAt }: OverviewPanelProps) {
   const { cards, loading, error, refresh } = useMarketplaceCards()
+  // Sprint-6 PR-2: explain "0 of N callable" with concrete blockers.
+  const { summary: diag } = useMarketplaceDiagnostic()
 
   const summary = useMemo(() => bucketCards(cards), [cards])
 
@@ -94,6 +99,17 @@ export default function OverviewPanel({ onNavigateTab, lastDiscoveryAt }: Overvi
           </div>
         )}
       </div>
+
+      {/* Sprint-6 PR-2: callability blockers diagnostic */}
+      {diag && diag.totals.blocked > 0 && diag.top_blockers.length > 0 && (
+        <BlockersBlock
+          blockers={diag.top_blockers}
+          callable={diag.totals.callable}
+          blocked={diag.totals.blocked}
+          total={diag.totals.catalog}
+          onNavigateTab={onNavigateTab}
+        />
+      )}
 
       <section>
         <h3 className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-starlight-300">
@@ -343,6 +359,118 @@ function SummaryTile({
     </div>
   )
 }
+
+// ──────────────────────────────────────────────────────────────────
+// Sprint-6 PR-2: BlockersBlock -- explain why connectors aren't callable.
+// ──────────────────────────────────────────────────────────────────
+
+const BLOCKER_TONE: Record<BlockerReason, keyof typeof TONES> = {
+  not_imported: 'cyan',
+  coming_soon: 'slate',
+  needs_api_key: 'amber',
+  needs_oauth: 'amber',
+  needs_probe: 'cyan',
+  probe_failed: 'rose',
+  disabled: 'slate',
+  archived: 'slate',
+  skill_pack: 'violet',
+}
+
+// Map blocker reason to the connections tab the operator should open.
+// Coming-soon and skill-pack point to overview itself (no useful action).
+const BLOCKER_TAB: Partial<Record<BlockerReason, string>> = {
+  not_imported: 'mcp',
+  needs_api_key: 'runtimes',
+  needs_oauth: 'apps',
+  needs_probe: 'mcp',
+  probe_failed: 'mcp',
+  disabled: 'mcp',
+  archived: 'mcp',
+}
+
+function BlockersBlock({
+  blockers, callable, blocked, total, onNavigateTab,
+}: {
+  blockers: DiagnosticBlocker[]
+  callable: number
+  blocked: number
+  total: number
+  onNavigateTab?: (tab: string) => void
+}) {
+  // The most-common blocker leads.
+  const ordered = [...blockers].sort((a, b) => b.count - a.count)
+  return (
+    <section
+      data-testid="overview-blockers-block"
+      className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-5"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-amber-100">
+            <Wrench size={14} />
+            Why aren't more connectors callable?
+          </h3>
+          <p className="mt-1 max-w-2xl text-xs text-amber-200/80">
+            {callable} of {total} are callable; {blocked} are blocked
+            for the reasons below. Each row is real (no fabricated
+            green pills) -- click through to fix the top blocker first.
+          </p>
+        </div>
+      </div>
+      <ul className="mt-4 space-y-2">
+        {ordered.slice(0, 5).map((b) => {
+          const tone = TONES[BLOCKER_TONE[b.reason]]
+          const targetTab = BLOCKER_TAB[b.reason]
+          return (
+            <li
+              key={b.reason}
+              className={`rounded-lg border ${tone.border} ${tone.bg} px-3 py-2.5`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className={`text-sm font-medium ${tone.text}`}>
+                  {b.label}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold ${tone.text}`}>
+                    {b.count}
+                  </span>
+                  {targetTab && onNavigateTab && (
+                    <button
+                      onClick={() => onNavigateTab(targetTab)}
+                      className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-starlight-200 hover:bg-white/10"
+                    >
+                      Open ›
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="mt-1 text-[11px] text-starlight-400">
+                {b.next_action}
+              </p>
+              {b.examples.length > 0 && (
+                <p className="mt-1 text-[10px] text-starlight-500">
+                  Examples:{' '}
+                  {b.examples.map((e) => e.display_name || e.entry_id).join(', ')}
+                  {b.count > b.examples.length && (
+                    <span> (+{b.count - b.examples.length} more)</span>
+                  )}
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {ordered.length > 5 && (
+        <p className="mt-3 text-[10px] text-starlight-500">
+          +{ordered.length - 5} additional blocker categor
+          {ordered.length - 5 === 1 ? 'y' : 'ies'} -- open the
+          relevant tab to see them.
+        </p>
+      )}
+    </section>
+  )
+}
+
 
 function CategoryTile({
   label, tab, icon, counts, hint, onNavigateTab, valueSuffix,
