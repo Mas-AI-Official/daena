@@ -27,6 +27,7 @@ import {
   useMarketplaceDiagnostic,
 } from '@/hooks/useMarketplace'
 import { SelfDiagnosticCard } from '@/components/common'
+import FirstCallableWizard from './FirstCallableWizard'
 
 interface OverviewPanelProps {
   /** Callback to navigate to a primary tab. */
@@ -100,6 +101,17 @@ export default function OverviewPanel({ onNavigateTab, lastDiscoveryAt }: Overvi
           </div>
         )}
       </div>
+
+      {/* Sprint-7 PR-3: first-callable wizard.
+          Shown ONLY when 0 of N callable. Auto-hides as soon as any
+          plugin flips to callable. The wizard is informational +
+          navigational -- it does NOT auto-install npm/pip/docker. */}
+      {summary.callable === 0 && summary.total > 0 && (
+        <FirstCallableWizard
+          catalogTotal={summary.total}
+          onNavigateTab={onNavigateTab}
+        />
+      )}
 
       {/* Sprint-6 PR-2: callability blockers diagnostic */}
       {diag && diag.totals.blocked > 0 && diag.top_blockers.length > 0 && (
