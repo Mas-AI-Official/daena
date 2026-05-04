@@ -33,6 +33,7 @@ from app.models.project import Project
 from app.models.skill import RefinedSkill
 from app.models.api_key import ApiKey
 from app.models.background_task import BackgroundTask
+from app.models.consent_grant import ConsentGrant
 from app.models.cron_run import CronRun
 from app.models.mcp_server import McpServer
 from app.models.notification import Notification
@@ -65,6 +66,7 @@ __all__ = [
     "Project",
     "ApiKey",
     "BackgroundTask",
+    "ConsentGrant",
     "CronRun",
     "McpServer",
     "Notification",

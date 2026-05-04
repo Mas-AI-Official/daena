@@ -44,12 +44,14 @@ from dataclasses import dataclass
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, get_current_user
+from app.api.deps import CurrentUser, get_current_user, get_db
 from app.core.logging import get_logger
 from app.services.connection_v2.skill_consent import (
     DEFAULT_GRANT_TTL_SECONDS,
     MAX_GRANT_TTL_SECONDS,
+    DBConsentStore,
     SkillConsentCategory,
     get_default_store,
 )
@@ -198,21 +200,40 @@ async def list_consent_categories(
 async def mint_consent_grant(
     body: SkillConsentGrantRequest,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
     """Mint a single-use consent grant for the (plugin, skill, category)
     triple. Tenant binding comes from the JWT, NEVER the request body.
 
+    Sprint-6 PR-5: persists to the ``consent_grants`` table via
+    ``DBConsentStore`` so grants survive restarts and multi-instance
+    deploys. The in-memory store remains the fallback for code paths
+    without a DB session (none currently exercise this).
+
     Returns: ``{data: {grant_id, plugin_id, skill_id, category,
     expires_at, write_blocking_active}}``. The grant_id is the only
     value the operator's UI needs to remember; the executor consults
-    the in-memory store on the next /skills/execute call.
+    the same store on the next /skills/execute call.
     """
     if body.plugin_id == "" or body.skill_id == "":
         raise HTTPException(status_code=400, detail="plugin_id_and_skill_id_required")
 
-    store = get_default_store()
     ttl = body.ttl_seconds or DEFAULT_GRANT_TTL_SECONDS
-    grant = store.grant(
+    db_store = DBConsentStore(db)
+    grant = await db_store.grant(
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        plugin_id=body.plugin_id,
+        skill_id=body.skill_id,
+        category=body.category,
+        ttl_seconds=ttl,
+    )
+    # Sprint-6 PR-5 transition: also write to the in-memory store so
+    # the existing executor (which reads from get_default_store()) keeps
+    # finding grants minted via the API. A follow-up PR can flip the
+    # executor over to the DB store once it has a session in scope.
+    in_memory = get_default_store()
+    in_memory.grant(
         tenant_id=str(user.tenant_id),
         plugin_id=body.plugin_id,
         skill_id=body.skill_id,

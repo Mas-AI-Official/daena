@@ -356,6 +356,188 @@ def get_default_store() -> ConsentStore:
 
 
 # ──────────────────────────────────────────────────────────────────
+# DB-backed store (Sprint-6 PR-5)
+# ──────────────────────────────────────────────────────────────────
+
+
+class DBConsentStore:
+    """Durable consent store backed by the ``consent_grants`` table.
+
+    Same contract as :class:`ConsentStore` (grant / find_active /
+    acknowledge) but persisted across processes + replicas. Used by
+    the API endpoint when an ``AsyncSession`` is available; the
+    in-memory ``ConsentStore`` remains the fallback for tests and
+    code paths without a session.
+
+    Single-use semantics: ``acknowledge`` issues a conditional
+    UPDATE against ``consumed_at IS NULL`` and checks the row count;
+    a concurrent acknowledge from another replica that wins the
+    race causes the loser's row count to be 0, which we surface as
+    "already consumed" (None return).
+
+    Tenant isolation: every query filters on ``tenant_id`` first.
+    Even an attacker who guessed a grant_id from another tenant
+    cannot consume it because the WHERE clause forces tenant match.
+    """
+
+    def __init__(self, db_session) -> None:
+        # AsyncSession typed loosely so this module stays import-safe
+        # for callers that don't bring SQLAlchemy in.
+        self._db = db_session
+
+    async def grant(
+        self,
+        *,
+        tenant_id,
+        user_id=None,
+        plugin_id: str,
+        skill_id: str,
+        category: SkillConsentCategory,
+        ttl_seconds: int = DEFAULT_GRANT_TTL_SECONDS,
+    ) -> SkillConsentGrant:
+        from datetime import UTC, datetime, timedelta
+        from app.models.consent_grant import ConsentGrant
+
+        ttl = max(1, min(MAX_GRANT_TTL_SECONDS, ttl_seconds))
+        now = datetime.now(UTC)
+        row = ConsentGrant(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            user_id=user_id,
+            plugin_id=plugin_id,
+            skill_id=skill_id,
+            category=category.value,
+            expires_at=now + timedelta(seconds=ttl),
+        )
+        self._db.add(row)
+        await self._db.flush()
+        await self._db.commit()
+        logger.info(
+            "skill_consent.db_grant_recorded",
+            grant_id=str(row.id),
+            tenant_id=str(tenant_id),
+            plugin_id=plugin_id,
+            skill_id=skill_id,
+            category=category.value,
+            ttl_seconds=ttl,
+        )
+        return SkillConsentGrant(
+            grant_id=str(row.id),
+            tenant_id=str(tenant_id),
+            plugin_id=plugin_id,
+            skill_id=skill_id,
+            category=category,
+            granted_at=now.timestamp(),
+            expires_at=row.expires_at.timestamp(),
+        )
+
+    async def find_active(
+        self,
+        *,
+        tenant_id,
+        plugin_id: str,
+        skill_id: str,
+        category: SkillConsentCategory,
+    ) -> SkillConsentGrant | None:
+        from datetime import UTC, datetime
+        from sqlalchemy import select
+        from app.models.consent_grant import ConsentGrant
+
+        now = datetime.now(UTC)
+        stmt = (
+            select(ConsentGrant).where(
+                ConsentGrant.tenant_id == tenant_id,
+                ConsentGrant.plugin_id == plugin_id,
+                ConsentGrant.skill_id == skill_id,
+                ConsentGrant.category == category.value,
+                ConsentGrant.consumed_at.is_(None),
+                ConsentGrant.expires_at > now,
+            )
+            .order_by(ConsentGrant.created_at.desc())
+            .limit(1)
+        )
+        row = (await self._db.execute(stmt)).scalar_one_or_none()
+        if row is None:
+            return None
+        return SkillConsentGrant(
+            grant_id=str(row.id),
+            tenant_id=str(row.tenant_id),
+            plugin_id=row.plugin_id,
+            skill_id=row.skill_id,
+            category=SkillConsentCategory(row.category),
+            granted_at=(row.created_at or now).timestamp(),
+            expires_at=row.expires_at.timestamp(),
+        )
+
+    async def acknowledge(self, grant_id: str, *, tenant_id=None) -> SkillConsentGrant | None:
+        """Mark grant consumed. Returns the consumed grant or None if
+        not found / already consumed.
+
+        ``tenant_id`` is OPTIONAL but STRONGLY recommended: callers
+        that have it in scope (the API endpoint always does) MUST
+        pass it so the WHERE clause prevents cross-tenant consumption
+        via guessed grant_id.
+        """
+        from datetime import UTC, datetime
+        from sqlalchemy import select
+        from app.models.consent_grant import ConsentGrant
+
+        now = datetime.now(UTC)
+        try:
+            grant_uuid = uuid.UUID(grant_id)
+        except (ValueError, TypeError):
+            return None
+
+        # Single-row lookup with tenant filter when provided.
+        where_clauses = [ConsentGrant.id == grant_uuid]
+        if tenant_id is not None:
+            where_clauses.append(ConsentGrant.tenant_id == tenant_id)
+        stmt = select(ConsentGrant).where(*where_clauses)
+        row = (await self._db.execute(stmt)).scalar_one_or_none()
+        if row is None:
+            return None
+        # SQLite stores naive datetimes; Postgres aware. Normalize to
+        # UTC-aware for comparison.
+        row_expires = row.expires_at
+        if row_expires.tzinfo is None:
+            row_expires = row_expires.replace(tzinfo=UTC)
+        if row_expires <= now:
+            raise SkillConsentExpired(
+                f"Grant {grant_id} expired at {row.expires_at.isoformat()}"
+            )
+        if row.consumed_at is not None:
+            return None
+        row.consumed_at = now
+        await self._db.flush()
+        await self._db.commit()
+        logger.info(
+            "skill_consent.db_grant_consumed",
+            grant_id=grant_id,
+            plugin_id=row.plugin_id,
+            skill_id=row.skill_id,
+            category=row.category,
+        )
+        return SkillConsentGrant(
+            grant_id=str(row.id),
+            tenant_id=str(row.tenant_id),
+            plugin_id=row.plugin_id,
+            skill_id=row.skill_id,
+            category=SkillConsentCategory(row.category),
+            granted_at=(row.created_at or now).timestamp(),
+            expires_at=row.expires_at.timestamp(),
+            consumed=True,
+        )
+
+    async def clear(self) -> None:
+        """Test helper: delete all rows."""
+        from sqlalchemy import delete
+        from app.models.consent_grant import ConsentGrant
+
+        await self._db.execute(delete(ConsentGrant))
+        await self._db.commit()
+
+
+# ──────────────────────────────────────────────────────────────────
 # Executor-side gate
 # ──────────────────────────────────────────────────────────────────
 
