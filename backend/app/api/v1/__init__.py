@@ -65,6 +65,7 @@ from app.api.v1 import (
     skill_refinery,
     skills,
     souls,
+    system_self_diagnostic,
     tts,
     voice_ws,
     waitlist,
@@ -208,4 +209,13 @@ router.include_router(notifications.router, tags=["notifications"])
 # WebSocket client, no tests). Chat SSE at /api/v1/chat/messages/stream is the
 # canonical streaming surface. The ConnectionManager at app/core/websocket.py
 # is retained for future LLM-pipeline streaming reuse. voice_ws is independent.
+# Sprint-6 PR-7: system self-diagnostic. Single read-only endpoint
+# that aggregates backend / DB / migration / frontend / local-model
+# / connector-callability state into one payload Daena can speak to
+# in chat. Never modifies state.
+router.include_router(
+    system_self_diagnostic.router,
+    prefix="/system",
+    tags=["system-self-diagnostic"],
+)
 router.include_router(voice_ws.router, tags=["voice-websocket"])

@@ -26,6 +26,7 @@ import {
   useMarketplaceCards,
   useMarketplaceDiagnostic,
 } from '@/hooks/useMarketplace'
+import { SelfDiagnosticCard } from '@/components/common'
 
 interface OverviewPanelProps {
   /** Callback to navigate to a primary tab. */
@@ -225,6 +226,9 @@ export default function OverviewPanel({ onNavigateTab, lastDiscoveryAt }: Overvi
           />
         </div>
       </section>
+
+      {/* Sprint-6 PR-7: Daena's runtime self-awareness card. */}
+      <SelfDiagnosticCard />
 
       {summary.failed > 0 && (
         <section className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-4">
