@@ -160,6 +160,8 @@ SkillExecutionStatus = Literal[
     "blocked",         # not in allowlist OR write/browser/payment skill
     "needs_connection",  # plugin V2 row not callable
     "needs_inputs",    # required_inputs missing from operator
+    "needs_consent",   # PR-CONN-ASSET-SHIELD-CONSENT-DESIGN: write-class skill
+                       # needs an operator consent grant before it can fire
     "unsupported",     # plugin/skill pair not registered at all
 ]
 
@@ -720,9 +722,19 @@ class SkillExecutor:
     integration at a time after end-to-end safety verification.
     """
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(
+        self, db: AsyncSession, *, consent_store: Any | None = None,
+    ) -> None:
         self.db = db
         self._audit = AuditService(db)
+        # PR-CONN-ASSET-SHIELD-CONSENT-DESIGN (Sprint-4 PR-4, 2026-05-03):
+        # consent_store is the seam for tests to inject a fresh
+        # in-memory ConsentStore. Production uses the module-level
+        # singleton via skill_consent.get_default_store().
+        from app.services.connection_v2.skill_consent import (
+            get_default_store,
+        )
+        self._consent_store = consent_store or get_default_store()
 
     async def execute(
         self,
@@ -757,7 +769,44 @@ class SkillExecutor:
                 ),
             )
 
-        # Step 2: read-only gate (defense in depth -- the import-time
+        # Step 2: Asset Shield consent gate.
+        # PR-CONN-ASSET-SHIELD-CONSENT-DESIGN (Sprint-4 PR-4, 2026-05-03):
+        # categorize the skill into a risk class. read_only=True entries
+        # return None (no consent needed -- Phase 2 universe). Anything
+        # else either consumes a matching operator grant from the
+        # ConsentStore or surfaces a consent_required outcome carrying
+        # the consent request blob the operator's approval queue can
+        # display + approve.
+        #
+        # For Phase 2 today this gate is DORMANT (every allowlist entry
+        # is read_only=True). The synthetic-write tests in
+        # ``tests/test_skill_consent.py`` exercise the gate's wiring
+        # and prove a write skill cannot fire without consent.
+        from app.services.connection_v2.skill_consent import (
+            check_consent_or_request,
+            SkillConsentRequest,
+        )
+        consent_allowed, consent_category, consent_request = (
+            check_consent_or_request(
+                entry, tenant_id=tenant_id, store=self._consent_store,
+            )
+        )
+        if not consent_allowed:
+            req = consent_request
+            return await self._record_blocked(
+                plugin_id=plugin_id,
+                skill_id=skill_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                reason="consent_required",
+                status_override="needs_consent",
+                summary=(
+                    req.operator_facing_summary if req else
+                    f"Skill {plugin_id}:{skill_id} needs consent."
+                ),
+            )
+
+        # Step 3: read-only gate (defense in depth -- the import-time
         # invariant should already prevent any read_only=False entry from
         # reaching here, but we re-check at execute time so a future
         # mutation of PHASE2_ALLOWLIST can't slip past).
