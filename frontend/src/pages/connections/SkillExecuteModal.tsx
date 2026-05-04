@@ -29,12 +29,30 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, Loader2, Lock, Play, ShieldCheck, X,
+  AlertTriangle, ArrowRight, Loader2, Lock, Play, ShieldCheck, User, X,
 } from 'lucide-react'
 
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
 import { draftMessage } from '@/lib/composerBridge'
+
+// PR-CONN-FRONTEND-ACCOUNT-PROFILE-PICKER (Sprint-5 PR-2):
+// plugin_id -> provider slug for the owner_email account picker. Only
+// OAuth-backed plugins map; non-OAuth (mcp-*) plugins skip the picker
+// entirely and the modal renders identically to before.
+const PLUGIN_TO_OAUTH_PROVIDER: Record<string, string> = {
+  'app-gmail': 'gmail',
+  'app-google-drive': 'google-drive',
+  'app-google-calendar': 'google-calendar',
+  'app-slack': 'slack',
+  'app-github': 'github',
+}
+
+interface OAuthAccount {
+  instance_id: string
+  owner_email: string | null
+  status: string
+}
 
 export interface Phase2AllowlistRow {
   plugin_id: string
@@ -89,6 +107,22 @@ export default function SkillExecuteModal({
   const [result, setResult] = useState<SkillExecutionResultDTO | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // PR-CONN-FRONTEND-ACCOUNT-PROFILE-PICKER (Sprint-5 PR-2):
+  // for OAuth-backed plugins, fetch the connected accounts so the
+  // operator can pick which Google profile (e.g. masoud@... vs
+  // daena@...) the skill should run as. The picker:
+  //   - is invisible for non-OAuth plugins (mcp-*)
+  //   - auto-selects the only account when there's just one
+  //   - REQUIRES explicit selection when multiple are connected
+  //   - shows a "no account connected" message when there's none
+  const oauthProvider =
+    allowlistRow.backend_surface === 'oauth'
+      ? PLUGIN_TO_OAUTH_PROVIDER[pluginId] ?? null
+      : null
+  const [accounts, setAccounts] = useState<OAuthAccount[] | null>(null)
+  const [accountsLoading, setAccountsLoading] = useState(false)
+  const [selectedOwnerEmail, setSelectedOwnerEmail] = useState<string | null>(null)
+
   // Reset state on (plugin, skill) change so reusing the same modal
   // for a different skill doesn't carry old inputs across.
   useEffect(() => {
@@ -96,22 +130,78 @@ export default function SkillExecuteModal({
     setSubmitting(false)
     setResult(null)
     setError(null)
+    setAccounts(null)
+    setSelectedOwnerEmail(null)
   }, [pluginId, skillId])
+
+  // Fetch OAuth accounts when the plugin is OAuth-backed.
+  useEffect(() => {
+    if (!oauthProvider) return
+    let cancelled = false
+    setAccountsLoading(true)
+    api.get<{ data: { provider: string; accounts: OAuthAccount[] } }>(
+      `/connectors/oauth/accounts?provider=${encodeURIComponent(oauthProvider)}`,
+    ).then((res) => {
+      if (cancelled) return
+      const list = res.data?.data?.accounts ?? []
+      // Only show CONNECTED accounts in the picker -- DISCONNECTED /
+      // NEEDS_REAUTH rows would just confuse the operator.
+      const connected = list.filter(a => a.status === 'CONNECTED')
+      setAccounts(connected)
+      // Auto-select the only one. If multiple, leave null so the
+      // operator must explicitly pick (the run button gates on this).
+      if (connected.length === 1) {
+        setSelectedOwnerEmail(connected[0].owner_email)
+      }
+    }).catch(() => {
+      if (cancelled) return
+      setAccounts([])
+    }).finally(() => {
+      if (!cancelled) setAccountsLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [oauthProvider])
 
   const allInputsSupplied = allowlistRow.required_inputs.every(
     f => (inputs[f] ?? '').trim().length > 0,
   )
 
+  // OAuth picker gate:
+  //   - non-OAuth plugin -> always satisfied (true)
+  //   - OAuth plugin with 0 accounts -> never satisfied
+  //   - OAuth plugin with 1 account -> auto-selected
+  //   - OAuth plugin with N accounts -> requires explicit selection
+  // Note: a NULL owner_email (orphan from failed identity fetch in
+  // PR-1) still counts as "selected" if the operator picks it -- the
+  // executor will resolve via instance_id/credentials fallback.
+  const accountSatisfied =
+    !oauthProvider
+    || (accounts !== null
+        && accounts.length > 0
+        && (accounts.length === 1 || selectedOwnerEmail !== null
+            || accounts.some(a => a.owner_email === selectedOwnerEmail)))
+  const canRun = allInputsSupplied && accountSatisfied && !accountsLoading
+
   async function handleRun() {
     setSubmitting(true)
     setError(null)
     try {
+      // PR-CONN-FRONTEND-ACCOUNT-PROFILE-PICKER (Sprint-5 PR-2):
+      // attach `_owner_email` to operator_inputs so the executor's
+      // _find_oauth_instance gate can disambiguate when the operator
+      // has multiple Google accounts connected. Empty/null owner_email
+      // (orphan from failed identity fetch) still gets passed as
+      // empty string -- the executor falls back to credentials lookup.
+      const operator_inputs: Record<string, string> = { ...inputs }
+      if (oauthProvider && selectedOwnerEmail) {
+        operator_inputs._owner_email = selectedOwnerEmail
+      }
       const res = await api.post<SkillExecutionResultDTO>(
         '/connections/v2/skills/execute',
         {
           plugin_id: pluginId,
           skill_id: skillId,
-          operator_inputs: inputs,
+          operator_inputs,
         },
       )
       setResult(res.data)
@@ -218,6 +308,65 @@ export default function SkillExecuteModal({
               written for every attempt.
             </p>
           </section>
+
+          {/* OAuth account picker (Sprint-5 PR-2) */}
+          {oauthProvider && !result && (
+            <section data-testid="oauth-account-picker">
+              <h3 className="mb-1.5 text-[10px] uppercase tracking-[0.16em] text-starlight-500">
+                Run as account
+              </h3>
+              {accountsLoading && (
+                <p className="text-[11px] text-starlight-400">
+                  Loading connected accounts...
+                </p>
+              )}
+              {!accountsLoading && accounts !== null && accounts.length === 0 && (
+                <p className="rounded-md border border-amber-500/30 bg-amber-500/[0.05] px-3 py-2 text-[11px] text-amber-200">
+                  No {oauthProvider} account connected. Open the connector and
+                  connect your Google account before running this skill.
+                </p>
+              )}
+              {!accountsLoading && accounts !== null && accounts.length === 1 && (
+                <p className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/20 bg-emerald-500/[0.05] px-2.5 py-1 text-[11px] text-emerald-100">
+                  <User size={11} />
+                  {accounts[0].owner_email ?? '(account profile unknown)'}
+                </p>
+              )}
+              {!accountsLoading && accounts !== null && accounts.length > 1 && (
+                <div className="space-y-1">
+                  <p className="text-[11px] text-starlight-400">
+                    Multiple {oauthProvider} accounts are connected. Pick which
+                    one Daena should use for this run.
+                  </p>
+                  {accounts.map((a) => {
+                    const label = a.owner_email ?? '(account profile unknown)'
+                    const checked = selectedOwnerEmail === a.owner_email
+                    return (
+                      <label
+                        key={a.instance_id}
+                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px] ${
+                          checked
+                            ? 'border-primary-500/50 bg-primary-500/10 text-primary-100'
+                            : 'border-white/10 bg-white/[0.03] text-starlight-200 hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="oauth-account"
+                          value={a.owner_email ?? ''}
+                          checked={checked}
+                          onChange={() => setSelectedOwnerEmail(a.owner_email)}
+                          className="accent-primary-400"
+                        />
+                        <User size={11} />
+                        <span>{label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Required inputs */}
           {allowlistRow.required_inputs.length > 0 && !result && (
@@ -330,8 +479,17 @@ export default function SkillExecuteModal({
               {!result && (
                 <button
                   onClick={() => void handleRun()}
-                  disabled={submitting || !allInputsSupplied}
+                  disabled={submitting || !canRun}
                   className="inline-flex items-center gap-1.5 rounded-md border border-primary-500/40 bg-primary-500/15 px-3 py-1.5 text-[11px] font-medium text-primary-100 hover:bg-primary-500/25 disabled:opacity-40"
+                  title={
+                    !allInputsSupplied
+                      ? 'Fill in all required inputs.'
+                      : oauthProvider && (accounts?.length ?? 0) === 0
+                        ? `No ${oauthProvider} account is connected.`
+                        : oauthProvider && (accounts?.length ?? 0) > 1 && !selectedOwnerEmail
+                          ? `Pick which ${oauthProvider} account to use.`
+                          : 'Run the skill.'
+                  }
                 >
                   {submitting ? (
                     <Loader2 size={11} className="animate-spin" />

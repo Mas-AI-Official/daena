@@ -7,6 +7,10 @@ Endpoints:
     GET  /connectors/oauth/callback                  -- Handle provider redirect
     POST /connectors/{instance_id}/oauth/refresh      -- Manual token refresh
     GET  /connectors/oauth/providers                  -- List supported providers
+    GET  /connectors/oauth/accounts?provider=gmail   -- List connected
+                                                       owner_email accounts
+                                                       for the picker UI
+                                                       (Sprint-5 PR-2)
 """
 
 from __future__ import annotations
@@ -334,6 +338,85 @@ async def oauth_callback(
             """,
             status_code=500,
         )
+
+
+@router.get("/oauth/accounts")
+async def list_oauth_accounts(
+    provider: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+) -> JSONResponse:
+    """List the operator's connected OAuth accounts for a provider.
+
+    PR-CONN-FRONTEND-ACCOUNT-PROFILE-PICKER (Sprint-5 PR-2, 2026-05-03).
+
+    Returns the minimum metadata the picker UI needs to disambiguate
+    multi-account flows (e.g. masoud@mas-ai.co vs daena@mas-ai.co
+    Gmail). NEVER returns:
+      * Access or refresh tokens.
+      * The encrypted ``credentials`` blob.
+      * Any field that could be substring-mistaken for a token by the
+        executor's audit walk (``access_token`` / ``refresh_token`` /
+        ``bearer`` / ``secret``).
+
+    Shape:
+        {
+          "data": {
+            "provider": "gmail",
+            "accounts": [
+              {
+                "instance_id": "uuid",
+                "owner_email": "daena@mas-ai.co" | null,
+                "status": "CONNECTED" | "DISCONNECTED" | ...
+              },
+              ...
+            ]
+          }
+        }
+    """
+    from sqlalchemy import select
+    from app.models.connections import Connector, ConnectorInstance
+
+    connector_name = _PROVIDER_TO_CONNECTOR_NAME.get(provider)
+    if connector_name is None:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "unsupported_provider", "provider": provider},
+        )
+
+    connector = (
+        await db.execute(
+            select(Connector).where(Connector.name == connector_name),
+        )
+    ).scalar_one_or_none()
+    if connector is None:
+        # Provider known to OAUTH_PROVIDERS but no catalog row installed
+        # for this tenant -- empty list is the honest answer.
+        return JSONResponse(content={
+            "data": {"provider": provider, "accounts": []},
+        })
+
+    rows = (
+        await db.execute(
+            select(ConnectorInstance).where(
+                ConnectorInstance.connector_id == connector.id,
+                ConnectorInstance.tenant_id == user.tenant_id,
+                ConnectorInstance.user_id == user.id,
+            )
+        )
+    ).scalars().all()
+
+    accounts = [
+        {
+            "instance_id": str(inst.id),
+            "owner_email": inst.owner_email,
+            "status": inst.status,
+        }
+        for inst in rows
+    ]
+    return JSONResponse(content={
+        "data": {"provider": provider, "accounts": accounts},
+    })
 
 
 @router.post("/{instance_id}/oauth/refresh")
