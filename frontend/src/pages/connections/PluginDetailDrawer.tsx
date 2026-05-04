@@ -271,6 +271,14 @@ export default function PluginDetailDrawer({
             </Section>
           )}
 
+          {/* ── PR-CONN-GOV-PRESETS-API-UI (Sprint-5 PR-5):
+              vendor-recommended governance tier per skill class.
+              Metadata-only -- the consent gate + read_only defense
+              remain the actual enforcement. ── */}
+          <Section title="Governance recommendations">
+            <GovernancePresetsBlock pluginId={plugin.id} />
+          </Section>
+
           {/* ── Provider key deep-link ── */}
           {isProvider && (
             <Section title="Where keys live">
@@ -989,5 +997,150 @@ function RiskInline({ risk }: { risk: PluginCard['risk_level'] }) {
       {risk === 'high' && <ShieldAlert size={10} className="mr-1 inline" />}
       {risk}
     </span>
+  )
+}
+
+
+// ── PR-CONN-GOV-PRESETS-API-UI (Sprint-5 PR-5, 2026-05-03) ──
+// Vendor-recommended governance tier per skill class. Pure metadata --
+// the actual enforcement remains the consent gate + read_only defense.
+// Cached at module level so opening multiple drawers in one session
+// makes ONE network call total.
+
+interface GovernancePreset {
+  plugin_id: string
+  rationale: string
+  tiers: Record<string, string>
+  _is_fallback?: boolean
+}
+
+let _presetsCache: GovernancePreset[] | null = null
+let _presetsPromise: Promise<GovernancePreset[]> | null = null
+
+async function loadPresets(): Promise<GovernancePreset[]> {
+  if (_presetsCache) return _presetsCache
+  if (_presetsPromise) return _presetsPromise
+  _presetsPromise = (async () => {
+    try {
+      const { api } = await import('@/lib/api')
+      const res = await api.get<{ data: { presets: GovernancePreset[] } }>(
+        '/connections/v2/governance/plugin-presets',
+      )
+      _presetsCache = res.data?.data?.presets ?? []
+      return _presetsCache
+    } catch {
+      _presetsCache = []
+      return _presetsCache
+    } finally {
+      _presetsPromise = null
+    }
+  })()
+  return _presetsPromise
+}
+
+function tierTone(tier: string): {
+  border: string; bg: string; text: string;
+} {
+  switch (tier) {
+    case 'allow':
+      return {
+        border: 'border-emerald-500/30',
+        bg: 'bg-emerald-500/[0.06]',
+        text: 'text-emerald-200',
+      }
+    case 'ask':
+      return {
+        border: 'border-amber-500/30',
+        bg: 'bg-amber-500/[0.06]',
+        text: 'text-amber-200',
+      }
+    case 'deny':
+      return {
+        border: 'border-rose-500/30',
+        bg: 'bg-rose-500/[0.06]',
+        text: 'text-rose-200',
+      }
+    default:
+      return {
+        border: 'border-white/10',
+        bg: 'bg-white/[0.04]',
+        text: 'text-starlight-300',
+      }
+  }
+}
+
+function humanizeClass(c: string): string {
+  return c.replace(/_/g, ' ')
+}
+
+function GovernancePresetsBlock({ pluginId }: { pluginId: string }) {
+  const [presets, setPresets] = useState<GovernancePreset[] | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    loadPresets().then((p) => {
+      if (!cancelled) setPresets(p)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  if (presets === null) {
+    return (
+      <p className="text-[11px] text-starlight-400">
+        Loading vendor governance recommendations...
+      </p>
+    )
+  }
+
+  // Find the matching preset; fall back to DEFAULT (_is_fallback=true).
+  const match = presets.find((p) => p.plugin_id === pluginId)
+  const fallback = presets.find((p) => p._is_fallback)
+  const preset = match ?? fallback
+  if (!preset) {
+    return (
+      <p className="text-[11px] text-starlight-500">
+        No vendor governance recommendation available for this plugin.
+      </p>
+    )
+  }
+
+  const isFallback = !!preset._is_fallback
+  const hasDeny = Object.values(preset.tiers).includes('deny')
+
+  return (
+    <div
+      data-testid="governance-presets-block"
+      className="space-y-2 rounded-lg border border-white/5 bg-white/[0.02] p-3"
+    >
+      <p className="text-[11px] text-starlight-300 leading-snug">
+        {isFallback
+          ? 'No specific recommendation in the vendor table -- showing the default baseline. The operator policy editor can override these.'
+          : preset.rationale}
+      </p>
+      {hasDeny && !isFallback && (
+        <p className="inline-flex items-start gap-1 rounded-md border border-rose-500/30 bg-rose-500/[0.06] px-2 py-1 text-[10px] text-rose-200">
+          <ShieldAlert size={11} className="mt-0.5 shrink-0" />
+          High-risk plugin: at least one skill class is recommended DENY by default.
+        </p>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(preset.tiers).map(([cls, tier]) => {
+          const tone = tierTone(tier)
+          return (
+            <span
+              key={cls}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] ${tone.border} ${tone.bg} ${tone.text}`}
+              title={`Vendor recommends ${tier.toUpperCase()} for ${humanizeClass(cls)} on this plugin`}
+            >
+              <span className="opacity-60 uppercase tracking-wider">{humanizeClass(cls)}</span>
+              <span className="font-semibold uppercase">{tier}</span>
+            </span>
+          )
+        })}
+      </div>
+      <p className="text-[10px] text-starlight-500">
+        Metadata only -- enforcement still runs through the consent
+        gate + Phase 2 read_only defense.
+      </p>
+    </div>
   )
 }

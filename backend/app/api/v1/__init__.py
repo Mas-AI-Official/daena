@@ -59,6 +59,7 @@ from app.api.v1 import (
     security_mode,
     self_improvement,
     settings,
+    plugin_governance_presets_api,
     skill_consent_api,
     skill_execution,
     skill_refinery,
@@ -108,6 +109,15 @@ router.include_router(
     skill_consent_api.router,
     prefix="/connections/v2/skill-consent",
     tags=["connections-v2-skill-consent"],
+)
+# PR-CONN-GOV-PRESETS-API-UI (Sprint-5 PR-5, 2026-05-03):
+# vendor governance recommendations per plugin (ALLOW / ASK / DENY
+# tiers per skill class). Metadata-only; the consent gate +
+# read_only defense remain the actual enforcement.
+router.include_router(
+    plugin_governance_presets_api.router,
+    prefix="/connections/v2/governance",
+    tags=["connections-v2-governance"],
 )
 # Department Minds (souls) -- persona overlays for the 10 departments +
 # founder-gated refinement pipeline (/souls list/get, /souls/{dept}/refine,
