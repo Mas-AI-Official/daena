@@ -154,7 +154,10 @@ export default function MarketplaceCard({
               </span>
             )}
             {cat.install_method === 'coming-soon' && (
-              <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-200">
+              <span
+                className="rounded-md border border-slate-500/20 bg-slate-500/5 px-1.5 py-0.5 text-[10px] text-slate-300"
+                title="Daena cannot install or probe this connector yet -- catalog metadata only."
+              >
                 coming soon
               </span>
             )}

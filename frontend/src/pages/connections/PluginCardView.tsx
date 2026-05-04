@@ -229,11 +229,10 @@ export default function PluginCardView({
                 </span>
               )
             })()}
-            {plugin.install_method === 'coming-soon' && plugin.officiality !== 'coming-soon' && (
-              <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-200">
-                coming soon
-              </span>
-            )}
+            {/* Sprint-6 PR-3: the dedicated `coming_soon` PluginStatus
+                renders a slate pill via pluginStatusTone(); the old
+                redundant amber pill (which made the whole card look
+                like a warning) is removed. */}
             {plugin.is_skill_pack && (
               <span
                 className="rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-200"
@@ -250,6 +249,22 @@ export default function PluginCardView({
             <div className="flex items-start gap-1.5 rounded-md border border-rose-500/30 bg-rose-500/5 px-2 py-1 text-[11px] text-rose-200">
               <AlertTriangle size={11} className="mt-0.5 shrink-0" />
               <span className="line-clamp-2">{plugin.failure_reason}</span>
+            </div>
+          )}
+
+          {/* Sprint-6 PR-3: coming-soon honest notice. Slate, not amber/rose,
+              so the operator reads it as intentional roadmap parity rather
+              than a broken install. */}
+          {plugin.status === 'coming_soon' && (
+            <div
+              data-testid="plugin-card-coming-soon-notice"
+              className="flex items-start gap-1.5 rounded-md border border-slate-500/20 bg-slate-500/5 px-2 py-1 text-[11px] text-slate-300"
+            >
+              <Wrench size={11} className="mt-0.5 shrink-0" />
+              <span className="line-clamp-2">
+                Roadmap parity only. Daena cannot install or probe this
+                connector yet -- catalog metadata only.
+              </span>
             </div>
           )}
 

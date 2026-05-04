@@ -41,6 +41,12 @@ export type PluginStatus =
   | 'connected'
   | 'failed'
   | 'not_supported_on_os'
+  // Sprint-6 PR-3: roadmap-parity catalog entries with no local probe.
+  // Visually neutral (slate) to avoid "broken/red" perception, but
+  // distinguished from `available` so the action button can stay
+  // disabled and the drawer can show the right "no local probe yet"
+  // copy. NEVER fires for entries that have a real installer/probe.
+  | 'coming_soon'
 
 export type PluginAction =
   | 'install'
@@ -112,6 +118,7 @@ const STATUS_LABELS: Record<PluginStatus, string> = {
   connected: 'Connected',
   failed: 'Failed',
   not_supported_on_os: 'Not supported on this OS',
+  coming_soon: 'Coming soon',
 }
 
 const ACTION_LABELS: Record<PluginAction, string> = {
@@ -196,6 +203,18 @@ function deriveStatus(card: MarketplaceCard, entry: CatalogEntry): PluginStatus 
   if (entry.kind === 'skill_pack') return 'connected'
   if (card.lifecycle === 'skill_pack') return 'connected'
 
+  // Sprint-6 PR-3: coming-soon catalog entries that haven't been
+  // wired for a real installer / probe get a neutral status of their
+  // own. Without this, Browserbase + similar entries displayed
+  // either "Available" (with an action button that goes nowhere
+  // useful) or "Failed" (after a stale probe returned
+  // unsupported_tool) -- both misleading. Coming-soon beats
+  // available + failed because the catalog declared it: there is
+  // nothing the operator can do locally to advance the state.
+  if (entry.install_method === 'coming-soon' && !card.v2_row_id) {
+    return 'coming_soon'
+  }
+
   // Failure overrides happy-path
   if (card.lifecycle === 'failed') return 'failed'
 
@@ -226,6 +245,14 @@ function deriveAction(
 ): { action: PluginAction; enabled: boolean } {
   // OS gate
   if (status === 'not_supported_on_os') {
+    return { action: 'setup_guide', enabled: true }
+  }
+
+  // Sprint-6 PR-3: coming-soon -> Setup guide is still useful (vendor
+  // signup link, env var names, why it's not yet wired), but probe /
+  // install / connect actions stay DISABLED. The drawer carries the
+  // explicit "Daena cannot install or probe this connector yet" copy.
+  if (status === 'coming_soon') {
     return { action: 'setup_guide', enabled: true }
   }
 
@@ -452,6 +479,16 @@ export const PLUGIN_STATUS_TONE: Record<
     bg: 'bg-slate-500/10',
     border: 'border-slate-500/30',
   },
+  // Sprint-6 PR-3: neutral slate (NOT amber/rose) so the operator
+  // reads it as "intentional roadmap parity," not "broken install."
+  // Distinguished from `not_supported_on_os` only by status_label
+  // copy and drawer messaging.
+  coming_soon: {
+    dot: 'bg-slate-400',
+    text: 'text-slate-300',
+    bg: 'bg-slate-500/5',
+    border: 'border-slate-500/20',
+  },
 }
 
 export function pluginStatusTone(status: PluginStatus) {
@@ -570,6 +607,12 @@ export function skillReadiness(plugin: PluginCard): SkillReadiness {
       return 'locked_needs_setup'
     case 'not_supported_on_os':
       return 'locked_unsupported'
+    case 'coming_soon':
+      // Sprint-6 PR-3: distinct readiness state so the chip reads
+      // "Roadmap parity only -- no local probe yet" instead of the
+      // generic "Connect first" message that misleads operators into
+      // looking for a non-existent connect button.
+      return 'locked_unsupported'
     default:
       return 'locked'
   }
@@ -656,6 +699,17 @@ export function skillReadinessReason(plugin: PluginCard): string {
     case 'locked_failed':
       return `${plugin.name} probe is failing. Re-test from the drawer, then this skill becomes ready.`
     case 'locked_unsupported':
+      // Sprint-6 PR-3: distinguish coming-soon from genuine OS-gate.
+      // We can't read the `install_method` directly here without
+      // breaking the existing call sites' type contracts, so use the
+      // status string plus the plugin's status_label as the source
+      // of truth.
+      if (plugin.status === 'coming_soon') {
+        return (
+          `${plugin.name} is on the roadmap. Daena cannot install or `
+          + 'probe this connector yet -- the catalog entry is metadata only.'
+        )
+      }
       return `${plugin.name} is not supported on this operating system.`
     default:
       return `Skill locked: connect ${plugin.name} first.`

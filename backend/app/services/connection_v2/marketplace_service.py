@@ -558,6 +558,21 @@ def _classify_card_blocker(card: MarketplaceCard) -> str | None:
     lifecycle = card.lifecycle
     if lifecycle in ("callable", "enabled"):
         return None
+
+    catalog = card.catalog or {}
+    install_method = catalog.get("install_method", "")
+    kind = catalog.get("kind", "")
+    has_v2_row = card.v2_row_id is not None
+
+    # Sprint-6 PR-3 defensive: coming-soon entries always classify as
+    # COMING_SOON regardless of lifecycle. If a stale probe registered
+    # a failure on one (e.g. browser_probe returning unsupported_tool),
+    # the operator still sees "coming_soon" rather than "probe_failed"
+    # -- there is nothing they can locally do to advance state and a
+    # red "Failed" pill misleads them into expecting a fix path.
+    if install_method == "coming-soon":
+        return BLOCKER_REASON_COMING_SOON
+
     if lifecycle == "archived":
         return BLOCKER_REASON_ARCHIVED
     if lifecycle == "disabled":
@@ -566,14 +581,6 @@ def _classify_card_blocker(card: MarketplaceCard) -> str | None:
         return BLOCKER_REASON_SKILL_PACK
     if lifecycle == "failed":
         return BLOCKER_REASON_PROBE_FAILED
-
-    catalog = card.catalog or {}
-    install_method = catalog.get("install_method", "")
-    kind = catalog.get("kind", "")
-    has_v2_row = card.v2_row_id is not None
-
-    if install_method == "coming-soon" and not has_v2_row:
-        return BLOCKER_REASON_COMING_SOON
 
     if kind == "api_provider" and card.provider_key_present is False:
         return BLOCKER_REASON_NEEDS_API_KEY
