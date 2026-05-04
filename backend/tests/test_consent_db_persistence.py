@@ -258,15 +258,22 @@ async def test_consent_grant_row_has_no_token_shaped_columns(
 async def test_api_mint_persists_to_db(
     client, auth_headers, db_session, test_tenant_id, test_user_id,
 ):
-    """POST /skill-consent/grant writes a row visible to DBConsentStore."""
+    """POST /skill-consent/grant writes a row visible in the DB.
+
+    Use unique-per-test plugin_id + skill_id so cross-test grants
+    (test_engine is session-scoped, committed grants survive) never
+    interfere with this assertion.
+    """
     await _seed_user(db_session, test_tenant_id, test_user_id)
+    plugin_id = "app-gmail-cdb-test-api-mint"
+    skill_id = "summarize_unread_cdb_test_api_mint"
 
     res = await client.post(
         "/api/v1/connections/v2/skill-consent/grant",
         headers=auth_headers,
         json={
-            "plugin_id": "app-gmail",
-            "skill_id": "summarize_unread",
+            "plugin_id": plugin_id,
+            "skill_id": skill_id,
             "category": "read_sensitive",
         },
     )
@@ -274,12 +281,26 @@ async def test_api_mint_persists_to_db(
     grant_id = res.json()["data"]["grant_id"]
     assert grant_id
 
-    # The DBConsentStore can find the same grant.
+    # Direct DB lookup by grant_id (sidesteps find_active's ordering
+    # heuristics when multiple grants share a created_at second).
+    import uuid as _uuid
+    row = (await db_session.execute(
+        select(ConsentGrant).where(
+            ConsentGrant.id == _uuid.UUID(grant_id),
+            ConsentGrant.tenant_id == test_tenant_id,
+        ),
+    )).scalar_one()
+    assert row.plugin_id == plugin_id
+    assert row.skill_id == skill_id
+    assert row.category == "read_sensitive"
+
+    # And find_active returns this grant (only one for this unique
+    # plugin/skill pair, so ordering is not a concern).
     store = DBConsentStore(db_session)
     found = await store.find_active(
         tenant_id=test_tenant_id,
-        plugin_id="app-gmail",
-        skill_id="summarize_unread",
+        plugin_id=plugin_id,
+        skill_id=skill_id,
         category=SkillConsentCategory.READ_SENSITIVE,
     )
     assert found is not None
