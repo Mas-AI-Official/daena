@@ -45,6 +45,21 @@ HONEST status (per Rule 17) until one of those lands.
   * mcp-slack:summarize_channel    -> conversations_history
   * mcp-slack:find_decisions       -> conversations_history
 
+PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE (2026-05-03):
+arms real MCP execution for FOUR DB schema-introspection reads. Each
+target_tool is a discrete read-only tool the vendor MCP exposes (NOT
+a SQL execution path). mcp-postgres STAYS planned_only because the
+archived reference Postgres MCP only ships a generic ``query`` tool;
+introspection there would require constructing
+``SELECT ... FROM information_schema...`` which the brief forbids
+("No SQL execution beyond schema introspection tools"). Defense
+test pins this decision so a future PR cannot stealth-promote it.
+
+  * mcp-sqlite:describe_schema     -> list_tables
+  * mcp-mongodb:describe_collections -> db-list-collections
+  * mcp-supabase:describe_schema   -> list_tables  (schemas=['public'])
+  * mcp-neon:describe_schema       -> get_database_tables
+
 ALL OTHER allowlist entries remain ``planned_only``.
 
 Why "spine, not engine":
@@ -481,6 +496,18 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
     # ── Databases: describe_schema ONLY ──
     # safe_query stays Phase 1 plan-only forever per founder rule 16
     # (cannot be proven read-only without per-query SQL parsing).
+    #
+    # PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE (2026-05-03): 4 of the 5 DB
+    # entries promoted to mcp_tool. mcp-postgres STAYS planned because
+    # the archived reference Postgres MCP exposes only `query` (no
+    # discrete schema introspection tool), so introspection requires
+    # SQL execution which the brief explicitly forbids. The other four
+    # MCPs ship discrete read-only tools we can call without SQL
+    # construction:
+    #   - mcp-sqlite ........ list_tables
+    #   - mcp-mongodb ....... db-list-collections
+    #   - mcp-supabase ...... list_tables
+    #   - mcp-neon .......... get_database_tables
     SkillToolMapping(
         plugin_id="mcp-postgres",
         skill_id="describe_schema",
@@ -491,7 +518,9 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         required_inputs=("database",),
         reads_summary=(
             "Postgres schema introspection: tables, columns, types, "
-            "indexes. No row data read. No DDL or DML executed."
+            "indexes. No row data read. No DDL or DML executed. "
+            "Stays planned: archived ref MCP exposes only `query`, "
+            "which would require SQL construction here."
         ),
     ),
     SkillToolMapping(
@@ -499,11 +528,15 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="describe_schema",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
-        target_tool="describe_schema",
-        required_inputs=("database_path",),
+        execution_mode="mcp_tool",
+        # SQLite reference MCP exposes a discrete `list_tables` tool
+        # that returns the names + types of tables. Pure metadata.
+        target_tool="list_tables",
+        required_inputs=(),
         reads_summary=(
-            "SQLite schema: tables + columns. Read-only metadata only."
+            "SQLite schema: list of tables in the database the MCP "
+            "was launched against. Read-only metadata. The MCP owns "
+            "the database path -- the operator does NOT pass it."
         ),
     ),
     SkillToolMapping(
@@ -511,11 +544,13 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="describe_schema",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
-        target_tool="describe_schema",
+        execution_mode="mcp_tool",
+        # Supabase vendor MCP exposes `list_tables` returning the
+        # public-schema tables + columns. Read-only.
+        target_tool="list_tables",
         required_inputs=("project_ref",),
         reads_summary=(
-            "Supabase schema: tables, columns, RLS policies. No row "
+            "Supabase schema: public-schema tables + columns. No row "
             "data, no auth records, no storage objects read."
         ),
     ),
@@ -524,12 +559,15 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="describe_schema",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
-        target_tool="describe_schema",
-        required_inputs=("database", "branch_id_or_default"),
+        execution_mode="mcp_tool",
+        # Neon vendor MCP exposes `get_database_tables` returning
+        # tables for a given Neon project. Read-only metadata.
+        target_tool="get_database_tables",
+        required_inputs=("project_id",),
         reads_summary=(
-            "Neon Postgres schema for the named branch. Read-only "
-            "metadata. Does not list snapshots or modify branches."
+            "Neon Postgres schema for the project's default branch. "
+            "Read-only metadata. Does not list snapshots or modify "
+            "branches."
         ),
     ),
     SkillToolMapping(
@@ -537,12 +575,16 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
         skill_id="describe_collections",
         backend_surface="mcp",
         read_only=True,
-        execution_mode="planned_only",
-        target_tool="describe_collections",
+        execution_mode="mcp_tool",
+        # MongoDB vendor MCP exposes `db-list-collections` returning
+        # collection names + counts for a database. Pure metadata --
+        # NEVER touches document content.
+        target_tool="db-list-collections",
         required_inputs=("database",),
         reads_summary=(
-            "MongoDB collection listing + a sample document SHAPE per "
-            "collection (field names + types only, never sample values)."
+            "MongoDB collection listing for the named database. "
+            "Returns collection names only. Never reads document "
+            "content, never returns sample values."
         ),
     ),
 )
@@ -1177,6 +1219,42 @@ _PLUGIN_TO_SERVER_KEY: dict[str, tuple[str, ...]] = {
         "mcp-slack",
         "@modelcontextprotocol/server-slack",
     ),
+    # PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE (2026-05-03):
+    # SQLite reference MCP. Typical claude_desktop_config keys are
+    # 'sqlite' (preferred) or the uvx package id. The MCP launches
+    # against a database path passed at startup -- our describe_schema
+    # call does NOT carry a path; the MCP owns it.
+    "mcp-sqlite": (
+        "sqlite",
+        "sqlite-mcp",
+        "mcp-sqlite",
+        "mcp-server-sqlite",
+    ),
+    # MongoDB Inc. vendor MCP. Distributed as `mongodb-mcp-server`
+    # via npm; typical keys 'mongodb' or the package name.
+    "mcp-mongodb": (
+        "mongodb",
+        "mongodb-mcp",
+        "mcp-mongodb",
+        "mongodb-mcp-server",
+    ),
+    # Supabase vendor MCP. Distributed as
+    # `@supabase/mcp-server-supabase`; typical keys 'supabase' or the
+    # package name.
+    "mcp-supabase": (
+        "supabase",
+        "supabase-mcp",
+        "mcp-supabase",
+        "@supabase/mcp-server-supabase",
+    ),
+    # Neon vendor MCP (`@neondatabase/mcp-server-neon`). Typical keys
+    # 'neon' or the package name.
+    "mcp-neon": (
+        "neon",
+        "neon-mcp",
+        "mcp-neon",
+        "@neondatabase/mcp-server-neon",
+    ),
 }
 
 
@@ -1288,6 +1366,47 @@ def _args_slack_conversations_history(
     }
 
 
+def _args_sqlite_list_tables(
+    operator_inputs: dict[str, str],
+) -> dict[str, Any]:
+    """SQLite reference MCP `list_tables` takes NO arguments. The
+    database path is supplied at MCP launch time (-db-path flag)
+    and never crosses the operator/executor boundary. We pass an
+    empty arg dict; ignored operator_inputs would still be safe but
+    we drop them for clarity."""
+    return {}
+
+
+def _args_mongodb_list_collections(
+    operator_inputs: dict[str, str],
+) -> dict[str, Any]:
+    """MongoDB vendor MCP `db-list-collections` args: database (str).
+    The MCP returns collection names + counts. NEVER touches document
+    content."""
+    return {"database": operator_inputs["database"]}
+
+
+def _args_supabase_list_tables(
+    operator_inputs: dict[str, str],
+) -> dict[str, Any]:
+    """Supabase vendor MCP `list_tables` args: project_id + schemas.
+    We pin schemas=['public'] to keep the read narrow -- never
+    queries auth.* / storage.* / private schemas."""
+    return {
+        "project_id": operator_inputs["project_ref"],
+        "schemas": ["public"],
+    }
+
+
+def _args_neon_get_database_tables(
+    operator_inputs: dict[str, str],
+) -> dict[str, Any]:
+    """Neon vendor MCP `get_database_tables` args: project_id. The
+    Neon MCP resolves to the project's default branch unless
+    branch_id is also passed; we keep it narrow + default-only."""
+    return {"projectId": operator_inputs["project_id"]}
+
+
 _ARG_BUILDERS: dict[tuple[str, str], Any] = {
     ("mcp-filesystem", "find_files"): _args_filesystem_search_files,
     ("mcp-filesystem", "summarize_directory"): _args_filesystem_list_directory,
@@ -1299,6 +1418,11 @@ _ARG_BUILDERS: dict[tuple[str, str], Any] = {
     ("mcp-sentry", "summarize_errors"): _args_sentry_list_issues,
     ("mcp-slack", "summarize_channel"): _args_slack_conversations_history,
     ("mcp-slack", "find_decisions"): _args_slack_conversations_history,
+    # PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE (2026-05-03)
+    ("mcp-sqlite", "describe_schema"): _args_sqlite_list_tables,
+    ("mcp-mongodb", "describe_collections"): _args_mongodb_list_collections,
+    ("mcp-supabase", "describe_schema"): _args_supabase_list_tables,
+    ("mcp-neon", "describe_schema"): _args_neon_get_database_tables,
 }
 
 

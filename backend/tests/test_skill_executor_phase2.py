@@ -152,6 +152,19 @@ PROMOTED_TO_MCP_TOOL: dict[tuple[str, str], str] = {
         "PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY",
     ("mcp-slack", "find_decisions"):
         "PR-CONN-PHASE2X-SLACK-GMAIL-DRIVE-READONLY",
+    # PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE (2026-05-03):
+    # 4 of 5 DB describe-schema/collections skills promoted. mcp-postgres
+    # stays planned because the archived ref MCP exposes only `query`,
+    # which would require SQL construction at the executor layer (the
+    # brief forbids "SQL execution beyond schema introspection tools").
+    ("mcp-sqlite", "describe_schema"):
+        "PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE",
+    ("mcp-mongodb", "describe_collections"):
+        "PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE",
+    ("mcp-supabase", "describe_schema"):
+        "PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE",
+    ("mcp-neon", "describe_schema"):
+        "PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE",
 }
 
 
@@ -275,6 +288,141 @@ def test_pr3_gmail_and_drive_remain_planned_only():
             f"{plug}:{skill} promoted to {entry.execution_mode!r} but "
             f"the OAuth executor surface doesn't exist. Either build "
             f"OAuthInvoker first or revert to planned_only."
+        )
+
+
+def test_pr4_db_describe_promotion_set_is_exactly_four():
+    """PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE promotes EXACTLY 4 skills.
+    mcp-postgres MUST NOT be in the set -- the archived ref MCP only
+    has a generic `query` tool (no discrete schema introspection)."""
+    pr4_keys = {
+        k for k, pr in PROMOTED_TO_MCP_TOOL.items()
+        if pr == "PR-CONN-DB-DESCRIBE-SCHEMA-PROMOTE"
+    }
+    assert pr4_keys == {
+        ("mcp-sqlite", "describe_schema"),
+        ("mcp-mongodb", "describe_collections"),
+        ("mcp-supabase", "describe_schema"),
+        ("mcp-neon", "describe_schema"),
+    }, f"PR-4 promotion set drifted: {pr4_keys}"
+
+
+def test_pr4_postgres_stays_planned_only():
+    """mcp-postgres:describe_schema MUST stay planned_only because the
+    archived reference Postgres MCP exposes only `query` (a generic
+    SQL execution path). Promoting would require constructing
+    `SELECT ... FROM information_schema.tables` -- the brief forbids
+    "SQL execution beyond schema introspection tools." This pins the
+    decision so a future PR cannot stealth-flip it."""
+    entry = _get_entry("mcp-postgres", "describe_schema")
+    assert entry is not None, "mcp-postgres:describe_schema missing from allowlist"
+    assert entry.execution_mode == "planned_only", (
+        f"mcp-postgres:describe_schema promoted to "
+        f"{entry.execution_mode!r}. The archived ref Postgres MCP "
+        f"only ships `query` -- introspection requires SQL construction "
+        f"which is explicitly forbidden in this PR's brief. Either "
+        f"build a discrete schema-introspection MCP or revert to planned."
+    )
+
+
+def test_pr4_no_db_write_skills_promoted():
+    """Defense in depth: even if a future PR adds a DB write skill
+    and accidentally tags it read_only=True, this name-list catches
+    the slip in the diff. Forbidden across ALL DB plugins."""
+    forbidden_db_writes = {
+        # Generic SQL writes
+        "execute_sql", "exec_sql", "run_sql", "query",
+        "safe_query",
+        # DDL
+        "create_table", "drop_table", "alter_table", "truncate_table",
+        "create_index", "drop_index",
+        "create_database", "drop_database",
+        # DML
+        "insert", "update", "delete", "upsert",
+        "insert_one", "insert_many",
+        "update_one", "update_many",
+        "delete_one", "delete_many",
+        # Migrations
+        "apply_migration", "create_migration", "rollback_migration",
+        # Branch / project mutations (Neon / Supabase)
+        "create_branch", "delete_branch",
+        "create_project", "delete_project",
+    }
+    db_plugins = {
+        "mcp-postgres", "mcp-sqlite", "mcp-mongodb",
+        "mcp-supabase", "mcp-neon",
+    }
+    promoted_db_skills = {
+        skill_id for (plug, skill_id) in PROMOTED_TO_MCP_TOOL
+        if plug in db_plugins
+    }
+    bad = promoted_db_skills & forbidden_db_writes
+    assert not bad, f"Forbidden DB write skill(s) promoted: {bad}"
+
+
+def test_pr4_db_promotions_have_arg_builders():
+    """Every promoted DB entry MUST have an _ARG_BUILDERS entry so the
+    executor can construct the MCP call. A missing builder would silently
+    fall back to passing operator_inputs as-is, which could include
+    unexpected fields."""
+    from app.services.connection_v2.skill_executor import _ARG_BUILDERS
+
+    expected = {
+        ("mcp-sqlite", "describe_schema"),
+        ("mcp-mongodb", "describe_collections"),
+        ("mcp-supabase", "describe_schema"),
+        ("mcp-neon", "describe_schema"),
+    }
+    for key in expected:
+        assert key in _ARG_BUILDERS, (
+            f"DB skill {key} promoted to mcp_tool but no entry in "
+            f"_ARG_BUILDERS -- executor would fall back to passing "
+            f"operator_inputs as-is, leaking unexpected fields."
+        )
+
+
+def test_pr4_arg_builder_sqlite_takes_no_db_path():
+    """SQLite reference MCP launches against a -db-path passed at
+    startup; the operator MUST NOT pass a path through. We pin that
+    the arg builder returns an empty dict."""
+    from app.services.connection_v2.skill_executor import _ARG_BUILDERS
+
+    builder = _ARG_BUILDERS[("mcp-sqlite", "describe_schema")]
+    assert builder({}) == {}
+    # Even if operator inputs carry junk fields (which they shouldn't,
+    # since required_inputs=()), the builder ignores them.
+    assert builder({"database_path": "/etc/passwd", "x": "y"}) == {}
+
+
+def test_pr4_arg_builder_supabase_pins_public_schema():
+    """Supabase list_tables accepts a `schemas` array; pinning
+    schemas=['public'] keeps the read narrow (never auth.* / storage.*
+    / private schemas)."""
+    from app.services.connection_v2.skill_executor import _ARG_BUILDERS
+
+    builder = _ARG_BUILDERS[("mcp-supabase", "describe_schema")]
+    args = builder({"project_ref": "abcd1234"})
+    assert args == {"project_id": "abcd1234", "schemas": ["public"]}
+    # Defense: even if operator slips an "auth" schema name through,
+    # builder still pins ['public']. Prove by including the field
+    # but the builder ignores it.
+    args2 = builder({"project_ref": "abcd1234", "schemas": ["auth", "storage"]})
+    assert args2 == {"project_id": "abcd1234", "schemas": ["public"]}
+
+
+def test_pr4_server_keys_registered_for_promoted_db_plugins():
+    """Every promoted DB plugin MUST appear in _PLUGIN_TO_SERVER_KEY
+    so _resolve_mcp_server_key returns a sensible name for the
+    operator-facing 'MCP not installed' error message."""
+    from app.services.connection_v2.skill_executor import (
+        _PLUGIN_TO_SERVER_KEY,
+    )
+
+    for plug in ("mcp-sqlite", "mcp-mongodb", "mcp-supabase", "mcp-neon"):
+        assert plug in _PLUGIN_TO_SERVER_KEY, (
+            f"{plug} promoted but missing from _PLUGIN_TO_SERVER_KEY -- "
+            f"resolver would fall back to using the catalog id verbatim, "
+            f"missing common claude_desktop_config keys"
         )
 
 
