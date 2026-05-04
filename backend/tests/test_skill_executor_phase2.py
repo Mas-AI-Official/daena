@@ -939,24 +939,48 @@ async def seeded_jwt_user(
     """Seed the tenant + user that conftest.auth_headers's JWT references.
     Required because the executor writes an audit row whose actor_id FK
     points at the JWT's user_id -- without a real users row the insert
-    fails on FK violation."""
-    tenant = Tenant(
-        id=test_tenant_id,
-        name="JWT Tenant",
-        slug=f"jwt-tenant-{test_tenant_id.hex[:6]}",
-    )
-    db_session.add(tenant)
-    await db_session.flush()
-    user = User(
-        id=test_user_id,
-        tenant_id=test_tenant_id,
-        email=f"jwt-{test_user_id.hex[:6]}@phase2.local",
-        password_hash="$2b$12$dummydummydummydummydummydummydummydummydummydummydu",
-        role="FOUNDER",
-        email_verified=True,
-    )
-    db_session.add(user)
-    await db_session.flush()
+    fails on FK violation.
+
+    Sprint-7 PR-6: idempotent. ``test_tenant_id`` and ``test_user_id``
+    are session-scoped fixed UUIDs (see conftest.py), and the
+    ``test_engine`` is session-scoped too -- so any test that COMMITS
+    these rows (Sprint-5 PR-4's ``test_skill_consent_api`` does)
+    leaves them in the DB for the rest of the suite. Inserting again
+    triggers a UNIQUE-constraint failure. Probe-then-insert avoids
+    the collision without changing the executor's behavior or the
+    fixture's contract."""
+    from sqlalchemy import select
+    tenant = (
+        await db_session.execute(
+            select(Tenant).where(Tenant.id == test_tenant_id),
+        )
+    ).scalar_one_or_none()
+    if tenant is None:
+        tenant = Tenant(
+            id=test_tenant_id,
+            name="JWT Tenant",
+            slug=f"jwt-tenant-{test_tenant_id.hex[:6]}",
+        )
+        db_session.add(tenant)
+        await db_session.flush()
+
+    user = (
+        await db_session.execute(
+            select(User).where(User.id == test_user_id),
+        )
+    ).scalar_one_or_none()
+    if user is None:
+        user = User(
+            id=test_user_id,
+            tenant_id=test_tenant_id,
+            email=f"jwt-{test_user_id.hex[:6]}@phase2.local",
+            password_hash="$2b$12$dummydummydummydummydummydummydummydummydummydummydu",
+            role="FOUNDER",
+            email_verified=True,
+        )
+        db_session.add(user)
+        await db_session.flush()
+
     return tenant, user
 
 
