@@ -46,6 +46,7 @@ import {
 } from './pluginCard'
 import OAuthLifecyclePanel from './OAuthLifecyclePanel'
 import SkillBundleSection from './SkillBundleSection'
+import FirstSkillRunBlock from './FirstSkillRunBlock'
 import { pluginIconFor, pluginIconTone } from './pluginIcons'
 // PR-CONN-UI-GHOSTS-AND-PROMPT-WIRING (2026-05-03): writing into the
 // chat composer is the FIRST safe execution path -- click a suggested
@@ -238,6 +239,12 @@ export default function PluginDetailDrawer({
               <ConnectionLadder plugin={plugin} />
             </Section>
           )}
+
+          {/* Sprint-7 PR-4: hero "first read-only skill" block. Renders
+              ABOVE the Skills section because it's the SINGLE most useful
+              action a first-time operator can take on a callable plugin.
+              Hidden when no first-run recipe exists for the plugin. */}
+          <FirstSkillRunBlock plugin={plugin} />
 
           {/* ── Skills (honeycomb cluster) ──
               Replaces the legacy flat "Included capabilities" list.
