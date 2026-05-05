@@ -60,6 +60,7 @@ from app.api.v1 import (
     self_improvement,
     settings,
     plugin_governance_presets_api,
+    google_setup,
     skill_consent_api,
     skill_execution,
     skill_refinery,
@@ -130,6 +131,15 @@ router.include_router(souls.router, tags=["souls"])
 # missions; outbound drafts land in approval queue unless auto_send is set.
 router.include_router(company_mode.router, prefix="/company-mode", tags=["company-mode"])
 router.include_router(connections.router, prefix="/connections", tags=["connections"])
+# PR-GOOGLE-OAUTH-LIVE-SETUP-HELPERS (Sprint-10 PR-1, 2026-05-05):
+# Live read-only checklist for the two pinned Google accounts.
+# Mounted under /connections so the frontend hook stays adjacent to
+# the rest of the connections surface. Endpoint: GET
+# /api/v1/connections/google-setup-status. NO write surface; NEVER
+# starts an OAuth flow.
+router.include_router(
+    google_setup.router, prefix="/connections", tags=["connections-google-setup"],
+)
 router.include_router(
     connections_v2.router, prefix="/connections/v2", tags=["connections-v2"],
 )
