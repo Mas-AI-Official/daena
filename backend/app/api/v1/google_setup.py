@@ -118,8 +118,10 @@ async def google_setup_status(
 
     # Steps 2-3: account presence. Pull all Google-shaped instances for
     # this tenant in one query; classify by owner_email.
+    from sqlalchemy.exc import OperationalError
     from sqlalchemy.orm import selectinload
     from app.models.connections import Connector
+    from app.core.logging import get_logger
 
     stmt = (
         select(ConnectorInstance)
@@ -133,8 +135,22 @@ async def google_setup_status(
         )
         .options(selectinload(ConnectorInstance.connector))
     )
-    result = await db.execute(stmt)
-    instances = list(result.scalars().all())
+    try:
+        result = await db.execute(stmt)
+        instances = list(result.scalars().all())
+    except OperationalError as exc:
+        # Dev SQLite databases created before owner_email landed on
+        # ConnectorInstance lack the column. ``create_all`` does not
+        # ALTER TABLE on existing rows, so the dev path needs a graceful
+        # degrade until the operator runs the migration / wipes
+        # ``backend/var/daena.db``. We surface "0 connected" + a note.
+        # Production is on Postgres + Alembic so this branch never
+        # fires there.
+        get_logger(__name__).warning(
+            "google_setup.legacy_schema_fallback",
+            error=str(exc)[:200],
+        )
+        instances = []
 
     founder = _account_status(instances, FOUNDER_EMAIL)
     agent = _account_status(instances, AGENT_EMAIL)

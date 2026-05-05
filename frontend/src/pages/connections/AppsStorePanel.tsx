@@ -25,6 +25,7 @@ import {
 } from '@/hooks/useMarketplace'
 import { useConnectionsV2 } from '@/hooks/useConnectionsV2'
 
+import GoogleAccountSetupGuide from './GoogleAccountSetupGuide'
 import MarketplaceCard from './MarketplaceCard'
 
 export default function AppsStorePanel() {
@@ -101,6 +102,12 @@ export default function AppsStorePanel() {
           Refresh
         </button>
       </div>
+
+      {/* Sprint-10 PR-1: live Google account setup checklist. The
+          guide hits /api/v1/connections/google-setup-status and
+          renders pass/fail per step (client / founder / agent /
+          ready). NEVER starts an OAuth flow; navigation hints only. */}
+      <GoogleAccountSetupGuide />
 
       <div className="relative max-w-md">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-starlight-500" />
