@@ -111,6 +111,25 @@ def test_script_does_not_use_uvicorn_reload():
         )
 
 
+def test_script_probes_ipv6_and_port_roll():
+    """Sprint-7 acceptance fix: Vite default-binds IPv6 (::1) and rolls
+    to the next free port (5174..5180) when 5173 is held by another
+    Vite. The launcher's frontend probe MUST cover both, otherwise it
+    falsely reports 'frontend down' even when Vite is happily serving.
+    Pinned here so a future PR cannot silently re-narrow the probe."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    # IPv6 loopback probe present.
+    assert "[::1]:" in text, (
+        "frontend probe must hit IPv6 loopback; Vite default-binds ::1"
+    )
+    # Port roll covered (Vite picks the next free port up to ~5180).
+    for port in (5174, 5175, 5176, 5177, 5178, 5179, 5180):
+        assert str(port) in text, (
+            f"frontend probe must cover Vite roll port {port}; otherwise "
+            "the launcher reports 'frontend down' when 5173 is held"
+        )
+
+
 def test_script_documents_next_action_on_failure():
     """When backend or frontend doesn't come up, the script must tell
     the operator what to do next, not silently exit 0."""

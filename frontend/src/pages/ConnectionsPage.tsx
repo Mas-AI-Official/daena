@@ -386,6 +386,20 @@ function AdvancedPanel({
           {section === 'skill_packs' && <SkillPacksPanel />}
           {section === 'legacy_v1' && (
             <div className="space-y-6">
+              {/* Sprint-7 acceptance fix (2026-05-04): clear top-of-section
+                  warning so an operator who clicked here cannot mistake the
+                  legacy panels for the canonical install path. */}
+              <div className="flex items-start gap-3 rounded-md border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-200">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <div>
+                  <strong>Legacy / debug only.</strong>{' '}
+                  Normal users should use the Plugins tab. Anything you
+                  install or connect from here writes to the OLD V1
+                  registry and may not mirror to the canonical V2 truth
+                  ladder. Use this view ONLY for migration debugging or
+                  reading legacy state.
+                </div>
+              </div>
               <section className="space-y-2">
                 <h3 className="text-sm font-semibold text-starlight-100">
                   Legacy plugin browser

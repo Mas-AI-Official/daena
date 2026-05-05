@@ -81,22 +81,50 @@ if "!BACKEND_OK!"=="1" (
 )
 
 :: --- Step 5: Wait for frontend (poll up to ~30s) ---
+:: Sprint-7 acceptance fix (2026-05-04): the prior version polled only
+:: http://127.0.0.1:5173 and falsely reported "frontend down" in two real
+:: scenarios:
+::   (a) Vite default-binds IPv6 (::1), so an IPv4 probe fails even when
+::       Vite is up on the right port.
+::   (b) When 5173 is held by another local Vite (cross-repo), Vite picks
+::       the next free port (5174-5180) and the launcher would miss it.
+:: We now probe BOTH IPv4 and IPv6, across the standard Vite port roll
+:: range (5173..5180), and capture which port answered for the URL banner.
 echo.
-echo  [5/5] Waiting for frontend on 127.0.0.1:5173 (up to ~30s)...
+echo  [5/5] Waiting for frontend (probes IPv4+IPv6 on 5173..5180, up to ~30s)...
 set "FRONTEND_OK=0"
+set "FRONTEND_PORT="
 for /l %%i in (1,1,15) do (
-    curl -s -f -o NUL http://127.0.0.1:5173 >NUL 2>&1
-    if !ERRORLEVEL! EQU 0 (
-        set "FRONTEND_OK=1"
-        goto :frontend_done
+    if "!FRONTEND_OK!"=="0" for %%p in (5173 5174 5175 5176 5177 5178 5179 5180) do (
+        if "!FRONTEND_OK!"=="0" (
+            curl -s -f -o NUL "http://127.0.0.1:%%p" >NUL 2>&1
+            if !ERRORLEVEL! EQU 0 (
+                set "FRONTEND_OK=1"
+                set "FRONTEND_PORT=%%p"
+            )
+        )
+        if "!FRONTEND_OK!"=="0" (
+            curl -s -f -o NUL "http://[::1]:%%p" >NUL 2>&1
+            if !ERRORLEVEL! EQU 0 (
+                set "FRONTEND_OK=1"
+                set "FRONTEND_PORT=%%p"
+            )
+        )
     )
+    if "!FRONTEND_OK!"=="1" goto :frontend_done
     ping -n 3 127.0.0.1 >NUL
 )
 :frontend_done
 if "!FRONTEND_OK!"=="1" (
-    echo        Frontend reachable.
+    echo        Frontend reachable on port !FRONTEND_PORT!.
+    if not "!FRONTEND_PORT!"=="5173" (
+        echo        [NOTE] Port 5173 was held by another process. Vite rolled
+        echo               to !FRONTEND_PORT!. cleanup-stale-dev.ps1 only kills
+        echo               THIS repo's Vite; a foreign Vite on 5173 keeps that
+        echo               port. Open the URL printed below.
+    )
 ) else (
-    echo        [WARN] Frontend did not respond within ~30s.
+    echo        [WARN] Frontend did not respond on any of 5173..5180 (IPv4 or IPv6) within ~30s.
 )
 
 echo.
@@ -111,10 +139,10 @@ if "!BACKEND_OK!"=="1" if "!FRONTEND_OK!"=="1" (
     echo     Health:         http://127.0.0.1:8000/health
     echo     Self-diagnostic: http://127.0.0.1:8000/api/v1/system/self-diagnostic ^(auth required^)
     echo     OpenAPI:        http://127.0.0.1:8000/docs
-    echo     Frontend:       http://127.0.0.1:5173
-    echo     Connections:    http://127.0.0.1:5173/connections
+    echo     Frontend:       http://127.0.0.1:!FRONTEND_PORT!
+    echo     Connections:    http://127.0.0.1:!FRONTEND_PORT!/connections
     echo.
-    echo   Next: open http://127.0.0.1:5173/connections to begin.
+    echo   Next: open http://127.0.0.1:!FRONTEND_PORT!/connections to begin.
 ) else (
     echo   Status: PARTIAL - one or more services did not come up
     echo.

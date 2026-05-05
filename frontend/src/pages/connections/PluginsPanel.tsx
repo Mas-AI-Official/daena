@@ -38,6 +38,13 @@ import {
   type PluginStatus,
   pluginCardFromMarketplaceCard,
 } from './pluginCard'
+// Acceptance fix (Sprint-7): the operator lands on Plugins by default.
+// Hoist the acceptance status + first-callable wizard ABOVE the grid so
+// the founder sees "Can I use Daena right now?" and the wizard the
+// moment the page loads -- they used to be hidden inside Advanced >
+// Overview, which is exactly the confusion this PR removes.
+import AcceptanceStatusPanel from './AcceptanceStatusPanel'
+import FirstCallableWizard from './FirstCallableWizard'
 
 // Status filter chips (UI ordering)
 const STATUS_FILTERS: Array<{ key: 'all' | PluginStatus; label: string }> = [
@@ -174,8 +181,21 @@ export default function PluginsPanel({
     }
   }
 
+  // Hoisted from OverviewPanel: the wizard renders only when callable=0.
+  // Counts is computed below from the same `cards` we already poll.
+  const totalCatalog = cards.length
+  const callableNow = counts.connected ?? 0
+
   return (
     <div className="space-y-4">
+      {/* Acceptance status -- "Can I use Daena right now?" */}
+      <AcceptanceStatusPanel />
+
+      {/* First-callable wizard -- only when callable=0 and catalog is loaded. */}
+      {callableNow === 0 && totalCatalog > 0 && (
+        <FirstCallableWizard catalogTotal={totalCatalog} />
+      )}
+
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/5 bg-midnight-400/30 px-4 py-3">
         <div>
           <h2 className="text-base font-semibold text-starlight-100">

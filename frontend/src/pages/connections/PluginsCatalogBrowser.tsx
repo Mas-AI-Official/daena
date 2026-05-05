@@ -365,12 +365,20 @@ export default function PluginsCatalogBrowser() {
           {recommendedState && <p className="mt-1 text-[10px] text-starlight-500">{recommendedState}</p>}
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {/* Sprint-7 acceptance fix (2026-05-04): this control lives in the
+              Legacy V1 panel inside Advanced. The label used to read "Install
+              recommended" with primary cyan styling, which made it look like
+              the canonical install path. The canonical path is the V2
+              MCPInstallDrawer in the Plugins tab. We mute the styling and
+              relabel so an operator who lands here doesn't mistake it for the
+              modern install. */}
           <button
             onClick={() => void installRecommended(true)}
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-accent-cyan/30 bg-accent-cyan/10 px-3 py-1.5 text-xs text-accent-cyan hover:bg-accent-cyan/20"
+            title="Legacy V1 install path. The modern install lives in the Plugins tab via the MCP install drawer."
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-starlight-400 hover:bg-white/10"
           >
             <ShieldCheck size={13} />
-            Install recommended
+            Legacy install (not recommended)
           </button>
           <button
             onClick={() => {

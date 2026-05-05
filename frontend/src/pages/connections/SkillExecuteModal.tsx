@@ -353,15 +353,23 @@ export default function SkillExecuteModal({
             </p>
           </section>
 
-          {/* Safety statement */}
-          <section className="flex items-start gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2">
+          {/* Safety statement.
+              Sprint-7 acceptance fix: spelled out per the local-usable brief.
+              Read-only, no writes, no deletes, no external network, local only.
+              Each phrase is a separate hard rule so the operator can scan it. */}
+          <section
+            data-testid="skill-execute-safety-statement"
+            className="flex items-start gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2"
+          >
             <ShieldCheck size={13} className="mt-0.5 shrink-0 text-emerald-300" />
             <p className="text-[11px] text-starlight-300">
-              <strong className="text-starlight-100">No writes, no sends, no payments.</strong>{' '}
-              Phase 2 only runs read-only tools through an allowlist. The
-              backend cannot post messages, modify external state, or
-              invoke browser actions on this code path. Audit row is
-              written for every attempt.
+              <strong className="text-starlight-100">
+                Read-only. No writes. No deletes. No external network. Local only.
+              </strong>{' '}
+              Phase 2 runs read-only tools through an allowlist. The backend
+              cannot post messages, modify external state, send payments, or
+              invoke browser actions on this code path. An audit row is written
+              for every attempt.
             </p>
           </section>
 
