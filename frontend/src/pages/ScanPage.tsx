@@ -19,13 +19,20 @@
  *   GET  /security/scans/:id/report/pdf -- Download PDF
  */
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { Crosshair, FileText, Activity } from 'lucide-react'
+import { Crosshair, FileText, Activity, ShieldCheck, AlertTriangle, X, Loader2 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
 import { useSecurityModeStore } from '@/stores/securityModeStore'
+import { useAuthStore } from '@/stores/authStore'
 import { confirmDialog } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
+
+// PR-SCAN-ADD-TO-SCOPE-INLINE-CTA (Sprint-9 PR-1):
+// founder-only inline CTA when /scans/start returns target_not_in_scope.
+// scope_type values mirror the backend's Literal exactly. Default is
+// `exact_url` (host-only). Wildcard is OPT-IN, never the default.
+type ScopeType = 'exact_url' | 'domain' | 'wildcard_subdomain'
 import {
   type ScanJob,
   type ScanReport as ScanReportData,
@@ -59,6 +66,18 @@ export function ScanPage() {
   const [report, setReport] = useState<ScanReportData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // PR-SCAN-ADD-TO-SCOPE-INLINE-CTA (Sprint-9 PR-1): track the target
+  // that just got blocked so the founder-only CTA can surface it.
+  // scopeBlockedTarget is set ONLY on a 403 target_not_in_scope response.
+  // Cleared after a successful add OR an explicit retry.
+  const [scopeBlockedTarget, setScopeBlockedTarget] = useState<string | null>(null)
+  const [scopeModalOpen, setScopeModalOpen] = useState(false)
+  const [scopeType, setScopeType] = useState<ScopeType>('exact_url')
+  const [scopeAdding, setScopeAdding] = useState(false)
+  const [scopeAddError, setScopeAddError] = useState<string | null>(null)
+  const [scopeAddSuccess, setScopeAddSuccess] = useState<string | null>(null)
+  const userRole = useAuthStore((s) => s.user?.role)
+  const isFounder = userRole === 'FOUNDER'
   const [history, setHistory] = useState<any[]>([])
   // Phase 10b B3: when true, /security/scans is queried with
   // archived=true so the founder can recover scans they soft-archived.
@@ -158,6 +177,8 @@ export function ScanPage() {
     if (!target.trim()) return
     setLoading(true)
     setError('')
+    setScopeBlockedTarget(null)
+    setScopeAddSuccess(null)
     try {
       const { data } = await api.post('/security/scans/start', {
         target: target.trim(),
@@ -176,6 +197,10 @@ export function ScanPage() {
         setError(
           `Target "${detail.target}" is not in your authorized scope. ${detail.hint || ''}`.trim()
         )
+        // PR-SCAN-ADD-TO-SCOPE-INLINE-CTA: capture the target so the
+        // founder-only "Add this target to Scan Scope" CTA can prefill
+        // the modal without re-typing.
+        setScopeBlockedTarget(detail.target ?? target.trim())
       } else if (typeof detail === 'string') {
         setError(detail)
       } else {
@@ -183,6 +208,52 @@ export function ScanPage() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  // PR-SCAN-ADD-TO-SCOPE-INLINE-CTA: open the modal preloaded with the
+  // last scope-blocked target. Founder-only -- the CTA button is gated
+  // on isFounder so this handler should never be invoked otherwise; the
+  // backend role gate is the second line of defense.
+  const openScopeModal = () => {
+    if (!isFounder || !scopeBlockedTarget) return
+    setScopeModalOpen(true)
+    setScopeType('exact_url')
+    setScopeAddError(null)
+    setScopeAddSuccess(null)
+  }
+
+  // Confirm-add handler. NEVER auto-starts a scan after success: the
+  // brief explicitly forbids it. Operator must click Start Scan again.
+  const confirmScopeAdd = async () => {
+    if (!isFounder || !scopeBlockedTarget) return
+    setScopeAdding(true)
+    setScopeAddError(null)
+    try {
+      await api.post('/security/authorized-scope/add', {
+        target: scopeBlockedTarget,
+        scope_type: scopeType,
+      })
+      setScopeAddSuccess(
+        `Target added to Scan Scope as ${scopeType.replace(/_/g, ' ')}. ` +
+        `Click Start Scan again to run.`,
+      )
+      // Clear the blocked-target marker so the CTA disappears.
+      setScopeBlockedTarget(null)
+      setError('')
+      setScopeModalOpen(false)
+      toast.success('Target added to Scan Scope')
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      if (detail && typeof detail === 'object' && detail.code) {
+        setScopeAddError(`${detail.code}: ${detail.hint || ''}`.trim())
+      } else if (typeof detail === 'string') {
+        setScopeAddError(detail)
+      } else {
+        setScopeAddError('Failed to add target to scope.')
+      }
+    } finally {
+      setScopeAdding(false)
     }
   }
 
@@ -325,6 +396,157 @@ export function ScanPage() {
         loading={loading}
         error={error}
       />
+
+      {/* PR-SCAN-ADD-TO-SCOPE-INLINE-CTA (Sprint-9 PR-1): when the last
+          scan was blocked by target_not_in_scope AND the operator has
+          the FOUNDER role, surface a one-click CTA that opens a
+          confirmation modal. Non-founder roles see only the existing
+          "go to /security/scope" hint above; the CTA never appears for
+          them, and the backend role gate is the second line of defense. */}
+      {scopeBlockedTarget && isFounder && (
+        <div
+          data-testid="scan-scope-cta-row"
+          className="flex flex-wrap items-center gap-3 rounded-md border border-amber-500/30 bg-amber-500/[0.05] px-3 py-2 text-[12px] text-amber-100"
+        >
+          <ShieldCheck size={14} className="shrink-0 text-amber-300" />
+          <span className="flex-1 min-w-0">
+            <strong>Founder authorized?</strong>{' '}
+            Add <code className="rounded bg-amber-500/10 px-1">{scopeBlockedTarget}</code>{' '}
+            to your Scan Scope. Daena will not auto-start the scan; you click Start Scan again.
+          </span>
+          <button
+            data-testid="scan-scope-cta-add"
+            onClick={openScopeModal}
+            className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-[11px] font-medium text-amber-50 hover:bg-amber-500/25"
+          >
+            Add this target to Scan Scope
+          </button>
+        </div>
+      )}
+
+      {scopeAddSuccess && (
+        <div className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/[0.05] px-3 py-2 text-[12px] text-emerald-100">
+          <ShieldCheck size={13} className="mt-0.5 shrink-0 text-emerald-300" />
+          <span>{scopeAddSuccess}</span>
+        </div>
+      )}
+
+      {scopeModalOpen && isFounder && scopeBlockedTarget && (
+        <div
+          data-testid="scan-scope-cta-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-midnight-900/80 px-4"
+          onClick={() => !scopeAdding && setScopeModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="flex items-start justify-between gap-3 border-b border-white/5 p-4">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-accent-cyan">
+                  Add to Scan Scope
+                </p>
+                <h3 className="mt-0.5 text-sm font-semibold text-starlight-100">
+                  Authorize this target for scanning
+                </h3>
+              </div>
+              <button
+                onClick={() => !scopeAdding && setScopeModalOpen(false)}
+                disabled={scopeAdding}
+                className="rounded-md border border-white/10 bg-white/5 p-1 text-starlight-300 hover:bg-white/10 disabled:opacity-40"
+                aria-label="Close"
+              >
+                <X size={12} />
+              </button>
+            </header>
+
+            <div className="space-y-4 p-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-starlight-500">Target</p>
+                <p className="mt-0.5 break-all rounded-md border border-white/10 bg-midnight-500/50 px-2.5 py-1.5 font-mono text-[12px] text-starlight-100">
+                  {scopeBlockedTarget}
+                </p>
+              </div>
+
+              <div>
+                <p className="mb-1.5 text-[10px] uppercase tracking-wider text-starlight-500">
+                  Scope type (default: exact URL only)
+                </p>
+                <div className="space-y-1.5">
+                  {([
+                    { id: 'exact_url' as const, label: 'Exact URL', hint: 'Authorize only this exact host. Most conservative.' },
+                    { id: 'domain' as const, label: 'Domain', hint: 'Authorize this domain only (no subdomains).' },
+                    { id: 'wildcard_subdomain' as const, label: 'Wildcard subdomain', hint: 'Authorize this domain AND every subdomain. Use with care.' },
+                  ]).map((opt) => {
+                    const checked = scopeType === opt.id
+                    return (
+                      <label
+                        key={opt.id}
+                        data-testid={`scan-scope-cta-radio-${opt.id}`}
+                        className={`flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-1.5 text-[11px] ${
+                          checked
+                            ? 'border-amber-500/50 bg-amber-500/10 text-amber-100'
+                            : 'border-white/10 bg-white/[0.03] text-starlight-200 hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="scope-type"
+                          value={opt.id}
+                          checked={checked}
+                          onChange={() => setScopeType(opt.id)}
+                          disabled={scopeAdding}
+                          className="mt-0.5 accent-amber-400"
+                        />
+                        <span className="min-w-0">
+                          <strong className="block text-[11px] text-starlight-100">{opt.label}</strong>
+                          <span className="block text-[10px] text-starlight-400">{opt.hint}</span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2 rounded-md border border-rose-500/30 bg-rose-500/[0.05] px-2.5 py-1.5 text-[11px] text-rose-200">
+                <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                <span>
+                  <strong>Only add targets you are authorized to test.</strong>{' '}
+                  Daena will scan within your declared scope; the legal authorization is yours.
+                </span>
+              </div>
+
+              {scopeAddError && (
+                <div className="flex items-start gap-2 rounded-md border border-rose-500/30 bg-rose-500/[0.05] px-2.5 py-1.5 text-[11px] text-rose-200">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  <span>{scopeAddError}</span>
+                </div>
+              )}
+            </div>
+
+            <footer className="flex items-center justify-end gap-2 border-t border-white/5 p-3">
+              <button
+                onClick={() => setScopeModalOpen(false)}
+                disabled={scopeAdding}
+                className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-starlight-300 hover:bg-white/10 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                data-testid="scan-scope-cta-confirm"
+                onClick={() => void confirmScopeAdd()}
+                disabled={scopeAdding}
+                className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-[11px] font-medium text-amber-50 hover:bg-amber-500/25 disabled:opacity-40"
+              >
+                {scopeAdding
+                  ? <Loader2 size={11} className="animate-spin" />
+                  : <ShieldCheck size={11} />}
+                Confirm add
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
 
       {/* PR-4: tell the operator where reports actually land. Brief said
           "improve copy so user knows where reports go" - this paragraph

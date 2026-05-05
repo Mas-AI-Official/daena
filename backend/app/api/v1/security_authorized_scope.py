@@ -25,14 +25,19 @@ import json
 from pathlib import Path
 from typing import Any
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, require_role
+from app.api.deps import CurrentUser, get_db, require_role
 from app.core.logging import get_logger
+from app.services.audit import AuditService
 from app.services.security.yellow_runtime_gate import (
     AuthorizedScope,
     load_authorized_scope,
+    parse_target,
     target_matches_scope,
     _SCOPES_JSON_PATH,  # noqa: SLF001 -- single source of truth for the path
 )
@@ -113,6 +118,25 @@ class ScopeTestResponse(BaseModel):
     target: str
     in_scope: bool
     reason: str
+
+
+# PR-SCAN-ADD-TO-SCOPE-INLINE-CTA (Sprint-9 PR-1):
+# append-only single-target add for the founder-only "Add this target
+# to Scan Scope" CTA on the /scan page. Distinct from the PUT-replaces-
+# all endpoint so a CTA click can never accidentally wipe other entries
+# (two-tab race).
+class ScopeAddRequest(BaseModel):
+    target: str = Field(..., min_length=1, max_length=512)
+    scope_type: Literal["exact_url", "domain", "wildcard_subdomain"] = "exact_url"
+
+
+class ScopeAddResponse(BaseModel):
+    target: str
+    scope_type: str
+    bucket: str  # which AuthorizedScope list received the entry
+    stored_value: str
+    already_present: bool
+    scope: AuthorizedScopeResponse
 
 
 # ── JSON read/write helpers ───────────────────────────────────────
@@ -237,4 +261,150 @@ async def test_authorized_scope(
             "tools will be blocked. Add the target's parent domain or CIDR "
             "to the scope if you own it."
         ),
+    )
+
+
+@router.post("/security/authorized-scope/add", response_model=ScopeAddResponse)
+async def add_to_authorized_scope(
+    body: ScopeAddRequest,
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> ScopeAddResponse:
+    """Append a single target to the tenant's authorized_scope.
+
+    PR-SCAN-ADD-TO-SCOPE-INLINE-CTA (Sprint-9 PR-1). Powers the founder-
+    only "Add this target to Scan Scope" CTA on the /scan page when a
+    scan is blocked by ``target_not_in_scope``.
+
+    Founder-gated. Append-only (read-modify-write). Idempotent: re-add
+    on an existing entry returns ``already_present=True`` without a
+    duplicate write.
+
+    Hard rules honored from the brief:
+      * Never auto-runs a scan after the add. Caller must re-POST to
+        ``/scans/start`` explicitly.
+      * Never defaults to wildcard scope -- ``scope_type`` defaults to
+        ``exact_url`` (host-only).
+      * Never weakens ``target_matches_scope``; this endpoint only
+        edits the input data the gate consumes.
+      * Audits every add as ``security.scope.added_from_scan`` with
+        the target + scope_type but NO secrets.
+    """
+    raw = body.target.strip()
+    kind, normalized = parse_target(raw)
+
+    # Reject targets the gate cannot classify; otherwise the operator
+    # could land an entry that never matches the gate's parse step.
+    if kind == "unknown":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "target_unparseable",
+                "target": raw,
+                "hint": "Provide a URL, bare hostname, IPv4 address, or "
+                "github.com / gitlab.com / bitbucket.org repo path.",
+            },
+        )
+
+    # Only domain-kind targets accept the wildcard option. Refusing
+    # wildcard for IP / path keeps the gate's semantics intact (a CIDR
+    # already covers a network; ``wildcard_domains`` does not match IPs).
+    if body.scope_type == "wildcard_subdomain" and kind != "domain":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "scope_type_mismatch",
+                "target": raw,
+                "kind": kind,
+                "hint": "Wildcard subdomain only applies to domain targets.",
+            },
+        )
+
+    tenant_key = str(user.tenant_id)
+    all_scopes = _read_all_scopes()
+    current = all_scopes.get(tenant_key) or {
+        "exact_domains": [],
+        "wildcard_domains": [],
+        "ipv4_cidrs": [],
+        "source_paths": [],
+    }
+
+    bucket: str
+    stored_value: str
+    if kind == "domain":
+        if body.scope_type == "wildcard_subdomain":
+            bucket = "wildcard_domains"
+            stored_value = normalized
+        else:
+            bucket = "exact_domains"
+            stored_value = normalized
+    elif kind == "ipv4":
+        bucket = "ipv4_cidrs"
+        stored_value = f"{normalized}/32"
+    elif kind == "path":
+        bucket = "source_paths"
+        stored_value = normalized.rstrip("/") + "/"
+    else:  # pragma: no cover -- guarded above
+        raise HTTPException(status_code=400, detail={"code": "target_unparseable"})
+
+    existing = list(current.get(bucket, []))
+    already_present = stored_value in existing
+    if not already_present:
+        existing.append(stored_value)
+        current[bucket] = existing
+        all_scopes[tenant_key] = current
+        try:
+            _write_all_scopes(all_scopes)
+        except OSError as exc:
+            logger.error(
+                "authorized_scope.add_write_failed",
+                tenant=tenant_key, error=str(exc),
+            )
+            raise HTTPException(status_code=500, detail="scope_write_failed") from exc
+
+    # Audit-log the add. NEVER include secrets; target + scope_type are
+    # already part of the founder's intent.
+    try:
+        audit = AuditService(db)
+        await audit.log_decision(
+            tenant_id=user.tenant_id,
+            actor_id=user.id,
+            actor_type="FOUNDER",
+            action_type="security.scope.added_from_scan",
+            action_params={
+                "target": raw,
+                "kind": kind,
+                "scope_type": body.scope_type,
+                "bucket": bucket,
+                "stored_value": stored_value,
+                "already_present": already_present,
+            },
+            result="ALLOWED",
+            risk_level="HIGH",
+            governance_tier=4,
+        )
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001 -- audit failure must not block the operator
+        logger.error(
+            "authorized_scope.audit_failed",
+            tenant=tenant_key, error=str(exc),
+        )
+
+    logger.info(
+        "authorized_scope.added_from_scan",
+        tenant=tenant_key,
+        kind=kind,
+        scope_type=body.scope_type,
+        bucket=bucket,
+        already_present=already_present,
+    )
+
+    refreshed = load_authorized_scope(tenant_key)
+    return ScopeAddResponse(
+        target=raw,
+        scope_type=body.scope_type,
+        bucket=bucket,
+        stored_value=stored_value,
+        already_present=already_present,
+        scope=_scope_to_response(refreshed),
     )
