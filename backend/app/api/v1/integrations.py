@@ -32,6 +32,15 @@ class ToolExecuteRequest(BaseModel):
     provider: str = Field(..., description="Provider slug: gmail, calendar, notion")
     tool_name: str = Field(..., description="Tool name: send_email, list_events, etc.")
     params: dict = Field(default_factory=dict, description="Tool-specific parameters")
+    owner_email: str | None = Field(
+        default=None,
+        description=(
+            "Pin which connected account to dispatch against (e.g. "
+            "masoud.masoori@mas-ai.co vs daena@mas-ai.co). Required when "
+            "the same provider has multiple connected instances; optional "
+            "otherwise. PR-1 read-only gate (Sprint-11)."
+        ),
+    )
 
 
 class QualifiedToolRequest(BaseModel):
@@ -39,6 +48,10 @@ class QualifiedToolRequest(BaseModel):
 
     tool: str = Field(..., description="Qualified tool name: provider.tool_name")
     params: dict = Field(default_factory=dict, description="Tool-specific parameters")
+    owner_email: str | None = Field(
+        default=None,
+        description="Pin which connected account to dispatch against.",
+    )
 
 
 @router.get("/tools")
@@ -77,6 +90,7 @@ async def execute_tool(
             params=body.params,
             user_id=user.id,
             tenant_id=user.tenant_id,
+            owner_email=body.owner_email,
         )
         return {"success": True, "data": result}
 
@@ -114,6 +128,7 @@ async def execute_qualified_tool(
             params=body.params,
             user_id=user.id,
             tenant_id=user.tenant_id,
+            owner_email=body.owner_email,
         )
         return {"success": True, "data": result}
 

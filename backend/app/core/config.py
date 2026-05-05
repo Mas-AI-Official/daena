@@ -298,6 +298,17 @@ class Settings(BaseSettings):
     enable_daenabot: bool = True
     disable_auth: bool = False
 
+    # Sprint-11 PR-1 read-only gate. Default ON: every write tool on
+    # IntegrationRouter (gmail.send_email, gmail.create_draft,
+    # google-calendar.create_event/update_event, notion.create_page, ...)
+    # returns permission_denied: write_disabled_phase2 regardless of the
+    # per-tool ConnectorPermission. Operator overrides via env only --
+    # never via UI -- so an LLM cannot toggle this flag mid-conversation
+    # to escape the supervised-work-operator boundary. Phase 3 (controlled
+    # external execution post-approval-queue) flips this OFF together with
+    # ApprovalQueue gating.
+    integrations_phase2_readonly: bool = True
+
     # --- Governance Mode ---
     # UNLEASHED = No governance pipeline. Shield only. Raw power.
     # BALANCED  = Light governance (SecurityGate + auto-proceed most actions)
