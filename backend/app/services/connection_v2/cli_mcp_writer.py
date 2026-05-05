@@ -277,6 +277,13 @@ def find_template_placeholders(template: str) -> list[str]:
     Used to surface unresolved tokens to the UI BEFORE the operator
     fills any value (so the placeholder input form can render the
     correct list on the very first preview call).
+
+    Accepts both ``<UPPER>`` and ``<lower>`` forms so the catalog can
+    use whichever convention is closest to vendor docs (e.g. uvx
+    examples that say ``--repository <path>``). The detector enforces
+    identifier-shape (alpha-leading, alnum / underscore / hyphen) so a
+    string like ``<HTML>`` text never accidentally registers, and
+    rejects empty / single-char tokens.
     """
     out: list[str] = []
     i = 0
@@ -289,8 +296,11 @@ def find_template_placeholders(template: str) -> list[str]:
                 break
             token = template[i:j + 1]
             inner = token[1:-1]
-            if inner and inner[0].isupper() and all(
-                c.isalnum() or c in ("_", "-") for c in inner
+            if (
+                inner
+                and len(inner) >= 2
+                and inner[0].isalpha()
+                and all(c.isalnum() or c in ("_", "-") for c in inner)
             ):
                 out.append(token)
             i = j + 1

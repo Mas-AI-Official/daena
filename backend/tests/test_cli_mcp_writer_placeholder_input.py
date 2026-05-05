@@ -59,11 +59,19 @@ def test_find_template_placeholders_returns_filesystem_token():
     assert "<ALLOWED_ROOT>" in tokens
 
 
-def test_find_template_placeholders_ignores_lowercase_and_html_like():
-    # An angle-bracket string that is not an UPPER_TOKEN must not
-    # appear -- catalog templates never contain HTML, but a future
-    # mistake should not silently surface as a placeholder.
-    assert find_template_placeholders("npx -y <lower> <UPPER>") == ["<UPPER>"]
+def test_find_template_placeholders_accepts_both_cases_but_rejects_short_or_non_id():
+    # Sprint-9 PR-2 widened the detector to accept both <UPPER> and
+    # <lower> tokens so the catalog can use whichever convention is
+    # closest to vendor docs (e.g. uvx examples that say
+    # "--repository <path>"). The detector still enforces identifier
+    # shape (alpha-leading, alnum/_/-) and a min length of 2 so a
+    # stray "<a>" or HTML-looking string never registers.
+    assert find_template_placeholders("npx -y <lower> <UPPER>") == ["<lower>", "<UPPER>"]
+    assert find_template_placeholders("npx --repo <path>") == ["<path>"]
+    # Single-char and digit-leading rejected.
+    assert find_template_placeholders("echo <a>") == []
+    assert find_template_placeholders("echo <2X>") == []
+    # Empty / no placeholders.
     assert find_template_placeholders("echo hi") == []
 
 

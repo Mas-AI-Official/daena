@@ -248,12 +248,25 @@ class McpServerProbe(Probe):
 
         resolved = _resolve_command(config)
         if not resolved:
+            # Sprint-9 PR-2 honesty polish: the bare "not found on PATH"
+            # message left the operator stuck. Spell out what to install
+            # for the most common bins so the error is actionable.
+            cmd = config.get("command", "")
+            hint = ""
+            if cmd in ("npx", "npm", "node"):
+                hint = " Install Node.js (https://nodejs.org) or ensure npx is on PATH."
+            elif cmd in ("uvx", "uv"):
+                hint = " Install uv (https://docs.astral.sh/uv) or ensure uvx is on PATH."
+            elif cmd == "docker":
+                hint = " Install Docker Desktop or ensure docker is on PATH."
+            elif cmd in ("python", "python3", "pip", "pipx"):
+                hint = " Ensure Python is on PATH."
             return ProbeResult(
                 success=False,
                 failure_dim="reachable",
                 failure_reason=_reason(
                     FAIL_BINARY_NOT_FOUND,
-                    f"command {config.get('command')!r} not found on PATH",
+                    f"command {cmd!r} not found on PATH.{hint}",
                 ),
             )
 
@@ -318,12 +331,18 @@ class McpServerProbe(Probe):
                                     session.initialize(), timeout=init_t,
                                 )
                             except asyncio.TimeoutError:
+                                # Sprint-9 PR-2 honesty polish: a first-run
+                                # MCP often spends 10-25s warming/caching the
+                                # npm/uvx package. Tell the operator to retry
+                                # in 10s instead of leaving them to guess.
                                 return ProbeResult(
                                     success=False,
                                     failure_dim="reachable",
                                     failure_reason=_reason(
                                         FAIL_INITIALIZE_TIMEOUT,
-                                        f"initialize did not complete in {init_t}s",
+                                        f"initialize did not complete in {init_t}s. "
+                                        "Package may still be downloading/warming "
+                                        "on first run. Retry probe in ~10s.",
                                     ),
                                 )
                             except Exception as exc:  # noqa: BLE001
