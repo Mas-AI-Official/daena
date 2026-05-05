@@ -96,11 +96,19 @@ function fetchDiagnostic(): Promise<DiagnosticPayload | null> {
 type HealthStatus = 'healthy' | 'warning' | 'blocked' | 'unknown'
 
 async function fetchHealth(): Promise<HealthStatus> {
+  // PR-LOCAL-BETA-ZERO-INPUT-MCP-SMOKE-AND-POLISH (Sprint-9, 2026-05-05):
+  // Hit `/api/v1/health` (the auth-free FastAPI health route) via the
+  // SAME relative path the rest of the API uses. The Vite dev proxy
+  // already forwards `/api/*` to the backend's port; in prod the
+  // reverse proxy does the same. The previous absolute-URL fallback
+  // (`http://127.0.0.1:8000/health`) tripped CORS from the page at
+  // :5173, the response was rejected as `TypeError: Failed to fetch`,
+  // and the panel rendered "Backend /health did not respond" while
+  // the backend was actually healthy. The bare `/health` path is also
+  // not on the proxy table, so it falls through to Vite's SPA
+  // index.html and the JSON parse silently degraded to `warning`.
   try {
-    const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)
-      ?.replace(/\/api\/v1\/?$/, '')
-      ?? 'http://127.0.0.1:8000'
-    const res = await fetch(`${base}/health`, {
+    const res = await fetch('/api/v1/health', {
       method: 'GET',
       headers: { Accept: 'application/json' },
     })
