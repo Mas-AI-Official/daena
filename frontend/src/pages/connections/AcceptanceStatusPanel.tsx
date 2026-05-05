@@ -88,6 +88,32 @@ function fetchDiagnostic(): Promise<DiagnosticPayload | null> {
 }
 
 
+// Sprint-8 PR-4: panel was lying when it said "Backend not responding
+// to /health" -- it actually meant "self-diagnostic returned null"
+// (which 401s for unauthenticated tabs, even when /health is healthy).
+// Probe /health directly via fetch (no auth, no axios interceptors)
+// so the backend row reflects the real liveness signal.
+type HealthStatus = 'healthy' | 'warning' | 'blocked' | 'unknown'
+
+async function fetchHealth(): Promise<HealthStatus> {
+  try {
+    const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)
+      ?.replace(/\/api\/v1\/?$/, '')
+      ?? 'http://127.0.0.1:8000'
+    const res = await fetch(`${base}/health`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) return 'blocked'
+    const body = await res.json().catch(() => ({}))
+    if (body && body.status === 'healthy') return 'healthy'
+    return 'warning'
+  } catch {
+    return 'blocked'
+  }
+}
+
+
 function StatusDot({ status }: { status: RowStatus }) {
   if (status === 'healthy') return <CheckCircle2 size={14} className="shrink-0 text-emerald-300" />
   if (status === 'warning') return <AlertTriangle size={14} className="shrink-0 text-amber-300" />
@@ -136,6 +162,7 @@ function verdictFromRows(rows: { status: RowStatus }[]): {
 
 export default function AcceptanceStatusPanel() {
   const [diag, setDiag] = useState<DiagnosticPayload | null>(null)
+  const [health, setHealth] = useState<HealthStatus>('unknown')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { cards } = useMarketplaceCards()
@@ -144,10 +171,11 @@ export default function AcceptanceStatusPanel() {
   const reload = () => {
     setLoading(true)
     setError(null)
-    void fetchDiagnostic().then((res) => {
+    void Promise.all([fetchDiagnostic(), fetchHealth()]).then(([d, h]) => {
       setLoading(false)
-      if (res === null) setError('Self-diagnostic endpoint did not respond.')
-      else setDiag(res)
+      setHealth(h)
+      if (d === null) setError('Self-diagnostic endpoint did not respond.')
+      else setDiag(d)
     })
   }
 
@@ -184,12 +212,15 @@ export default function AcceptanceStatusPanel() {
   const googleStatus: RowStatus =
     googleConnected > 0 ? 'healthy' : googleAccounts.length > 0 ? 'warning' : 'unknown'
 
-  const backendStatus: RowStatus = diag === null && !loading
-    ? 'blocked'
-    : (checks.backend?.status as RowStatus) ?? 'unknown'
+  // Sprint-8 PR-4: backend liveness comes from the unauth'd /health
+  // probe. Self-diagnostic (auth-required) is a SEPARATE row -- a
+  // 401 there must NOT make the panel claim the backend is down.
+  const backendStatus: RowStatus = loading
+    ? 'unknown'
+    : (health === 'unknown' ? 'blocked' : health)
 
   const selfDiagStatus: RowStatus = diag === null
-    ? (loading ? 'unknown' : 'blocked')
+    ? (loading ? 'unknown' : (backendStatus === 'healthy' ? 'warning' : 'blocked'))
     : 'healthy'
 
   // The frontend row is trivially healthy because this code is running.
@@ -212,8 +243,12 @@ export default function AcceptanceStatusPanel() {
       key: 'backend',
       label: 'Backend healthy',
       status: backendStatus,
-      detail: backendStatus === 'healthy' ? 'FastAPI responding on 127.0.0.1:8000.' : 'Backend not responding to /health.',
-      nextAction: backendStatus !== 'healthy' ? 'Run scripts\\start-daena-local.bat or check the backend window.' : undefined,
+      detail: backendStatus === 'healthy'
+        ? 'FastAPI /health returned status=healthy on 127.0.0.1:8000.'
+        : (loading ? 'Probing /health...' : 'Backend /health did not respond. Backend may not be running.'),
+      nextAction: backendStatus !== 'healthy' && !loading
+        ? 'Run scripts\\start-daena-local.bat or check the backend window.'
+        : undefined,
     },
     {
       key: 'frontend',
@@ -227,7 +262,11 @@ export default function AcceptanceStatusPanel() {
       status: selfDiagStatus,
       detail: selfDiagStatus === 'healthy'
         ? `GET /api/v1/system/self-diagnostic returned ${diag?.data.overall_status ?? '?'} in ${diag?.data.elapsed_ms ?? 0}ms.`
-        : (loading ? 'Probing...' : 'Self-diagnostic endpoint did not respond.'),
+        : (loading
+            ? 'Probing...'
+            : backendStatus === 'healthy'
+              ? 'Self-diagnostic returned no payload (auth required or endpoint error). Backend itself is healthy.'
+              : 'Self-diagnostic endpoint did not respond.'),
     },
     {
       key: 'callable',

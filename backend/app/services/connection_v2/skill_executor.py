@@ -134,11 +134,16 @@ from app.services.audit import AuditService
 logger = get_logger(__name__)
 
 
-# Real-execution timeout for promoted skills. Keep modest -- a single
-# read-only MCP call should resolve well inside this window. Beyond
-# this, we return blocked(reason=mcp_tool_timeout) so the operator
-# never sees a hung Run button.
-_MCP_EXEC_TIMEOUT_SECONDS: float = 12.0
+# Real-execution timeout for promoted skills. Sized for real-world
+# read-only calls -- e.g. ``filesystem.search_files`` walking a
+# repo-scale tree (D:\Ideas\Daena, ~50k node_modules entries) takes
+# 15-25s on Windows. The 12s default tripped the brief's exact
+# acceptance call; bumping to 45s covers wide trees while still
+# capping a hung MCP within an operator-friendly window. Beyond this
+# we return blocked(reason=mcp_tool_timeout) so the Run button never
+# spins forever. Sprint-9 PR-CONN-PHASE2-PER-SKILL-TIMEOUT can move
+# this into per-skill metadata if narrower limits are needed.
+_MCP_EXEC_TIMEOUT_SECONDS: float = 45.0
 
 
 # Trim the operator-facing summary to keep responses small and avoid
