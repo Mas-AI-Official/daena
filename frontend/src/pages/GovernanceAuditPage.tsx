@@ -110,6 +110,12 @@ function AuditDetail({ entry }: { entry: AuditEntryResponse }) {
     'routing_source', 'selection_reason', 'mode_reason', 'intent',
     'latency_ms', 'provider_strategy', 'suggested_models', 'top_candidates',
     'providers_considered', 'user_message',
+    // Plugin invocation panel fields (Sprint-10 PR-5)
+    'plugin_id', 'skill_id', 'outcome', 'read_only', 'target_tool',
+    'url_host', 'result_length', 'blocked_reason', 'phase',
+    'allowlist_match', 'execution_mode', 'backend_surface',
+    'argument_shape', 'missing_inputs', 'goal_length', 'truncated',
+    'worker_version',
   ])
   const otherParams = Object.entries(params).filter(([k, v]) => !shownKeys.has(k) && v != null && v !== '')
 
@@ -202,6 +208,85 @@ function AuditDetail({ entry }: { entry: AuditEntryResponse }) {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Plugin Invocation panel (Sprint-10 PR-5):
+          structured rendering for plugin.skill_invocation rows.
+          The brief mandates: plugin, skill, status, read-only/write,
+          result preview, audit id.  No secret values. */}
+      {entry.action_type === 'plugin.skill_invocation' && (
+        <div
+          data-testid="audit-detail-plugin-panel"
+          className="space-y-2"
+        >
+          <p className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold">
+            Plugin Invocation
+          </p>
+          <div className="rounded-lg bg-midnight-800/50 border border-white/5 p-3 grid grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2 text-xs">
+            <div>
+              <span className="text-[10px] text-starlight-500">Plugin</span>
+              <p className="font-mono text-starlight-200">
+                {String(params.plugin_id ?? '?')}
+              </p>
+            </div>
+            <div>
+              <span className="text-[10px] text-starlight-500">Skill</span>
+              <p className="font-mono text-starlight-200">
+                {String(params.skill_id ?? '?')}
+              </p>
+            </div>
+            <div>
+              <span className="text-[10px] text-starlight-500">Status</span>
+              <p className="text-starlight-200">
+                {String(params.outcome ?? entry.result ?? '?')}
+              </p>
+            </div>
+            <div>
+              <span className="text-[10px] text-starlight-500">Mode</span>
+              <p className={params.read_only === false
+                ? 'text-amber-300 font-semibold'
+                : 'text-emerald-300 font-semibold'}>
+                {params.read_only === false ? 'WRITE' : 'read-only'}
+              </p>
+            </div>
+            {params.target_tool && (
+              <div>
+                <span className="text-[10px] text-starlight-500">Target tool</span>
+                <p className="font-mono text-starlight-300">
+                  {String(params.target_tool)}
+                </p>
+              </div>
+            )}
+            {params.url_host && (
+              <div>
+                <span className="text-[10px] text-starlight-500">Host</span>
+                <p className="font-mono text-starlight-300 truncate">
+                  {String(params.url_host)}
+                </p>
+              </div>
+            )}
+            {typeof params.result_length === 'number' && (
+              <div>
+                <span className="text-[10px] text-starlight-500">Result length</span>
+                <p className="text-starlight-300">{String(params.result_length)} chars</p>
+              </div>
+            )}
+            {params.blocked_reason && (
+              <div className="col-span-2 lg:col-span-3">
+                <span className="text-[10px] text-starlight-500">Reason</span>
+                <p className="text-rose-300 font-mono break-all">
+                  {String(params.blocked_reason)}
+                </p>
+              </div>
+            )}
+            <div className="col-span-2 lg:col-span-3">
+              <span className="text-[10px] text-starlight-500">Audit id</span>
+              <p className="font-mono text-starlight-400 text-[11px]">
+                {entry.id}
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -355,6 +440,11 @@ export function GovernanceAuditPage() {
   const [filterRisk, setFilterRisk] = useState<string>('')
   const [filterResult, setFilterResult] = useState<string>('')
   const [filterAction, setFilterAction] = useState<string>('')
+  // PR-AUDIT-VIEWER-PLUGIN-FILTER (Sprint-10 PR-5, 2026-05-05):
+  // narrow audit rows to a specific plugin's skill invocations. When
+  // set, auto-implies action_type='plugin.skill_invocation' so the
+  // operator doesn't have to combine two filters.
+  const [filterPlugin, setFilterPlugin] = useState<string>('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -390,12 +480,28 @@ export function GovernanceAuditPage() {
     [entries],
   )
 
-  const hasActiveFilters = !!(filterRisk || filterResult || filterAction || dateFrom || dateTo)
+  // PR-AUDIT-VIEWER-PLUGIN-FILTER (Sprint-10 PR-5, 2026-05-05).
+  // Unique plugin_ids derived from plugin.skill_invocation rows so the
+  // dropdown shows only what the operator has actually used.
+  const pluginIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const e of entries) {
+      if (e.action_type !== 'plugin.skill_invocation') continue
+      const pid = (e.action_params as Record<string, unknown> | null)?.plugin_id
+      if (typeof pid === 'string' && pid) ids.add(pid)
+    }
+    return [...ids].sort()
+  }, [entries])
+
+  const hasActiveFilters = !!(
+    filterRisk || filterResult || filterAction || filterPlugin || dateFrom || dateTo
+  )
 
   const clearFilters = () => {
     setFilterRisk('')
     setFilterResult('')
     setFilterAction('')
+    setFilterPlugin('')
     setDateFrom('')
     setDateTo('')
     setSearchQuery('')
@@ -468,6 +574,15 @@ export function GovernanceAuditPage() {
       if (filterResult && e.result !== filterResult) return false
       // Action type filter
       if (filterAction && e.action_type !== filterAction) return false
+      // PR-AUDIT-VIEWER-PLUGIN-FILTER (Sprint-10 PR-5):
+      // Plugin filter: when set, narrow to plugin.skill_invocation
+      // rows for the chosen plugin_id. An operator filtering "what
+      // did mcp-fetch do" should never have to also tick action_type.
+      if (filterPlugin) {
+        if (e.action_type !== 'plugin.skill_invocation') return false
+        const pid = (e.action_params as Record<string, unknown> | null)?.plugin_id
+        if (pid !== filterPlugin) return false
+      }
       // Date range
       if (dateFrom) {
         const entryDate = new Date(e.created_at).toISOString().slice(0, 10)
@@ -479,7 +594,7 @@ export function GovernanceAuditPage() {
       }
       return true
     })
-  }, [entries, searchQuery, filterRisk, filterResult, filterAction, dateFrom, dateTo])
+  }, [entries, searchQuery, filterRisk, filterResult, filterAction, filterPlugin, dateFrom, dateTo])
 
   return (
     <div className="h-full overflow-y-auto">
@@ -581,7 +696,7 @@ export function GovernanceAuditPage() {
               Filters
               {hasActiveFilters && (
                 <span className="ml-1 w-4 h-4 rounded-full bg-primary-500 text-[10px] text-white flex items-center justify-center font-medium">
-                  {[filterRisk, filterResult, filterAction, dateFrom, dateTo].filter(Boolean).length}
+                  {[filterRisk, filterResult, filterAction, filterPlugin, dateFrom, dateTo].filter(Boolean).length}
                 </span>
               )}
             </button>
@@ -609,6 +724,24 @@ export function GovernanceAuditPage() {
                         <option value="">All</option>
                         {actionTypes.map((t) => (
                           <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Plugin dropdown (Sprint-10 PR-5) -- narrow to a
+                        specific plugin's skill invocations. Auto-implies
+                        action_type='plugin.skill_invocation'. */}
+                    <div data-testid="audit-filter-plugin">
+                      <label className="block text-[10px] text-starlight-500 uppercase tracking-wider mb-1">Plugin</label>
+                      <select
+                        value={filterPlugin}
+                        onChange={(e) => setFilterPlugin(e.target.value)}
+                        className="w-full glass-input px-2.5 py-2 rounded-lg text-xs text-starlight-200 bg-midnight-400/60 border border-white/5 focus:outline-none focus:ring-1 focus:ring-primary-500/40 cursor-pointer"
+                        aria-label="Filter by plugin"
+                      >
+                        <option value="">All plugins</option>
+                        {pluginIds.map((pid) => (
+                          <option key={pid} value={pid}>{pid}</option>
                         ))}
                       </select>
                     </div>
