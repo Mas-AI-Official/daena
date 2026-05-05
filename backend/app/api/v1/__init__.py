@@ -61,6 +61,7 @@ from app.api.v1 import (
     settings,
     plugin_governance_presets_api,
     google_setup,
+    scrape,
     skill_consent_api,
     skill_execution,
     skill_refinery,
@@ -139,6 +140,14 @@ router.include_router(connections.router, prefix="/connections", tags=["connecti
 # starts an OAuth flow.
 router.include_router(
     google_setup.router, prefix="/connections", tags=["connections-google-setup"],
+)
+# PR-SCRAPEGRAPH-GOVERNED-READONLY-SKILL (Sprint-10 PR-2, 2026-05-05):
+# Governed read-only ScrapeGraphAI surface. FOUNDER-only. Spawns the
+# venv_daena worker, returns capped extracted text. Every call writes
+# a plugin.skill_invocation audit row carrying url_host (not the full
+# URL value) + result length + truncated flag. NO write surface.
+router.include_router(
+    scrape.router, prefix="/scrape", tags=["scrape"],
 )
 router.include_router(
     connections_v2.router, prefix="/connections/v2", tags=["connections-v2"],
