@@ -648,6 +648,93 @@ PHASE2_ALLOWLIST: tuple[SkillToolMapping, ...] = (
             "content, never returns sample values."
         ),
     ),
+
+    # ── Zero-input dev MCPs (PR-CONN-PHASE2-ARM-ZERO-INPUT-MCPS, 2026-05-05) ──
+    # Four zero-cost-of-credentials MCPs the operator can install with
+    # one click. Arming one safe READ skill on each gives the local-beta
+    # a richer demo path: Time / Fetch / Memory / Sequential Thinking
+    # all run without a single token, allowing Daena to demonstrate more
+    # than file search on a clean install.
+    SkillToolMapping(
+        plugin_id="mcp-time",
+        skill_id="current_time",
+        backend_surface="mcp",
+        read_only=True,
+        execution_mode="mcp_tool",
+        # Reference time MCP exposes `get_current_time(timezone)`.
+        # Returns the wall-clock time in the named IANA zone. No
+        # writes, no network calls, no state mutation.
+        target_tool="get_current_time",
+        required_inputs=("timezone",),
+        reads_summary=(
+            "Read the current wall-clock time in an IANA timezone "
+            "(e.g. UTC, America/Toronto). Returns time + zone + "
+            "offset. No writes; no network egress."
+        ),
+    ),
+    SkillToolMapping(
+        plugin_id="mcp-fetch",
+        skill_id="fetch_public_url",
+        backend_surface="mcp",
+        read_only=True,
+        execution_mode="mcp_tool",
+        # Reference fetch MCP exposes `fetch(url, max_length, ...)`.
+        # We pass max_length=_FETCH_MAX_LENGTH to cap the response
+        # at the MCP boundary. A precall URL-safety validator (see
+        # url_safety.is_public_url_safe) blocks loopback, RFC1918,
+        # link-local, reserved IPs, and internal-DNS suffixes BEFORE
+        # the MCP socket opens.
+        target_tool="fetch",
+        required_inputs=("url",),
+        reads_summary=(
+            "HTTP GET a public URL and read the response body as "
+            "markdown (capped). Loopback, RFC1918, link-local, and "
+            "internal-DNS targets are refused before the call. No "
+            "cookies, no credentials, no POST, no file download."
+        ),
+    ),
+    SkillToolMapping(
+        plugin_id="mcp-memory",
+        skill_id="list_memory_graph",
+        backend_surface="mcp",
+        read_only=True,
+        execution_mode="mcp_tool",
+        # Reference memory MCP exposes write tools (create_entities,
+        # add_observations, ...) AND read tools. We map ONLY to the
+        # zero-input read path `read_graph`. The summary cap in
+        # _summarize_mcp_result trims oversized graph dumps.
+        target_tool="read_graph",
+        required_inputs=(),
+        reads_summary=(
+            "Read the cross-tool memory MCP's knowledge graph "
+            "(entities + relations). Read-only -- the executor never "
+            "calls create/add/delete tools on this MCP."
+        ),
+    ),
+    SkillToolMapping(
+        plugin_id="mcp-sequential-thinking",
+        skill_id="reason_step",
+        backend_surface="mcp",
+        read_only=True,
+        execution_mode="mcp_tool",
+        # Reference sequential-thinking MCP exposes a single tool:
+        # `sequentialthinking(thought, thoughtNumber, totalThoughts,
+        # nextThoughtNeeded, ...)`. The MCP keeps an in-process
+        # thought log -- no disk write, no network egress. We arm a
+        # single-step usage: operator supplies one thought, we set
+        # thoughtNumber=1 / totalThoughts=1 / nextThoughtNeeded=False
+        # in the arg builder. The MCP returns a structured plan
+        # acknowledgement -- NOT a hidden chain-of-thought generated
+        # by an LLM (this MCP does no inference of its own).
+        target_tool="sequentialthinking",
+        required_inputs=("thought",),
+        reads_summary=(
+            "Record one structured thought in the sequential-thinking "
+            "MCP's in-process plan (single step). Returns a structured "
+            "acknowledgement of the thought, NOT a hidden chain-of-thought "
+            "(this MCP does no LLM inference). No disk write, no network."
+        ),
+    ),
 )
 
 
@@ -865,6 +952,24 @@ class SkillExecutor:
                     f"inputs before it can run: {', '.join(missing)}."
                 ),
             )
+
+        # Step 4.5: PRECALL validators (Sprint-9 PR-CONN-PHASE2-ARM-ZERO-INPUT-MCPS).
+        # Per-skill safety gates that run AFTER required-input presence
+        # check but BEFORE any MCP/OAuth socket opens. Today this is
+        # used by mcp-fetch:fetch_public_url to refuse SSRF-shaped URLs
+        # before the fetch MCP ever sees them. Returns None to allow.
+        if entry.execution_mode == "mcp_tool":
+            precall_block = _run_precall_validator(entry, operator_inputs)
+            if precall_block is not None:
+                reason_code, operator_msg = precall_block
+                return await self._record_blocked(
+                    plugin_id=plugin_id,
+                    skill_id=skill_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    reason=reason_code,
+                    summary=operator_msg,
+                )
 
         # Step 5: branch on execution_mode + backend_surface.
         #   * planned_only         -> existing spine path (write planned audit row)
@@ -1780,6 +1885,39 @@ _PLUGIN_TO_SERVER_KEY: dict[str, tuple[str, ...]] = {
         "mcp-neon",
         "@neondatabase/mcp-server-neon",
     ),
+    # Reference Time MCP (Python). Catalog template uses the npm shim
+    # name; the python package itself ships as `mcp-server-time`.
+    "mcp-time": (
+        "time",
+        "mcp-time",
+        "server-time",
+        "mcp-server-time",
+        "@modelcontextprotocol/server-time",
+    ),
+    # Reference Fetch MCP (Python). Same shape as Time.
+    "mcp-fetch": (
+        "fetch",
+        "mcp-fetch",
+        "server-fetch",
+        "mcp-server-fetch",
+        "@modelcontextprotocol/server-fetch",
+    ),
+    # Reference Memory MCP (npm). Several common keys.
+    "mcp-memory": (
+        "memory",
+        "mcp-memory",
+        "server-memory",
+        "@modelcontextprotocol/server-memory",
+    ),
+    # Reference Sequential Thinking MCP (npm). Operators typically
+    # use the `sequential-thinking` short key.
+    "mcp-sequential-thinking": (
+        "sequential-thinking",
+        "sequentialthinking",
+        "mcp-sequential-thinking",
+        "server-sequential-thinking",
+        "@modelcontextprotocol/server-sequential-thinking",
+    ),
 }
 
 
@@ -1932,6 +2070,69 @@ def _args_neon_get_database_tables(
     return {"projectId": operator_inputs["project_id"]}
 
 
+# ── Zero-input MCP arg builders (PR-CONN-PHASE2-ARM-ZERO-INPUT-MCPS) ──
+
+
+# Cap on the bytes we ask the fetch MCP to return. Defense-in-depth on
+# top of _RESULT_SUMMARY_MAX_CHARS -- the MCP enforces this at its own
+# socket layer, the executor trims the summary, and the audit row
+# stores only the SHA256[:8] hash of the raw body. Keep large enough
+# to read a typical README (~50KB), small enough to refuse a
+# multi-megabyte page.
+_FETCH_MAX_LENGTH: int = 65536
+
+
+def _args_time_get_current_time(
+    operator_inputs: dict[str, str],
+) -> dict[str, Any]:
+    """Reference time MCP `get_current_time` args: timezone (IANA)."""
+    return {"timezone": operator_inputs["timezone"]}
+
+
+def _args_fetch_url(operator_inputs: dict[str, str]) -> dict[str, Any]:
+    """Reference fetch MCP `fetch` args: url + max_length cap.
+
+    The URL safety check runs in the precall validator (see
+    ``_PRECALL_VALIDATORS``) BEFORE this builder is invoked, so by
+    the time we're here the URL has already passed the public-only
+    gate. We never disable redirects at this layer -- the MCP's own
+    socket layer does NOT chase redirects to private IPs by default
+    in the reference server, and a follow-up PR can add post-resolve
+    rechecks if needed."""
+    return {
+        "url": operator_inputs["url"].strip(),
+        "max_length": _FETCH_MAX_LENGTH,
+    }
+
+
+def _args_memory_read_graph(
+    operator_inputs: dict[str, str],
+) -> dict[str, Any]:
+    """Reference memory MCP `read_graph` takes NO arguments. Returns
+    the entire entity+relation graph; the executor trims via
+    _summarize_mcp_result + _RESULT_SUMMARY_MAX_CHARS."""
+    return {}
+
+
+def _args_sequential_thinking(
+    operator_inputs: dict[str, str],
+) -> dict[str, Any]:
+    """Reference sequential-thinking MCP `sequentialthinking` args.
+
+    We arm a SINGLE-STEP usage shape (operator supplies one thought,
+    we pin thoughtNumber=1, totalThoughts=1, nextThoughtNeeded=False).
+    The MCP records the thought in its in-process plan and returns a
+    structured acknowledgement -- it does NO LLM inference of its
+    own. Multi-step iterative usage would require an LLM driving the
+    loop; that's not what this skill is for."""
+    return {
+        "thought": operator_inputs["thought"].strip(),
+        "thoughtNumber": 1,
+        "totalThoughts": 1,
+        "nextThoughtNeeded": False,
+    }
+
+
 _ARG_BUILDERS: dict[tuple[str, str], Any] = {
     ("mcp-filesystem", "find_files"): _args_filesystem_search_files,
     ("mcp-filesystem", "summarize_directory"): _args_filesystem_list_directory,
@@ -1948,7 +2149,60 @@ _ARG_BUILDERS: dict[tuple[str, str], Any] = {
     ("mcp-mongodb", "describe_collections"): _args_mongodb_list_collections,
     ("mcp-supabase", "describe_schema"): _args_supabase_list_tables,
     ("mcp-neon", "describe_schema"): _args_neon_get_database_tables,
+    # PR-CONN-PHASE2-ARM-ZERO-INPUT-MCPS (2026-05-05)
+    ("mcp-time", "current_time"): _args_time_get_current_time,
+    ("mcp-fetch", "fetch_public_url"): _args_fetch_url,
+    ("mcp-memory", "list_memory_graph"): _args_memory_read_graph,
+    ("mcp-sequential-thinking", "reason_step"): _args_sequential_thinking,
 }
+
+
+# Per-skill PRECALL validators. Run AFTER required-inputs check and
+# BEFORE the MCP socket opens. Return None to allow; return a stable
+# (reason_code, operator_message) tuple to block. The executor records
+# the reason in the audit row's blocked_reason field and surfaces the
+# operator-facing message as the result summary.
+def _precall_validate_fetch_url(
+    operator_inputs: dict[str, str],
+) -> tuple[str, str] | None:
+    """Pre-call URL safety gate for mcp-fetch:fetch_public_url.
+
+    Refuses URLs that point at loopback, link-local, RFC1918 private
+    ranges, reserved IP space, or internal-DNS suffixes (.local /
+    .internal / .corp / .home / .lan / .intranet / .localdomain).
+    Refuses non-http(s) schemes outright."""
+    from app.services.connection_v2.url_safety import is_public_url_safe
+
+    raw = operator_inputs.get("url", "")
+    ok, reason = is_public_url_safe(raw)
+    if ok:
+        return None
+    return (
+        f"url_safety:{reason}",
+        (
+            f"Refused to fetch this URL: it failed the public-URL "
+            f"safety check ({reason}). Daena's mcp-fetch skill blocks "
+            f"loopback, RFC1918 private, link-local, reserved IP, and "
+            f"internal-DNS targets before the MCP socket opens."
+        ),
+    )
+
+
+_PRECALL_VALIDATORS: dict[
+    tuple[str, str], Any
+] = {
+    ("mcp-fetch", "fetch_public_url"): _precall_validate_fetch_url,
+}
+
+
+def _run_precall_validator(
+    entry: SkillToolMapping, operator_inputs: dict[str, str],
+) -> tuple[str, str] | None:
+    """Dispatch to the per-skill precall validator if registered."""
+    validator = _PRECALL_VALIDATORS.get((entry.plugin_id, entry.skill_id))
+    if validator is None:
+        return None
+    return validator(operator_inputs)
 
 
 def _build_mcp_arguments(

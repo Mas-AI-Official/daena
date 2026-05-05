@@ -179,6 +179,21 @@ PROMOTED_TO_MCP_TOOL: dict[tuple[str, str], str] = {
         "PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY",
     ("app-google-drive", "summarize_file"):
         "PR-CONN-PHASE2X-GMAIL-DRIVE-READONLY",
+    # PR-CONN-PHASE2-ARM-ZERO-INPUT-MCPS (Sprint-9, 2026-05-05):
+    # Four zero-credential MCPs armed for read-only execution. Each
+    # carries either zero or one operator-supplied input and reads
+    # state that is either wall-clock (time), MCP-internal
+    # (memory KG, sequential-thinking in-process plan), or
+    # public-internet (fetch, with SSRF guard). No OAuth, no API
+    # tokens, no payment surfaces involved.
+    ("mcp-time", "current_time"):
+        "PR-CONN-PHASE2-ARM-ZERO-INPUT-MCPS",
+    ("mcp-fetch", "fetch_public_url"):
+        "PR-CONN-PHASE2-ARM-ZERO-INPUT-MCPS",
+    ("mcp-memory", "list_memory_graph"):
+        "PR-CONN-PHASE2-ARM-ZERO-INPUT-MCPS",
+    ("mcp-sequential-thinking", "reason_step"):
+        "PR-CONN-PHASE2-ARM-ZERO-INPUT-MCPS",
 }
 
 
