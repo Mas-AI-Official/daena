@@ -1,35 +1,43 @@
-"""ResearchFlow -- chains scrape -> persist into a local ResearchDraft.
+"""ResearchFlow -- chains scrape -> structure -> persist into ResearchDraft.
 
-PR-CAREEROPS-READONLY-RESEARCH-FLOW (Sprint-10 PR-3, 2026-05-05).
-PR-CONTENTOPS-READONLY-RESEARCH-FLOW (Sprint-10 PR-4, 2026-05-05).
+Sprint-10 PR-3 / PR-4: read-only career + content research flows.
+Sprint-11 PR-2:        post-process scrape output into a structured
+                       payload (opportunity-shaped for kind=career,
+                       brief-shaped for kind=content) stored in
+                       ``ResearchDraft.structured_payload`` JSONB.
 
 The flow is deliberately small and read-only:
 
   1. Validate inputs (kind, url, goal).
   2. Call ``scrape_service.extract_from_url`` -- which itself enforces
      URL safety + caps output + audits.
-  3. Persist a ``ResearchDraft`` row in the operator's tenant.
-  4. Return the draft id + summary.
+  3. Build a kind-specific structured payload via deterministic
+     extraction (host -> company candidate, URLs in extract -> sources,
+     bulleted lines -> outline / requirements). LLM enrichment is
+     deferred to a follow-up PR; fields the heuristic cannot fill carry
+     ``_llm_pending=true`` so the UI can render an honest
+     "needs LLM enrichment" badge.
+  4. Persist a ``ResearchDraft`` row in the operator's tenant.
+  5. Return the draft id + summary.
 
 NEVER:
   * sends the draft anywhere (no email, no LinkedIn / Indeed
     automation, no DMs, no posting)
-  * triggers a second LLM round-trip to "improve" the draft
+  * triggers an LLM round-trip in this PR (deterministic shape only)
   * reads / writes any external system beyond the URL the operator
     specified
   * stores the operator's OAuth token / API key / any credential
 
-The summary the LLM produced inside the scrape worker is the draft's
-summary -- ScrapeGraphAI's SmartScraperGraph is already a "scrape
-under this goal" call that returns goal-tailored text. A future PR
-can add a separate post-process LLM step (e.g. extract structured
-fields) without changing this service's contract.
+CLAUDE.md Rule 2 is upheld: ``structured_payload`` is JSONB on the
+single canonical ``ResearchDraft`` table. NO parallel
+``OpportunityDraft`` / ``ContentBrief`` tables exist or will be added.
 """
 
 from __future__ import annotations
 
+import re
 import uuid
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +58,12 @@ ResearchKind = Literal["career", "content"]
 ALLOWED_KINDS: tuple[ResearchKind, ...] = ("career", "content")
 
 
+# Schema version for structured_payload. Bumped if the shape changes
+# in a backwards-incompatible way; consumers should ignore unknown
+# fields rather than pin to a specific version.
+STRUCTURED_PAYLOAD_VERSION = "2026-05-05.v1"
+
+
 class ResearchFlowError(Exception):
     """Operator-safe error -- the message is fine for an API response."""
 
@@ -62,6 +76,128 @@ def _safe_host(url: str) -> str:
         return f"{(parts.scheme or 'http').lower()}://{host}{port}"
     except Exception:
         return "?"
+
+
+# ── Structured-payload extraction ─────────────────────────────────────
+
+
+_BULLET_RE = re.compile(r"^\s*(?:[-*•·●]|\d+[\.)])\s+(.+?)\s*$", re.MULTILINE)
+_URL_RE = re.compile(r"https?://[^\s)>\"']+", re.IGNORECASE)
+
+
+def _bullets(text: str, *, limit: int = 12) -> list[str]:
+    """Return de-duplicated bulleted lines from a text blob."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in _BULLET_RE.finditer(text or ""):
+        line = m.group(1).strip()
+        if not line or line.lower() in seen:
+            continue
+        seen.add(line.lower())
+        out.append(line[:300])
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _urls(text: str, *, limit: int = 12) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in _URL_RE.finditer(text or ""):
+        url = m.group(0).rstrip(".,;)")
+        if url in seen:
+            continue
+        seen.add(url)
+        out.append(url[:2048])
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _company_candidate_from_host(source_host: str) -> str | None:
+    """Best-effort company name from the source host.
+
+    ``https://greenhouse.io/...`` -> ``greenhouse``. The LLM enrichment
+    step will replace this with the real company name when it lands.
+    """
+    try:
+        host = source_host.split("://", 1)[-1].split("/", 1)[0]
+        host = host.split(":", 1)[0]
+        parts = host.split(".")
+        # Drop common ATS subdomains so jobs.acme.com -> acme
+        if parts and parts[0] in {"jobs", "careers", "boards", "apply"}:
+            parts = parts[1:]
+        if len(parts) >= 2:
+            return parts[0]
+        return host or None
+    except Exception:
+        return None
+
+
+def build_structured_payload(
+    *,
+    kind: ResearchKind,
+    goal: str,
+    raw_extract: str,
+    source_url: str,
+    source_host: str,
+) -> dict[str, Any]:
+    """Produce a kind-specific structured payload.
+
+    Deterministic only -- no LLM call. Fields the heuristic cannot
+    fill confidently are set to ``None`` (or empty list/string) and the
+    payload's ``_llm_pending`` flag stays True so the UI can render an
+    honest pending badge. A follow-up PR will run an LLM enrichment
+    pass that flips ``_llm_pending`` to False and fills the gaps.
+
+    The shape is stable across LLM-enrichment passes -- the same keys,
+    just better values.
+    """
+    extract = raw_extract or ""
+
+    if kind == "career":
+        # Opportunity shape per Sprint-11 brief.
+        return {
+            "_schema_version": STRUCTURED_PAYLOAD_VERSION,
+            "_kind": "opportunity",
+            "_llm_pending": True,
+            "company": _company_candidate_from_host(source_host),
+            "role": None,             # LLM enrichment fills
+            "team": None,
+            "location": None,
+            "compensation": None,
+            "requirements": _bullets(extract, limit=12),
+            "responsibilities": [],   # LLM enrichment fills
+            "fit_score": None,        # 0-100, LLM enrichment fills
+            "fit_rationale": None,
+            "missing_skills": [],     # LLM enrichment fills
+            "suggested_answers": [],  # list[{question, answer, confidence}]
+            "outreach_draft_local": None,
+            "next_tasks": [],         # list[str]; first pass: empty
+            "sources": [source_url, *_urls(extract, limit=8)],
+            "goal_echo": goal,
+        }
+
+    if kind == "content":
+        # Content brief shape per Sprint-11 brief.
+        bullets = _bullets(extract, limit=12)
+        return {
+            "_schema_version": STRUCTURED_PAYLOAD_VERSION,
+            "_kind": "brief",
+            "_llm_pending": True,
+            "audience": None,
+            "key_points": bullets[:8],
+            "angle": None,
+            "outline": bullets,
+            "captions": [],           # LLM enrichment fills
+            "hooks": [],
+            "sources": [source_url, *_urls(extract, limit=10)],
+            "risks_to_verify": [],
+            "claims_to_verify": [],
+            "goal_echo": goal,
+        }
+
+    raise ResearchFlowError(f"unknown_kind: {kind!r}")
 
 
 async def create_research_draft(
@@ -109,6 +245,14 @@ async def create_research_draft(
             f"scrape_failed:{outcome.error or 'unknown'}"
         )
 
+    structured = build_structured_payload(
+        kind=kind,
+        goal=goal.strip(),
+        raw_extract=outcome.result,
+        source_url=url.strip(),
+        source_host=_safe_host(url),
+    )
+
     draft = ResearchDraft(
         id=uuid.uuid4(),
         tenant_id=tenant_id,
@@ -122,6 +266,7 @@ async def create_research_draft(
                                       # split if a second LLM stage lands
         status="DRAFT",
         audit_event_id=None,  # set by API layer post-write
+        structured_payload=structured,
     )
     db.add(draft)
     await db.flush()

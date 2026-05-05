@@ -42,7 +42,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, GUID, TenantMixin, TimestampMixin
+from app.models.base import Base, GUID, JSONBCompat, TenantMixin, TimestampMixin
 
 
 class ResearchDraft(Base, TenantMixin, TimestampMixin):
@@ -50,6 +50,13 @@ class ResearchDraft(Base, TenantMixin, TimestampMixin):
 
     NEVER auto-published, NEVER submitted, NEVER emailed. The
     operator owns what happens next.
+
+    Sprint-11 PR-2: ``structured_payload`` JSONB carries the
+    kind-specific structured shape (opportunity for kind=career,
+    brief for kind=content). The schema is documented in
+    ``app.services.research_flow``; the column is single canonical
+    storage for both shapes -- per CLAUDE.md Rule 2 we do NOT spawn
+    parallel OpportunityDraft / ContentBrief tables.
     """
 
     __tablename__ = "research_drafts"
@@ -72,4 +79,9 @@ class ResearchDraft(Base, TenantMixin, TimestampMixin):
     )
     audit_event_id: Mapped[str | None] = mapped_column(
         String(64), nullable=True,
+    )
+    # Sprint-11 PR-2: kind-specific structured shape. NULL allowed for
+    # legacy rows created before this column existed.
+    structured_payload: Mapped[dict | None] = mapped_column(
+        JSONBCompat, nullable=True,
     )

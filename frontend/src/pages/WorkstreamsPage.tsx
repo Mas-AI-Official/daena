@@ -27,11 +27,15 @@ import {
   Activity,
   AlertCircle,
   Archive,
+  Briefcase,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock,
   FileText,
   Mail,
   MessageSquare,
+  Newspaper,
   Pause,
   Play,
   RadioTower,
@@ -841,6 +845,189 @@ function WorkstreamDetailDrawer({
   )
 }
 
+// ── Sprint-11 PR-2: Drafts lane ────────────────────────────────────
+//
+// Surfaces career + content research drafts (and -- once PR-3 lands --
+// form drafts) inside the existing Workstreams console. Per the audit,
+// we do NOT spin up a parallel "Work Command Center" page. Drafts are
+// the unit of supervised research; workstreams are the unit of
+// supervised action. They live next to each other on one page.
+//
+// The lane is read-only here -- the Apply / Edit / Approve buttons land
+// inside dedicated draft surfaces (PR-3 form drafts, PR-4 approval
+// queue extension). For now: count, last-three preview, click to expand
+// the structured_payload JSON for inspection.
+
+interface ResearchDraftSummary {
+  id: string
+  kind: 'career' | 'content'
+  source_url: string
+  source_host: string
+  goal: string
+  summary: string
+  status: string
+  created_at: string
+  structured_payload: Record<string, unknown> | null
+}
+
+function PendingBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30"
+      title="Deterministic shape only. LLM enrichment pass deferred to a follow-up PR."
+    >
+      llm pending
+    </span>
+  )
+}
+
+function DraftRow({ draft }: { draft: ResearchDraftSummary }) {
+  const [open, setOpen] = useState(false)
+  const payload = draft.structured_payload
+  const llmPending = payload && payload._llm_pending === true
+  const company = payload && typeof payload.company === 'string' ? payload.company : null
+  const headline = company || draft.source_host || 'untitled draft'
+  return (
+    <div className="border border-white/5 rounded-md bg-white/[.02] hover:bg-white/[.04] transition">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-start gap-2 p-2.5 text-left cursor-pointer"
+      >
+        {open ? <ChevronDown size={12} className="mt-0.5 text-starlight-500" /> : <ChevronRight size={12} className="mt-0.5 text-starlight-500" />}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-semibold text-starlight-100 truncate">
+              {headline}
+            </span>
+            {llmPending && <PendingBadge />}
+            <span className="text-[9px] text-starlight-500 font-mono">{draft.source_host}</span>
+          </div>
+          <div className="text-[10px] text-starlight-400 line-clamp-1 mt-0.5">
+            {draft.goal}
+          </div>
+        </div>
+        <span className="text-[9px] text-starlight-500 whitespace-nowrap">
+          {formatRelative(draft.created_at)}
+        </span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 pt-0 space-y-2 text-[11px] text-starlight-300 border-t border-white/5">
+          {payload ? (
+            <pre className="text-[10px] overflow-x-auto bg-black/20 rounded p-2 whitespace-pre-wrap">
+              {JSON.stringify(payload, null, 2)}
+            </pre>
+          ) : (
+            <div className="italic text-starlight-500">no structured payload yet</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DraftsLane() {
+  const [careerDrafts, setCareerDrafts] = useState<ResearchDraftSummary[]>([])
+  const [contentDrafts, setContentDrafts] = useState<ResearchDraftSummary[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<'career' | 'content' | 'form'>('career')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const [careerRes, contentRes] = await Promise.all([
+        api.get('/research/drafts', { params: { kind: 'career', limit: 25 } }),
+        api.get('/research/drafts', { params: { kind: 'content', limit: 25 } }),
+      ])
+      setCareerDrafts(careerRes.data?.drafts ?? [])
+      setContentDrafts(contentRes.data?.drafts ?? [])
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const careerCount = careerDrafts.length
+  const contentCount = contentDrafts.length
+
+  const TABS: Array<{ key: 'career' | 'content' | 'form'; label: string; icon: React.ReactNode; count: number; placeholder?: string }> = [
+    { key: 'career', label: 'Career', icon: <Briefcase size={11} />, count: careerCount },
+    { key: 'content', label: 'Content', icon: <Newspaper size={11} />, count: contentCount },
+    { key: 'form', label: 'Forms', icon: <FileText size={11} />, count: 0, placeholder: 'PR-3 lands the FormDraft surface here.' },
+  ]
+
+  const visible = tab === 'career'
+    ? careerDrafts
+    : tab === 'content'
+      ? contentDrafts
+      : []
+
+  return (
+    <div className="glass-panel rounded-xl p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <div className="text-sm font-bold text-starlight-100">Drafts to review</div>
+          <div className="text-[11px] text-starlight-500">
+            Local-only research artifacts. Daena prepared, you decide what's next. No external action fires from this lane.
+          </div>
+        </div>
+        <button
+          onClick={() => void load()}
+          className="text-[10px] text-starlight-400 hover:text-starlight-100 inline-flex items-center gap-1"
+        >
+          <RefreshCw size={10} /> Refresh
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-2 py-1 rounded text-[10px] inline-flex items-center gap-1 cursor-pointer ${
+              tab === t.key
+                ? 'bg-primary-500 text-white'
+                : 'bg-white/5 text-starlight-300 hover:bg-white/10'
+            }`}
+          >
+            {t.icon}
+            {t.label}
+            <span className="px-1 text-[9px] rounded bg-black/20">{t.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="text-[11px] text-amber-300">Failed to load drafts: {error}</div>
+      )}
+
+      {loading ? (
+        <div className="text-[11px] text-starlight-400">Loading drafts…</div>
+      ) : tab === 'form' ? (
+        <div className="text-[11px] text-starlight-500 italic px-1">
+          {TABS.find(t => t.key === 'form')?.placeholder}
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="text-[11px] text-starlight-500 italic px-1">
+          No {tab} drafts yet. Run a research flow from chat or call <code className="bg-white/5 px-1 rounded">POST /api/v1/research/{tab}</code>.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {visible.map(d => <DraftRow key={d.id} draft={d} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 export default function WorkstreamsPage() {
   const [items, setItems] = useState<Workstream[]>([])
   const [loading, setLoading] = useState(true)
@@ -920,6 +1107,11 @@ export default function WorkstreamsPage() {
           redirect it mid-flight.
         </p>
       </div>
+
+      {/* Sprint-11 PR-2: Drafts lane. Local-only research drafts live
+          alongside the live workstream feed. No external action fires
+          from this lane -- it is preparation surface only. */}
+      <DraftsLane />
 
       <div className="flex items-center gap-2 flex-wrap">
         {FILTERS.map(f => (

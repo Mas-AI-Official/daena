@@ -72,6 +72,10 @@ class ResearchDraftOut(BaseModel):
     status: str
     audit_event_id: str | None
     created_at: str
+    # Sprint-11 PR-2: kind-specific structured shape (opportunity for
+    # kind=career, brief for kind=content). May be None on rows
+    # created before the column existed.
+    structured_payload: dict | None = None
 
     @classmethod
     def from_model(cls, row: ResearchDraft) -> "ResearchDraftOut":
@@ -86,6 +90,7 @@ class ResearchDraftOut(BaseModel):
             status=row.status,
             audit_event_id=row.audit_event_id,
             created_at=row.created_at.isoformat() if row.created_at else "",
+            structured_payload=row.structured_payload,
         )
 
 
