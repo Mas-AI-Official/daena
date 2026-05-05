@@ -16,6 +16,7 @@ from app.models.connection_v2 import (
 )
 from app.models.connections import Connector, ConnectorInstance, ConnectorPermission
 from app.models.crm import Account, Contact, Deal, OutreachDraft
+from app.models.research import ResearchDraft
 from app.models.department_budget import DepartmentBudget, ExpenseProposal
 from app.models.department_message import DepartmentMessage
 from app.models.department_policy import DepartmentPolicy
@@ -61,6 +62,7 @@ __all__ = [
     "ConnectionV2", "ConnectionV2Capability", "ConnectionV2OpLock",
     "ConnectionKind", "AuthMethod", "TrustTier", "OpKind",
     "Account", "Contact", "Deal", "OutreachDraft",
+    "ResearchDraft",
     "DepartmentBudget", "ExpenseProposal", "DepartmentState", "DepartmentMessage", "DepartmentPolicy",
     "UsageLedger", "VaultSecret", "Subscription",
     "ProjectPipeline",

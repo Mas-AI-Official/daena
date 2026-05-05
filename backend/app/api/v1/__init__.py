@@ -61,6 +61,7 @@ from app.api.v1 import (
     settings,
     plugin_governance_presets_api,
     google_setup,
+    research,
     scrape,
     skill_consent_api,
     skill_execution,
@@ -148,6 +149,14 @@ router.include_router(
 # URL value) + result length + truncated flag. NO write surface.
 router.include_router(
     scrape.router, prefix="/scrape", tags=["scrape"],
+)
+# PR-CAREEROPS-READONLY-RESEARCH-FLOW (Sprint-10 PR-3, 2026-05-05).
+# PR-CONTENTOPS-READONLY-RESEARCH-FLOW (Sprint-10 PR-4, 2026-05-05).
+# Supervised read-only research flows producing local-only
+# ResearchDraft rows. POST /career + POST /content + GET /drafts.
+# NEVER sends, posts, emails, or otherwise dispatches a draft.
+router.include_router(
+    research.router, prefix="/research", tags=["research"],
 )
 router.include_router(
     connections_v2.router, prefix="/connections/v2", tags=["connections-v2"],
