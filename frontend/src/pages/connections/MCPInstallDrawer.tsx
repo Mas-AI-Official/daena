@@ -85,16 +85,34 @@ export default function MCPInstallDrawer({
   const [applyLoading, setApplyLoading] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
   const [restoreOpen, setRestoreOpen] = useState(false)
+  // PR-CONN-MCP-INSTALL-PLACEHOLDER-INPUT (Sprint-8 PR-1): operator
+  // values for any <TOKEN> in the catalog command_template. Persists
+  // across preview re-fetches so the operator types once.
+  const [placeholderValues, setPlaceholderValues] = useState<Record<string, string>>({})
+  // Toggle that gates auto-refetch on every keystroke. Default OFF --
+  // re-preview only fires when the operator clicks "Update preview"
+  // so they don't see partial-typing failures flicker.
+  const [previewBumpToken, setPreviewBumpToken] = useState(0)
 
-  // Re-fetch preview whenever (target | allowCreate) change.
+  // Re-fetch preview whenever (target | allowCreate | bump) change.
   useEffect(() => {
     if (step !== 'preview' || !target) return
     let cancelled = false
     setPreviewLoading(true)
     setPreviewError(null)
+    // Only forward placeholder values that are non-empty so blank
+    // fields surface as honest "still unresolved" on the first call.
+    const filledValues: Record<string, string> = {}
+    for (const [k, v] of Object.entries(placeholderValues)) {
+      if (v && v.trim()) filledValues[k] = v.trim()
+    }
     void (async () => {
       const res = await previewMcpInstall(plugin.id, {
-        target, allow_create: allowCreate,
+        target,
+        allow_create: allowCreate,
+        ...(Object.keys(filledValues).length > 0
+          ? { placeholder_values: filledValues }
+          : {}),
       })
       if (cancelled) return
       setPreviewLoading(false)
@@ -105,14 +123,23 @@ export default function MCPInstallDrawer({
       }
     })()
     return () => { cancelled = true }
-  }, [step, target, allowCreate, plugin.id])
+  }, [step, target, allowCreate, plugin.id, previewBumpToken])
 
   async function handleApply() {
     if (!target) return
     setApplyLoading(true)
     setApplyError(null)
+    const filledValues: Record<string, string> = {}
+    for (const [k, v] of Object.entries(placeholderValues)) {
+      if (v && v.trim()) filledValues[k] = v.trim()
+    }
     const res = await applyMcpInstall(plugin.id, {
-      target, allow_create: allowCreate, probe_after_apply: true,
+      target,
+      allow_create: allowCreate,
+      probe_after_apply: true,
+      ...(Object.keys(filledValues).length > 0
+        ? { placeholder_values: filledValues }
+        : {}),
     })
     setApplyLoading(false)
     if (res.ok && res.result) {
@@ -151,6 +178,11 @@ export default function MCPInstallDrawer({
               error={previewError}
               allowCreate={allowCreate}
               setAllowCreate={setAllowCreate}
+              placeholderValues={placeholderValues}
+              setPlaceholderValue={(k, v) =>
+                setPlaceholderValues((prev) => ({ ...prev, [k]: v }))
+              }
+              onUpdatePreview={() => setPreviewBumpToken((n) => n + 1)}
               onBack={() => setStep('target')}
               onNext={() => preview?.apply_allowed && setStep('confirm')}
             />
@@ -342,13 +374,18 @@ function TargetStep({
 // ──────────────────────────────────────────────────────────────────
 
 function PreviewStep({
-  preview, loading, error, allowCreate, setAllowCreate, onBack, onNext,
+  preview, loading, error, allowCreate, setAllowCreate,
+  placeholderValues, setPlaceholderValue, onUpdatePreview,
+  onBack, onNext,
 }: {
   preview: McpInstallPreview | null
   loading: boolean
   error: string | null
   allowCreate: boolean
   setAllowCreate: (v: boolean) => void
+  placeholderValues: Record<string, string>
+  setPlaceholderValue: (key: string, value: string) => void
+  onUpdatePreview: () => void
   onBack: () => void
   onNext: () => void
 }) {
@@ -370,6 +407,11 @@ function PreviewStep({
     preview.failure_reason && preview.failure_reason.startsWith('config_parse_error')
   const isMissingPath =
     preview.failure_reason && preview.failure_reason.startsWith('config_path_missing')
+  const hasPlaceholders =
+    preview.unresolved_placeholders && preview.unresolved_placeholders.length > 0
+  const placeholderValueRejected =
+    preview.failure_reason &&
+    preview.failure_reason.startsWith('placeholder_value_invalid')
 
   return (
     <>
@@ -386,6 +428,67 @@ function PreviewStep({
           }
         />
       </Section>
+
+      {hasPlaceholders && (
+        <Section title="Operator-supplied values">
+          <div
+            data-testid="mcp-install-placeholder-form"
+            className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-100"
+          >
+            <p className="mb-2">
+              <strong>This MCP needs values you have to provide.</strong>{' '}
+              Daena does not auto-fill paths. Type each value below, then
+              click <strong>Update preview</strong> -- the diff above will
+              re-render with your value substituted.
+            </p>
+            <ul className="space-y-2">
+              {preview.unresolved_placeholders.map((token) => {
+                const friendly = friendlyPlaceholderLabel(token)
+                const hint = friendlyPlaceholderHint(token)
+                const value = placeholderValues[token] ?? ''
+                return (
+                  <li key={token}>
+                    <label className="block">
+                      <span className="block text-[11px] font-medium text-amber-200">
+                        {friendly}
+                      </span>
+                      <span className="block text-[10px] text-amber-300/80">
+                        Token: <code>{token}</code> -- {hint}
+                      </span>
+                      <input
+                        data-testid={`mcp-install-placeholder-input-${token}`}
+                        type="text"
+                        value={value}
+                        onChange={(e) => setPlaceholderValue(token, e.target.value)}
+                        placeholder={placeholderExample(token)}
+                        className="mt-1 w-full rounded-md border border-amber-500/40 bg-midnight-900/40 px-2 py-1.5 text-[12px] text-starlight-100 placeholder-starlight-600 focus:border-amber-500 focus:outline-none"
+                      />
+                    </label>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="mt-3 flex items-center justify-between">
+              <span className="text-[10px] text-amber-300/80">
+                Daena rejects shell metacharacters; values are read-only
+                inputs to the CLI's mcpServers args list.
+              </span>
+              <button
+                data-testid="mcp-install-placeholder-update"
+                onClick={onUpdatePreview}
+                className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-100 hover:bg-amber-500/20"
+              >
+                Update preview
+              </button>
+            </div>
+            {placeholderValueRejected && (
+              <p className="mt-2 text-[11px] text-rose-300">
+                Backend refused a value: <code>{preview.failure_reason}</code>
+              </p>
+            )}
+          </div>
+        </Section>
+      )}
 
       {isMissingPath && !allowCreate && (
         <Section title="Config file not found">
@@ -712,6 +815,34 @@ function FooterRow({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   )
+}
+
+// PR-CONN-MCP-INSTALL-PLACEHOLDER-INPUT (Sprint-8 PR-1):
+// Friendly labels keyed off catalog placeholder tokens. Add a row when
+// you add a new placeholder to the marketplace catalog.
+const PLACEHOLDER_FRIENDLY: Record<string, { label: string; hint: string; example: string }> = {
+  '<ALLOWED_ROOT>': {
+    label: 'Allowed folder root',
+    hint: 'The Filesystem MCP can only read inside this directory.',
+    example: 'D:\\Ideas\\Daena',
+  },
+}
+
+function friendlyPlaceholderLabel(token: string): string {
+  const known = PLACEHOLDER_FRIENDLY[token]
+  if (known) return known.label
+  // Generic fallback: turn <SOME_TOKEN> -> "Some token".
+  const inner = token.replace(/^</, '').replace(/>$/, '')
+  const lowered = inner.toLowerCase().replace(/_/g, ' ')
+  return lowered.charAt(0).toUpperCase() + lowered.slice(1)
+}
+
+function friendlyPlaceholderHint(token: string): string {
+  return PLACEHOLDER_FRIENDLY[token]?.hint ?? 'Operator-supplied value.'
+}
+
+function placeholderExample(token: string): string {
+  return PLACEHOLDER_FRIENDLY[token]?.example ?? ''
 }
 
 function FailureCard({

@@ -209,6 +209,12 @@ class McpInstallTarget(BaseModel):
     target: Literal["claude_desktop", "claude_code", "codex", "gemini_cli"]
     allow_create: bool = False
     probe_after_apply: bool = False
+    # PR-CONN-MCP-INSTALL-PLACEHOLDER-INPUT (Sprint-8 PR-1):
+    # operator-supplied substitutions for any <TOKEN> placeholders the
+    # catalog command_template carries (e.g. {"<ALLOWED_ROOT>": "D:/x"}).
+    # Validated server-side for shell safety. Only NAMES land in audit
+    # logs; values are scrubbed.
+    placeholder_values: dict[str, str] | None = None
 
 
 # ──────────────────────────────────────────────────────────────────

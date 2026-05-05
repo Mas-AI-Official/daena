@@ -306,6 +306,7 @@ async def preview_mcp_install(
 
     report = preview_install(
         target=body.target, entry=entry, allow_create=body.allow_create,
+        placeholder_values=body.placeholder_values,
     )
     return {
         "success": report.failure_reason is None,
@@ -325,6 +326,7 @@ async def preview_mcp_install(
             "risk_warnings": report.risk_warnings,
             "apply_allowed": report.apply_allowed,
             "failure_reason": report.failure_reason,
+            "unresolved_placeholders": report.unresolved_placeholders,
         },
     }
 
@@ -371,6 +373,7 @@ async def apply_mcp_install(
 
     report = apply_install(
         target=body.target, entry=entry, allow_create=body.allow_create,
+        placeholder_values=body.placeholder_values,
     )
 
     out: dict = {
@@ -391,9 +394,18 @@ async def apply_mcp_install(
         # Import / update a V2 row so the new MCP shows up in Plugins
         # without requiring a discovery refresh. Idempotent on
         # (tenant_id, kind, slug).
-        from app.services.connection_v2.cli_mcp_writer import build_mcp_block
+        from app.services.connection_v2.cli_mcp_writer import (
+            build_mcp_block,
+            resolve_command_template,
+        )
 
-        block = build_mcp_block(entry) or {}
+        # Re-substitute the catalog template with the same placeholder
+        # bag so the V2 row carries the resolved command/args (e.g. the
+        # operator's Allowed-folder-root) rather than the literal token.
+        effective_template, _applied, _resolve_err = resolve_command_template(
+            entry.command_template, body.placeholder_values,
+        )
+        block = build_mcp_block(entry, effective_template=effective_template) or {}
         from app.services.connection_v2.seeders import mcp_slug
         slug = mcp_slug(report.server_name)
         config = {

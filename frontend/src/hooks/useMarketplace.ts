@@ -458,6 +458,10 @@ export interface McpInstallPreviewBody {
   target: McpInstallTarget
   allow_create?: boolean
   probe_after_apply?: boolean
+  // PR-CONN-MCP-INSTALL-PLACEHOLDER-INPUT (Sprint-8 PR-1):
+  // operator-supplied substitutions for <TOKEN> placeholders in the
+  // catalog command_template. Validated server-side for shell safety.
+  placeholder_values?: Record<string, string>
 }
 
 export interface McpServerBlock {
@@ -481,6 +485,10 @@ export interface McpInstallPreview {
   risk_warnings: string[]
   apply_allowed: boolean
   failure_reason: string | null
+  // PR-CONN-MCP-INSTALL-PLACEHOLDER-INPUT (Sprint-8 PR-1):
+  // every <TOKEN> in the raw catalog template that still needs an
+  // operator-supplied value. Empty list once all are resolved.
+  unresolved_placeholders: string[]
 }
 
 export interface McpInstallApply {

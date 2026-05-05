@@ -67,6 +67,7 @@ FAIL_CONFIG_PATH_MISSING = "config_path_missing"
 FAIL_CONFIG_PARSE_ERROR = "config_parse_error"
 FAIL_COMMAND_TEMPLATE_INVALID = "command_template_invalid"
 FAIL_PLACEHOLDER_UNRESOLVED = "placeholder_unresolved"
+FAIL_PLACEHOLDER_VALUE_INVALID = "placeholder_value_invalid"
 FAIL_WRITE_FAILED = "write_failed"
 
 
@@ -270,12 +271,112 @@ def find_unresolved_placeholders(parsed: ParsedCommand) -> list[str]:
     return pending
 
 
+def find_template_placeholders(template: str) -> list[str]:
+    """Surface every ``<TOKEN>`` literal in a raw command_template.
+
+    Used to surface unresolved tokens to the UI BEFORE the operator
+    fills any value (so the placeholder input form can render the
+    correct list on the very first preview call).
+    """
+    out: list[str] = []
+    i = 0
+    n = len(template)
+    while i < n:
+        ch = template[i]
+        if ch == "<":
+            j = template.find(">", i + 1)
+            if j == -1:
+                break
+            token = template[i:j + 1]
+            inner = token[1:-1]
+            if inner and inner[0].isupper() and all(
+                c.isalnum() or c in ("_", "-") for c in inner
+            ):
+                out.append(token)
+            i = j + 1
+            continue
+        i += 1
+    return out
+
+
+# Characters that MUST never appear in a placeholder value. We block at the
+# substitution boundary so a malicious or accidental newline / pipe / backtick
+# can never reach a CLI's mcpServers args list. shlex.quote guards spaces and
+# quotes; this list guards everything else (defense in depth).
+_PLACEHOLDER_VALUE_FORBIDDEN: tuple[str, ...] = (
+    ";", "|", "&", "`", "\n", "\r", "\0", "<", ">",
+)
+
+
+def resolve_command_template(
+    template: str, values: dict[str, str] | None,
+) -> tuple[str, list[str], str | None]:
+    """Substitute ``<KEY>`` placeholders in ``template``.
+
+    Returns ``(resolved_template, applied_keys, error_or_none)``.
+
+    Each value is shlex.quote-wrapped when it contains whitespace or quote
+    characters so the resulting command line still parses to a single
+    token. Values containing shell metacharacters / control bytes / angle
+    brackets are rejected -- we never silently rewrite them.
+
+    Caller-supplied keys may be passed as ``"<X>"`` or as bare ``"X"``;
+    both forms map to the same placeholder token.
+    """
+    if not values:
+        return template, [], None
+    out = template
+    applied: list[str] = []
+    for raw_key, raw_val in values.items():
+        if not isinstance(raw_key, str) or not raw_key.strip():
+            return template, applied, (
+                f"{FAIL_PLACEHOLDER_VALUE_INVALID}: empty placeholder key"
+            )
+        key = (
+            raw_key
+            if raw_key.startswith("<") and raw_key.endswith(">")
+            else f"<{raw_key.strip('<>')}>"
+        )
+        if not isinstance(raw_val, str):
+            return template, applied, (
+                f"{FAIL_PLACEHOLDER_VALUE_INVALID}: {key} value must be a string"
+            )
+        val = raw_val.strip()
+        if not val:
+            return template, applied, (
+                f"{FAIL_PLACEHOLDER_VALUE_INVALID}: {key} value is empty"
+            )
+        if "$(" in val or "${" in val:
+            return template, applied, (
+                f"{FAIL_PLACEHOLDER_VALUE_INVALID}: {key} contains shell expansion"
+            )
+        for ch in _PLACEHOLDER_VALUE_FORBIDDEN:
+            if ch in val:
+                return template, applied, (
+                    f"{FAIL_PLACEHOLDER_VALUE_INVALID}: {key} contains forbidden character {ch!r}"
+                )
+        if key not in out:
+            # Operator supplied a key the catalog template does not reference.
+            # Skip silently rather than fail -- a generous superset is safer than
+            # an over-strict exact-match check (the form may carry stale fields).
+            continue
+        # Always shlex.quote -- Windows paths carry backslashes which
+        # POSIX shlex.split treats as escape chars; single-quoting
+        # preserves the literal value through the round-trip.
+        quoted = shlex.quote(val)
+        out = out.replace(key, quoted)
+        applied.append(key)
+    return out, applied, None
+
+
 # ──────────────────────────────────────────────────────────────────
 # MCP block construction
 # ──────────────────────────────────────────────────────────────────
 
 
-def build_mcp_block(entry: CatalogEntry) -> dict | None:
+def build_mcp_block(
+    entry: CatalogEntry, *, effective_template: str | None = None,
+) -> dict | None:
     """Build the JSON object that goes under ``mcpServers[server_name]``.
 
     Shape mirrors what every supported CLI accepts:
@@ -285,8 +386,12 @@ def build_mcp_block(entry: CatalogEntry) -> dict | None:
     environment / vault / Settings -- the operator sets them before
     launching the CLI. We surface ``required_env_vars`` separately so
     the UI can warn the operator about what to set.
+
+    ``effective_template`` lets a caller substitute placeholders without
+    cloning the frozen entry.
     """
-    parsed = parse_command_template(entry.command_template)
+    template = effective_template if effective_template is not None else entry.command_template
+    parsed = parse_command_template(template)
     if parsed is None:
         return None
     return {
@@ -505,6 +610,12 @@ class PreviewReport:
     risk_warnings: list[str]
     apply_allowed: bool
     failure_reason: str | None
+    # PR-CONN-MCP-INSTALL-PLACEHOLDER-INPUT (Sprint-8 PR-1):
+    # surface every <TOKEN> the operator still has to fill -- always
+    # populated from the RAW catalog template so the UI can render an
+    # input form on the very first preview call, even before any value
+    # has been supplied. Empty list once every placeholder is resolved.
+    unresolved_placeholders: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -525,18 +636,24 @@ class ApplyReport:
 
 def _validate_entry(
     entry: CatalogEntry,
+    *,
+    effective_template: str | None = None,
 ) -> tuple[ParsedCommand | None, str | None, list[str]]:
     """Common preflight: parse template, find unresolved placeholders.
 
     Returns ``(parsed, failure_reason, placeholders)``. When
     ``failure_reason`` is non-None, callers should NOT proceed to write.
+
+    ``effective_template`` lets the install path validate AFTER
+    placeholder substitution while preserving the entry's frozen state.
     """
     if entry.kind != "mcp_server":
         return None, FAIL_TARGET_UNSUPPORTED + f": only mcp_server entries can be installed (kind={entry.kind!r})", []
 
-    parsed = parse_command_template(entry.command_template)
+    template = effective_template if effective_template is not None else entry.command_template
+    parsed = parse_command_template(template)
     if parsed is None:
-        return None, FAIL_COMMAND_TEMPLATE_INVALID + f": command_template={entry.command_template!r}", []
+        return None, FAIL_COMMAND_TEMPLATE_INVALID + f": command_template={template!r}", []
 
     placeholders = find_unresolved_placeholders(parsed)
     if placeholders:
@@ -546,9 +663,25 @@ def _validate_entry(
 
 
 def preview_install(
-    *, target: str, entry: CatalogEntry, allow_create: bool = False,
+    *,
+    target: str,
+    entry: CatalogEntry,
+    allow_create: bool = False,
+    placeholder_values: dict[str, str] | None = None,
 ) -> PreviewReport:
-    """Compute what an install would do. NEVER touches the filesystem."""
+    """Compute what an install would do. NEVER touches the filesystem.
+
+    ``placeholder_values`` is the operator-supplied substitution table
+    for any ``<TOKEN>`` placeholders in ``entry.command_template``
+    (e.g. ``{"<ALLOWED_ROOT>": "D:\\Ideas\\Daena"}``). Values are
+    validated for shell safety BEFORE substitution so a malicious
+    or accidental newline / pipe / backtick can never reach the CLI's
+    mcpServers args list.
+    """
+    # Always surface the raw catalog placeholders so the UI can render
+    # the input form on the very first preview call.
+    raw_placeholders = find_template_placeholders(entry.command_template)
+
     spec = get_target_spec(target)
     if spec is None:
         return PreviewReport(
@@ -562,11 +695,41 @@ def preview_install(
             risk_warnings=[],
             apply_allowed=False,
             failure_reason=f"{FAIL_TARGET_UNSUPPORTED}: {target!r} is not one of {SUPPORTED_TARGETS}",
+            unresolved_placeholders=raw_placeholders,
         )
 
     server_name = server_name_for(entry)
-    parsed, validation_fail, _placeholders = _validate_entry(entry)
+
+    effective_template, _applied, resolve_err = resolve_command_template(
+        entry.command_template, placeholder_values,
+    )
+    if resolve_err is not None:
+        return PreviewReport(
+            target=spec.target, target_display_name=spec.display_name,
+            config_path=None, config_exists=False, parse_ok=True,
+            candidates_tried=[],
+            server_name=server_name,
+            proposed_block=None, existing_block=None,
+            action="failed", backup_path=None,
+            required_env_vars=list(entry.required_env_vars),
+            risk_warnings=[],
+            apply_allowed=False,
+            failure_reason=resolve_err,
+            unresolved_placeholders=raw_placeholders,
+        )
+
+    parsed, validation_fail, post_resolve_pending = _validate_entry(
+        entry, effective_template=effective_template,
+    )
     if validation_fail is not None:
+        # Prefer post-resolution placeholder list (the ones the operator
+        # still needs to fill) when validation tripped on placeholder
+        # detection; fall back to the raw catalog list otherwise.
+        unresolved = (
+            post_resolve_pending
+            if validation_fail.startswith(FAIL_PLACEHOLDER_UNRESOLVED)
+            else raw_placeholders
+        )
         return PreviewReport(
             target=spec.target, target_display_name=spec.display_name,
             config_path=None, config_exists=False, parse_ok=True,
@@ -578,9 +741,10 @@ def preview_install(
             risk_warnings=[],
             apply_allowed=False,
             failure_reason=validation_fail,
+            unresolved_placeholders=unresolved,
         )
 
-    proposed = build_mcp_block(entry)
+    proposed = build_mcp_block(entry, effective_template=effective_template)
 
     resolution = resolve_path(spec, allow_create=allow_create)
     if resolution.existing is None and resolution.would_create is None:
@@ -597,6 +761,7 @@ def preview_install(
             failure_reason=(
                 f"{FAIL_CONFIG_PATH_MISSING}: {resolution.failure_reason or 'unknown'}"
             ),
+            unresolved_placeholders=raw_placeholders,
         )
 
     target_path = resolution.existing or resolution.would_create
@@ -618,6 +783,7 @@ def preview_install(
             ],
             apply_allowed=False,
             failure_reason=f"{FAIL_CONFIG_PARSE_ERROR}: {snapshot.parse_error}",
+            unresolved_placeholders=raw_placeholders,
         )
 
     existing_block = snapshot.mcp_servers.get(server_name)
@@ -660,11 +826,16 @@ def preview_install(
         risk_warnings=risk_warnings,
         apply_allowed=action != "failed",
         failure_reason=None,
+        unresolved_placeholders=[],
     )
 
 
 def apply_install(
-    *, target: str, entry: CatalogEntry, allow_create: bool = False,
+    *,
+    target: str,
+    entry: CatalogEntry,
+    allow_create: bool = False,
+    placeholder_values: dict[str, str] | None = None,
 ) -> ApplyReport:
     """Perform the actual write. Backup + atomic rename.
 
@@ -673,8 +844,14 @@ def apply_install(
 
     Idempotent: re-running on the same (target, entry) yields
     ``skipped`` when the existing block already matches.
+
+    ``placeholder_values`` is forwarded to ``preview_install`` so the
+    same substitution table drives both the diff and the write.
     """
-    preview = preview_install(target=target, entry=entry, allow_create=allow_create)
+    preview = preview_install(
+        target=target, entry=entry, allow_create=allow_create,
+        placeholder_values=placeholder_values,
+    )
     if preview.failure_reason is not None or not preview.apply_allowed:
         return ApplyReport(
             target=preview.target, target_display_name=preview.target_display_name,
@@ -763,6 +940,7 @@ __all__ = [
     "FAIL_CONFIG_PARSE_ERROR",
     "FAIL_CONFIG_PATH_MISSING",
     "FAIL_PLACEHOLDER_UNRESOLVED",
+    "FAIL_PLACEHOLDER_VALUE_INVALID",
     "FAIL_TARGET_UNSUPPORTED",
     "FAIL_WRITE_FAILED",
     "ParsedCommand",
@@ -773,12 +951,14 @@ __all__ = [
     "apply_install",
     "atomic_write_json",
     "build_mcp_block",
+    "find_template_placeholders",
     "find_unresolved_placeholders",
     "get_target_spec",
     "parse_command_template",
     "preview_install",
     "read_config",
     "reset_target_cache",
+    "resolve_command_template",
     "resolve_path",
     "server_name_for",
 ]
