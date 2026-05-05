@@ -297,19 +297,68 @@ export default function SkillExecuteModal({
 
   // ── Render ──
 
-  const phaseStatusPill = result && (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-        result.status === 'planned'
-          ? 'bg-emerald-500/15 text-emerald-200'
-          : result.status === 'needs_inputs'
-            ? 'bg-amber-500/15 text-amber-200'
-            : 'bg-rose-500/15 text-rose-200'
-      }`}
-    >
-      {result.status}
-    </span>
-  )
+  // PR-CONN-FILESYSTEM-FIND-FILES-REAL-READONLY (Sprint-8 PR-3): status
+  // pill must distinguish "Executed read-only" (real call returned) from
+  // "Planned preview" (catalog-only) and call out "Connect Filesystem
+  // first" for needs_connection. Each label maps to a stable testid so
+  // the acceptance smoke can pin the contract.
+  const STATUS_LABEL: Record<string, { label: string; tone: string; testid: string }> = {
+    executed: {
+      label: 'Executed read-only',
+      tone: 'bg-emerald-500/15 text-emerald-100 border border-emerald-500/30',
+      testid: 'skill-status-executed',
+    },
+    planned: {
+      label: 'Planned preview',
+      tone: 'bg-emerald-500/15 text-emerald-200',
+      testid: 'skill-status-planned',
+    },
+    needs_inputs: {
+      label: 'Needs inputs',
+      tone: 'bg-amber-500/15 text-amber-200',
+      testid: 'skill-status-needs-inputs',
+    },
+    needs_connection: {
+      label: 'Connect Filesystem first',
+      tone: 'bg-amber-500/15 text-amber-200',
+      testid: 'skill-status-needs-connection',
+    },
+    needs_consent: {
+      label: 'Needs consent',
+      tone: 'bg-amber-500/15 text-amber-200',
+      testid: 'skill-status-needs-consent',
+    },
+    blocked: {
+      label: 'Blocked',
+      tone: 'bg-rose-500/15 text-rose-200',
+      testid: 'skill-status-blocked',
+    },
+    unsupported: {
+      label: 'Unsupported',
+      tone: 'bg-rose-500/15 text-rose-200',
+      testid: 'skill-status-unsupported',
+    },
+  }
+  const phaseStatusPill = result && (() => {
+    const label = STATUS_LABEL[result.status] ?? {
+      label: result.status,
+      tone: 'bg-rose-500/15 text-rose-200',
+      testid: `skill-status-${result.status}`,
+    }
+    // For needs_connection on a non-Filesystem plugin, swap the
+    // hardcoded "Filesystem" label for the actual plugin display name.
+    const display = result.status === 'needs_connection' && pluginId !== 'mcp-filesystem'
+      ? `Connect ${pluginName} first`
+      : label.label
+    return (
+      <span
+        data-testid={label.testid}
+        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${label.tone}`}
+      >
+        {display}
+      </span>
+    )
+  })()
 
   return (
     <div
@@ -502,7 +551,9 @@ export default function SkillExecuteModal({
               {result.tool_calls.length > 0 && (
                 <div className="mt-2 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2">
                   <p className="text-[10px] uppercase tracking-wider text-starlight-500">
-                    Planned tool call (no real invocation in Phase 2)
+                    {result.status === 'executed'
+                      ? 'Executed tool call (real read-only invocation)'
+                      : 'Planned tool call (catalog preview, not invoked)'}
                   </p>
                   <p className="mt-1 font-mono text-[11px] text-starlight-200">
                     {result.tool_calls[0].backend_surface.toUpperCase()}.{result.tool_calls[0].tool_name}
@@ -603,11 +654,12 @@ export default function SkillExecuteModal({
           {/* Footer actions */}
           <footer className="flex items-center justify-between gap-2 border-t border-white/5 pt-3">
             <span className="text-[10px] text-starlight-500">
-              Phase 2 spine: planned-only. Real tool invocation arms in
-              follow-up PRs.
+              {allowlistRow.execution_mode === 'mcp_tool'
+                ? 'Phase 2 read-only. Skill executes against the live MCP when callable; otherwise returns planned/needs_connection.'
+                : 'Phase 2 spine: planned-only. Real invocation arms in follow-up PRs.'}
             </span>
             <div className="flex items-center gap-2">
-              {result?.status === 'planned' && (
+              {(result?.status === 'planned' || result?.status === 'executed') && (
                 <button
                   onClick={handleDraftFollowup}
                   className="inline-flex items-center gap-1.5 rounded-md border border-accent-cyan/30 bg-accent-cyan/10 px-3 py-1.5 text-[11px] font-medium text-accent-cyan hover:bg-accent-cyan/20"
