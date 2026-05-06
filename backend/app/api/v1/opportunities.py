@@ -33,6 +33,14 @@ from app.models.business import (
     Opportunity,
 )
 from app.services.business_pipeline.orchestrator import run_discovery_loop
+from app.services.business_pipeline.workstream_bridge import (
+    DepartmentNotFound,
+    DuplicateWorkstream,
+    OpportunityNotFound,
+    UnknownOpportunityType,
+    WorkstreamBridgeError,
+    create_workstream_for_opportunity,
+)
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -205,5 +213,72 @@ async def reject(
         opportunity_id=opportunity_id, status="rejected",
     )
     response = _row_to_response(row)
+    await db.commit()
+    return response
+
+
+# ── Sprint-20 PR-3: Promote opportunity to workstream ───────────────
+
+
+class CreateWorkstreamResponse(BaseModel):
+    workstream_id: str
+    opportunity_id: str
+    department_name: str
+    collaborators: list[str]
+
+
+@router.post(
+    "/{opportunity_id}/create-workstream",
+    response_model=CreateWorkstreamResponse,
+)
+async def create_workstream(
+    opportunity_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CreateWorkstreamResponse:
+    """Promote a discovered opportunity into a tracked workstream owned
+    by the right department. Local-only -- no external action."""
+    try:
+        oid = uuid.UUID(opportunity_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid_uuid")
+
+    try:
+        result = await create_workstream_for_opportunity(
+            db, tenant_id=user.tenant_id, user_id=user.id,
+            opportunity_id=oid,
+        )
+    except OpportunityNotFound:
+        raise HTTPException(status_code=404, detail="opportunity_not_found")
+    except UnknownOpportunityType as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "unknown_opportunity_type", "type": str(exc)},
+        )
+    except DepartmentNotFound as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "department_not_found", "department": str(exc)},
+        )
+    except DuplicateWorkstream as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "duplicate_workstream",
+                "existing_workstream_id": str(exc.existing_workstream_id),
+            },
+        )
+    except WorkstreamBridgeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": exc.code, "message": str(exc)},
+        )
+
+    response = CreateWorkstreamResponse(
+        workstream_id=str(result.workstream_id),
+        opportunity_id=str(result.opportunity_id),
+        department_name=result.department_name,
+        collaborators=result.collaborators,
+    )
     await db.commit()
     return response

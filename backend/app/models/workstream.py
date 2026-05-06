@@ -101,6 +101,12 @@ class WorkstreamSourceType(str, Enum):
     # FormDraft.id; context.draft_kind holds "career" / "content" /
     # "form".
     DRAFT = "draft"
+    # Sprint-20 PR-3 (2026-05-06): operator (or routine) promoted a
+    # discovered Opportunity to a tracked workstream. source_ref_id
+    # holds Opportunity.id; context.opportunity_type / .source_url /
+    # .deadline_at copy the inbox row at time of promotion so the
+    # workstream remains stable if the opportunity row later changes.
+    OPPORTUNITY = "opportunity"
 
 
 class Workstream(Base, TenantMixin, TimestampMixin, SoftDeleteMixin):

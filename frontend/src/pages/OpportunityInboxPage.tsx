@@ -12,7 +12,7 @@
  *     through the controlled execution dispatcher elsewhere.
  */
 import { useEffect, useState } from 'react'
-import { Briefcase, RefreshCw, Archive, X, AlertTriangle, ShieldAlert } from 'lucide-react'
+import { Briefcase, RefreshCw, Archive, X, AlertTriangle, ShieldAlert, GitBranch } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button } from '@/components/common'
@@ -109,6 +109,21 @@ export default function OpportunityInboxPage() {
       setReloadCount((c) => c + 1)
     } catch {
       // surfaced via api error store
+    }
+  }
+
+  async function createWorkstream(id: string) {
+    try {
+      const r = await api.post<{ workstream_id: string; department_name: string }>(
+        `/api/v1/opportunities/${id}/create-workstream`,
+      )
+      setLastRunSummary(
+        `Promoted to ${r.data.department_name}. Workstream ${r.data.workstream_id.slice(0, 8)} created.`,
+      )
+      setReloadCount((c) => c + 1)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to create workstream'
+      setLastRunSummary(`Promotion failed: ${msg}`)
     }
   }
 
@@ -244,9 +259,19 @@ export default function OpportunityInboxPage() {
                     {row.status === 'discovered' && (
                       <div className="flex gap-2">
                         <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => createWorkstream(row.id)}
+                          title="Promote to workstream owned by the right department"
+                        >
+                          <GitBranch className="w-3 h-3 mr-1" />
+                          Workstream
+                        </Button>
+                        <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setStatus(row.id, 'archive')}
+                          title="Archive this opportunity"
                         >
                           <Archive className="w-3 h-3" />
                         </Button>
@@ -254,6 +279,7 @@ export default function OpportunityInboxPage() {
                           variant="ghost"
                           size="sm"
                           onClick={() => setStatus(row.id, 'reject')}
+                          title="Reject this opportunity"
                         >
                           <X className="w-3 h-3" />
                         </Button>
