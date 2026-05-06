@@ -801,8 +801,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # the dispatcher's _TOOL_HANDLERS registry before the first request.
     # The import does not run any handler -- it just makes the registry
     # non-empty for tools the operator unlocked in WRITE_TOOLS.
+    #
+    # IMPORTANT: use `from ... import` rather than `import app.services...`
+    # because the dotted-import form binds the top-level name ``app`` in
+    # this function's local scope, which would SHADOW the lifespan
+    # parameter ``app: FastAPI`` for the rest of the function (caught by
+    # the live activation run, 2026-05-06).
     try:
-        import app.services.controlled_execution_handlers  # noqa: F401
+        from app.services import controlled_execution_handlers  # noqa: F401
         logger.info("controlled_execution.handlers.registered")
     except Exception as exc:  # noqa: BLE001 -- best-effort
         logger.error(
