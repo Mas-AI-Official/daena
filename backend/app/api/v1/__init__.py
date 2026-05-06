@@ -62,6 +62,7 @@ from app.api.v1 import (
     plugin_governance_presets_api,
     google_setup,
     research,
+    form_drafts,
     scrape,
     skill_consent_api,
     skill_execution,
@@ -157,6 +158,15 @@ router.include_router(
 # NEVER sends, posts, emails, or otherwise dispatches a draft.
 router.include_router(
     research.router, prefix="/research", tags=["research"],
+)
+# PR-FORM-DRAFT-ASSISTANT (Sprint-11 PR-3, 2026-05-05):
+# Local-only form draft assistant. Three input surfaces: pasted
+# questions, pasted HTML, opportunity URL. Output: editable suggested
+# answers with confidence + NEEDS_REVIEW. NO submit/send/apply/post
+# endpoint exists. Sensitive (passport/SSN/SIN/visa) and payment
+# (CC/CVV/billing) field types refuse auto-population.
+router.include_router(
+    form_drafts.router, prefix="/form-drafts", tags=["form-drafts"],
 )
 router.include_router(
     connections_v2.router, prefix="/connections/v2", tags=["connections-v2"],

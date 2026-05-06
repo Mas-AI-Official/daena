@@ -926,9 +926,22 @@ function DraftRow({ draft }: { draft: ResearchDraftSummary }) {
   )
 }
 
+interface FormDraftSummary {
+  id: string
+  title: string
+  source_kind: string
+  source_url: string | null
+  source_host: string | null
+  goal: string
+  status: string
+  created_at: string
+  structured_payload?: null
+}
+
 function DraftsLane() {
   const [careerDrafts, setCareerDrafts] = useState<ResearchDraftSummary[]>([])
   const [contentDrafts, setContentDrafts] = useState<ResearchDraftSummary[]>([])
+  const [formDrafts, setFormDrafts] = useState<FormDraftSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<'career' | 'content' | 'form'>('career')
@@ -937,12 +950,14 @@ function DraftsLane() {
     setLoading(true)
     setError(null)
     try {
-      const [careerRes, contentRes] = await Promise.all([
+      const [careerRes, contentRes, formsRes] = await Promise.all([
         api.get('/research/drafts', { params: { kind: 'career', limit: 25 } }),
         api.get('/research/drafts', { params: { kind: 'content', limit: 25 } }),
+        api.get('/form-drafts', { params: { limit: 25 } }).catch(() => ({ data: { drafts: [] } })),
       ])
       setCareerDrafts(careerRes.data?.drafts ?? [])
       setContentDrafts(contentRes.data?.drafts ?? [])
+      setFormDrafts(formsRes.data?.drafts ?? [])
     } catch (err) {
       setError(String(err))
     } finally {
@@ -956,14 +971,15 @@ function DraftsLane() {
 
   const careerCount = careerDrafts.length
   const contentCount = contentDrafts.length
+  const formCount = formDrafts.length
 
-  const TABS: Array<{ key: 'career' | 'content' | 'form'; label: string; icon: React.ReactNode; count: number; placeholder?: string }> = [
+  const TABS: Array<{ key: 'career' | 'content' | 'form'; label: string; icon: React.ReactNode; count: number }> = [
     { key: 'career', label: 'Career', icon: <Briefcase size={11} />, count: careerCount },
     { key: 'content', label: 'Content', icon: <Newspaper size={11} />, count: contentCount },
-    { key: 'form', label: 'Forms', icon: <FileText size={11} />, count: 0, placeholder: 'PR-3 lands the FormDraft surface here.' },
+    { key: 'form', label: 'Forms', icon: <FileText size={11} />, count: formCount },
   ]
 
-  const visible = tab === 'career'
+  const visibleResearch = tab === 'career'
     ? careerDrafts
     : tab === 'content'
       ? contentDrafts
@@ -1011,16 +1027,37 @@ function DraftsLane() {
       {loading ? (
         <div className="text-[11px] text-starlight-400">Loading drafts…</div>
       ) : tab === 'form' ? (
-        <div className="text-[11px] text-starlight-500 italic px-1">
-          {TABS.find(t => t.key === 'form')?.placeholder}
-        </div>
-      ) : visible.length === 0 ? (
+        formDrafts.length === 0 ? (
+          <div className="text-[11px] text-starlight-500 italic px-1">
+            No form drafts yet. Daena prepares answers locally; you submit
+            manually. Use <code className="bg-white/5 px-1 rounded">POST /api/v1/form-drafts/from-questions</code>,
+            <code className="bg-white/5 px-1 rounded">/from-html</code>,
+            or <code className="bg-white/5 px-1 rounded">/from-url</code>.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {formDrafts.map(d => (
+              <div key={d.id} className="border border-white/5 rounded-md bg-white/[.02] p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold text-starlight-100 truncate">
+                    {d.title}
+                  </div>
+                  <div className="text-[9px] text-starlight-500">{formatRelative(d.created_at)}</div>
+                </div>
+                <div className="text-[10px] text-starlight-400 truncate">
+                  source: {d.source_kind}{d.source_host ? ` · ${d.source_host}` : ''}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : visibleResearch.length === 0 ? (
         <div className="text-[11px] text-starlight-500 italic px-1">
           No {tab} drafts yet. Run a research flow from chat or call <code className="bg-white/5 px-1 rounded">POST /api/v1/research/{tab}</code>.
         </div>
       ) : (
         <div className="space-y-1.5">
-          {visible.map(d => <DraftRow key={d.id} draft={d} />)}
+          {visibleResearch.map(d => <DraftRow key={d.id} draft={d} />)}
         </div>
       )}
     </div>
