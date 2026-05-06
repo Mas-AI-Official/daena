@@ -213,6 +213,12 @@ class PromptInjectionScanner:
         findings.extend(self._scan_invisible_unicode(content))
         findings.extend(self._scan_homoglyphs(content))
         findings.extend(self._scan_encoded_blobs(content))
+        # Sprint-13 PR-7 (2026-05-06): Morse-code-encoded smuggling.
+        # The Grok wallet-drain attack used Morse-encoded instructions
+        # to bypass content filters. _scan_morse_code flags long
+        # runs of dot/dash/slash patterns and decodes a sample to
+        # check for instruction-shaped content underneath.
+        findings.extend(self._scan_morse_code(content))
 
         cleaned, quarantined = self._quarantine(content, findings)
         verdict, decision, reason = self._decide(
@@ -339,6 +345,80 @@ class PromptInjectionScanner:
                     end=m.end(),
                     confidence=0.85,
                 ))
+        return findings
+
+    # Sprint-13 PR-7 -- Morse-code lookup. Standard ITU Morse for the
+    # 26 letters + 10 digits. We decode opportunistically only to
+    # verify the run is real Morse (not a code fence with dashes);
+    # decode is bounded to the first 30 letter-units.
+    _MORSE_TABLE: dict[str, str] = {
+        ".-":   "A", "-...": "B", "-.-.": "C", "-..":  "D", ".":    "E",
+        "..-.": "F", "--.":  "G", "....": "H", "..":   "I", ".---": "J",
+        "-.-":  "K", ".-..": "L", "--":   "M", "-.":   "N", "---":  "O",
+        ".--.": "P", "--.-": "Q", ".-.":  "R", "...":  "S", "-":    "T",
+        "..-":  "U", "...-": "V", ".--":  "W", "-..-": "X", "-.--": "Y",
+        "--..": "Z",
+        "-----": "0", ".----": "1", "..---": "2", "...--": "3", "....-": "4",
+        ".....": "5", "-....": "6", "--...": "7", "---..": "8", "----.": "9",
+    }
+
+    def _scan_morse_code(self, content: str) -> list[InjectionFinding]:
+        """Flag long runs of Morse-code-like sequences.
+
+        Conservative trigger: at least 6 letter-tokens (separated by
+        whitespace) where every token is a valid Morse codepoint.
+        The scanner decodes the first 30 tokens and checks for
+        instruction-shaped content (literal substrings like
+        ``IGNORE``, ``SYSTEM``, ``PROMPT``, ``OVERRIDE``, ``WALLET``,
+        ``TRANSFER``, ``TOKEN``, ``API``, ``KEY``). When the decode
+        carries one of those, severity is HIGH; otherwise it stays
+        MEDIUM (a long Morse blob is itself suspicious in operator
+        input).
+        """
+
+        findings: list[InjectionFinding] = []
+
+        # Long sequences of dot/dash separated by whitespace OR slash
+        # word-separator. Anchor on word boundaries so a single
+        # "----" inside a Markdown table doesn't trip.
+        for m in re.finditer(
+            r"(?:[.\-]{1,7}(?:[ /]+[.\-]{1,7}){5,})",
+            content,
+        ):
+            run = m.group(0)
+            tokens = re.split(r"[ /]+", run)
+            valid = [t for t in tokens if t in self._MORSE_TABLE]
+            if len(valid) < 6:
+                continue
+            # Decode a bounded sample.
+            decoded = "".join(self._MORSE_TABLE.get(t, "") for t in tokens[:30])
+            decoded_upper = decoded.upper()
+            high_signals = (
+                "IGNORE", "SYSTEM", "PROMPT", "OVERRIDE", "WALLET",
+                "TRANSFER", "TOKEN", "APIKEY", "API", "KEY", "SECRET",
+                "ROOT", "SUDO", "EXEC",
+            )
+            severity = InjectionSeverity.MEDIUM
+            confidence = 0.7
+            for signal in high_signals:
+                if signal in decoded_upper:
+                    severity = InjectionSeverity.HIGH
+                    confidence = 0.92
+                    break
+
+            findings.append(InjectionFinding(
+                category="encoded_blob",
+                severity=severity,
+                pattern="morse_code_run",
+                matched_text=(
+                    f"{len(valid)} morse tokens; "
+                    f"decoded sample={decoded[:40]!r}"
+                ),
+                start=m.start(),
+                end=m.end(),
+                confidence=confidence,
+            ))
+
         return findings
 
     def _scan_encoded_blobs(self, content: str) -> list[InjectionFinding]:
