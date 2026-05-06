@@ -123,6 +123,131 @@ async def qe_readiness(
     return {"success": True, "data": await get_qe_readiness(refresh=refresh)}
 
 
+# ── Sprint-MORNING PR-4: ecosystem morning-readiness aggregator ──────
+
+
+@router.get("/morning-readiness")
+async def morning_readiness(
+    refresh: bool = False,
+    _user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Aggregate the "ready for VP work?" view across CLIs, local LLMs,
+    API providers, and detected MCPs.
+
+    Pure read-only. NEVER returns secret values -- only presence flags
+    (booleans) for env-var names. The endpoint is the single backend
+    surface MorningReadinessPanel reads to render its summary; no other
+    round-trips required.
+
+    Buckets:
+      * cli_runtimes  -- Claude / Codex / Gemini / etc.
+      * local_llms    -- Ollama, llama-server, vLLM
+      * api_providers -- OpenAI, Anthropic, Gemini, Groq, Perplexity, etc.
+      * detected_mcps -- MCPs already configured in OTHER CLIs that
+                        Daena could one-click import.
+    """
+    from app.services.runtime_readiness import get_runtime_readiness
+
+    runtime = await get_runtime_readiness(refresh=refresh)
+    items: list[dict[str, object]] = list(runtime.get("items") or [])
+
+    def _by_kind(kind: str) -> list[dict[str, object]]:
+        return [i for i in items if i.get("kind") == kind]
+
+    def _ready_count(rows: list[dict[str, object]]) -> int:
+        return sum(
+            1 for r in rows
+            if r.get("readiness_state") == "ready"
+        )
+
+    cli_rows = _by_kind("cli_runtime")
+    llm_rows = _by_kind("local_llm")
+    api_rows = _by_kind("api_provider")
+
+    # Detected MCPs (best-effort: never raise if scanner fails).
+    # NEVER expose env values -- only server name + source CLI + command.
+    detected_items: list[dict[str, object]] = []
+    detected_total = 0
+    detected_error: str | None = None
+    try:
+        from app.services.mcp_sync.detector import CLIMCPDetector
+        merged = await CLIMCPDetector().discover_all()
+        detected_total = len(merged)
+        for m in merged[:20]:
+            detected_items.append({
+                "name": m.name,
+                "from_cli": m.source_cli,
+                "command": m.command,
+                # env intentionally redacted -- env values may carry tokens
+            })
+    except Exception as exc:  # noqa: BLE001 -- best-effort
+        detected_error = str(exc)[:200]
+
+    # Compose blockers (operator-actionable).
+    blockers: list[str] = []
+    if _ready_count(llm_rows) == 0 and _ready_count(cli_rows) == 0:
+        blockers.append(
+            "No local LLM and no CLI runtime detected. Start "
+            "llama-server / Ollama, or install Claude / Codex / Gemini CLI.",
+        )
+    if _ready_count(llm_rows) == 0:
+        blockers.append("No local LLM reachable. Free-tier work falls back to CLI subscription.")
+    if not any(_env_present_for(api) for api in api_rows):
+        blockers.append("No paid API key configured. Daena runs free-tier only.")
+
+    summary = {
+        "cli_runtimes": _summarize(cli_rows),
+        "local_llms": _summarize(llm_rows),
+        "api_providers": _summarize(api_rows),
+        "detected_mcps": {
+            "total": detected_total,
+            "items": detected_items,
+            "scan_error": detected_error,
+        },
+        "blockers": blockers,
+        "ready_for_morning_work": (
+            len(blockers) == 0
+            or _ready_count(cli_rows) > 0
+            or _ready_count(llm_rows) > 0
+        ),
+    }
+    return {"success": True, "data": summary}
+
+
+def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
+    """One-bucket summary: id list with readiness_state + cost_class."""
+    return {
+        "total": len(rows),
+        "ready": sum(
+            1 for r in rows
+            if r.get("readiness_state") == "ready"
+        ),
+        "items": [
+            {
+                "id": r.get("id"),
+                "display_name": r.get("display_name") or r.get("id"),
+                "readiness_state": r.get("readiness_state"),
+                "cost_class": r.get("cost_class"),
+                "detected": bool(r.get("detected")),
+                "configured": bool(r.get("configured")),
+                "callable": bool(r.get("callable")),
+                "endpoint": r.get("endpoint"),
+                "next_action": r.get("safe_failure_reason"),
+            }
+            for r in rows
+        ],
+    }
+
+
+def _env_present_for(api: dict[str, object]) -> bool:
+    """True iff the API row is reported configured (env var present).
+
+    Reads the runtime_readiness "configured" boolean -- never reads the
+    secret itself.
+    """
+    return bool(api.get("configured"))
+
+
 # Stable status taxonomy. The worst status anywhere in `checks` becomes
 # overall_status (warning > healthy; blocked > warning).
 STATUS_HEALTHY = "healthy"

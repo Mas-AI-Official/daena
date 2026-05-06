@@ -14,6 +14,7 @@ import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
 import { Card, Badge } from '@/components/common'
 import { BrainReadinessPanel } from '@/components/common/BrainReadinessPanel'
+import { MorningReadinessPanel } from '@/components/common/MorningReadinessPanel'
 
 interface RuntimeInfo {
   runtime_id: string
@@ -155,6 +156,11 @@ export function SettingsModelsRuntimes() {
           Honest snapshot of which brain Daena will use right now.
           Read-only; no paid call fires from here. */}
       <BrainReadinessPanel />
+
+      {/* Sprint-MORNING PR-4: ecosystem readiness panel.
+          Single read-only call to /system/morning-readiness covering
+          CLIs, local LLMs, API keys, and detected MCPs. */}
+      <MorningReadinessPanel />
 
       {/* Section 1: Local Models */}
       <section className="space-y-3">
