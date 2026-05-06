@@ -72,6 +72,7 @@ from app.api.v1 import (
     skills,
     souls,
     system_self_diagnostic,
+    opportunities,
     routines as routines_api,
     trust,
     trust_chat,
@@ -310,4 +311,11 @@ router.include_router(
 # the structured response; backend never hallucinates permissions.
 router.include_router(
     trust_chat.router, prefix="/trust/chat", tags=["trust-chat"],
+)
+# Sprint-19 PR-2 (2026-05-06): Lead and opportunity inbox.
+# Read + minor-mutation surface over discovered Opportunity rows.
+# NO send / submit / post / pay endpoints. External writes go
+# through the controlled execution dispatcher only.
+router.include_router(
+    opportunities.router, prefix="/opportunities", tags=["opportunities"],
 )

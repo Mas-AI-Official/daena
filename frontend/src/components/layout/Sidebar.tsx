@@ -134,6 +134,7 @@ const navGroups: NavGroup[] = [
       { label: 'Policy Rules', path: '/policies', icon: <Shield size={18} /> },
       { label: 'Audit Log', path: '/governance/audit', icon: <Shield size={18} /> },
       { label: 'Trust Ladder', path: '/governance/trust', icon: <Shield size={18} /> },
+      { label: 'Opportunities', path: '/opportunities', icon: <Shield size={18} /> },
       { label: 'Analytics', path: '/analytics', icon: <BarChart3 size={18} /> },
     ],
   },

@@ -31,6 +31,7 @@ const PoliciesPage = lazy(() => import('@/pages/PoliciesPage'))
 const GovernanceApprovalsPage = lazy(() => import('@/pages/GovernanceApprovalsPage'))
 const GovernanceAuditPage = lazy(() => import('@/pages/GovernanceAuditPage'))
 const GovernanceTrustPage = lazy(() => import('@/pages/GovernanceTrustPage'))
+const OpportunityInboxPage = lazy(() => import('@/pages/OpportunityInboxPage'))
 const DepartmentsPage = lazy(() => import('@/pages/DepartmentsPage'))
 // Department Minds (soul personas) + Company Mode activation -- shipped
 // with the TICKET-DEPT-MINDS-01 stack. Consumes /souls + /company-mode.
@@ -123,6 +124,7 @@ function AppRoutes() {
                   <Route path="/governance/approvals" element={<GovernanceApprovalsPage />} />
                   <Route path="/governance/audit" element={<GovernanceAuditPage />} />
                   <Route path="/governance/trust" element={<GovernanceTrustPage />} />
+                  <Route path="/opportunities" element={<OpportunityInboxPage />} />
                   <Route path="/security" element={<SecurityDashboardPage />} />
                   <Route path="/security/scope" element={<SecurityScopePage />} />
                   <Route path="/scan" element={<ScanPage />} />
