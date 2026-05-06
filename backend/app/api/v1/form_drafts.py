@@ -28,7 +28,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +37,11 @@ from app.api.deps import CurrentUser, get_current_user, require_role
 from app.core.database import get_db
 from app.core.logging import get_logger
 from app.models.form_draft import FormDraft, FormDraftField
+from app.models.research import ResearchDraft
+from app.services.draft_enrichment import (
+    EnrichmentRefused,
+    enrich_form_draft,
+)
 from app.services.form_draft_service import (
     archive_draft,
     create_form_draft_from_html,
@@ -361,6 +366,102 @@ async def post_archive(
     await db.commit()
     await db.refresh(draft, attribute_names=["fields"])
     return FormDraftOut.from_model(draft)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Sprint-12 PR-2: routed-brain enrichment of form fields
+# ──────────────────────────────────────────────────────────────────
+
+
+class FormEnrichRequest(BaseModel):
+    """Optional flags + research-context pointer for enrichment."""
+    allow_metered: bool = Field(
+        default=False,
+        description="When True, allow a metered API provider to fill the brain slot.",
+    )
+    research_draft_id: uuid.UUID | None = Field(
+        default=None,
+        description=(
+            "Optional ResearchDraft to use as grounding context. The "
+            "draft must belong to the calling user. Only a whitelist "
+            "of fields is passed to the LLM (company/role/fit_rationale/"
+            "missing_skills/outreach_draft_local/next_tasks)."
+        ),
+    )
+
+
+class FormEnrichResponse(BaseModel):
+    success: bool
+    draft_id: str
+    runtime_id: str
+    cost_class: str
+    fields_filled: int
+    needs_review: list[str]
+    llm_failed: bool
+    metadata: dict
+
+
+@router.post("/{draft_id}/enrich", response_model=FormEnrichResponse)
+async def post_enrich_form_draft(
+    draft_id: uuid.UUID,
+    request: Request,
+    body: FormEnrichRequest | None = None,
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> FormEnrichResponse:
+    """Run LLM enrichment on a FormDraft's eligible fields.
+
+    Reads ``/system/runtime-readiness`` first. Refuses honestly on
+    no_ready_main_brain. Blocked field types (payment / sensitive)
+    are NEVER given a suggested_value regardless of LLM output.
+    NEVER submits the form.
+    """
+    draft = await _load_draft(db, draft_id, user)
+    body = body or FormEnrichRequest()
+    registry = getattr(request.app.state, "model_registry", None)
+
+    research_ctx: dict | None = None
+    if body.research_draft_id is not None:
+        rd = (await db.execute(
+            select(ResearchDraft).where(
+                ResearchDraft.id == body.research_draft_id,
+                ResearchDraft.tenant_id == user.tenant_id,
+                ResearchDraft.user_id == user.id,
+            )
+        )).scalar_one_or_none()
+        if rd is None:
+            raise HTTPException(
+                status_code=404,
+                detail="research_draft_not_found_for_user",
+            )
+        research_ctx = rd.structured_payload or None
+
+    try:
+        result = await enrich_form_draft(
+            db, draft,
+            research_context=research_ctx,
+            allow_metered=body.allow_metered,
+            registry=registry,
+            actor_id=user.id,
+        )
+    except EnrichmentRefused as exc:
+        await db.commit()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "next_action": exc.next_action},
+        )
+
+    await db.commit()
+    return FormEnrichResponse(
+        success=True,
+        draft_id=result.draft_id,
+        runtime_id=result.runtime_id,
+        cost_class=result.cost_class,
+        fields_filled=result.fields_filled,
+        needs_review=result.needs_review,
+        llm_failed=result.llm_failed,
+        metadata=result.metadata,
+    )
 
 
 @router.delete("/{draft_id}")
