@@ -410,11 +410,24 @@ async def post_from_draft(
         # the workstream timeline + draft-action factory (PR-4) can
         # read them without re-loading the draft.
         if kind == "business_opportunity":
-            initial_context["opportunity_type"] = sp.get("opportunity_type")
+            from app.services.draft_action_factory import suggested_action_drafts
+
+            opp_type_str = sp.get("opportunity_type")
+            initial_context["opportunity_type"] = opp_type_str
             initial_context["deadline"] = sp.get("deadline")
             initial_context["fit_score"] = sp.get("fit_score")
             initial_context["risk_level"] = sp.get("risk_level")
             initial_context["confidence"] = sp.get("confidence")
+            # Sprint-13 PR-4: seeded action drafts (Daena proposes;
+            # never auto-executes). The list is metadata only --
+            # contains no send/submit/apply/post field. Drafts are
+            # filled in via the operator UI; Phase 3 wiring (PR-8
+            # design lock) is what eventually sends one.
+            initial_context["seeded_action_drafts"] = (
+                suggested_action_drafts(opp_type_str)
+                if isinstance(opp_type_str, str)
+                else []
+            )
             na = sp.get("next_action")
             if isinstance(na, str) and na.strip():
                 next_step_text = na.strip()[:500]
