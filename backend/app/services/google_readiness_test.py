@@ -134,4 +134,22 @@ async def probe_google_provider(
         "provider": provider,
         "status": status,
         "reason": reason,
+        "next_action": _next_action_for_status(status),
     }
+
+
+# Sprint-20 PR-1 (2026-05-06): operator-facing one-liner per status,
+# rendered next to the status pill. Never user data; pure mapping.
+_NEXT_ACTIONS: dict[str, str] = {
+    "connected": "Ready.",
+    "expired": "Disconnect and reconnect this account.",
+    "insufficient_scope": (
+        "Reconnect and grant the missing scope on the consent screen."
+    ),
+    "failed": "Retry; if the failure persists, reconnect this account.",
+    "not_connected": "Connect this account from the Apps panel.",
+}
+
+
+def _next_action_for_status(status: str) -> str:
+    return _NEXT_ACTIONS.get(status, "Reconnect this account.")

@@ -274,3 +274,95 @@ async def google_readiness_test(
         results.append(result)
 
     return {"owner_email": owner_email, "results": results}
+
+
+# ── Sprint-20 PR-1 (2026-05-06): Activation summary ─────────────────
+#
+# Fast DB-only readiness summary the OpportunityInboxPage banner pulls
+# on mount. Does NOT call Google. Built for "is this operator ready to
+# run the business loop right now?" not for "are the tokens still good
+# in Google's view?" -- the latter is the live readiness probe.
+#
+# Returns: { ready: bool, blockers: [{role, email, missing: [...]}] }
+# where ``missing`` is the subset of (gmail, drive, calendar) the
+# pinned email has NOT connected. ``blockers`` is empty iff ready.
+#
+# NEVER returns secrets, tokens, instance ids, or counts.
+
+
+_SUMMARY_PROVIDER_LABELS: dict[str, str] = {
+    "gmail": "gmail",
+    "google-drive": "drive",
+    "google-calendar": "calendar",
+}
+
+
+@router.get("/google-activation-summary")
+async def google_activation_summary(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """One-liner readiness for the two pinned Google accounts.
+
+    Pure DB read. The response is small and fast so cross-page banners
+    can pull it on every mount without a Google round-trip.
+    """
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.orm import selectinload
+    from app.models.connections import Connector
+
+    client_meta = oauth_client_config_store.get_metadata("google")
+    client_configured = bool(client_meta.get("configured"))
+
+    stmt = (
+        select(ConnectorInstance)
+        .join(Connector, ConnectorInstance.connector_id == Connector.id)
+        .where(
+            ConnectorInstance.tenant_id == user.tenant_id,
+            ConnectorInstance.user_id == user.id,
+            Connector.name.in_(GOOGLE_CONNECTOR_SLUGS),
+        )
+        .options(selectinload(ConnectorInstance.connector))
+    )
+    try:
+        result = await db.execute(stmt)
+        instances = list(result.scalars().all())
+    except OperationalError:
+        instances = []
+
+    def _missing_for(target_email: str) -> list[str]:
+        target = target_email.strip().lower()
+        connected_slugs = {
+            (inst.connector.name if inst.connector else "")
+            for inst in instances
+            if (inst.owner_email or "").strip().lower() == target
+            and (inst.status or "").upper() == "CONNECTED"
+        }
+        missing: list[str] = []
+        for slug, label in _SUMMARY_PROVIDER_LABELS.items():
+            if slug not in connected_slugs:
+                missing.append(label)
+        return missing
+
+    blockers: list[dict] = []
+    if not client_configured:
+        blockers.append({
+            "role": "client",
+            "email": None,
+            "missing": ["client_id", "client_secret"],
+        })
+    for role, email in (
+        ("founder", FOUNDER_EMAIL),
+        ("agent", AGENT_EMAIL),
+    ):
+        missing = _missing_for(email)
+        if missing:
+            blockers.append({
+                "role": role, "email": email, "missing": missing,
+            })
+
+    return {
+        "ready": len(blockers) == 0,
+        "client_configured": client_configured,
+        "blockers": blockers,
+    }

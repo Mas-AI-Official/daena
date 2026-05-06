@@ -12,10 +12,12 @@
  *     through the controlled execution dispatcher elsewhere.
  */
 import { useEffect, useState } from 'react'
-import { Briefcase, RefreshCw, Archive, X, AlertTriangle } from 'lucide-react'
+import { Briefcase, RefreshCw, Archive, X, AlertTriangle, ShieldAlert } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button } from '@/components/common'
 import { api } from '@/lib/api'
+import { useGoogleActivationSummary } from '@/hooks/useGoogleActivationSummary'
 
 interface OpportunityRow {
   id: string
@@ -64,6 +66,7 @@ export default function OpportunityInboxPage() {
   const [reloadCount, setReloadCount] = useState(0)
   const [running, setRunning] = useState(false)
   const [lastRunSummary, setLastRunSummary] = useState<string | null>(null)
+  const { summary: activation } = useGoogleActivationSummary()
 
   useEffect(() => {
     let cancelled = false
@@ -143,6 +146,39 @@ export default function OpportunityInboxPage() {
             </Button>
           </div>
         </header>
+
+        {activation && !activation.ready && (
+          <Card
+            className="border-amber-500/30 bg-amber-500/5"
+            data-testid="opportunities-activation-blocker"
+          >
+            <div className="p-4 flex items-start gap-3 text-amber-200">
+              <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+              <div className="text-xs space-y-1 flex-1 min-w-0">
+                <p className="font-semibold">
+                  Google not fully connected. Outreach drafts cannot
+                  reach Gmail until both accounts are ready.
+                </p>
+                <ul className="space-y-0.5 text-amber-300/90">
+                  {activation.blockers.map((b) => (
+                    <li key={`${b.role}:${b.email ?? 'client'}`}>
+                      <span className="font-mono">
+                        {b.email ?? 'OAuth client'}
+                      </span>{' '}
+                      missing: {b.missing.join(', ')}
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  to="/connections"
+                  className="inline-block mt-2 underline decoration-dotted hover:text-amber-100"
+                >
+                  Open the Connections page →
+                </Link>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {lastRunSummary && (
           <Card className="border-slate-700 bg-slate-900/50">

@@ -28,7 +28,7 @@
  *     "switch account" picker once both rows exist.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   CheckCircle2, Circle, ExternalLink, KeyRound, Mail,
   RefreshCw, ShieldAlert, User, Activity,
@@ -39,16 +39,20 @@ import {
   type GoogleAccountStatus, useGoogleSetupStatus,
 } from '@/hooks/useGoogleSetupStatus'
 
-// Sprint-16 PR-3: live readiness probe result.
+// Sprint-16 PR-3: live readiness probe result. Sprint-20 PR-1 added
+// next_action so the operator never has to guess what to do for a
+// non-connected status.
 interface ReadinessResult {
   provider: string
   status: 'connected' | 'expired' | 'insufficient_scope' | 'failed' | 'not_connected'
   reason: string
+  next_action?: string
 }
 
 interface ReadinessResponse {
   owner_email: string
   results: ReadinessResult[]
+  checked_at?: string
 }
 
 
@@ -154,6 +158,8 @@ function ReadinessBadge({ result }: { result: ReadinessResult }) {
 export default function GoogleAccountSetupGuide() {
   const { status, loading, error, refresh } = useGoogleSetupStatus()
   // Sprint-16 PR-3: per-account live readiness probe state.
+  // Sprint-20 PR-1: stamp checked_at + auto-probe on mount when both
+  // accounts are connected so the operator never has to click first.
   const [readinessByEmail, setReadinessByEmail] = useState<
     Record<string, ReadinessResponse | { error: string } | { loading: true }>
   >({})
@@ -165,12 +171,33 @@ export default function GoogleAccountSetupGuide() {
         '/connections/google-readiness-test',
         { owner_email, providers: ['gmail', 'calendar', 'drive'] },
       )
-      setReadinessByEmail(prev => ({ ...prev, [owner_email]: data }))
+      const stamped: ReadinessResponse = {
+        ...data, checked_at: new Date().toISOString(),
+      }
+      setReadinessByEmail(prev => ({ ...prev, [owner_email]: stamped }))
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Readiness probe failed'
       setReadinessByEmail(prev => ({ ...prev, [owner_email]: { error: msg } }))
     }
   }
+
+  // Sprint-20 PR-1: auto-probe both accounts once they're both connected.
+  // Avoids "operator has to remember to click Test read-only on every
+  // visit" -- the page is the source of truth.
+  useEffect(() => {
+    if (!status) return
+    const tasks: Promise<void>[] = []
+    if (status.founder_account.connected
+        && readinessByEmail[status.founder_account.email] == null) {
+      tasks.push(runReadinessTest(status.founder_account.email))
+    }
+    if (status.agent_account.connected
+        && readinessByEmail[status.agent_account.email] == null) {
+      tasks.push(runReadinessTest(status.agent_account.email))
+    }
+    void Promise.all(tasks)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.founder_account.connected, status?.agent_account.connected])
 
   return (
     <section
@@ -358,11 +385,42 @@ export default function GoogleAccountSetupGuide() {
                   <p className="mt-2 text-[10px] text-rose-300">{probeError}</p>
                 )}
                 {probeResults && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {probeResults.map(r => (
-                      <ReadinessBadge key={r.provider} result={r} />
-                    ))}
-                  </div>
+                  <>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {probeResults.map(r => (
+                        <ReadinessBadge key={r.provider} result={r} />
+                      ))}
+                    </div>
+                    {/* Sprint-20 PR-1: surface next_action per failed
+                        provider so the operator never has to guess. */}
+                    {probeResults.some(r => r.status !== 'connected'
+                                          && r.next_action) && (
+                      <ul
+                        data-testid={`readiness-${role}-next-actions`}
+                        className="mt-2 space-y-0.5 text-[10px] text-amber-300"
+                      >
+                        {probeResults
+                          .filter(r => r.status !== 'connected' && r.next_action)
+                          .map(r => (
+                            <li key={r.provider}>
+                              <span className="font-mono text-starlight-200">
+                                {r.provider}
+                              </span>
+                              : {r.next_action}
+                            </li>
+                          ))}
+                      </ul>
+                    )}
+                    {probeState && 'checked_at' in probeState && probeState.checked_at && (
+                      <p
+                        data-testid={`readiness-${role}-checked-at`}
+                        className="mt-1 text-[9px] text-starlight-400"
+                      >
+                        Checked{' '}
+                        {new Date(probeState.checked_at).toLocaleTimeString()}.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </div>
