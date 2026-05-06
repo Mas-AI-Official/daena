@@ -74,6 +74,7 @@ from app.api.v1 import (
     system_self_diagnostic,
     routines as routines_api,
     trust,
+    trust_chat,
     tts,
     voice_ws,
     vp_commands,
@@ -302,4 +303,11 @@ router.include_router(
 # trust auto-approval ALWAYS refuses for routine outputs.
 router.include_router(
     routines_api.router, prefix="/routines", tags=["routines"],
+)
+# Sprint-18 PR-5 (2026-05-06): Trust-aware VP chat commands.
+# Deterministic pattern matcher; NO LLM in the path. Authoritative
+# state from trust_policy + routine_autonomy. The frontend renders
+# the structured response; backend never hallucinates permissions.
+router.include_router(
+    trust_chat.router, prefix="/trust/chat", tags=["trust-chat"],
 )
