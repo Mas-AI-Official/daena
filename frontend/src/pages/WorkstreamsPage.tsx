@@ -47,6 +47,10 @@ import {
   Workflow,
   XCircle,
   Zap,
+  Brain,
+  Users,
+  ArrowRightCircle,
+  Loader2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
@@ -874,14 +878,192 @@ function PendingBadge() {
   return (
     <span
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30"
-      title="Deterministic shape only. LLM enrichment pass deferred to a follow-up PR."
+      title="Deterministic shape only. Click Enrich to run the routed main brain."
     >
       llm pending
     </span>
   )
 }
 
-function DraftRow({ draft }: { draft: ResearchDraftSummary }) {
+/**
+ * DraftActions — Sprint-MORNING PR-2.
+ *
+ * Inline action row for Enrich / QE Review / Create Workstream against a
+ * ResearchDraft or FormDraft. Each action targets the existing Sprint-12
+ * endpoints; refusals (no main brain ready, etc.) surface via toast +
+ * inline status. No external action fires from these buttons.
+ */
+type DraftActionStatus = 'idle' | 'running' | 'done' | 'refused'
+
+interface DraftActionsProps {
+  draftId: string
+  draftKind: 'career' | 'content' | 'form'
+  onRefresh?: () => void
+}
+
+function DraftActions({ draftId, draftKind, onRefresh }: DraftActionsProps) {
+  const [enrichStatus, setEnrichStatus] = useState<DraftActionStatus>('idle')
+  const [qeStatus, setQeStatus] = useState<DraftActionStatus>('idle')
+  const [wsStatus, setWsStatus] = useState<DraftActionStatus>('idle')
+  const [lastNote, setLastNote] = useState<string | null>(null)
+
+  const enrichUrl =
+    draftKind === 'form'
+      ? `/form-drafts/${draftId}/enrich`
+      : `/research/drafts/${draftId}/enrich`
+  const qeUrl =
+    draftKind === 'form'
+      ? `/form-drafts/${draftId}/qe-review`
+      : `/research/drafts/${draftId}/qe-review`
+
+  const onEnrich = async () => {
+    setEnrichStatus('running')
+    setLastNote(null)
+    try {
+      const { data } = await api.post(enrichUrl, { allow_metered: false }, { silent: true })
+      const refusal = data?.refusal_code as string | undefined
+      if (refusal) {
+        setEnrichStatus('refused')
+        const next = (data?.next_action as string | undefined) ?? 'See logs.'
+        setLastNote(next)
+        toast.error(`Enrich refused: ${refusal}`)
+      } else {
+        setEnrichStatus('done')
+        toast.success('Enriched ✓')
+        onRefresh?.()
+      }
+    } catch (err) {
+      setEnrichStatus('refused')
+      const msg = err instanceof Error ? err.message : 'failed'
+      setLastNote(msg)
+      toast.error(`Enrich failed: ${msg}`)
+    }
+  }
+
+  const onQeReview = async () => {
+    setQeStatus('running')
+    setLastNote(null)
+    try {
+      const { data } = await api.post(
+        qeUrl,
+        { allow_metered: false, allow_web_grounding: false },
+        { silent: true },
+      )
+      const mode = (data?.mode as string | undefined) ?? 'unknown'
+      if (mode === 'unavailable') {
+        setQeStatus('refused')
+        setLastNote('Council unavailable — no reviewers ready.')
+        toast.error('Council unavailable')
+      } else {
+        setQeStatus('done')
+        toast.success(`Council ran in mode=${mode}`)
+        onRefresh?.()
+      }
+    } catch (err) {
+      setQeStatus('refused')
+      const msg = err instanceof Error ? err.message : 'failed'
+      setLastNote(msg)
+      toast.error(`Council failed: ${msg}`)
+    }
+  }
+
+  const onCreateWorkstream = async () => {
+    setWsStatus('running')
+    setLastNote(null)
+    try {
+      const { data } = await api.post(
+        '/workstreams/from-draft',
+        { draft_kind: draftKind, draft_ref: draftId },
+        { silent: true },
+      )
+      setWsStatus('done')
+      const wsId = (data?.id as string | undefined)?.slice(0, 8) ?? 'created'
+      toast.success(`Workstream ${wsId} created`)
+      onRefresh?.()
+    } catch (err) {
+      setWsStatus('refused')
+      const msg = err instanceof Error ? err.message : 'failed'
+      setLastNote(msg)
+      toast.error(`Create workstream failed: ${msg}`)
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+      <ActionButton
+        label="Enrich"
+        Icon={Brain}
+        status={enrichStatus}
+        onClick={onEnrich}
+      />
+      <ActionButton
+        label="Council"
+        Icon={Users}
+        status={qeStatus}
+        onClick={onQeReview}
+      />
+      <ActionButton
+        label="Create Workstream"
+        Icon={ArrowRightCircle}
+        status={wsStatus}
+        onClick={onCreateWorkstream}
+      />
+      {lastNote && (
+        <div className="basis-full mt-1 text-[10px] text-amber-300">
+          {lastNote}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ActionButton({
+  label,
+  Icon,
+  status,
+  onClick,
+}: {
+  label: string
+  Icon: typeof Brain
+  status: DraftActionStatus
+  onClick: () => void
+}) {
+  const disabled = status === 'running'
+  const tone =
+    status === 'done'
+      ? 'border-emerald-500/40 text-emerald-200 bg-emerald-500/10'
+      : status === 'refused'
+        ? 'border-rose-500/40 text-rose-200 bg-rose-500/10'
+        : 'border-white/10 text-starlight-300 hover:bg-white/5'
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] border ${tone} ${
+        disabled ? 'opacity-60 cursor-wait' : 'cursor-pointer'
+      }`}
+    >
+      {status === 'running' ? (
+        <Loader2 size={11} className="animate-spin" />
+      ) : (
+        <Icon size={11} />
+      )}
+      {label}
+    </button>
+  )
+}
+
+function DraftRow({
+  draft,
+  onRefresh,
+}: {
+  draft: ResearchDraftSummary
+  onRefresh?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const payload = draft.structured_payload
   const llmPending = payload && payload._llm_pending === true
@@ -920,6 +1102,11 @@ function DraftRow({ draft }: { draft: ResearchDraftSummary }) {
           ) : (
             <div className="italic text-starlight-500">no structured payload yet</div>
           )}
+          <DraftActions
+            draftId={draft.id}
+            draftKind={draft.kind}
+            onRefresh={onRefresh}
+          />
         </div>
       )}
     </div>
@@ -1037,7 +1224,7 @@ function DraftsLane() {
         ) : (
           <div className="space-y-1.5">
             {formDrafts.map(d => (
-              <div key={d.id} className="border border-white/5 rounded-md bg-white/[.02] p-2.5">
+              <div key={d.id} className="border border-white/5 rounded-md bg-white/[.02] p-2.5 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-[11px] font-semibold text-starlight-100 truncate">
                     {d.title}
@@ -1047,6 +1234,11 @@ function DraftsLane() {
                 <div className="text-[10px] text-starlight-400 truncate">
                   source: {d.source_kind}{d.source_host ? ` · ${d.source_host}` : ''}
                 </div>
+                <DraftActions
+                  draftId={d.id}
+                  draftKind="form"
+                  onRefresh={load}
+                />
               </div>
             ))}
           </div>
@@ -1057,7 +1249,7 @@ function DraftsLane() {
         </div>
       ) : (
         <div className="space-y-1.5">
-          {visibleResearch.map(d => <DraftRow key={d.id} draft={d} />)}
+          {visibleResearch.map(d => <DraftRow key={d.id} draft={d} onRefresh={load} />)}
         </div>
       )}
     </div>
