@@ -46,19 +46,64 @@ def _make_request(**overrides):
     return ControlledExecutionRequest(**base)
 
 
-def _make_ctx(*, request, payload, tenant_id=None, user_id=None):
+def _make_ctx(
+    *, request, payload, tenant_id=None, user_id=None,
+    approval_params=None,
+):
+    """Build a HandlerContext with a configurable approval row.
+
+    Sprint-16 PR-2 makes the handler consult
+    ``ctx.approval.action_params`` so tests must opt-in to a
+    realistic approval row by passing ``approval_params``. When None,
+    the approval is a bare MagicMock whose ``action_params`` attr
+    returns ``None`` (matching the legacy / missing-snapshot case
+    intentionally tested by ``TestSnapshotRequired``).
+    """
     import uuid
 
     from app.services.controlled_execution_dispatch import HandlerContext
 
+    approval = MagicMock()
+    approval.action_params = approval_params  # may be None
     return HandlerContext(
         request=request,
-        approval=MagicMock(),
+        approval=approval,
         payload=payload,
         tenant_id=tenant_id or uuid.uuid4(),
         user_id=user_id or uuid.uuid4(),
         db=MagicMock(),
     )
+
+
+def _matching_snapshot_dict(*, owner_email="founder@example.com",
+                            to="ops@example.com",
+                            from_value="Founder <founder@example.com>",
+                            subject="Q3 plan", body_snippet="",
+                            draft_id="draft-abc",
+                            message_id=None, thread_id=None):
+    """Build a draft_snapshot dict that EXACTLY matches what
+    build_snapshot_from_gmail_draft would produce from
+    _draft_meta(...) -- so first_drift_field returns None and the
+    handler proceeds to send.
+    """
+    return {
+        "draft_id": draft_id,
+        "owner_email": owner_email,
+        "to": to,
+        "from_value": from_value,
+        "subject": subject,
+        "body_snippet": body_snippet,
+        "captured_at": "2026-05-06T12:00:00+00:00",
+        "message_id": message_id,
+        "thread_id": thread_id,
+    }
+
+
+def _approval_with_snapshot(snapshot=None, **snap_overrides):
+    """Build an approval action_params dict carrying a snapshot."""
+    if snapshot is None:
+        snapshot = _matching_snapshot_dict(**snap_overrides)
+    return {"draft_snapshot": snapshot}
 
 
 def _draft_meta(*, from_value: str, to: str = "ops@example.com",
@@ -238,7 +283,14 @@ class TestDraftOwnerEmailMismatch:
         monkeypatch.setattr(mod, "_build_client", lambda c: fake_client)
 
         req = _make_request()
-        ctx = _make_ctx(request=req, payload={"draft_id": "draft-abc"})
+        # Snapshot present but the From: check fires FIRST (Sprint-15
+        # invariant) so this still surfaces draft_owner_email_mismatch
+        # before the snapshot wall.
+        ctx = _make_ctx(
+            request=req,
+            payload={"draft_id": "draft-abc"},
+            approval_params=_approval_with_snapshot(),
+        )
         with pytest.raises(ControlledExecutionRefused) as ei:
             await mod.handle_gmail_send_existing_draft(ctx)
         assert ei.value.code == "draft_owner_email_mismatch"
@@ -265,10 +317,188 @@ class TestDraftOwnerEmailMismatch:
         monkeypatch.setattr(mod, "_build_client", lambda c: fake_client)
 
         req = _make_request()
-        ctx = _make_ctx(request=req, payload={"draft_id": "draft-abc"})
+        ctx = _make_ctx(
+            request=req,
+            payload={"draft_id": "draft-abc"},
+            approval_params=_approval_with_snapshot(),
+        )
         with pytest.raises(ControlledExecutionRefused) as ei:
             await mod.handle_gmail_send_existing_draft(ctx)
         assert ei.value.code == "draft_owner_email_mismatch"
+
+
+class TestSnapshotRequired:
+    """Sprint-16 PR-2: send approval MUST carry a draft_snapshot."""
+
+    async def test_no_action_params_refused(self, monkeypatch):
+        """When the approval row's action_params is None (legacy /
+        Sprint-15-era approval), the handler refuses with
+        draft_snapshot_required BEFORE sending."""
+        from app.services.controlled_execution_dispatch import (
+            ControlledExecutionRefused,
+        )
+        from app.services.controlled_execution_handlers import (
+            gmail_send_existing_draft as mod,
+        )
+
+        async def _fake_load(ctx, *, owner_email):
+            return {"access_token": "tok"}
+
+        fake_client = MagicMock()
+        fake_client.get_draft = AsyncMock(return_value=_draft_meta(
+            from_value="Founder <founder@example.com>",
+        ))
+        monkeypatch.setattr(mod, "_load_gmail_credentials", _fake_load)
+        monkeypatch.setattr(mod, "_build_client", lambda c: fake_client)
+
+        req = _make_request()
+        ctx = _make_ctx(
+            request=req,
+            payload={"draft_id": "draft-abc"},
+            approval_params=None,  # legacy approval
+        )
+        with pytest.raises(ControlledExecutionRefused) as ei:
+            await mod.handle_gmail_send_existing_draft(ctx)
+        assert ei.value.code == "draft_snapshot_required"
+        assert not fake_client.send_existing_draft.called
+
+    async def test_snapshot_not_dict_refused(self, monkeypatch):
+        from app.services.controlled_execution_dispatch import (
+            ControlledExecutionRefused,
+        )
+        from app.services.controlled_execution_handlers import (
+            gmail_send_existing_draft as mod,
+        )
+
+        async def _fake_load(ctx, *, owner_email):
+            return {"access_token": "tok"}
+
+        fake_client = MagicMock()
+        fake_client.get_draft = AsyncMock(return_value=_draft_meta(
+            from_value="Founder <founder@example.com>",
+        ))
+        monkeypatch.setattr(mod, "_load_gmail_credentials", _fake_load)
+        monkeypatch.setattr(mod, "_build_client", lambda c: fake_client)
+
+        req = _make_request()
+        # action_params is a dict but draft_snapshot is a string,
+        # not a dict. The handler refuses cleanly rather than
+        # crashing.
+        ctx = _make_ctx(
+            request=req,
+            payload={"draft_id": "draft-abc"},
+            approval_params={"draft_snapshot": "not-a-dict"},
+        )
+        with pytest.raises(ControlledExecutionRefused) as ei:
+            await mod.handle_gmail_send_existing_draft(ctx)
+        assert ei.value.code == "draft_snapshot_required"
+
+
+class TestSnapshotDriftRefusals:
+    """Sprint-16 PR-2: every locked snapshot field that drifts must
+    refuse with the right stable code."""
+
+    async def test_recipient_drift_refused(self, monkeypatch):
+        from app.services.controlled_execution_dispatch import (
+            ControlledExecutionRefused,
+        )
+        from app.services.controlled_execution_handlers import (
+            gmail_send_existing_draft as mod,
+        )
+
+        async def _fake_load(ctx, *, owner_email):
+            return {"access_token": "tok"}
+
+        fake_client = MagicMock()
+        # Current Gmail draft has been edited: To: was changed.
+        fake_client.get_draft = AsyncMock(return_value=_draft_meta(
+            from_value="Founder <founder@example.com>",
+            to="attacker@evil.com",  # drifted from approved
+            subject="Q3 plan",
+        ))
+        monkeypatch.setattr(mod, "_load_gmail_credentials", _fake_load)
+        monkeypatch.setattr(mod, "_build_client", lambda c: fake_client)
+
+        req = _make_request()
+        # Approved snapshot says ops@example.com.
+        ctx = _make_ctx(
+            request=req,
+            payload={"draft_id": "draft-abc"},
+            approval_params=_approval_with_snapshot(to="ops@example.com"),
+        )
+        with pytest.raises(ControlledExecutionRefused) as ei:
+            await mod.handle_gmail_send_existing_draft(ctx)
+        assert ei.value.code == "draft_recipient_mismatch"
+        assert not fake_client.send_existing_draft.called
+
+    async def test_subject_drift_refused(self, monkeypatch):
+        from app.services.controlled_execution_dispatch import (
+            ControlledExecutionRefused,
+        )
+        from app.services.controlled_execution_handlers import (
+            gmail_send_existing_draft as mod,
+        )
+
+        async def _fake_load(ctx, *, owner_email):
+            return {"access_token": "tok"}
+
+        fake_client = MagicMock()
+        fake_client.get_draft = AsyncMock(return_value=_draft_meta(
+            from_value="Founder <founder@example.com>",
+            to="ops@example.com",
+            subject="WIRE $50K NOW",  # drifted from approved
+        ))
+        monkeypatch.setattr(mod, "_load_gmail_credentials", _fake_load)
+        monkeypatch.setattr(mod, "_build_client", lambda c: fake_client)
+
+        req = _make_request()
+        ctx = _make_ctx(
+            request=req,
+            payload={"draft_id": "draft-abc"},
+            approval_params=_approval_with_snapshot(subject="Q3 plan"),
+        )
+        with pytest.raises(ControlledExecutionRefused) as ei:
+            await mod.handle_gmail_send_existing_draft(ctx)
+        assert ei.value.code == "draft_subject_mismatch"
+        assert not fake_client.send_existing_draft.called
+
+    async def test_message_id_drift_refused(self, monkeypatch):
+        """When only message_id drifts, the snapshot helper reports
+        message_id, which maps to draft_metadata_hash_mismatch (we
+        don't surface message-id-specific refusal -- the operator
+        sees 'something changed' and re-approves)."""
+        from app.services.controlled_execution_dispatch import (
+            ControlledExecutionRefused,
+        )
+        from app.services.controlled_execution_handlers import (
+            gmail_send_existing_draft as mod,
+        )
+
+        async def _fake_load(ctx, *, owner_email):
+            return {"access_token": "tok"}
+
+        fake_client = MagicMock()
+        # Build a draft_meta that includes a different message_id
+        meta = _draft_meta(
+            from_value="Founder <founder@example.com>",
+            to="ops@example.com",
+            subject="Q3 plan",
+        )
+        meta["message"]["id"] = "different-message-id"
+        fake_client.get_draft = AsyncMock(return_value=meta)
+        monkeypatch.setattr(mod, "_load_gmail_credentials", _fake_load)
+        monkeypatch.setattr(mod, "_build_client", lambda c: fake_client)
+
+        req = _make_request()
+        ctx = _make_ctx(
+            request=req,
+            payload={"draft_id": "draft-abc"},
+            approval_params=_approval_with_snapshot(message_id="msg-xyz"),
+        )
+        with pytest.raises(ControlledExecutionRefused) as ei:
+            await mod.handle_gmail_send_existing_draft(ctx)
+        assert ei.value.code == "draft_metadata_hash_mismatch"
+        assert not fake_client.send_existing_draft.called
 
 
 class TestSuccessPath:
@@ -281,6 +511,9 @@ class TestSuccessPath:
             return {"access_token": "SECRET-NEVER-LEAK"}
 
         fake_client = MagicMock()
+        # The fetched draft's metadata MUST match the approved
+        # snapshot exactly (Sprint-16 PR-2 wall) -- we use the
+        # _draft_meta default _AND_ the matching snapshot helper.
         fake_client.get_draft = AsyncMock(return_value=_draft_meta(
             from_value="Founder <founder@example.com>",
             to="ops@example.com",
@@ -296,7 +529,29 @@ class TestSuccessPath:
         monkeypatch.setattr(mod, "_build_client", lambda c: fake_client)
 
         req = _make_request()
-        ctx = _make_ctx(request=req, payload={"draft_id": "draft-abc"})
+        # Build a snapshot that matches the fetched draft byte-for-
+        # byte. The _draft_meta helper in this file builds Gmail
+        # metadata WITHOUT a message id by default; the snapshot
+        # helper mirrors that.
+        ctx = _make_ctx(
+            request=req,
+            payload={"draft_id": "draft-abc"},
+            approval_params=_approval_with_snapshot(
+                draft_id="draft-abc",
+                owner_email="founder@example.com",
+                to="ops@example.com",
+                from_value="Founder <founder@example.com>",
+                subject="Q3 plan",
+                body_snippet="",
+                # _draft_meta sets message.id = "msg-xyz" by default
+                # (see the helper at the top of this file). The
+                # approved snapshot must mirror it; otherwise PR-2's
+                # snapshot wall would refuse with
+                # draft_metadata_hash_mismatch.
+                message_id="msg-xyz",
+                thread_id=None,
+            ),
+        )
         result = await mod.handle_gmail_send_existing_draft(ctx)
 
         assert result["draft_id"] == "draft-abc"
@@ -308,6 +563,15 @@ class TestSuccessPath:
         assert result["audit_subject"] == "Q3 plan"
         assert isinstance(result["rollback_or_undo_instruction"], str)
         assert len(result["rollback_or_undo_instruction"]) > 0
+        # Sprint-16 PR-2: surface BOTH hashes for the audit row.
+        assert isinstance(result["approved_snapshot_hash"], str)
+        assert len(result["approved_snapshot_hash"]) == 64
+        assert isinstance(result["verified_snapshot_hash"], str)
+        assert len(result["verified_snapshot_hash"]) == 64
+        # Hashes match because the fetched draft and the approved
+        # snapshot agree (the dispatch wouldn't have proceeded
+        # otherwise).
+        assert result["approved_snapshot_hash"] == result["verified_snapshot_hash"]
 
         # Paranoid: walk every value and assert no secret string.
         def _walk(o):

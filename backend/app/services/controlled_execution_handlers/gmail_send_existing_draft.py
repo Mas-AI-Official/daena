@@ -1,5 +1,8 @@
 """gmail.send_existing_draft handler -- Sprint-15 PR-2 (2026-05-06).
 
+Sprint-16 PR-2 (2026-05-06) hardens it with the draft-snapshot
+integrity wall.
+
 The FIRST controlled external send. Sends an existing Gmail draft
 by id. The handler runs only after the dispatcher's six gates have
 passed AND a SECOND approval has been raised separately for the
@@ -13,10 +16,13 @@ Why this is the safest possible first send:
     no arbitrary ``to``, ``subject``, ``body``, ``cc``, ``bcc``, or
     attachment. The draft contents live with Gmail; Daena does not
     re-supply them at send time.
-  * The handler fetches the draft from Gmail BEFORE sending so the
-    audit row records what is actually about to leave Gmail. If
-    the draft's ``From`` header does not match ``owner_email``, the
-    send refuses with ``draft_owner_email_mismatch``.
+  * The handler fetches the draft from Gmail BEFORE sending and
+    re-computes the canonical draft-metadata snapshot. If any of
+    ``to``, ``subject``, ``from_value``, or other locked snapshot
+    fields drifted between approval and send, the handler refuses
+    with a stable code (``draft_recipient_mismatch``,
+    ``draft_subject_mismatch``, etc.). Sprint-15 only checked the
+    From: header; Sprint-16 checks the full snapshot.
   * The handler refuses ``oauth_not_connected:google`` BEFORE any
     HTTP call to Gmail.
   * Generic ``gmail.send_email`` is NOT in WRITE_TOOLS and never
@@ -43,11 +49,28 @@ Refusal codes (in addition to the dispatcher's gates):
         raised. The most common cause: the draft was deleted from
         Gmail's drafts folder between approval and send.
 
+    draft_snapshot_required          (Sprint-16)
+        The send-approval row does NOT carry a draft_snapshot in
+        its action_params. The upstream send-approval creator
+        MUST capture a snapshot at approval time; legacy
+        approvals (created before Sprint-16) are not honoured.
+
     draft_owner_email_mismatch
-        The fetched draft's ``From`` header is a different account
-        than the request's ``owner_email``. This is the lock that
-        prevents draft-substitution from another account on the
-        same connector.
+        Either the fetched draft's ``From`` header is for a
+        different account than the request's ``owner_email``
+        (Sprint-15 lock), OR the snapshot's owner_email field
+        drifted between approval and send (Sprint-16 lock).
+
+    draft_recipient_mismatch         (Sprint-16)
+        Snapshot's ``to`` differs from the current Gmail draft.
+
+    draft_subject_mismatch           (Sprint-16)
+        Snapshot's ``subject`` differs from the current Gmail
+        draft.
+
+    draft_metadata_hash_mismatch     (Sprint-16)
+        The snapshot's metadata hash drifted but no specific
+        named field caught it (e.g. message_id changed).
 """
 
 from __future__ import annotations
@@ -64,11 +87,33 @@ from app.services.controlled_execution_dispatch import (
     HandlerContext,
     register_tool_handler,
 )
+from app.services.gmail_draft_snapshot import (
+    build_snapshot_from_gmail_draft,
+    compute_draft_metadata_hash,
+    first_drift_field,
+)
 from app.services.integrations.gmail_client import GmailClient
 
 logger = get_logger(__name__)
 
 _TOOL_ID = "gmail.send_existing_draft"
+
+
+# Sprint-16 PR-2: stable refusal-code mapping for snapshot drift.
+# The drift-field name from gmail_draft_snapshot.first_drift_field
+# maps deterministically to a refusal code. Order in the snapshot
+# helper is load-bearing -- do not reorder without updating both.
+_DRIFT_FIELD_TO_REFUSAL_CODE = {
+    "owner_email": "draft_owner_email_mismatch",
+    "to": "draft_recipient_mismatch",
+    "subject": "draft_subject_mismatch",
+    "from_value": "draft_owner_email_mismatch",
+    "draft_id": "draft_metadata_hash_mismatch",
+    "message_id": "draft_metadata_hash_mismatch",
+    "thread_id": "draft_metadata_hash_mismatch",
+    "body_snippet": "draft_metadata_hash_mismatch",
+    "metadata_hash": "draft_metadata_hash_mismatch",
+}
 
 
 async def _load_gmail_credentials(
@@ -208,6 +253,44 @@ async def handle_gmail_send_existing_draft(
             f"draft-substitution from another connected account.",
         )
 
+    # Sprint-16 PR-2: snapshot integrity wall.
+    # The send-approval row must carry a draft_snapshot that was
+    # captured at approval time. Re-build the snapshot from the
+    # fetched draft and refuse if any locked field drifted.
+    approval_params = (
+        getattr(ctx.approval, "action_params", None) or {}
+    )
+    approved_snapshot = approval_params.get("draft_snapshot")
+    if not approved_snapshot or not isinstance(approved_snapshot, dict):
+        raise ControlledExecutionRefused(
+            "draft_snapshot_required",
+            "send approval missing draft_snapshot in action_params. "
+            "Sprint-16 requires the upstream send-approval creator "
+            "to capture a Gmail draft snapshot at approval time so "
+            "send-time integrity can verify content has not drifted. "
+            "Legacy approvals (pre-Sprint-16) are not honoured.",
+        )
+
+    current_snapshot = build_snapshot_from_gmail_draft(
+        draft_meta=draft_meta,
+        owner_email=ctx.request.owner_email,
+    )
+    drift = first_drift_field(
+        approved=approved_snapshot, current=current_snapshot,
+    )
+    if drift is not None:
+        code = _DRIFT_FIELD_TO_REFUSAL_CODE.get(
+            drift, "draft_metadata_hash_mismatch",
+        )
+        approved_hash = compute_draft_metadata_hash(approved_snapshot)
+        current_hash = compute_draft_metadata_hash(current_snapshot)
+        raise ControlledExecutionRefused(
+            code,
+            f"draft drifted between approval and send (field={drift!r}); "
+            f"approved_hash={approved_hash[:16]}.. "
+            f"current_hash={current_hash[:16]}..",
+        )
+
     result = await client.send_existing_draft(draft_id)
 
     # Build a SAFE result. Never include the access_token, never
@@ -232,6 +315,13 @@ async def handle_gmail_send_existing_draft(
         # Audit-only metadata; truncated by the audit viewer (PR-4).
         "audit_to": header_map.get("to", ""),
         "audit_subject": header_map.get("subject", ""),
+        # Sprint-16 PR-2: surface the verified-at-send snapshot hash
+        # so the audit viewer can prove "what was approved is what
+        # was sent". Both the approved hash and the current hash are
+        # rendered in the row; if they ever differ, the dispatch
+        # would have refused above.
+        "approved_snapshot_hash": compute_draft_metadata_hash(approved_snapshot),
+        "verified_snapshot_hash": compute_draft_metadata_hash(current_snapshot),
         "rollback_or_undo_instruction": (
             ctx.request.rollback_or_undo_instruction
             or "Email cannot be unsent after delivery. Send a "
