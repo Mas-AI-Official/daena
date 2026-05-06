@@ -7,3 +7,6 @@
 .trust_ladder.json
 .trust_policy.json
 .routine_autonomy.json
+.opportunity_seed.json
+.send_rate_limit.json
+.recipient_suppression.json

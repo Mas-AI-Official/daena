@@ -15,6 +15,7 @@ from app.models.connection_v2 import (
     TrustTier,
 )
 from app.models.connections import Connector, ConnectorInstance, ConnectorPermission
+from app.models.business import BizOutreachDraft, Opportunity
 from app.models.crm import Account, Contact, Deal, OutreachDraft
 from app.models.research import ResearchDraft
 from app.models.form_draft import FormDraft, FormDraftField
