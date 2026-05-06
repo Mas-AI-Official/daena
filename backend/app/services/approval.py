@@ -21,6 +21,44 @@ from app.services._base import BaseService
 _DEFAULT_EXPIRY_HOURS = 24
 
 
+# ── Sprint-11 PR-4: draft approval kinds ─────────────────────────────
+#
+# Operator-curated drafts (email replies Daena prepared, form answers
+# the assistant filled, ContentBriefs, application drafts, file-change
+# proposals) flow through the *same* GoaRequest / PendingApproval
+# tables as runtime-tier approvals. We do NOT spin up a sibling queue
+# (CLAUDE.md Rule 2). Instead, draft approvals carry one of these
+# sentinel action_types so the dispatcher (and the test suite) can
+# tell them apart and refuse to fire external action on approve.
+DRAFT_KINDS: tuple[str, ...] = (
+    "email_draft",
+    "form_draft",
+    "application_draft",
+    "content_post_draft",
+    "file_change_proposal",
+)
+
+
+def is_draft_kind(action_type: str) -> bool:
+    """True when action_type is one of the supervised-work draft
+    kinds. The ApprovalService.approve() path treats these as
+    manual-action only -- approving sets status=APPROVED but does NOT
+    trigger any external dispatcher (no email send, no form post, no
+    file write, no LinkedIn invite). The 'approved_for_manual_action'
+    semantic is encoded in:
+
+        - GoaRequest.action_type (one of DRAFT_KINDS)
+        - GoaRequest.decision_reason carries an explicit
+          "approved_for_manual_action" sentinel for audit clarity
+        - the audit row's action_type starts with "draft.approval."
+
+    A test in tests/test_approval_queue_drafts.py asserts the approve
+    code path imports no IntegrationRouter / scrape worker / Gmail /
+    Calendar client.
+    """
+    return action_type in DRAFT_KINDS
+
+
 class ApprovalService(BaseService):
     """Manages governance approval requests and decisions.
 
@@ -90,6 +128,59 @@ class ApprovalService(BaseService):
         await self.db.flush()
 
         return self._request_to_dict(request)
+
+    async def request_draft_approval(
+        self,
+        *,
+        tenant_id: UUID,
+        user_id: UUID,
+        draft_kind: str,
+        draft_ref: str,
+        title: str,
+        context: dict | None = None,
+        session_id: UUID | None = None,
+    ) -> dict:
+        """Queue a draft for operator review without scheduling any
+        external action.
+
+        Creates a ``GoaRequest`` whose ``action_type`` is one of the
+        DRAFT_KINDS sentinels; ``action_params`` carries the
+        ``draft_ref`` (string id of the FormDraft / ResearchDraft / ...)
+        and a human-readable ``title``. risk_level is "LOW" and
+        governance_tier is 2 because the act of preparing a draft is
+        not itself a privileged action -- the privileged action is
+        what the operator chooses to do with the draft afterwards.
+
+        Approving this request via ``approve()`` flips status to
+        APPROVED but **does not** trigger any external dispatcher.
+        Tests in ``test_approval_queue_drafts.py`` enforce that
+        contract.
+        """
+        if draft_kind not in DRAFT_KINDS:
+            raise ValueError(
+                f"unknown_draft_kind: {draft_kind!r}. "
+                f"Allowed: {DRAFT_KINDS}"
+            )
+        params = {
+            "draft_kind": draft_kind,
+            "draft_ref": draft_ref,
+            "title": title,
+            # Sentinel the test suite asserts on -- this is what
+            # "approved_for_manual_action" means in the brief: the
+            # approval is operator-acknowledged, but Daena does NOT
+            # take the action. The operator does, by hand, off-system.
+            "manual_action_only": True,
+        }
+        return await self.request_approval(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            action_type=draft_kind,
+            action_params=params,
+            risk_level="LOW",
+            governance_tier=2,
+            session_id=session_id,
+            context=context,
+        )
 
     async def approve(
         self,

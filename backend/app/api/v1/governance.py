@@ -9,8 +9,9 @@ from __future__ import annotations
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_role
@@ -109,6 +110,75 @@ async def evaluate_action(
 
 
 # ── Approvals ──
+
+
+class CreateDraftApprovalRequest(BaseModel):
+    """Sprint-11 PR-4: queue a local draft for operator review.
+
+    The four supported ``draft_kind`` values come from
+    ``DRAFT_KINDS`` (email_draft, form_draft, application_draft,
+    content_post_draft, file_change_proposal). ``draft_ref`` is the
+    string id of the persisted draft row (UUID for form drafts /
+    research drafts, freeform for file change proposals). NEVER
+    contains the draft body -- the reviewer fetches the draft from
+    its own table.
+    """
+    draft_kind: str
+    draft_ref: str
+    title: str
+    context: dict | None = None
+    session_id: UUID | None = None
+
+
+@router.post("/approvals/draft", status_code=201, response_model=ApprovalResponse)
+async def create_draft_approval(
+    body: CreateDraftApprovalRequest,
+    user: CurrentUser = Depends(get_current_user),
+    service: ApprovalService = Depends(get_approval_service),
+    audit: AuditService = Depends(get_audit_service),
+) -> ApprovalResponse:
+    """Queue a draft for operator review.
+
+    Approving this request flips ``GoaRequest.status`` to APPROVED but
+    does NOT trigger any external action. The 'approve = manual
+    action' contract lives in ``approval.is_draft_kind`` and is
+    asserted by ``test_approval_queue_drafts.py``.
+    """
+    from app.services.approval import DRAFT_KINDS
+    if body.draft_kind not in DRAFT_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown_draft_kind: {body.draft_kind!r}. "
+                   f"Allowed: {list(DRAFT_KINDS)}",
+        )
+
+    result = await service.request_draft_approval(
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        draft_kind=body.draft_kind,
+        draft_ref=body.draft_ref,
+        title=body.title,
+        context=body.context,
+        session_id=body.session_id,
+    )
+
+    await audit.log_decision(
+        tenant_id=user.tenant_id,
+        actor_id=user.id,
+        actor_type="USER",
+        action_type=f"draft.approval.requested.{body.draft_kind}",
+        action_params={
+            "draft_kind": body.draft_kind,
+            "draft_ref": body.draft_ref,
+            "title": body.title,
+        },
+        result="PENDING",
+        risk_level="LOW",
+        governance_tier=2,
+        session_id=body.session_id,
+    )
+
+    return ApprovalResponse(**result)
 
 
 @router.post("/approvals", status_code=201, response_model=ApprovalResponse)
