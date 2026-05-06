@@ -211,6 +211,20 @@ export function GovernanceApprovalsPage() {
   const openPhase3Modal = (approval: ApprovalResponse) => {
     if (!isPhase3ToolId(approval.action_type)) return false
     const params = (approval.action_params || {}) as Record<string, unknown>
+    // Sprint-15 PR-3: send approvals carry a draft_preview snapshot
+    // captured by the upstream send-approval creator (To, Subject,
+    // snippet). The modal renders it inside the irrevocability
+    // banner so the operator sees what is about to leave Gmail.
+    const draftPreviewRaw = params['draft_preview'] as
+      | { to?: unknown; subject?: unknown; snippet?: unknown }
+      | undefined
+    const draft_preview = draftPreviewRaw
+      ? {
+          to: typeof draftPreviewRaw.to === 'string' ? draftPreviewRaw.to : null,
+          subject: typeof draftPreviewRaw.subject === 'string' ? draftPreviewRaw.subject : null,
+          snippet: typeof draftPreviewRaw.snippet === 'string' ? draftPreviewRaw.snippet : null,
+        }
+      : null
     setPhase3Details({
       approval_id: approval.id,
       action_type: approval.action_type as Phase3ToolId,
@@ -221,6 +235,7 @@ export function GovernanceApprovalsPage() {
         params['asset_shield_pass'] !== false,
       rollback_or_undo_instruction:
         (params['rollback_or_undo_instruction'] as string) || null,
+      draft_preview,
     })
     return true
   }

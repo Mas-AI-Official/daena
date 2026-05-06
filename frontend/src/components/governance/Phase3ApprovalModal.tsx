@@ -23,12 +23,15 @@ import {
   XCircle,
   X,
   Mail,
+  Send,
   Calendar,
   FileEdit,
+  AlertTriangle,
 } from 'lucide-react'
 
 export const PHASE3_TOOL_IDS = [
   'gmail.create_draft',
+  'gmail.send_existing_draft',
   'calendar.create_tentative_event_without_invites',
   'local.file_change_proposal',
 ] as const
@@ -39,18 +42,40 @@ export function isPhase3ToolId(action_type: string | null | undefined): action_t
   return !!action_type && (PHASE3_TOOL_IDS as readonly string[]).includes(action_type)
 }
 
-const TOOL_META: Record<Phase3ToolId, { label: string; icon: React.ReactNode; risk: string; rollback_default: string }> = {
+interface ToolMeta {
+  label: string
+  icon: React.ReactNode
+  risk: 'low' | 'medium' | 'high'
+  rollback_default: string
+  // Sprint-15 PR-3: when true, render an extra irrevocability
+  // banner above the layout. Send is the FIRST irreversible Phase 3
+  // action, so the second-approval wall must be visibly different
+  // from a draft approval.
+  is_send: boolean
+}
+
+const TOOL_META: Record<Phase3ToolId, ToolMeta> = {
   'gmail.create_draft': {
     label: 'Gmail: Create Draft',
     icon: <Mail size={14} />,
     risk: 'low',
     rollback_default: 'Delete the draft from the Gmail Drafts folder.',
+    is_send: false,
+  },
+  'gmail.send_existing_draft': {
+    label: 'Gmail: Send Existing Draft',
+    icon: <Send size={14} />,
+    risk: 'high',
+    rollback_default:
+      'Email cannot be unsent after delivery. Send a follow-up correction or recall via Google Workspace admin if available.',
+    is_send: true,
   },
   'calendar.create_tentative_event_without_invites': {
     label: 'Calendar: Tentative Event (no invites)',
     icon: <Calendar size={14} />,
     risk: 'low',
     rollback_default: 'Open calendar.google.com and delete the event.',
+    is_send: false,
   },
   'local.file_change_proposal': {
     label: 'Local: File Change Proposal',
@@ -58,7 +83,20 @@ const TOOL_META: Record<Phase3ToolId, { label: string; icon: React.ReactNode; ri
     risk: 'medium',
     rollback_default:
       'Reject the proposal here; no changes have been applied.',
+    is_send: false,
   },
+}
+
+// Sprint-15 PR-3: optional draft preview surfaced ONLY on send
+// approvals so the operator sees what is actually about to leave
+// Gmail before clicking Approve. The upstream send-approval-creator
+// is responsible for snapshotting the draft's To/Subject/snippet
+// at approval-creation time and stashing them in
+// action_params.draft_preview.
+export interface Phase3DraftPreview {
+  to: string | null
+  subject: string | null
+  snippet: string | null
 }
 
 export interface Phase3ApprovalDetails {
@@ -69,6 +107,7 @@ export interface Phase3ApprovalDetails {
   payload_hash: string | null
   asset_shield_pass: boolean
   rollback_or_undo_instruction: string | null
+  draft_preview?: Phase3DraftPreview | null
 }
 
 interface Props {
@@ -145,6 +184,28 @@ export function Phase3ApprovalModal({
         </header>
 
         <div className="p-4 space-y-3">
+          {/* Sprint-15 PR-3: irrevocability banner for SEND actions.
+              Rendered FIRST so the operator sees the warning before
+              any other detail. Different from a draft approval --
+              this is the second wall, and the message must say so. */}
+          {meta.is_send && (
+            <div
+              data-testid="phase3-send-irrevocability-banner"
+              className="rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-[11px] text-rose-200"
+            >
+              <div className="flex items-center gap-2 font-bold uppercase tracking-[0.16em] text-rose-300">
+                <AlertTriangle size={12} />
+                This will send an email externally
+              </div>
+              <p className="mt-1 leading-relaxed">
+                Approving here triggers the FIRST controlled external
+                send. Email cannot be unsent after delivery. Confirm
+                the recipient and subject below match what you
+                intended; reject if anything is off.
+              </p>
+            </div>
+          )}
+
           {/* Tool / account / risk */}
           <div className="flex items-center gap-2 flex-wrap text-[11px]">
             <span className="px-2 py-0.5 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30 font-mono">
@@ -157,7 +218,9 @@ export function Phase3ApprovalModal({
             )}
             <span
               className={`px-2 py-0.5 rounded border ${
-                meta.risk === 'low'
+                meta.risk === 'high'
+                  ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                  : meta.risk === 'low'
                   ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                   : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
               }`}
@@ -165,6 +228,65 @@ export function Phase3ApprovalModal({
               risk: {meta.risk}
             </span>
           </div>
+
+          {/* Sprint-15 PR-3: send-time draft preview. Only shown on
+              send approvals, only when the upstream approval creator
+              snapshotted draft metadata. Empty placeholder when
+              missing -- the operator can still approve via the
+              hash + payload, but the preview makes the second wall
+              honest. */}
+          {meta.is_send && (
+            <div
+              data-testid="phase3-send-draft-preview"
+              className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3"
+            >
+              <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-300 mb-2">
+                Draft snapshot (what will be sent)
+              </div>
+              {details.draft_preview ? (
+                <dl className="space-y-1 text-[11px]">
+                  <div className="flex gap-2">
+                    <dt className="font-bold text-starlight-300 min-w-[70px]">To:</dt>
+                    <dd
+                      data-testid="phase3-send-draft-to"
+                      className="text-starlight-100 font-mono break-all"
+                    >
+                      {details.draft_preview.to || '(missing)'}
+                    </dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="font-bold text-starlight-300 min-w-[70px]">Subject:</dt>
+                    <dd
+                      data-testid="phase3-send-draft-subject"
+                      className="text-starlight-100"
+                    >
+                      {details.draft_preview.subject || '(missing)'}
+                    </dd>
+                  </div>
+                  {details.draft_preview.snippet && (
+                    <div className="flex gap-2">
+                      <dt className="font-bold text-starlight-300 min-w-[70px]">Snippet:</dt>
+                      <dd
+                        data-testid="phase3-send-draft-snippet"
+                        className="text-starlight-200 italic"
+                      >
+                        {details.draft_preview.snippet}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              ) : (
+                <p
+                  data-testid="phase3-send-draft-preview-missing"
+                  className="text-[10px] text-amber-300"
+                >
+                  Draft preview not snapshotted at approval time. Open
+                  Gmail Drafts in another tab and verify the recipient
+                  before approving.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Asset Shield result */}
           <div
