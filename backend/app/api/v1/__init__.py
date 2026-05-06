@@ -72,6 +72,7 @@ from app.api.v1 import (
     skills,
     souls,
     system_self_diagnostic,
+    trust,
     tts,
     voice_ws,
     vp_commands,
@@ -285,4 +286,11 @@ router.include_router(voice_ws.router, tags=["voice-websocket"])
 # surface the readiness next_action verbatim.
 router.include_router(
     vp_commands.router, prefix="/vp-commands", tags=["vp-commands"],
+)
+# Sprint-18 PR-2 (2026-05-06): Trust Ladder UI surface.
+# Read-only state for any auth user; founder-only tier mutation
+# requires confirmation phrase. Daena cannot raise her own tier --
+# tool dispatches NEVER reach this endpoint.
+router.include_router(
+    trust.router, prefix="/trust", tags=["trust"],
 )

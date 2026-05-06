@@ -30,6 +30,7 @@ const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const PoliciesPage = lazy(() => import('@/pages/PoliciesPage'))
 const GovernanceApprovalsPage = lazy(() => import('@/pages/GovernanceApprovalsPage'))
 const GovernanceAuditPage = lazy(() => import('@/pages/GovernanceAuditPage'))
+const GovernanceTrustPage = lazy(() => import('@/pages/GovernanceTrustPage'))
 const DepartmentsPage = lazy(() => import('@/pages/DepartmentsPage'))
 // Department Minds (soul personas) + Company Mode activation -- shipped
 // with the TICKET-DEPT-MINDS-01 stack. Consumes /souls + /company-mode.
@@ -38,13 +39,12 @@ const MindDetailPage = lazy(() => import('@/pages/MindDetailPage'))
 const CompanyModePage = lazy(() => import('@/pages/CompanyModePage'))
 const TasksPage = lazy(() => import('@/pages/TasksPage'))
 const SkillsPage = lazy(() => import('@/pages/SkillsPage'))
-const DaenaBotPage = lazy(() => import('@/pages/DaenaBotPage'))
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
-const FounderPage = lazy(() => import('@/pages/FounderPage'))
 const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
 const ProjectDetailPage = lazy(() => import('@/pages/ProjectDetailPage'))
 const PipelinePage = lazy(() => import('@/pages/PipelinePage'))
+const WorkstreamsPage = lazy(() => import('@/pages/WorkstreamsPage'))
 const EngagementConsolePage = lazy(() => import('@/pages/EngagementConsolePage'))
 // CrmPage and VoiceConsolePage were removed 2026-04-17 -- the department
 // model (/departments/{id}) is the canonical UX. CRM lives inside the
@@ -122,11 +122,15 @@ function AppRoutes() {
                   {/* Governance + Security */}
                   <Route path="/governance/approvals" element={<GovernanceApprovalsPage />} />
                   <Route path="/governance/audit" element={<GovernanceAuditPage />} />
+                  <Route path="/governance/trust" element={<GovernanceTrustPage />} />
                   <Route path="/security" element={<SecurityDashboardPage />} />
                   <Route path="/security/scope" element={<SecurityScopePage />} />
                   <Route path="/scan" element={<ScanPage />} />
                   <Route path="/scan/walkthrough/:jobId" element={<ScanWalkthroughPage />} />
-                  <Route path="/engagements" element={<EngagementConsolePage />} />
+                  {/* /engagements was the old scan launcher; sidebar removed
+                      2026-04-21. Route preserved for bookmarks but redirects
+                      to the canonical /scan entry point. */}
+                  <Route path="/engagements" element={<Navigate to="/scan" replace />} />
 
                   {/* Intelligence */}
                   <Route path="/departments" element={<DepartmentsPage />} />
@@ -140,6 +144,7 @@ function AppRoutes() {
 
                   {/* Execution */}
                   <Route path="/tasks" element={<TasksPage />} />
+                  <Route path="/workstreams" element={<WorkstreamsPage />} />
                   <Route path="/connections" element={<ConnectionsPage />} />
                   <Route path="/daenabot" element={<Navigate to="/chat" replace />} />
 
