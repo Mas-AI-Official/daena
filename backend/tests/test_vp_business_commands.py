@@ -26,8 +26,17 @@ pytestmark = pytest.mark.asyncio
 
 
 async def _seed(db_session, tenant_id, user_id):
-    from sqlalchemy import select
+    """Idempotent tenant/user seed; ALSO wipes opportunities for
+    this tenant so prior tests' committed rows don't leak into
+    chat-command queries."""
+    from sqlalchemy import delete, select
+    from app.models.business import Opportunity
     from app.models.identity import Tenant, User
+
+    # Wipe opportunities for clean queries.
+    await db_session.execute(
+        delete(Opportunity).where(Opportunity.tenant_id == tenant_id),
+    )
 
     if (await db_session.execute(
         select(Tenant).where(Tenant.id == tenant_id),

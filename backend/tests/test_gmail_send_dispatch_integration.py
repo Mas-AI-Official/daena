@@ -34,24 +34,37 @@ pytestmark = pytest.mark.asyncio
 
 
 async def _seed_minimal_tenant_user(db_session, tenant_id, user_id):
-    """Insert just enough Tenant + User rows for FK-enforced tests."""
+    """Insert just enough Tenant + User rows for FK-enforced tests.
+
+    Idempotent: if a previous test committed a row with the same id
+    (e.g. tests that hit an API endpoint which calls
+    ``await db.commit()``), this helper skips the insert instead of
+    blowing up on the UNIQUE constraint."""
+    from sqlalchemy import select
     from app.models.identity import Tenant, User
 
-    tenant = Tenant(
-        id=tenant_id,
-        name="Sprint-17 Test Tenant",
-        slug="sprint17-test",
-    )
-    db_session.add(tenant)
-    user = User(
-        id=user_id,
-        tenant_id=tenant_id,
-        email="founder@example.com",
-        password_hash="$argon2id$test$placeholder",
-        display_name="Founder",
-        role="FOUNDER",
-    )
-    db_session.add(user)
+    if (await db_session.execute(
+        select(Tenant).where(Tenant.id == tenant_id),
+    )).scalar_one_or_none() is None:
+        import uuid as _uuid
+        tenant = Tenant(
+            id=tenant_id,
+            name="Sprint-17 Test Tenant",
+            slug=f"sprint17-test-{_uuid.uuid4().hex[:6]}",
+        )
+        db_session.add(tenant)
+    if (await db_session.execute(
+        select(User).where(User.id == user_id),
+    )).scalar_one_or_none() is None:
+        user = User(
+            id=user_id,
+            tenant_id=tenant_id,
+            email=f"founder-{user_id}@example.com",
+            password_hash="$argon2id$test$placeholder",
+            display_name="Founder",
+            role="FOUNDER",
+        )
+        db_session.add(user)
     await db_session.flush()
 
 
