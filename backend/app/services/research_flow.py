@@ -54,8 +54,38 @@ from app.services.scrape import (
 logger = get_logger(__name__)
 
 
-ResearchKind = Literal["career", "content"]
-ALLOWED_KINDS: tuple[ResearchKind, ...] = ("career", "content")
+ResearchKind = Literal["career", "content", "business_opportunity"]
+ALLOWED_KINDS: tuple[ResearchKind, ...] = ("career", "content", "business_opportunity")
+
+# Sprint-13 PR-2 (2026-05-06): the closed set of opportunity types
+# Daena scouts for. The set is closed so the workstream generator
+# (PR-3) can map type -> default department deterministically. Adding
+# a new type requires touching this tuple AND the department map in
+# PR-3 -- they must move in lockstep.
+OpportunityType = Literal[
+    "grant",
+    "accelerator",
+    "hackathon",
+    "freelance",
+    "customer",
+    "partnership",
+    "security_bounty",
+    "rfp",
+    "content",
+    "startup_program",
+]
+ALLOWED_OPPORTUNITY_TYPES: tuple[OpportunityType, ...] = (
+    "grant",
+    "accelerator",
+    "hackathon",
+    "freelance",
+    "customer",
+    "partnership",
+    "security_bounty",
+    "rfp",
+    "content",
+    "startup_program",
+)
 
 
 # Schema version for structured_payload. Bumped if the shape changes
@@ -197,6 +227,32 @@ def build_structured_payload(
             "goal_echo": goal,
         }
 
+    if kind == "business_opportunity":
+        # Sprint-13 PR-2 -- business opportunity shape. The workstream
+        # generator (PR-3) reads ``opportunity_type`` to pick a
+        # default department; the draft action factory (PR-4) reads
+        # ``next_action`` and ``deadline`` to schedule local drafts.
+        bullets = _bullets(extract, limit=12)
+        return {
+            "_schema_version": STRUCTURED_PAYLOAD_VERSION,
+            "_kind": "business_opportunity",
+            "_llm_pending": True,
+            "title": None,                  # LLM enrichment fills
+            "opportunity_type": None,       # set by API caller (closed set)
+            "deadline": None,               # ISO date or null; LLM fills
+            "fit_score": None,              # 0-100; LLM fills
+            "revenue_potential": None,      # USD estimate or text
+            "effort_estimate": None,        # hours/days; LLM fills
+            "risk_level": None,             # low/medium/high; LLM fills
+            "next_action": None,            # one-line; LLM fills
+            "suggested_department": None,   # PR-3 maps from opportunity_type
+            "evidence": [source_url],
+            "source_notes": bullets,
+            "confidence": None,             # 0-100; LLM fills
+            "sources": [source_url, *_urls(extract, limit=8)],
+            "goal_echo": goal,
+        }
+
     raise ResearchFlowError(f"unknown_kind: {kind!r}")
 
 
@@ -209,6 +265,7 @@ async def create_research_draft(
     user_id: uuid.UUID,
     tenant_id: uuid.UUID,
     max_chars: int = 8000,
+    opportunity_type: OpportunityType | None = None,
 ) -> ResearchDraft:
     """Run the read-only research flow and persist a draft.
 
@@ -216,6 +273,10 @@ async def create_research_draft(
       ResearchFlowError on validation / scrape failure. The message
       carries a stable prefix (``url_safety:``, ``goal_required``,
       ``scrape_failed``, ``unknown_kind``) the API + UI can match.
+
+    ``opportunity_type`` is required when ``kind == "business_opportunity"``
+    and forbidden for all other kinds. The closed set lives on
+    ``ALLOWED_OPPORTUNITY_TYPES``.
     """
     if kind not in ALLOWED_KINDS:
         raise ResearchFlowError(
@@ -225,6 +286,18 @@ async def create_research_draft(
         raise ResearchFlowError("url_safety:url_invalid")
     if not isinstance(goal, str) or not goal.strip():
         raise ResearchFlowError("goal_required")
+    if kind == "business_opportunity":
+        if opportunity_type is None:
+            raise ResearchFlowError("opportunity_type_required")
+        if opportunity_type not in ALLOWED_OPPORTUNITY_TYPES:
+            raise ResearchFlowError(
+                f"opportunity_type_invalid: {opportunity_type!r} "
+                f"not in {ALLOWED_OPPORTUNITY_TYPES}"
+            )
+    elif opportunity_type is not None:
+        raise ResearchFlowError(
+            "opportunity_type_only_with_business_opportunity_kind"
+        )
 
     # Delegate to scrape_service. It re-validates URL safety + caps
     # + audits the call. We never bypass that audit row here -- it is
@@ -252,6 +325,10 @@ async def create_research_draft(
         source_url=url.strip(),
         source_host=_safe_host(url),
     )
+    if kind == "business_opportunity" and opportunity_type is not None:
+        # Stamp the closed-set type so the workstream generator (PR-3)
+        # can deterministically pick the default department.
+        structured["opportunity_type"] = opportunity_type
 
     draft = ResearchDraft(
         id=uuid.uuid4(),

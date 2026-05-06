@@ -1262,26 +1262,33 @@ function StartHereCard({
 function DraftsLane() {
   const [careerDrafts, setCareerDrafts] = useState<ResearchDraftSummary[]>([])
   const [contentDrafts, setContentDrafts] = useState<ResearchDraftSummary[]>([])
+  // Sprint-13 PR-2: business opportunity drafts (grants / hackathons /
+  // freelance / customer / partnership / security_bounty / rfp /
+  // content / startup_program / accelerator).
+  const [opportunityDrafts, setOpportunityDrafts] = useState<ResearchDraftSummary[]>([])
   const [formDrafts, setFormDrafts] = useState<FormDraftSummary[]>([])
   // Sprint-MORNING PR-3: source_ref_ids of drafts that already have a
   // workstream so we can render a "workstream created" badge on each row.
   const [draftIdsWithWorkstream, setDraftIdsWithWorkstream] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<'career' | 'content' | 'form'>('career')
+  const [tab, setTab] = useState<'career' | 'content' | 'opportunity' | 'form'>('career')
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [careerRes, contentRes, formsRes, wsRes] = await Promise.all([
+      const [careerRes, contentRes, opportunityRes, formsRes, wsRes] = await Promise.all([
         api.get('/research/drafts', { params: { kind: 'career', limit: 25 } }),
         api.get('/research/drafts', { params: { kind: 'content', limit: 25 } }),
+        api.get('/research/drafts', { params: { kind: 'business_opportunity', limit: 25 } })
+          .catch(() => ({ data: { drafts: [] } })),
         api.get('/form-drafts', { params: { limit: 25 } }).catch(() => ({ data: { drafts: [] } })),
         api.get('/workstreams', { params: { limit: 200 } }).catch(() => ({ data: { data: { workstreams: [] } } })),
       ])
       setCareerDrafts(careerRes.data?.drafts ?? [])
       setContentDrafts(contentRes.data?.drafts ?? [])
+      setOpportunityDrafts(opportunityRes.data?.drafts ?? [])
       setFormDrafts(formsRes.data?.drafts ?? [])
       const wsList = (wsRes.data?.data?.workstreams ?? []) as Array<{
         source_type?: string | null
@@ -1307,11 +1314,13 @@ function DraftsLane() {
 
   const careerCount = careerDrafts.length
   const contentCount = contentDrafts.length
+  const opportunityCount = opportunityDrafts.length
   const formCount = formDrafts.length
 
-  const TABS: Array<{ key: 'career' | 'content' | 'form'; label: string; icon: React.ReactNode; count: number }> = [
+  const TABS: Array<{ key: 'career' | 'content' | 'opportunity' | 'form'; label: string; icon: React.ReactNode; count: number }> = [
     { key: 'career', label: 'Career', icon: <Briefcase size={11} />, count: careerCount },
     { key: 'content', label: 'Content', icon: <Newspaper size={11} />, count: contentCount },
+    { key: 'opportunity', label: 'Opportunities', icon: <Sparkles size={11} />, count: opportunityCount },
     { key: 'form', label: 'Forms', icon: <FileText size={11} />, count: formCount },
   ]
 
@@ -1319,7 +1328,9 @@ function DraftsLane() {
     ? careerDrafts
     : tab === 'content'
       ? contentDrafts
-      : []
+      : tab === 'opportunity'
+        ? opportunityDrafts
+        : []
 
   return (
     <div className="glass-panel rounded-xl p-4 space-y-3">

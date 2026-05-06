@@ -46,6 +46,8 @@ from app.services.draft_qe_review import (
 )
 from app.services.research_flow import (
     ALLOWED_KINDS,
+    ALLOWED_OPPORTUNITY_TYPES,
+    OpportunityType,
     ResearchFlowError,
     create_research_draft,
 )
@@ -119,9 +121,10 @@ class ListDraftsResponse(BaseModel):
 
 async def _create(
     db: AsyncSession, *,
-    kind: Literal["career", "content"],
+    kind: Literal["career", "content", "business_opportunity"],
     body: ResearchRequest,
     user: CurrentUser,
+    opportunity_type: OpportunityType | None = None,
 ) -> ResearchDraft:
     try:
         draft = await create_research_draft(
@@ -132,6 +135,7 @@ async def _create(
             user_id=user.id,
             tenant_id=user.tenant_id,
             max_chars=body.max_chars,
+            opportunity_type=opportunity_type,
         )
     except ResearchFlowError as exc:
         msg = str(exc)
@@ -143,6 +147,22 @@ async def _create(
         )
     await db.commit()
     return draft
+
+
+class OpportunityResearchRequest(ResearchRequest):
+    """Sprint-13 PR-2 -- business opportunity research request.
+
+    Inherits url + goal + max_chars from ResearchRequest. Adds the
+    closed-set opportunity_type so the workstream generator (PR-3)
+    can pick a default department deterministically.
+    """
+    opportunity_type: OpportunityType = Field(
+        ...,
+        description=(
+            "One of: grant, accelerator, hackathon, freelance, customer, "
+            "partnership, security_bounty, rfp, content, startup_program."
+        ),
+    )
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -188,6 +208,33 @@ async def post_research_content(
     a browser at any social platform.
     """
     draft = await _create(db, kind="content", body=body, user=user)
+    return CreateDraftResponse(success=True, draft=ResearchDraftOut.from_model(draft))
+
+
+@router.post("/opportunity", response_model=CreateDraftResponse)
+async def post_research_opportunity(
+    body: OpportunityResearchRequest,
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> CreateDraftResponse:
+    """Sprint-13 PR-2 -- business opportunity research flow.
+
+    Input: a source URL (grant page / hackathon page / customer site /
+    bounty program scope / etc.) + a goal + a closed-set
+    opportunity_type.
+
+    Output: a LOCAL ``ResearchDraft`` row with kind=business_opportunity
+    and status=DRAFT. NEVER applies, NEVER submits, NEVER scans.
+    The workstream generator (PR-3) reads this row to draft an
+    eligibility check + a local proposal -- still no external action.
+    """
+    draft = await _create(
+        db,
+        kind="business_opportunity",
+        body=body,
+        user=user,
+        opportunity_type=body.opportunity_type,
+    )
     return CreateDraftResponse(success=True, draft=ResearchDraftOut.from_model(draft))
 
 
