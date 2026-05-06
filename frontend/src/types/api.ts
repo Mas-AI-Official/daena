@@ -116,6 +116,22 @@ export interface MessageResponse {
   token_count_input: number | null
   token_count_output: number | null
   created_at: string
+  /**
+   * VP-command preflight result -- when set, this assistant message is the
+   * structured response from /api/v1/vp-commands (no LLM call). MessageBubble
+   * renders the card layout instead of the markdown body.
+   * Sprint-MORNING PR-1.
+   */
+  vp_command_result?: VPCommandResult | null
+}
+
+export interface VPCommandResult {
+  success: boolean
+  intent: string
+  summary: string
+  needs_disambiguation: boolean
+  next_action: string | null
+  data: Record<string, unknown>
 }
 
 export interface CreateSessionRequest {

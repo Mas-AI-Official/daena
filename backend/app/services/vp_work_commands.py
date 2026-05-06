@@ -134,7 +134,8 @@ _WORKPLAN_FROM_RE = re.compile(
 )
 _NEXT_RE = re.compile(
     r"\b(what\s+(?:should|do)\s+(?:i|we)\s+do\s+next|"
-    r"what'?s\s+next|next\s+step|next\s+steps?|"
+    r"what'?s\s+next|what\s+is\s+next|"
+    r"next\s+step|next\s+steps?|"
     r"what\s+(?:should|do)\s+(?:i|we)\s+work\s+on|"
     r"what\s+now)\b",
     re.IGNORECASE,

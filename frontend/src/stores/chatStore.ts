@@ -14,6 +14,7 @@ import type {
   RoutingMode,
   UpdateSessionRequest,
   DaenaBotActivityEvent,
+  VPCommandResult,
 } from '@/types/api'
 
 // ── Streaming state for active generation ──
@@ -200,6 +201,34 @@ interface ChatState {
   appendContent: (chunk: string) => void
   finalizeStream: (msg: MessageResponse) => void
   cancelStream: () => void
+}
+
+/**
+ * VP-command preflight (Sprint-MORNING PR-1).
+ *
+ * Calls /api/v1/vp-commands with the user's text. If the deterministic
+ * regex parser matches a recognized intent (anything except
+ * "unrecognized"), returns the structured result so the chat UI can
+ * render it as a card and skip the LLM stream. Returns null on
+ * unrecognized OR any preflight failure -- the LLM path is always the
+ * graceful fallback.
+ */
+async function tryVPCommandPreflight(text: string): Promise<VPCommandResult | null> {
+  // Skip preflight for very short messages (regex parser needs verb+target).
+  if (!text || text.trim().length < 3) return null
+  try {
+    const { data } = await api.post<VPCommandResult>(
+      '/vp-commands',
+      { text },
+      { silent: true, timeout: 60_000 },
+    )
+    if (!data) return null
+    if (data.intent === 'unrecognized') return null
+    return data
+  } catch {
+    // Network error / 401 / 5xx -- fall through to LLM silently.
+    return null
+  }
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -451,6 +480,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!activeSessionId && !creatingSession) return
 
     set({ error: null, lastFailedMessage: null })
+
+    // Sprint-MORNING PR-1: VP-command preflight.
+    //
+    // Try the deterministic regex parser at /api/v1/vp-commands BEFORE the
+    // LLM stream. If the parser matches a recognized intent (review drafts,
+    // next steps, enrich draft, council review, create workstream, which
+    // department), render the structured response as a synthetic chat card
+    // and skip the LLM entirely. Unrecognized -> fall through to normal SSE.
+    //
+    // The preflight is best-effort: any error (network, auth, 5xx) silently
+    // falls through so the LLM path remains the safety net.
+    const vpResult = await tryVPCommandPreflight(content)
+    if (vpResult) {
+      const sessionId = activeSessionId ?? 'pending-session'
+      const now = new Date().toISOString()
+      const userMsg: MessageResponse = {
+        id: `vp-user-${Date.now()}`,
+        session_id: sessionId,
+        role: 'USER',
+        content,
+        model_used: null,
+        provider_used: null,
+        governance_tier: null,
+        cost_usd: null,
+        latency_ms: null,
+        token_count_input: null,
+        token_count_output: null,
+        created_at: now,
+      }
+      const cardMsg: MessageResponse = {
+        id: `vp-card-${Date.now()}`,
+        session_id: sessionId,
+        role: 'ASSISTANT',
+        content: vpResult.summary,
+        model_used: null,
+        provider_used: 'vp_command',
+        governance_tier: null,
+        cost_usd: null,
+        latency_ms: null,
+        token_count_input: null,
+        token_count_output: null,
+        created_at: now,
+        vp_command_result: vpResult,
+      }
+      set((s) => ({ messages: [...s.messages, userMsg, cardMsg] }))
+      return
+    }
 
     if (creatingSession) {
       set({

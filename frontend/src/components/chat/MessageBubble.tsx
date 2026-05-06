@@ -12,6 +12,7 @@ import rehypeHighlight from 'rehype-highlight'
 import 'highlight.js/styles/github-dark-dimmed.min.css'
 import { Clock, Copy, Cpu, Zap, Pencil, Check, X, RotateCcw, ChevronDown, ChevronUp, Terminal, FileText, Globe, AlertCircle, Maximize2, Minimize2, ThumbsUp, ThumbsDown, Building2 } from 'lucide-react'
 import { DaenaAvatar } from './DaenaAvatar'
+import { VPCommandCard } from './VPCommandCard'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import type { MessageResponse } from '@/types/api'
@@ -407,7 +408,12 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming,
               </div>
             )}
 
-            {/* Markdown content */}
+            {/* VP-command card (Sprint-MORNING PR-1): when the chat preflight
+                matched a deterministic VP-work intent, render the structured
+                card instead of the markdown body. */}
+            {message.vp_command_result ? (
+              <VPCommandCard result={message.vp_command_result} />
+            ) : (
             <div className={`prose-daena break-words ${isLongMessage && isCollapsed ? 'relative' : ''}`}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
@@ -479,6 +485,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming,
                 <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-midnight-500/95 to-transparent pointer-events-none" />
               )}
             </div>
+            )}
 
             {/* Expand bar at bottom of collapsed messages */}
             {isLongMessage && isCollapsed && (
@@ -526,6 +533,11 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming,
               <span className="text-[10px] text-starlight-600">
                 {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
+            )}
+            {/* Copy button — USER messages too. Critical when a reply
+                fails: operator can re-grab their prompt without retyping. */}
+            {isUser && (
+              <CopyButton text={content} />
             )}
             {/* Edit button — USER messages only */}
             {isUser && onEdit && (
