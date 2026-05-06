@@ -72,6 +72,7 @@ from app.api.v1 import (
     skills,
     souls,
     system_self_diagnostic,
+    business_chat,
     opportunities,
     routines as routines_api,
     trust,
@@ -318,4 +319,10 @@ router.include_router(
 # through the controlled execution dispatcher only.
 router.include_router(
     opportunities.router, prefix="/opportunities", tags=["opportunities"],
+)
+# Sprint-19 PR-7 (2026-05-06): VP business chat commands.
+# Deterministic pattern matcher; NO LLM in the path. Authoritative
+# state from Opportunity + GoaRequest tables.
+router.include_router(
+    business_chat.router, prefix="/business/chat", tags=["business-chat"],
 )
