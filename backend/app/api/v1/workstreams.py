@@ -196,11 +196,29 @@ async def start_workstream(
 #   career  -> Sales / Career OPS                 -> "Sales"
 #   content -> Marketing / ContentOps             -> "Marketing"
 #   form    -> Operations / Founder Office        -> "Operations"
+#   business_opportunity -> per opportunity_type  (see map below)
 #   risky/legal flag -> Legal & Compliance        -> "Legal & Compliance"
 _DRAFT_KIND_TO_DEPARTMENT_NAME = {
     "career":  "Sales",
     "content": "Marketing",
     "form":    "Operations",
+    "business_opportunity": "Operations",  # default; overridden by type
+}
+
+# Sprint-13 PR-3 (2026-05-06): opportunity_type -> default department.
+# Closed map matches research_flow.ALLOWED_OPPORTUNITY_TYPES; new
+# opportunity types must extend BOTH simultaneously.
+_OPPORTUNITY_TYPE_TO_DEPARTMENT_NAME: dict[str, str] = {
+    "grant":            "Finance",
+    "accelerator":      "Operations",
+    "hackathon":        "Engineering",
+    "freelance":        "Sales",
+    "customer":         "Sales",
+    "partnership":      "Sales",
+    "security_bounty":  "Security Operations",
+    "rfp":              "Sales",
+    "content":          "Marketing",
+    "startup_program":  "Operations",
 }
 _LEGAL_FLAG_TOKENS = (
     "legal", "compliance", "regulat", "license", "licence", "patent",
@@ -303,7 +321,7 @@ async def post_from_draft(
     from sqlalchemy import select
 
     kind = (body.draft_kind or "").lower().strip()
-    if kind not in ("career", "content", "form"):
+    if kind not in ("career", "content", "form", "business_opportunity"):
         raise HTTPException(
             status_code=400,
             detail={"code": "unknown_draft_kind", "kind": kind},
@@ -311,7 +329,7 @@ async def post_from_draft(
 
     # Load draft (tenant + user-scoped)
     draft_obj: ResearchDraft | FormDraft | None = None
-    if kind in ("career", "content"):
+    if kind in ("career", "content", "business_opportunity"):
         draft_obj = (await db.execute(
             select(ResearchDraft).where(
                 ResearchDraft.id == body.draft_ref,
@@ -341,6 +359,15 @@ async def post_from_draft(
         ) if not isinstance(draft_obj, FormDraft) else None
         if _looks_legal(payload, draft_obj.goal):
             dept_name = "Legal & Compliance"
+        elif kind == "business_opportunity":
+            # Sprint-13 PR-3: per-type department mapping. Closed-set
+            # opportunity_type -> department; falls back to the kind
+            # default ("Operations") when the type is missing/unknown.
+            opp_type = (payload or {}).get("opportunity_type") if isinstance(payload, dict) else None
+            if isinstance(opp_type, str) and opp_type in _OPPORTUNITY_TYPE_TO_DEPARTMENT_NAME:
+                dept_name = _OPPORTUNITY_TYPE_TO_DEPARTMENT_NAME[opp_type]
+            else:
+                dept_name = _DRAFT_KIND_TO_DEPARTMENT_NAME[kind]
         else:
             dept_name = _DRAFT_KIND_TO_DEPARTMENT_NAME[kind]
 
@@ -378,7 +405,36 @@ async def post_from_draft(
         sp = draft_obj.structured_payload or {}
         initial_context["llm_pending"] = bool(sp.get("_llm_pending"))
         initial_context["llm_failed"] = bool(sp.get("_llm_failed"))
-        if sp.get("next_tasks"):
+        # Sprint-13 PR-3: opportunity drafts carry opportunity_type +
+        # next_action + deadline. Surface them in initial_context so
+        # the workstream timeline + draft-action factory (PR-4) can
+        # read them without re-loading the draft.
+        if kind == "business_opportunity":
+            initial_context["opportunity_type"] = sp.get("opportunity_type")
+            initial_context["deadline"] = sp.get("deadline")
+            initial_context["fit_score"] = sp.get("fit_score")
+            initial_context["risk_level"] = sp.get("risk_level")
+            initial_context["confidence"] = sp.get("confidence")
+            na = sp.get("next_action")
+            if isinstance(na, str) and na.strip():
+                next_step_text = na.strip()[:500]
+            elif sp.get("_llm_pending"):
+                next_step_text = (
+                    "Run /enrich on this opportunity to score fit, "
+                    "deadline, and next action before drafting outreach."
+                )
+            else:
+                deadline = sp.get("deadline")
+                if isinstance(deadline, str) and deadline.strip():
+                    next_step_text = (
+                        f"Review eligibility before deadline: {deadline}"
+                    )[:500]
+                else:
+                    next_step_text = (
+                        "Review eligibility and decide whether to pursue "
+                        "this opportunity locally."
+                    )[:500]
+        elif sp.get("next_tasks"):
             initial_context["seeded_next_tasks"] = list(sp.get("next_tasks") or [])[:5]
             next_step_text = (initial_context["seeded_next_tasks"][0] or "")[:500] or None
         elif sp.get("_llm_pending"):
