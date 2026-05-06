@@ -72,6 +72,7 @@ from app.api.v1 import (
     system_self_diagnostic,
     tts,
     voice_ws,
+    vp_commands,
     waitlist,
 )
 
@@ -257,3 +258,10 @@ router.include_router(
     tags=["system-self-diagnostic"],
 )
 router.include_router(voice_ws.router, tags=["voice-websocket"])
+# Sprint-12 PR-5 (2026-05-05): VP work chat commands. Natural-English
+# parser + runner that drives the draft + workstream pipeline. NO
+# external action; tenant + user-scoped; runtime-not-ready refusals
+# surface the readiness next_action verbatim.
+router.include_router(
+    vp_commands.router, prefix="/vp-commands", tags=["vp-commands"],
+)
