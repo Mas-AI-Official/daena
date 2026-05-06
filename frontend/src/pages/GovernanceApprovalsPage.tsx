@@ -264,6 +264,65 @@ export function GovernanceApprovalsPage() {
             snapshot_hash: draftSnapshotHash,
           }
         : null
+    // Sprint-17 PR-2: file-apply preview extraction. Populated only
+    // when the approval is for local.file_change_proposal.apply and
+    // the upstream creator stashed action_params.file_apply_preview
+    // (or its individual fields).
+    const fileApplyRaw = params['file_apply_preview'] as
+      | {
+          target_repo_relative?: unknown
+          current_file_hash?: unknown
+          approved_diff_hash?: unknown
+          backup_file_path?: unknown
+          change_type?: unknown
+          tests_to_run_after_apply?: unknown
+          diff_preview_lines?: unknown
+          diff_excerpt?: unknown
+          secret_file_check_passed?: unknown
+          outside_repo_check_passed?: unknown
+        }
+      | undefined
+    const file_apply_preview = fileApplyRaw
+      ? {
+          target_repo_relative:
+            typeof fileApplyRaw.target_repo_relative === 'string'
+              ? fileApplyRaw.target_repo_relative
+              : '',
+          current_file_hash:
+            typeof fileApplyRaw.current_file_hash === 'string'
+              ? fileApplyRaw.current_file_hash
+              : null,
+          approved_diff_hash:
+            typeof fileApplyRaw.approved_diff_hash === 'string'
+              ? fileApplyRaw.approved_diff_hash
+              : null,
+          backup_file_path:
+            typeof fileApplyRaw.backup_file_path === 'string'
+              ? fileApplyRaw.backup_file_path
+              : null,
+          change_type:
+            typeof fileApplyRaw.change_type === 'string'
+              ? fileApplyRaw.change_type
+              : '',
+          tests_to_run_after_apply: Array.isArray(fileApplyRaw.tests_to_run_after_apply)
+            ? (fileApplyRaw.tests_to_run_after_apply as unknown[])
+                .filter((t): t is string => typeof t === 'string')
+            : [],
+          diff_preview_lines:
+            typeof fileApplyRaw.diff_preview_lines === 'number'
+              ? fileApplyRaw.diff_preview_lines
+              : null,
+          diff_excerpt:
+            typeof fileApplyRaw.diff_excerpt === 'string'
+              ? fileApplyRaw.diff_excerpt
+              : null,
+          secret_file_check_passed:
+            fileApplyRaw.secret_file_check_passed !== false,
+          outside_repo_check_passed:
+            fileApplyRaw.outside_repo_check_passed !== false,
+        }
+      : null
+
     setPhase3Details({
       approval_id: approval.id,
       action_type: approval.action_type as Phase3ToolId,
@@ -275,6 +334,7 @@ export function GovernanceApprovalsPage() {
       rollback_or_undo_instruction:
         (params['rollback_or_undo_instruction'] as string) || null,
       draft_preview,
+      file_apply_preview,
     })
     return true
   }

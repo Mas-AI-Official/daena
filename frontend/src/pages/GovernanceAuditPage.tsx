@@ -39,6 +39,7 @@ const CONTROLLED_TOOL_IDS = [
   'gmail.send_existing_draft',
   'calendar.create_tentative_event_without_invites',
   'local.file_change_proposal',
+  'local.file_change_proposal.apply',
 ] as const
 
 // Audit channel emitted by the dispatcher itself (refusal rows
