@@ -72,6 +72,7 @@ from app.api.v1 import (
     skills,
     souls,
     system_self_diagnostic,
+    routines as routines_api,
     trust,
     tts,
     voice_ws,
@@ -293,4 +294,12 @@ router.include_router(
 # tool dispatches NEVER reach this endpoint.
 router.include_router(
     trust.router, prefix="/trust", tags=["trust"],
+)
+# Sprint-18 PR-4 (2026-05-06): Routine Autonomy Scheduler API.
+# Skeleton-only -- no cron daemon activated yet. Operator can
+# register routines, pause/resume, and run-once on demand. Every
+# scheduler-initiated dispatch is DispatchInitiator.SCHEDULER, so
+# trust auto-approval ALWAYS refuses for routine outputs.
+router.include_router(
+    routines_api.router, prefix="/routines", tags=["routines"],
 )
