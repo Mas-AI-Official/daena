@@ -256,6 +256,93 @@ def build_structured_payload(
     raise ResearchFlowError(f"unknown_kind: {kind!r}")
 
 
+def _security_bounty_overlay(extract: str) -> dict[str, Any]:
+    """Return the bounty-program-specific overlay for the structured payload.
+
+    Heuristic only (deterministic); ``_llm_pending`` stays True at the
+    draft level so a follow-up enrichment can replace heuristic
+    guesses with LLM-extracted ground truth. The overlay carries:
+
+      * ``program_name``        -- best-effort title from the extract
+      * ``allowed_domains``     -- list of domains the program scope
+                                   appears to allow
+      * ``out_of_scope_rules``  -- list of out-of-scope hints
+      * ``reward_range``        -- plain-text reward / payout hint
+      * ``report_url``          -- the report intake URL if mentioned
+      * ``identity_required``   -- true when the program clearly
+                                   requires registration / KYC
+      * ``safe_next_action``    -- LITERAL text the UI surfaces
+                                   verbatim. NEVER asks Daena to
+                                   scan; always asks the operator
+                                   to register manually first.
+      * ``scope_check_status``  -- "not_yet_in_scope" until the
+                                   operator adds the program's
+                                   allowed_domains to authorized_scope.
+                                   Daena is never permitted to scan
+                                   from this row.
+
+    Note: NO ``scan`` / ``exploit`` / ``test_target`` key ever
+    appears -- the scout's output is metadata only. Contract test
+    enforces this.
+    """
+    text = extract or ""
+    lowered = text.lower()
+
+    # Out-of-scope token sniff (lots of programs use a literal
+    # "Out of scope" header).
+    out_of_scope: list[str] = []
+    for line in text.splitlines():
+        l = line.strip()
+        if not l:
+            continue
+        if "out of scope" in l.lower() or "not in scope" in l.lower():
+            # Take the next 3 lines as candidates.
+            out_of_scope.append(l)
+
+    # Identity hint: programs requiring HackerOne / Bugcrowd / a
+    # named portal usually require an account.
+    identity_required = any(
+        token in lowered
+        for token in (
+            "hackerone", "bugcrowd", "intigriti", "yeswehack",
+            "register", "create an account", "must be a member",
+            "must be enrolled",
+        )
+    )
+
+    # Reward range hint: pull a "$<n>" or "<n>k" mention if present.
+    reward_range = None
+    for token in ("$", "USD", "EUR", "rewards", "bounty", "payout"):
+        idx = lowered.find(token.lower())
+        if idx >= 0:
+            reward_range = text[max(0, idx - 30): idx + 80].strip()[:160]
+            break
+
+    # Report URL: pull the first url that looks like an intake link.
+    report_url = None
+    for url in _urls(text, limit=20):
+        u = url.lower()
+        if any(t in u for t in ("/report", "/submit", "/disclos", "/policy")):
+            report_url = url
+            break
+
+    return {
+        "program_name": None,            # LLM enrichment fills
+        "allowed_domains": [],           # LLM enrichment fills
+        "out_of_scope_rules": out_of_scope[:8],
+        "reward_range": reward_range,
+        "report_url": report_url,
+        "identity_required": identity_required,
+        "safe_next_action": (
+            "Register on the program's official portal manually before "
+            "any test or scan. Add the allowed_domains to the operator's "
+            "authorized_scope; Daena will refuse to scan a target that "
+            "is not explicitly in scope."
+        ),
+        "scope_check_status": "not_yet_in_scope",
+    }
+
+
 async def create_research_draft(
     db: AsyncSession,
     *,
@@ -329,6 +416,14 @@ async def create_research_draft(
         # Stamp the closed-set type so the workstream generator (PR-3)
         # can deterministically pick the default department.
         structured["opportunity_type"] = opportunity_type
+        # Sprint-13 PR-5: security bounty programs get extra
+        # metadata fields the scout fills heuristically (program
+        # name, allowed_domains hint, identity_required, etc.) and
+        # a verbatim safe_next_action that explicitly forbids any
+        # automated scan until the operator registers on the
+        # program portal manually.
+        if opportunity_type == "security_bounty":
+            structured.update(_security_bounty_overlay(outcome.result))
 
     draft = ResearchDraft(
         id=uuid.uuid4(),
