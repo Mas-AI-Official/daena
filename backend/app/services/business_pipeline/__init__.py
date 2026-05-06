@@ -22,6 +22,9 @@ from app.services.business_pipeline.orchestrator import (
     DEFAULT_TOP_N,
     run_discovery_loop,
 )
+# Side-effect import: registers the opportunity_discovery handler
+# with routine_autonomy on first import.
+from app.services.business_pipeline import routine_handler  # noqa: F401
 from app.models.business import OPPORTUNITY_TYPES
 
 __all__ = [

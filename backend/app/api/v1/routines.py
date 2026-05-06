@@ -24,7 +24,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import CurrentUser, get_current_user
+from app.core.database import get_db
 from app.core.logging import get_logger
 from app.services import routine_autonomy
 from app.services.routine_autonomy import ROUTINE_KIND_VALUES, RoutineOutcome
@@ -135,8 +138,18 @@ class RunOnceResponse(BaseModel):
 async def run_once(
     routine_id: str,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> RunOnceResponse:
-    result = await routine_autonomy.run_once(routine_id)
+    # Pass tenant context so handlers that need DB scope have it.
+    # Handlers that don't need it can ignore the kwargs.
+    result = await routine_autonomy.run_once(
+        routine_id,
+        db=db,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+    )
+    if result.outcome == RoutineOutcome.OK:
+        await db.commit()
     logger.info(
         "routines.run_once.complete",
         routine_id=routine_id,
