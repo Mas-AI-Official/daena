@@ -107,6 +107,22 @@ async def router_policy(
     return {"success": True, "data": get_router_policy()}
 
 
+@router.get("/qe-readiness")
+async def qe_readiness(
+    refresh: bool = False,
+    _user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return the QE/Council slot assignment.
+
+    Five reviewer slots: local_reasoner, code_reviewer, web_grounder,
+    risk_reviewer, final_synthesizer. Each slot resolves to a ready
+    runtime (or 'unfilled' with rationale). Mode is full / degraded /
+    unavailable per the readiness ladder.
+    """
+    from app.services.runtime_readiness import get_qe_readiness
+    return {"success": True, "data": await get_qe_readiness(refresh=refresh)}
+
+
 # Stable status taxonomy. The worst status anywhere in `checks` becomes
 # overall_status (warning > healthy; blocked > warning).
 STATUS_HEALTHY = "healthy"

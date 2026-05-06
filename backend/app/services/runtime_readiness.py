@@ -479,6 +479,253 @@ def summary_to_dict(s: RouterSummary) -> dict[str, Any]:
     }
 
 
+# ── Sprint-12A PR-3: QE/Council slot assignment ─────────────────────
+
+
+# The five named QE/Council reviewer slots. Each slot has:
+#   * intent     -- what kind of review it does
+#   * preferred  -- ordered list of runtime ids that can fill the slot
+#   * fallback_role -- if no preferred id is ready, fall back to any
+#                       runtime in the readiness pool whose primary or
+#                       secondary role matches this string
+#
+# The slots overlap on purpose. local_reasoner and code_reviewer can
+# share a runtime when only one is ready -- the qe_mode tells the
+# operator what mode QE is running in.
+QE_SLOTS: dict[str, dict[str, Any]] = {
+    "local_reasoner": {
+        "intent": (
+            "Cheap, private, deterministic first-pass review. Catches "
+            "the obvious problems before paid lanes fire."
+        ),
+        "preferred": ["vllm_configured", "ollama_backend"],
+        "fallback_role": "main_brain",
+    },
+    "code_reviewer": {
+        "intent": (
+            "Cross-file impact + refactor quality review. Wants the "
+            "model best at reading whole modules."
+        ),
+        "preferred": ["cli_claude", "cli_codex", "vllm_configured"],
+        "fallback_role": "coder",
+    },
+    "web_grounder": {
+        "intent": (
+            "Verifies claims that depend on live information (recent "
+            "events, current pricing, regulation changes)."
+        ),
+        "preferred": ["provider_perplexity"],
+        "fallback_role": "web_grounding",
+    },
+    "risk_reviewer": {
+        "intent": (
+            "Looks for hallucinations, missing evidence, security "
+            "implications, scope creep, and 'too good to be true' "
+            "fit_scores."
+        ),
+        "preferred": [
+            "provider_anthropic", "provider_openai", "cli_claude",
+        ],
+        "fallback_role": "qe_reviewer",
+    },
+    "final_synthesizer": {
+        "intent": (
+            "Reads the other reviewers and writes the final summary "
+            "the operator sees. Strong synthesis matters more than "
+            "raw capability here."
+        ),
+        "preferred": [
+            "vllm_configured", "ollama_backend", "cli_claude",
+            "provider_anthropic",
+        ],
+        "fallback_role": "main_brain",
+    },
+}
+
+
+@dataclass(slots=True)
+class QESlotAssignment:
+    slot: str
+    intent: str
+    runtime_id: str | None
+    runtime_display_name: str | None
+    fill_source: Literal["preferred", "fallback_role", "unfilled"]
+    rationale: str
+
+
+@dataclass(slots=True)
+class QEReadiness:
+    mode: Literal["full", "degraded", "unavailable"]
+    distinct_runtime_ids: list[str]
+    slot_assignments: list[QESlotAssignment]
+    mode_reason: str
+
+
+def _pick_for_slot(
+    slot_name: str,
+    spec: dict[str, Any],
+    items: list[ReadinessItem],
+    already_used: set[str],
+) -> QESlotAssignment:
+    """Resolve one QE slot to a ready runtime.
+
+    Preferred ids beat fallback-role lookups. Within either tier, a
+    runtime not yet assigned to another slot beats one that already
+    is -- this is what gives QE actual diversity. Re-use is permitted
+    when there is no other choice; the mode field tells the operator
+    QE is running degraded.
+    """
+    ready_by_id = {i.id: i for i in items if i.readiness_state == "ready"}
+
+    # 1. Try preferred ids in order, prioritising un-used.
+    for preferred_id in spec["preferred"]:
+        if preferred_id in ready_by_id and preferred_id not in already_used:
+            it = ready_by_id[preferred_id]
+            return QESlotAssignment(
+                slot=slot_name,
+                intent=spec["intent"],
+                runtime_id=it.id,
+                runtime_display_name=it.display_name,
+                fill_source="preferred",
+                rationale=f"Preferred runtime {it.id} is ready and unassigned.",
+            )
+
+    # 2. Fallback to any ready runtime whose primary/secondary role matches.
+    fallback_role = spec.get("fallback_role")
+    if fallback_role:
+        candidates = [
+            i for i in items
+            if i.readiness_state == "ready"
+            and (i.recommended_role == fallback_role
+                 or fallback_role in i.secondary_roles)
+        ]
+        for it in candidates:
+            if it.id not in already_used:
+                return QESlotAssignment(
+                    slot=slot_name,
+                    intent=spec["intent"],
+                    runtime_id=it.id,
+                    runtime_display_name=it.display_name,
+                    fill_source="fallback_role",
+                    rationale=(
+                        f"No preferred runtime ready; falling back to "
+                        f"{it.id} via fallback_role={fallback_role!r}."
+                    ),
+                )
+
+    # 3. Last resort: re-use a preferred runtime even though it's
+    #    already assigned to another slot. QE flips to degraded when
+    #    this happens for any slot.
+    for preferred_id in spec["preferred"]:
+        if preferred_id in ready_by_id:
+            it = ready_by_id[preferred_id]
+            return QESlotAssignment(
+                slot=slot_name,
+                intent=spec["intent"],
+                runtime_id=it.id,
+                runtime_display_name=it.display_name,
+                fill_source="fallback_role",
+                rationale=(
+                    f"All preferred runtimes already assigned to other "
+                    f"slots; re-using {it.id}. QE will run degraded."
+                ),
+            )
+
+    return QESlotAssignment(
+        slot=slot_name,
+        intent=spec["intent"],
+        runtime_id=None,
+        runtime_display_name=None,
+        fill_source="unfilled",
+        rationale=(
+            f"No ready runtime matches preferred IDs "
+            f"({spec['preferred']!r}) or fallback role "
+            f"({spec.get('fallback_role')!r})."
+        ),
+    )
+
+
+def assign_qe_slots(items: list[ReadinessItem]) -> QEReadiness:
+    """Assign each of the five QE slots to a ready runtime.
+
+    Returns ``QEReadiness`` with:
+      * ``mode``: full / degraded / unavailable
+      * ``distinct_runtime_ids``: how many DIFFERENT runtimes
+        contributed to the council
+      * ``slot_assignments``: per-slot detail (or unfilled)
+      * ``mode_reason``: plain-English string the UI renders
+    """
+    assignments: list[QESlotAssignment] = []
+    used: set[str] = set()
+    for slot_name, spec in QE_SLOTS.items():
+        a = _pick_for_slot(slot_name, spec, items, used)
+        assignments.append(a)
+        if a.runtime_id is not None:
+            used.add(a.runtime_id)
+
+    distinct = sorted({a.runtime_id for a in assignments if a.runtime_id})
+    filled_count = sum(1 for a in assignments if a.runtime_id is not None)
+
+    if filled_count == 0:
+        mode: Literal["full", "degraded", "unavailable"] = "unavailable"
+        reason = (
+            "No QE slot could be filled. Configure at least one local "
+            "model or one CLI/API provider before running Council."
+        )
+    elif len(distinct) >= 2 and filled_count >= 3:
+        mode = "full"
+        reason = (
+            f"{filled_count} slots filled with {len(distinct)} distinct "
+            f"runtimes. QE can run with peer cross-check."
+        )
+    else:
+        mode = "degraded"
+        reason = (
+            f"{filled_count} slots filled with {len(distinct)} distinct "
+            f"runtime(s). QE runs in degraded mode -- there is no real "
+            f"peer cross-check when reviewers are the same model. "
+            f"Configure a second runtime to upgrade to full mode."
+        )
+
+    return QEReadiness(
+        mode=mode,
+        distinct_runtime_ids=distinct,
+        slot_assignments=assignments,
+        mode_reason=reason,
+    )
+
+
+def qe_readiness_to_dict(qe: QEReadiness) -> dict[str, Any]:
+    return {
+        "mode": qe.mode,
+        "mode_reason": qe.mode_reason,
+        "distinct_runtime_ids": qe.distinct_runtime_ids,
+        "slot_assignments": [
+            {
+                "slot": a.slot,
+                "intent": a.intent,
+                "runtime_id": a.runtime_id,
+                "runtime_display_name": a.runtime_display_name,
+                "fill_source": a.fill_source,
+                "rationale": a.rationale,
+            }
+            for a in qe.slot_assignments
+        ],
+    }
+
+
+async def get_qe_readiness(refresh: bool = False) -> dict[str, Any]:
+    """Public entry: fetch readiness + assign QE slots."""
+    if refresh:
+        truth = await runtime_truth_registry.refresh()
+    else:
+        truth = await runtime_truth_registry.get_truth()
+    raw_items: list[dict[str, Any]] = list(truth.get("items") or [])
+    classified = [_classify_item(it) for it in raw_items]
+    qe = assign_qe_slots(classified)
+    return qe_readiness_to_dict(qe)
+
+
 def get_router_policy() -> dict[str, Any]:
     """Return the static router policy matrix (no I/O).
 
