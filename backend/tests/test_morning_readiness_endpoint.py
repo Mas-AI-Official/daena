@@ -140,6 +140,81 @@ class TestShape:
         assert result["data"]["ready_for_morning_work"] is False
 
 
+class TestAutofixProposals:
+    """Sprint-MORNING PR-5 contract.
+
+    Daena PROPOSES fixes; never auto-executes. The shape of each
+    proposal must carry only: id / title / rationale / copy_command
+    (string or null) / deep_link (string or null) / severity. NO
+    'auto_execute' / 'run_now' / 'apply' field.
+    """
+
+    async def test_autofix_keys_locked(self, monkeypatch):
+        import app.api.v1.system_self_diagnostic as mod
+
+        async def _fake_runtime(refresh=False):
+            return {
+                "items": [
+                    {
+                        "id": "ollama_backend",
+                        "display_name": "Ollama (backend)",
+                        "kind": "local_llm",
+                        "detected": False,
+                        "configured": False,
+                        "callable": False,
+                        "readiness_state": "detected_offline",
+                        "cost_class": "free_local",
+                        "endpoint": None,
+                        "safe_failure_reason": "not running",
+                    },
+                    {
+                        "id": "provider_openai",
+                        "display_name": "OpenAI",
+                        "kind": "api_provider",
+                        "detected": False,
+                        "configured": False,
+                        "callable": False,
+                        "readiness_state": "not_configured",
+                        "cost_class": "metered_api",
+                        "endpoint": None,
+                        "safe_failure_reason": "no key",
+                    },
+                ],
+                "router_summary": {},
+            }
+
+        from app.services import runtime_readiness as rr_mod
+        monkeypatch.setattr(rr_mod, "get_runtime_readiness", _fake_runtime)
+
+        result = await mod.morning_readiness(refresh=False, _user=None)
+        proposals = result["data"]["autofix_proposals"]
+        assert len(proposals) >= 2
+
+        for p in proposals:
+            assert set(p.keys()) == {
+                "id",
+                "title",
+                "rationale",
+                "copy_command",
+                "deep_link",
+                "severity",
+            }, f"unexpected proposal shape: {p.keys()}"
+            # Daena never carries an auto-execute flag.
+            for forbidden in ("auto_execute", "run_now", "apply", "execute"):
+                assert forbidden not in p
+
+        # The Ollama proposal must surface a copy command.
+        ollama_props = [p for p in proposals if "ollama" in p["id"].lower()]
+        assert ollama_props, "expected an Ollama proposal"
+        assert ollama_props[0]["copy_command"] == "ollama serve"
+
+        # The OpenAI key proposal must surface a deep link, not a command.
+        openai_props = [p for p in proposals if "openai" in p["id"].lower()]
+        assert openai_props
+        assert openai_props[0]["copy_command"] is None
+        assert openai_props[0]["deep_link"] == "/settings/connections"
+
+
 class TestNoSecretLeak:
     async def test_detected_mcps_drops_env(self, monkeypatch):
         """MCP env values may carry tokens. The aggregator must never

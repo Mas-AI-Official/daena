@@ -9,8 +9,18 @@
  * Backend contract: GET /api/v1/system/morning-readiness.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import {
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+  Copy,
+  Wrench,
+  ExternalLink,
+} from 'lucide-react'
 import { api } from '@/lib/api'
+import { toast } from '@/stores/toastStore'
 
 interface BucketItem {
   id: string
@@ -36,6 +46,15 @@ interface DetectedMCP {
   command: string
 }
 
+interface AutofixProposal {
+  id: string
+  title: string
+  rationale: string
+  copy_command: string | null
+  deep_link: string | null
+  severity: 'info' | 'warn' | 'blocker'
+}
+
 interface MorningReadinessData {
   cli_runtimes: BucketSummary
   local_llms: BucketSummary
@@ -46,6 +65,7 @@ interface MorningReadinessData {
     scan_error: string | null
   }
   blockers: string[]
+  autofix_proposals: AutofixProposal[]
   ready_for_morning_work: boolean
 }
 
@@ -135,6 +155,9 @@ export function MorningReadinessPanel() {
           <Bucket title="API Providers" bucket={data.api_providers} keyHint />
           <DetectedMCPs detected={data.detected_mcps} />
           {data.blockers.length > 0 && <Blockers items={data.blockers} />}
+          {data.autofix_proposals.length > 0 && (
+            <AutofixProposals proposals={data.autofix_proposals} />
+          )}
         </>
       )}
     </div>
@@ -283,6 +306,67 @@ function Blockers({ items }: { items: string[] }) {
           >
             <AlertCircle size={11} className="mt-0.5 shrink-0" />
             <span>{b}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function AutofixProposals({ proposals }: { proposals: AutofixProposal[] }) {
+  const onCopy = async (cmd: string) => {
+    try {
+      await navigator.clipboard.writeText(cmd)
+      toast.success('Command copied')
+    } catch {
+      toast.error('Copy failed; select and copy manually')
+    }
+  }
+  return (
+    <div className="rounded-md border border-primary-500/20 bg-primary-500/[0.04] p-2">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-primary-200 mb-1">
+        <Wrench size={11} />
+        Autofix proposals
+        <span className="text-[10px] font-normal text-starlight-400 ml-1">
+          (Daena suggests; you decide what runs)
+        </span>
+      </div>
+      <ul className="space-y-1.5">
+        {proposals.map((p) => (
+          <li
+            key={p.id}
+            className="rounded bg-slate-900/40 px-2 py-1.5 text-[11px] text-starlight-200"
+          >
+            <div className="font-medium">{p.title}</div>
+            <div className="mt-0.5 text-[10px] text-starlight-400">
+              {p.rationale}
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              {p.copy_command && (
+                <>
+                  <code className="flex-1 truncate font-mono text-[10px] bg-black/30 rounded px-1.5 py-0.5 text-accent-cyan">
+                    {p.copy_command}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => void onCopy(p.copy_command!)}
+                    className="inline-flex items-center gap-1 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-starlight-300 hover:bg-white/5 cursor-pointer"
+                  >
+                    <Copy size={10} />
+                    Copy
+                  </button>
+                </>
+              )}
+              {p.deep_link && (
+                <Link
+                  to={p.deep_link}
+                  className="inline-flex items-center gap-1 rounded border border-primary-500/30 px-1.5 py-0.5 text-[10px] text-primary-300 hover:bg-primary-500/10 ml-auto"
+                >
+                  Open
+                  <ExternalLink size={10} />
+                </Link>
+              )}
+            </div>
           </li>
         ))}
       </ul>

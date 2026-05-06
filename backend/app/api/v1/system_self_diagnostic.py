@@ -205,6 +205,13 @@ async def morning_readiness(
             "scan_error": detected_error,
         },
         "blockers": blockers,
+        # Sprint-MORNING PR-5: per-row fixes the operator can copy or
+        # click. Daena proposes; never auto-runs an OS install. Every
+        # action is either a string command (for the operator to paste
+        # into a terminal) or a deep link to a settings page.
+        "autofix_proposals": _build_autofix_proposals(
+            cli_rows, llm_rows, api_rows,
+        ),
         "ready_for_morning_work": (
             len(blockers) == 0
             or _ready_count(cli_rows) > 0
@@ -212,6 +219,124 @@ async def morning_readiness(
         ),
     }
     return {"success": True, "data": summary}
+
+
+def _build_autofix_proposals(
+    cli_rows: list[dict[str, object]],
+    llm_rows: list[dict[str, object]],
+    api_rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Map readiness state to operator-actionable proposals.
+
+    Each proposal carries:
+      * ``id`` -- stable id for dedupe + UI key
+      * ``title`` -- short headline
+      * ``rationale`` -- one-line "why this would help"
+      * ``copy_command`` -- string the operator can paste, or null
+      * ``deep_link`` -- frontend route, or null
+      * ``severity`` -- info / warn / blocker
+
+    Daena proposes; never auto-executes. The frontend renders a copy
+    button or a router link, never an "auto-run" button.
+    """
+    proposals: list[dict[str, object]] = []
+
+    # Local LLM offline -> propose start commands (informational; the
+    # operator chooses which one runs).
+    for llm in llm_rows:
+        state = llm.get("readiness_state")
+        item_id = str(llm.get("id") or "")
+        if state == "ready":
+            continue
+        if "ollama" in item_id:
+            proposals.append({
+                "id": f"start_{item_id}",
+                "title": f"Start {llm.get('display_name')}",
+                "rationale": "Free local main brain. No subscription needed.",
+                "copy_command": "ollama serve",
+                "deep_link": None,
+                "severity": "warn",
+            })
+        if "llama" in item_id or "vllm" in item_id:
+            proposals.append({
+                "id": f"start_{item_id}",
+                "title": f"Start {llm.get('display_name')}",
+                "rationale": "Local OpenAI-compatible LLM. Free, faster than CLI runtimes for short prompts.",
+                "copy_command": (
+                    "powershell -ExecutionPolicy Bypass "
+                    "-File backend/start-llama-server.ps1 -Model qwen3-8b"
+                ),
+                "deep_link": None,
+                "severity": "warn",
+            })
+
+    # CLI runtime offline -> install/login hint (text only, no auto-install).
+    for cli in cli_rows:
+        state = cli.get("readiness_state")
+        item_id = str(cli.get("id") or "")
+        if state == "ready":
+            continue
+        if "claude" in item_id:
+            proposals.append({
+                "id": f"install_{item_id}",
+                "title": "Install or authenticate Claude Code CLI",
+                "rationale": "Subscription brain; native MCP / browser tools.",
+                "copy_command": "npm install -g @anthropic-ai/claude-code && claude login",
+                "deep_link": None,
+                "severity": "info",
+            })
+        if "codex" in item_id:
+            proposals.append({
+                "id": f"install_{item_id}",
+                "title": "Install or authenticate Codex CLI",
+                "rationale": "Subscription brain; strong on tight algorithmic / async tasks.",
+                "copy_command": "npm install -g @openai/codex && codex login",
+                "deep_link": None,
+                "severity": "info",
+            })
+        if "gemini" in item_id:
+            proposals.append({
+                "id": f"install_{item_id}",
+                "title": "Install or authenticate Gemini CLI",
+                "rationale": "Subscription brain; large context window.",
+                "copy_command": "npm install -g @google/gemini-cli && gemini login",
+                "deep_link": None,
+                "severity": "info",
+            })
+
+    # API key not configured -> deep-link to Connections (no copy command;
+    # secret entry happens in the UI via vault).
+    for api in api_rows:
+        state = api.get("readiness_state")
+        configured = bool(api.get("configured"))
+        if state == "ready" or configured:
+            continue
+        proposals.append({
+            "id": f"set_key_{api.get('id')}",
+            "title": f"Add {api.get('display_name')} API key",
+            "rationale": (
+                "Optional: enables metered fallback when local + CLI brains aren't enough. "
+                "Daena will only call paid APIs when allow_metered=true is set per-call."
+            ),
+            "copy_command": None,
+            "deep_link": "/settings/connections",
+            "severity": "info",
+        })
+
+    # Configured-untested provider -> propose a test (text only; we don't
+    # fire the call).
+    for api in api_rows:
+        if api.get("readiness_state") == "configured_untested":
+            proposals.append({
+                "id": f"test_{api.get('id')}",
+                "title": f"Test {api.get('display_name')} reachability",
+                "rationale": "Provider key is set but Daena hasn't verified the connection yet.",
+                "copy_command": None,
+                "deep_link": "/settings/models-runtimes",
+                "severity": "info",
+            })
+
+    return proposals
 
 
 def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
