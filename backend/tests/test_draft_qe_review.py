@@ -253,6 +253,12 @@ class TestModeHonesty:
         assert result.mode == "full"
         assert len(result.distinct_runtime_ids) >= 2
         assert any("inflated" in f for f in result.findings)
+        # Sprint-MORNING PR-3: stamp draft.structured_payload._qe_mode
+        # so the WorkstreamsPage Drafts lane can render an honest badge.
+        await db_session.refresh(career_draft)
+        payload = career_draft.structured_payload or {}
+        assert payload.get("_qe_mode") == "full"
+        assert "_qe_reviewed_at" in payload
 
     @pytest.mark.asyncio
     async def test_single_runtime_collapses_to_degraded(

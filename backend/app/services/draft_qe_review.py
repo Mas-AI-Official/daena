@@ -53,6 +53,7 @@ import asyncio
 import json
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -583,6 +584,22 @@ async def run_draft_qe_review(
         risk_level="LOW",
         governance_tier=1,
     )
+
+    # Sprint-MORNING PR-3: stamp QE state on the draft's structured_payload
+    # so the WorkstreamsPage Drafts lane can render an honest badge without
+    # an extra audit-log query per row. Only stamp when the run actually
+    # produced reviewer output (full or degraded). Unavailable mode means
+    # nothing ran -- don't lie about it.
+    if final_mode in ("full", "degraded") and getattr(draft, "structured_payload", None) is not None:
+        try:
+            payload = dict(draft.structured_payload or {})
+            payload["_qe_reviewed_at"] = datetime.now(timezone.utc).isoformat()
+            payload["_qe_mode"] = final_mode
+            draft.structured_payload = payload
+            await db.flush()
+        except Exception:
+            # Stamp is best-effort -- audit row is the canonical record.
+            pass
 
     return QEReviewResult(
         draft_id=str(draft.id),

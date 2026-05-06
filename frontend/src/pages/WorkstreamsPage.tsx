@@ -885,6 +885,86 @@ function PendingBadge() {
   )
 }
 
+function PillBadge({
+  tone,
+  text,
+  title,
+}: {
+  tone: 'emerald' | 'sky' | 'amber' | 'violet'
+  text: string
+  title?: string
+}) {
+  const toneClass: Record<typeof tone, string> = {
+    emerald: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    sky: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+    amber: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    violet: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
+  }
+  return (
+    <span
+      title={title}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border ${toneClass[tone]}`}
+    >
+      {text}
+    </span>
+  )
+}
+
+/**
+ * StatusBadges — Sprint-MORNING PR-3.
+ *
+ * Renders a compact set of badges describing the lifecycle state of a
+ * draft. Read-only: every badge is derived from already-loaded data.
+ * - llm pending   -- payload._llm_pending === true (no enrichment yet)
+ * - enriched      -- payload._llm_pending === false
+ * - QE: full|deg  -- payload._qe_mode set by QE service after a real run
+ * - workstream    -- a workstream exists with source_ref_id == draft.id
+ */
+function StatusBadges({
+  payload,
+  hasWorkstream,
+}: {
+  payload: Record<string, unknown> | null | undefined
+  hasWorkstream: boolean
+}) {
+  const llmPending = payload && payload._llm_pending === true
+  const enriched = payload && payload._llm_pending === false
+  const qeMode =
+    payload && typeof payload._qe_mode === 'string'
+      ? (payload._qe_mode as string)
+      : null
+
+  return (
+    <>
+      {llmPending && <PendingBadge />}
+      {enriched && (
+        <PillBadge tone="sky" text="enriched" title="LLM enrichment ran" />
+      )}
+      {qeMode === 'full' && (
+        <PillBadge
+          tone="emerald"
+          text="QE: full"
+          title="Three-stage council ran with 2+ distinct runtimes"
+        />
+      )}
+      {qeMode === 'degraded' && (
+        <PillBadge
+          tone="amber"
+          text="QE: degraded"
+          title="Council ran with fewer reviewers than full mode"
+        />
+      )}
+      {hasWorkstream && (
+        <PillBadge
+          tone="violet"
+          text="workstream"
+          title="Promoted to a workstream"
+        />
+      )}
+    </>
+  )
+}
+
 /**
  * DraftActions — Sprint-MORNING PR-2.
  *
@@ -1060,13 +1140,14 @@ function ActionButton({
 function DraftRow({
   draft,
   onRefresh,
+  hasWorkstream,
 }: {
   draft: ResearchDraftSummary
   onRefresh?: () => void
+  hasWorkstream: boolean
 }) {
   const [open, setOpen] = useState(false)
   const payload = draft.structured_payload
-  const llmPending = payload && payload._llm_pending === true
   const company = payload && typeof payload.company === 'string' ? payload.company : null
   const headline = company || draft.source_host || 'untitled draft'
   return (
@@ -1082,7 +1163,7 @@ function DraftRow({
             <span className="text-[11px] font-semibold text-starlight-100 truncate">
               {headline}
             </span>
-            {llmPending && <PendingBadge />}
+            <StatusBadges payload={payload} hasWorkstream={hasWorkstream} />
             <span className="text-[9px] text-starlight-500 font-mono">{draft.source_host}</span>
           </div>
           <div className="text-[10px] text-starlight-400 line-clamp-1 mt-0.5">
@@ -1125,10 +1206,65 @@ interface FormDraftSummary {
   structured_payload?: null
 }
 
+/**
+ * StartHereCard — Sprint-MORNING PR-3.
+ *
+ * The morning landing card. Renders the suggested first workflow + a
+ * compact totals row so the operator sees at a glance: how many drafts
+ * exist, how many already have workstreams, what to do next. The card
+ * is read-only — the suggested steps are buttons-as-text, not actions.
+ */
+function StartHereCard({
+  careerCount,
+  contentCount,
+  formCount,
+  workstreamCount,
+}: {
+  careerCount: number
+  contentCount: number
+  formCount: number
+  workstreamCount: number
+}) {
+  const totalDrafts = careerCount + contentCount + formCount
+  return (
+    <div className="rounded-lg border border-primary-500/20 bg-primary-500/[0.04] p-3">
+      <div className="flex items-start gap-2">
+        <Sparkles size={14} className="mt-0.5 text-primary-400" />
+        <div className="flex-1">
+          <div className="text-[12px] font-semibold text-starlight-100">
+            Start here tomorrow
+          </div>
+          <ol className="mt-1.5 space-y-0.5 list-decimal list-inside text-[11px] text-starlight-300">
+            <li>Open <span className="text-starlight-100">Settings → Models &amp; Runtimes</span> to confirm the main brain is ready.</li>
+            <li>Pick a draft below, click <span className="text-starlight-100">Enrich</span> for the routed brain to fill it.</li>
+            <li>Run <span className="text-starlight-100">Council</span> for an honest cross-check.</li>
+            <li>Click <span className="text-starlight-100">Create Workstream</span> to promote the draft to a work plan.</li>
+            <li>Ask the chat: <span className="font-mono text-primary-300">what should I do next?</span></li>
+          </ol>
+          <div className="mt-2 flex items-center gap-3 text-[10px] text-starlight-400">
+            <span>{totalDrafts} drafts</span>
+            <span>·</span>
+            <span>{careerCount} career</span>
+            <span>·</span>
+            <span>{contentCount} content</span>
+            <span>·</span>
+            <span>{formCount} form</span>
+            <span>·</span>
+            <span className="text-violet-300">{workstreamCount} workstreams</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DraftsLane() {
   const [careerDrafts, setCareerDrafts] = useState<ResearchDraftSummary[]>([])
   const [contentDrafts, setContentDrafts] = useState<ResearchDraftSummary[]>([])
   const [formDrafts, setFormDrafts] = useState<FormDraftSummary[]>([])
+  // Sprint-MORNING PR-3: source_ref_ids of drafts that already have a
+  // workstream so we can render a "workstream created" badge on each row.
+  const [draftIdsWithWorkstream, setDraftIdsWithWorkstream] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<'career' | 'content' | 'form'>('career')
@@ -1137,14 +1273,26 @@ function DraftsLane() {
     setLoading(true)
     setError(null)
     try {
-      const [careerRes, contentRes, formsRes] = await Promise.all([
+      const [careerRes, contentRes, formsRes, wsRes] = await Promise.all([
         api.get('/research/drafts', { params: { kind: 'career', limit: 25 } }),
         api.get('/research/drafts', { params: { kind: 'content', limit: 25 } }),
         api.get('/form-drafts', { params: { limit: 25 } }).catch(() => ({ data: { drafts: [] } })),
+        api.get('/workstreams', { params: { limit: 200 } }).catch(() => ({ data: { data: { workstreams: [] } } })),
       ])
       setCareerDrafts(careerRes.data?.drafts ?? [])
       setContentDrafts(contentRes.data?.drafts ?? [])
       setFormDrafts(formsRes.data?.drafts ?? [])
+      const wsList = (wsRes.data?.data?.workstreams ?? []) as Array<{
+        source_type?: string | null
+        source_ref_id?: string | null
+      }>
+      setDraftIdsWithWorkstream(
+        new Set(
+          wsList
+            .filter(w => w.source_type === 'draft' && w.source_ref_id)
+            .map(w => w.source_ref_id as string),
+        ),
+      )
     } catch (err) {
       setError(String(err))
     } finally {
@@ -1174,6 +1322,12 @@ function DraftsLane() {
 
   return (
     <div className="glass-panel rounded-xl p-4 space-y-3">
+      <StartHereCard
+        careerCount={careerCount}
+        contentCount={contentCount}
+        formCount={formCount}
+        workstreamCount={draftIdsWithWorkstream.size}
+      />
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <div className="text-sm font-bold text-starlight-100">Drafts to review</div>
@@ -1226,8 +1380,12 @@ function DraftsLane() {
             {formDrafts.map(d => (
               <div key={d.id} className="border border-white/5 rounded-md bg-white/[.02] p-2.5 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-[11px] font-semibold text-starlight-100 truncate">
-                    {d.title}
+                  <div className="text-[11px] font-semibold text-starlight-100 truncate flex items-center gap-2">
+                    <span className="truncate">{d.title}</span>
+                    <StatusBadges
+                      payload={null}
+                      hasWorkstream={draftIdsWithWorkstream.has(d.id)}
+                    />
                   </div>
                   <div className="text-[9px] text-starlight-500">{formatRelative(d.created_at)}</div>
                 </div>
@@ -1249,7 +1407,14 @@ function DraftsLane() {
         </div>
       ) : (
         <div className="space-y-1.5">
-          {visibleResearch.map(d => <DraftRow key={d.id} draft={d} onRefresh={load} />)}
+          {visibleResearch.map(d => (
+            <DraftRow
+              key={d.id}
+              draft={d}
+              onRefresh={load}
+              hasWorkstream={draftIdsWithWorkstream.has(d.id)}
+            />
+          ))}
         </div>
       )}
     </div>
