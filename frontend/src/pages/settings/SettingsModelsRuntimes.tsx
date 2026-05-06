@@ -9,10 +9,11 @@
  * 4. Auto Routing config
  */
 import { useEffect, useState, useCallback } from 'react'
-import { Terminal, Key, RefreshCw, Check, X, Loader2, Eye, EyeOff } from 'lucide-react'
+import { Terminal, Key, RefreshCw, Check, X, Loader2, Eye, EyeOff, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
 import { Card, Badge } from '@/components/common'
+import { BrainReadinessPanel } from '@/components/common/BrainReadinessPanel'
 
 interface RuntimeInfo {
   runtime_id: string
@@ -150,6 +151,11 @@ export function SettingsModelsRuntimes() {
 
   return (
     <div className="space-y-8">
+      {/* Sprint-12A PR-4: brain readiness panel.
+          Honest snapshot of which brain Daena will use right now.
+          Read-only; no paid call fires from here. */}
+      <BrainReadinessPanel />
+
       {/* Section 1: Local Models */}
       <section className="space-y-3">
         <div>
@@ -177,11 +183,11 @@ export function SettingsModelsRuntimes() {
               : 'Checking installed models...'
             }
           </p>
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-xs text-starlight-300 cursor-pointer">
-              <input type="checkbox" defaultChecked className="w-3.5 h-3.5 rounded border-white/20 bg-transparent text-primary-500" />
-              Auto-update models weekly
-            </label>
+          <div className="flex items-start gap-2 rounded-md border border-accent-amber/20 bg-accent-amber/5 px-3 py-2">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-accent-amber" />
+            <p className="text-[10px] text-starlight-400">
+              Model auto-update is not wired to a backend scheduler in this build, so the previous checkbox was removed from the active control path.
+            </p>
           </div>
         </Card>
       </section>
@@ -195,19 +201,15 @@ export function SettingsModelsRuntimes() {
       <section className="space-y-3">
         <div>
           <h3 className="text-sm font-display font-semibold text-starlight-100">Auto Routing</h3>
-          <p className="text-xs text-starlight-400 mt-0.5">How Daena picks the best model for each task.</p>
+          <p className="text-xs text-starlight-400 mt-0.5">Read-only here until backend routing contracts are verified.</p>
         </div>
         <Card variant="glass" padding="md" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-starlight-300">Cost optimization</span>
-            <label className="relative w-10 h-5 cursor-pointer">
-              <input type="checkbox" defaultChecked className="sr-only peer" />
-              <div className="w-10 h-5 rounded-full bg-white/10 peer-checked:bg-accent-green/30 transition-colors" />
-              <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-starlight-500 peer-checked:bg-accent-green peer-checked:translate-x-5 transition-all" />
-            </label>
+          <div className="flex items-start gap-2 rounded-md border border-accent-amber/20 bg-accent-amber/5 px-3 py-2">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-accent-amber" />
+            <p className="text-[10px] text-starlight-400">
+              The old cost-optimization toggle was frontend-only. Use Runtime & Connections for provider truth and Billing for budget preferences until backend routing enforcement is verified.
+            </p>
           </div>
-          <p className="text-[10px] text-starlight-500">Route simple tasks to cheaper models automatically.</p>
-
           <div className="pt-2 border-t border-white/5">
             <span className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold">Fallback chain</span>
             <p className="text-xs text-starlight-400 mt-1">Claude Code &rarr; Codex &rarr; Gemini &rarr; Ollama &rarr; API keys</p>
