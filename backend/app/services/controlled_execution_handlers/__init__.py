@@ -28,6 +28,7 @@ from app.services.controlled_execution_handlers import (  # noqa: F401
     calendar_tentative_event,
     file_change_proposal,
     file_change_proposal_apply,
+    git_commit_approved_patch,
     gmail_create_draft,
     gmail_send_existing_draft,
 )

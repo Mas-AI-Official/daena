@@ -72,6 +72,7 @@ WriteToolId = Literal[
     "calendar.create_tentative_event_without_invites",
     "local.file_change_proposal",
     "local.file_change_proposal.apply",
+    "local.git_commit_approved_patch",
 ]
 
 WRITE_TOOLS: Final[frozenset[str]] = frozenset({
@@ -81,8 +82,12 @@ WRITE_TOOLS: Final[frozenset[str]] = frozenset({
     "local.file_change_proposal",
     # Sprint-17 PR-1 (2026-05-06): apply an approved file change
     # proposal. Backup-based rollback. Hash-verified at apply time.
-    # PR-5 adds local.git_commit_approved_patch for the commit wall.
     "local.file_change_proposal.apply",
+    # Sprint-17 PR-5 (2026-05-06): commit the applied change with a
+    # SECOND approval. Refuses unrelated dirty files. Never pushes.
+    # Two walls: apply doesn't authorize commit; the operator
+    # explicitly approves each step.
+    "local.git_commit_approved_patch",
 })
 
 

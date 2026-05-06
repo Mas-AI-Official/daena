@@ -41,18 +41,16 @@ _LOCKED_FIELDS = (
 
 
 class TestPhase3StaysOff:
-    async def test_write_tools_is_sprint17_pr1_set(self):
-        """Sprint-17 PR-1 unlocks exactly FIVE write tools.
+    async def test_write_tools_is_sprint17_pr5_set(self):
+        """Sprint-17 PR-5 unlocks SIX write tools (PR-1 added apply,
+        PR-5 adds the local commit wall).
 
         Rename history (each rename is the deliberate signal that
         Phase 3 is widening, executed in the SAME PR that adds the
         tool):
           Sprint-14 -> Sprint-15: gmail.send_existing_draft
           Sprint-15 -> Sprint-17 PR-1: local.file_change_proposal.apply
-
-        Sprint-17 PR-5 (in this same sprint) will rename this test
-        again to add local.git_commit_approved_patch, taking the set
-        to six.
+          Sprint-17 PR-1 -> Sprint-17 PR-5: local.git_commit_approved_patch
         """
         from app.services.controlled_execution_design import WRITE_TOOLS
 
@@ -62,9 +60,10 @@ class TestPhase3StaysOff:
             "calendar.create_tentative_event_without_invites",
             "local.file_change_proposal",
             "local.file_change_proposal.apply",
+            "local.git_commit_approved_patch",
         })
         assert WRITE_TOOLS == sprint17_unlock, (
-            f"WRITE_TOOLS drift -- expected exactly the Sprint-17 PR-1 "
+            f"WRITE_TOOLS drift -- expected exactly the Sprint-17 PR-5 "
             f"unlock set, got {sorted(WRITE_TOOLS)}. If you are "
             f"unlocking a new tool, update this test deliberately "
             f"in the SAME PR that adds the tool, not in a follow-up."
