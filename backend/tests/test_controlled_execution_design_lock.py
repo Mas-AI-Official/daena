@@ -41,14 +41,49 @@ _LOCKED_FIELDS = (
 
 
 class TestPhase3StaysOff:
-    async def test_write_tools_is_empty(self):
-        """Phase 3 is locked closed in PR-8. The first write tool
-        added in a later sprint must update this test on purpose."""
+    async def test_write_tools_is_sprint14_set(self):
+        """Sprint-14 unlocks exactly THREE write tools, all
+        draft / proposal / tentative variants. Adding any tool
+        beyond this set requires touching this test on purpose --
+        the operator-visible signal that Phase 3 is being widened."""
         from app.services.controlled_execution_design import WRITE_TOOLS
 
-        assert WRITE_TOOLS == frozenset(), (
-            f"WRITE_TOOLS expected empty for PR-8, got {sorted(WRITE_TOOLS)}"
+        sprint14_unlock = frozenset({
+            "gmail.create_draft",
+            "calendar.create_tentative_event_without_invites",
+            "local.file_change_proposal",
+        })
+        assert WRITE_TOOLS == sprint14_unlock, (
+            f"WRITE_TOOLS drift -- expected exactly the Sprint-14 "
+            f"unlock set, got {sorted(WRITE_TOOLS)}. If you are "
+            f"unlocking a new tool, update this test deliberately "
+            f"in the SAME PR that adds the tool, not in a follow-up."
         )
+
+    async def test_no_send_tool_in_allowlist(self):
+        """Sprint-14 explicitly does NOT unlock send/submit/post/
+        apply variants. PR-15 will unlock send AFTER trust-ladder
+        and approval-modal flows have run end-to-end."""
+        from app.services.controlled_execution_design import WRITE_TOOLS
+
+        for tool_id in WRITE_TOOLS:
+            lowered = tool_id.lower()
+            assert ".send" not in lowered, (
+                f"send tool {tool_id!r} found in WRITE_TOOLS; "
+                f"Sprint-14 is draft/tentative/proposal only."
+            )
+            assert ".submit" not in lowered, (
+                f"submit tool {tool_id!r} found in WRITE_TOOLS"
+            )
+            assert ".post" not in lowered, (
+                f"post tool {tool_id!r} found in WRITE_TOOLS"
+            )
+            assert ".apply" not in lowered, (
+                f"apply tool {tool_id!r} found in WRITE_TOOLS"
+            )
+            assert ".pay" not in lowered, (
+                f"pay tool {tool_id!r} found in WRITE_TOOLS"
+            )
 
     async def test_readonly_env_default_unchanged(self):
         """The Phase 3 readonly env defaults to true. The PR does

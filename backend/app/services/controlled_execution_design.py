@@ -59,14 +59,22 @@ from typing import Final, Literal
 #      allowlist for the operator's tenant
 #   2. A founder-approved policy says ALLOW for this tool
 #   3. A negative test proves a missing field is refused
-# Phase 3 starts with this set EMPTY -- nothing executes. The
-# WriteToolId type is left as `str` until the first concrete tool
-# is added (a Literal[] with zero alternatives is a SyntaxError; we
-# avoid that by switching to str alias here and tightening to a
-# Literal in the same PR that adds the first WRITE_TOOL).
-WriteToolId = str
+# Sprint-14 unlocks the first three (gmail.create_draft, calendar
+# tentative event without invites, local file change proposal).
+# All three are draft / proposal / tentative variants -- none of
+# them sends, posts, or applies on the back of approval. PR-15
+# unlocks the actual send variants.
+WriteToolId = Literal[
+    "gmail.create_draft",
+    "calendar.create_tentative_event_without_invites",
+    "local.file_change_proposal",
+]
 
-WRITE_TOOLS: Final[frozenset[str]] = frozenset()
+WRITE_TOOLS: Final[frozenset[str]] = frozenset({
+    "gmail.create_draft",
+    "calendar.create_tentative_event_without_invites",
+    "local.file_change_proposal",
+})
 
 
 # ── 10-field locked contract ─────────────────────────────────────────

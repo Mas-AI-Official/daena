@@ -796,6 +796,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if settings.disable_auth:
         logger.warning("AUTH_DISABLED — all endpoints return dev user. Do NOT deploy this.")
 
+    # Sprint-14 PR-2 (2026-05-06): side-effect-import the controlled
+    # execution handlers package so each handler registers itself with
+    # the dispatcher's _TOOL_HANDLERS registry before the first request.
+    # The import does not run any handler -- it just makes the registry
+    # non-empty for tools the operator unlocked in WRITE_TOOLS.
+    try:
+        import app.services.controlled_execution_handlers  # noqa: F401
+        logger.info("controlled_execution.handlers.registered")
+    except Exception as exc:  # noqa: BLE001 -- best-effort
+        logger.error(
+            "controlled_execution.handlers.import_failed",
+            error=str(exc),
+        )
+
     # === ESSENTIALS START ===
 
     # --- Vault V2 KEK validation (Phase 4a-2) ---
