@@ -5,3 +5,5 @@
 .file_change_backups/
 .tmp_apply_test/
 .trust_ladder.json
+.trust_policy.json
+.routine_autonomy.json
