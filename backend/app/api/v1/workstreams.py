@@ -187,6 +187,267 @@ async def start_workstream(
     return {"success": True, "data": _serialize_workstream(ws)}
 
 
+# ──────────────────────────────────────────────────────────────────
+# Sprint-12 PR-4: workstreams from drafts
+# ──────────────────────────────────────────────────────────────────
+
+
+# Department routing per the brief:
+#   career  -> Sales / Career OPS                 -> "Sales"
+#   content -> Marketing / ContentOps             -> "Marketing"
+#   form    -> Operations / Founder Office        -> "Operations"
+#   risky/legal flag -> Legal & Compliance        -> "Legal & Compliance"
+_DRAFT_KIND_TO_DEPARTMENT_NAME = {
+    "career":  "Sales",
+    "content": "Marketing",
+    "form":    "Operations",
+}
+_LEGAL_FLAG_TOKENS = (
+    "legal", "compliance", "regulat", "license", "licence", "patent",
+    "litigation", "liability", "gdpr", "ccpa",
+)
+
+
+class FromDraftRequest(BaseModel):
+    draft_kind: str = Field(
+        ...,
+        description="career | content | form",
+    )
+    draft_ref: uuid.UUID = Field(
+        ...,
+        description="ResearchDraft.id (career/content) or FormDraft.id (form).",
+    )
+    goal: str | None = Field(
+        default=None,
+        max_length=500,
+        description=(
+            "Workstream goal. When omitted, the draft's stored goal "
+            "is reused (no LLM call -- deterministic only)."
+        ),
+    )
+    department_override: str | None = Field(
+        default=None,
+        description=(
+            "Operator override of the auto-assigned department. "
+            "Takes the department name (e.g. 'Sales')."
+        ),
+    )
+
+
+async def _resolve_department(
+    db: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    name: str,
+):
+    from app.models.organization import Department
+    from sqlalchemy import select
+
+    rows = (await db.execute(
+        select(Department).where(
+            Department.tenant_id == tenant_id,
+            Department.is_active.is_(True),
+        )
+    )).scalars().all()
+
+    target = name.strip().lower()
+    for d in rows:
+        if d.name.strip().lower() == target:
+            return d
+    # Fuzzy: Legal & Compliance vs "Legal" passed by override
+    for d in rows:
+        if target and target in d.name.strip().lower():
+            return d
+    return None
+
+
+def _looks_legal(payload: dict | None, goal: str | None) -> bool:
+    """Return True when the draft text contains a legal/compliance token.
+
+    Cheap deterministic heuristic; no LLM call. Drives the
+    risky/legal -> Legal & Compliance routing rule per the brief.
+    """
+    haystack = (goal or "")
+    if isinstance(payload, dict):
+        # Safe fields to scan -- avoid raw_extract / source_url leakage.
+        for k in (
+            "fit_rationale", "outreach_draft_local",
+            "claims_to_verify", "risks_to_verify", "next_tasks",
+            "missing_skills", "objections",
+        ):
+            v = payload.get(k)
+            if isinstance(v, str):
+                haystack += " " + v
+            elif isinstance(v, list):
+                for item in v:
+                    if isinstance(item, str):
+                        haystack += " " + item
+    haystack_l = haystack.lower()
+    return any(tok in haystack_l for tok in _LEGAL_FLAG_TOKENS)
+
+
+@router.post("/from-draft", status_code=201)
+async def post_from_draft(
+    body: FromDraftRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Promote an enriched (and ideally QE-reviewed) draft to a Workstream.
+
+    NEVER triggers an external action. The workstream is a LOCAL plan
+    -- the operator drives any subsequent send / submit / apply
+    manually after reviewing the next-step text.
+    """
+    from app.models.form_draft import FormDraft
+    from app.models.research import ResearchDraft
+    from sqlalchemy import select
+
+    kind = (body.draft_kind or "").lower().strip()
+    if kind not in ("career", "content", "form"):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "unknown_draft_kind", "kind": kind},
+        )
+
+    # Load draft (tenant + user-scoped)
+    draft_obj: ResearchDraft | FormDraft | None = None
+    if kind in ("career", "content"):
+        draft_obj = (await db.execute(
+            select(ResearchDraft).where(
+                ResearchDraft.id == body.draft_ref,
+                ResearchDraft.tenant_id == user.tenant_id,
+                ResearchDraft.user_id == user.id,
+                ResearchDraft.kind == kind,
+            )
+        )).scalar_one_or_none()
+    else:
+        draft_obj = (await db.execute(
+            select(FormDraft).where(
+                FormDraft.id == body.draft_ref,
+                FormDraft.tenant_id == user.tenant_id,
+                FormDraft.user_id == user.id,
+            )
+        )).scalar_one_or_none()
+    if draft_obj is None:
+        raise HTTPException(status_code=404, detail="draft_not_found")
+
+    # Department routing
+    if body.department_override:
+        dept_name = body.department_override
+    else:
+        payload = (
+            getattr(draft_obj, "structured_payload", None)
+            or {}
+        ) if not isinstance(draft_obj, FormDraft) else None
+        if _looks_legal(payload, draft_obj.goal):
+            dept_name = "Legal & Compliance"
+        else:
+            dept_name = _DRAFT_KIND_TO_DEPARTMENT_NAME[kind]
+
+    dept = await _resolve_department(
+        db, tenant_id=user.tenant_id, name=dept_name,
+    )
+    if dept is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "department_not_seeded",
+                "department_name": dept_name,
+            },
+        )
+
+    # Goal: prefer body.goal, else draft.goal, else fallback string.
+    goal = (body.goal or "").strip() or (draft_obj.goal or "").strip()
+    if not goal:
+        goal = f"Plan next steps for {kind} draft {draft_obj.id}"
+    if len(goal) > 500:
+        goal = goal[:500]
+
+    # Build initial_context with deterministic next-step hints.
+    next_step_text: str | None = None
+    initial_context: dict = {
+        "draft_kind": kind,
+        "draft_ref": str(draft_obj.id),
+        "department_routed_by": (
+            "override" if body.department_override
+            else ("legal_flag" if dept_name == "Legal & Compliance"
+                  else "kind_default")
+        ),
+    }
+    if isinstance(draft_obj, ResearchDraft):
+        sp = draft_obj.structured_payload or {}
+        initial_context["llm_pending"] = bool(sp.get("_llm_pending"))
+        initial_context["llm_failed"] = bool(sp.get("_llm_failed"))
+        if sp.get("next_tasks"):
+            initial_context["seeded_next_tasks"] = list(sp.get("next_tasks") or [])[:5]
+            next_step_text = (initial_context["seeded_next_tasks"][0] or "")[:500] or None
+        elif sp.get("_llm_pending"):
+            next_step_text = "Run /enrich on this draft before promoting next steps."
+    else:
+        # FormDraft: count blocked + needs_review fields for the next-step.
+        # Fields are loaded by the caller -- if not, refresh.
+        try:
+            await db.refresh(draft_obj, attribute_names=["fields"])
+        except Exception:
+            pass
+        all_fields = list(draft_obj.fields or [])
+        blocked = [
+            f for f in all_fields
+            if f.field_type in ("blocked_payment", "blocked_sensitive")
+        ]
+        needs = [f for f in all_fields if f.needs_review]
+        initial_context["form_field_count"] = len(all_fields)
+        initial_context["form_blocked_count"] = len(blocked)
+        initial_context["form_needs_review_count"] = len(needs)
+        if blocked:
+            next_step_text = (
+                f"{len(blocked)} sensitive/payment field(s) require manual fill; "
+                f"{len(needs)} other field(s) flagged for review."
+            )[:500]
+        elif needs:
+            next_step_text = (
+                f"{len(needs)} field(s) flagged for review before manual submission."
+            )[:500]
+        else:
+            next_step_text = "Form draft ready for operator review and manual submission."
+
+    svc = WorkstreamService(db)
+    ws = await svc.start(
+        StartParams(
+            tenant_id=user.tenant_id,
+            user_id=user.id,
+            department_id=dept.id,
+            goal=goal,
+            initial_context=initial_context,
+            next_step_text=next_step_text,
+            source_type=WorkstreamSourceType.DRAFT,
+            source_ref_id=draft_obj.id,
+        ),
+    )
+
+    # Audit row -- separate from the WorkstreamService's STARTED event,
+    # so the workstreams.from-draft action is filterable on its own.
+    from app.services.audit import AuditService
+    await AuditService(db).log_decision(
+        tenant_id=user.tenant_id,
+        actor_id=user.id,
+        actor_type="USER",
+        action_type="workstream.from_draft",
+        action_params={
+            "workstream_id": str(ws.id),
+            "draft_kind": kind,
+            "draft_ref": str(draft_obj.id),
+            "department": dept.name,
+            "department_routed_by": initial_context["department_routed_by"],
+        },
+        result="ALLOWED",
+        risk_level="LOW",
+        governance_tier=1,
+    )
+    await db.commit()
+    return {"success": True, "data": _serialize_workstream(ws)}
+
+
 @router.get("/{workstream_id}")
 async def get_workstream(
     workstream_id: uuid.UUID,

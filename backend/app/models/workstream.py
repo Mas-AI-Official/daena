@@ -96,6 +96,11 @@ class WorkstreamSourceType(str, Enum):
     COMPANY_MODE = "company_mode"
     MANUAL = "manual"
     DEV_DEMO = "dev_demo"
+    # Sprint-12 PR-4 (2026-05-05): operator promoted a draft to a
+    # workstream. source_ref_id holds the ResearchDraft.id /
+    # FormDraft.id; context.draft_kind holds "career" / "content" /
+    # "form".
+    DRAFT = "draft"
 
 
 class Workstream(Base, TenantMixin, TimestampMixin, SoftDeleteMixin):
