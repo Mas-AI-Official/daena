@@ -55,6 +55,7 @@ import {
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
 import { useResilientSSE, type SSEStatus } from '@/lib/sse'
+import { AutonomyMissionControl } from '@/components/common/AutonomyMissionControl'
 
 type WorkstreamStatus =
   | 'RUNNING'
@@ -1501,6 +1502,12 @@ export default function WorkstreamsPage() {
           redirect it mid-flight.
         </p>
       </div>
+
+      {/* Sprint-13 PR-1: Business Autonomy Mission Control. The 5-state
+          meta-control over what classes of action Daena is allowed to
+          take autonomously. Mounted ABOVE Drafts so the operator sees
+          the policy before they see what Daena did under it. */}
+      <AutonomyMissionControl />
 
       {/* Sprint-11 PR-2: Drafts lane. Local-only research drafts live
           alongside the live workstream feed. No external action fires

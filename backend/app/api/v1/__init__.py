@@ -16,6 +16,7 @@ from app.api.v1 import (
     analytics,
     api_keys,
     auth,
+    autonomy_mode,
     autopilot,
     connections_v2,
     benchmark,
@@ -256,6 +257,15 @@ router.include_router(
     system_self_diagnostic.router,
     prefix="/system",
     tags=["system-self-diagnostic"],
+)
+# Sprint-13 PR-1 (2026-05-06): Business Autonomy Mission Control.
+# GET/PUT /system/autonomy-mode -- 5-state operator-facing meta-control
+# over what classes of action Daena is allowed to take autonomously.
+# Persisted as JSON file (gitignored). Never executes any action.
+router.include_router(
+    autonomy_mode.router,
+    prefix="/system",
+    tags=["system-autonomy"],
 )
 router.include_router(voice_ws.router, tags=["voice-websocket"])
 # Sprint-12 PR-5 (2026-05-05): VP work chat commands. Natural-English
