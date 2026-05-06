@@ -215,16 +215,55 @@ export function GovernanceApprovalsPage() {
     // captured by the upstream send-approval creator (To, Subject,
     // snippet). The modal renders it inside the irrevocability
     // banner so the operator sees what is about to leave Gmail.
+    //
+    // Sprint-16 PR-5: ALSO read action_params.draft_snapshot (the
+    // canonical Sprint-16 contract field). Either shape is accepted
+    // for backward-compat with the older draft_preview-only path.
+    // The snapshot hash is extracted from draft_snapshot only --
+    // draft_preview never carries it.
     const draftPreviewRaw = params['draft_preview'] as
       | { to?: unknown; subject?: unknown; snippet?: unknown }
       | undefined
-    const draft_preview = draftPreviewRaw
-      ? {
-          to: typeof draftPreviewRaw.to === 'string' ? draftPreviewRaw.to : null,
-          subject: typeof draftPreviewRaw.subject === 'string' ? draftPreviewRaw.subject : null,
-          snippet: typeof draftPreviewRaw.snippet === 'string' ? draftPreviewRaw.snippet : null,
+    const draftSnapshotRaw = params['draft_snapshot'] as
+      | {
+          to?: unknown
+          subject?: unknown
+          body_snippet?: unknown
+          captured_at?: unknown
         }
+      | undefined
+    const draftSnapshotHash = typeof params['draft_snapshot_hash'] === 'string'
+      ? (params['draft_snapshot_hash'] as string)
       : null
+
+    const draft_preview =
+      draftPreviewRaw || draftSnapshotRaw
+        ? {
+            to:
+              typeof draftPreviewRaw?.to === 'string'
+                ? draftPreviewRaw.to
+                : typeof draftSnapshotRaw?.to === 'string'
+                ? draftSnapshotRaw.to
+                : null,
+            subject:
+              typeof draftPreviewRaw?.subject === 'string'
+                ? draftPreviewRaw.subject
+                : typeof draftSnapshotRaw?.subject === 'string'
+                ? draftSnapshotRaw.subject
+                : null,
+            snippet:
+              typeof draftPreviewRaw?.snippet === 'string'
+                ? draftPreviewRaw.snippet
+                : typeof draftSnapshotRaw?.body_snippet === 'string'
+                ? draftSnapshotRaw.body_snippet
+                : null,
+            snapshot_captured_at:
+              typeof draftSnapshotRaw?.captured_at === 'string'
+                ? draftSnapshotRaw.captured_at
+                : null,
+            snapshot_hash: draftSnapshotHash,
+          }
+        : null
     setPhase3Details({
       approval_id: approval.id,
       action_type: approval.action_type as Phase3ToolId,

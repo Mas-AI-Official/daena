@@ -316,6 +316,97 @@ function AuditDetail({ entry }: { entry: AuditEntryResponse }) {
         </div>
       )}
 
+      {/* Sprint-16 PR-5: Phase 3 controlled-execution panel.
+          Renders the snapshot hashes, owner_email, and other
+          send-time integrity proofs for any row whose action_type
+          is in CONTROLLED_TOOL_IDS. Hashes are truncated for
+          readability; the literal value is queryable via the row's
+          full action_params dump below. */}
+      {isControlledExecutionRow(entry.action_type) && (
+        <div
+          data-testid="audit-detail-phase3-panel"
+          className="space-y-2"
+        >
+          <p className="text-[10px] text-violet-300 uppercase tracking-wider font-semibold">
+            Phase 3 controlled execution
+          </p>
+          <div className="rounded-lg bg-violet-500/5 border border-violet-500/20 p-3 grid grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2 text-xs">
+            <div>
+              <span className="text-[10px] text-starlight-500">Tool</span>
+              <p className="font-mono text-violet-300">{entry.action_type}</p>
+            </div>
+            {typeof params.owner_email === 'string' && (
+              <div>
+                <span className="text-[10px] text-starlight-500">Owner</span>
+                <p className="font-mono text-starlight-200 truncate">
+                  {params.owner_email as string}
+                </p>
+              </div>
+            )}
+            {typeof params.audit_to === 'string' && params.audit_to && (
+              <div>
+                <span className="text-[10px] text-starlight-500">To</span>
+                <p className="font-mono text-starlight-200 truncate">
+                  {params.audit_to as string}
+                </p>
+              </div>
+            )}
+            {typeof params.audit_subject === 'string' && params.audit_subject && (
+              <div className="col-span-2 lg:col-span-3">
+                <span className="text-[10px] text-starlight-500">Subject</span>
+                <p className="text-starlight-200">
+                  {(params.audit_subject as string).slice(0, 120)}
+                  {(params.audit_subject as string).length > 120 ? '…' : ''}
+                </p>
+              </div>
+            )}
+            {typeof params.payload_hash === 'string' && (
+              <div>
+                <span className="text-[10px] text-starlight-500">Payload hash</span>
+                <p className="font-mono text-starlight-300 text-[10px]">
+                  {(params.payload_hash as string).slice(0, 16)}…
+                </p>
+              </div>
+            )}
+            {typeof params.approved_snapshot_hash === 'string' && (
+              <div>
+                <span className="text-[10px] text-starlight-500">Approved snapshot</span>
+                <p
+                  data-testid="audit-detail-approved-snapshot-hash"
+                  className="font-mono text-emerald-300 text-[10px]"
+                >
+                  {(params.approved_snapshot_hash as string).slice(0, 16)}…
+                </p>
+              </div>
+            )}
+            {typeof params.verified_snapshot_hash === 'string' && (
+              <div>
+                <span className="text-[10px] text-starlight-500">Verified snapshot</span>
+                <p
+                  data-testid="audit-detail-verified-snapshot-hash"
+                  className={
+                    'font-mono text-[10px] ' +
+                    (params.approved_snapshot_hash === params.verified_snapshot_hash
+                      ? 'text-emerald-300'
+                      : 'text-rose-300')
+                  }
+                >
+                  {(params.verified_snapshot_hash as string).slice(0, 16)}…
+                </p>
+              </div>
+            )}
+            {typeof params.refusal_code === 'string' && (
+              <div className="col-span-2 lg:col-span-3">
+                <span className="text-[10px] text-starlight-500">Refusal code</span>
+                <p className="font-mono text-rose-300 break-all">
+                  {params.refusal_code as string}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Context section */}
       <div className="flex items-center gap-6 flex-wrap text-xs">
         {entry.actor_type && (

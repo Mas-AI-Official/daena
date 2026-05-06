@@ -93,10 +93,17 @@ const TOOL_META: Record<Phase3ToolId, ToolMeta> = {
 // is responsible for snapshotting the draft's To/Subject/snippet
 // at approval-creation time and stashing them in
 // action_params.draft_preview.
+//
+// Sprint-16 PR-5: extended with snapshot_captured_at + snapshot_hash
+// so the operator can see WHEN the snapshot was taken and a hash
+// prefix that maps directly to the audit-log row written after
+// send. Both fields are optional; older approvals lack them.
 export interface Phase3DraftPreview {
   to: string | null
   subject: string | null
   snippet: string | null
+  snapshot_captured_at?: string | null
+  snapshot_hash?: string | null
 }
 
 export interface Phase3ApprovalDetails {
@@ -271,6 +278,36 @@ export function Phase3ApprovalModal({
                         className="text-starlight-200 italic"
                       >
                         {details.draft_preview.snippet}
+                      </dd>
+                    </div>
+                  )}
+                  {/* Sprint-16 PR-5: snapshot time + hash for audit
+                      cross-reference. Hash is truncated (16+8 chars)
+                      to fit, but the literal value is also rendered
+                      in the result row of the audit log so operator
+                      can match. */}
+                  {details.draft_preview.snapshot_captured_at && (
+                    <div className="flex gap-2">
+                      <dt className="font-bold text-starlight-300 min-w-[70px]">Captured:</dt>
+                      <dd
+                        data-testid="phase3-send-draft-captured-at"
+                        className="text-starlight-300 font-mono text-[10px]"
+                      >
+                        {details.draft_preview.snapshot_captured_at}
+                      </dd>
+                    </div>
+                  )}
+                  {details.draft_preview.snapshot_hash && (
+                    <div className="flex gap-2">
+                      <dt className="font-bold text-starlight-300 min-w-[70px]">Hash:</dt>
+                      <dd
+                        data-testid="phase3-send-draft-snapshot-hash"
+                        className="text-starlight-200 font-mono text-[10px]"
+                        title="Snapshot metadata hash (matches the audit row written after send)"
+                      >
+                        {details.draft_preview.snapshot_hash.length === 64
+                          ? `${details.draft_preview.snapshot_hash.slice(0, 16)}…${details.draft_preview.snapshot_hash.slice(-8)}`
+                          : details.draft_preview.snapshot_hash}
                       </dd>
                     </div>
                   )}
