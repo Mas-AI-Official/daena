@@ -27,7 +27,7 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +36,10 @@ from app.api.deps import CurrentUser, get_current_user, require_role
 from app.core.database import get_db
 from app.core.logging import get_logger
 from app.models.research import ResearchDraft
+from app.services.draft_enrichment import (
+    EnrichmentRefused,
+    enrich_research_draft,
+)
 from app.services.research_flow import (
     ALLOWED_KINDS,
     ResearchFlowError,
@@ -236,3 +240,85 @@ async def get_research_draft(
     if row is None:
         raise HTTPException(status_code=404, detail="draft_not_found")
     return ResearchDraftOut.from_model(row)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Sprint-12 PR-1: routed-brain enrichment
+# ──────────────────────────────────────────────────────────────────
+
+
+class EnrichRequest(BaseModel):
+    """Optional flags for an enrichment pass."""
+    allow_metered: bool = Field(
+        default=False,
+        description=(
+            "When True, allow the routed brain to be a metered API "
+            "provider. Default False -- local-first policy."
+        ),
+    )
+
+
+class EnrichResponse(BaseModel):
+    success: bool
+    draft_id: str
+    runtime_id: str
+    cost_class: str
+    fields_filled: int
+    needs_review: list[str]
+    llm_failed: bool
+    metadata: dict
+
+
+@router.post("/drafts/{draft_id}/enrich", response_model=EnrichResponse)
+async def post_enrich_research_draft(
+    draft_id: uuid.UUID,
+    request: Request,
+    body: EnrichRequest | None = None,
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> EnrichResponse:
+    """Run LLM enrichment on one ResearchDraft.
+
+    Reads ``/system/runtime-readiness`` first -- refuses with
+    ``no_ready_main_brain`` if no main brain is currently ready,
+    surfacing the readiness ``next_action`` so the operator knows
+    what to start. NEVER hardcodes a provider. NEVER sends, posts,
+    or otherwise externally acts on the draft.
+    """
+    row = (await db.execute(
+        select(ResearchDraft).where(
+            ResearchDraft.id == draft_id,
+            ResearchDraft.tenant_id == user.tenant_id,
+            ResearchDraft.user_id == user.id,
+        )
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="draft_not_found")
+
+    body = body or EnrichRequest()
+    registry = getattr(request.app.state, "model_registry", None)
+
+    try:
+        result = await enrich_research_draft(
+            db, row,
+            allow_metered=body.allow_metered,
+            registry=registry,
+            actor_id=user.id,
+        )
+    except EnrichmentRefused as exc:
+        await db.commit()  # persist the refusal audit row
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "next_action": exc.next_action},
+        )
+    await db.commit()
+    return EnrichResponse(
+        success=True,
+        draft_id=result.draft_id,
+        runtime_id=result.runtime_id,
+        cost_class=result.cost_class,
+        fields_filled=result.fields_filled,
+        needs_review=result.needs_review,
+        llm_failed=result.llm_failed,
+        metadata=result.metadata,
+    )
