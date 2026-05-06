@@ -18,6 +18,7 @@ from app.api.v1 import (
     auth,
     autonomy_mode,
     autopilot,
+    controlled_execution,
     connections_v2,
     benchmark,
     billing,
@@ -266,6 +267,16 @@ router.include_router(
     autonomy_mode.router,
     prefix="/system",
     tags=["system-autonomy"],
+)
+# Sprint-14 PR-1 (2026-05-06): Controlled Execution Dispatch.
+# POST /api/v1/integrations/controlled-execution/dispatch is the
+# SINGLE Phase 3 write surface. Every external action goes through
+# this endpoint (or it does not happen at all). Each PR after PR-1
+# registers exactly ONE WRITE_TOOLS entry + handler pair.
+router.include_router(
+    controlled_execution.router,
+    prefix="/integrations/controlled-execution",
+    tags=["controlled-execution"],
 )
 router.include_router(voice_ws.router, tags=["voice-websocket"])
 # Sprint-12 PR-5 (2026-05-05): VP work chat commands. Natural-English
