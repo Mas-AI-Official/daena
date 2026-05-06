@@ -206,6 +206,66 @@ class GmailClient:
             "status": "sent",
         }
 
+    async def get_draft(self, draft_id: str) -> dict[str, Any]:
+        """Fetch a draft's metadata + headers by id.
+
+        Sprint-15 PR-2 (2026-05-06): the controlled
+        ``gmail.send_existing_draft`` handler reads the draft right
+        before send so the second-approval modal can show what is
+        actually queued, and so the audit row records the recipient
+        / subject Daena is about to send to.
+
+        Returns a dict with at least ``id``, ``message`` (with
+        nested ``payload.headers``). Headers we care about:
+        ``To``, ``Subject``, ``From``. Never returns the access
+        token. Caller treats a missing field as a failed read.
+        """
+        self._check_token()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"{GMAIL_API_BASE}/drafts/{draft_id}",
+                headers=self._headers,
+                params={"format": "metadata"},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def send_existing_draft(self, draft_id: str) -> dict[str, Any]:
+        """Send an EXISTING draft by id.
+
+        Sprint-15 PR-2 (2026-05-06): the first controlled external
+        send. Refuses ANY arbitrary recipient / subject / body --
+        the only input is the draft_id, which must be a draft
+        already created by ``gmail.create_draft`` and approved by
+        the operator.
+
+        Calls Gmail's ``POST /drafts/send`` with body
+        ``{"id": draft_id}``. Gmail looks up the draft contents
+        server-side; nothing flows from Daena except the id and the
+        bearer token.
+
+        Returns ``{message_id, thread_id, status="sent"}``.
+        """
+        self._check_token()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{GMAIL_API_BASE}/drafts/send",
+                headers=self._headers,
+                json={"id": draft_id},
+            )
+            resp.raise_for_status()
+            result = resp.json()
+
+        logger.info(
+            "gmail.draft_sent", draft_id=draft_id,
+            message_id=result.get("id"),
+        )
+        return {
+            "message_id": result.get("id"),
+            "thread_id": result.get("threadId"),
+            "status": "sent",
+        }
+
     async def create_draft(
         self,
         to: str,

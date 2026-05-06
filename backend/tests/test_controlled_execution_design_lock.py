@@ -41,49 +41,67 @@ _LOCKED_FIELDS = (
 
 
 class TestPhase3StaysOff:
-    async def test_write_tools_is_sprint14_set(self):
-        """Sprint-14 unlocks exactly THREE write tools, all
-        draft / proposal / tentative variants. Adding any tool
-        beyond this set requires touching this test on purpose --
-        the operator-visible signal that Phase 3 is being widened."""
+    async def test_write_tools_is_sprint15_set(self):
+        """Sprint-15 unlocks exactly FOUR write tools.
+
+        Renamed from test_write_tools_is_sprint14_set on 2026-05-06
+        when gmail.send_existing_draft landed -- the deliberate
+        operator-visible signal that Phase 3 is being widened by
+        ONE narrow send tool (specific draft id, no arbitrary
+        to/subject/body)."""
         from app.services.controlled_execution_design import WRITE_TOOLS
 
-        sprint14_unlock = frozenset({
+        sprint15_unlock = frozenset({
             "gmail.create_draft",
+            "gmail.send_existing_draft",
             "calendar.create_tentative_event_without_invites",
             "local.file_change_proposal",
         })
-        assert WRITE_TOOLS == sprint14_unlock, (
-            f"WRITE_TOOLS drift -- expected exactly the Sprint-14 "
+        assert WRITE_TOOLS == sprint15_unlock, (
+            f"WRITE_TOOLS drift -- expected exactly the Sprint-15 "
             f"unlock set, got {sorted(WRITE_TOOLS)}. If you are "
             f"unlocking a new tool, update this test deliberately "
             f"in the SAME PR that adds the tool, not in a follow-up."
         )
 
-    async def test_no_send_tool_in_allowlist(self):
-        """Sprint-14 explicitly does NOT unlock send/submit/post/
-        apply variants. PR-15 will unlock send AFTER trust-ladder
-        and approval-modal flows have run end-to-end."""
+    async def test_no_broad_send_or_submit_or_apply_in_allowlist(self):
+        """Sprint-15 unlocks gmail.send_existing_draft -- a NARROW
+        send (one specific draft_id, no arbitrary fields). It does
+        NOT unlock generic send, submit, post, apply, or pay tools.
+
+        The check below tightens the Sprint-14 substring rule:
+          * the tool MUST NOT END with ``.send`` / ``.submit`` /
+            ``.post`` / ``.apply`` / ``.pay`` (those would be broad
+            verbs)
+          * the tool MUST NOT contain ``.send_email`` (would be a
+            generic send-mail with arbitrary recipients)
+          * gmail.send_existing_draft is explicitly allowed
+            because it is bound to a draft created by
+            gmail.create_draft and refuses arbitrary fields
+        """
         from app.services.controlled_execution_design import WRITE_TOOLS
+
+        narrow_send_allowlist = {"gmail.send_existing_draft"}
 
         for tool_id in WRITE_TOOLS:
             lowered = tool_id.lower()
-            assert ".send" not in lowered, (
-                f"send tool {tool_id!r} found in WRITE_TOOLS; "
-                f"Sprint-14 is draft/tentative/proposal only."
+            for forbidden_suffix in (".send", ".submit", ".post", ".apply", ".pay"):
+                assert not lowered.endswith(forbidden_suffix), (
+                    f"broad {forbidden_suffix!r} verb tool {tool_id!r} "
+                    f"in WRITE_TOOLS; Sprint-15 unlocks only the "
+                    f"narrow send_existing_draft."
+                )
+            assert ".send_email" not in lowered, (
+                f"generic send_email tool {tool_id!r} in WRITE_TOOLS; "
+                f"only gmail.send_existing_draft is narrow enough."
             )
-            assert ".submit" not in lowered, (
-                f"submit tool {tool_id!r} found in WRITE_TOOLS"
-            )
-            assert ".post" not in lowered, (
-                f"post tool {tool_id!r} found in WRITE_TOOLS"
-            )
-            assert ".apply" not in lowered, (
-                f"apply tool {tool_id!r} found in WRITE_TOOLS"
-            )
-            assert ".pay" not in lowered, (
-                f"pay tool {tool_id!r} found in WRITE_TOOLS"
-            )
+            if ".send" in lowered:
+                assert tool_id in narrow_send_allowlist, (
+                    f"send-shaped tool {tool_id!r} not on narrow "
+                    f"allowlist {sorted(narrow_send_allowlist)}; if "
+                    f"you are unlocking a new send tool, update this "
+                    f"test deliberately in the SAME PR."
+                )
 
     async def test_readonly_env_default_unchanged(self):
         """The Phase 3 readonly env defaults to true. The PR does

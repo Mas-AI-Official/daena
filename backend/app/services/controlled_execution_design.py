@@ -59,19 +59,23 @@ from typing import Final, Literal
 #      allowlist for the operator's tenant
 #   2. A founder-approved policy says ALLOW for this tool
 #   3. A negative test proves a missing field is refused
-# Sprint-14 unlocks the first three (gmail.create_draft, calendar
+# Sprint-14 unlocked the first three (gmail.create_draft, calendar
 # tentative event without invites, local file change proposal).
-# All three are draft / proposal / tentative variants -- none of
-# them sends, posts, or applies on the back of approval. PR-15
-# unlocks the actual send variants.
+# Sprint-15 (2026-05-06) adds the FIRST controlled external send:
+# gmail.send_existing_draft. It is a NARROW send -- accepts only a
+# draft_id created by gmail.create_draft, refuses arbitrary
+# to/subject/body. There is intentionally NO `gmail.send` or
+# `gmail.send_email` tool; broad sends remain blocked.
 WriteToolId = Literal[
     "gmail.create_draft",
+    "gmail.send_existing_draft",
     "calendar.create_tentative_event_without_invites",
     "local.file_change_proposal",
 ]
 
 WRITE_TOOLS: Final[frozenset[str]] = frozenset({
     "gmail.create_draft",
+    "gmail.send_existing_draft",
     "calendar.create_tentative_event_without_invites",
     "local.file_change_proposal",
 })

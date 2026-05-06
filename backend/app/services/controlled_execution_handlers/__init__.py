@@ -8,6 +8,9 @@ Sprint-14 ships:
   - calendar.create_tentative_event_without_invites      (PR-3)
   - local.file_change_proposal                           (PR-4)
 
+Sprint-15 adds:
+  - gmail.send_existing_draft                            (PR-2)
+
 Adding a new handler module here is the SAME action as adding the
 tool_id to ``controlled_execution_design.WRITE_TOOLS``. They must
 move in lockstep; the dispatcher's ``register_tool_handler`` refuses
@@ -21,4 +24,5 @@ from app.services.controlled_execution_handlers import (  # noqa: F401
     calendar_tentative_event,
     file_change_proposal,
     gmail_create_draft,
+    gmail_send_existing_draft,
 )
