@@ -28,6 +28,31 @@ import type { AuditEntryResponse, ApiResponse, RiskLevel } from '@/types/api'
 
 const REVIEWED_STORAGE_KEY = 'daena:auditReviewedIds'
 
+// Sprint-15 PR-4 (2026-05-06): Controlled Execution filter.
+// Mirrors the backend WRITE_TOOLS allowlist plus the dispatch
+// audit channel. When the filter is on, the audit page narrows to
+// rows whose action_type matches a controlled-execution shape.
+// MUST stay in lockstep with controlled_execution_design.WRITE_TOOLS;
+// the Sprint-15 fast-subset smoke verifies the tuples match.
+const CONTROLLED_TOOL_IDS = [
+  'gmail.create_draft',
+  'gmail.send_existing_draft',
+  'calendar.create_tentative_event_without_invites',
+  'local.file_change_proposal',
+] as const
+
+// Audit channel emitted by the dispatcher itself (refusal rows
+// carry this prefix).
+const CONTROLLED_AUDIT_PREFIX = 'controlled_execution.'
+
+function isControlledExecutionRow(action_type: string | null | undefined): boolean {
+  if (!action_type) return false
+  if (CONTROLLED_TOOL_IDS.includes(action_type as (typeof CONTROLLED_TOOL_IDS)[number])) {
+    return true
+  }
+  return action_type.startsWith(CONTROLLED_AUDIT_PREFIX)
+}
+
 interface AuditVerifyResponse {
   success: boolean
   data: {
@@ -445,6 +470,10 @@ export function GovernanceAuditPage() {
   // set, auto-implies action_type='plugin.skill_invocation' so the
   // operator doesn't have to combine two filters.
   const [filterPlugin, setFilterPlugin] = useState<string>('')
+  // Sprint-15 PR-4: narrow to controlled-execution rows only. Toggle
+  // sits next to the Filters button so the operator can flip on a
+  // single Phase-3 view without combining other filters.
+  const [filterControlledOnly, setFilterControlledOnly] = useState<boolean>(false)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -494,7 +523,7 @@ export function GovernanceAuditPage() {
   }, [entries])
 
   const hasActiveFilters = !!(
-    filterRisk || filterResult || filterAction || filterPlugin || dateFrom || dateTo
+    filterRisk || filterResult || filterAction || filterPlugin || filterControlledOnly || dateFrom || dateTo
   )
 
   const clearFilters = () => {
@@ -502,6 +531,7 @@ export function GovernanceAuditPage() {
     setFilterResult('')
     setFilterAction('')
     setFilterPlugin('')
+    setFilterControlledOnly(false)
     setDateFrom('')
     setDateTo('')
     setSearchQuery('')
@@ -583,6 +613,10 @@ export function GovernanceAuditPage() {
         const pid = (e.action_params as Record<string, unknown> | null)?.plugin_id
         if (pid !== filterPlugin) return false
       }
+      // Sprint-15 PR-4: controlled-execution-only filter.
+      if (filterControlledOnly && !isControlledExecutionRow(e.action_type)) {
+        return false
+      }
       // Date range
       if (dateFrom) {
         const entryDate = new Date(e.created_at).toISOString().slice(0, 10)
@@ -594,7 +628,7 @@ export function GovernanceAuditPage() {
       }
       return true
     })
-  }, [entries, searchQuery, filterRisk, filterResult, filterAction, filterPlugin, dateFrom, dateTo])
+  }, [entries, searchQuery, filterRisk, filterResult, filterAction, filterPlugin, filterControlledOnly, dateFrom, dateTo])
 
   return (
     <div className="h-full overflow-y-auto">
@@ -683,6 +717,27 @@ export function GovernanceAuditPage() {
                 className="w-full glass-input pl-9 pr-4 py-2.5 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-500 focus:outline-none focus:ring-1 focus:ring-primary-500/40"
               />
             </div>
+            {/* Sprint-15 PR-4: Controlled-execution-only toggle.
+                One-click filter to the Phase 3 audit channel. Sits
+                next to the Filters button so the operator never has
+                to dig into the dropdown. */}
+            <button
+              data-testid="audit-filter-controlled-only"
+              onClick={() => setFilterControlledOnly(v => !v)}
+              title={
+                filterControlledOnly
+                  ? 'Showing controlled-execution rows only. Click to clear.'
+                  : 'Narrow to controlled-execution rows (Phase 3 writes).'
+              }
+              className={`flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer ${
+                filterControlledOnly
+                  ? 'bg-violet-500/15 text-violet-300 border border-violet-500/30'
+                  : 'glass-input text-starlight-400 hover:text-starlight-200'
+              }`}
+            >
+              <Shield size={14} />
+              Phase 3 only
+            </button>
             {/* Toggle filters button */}
             <button
               onClick={() => setFiltersOpen(!filtersOpen)}
@@ -696,7 +751,7 @@ export function GovernanceAuditPage() {
               Filters
               {hasActiveFilters && (
                 <span className="ml-1 w-4 h-4 rounded-full bg-primary-500 text-[10px] text-white flex items-center justify-center font-medium">
-                  {[filterRisk, filterResult, filterAction, filterPlugin, dateFrom, dateTo].filter(Boolean).length}
+                  {[filterRisk, filterResult, filterAction, filterPlugin, filterControlledOnly, dateFrom, dateTo].filter(Boolean).length}
                 </span>
               )}
             </button>
