@@ -267,15 +267,33 @@ export default function OpportunityInboxPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <Badge color={STATUS_COLOR[row.status] || 'gray'}>
-                          {row.status}
-                        </Badge>
+                        {(row.status === 'queued' || row.status === 'approved') ? (
+                          <Link
+                            to="/governance/approvals"
+                            className="inline-block"
+                            title="Open governance approvals to act on this opportunity"
+                          >
+                            <Badge color={STATUS_COLOR[row.status] || 'gray'}>
+                              {row.status}
+                            </Badge>
+                          </Link>
+                        ) : (
+                          <Badge color={STATUS_COLOR[row.status] || 'gray'}>
+                            {row.status}
+                          </Badge>
+                        )}
                         <Badge color="gray">{TYPE_LABEL[row.type] || row.type}</Badge>
                         {row.assigned_department && (
-                          <Badge color="gold">
-                            <GitBranch className="w-3 h-3 inline mr-1" />
-                            {row.assigned_department}
-                          </Badge>
+                          <Link
+                            to="/workstreams"
+                            className="inline-block"
+                            title={`See ${row.assigned_department} workstreams`}
+                          >
+                            <Badge color="gold">
+                              <GitBranch className="w-3 h-3 inline mr-1" />
+                              {row.assigned_department}
+                            </Badge>
+                          </Link>
                         )}
                         <span className="text-xs text-slate-500">
                           score {row.score}
