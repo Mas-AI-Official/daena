@@ -1,3 +1,4 @@
 .daena-port
 .autonomy_mode.json
 .llama-server.pid
+.file_change_proposals/

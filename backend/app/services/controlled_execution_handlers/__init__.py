@@ -19,5 +19,6 @@ from __future__ import annotations
 # Side-effect imports register handlers at load time.
 from app.services.controlled_execution_handlers import (  # noqa: F401
     calendar_tentative_event,
+    file_change_proposal,
     gmail_create_draft,
 )
