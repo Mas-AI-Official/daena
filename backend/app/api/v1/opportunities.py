@@ -86,6 +86,42 @@ def _row_to_response(o: Opportunity) -> OpportunityRow:
     )
 
 
+# ── Sprint-20 PR-4: Send rate limit visibility ───────────────────────
+# Mounted BEFORE /{opportunity_id} so FastAPI's route matcher does not
+# treat 'send-rate-limit' as a UUID-shaped path parameter.
+
+
+class SendRateLimitResponse(BaseModel):
+    today_utc: str
+    used: int
+    cap: int
+    remaining: int
+
+
+@router.get("/send-rate-limit", response_model=SendRateLimitResponse)
+async def send_rate_limit(
+    user: CurrentUser = Depends(get_current_user),
+) -> SendRateLimitResponse:
+    """How many outreach sends remain today for this tenant.
+
+    Pure read of the persistent counter. NEVER mutates. Surfaced on
+    the OpportunityInboxPage so the operator never has to guess
+    whether a send will be rate-limited before they queue it.
+    """
+    from datetime import UTC, datetime
+
+    from app.services.outreach.send_rate_limit import (
+        get_cap_per_day, get_usage,
+    )
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    used = get_usage(user.tenant_id, day=today)
+    cap = get_cap_per_day()
+    return SendRateLimitResponse(
+        today_utc=today, used=used, cap=cap,
+        remaining=max(cap - used, 0),
+    )
+
+
 @router.get("/", response_model=list[OpportunityRow])
 async def list_opportunities(
     status: str | None = Query(None),

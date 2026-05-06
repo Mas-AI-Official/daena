@@ -67,6 +67,21 @@ export default function OpportunityInboxPage() {
   const [running, setRunning] = useState(false)
   const [lastRunSummary, setLastRunSummary] = useState<string | null>(null)
   const { summary: activation } = useGoogleActivationSummary()
+  const [rateLimit, setRateLimit] = useState<
+    { used: number; cap: number; remaining: number } | null
+  >(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api.get<{ used: number; cap: number; remaining: number; today_utc: string }>(
+      '/api/v1/opportunities/send-rate-limit',
+    ).then((r) => {
+      if (!cancelled) setRateLimit(r.data)
+    }).catch(() => {
+      if (!cancelled) setRateLimit(null)
+    })
+    return () => { cancelled = true }
+  }, [reloadCount])
 
   useEffect(() => {
     let cancelled = false
@@ -142,7 +157,20 @@ export default function OpportunityInboxPage() {
               post / pay are NOT reachable from this page.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-3">
+            {rateLimit && (
+              <div
+                data-testid="opp-send-rate-limit"
+                className={
+                  rateLimit.remaining > 0
+                    ? 'text-xs text-slate-400 border border-slate-700 px-2 py-1 rounded'
+                    : 'text-xs text-amber-300 border border-amber-700/50 px-2 py-1 rounded bg-amber-900/10'
+                }
+                title="Outreach sends remaining today (UTC). Resets at 00:00 UTC."
+              >
+                {rateLimit.remaining}/{rateLimit.cap} sends left today
+              </div>
+            )}
             <Button
               variant="secondary"
               size="sm"
@@ -243,6 +271,12 @@ export default function OpportunityInboxPage() {
                           {row.status}
                         </Badge>
                         <Badge color="gray">{TYPE_LABEL[row.type] || row.type}</Badge>
+                        {row.assigned_department && (
+                          <Badge color="gold">
+                            <GitBranch className="w-3 h-3 inline mr-1" />
+                            {row.assigned_department}
+                          </Badge>
+                        )}
                         <span className="text-xs text-slate-500">
                           score {row.score}
                         </span>
