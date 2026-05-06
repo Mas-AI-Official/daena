@@ -30,12 +30,23 @@
 
 import {
   CheckCircle2, Circle, ExternalLink, KeyRound, Mail,
-  ShieldAlert, User,
+  RefreshCw, ShieldAlert, User,
 } from 'lucide-react'
 
 import {
   type GoogleAccountStatus, useGoogleSetupStatus,
 } from '@/hooks/useGoogleSetupStatus'
+
+
+// Sprint-15 PR-1: per-provider granularity for the two pinned accounts.
+// The backend payload returns `connected_services` as a list of slugs;
+// the wizard renders one pill per Phase-3-relevant provider so the
+// operator sees exactly which Google scopes are present.
+const PHASE3_PROVIDERS = [
+  { slug: 'gmail',            label: 'Gmail' },
+  { slug: 'google-calendar',  label: 'Calendar' },
+  { slug: 'google-drive',     label: 'Drive' },
+] as const
 
 
 function StepIcon({ done }: { done: boolean }) {
@@ -45,37 +56,69 @@ function StepIcon({ done }: { done: boolean }) {
 }
 
 
+function ProviderPills({
+  services, role,
+}: { services: string[]; role: 'founder' | 'agent' }) {
+  return (
+    <div
+      data-testid={`google-${role}-provider-pills`}
+      className="mt-1 flex flex-wrap gap-1"
+    >
+      {PHASE3_PROVIDERS.map(p => {
+        const present = services.includes(p.slug)
+        return (
+          <span
+            key={p.slug}
+            data-testid={`google-${role}-provider-${p.slug}-${present ? 'on' : 'off'}`}
+            className={
+              present
+                ? 'rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300'
+                : 'rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-starlight-400'
+            }
+          >
+            {p.label}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+
 function AccountStatusLine({
   account, role,
 }: { account: GoogleAccountStatus; role: 'founder' | 'agent' }) {
   if (account.connected) {
-    const services = account.connected_services.length > 0
-      ? account.connected_services.join(' + ')
-      : '(none yet)'
     return (
-      <p
-        data-testid={`google-${role}-status-connected`}
-        className="mt-1 text-[11px] text-emerald-300"
-      >
-        Connected. Services: {services}.
-      </p>
+      <>
+        <p
+          data-testid={`google-${role}-status-connected`}
+          className="mt-1 text-[11px] text-emerald-300"
+        >
+          Connected.
+        </p>
+        <ProviderPills services={account.connected_services} role={role} />
+      </>
     )
   }
   return (
-    <p
-      data-testid={`google-${role}-status-todo`}
-      className="mt-1 text-[11px] text-amber-300"
-    >
-      Not connected yet. Open the Apps tab below and click Connect on
-      Gmail (or Drive / Calendar). Sign in as{' '}
-      <code className="text-starlight-200">{account.email}</code>.
-    </p>
+    <>
+      <p
+        data-testid={`google-${role}-status-todo`}
+        className="mt-1 text-[11px] text-amber-300"
+      >
+        Not connected yet. Open the Apps tab below and click Connect on
+        Gmail (or Drive / Calendar). Sign in as{' '}
+        <code className="text-starlight-200">{account.email}</code>.
+      </p>
+      <ProviderPills services={[]} role={role} />
+    </>
   )
 }
 
 
 export default function GoogleAccountSetupGuide() {
-  const { status, loading, error } = useGoogleSetupStatus()
+  const { status, loading, error, refresh } = useGoogleSetupStatus()
 
   return (
     <section
@@ -112,14 +155,27 @@ export default function GoogleAccountSetupGuide() {
             <KeyRound size={12} className="text-amber-200" />
             Live setup checklist
           </h4>
-          {status?.ready && (
-            <span
-              data-testid="google-setup-ready-pill"
-              className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300"
+          <div className="flex items-center gap-2">
+            {status?.ready && (
+              <span
+                data-testid="google-setup-ready-pill"
+                className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300"
+              >
+                Ready
+              </span>
+            )}
+            <button
+              type="button"
+              data-testid="google-setup-refresh"
+              onClick={() => { void refresh() }}
+              disabled={loading}
+              className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-starlight-300 hover:bg-white/10 disabled:opacity-50"
+              title="Re-fetch Google setup status"
             >
-              Ready
-            </span>
-          )}
+              <RefreshCw size={10} className={loading ? 'animate-spin' : ''} />
+              Refresh status
+            </button>
+          </div>
         </div>
         {loading && (
           <p className="mt-2 text-[11px] text-starlight-400">
@@ -247,6 +303,28 @@ export default function GoogleAccountSetupGuide() {
             trail is unambiguous. Never used to read your personal mail.
           </p>
         </div>
+      </div>
+
+      {/* Sprint-15 PR-1: Phase-3 refusal hint. When a controlled write
+          fails with `oauth_not_connected:google`, the operator returns
+          here. We surface the exact refusal code so the audit trail
+          maps to a visible action. */}
+      <div
+        data-testid="google-phase3-refusal-hint"
+        className="mt-4 rounded-md border border-rose-500/20 bg-rose-500/5 p-3 text-[11px] text-starlight-300"
+      >
+        <p className="font-semibold text-rose-300">
+          Phase 3 controlled writes refuse without this connection
+        </p>
+        <p className="mt-1">
+          Any approved <code className="text-starlight-200">gmail.create_draft</code>,{' '}
+          <code className="text-starlight-200">gmail.send_existing_draft</code>, or{' '}
+          <code className="text-starlight-200">calendar.create_tentative_event_without_invites</code>{' '}
+          dispatch refuses with{' '}
+          <code className="text-rose-300">oauth_not_connected:google</code>{' '}
+          if the matching account above is not green. Daena never silently
+          fails — the dispatch refuses BEFORE any HTTP call to Google.
+        </p>
       </div>
 
       <p className="mt-4 text-[10px] text-starlight-400">
