@@ -8,5 +8,6 @@
 .trust_policy.json
 .routine_autonomy.json
 .opportunity_seed.json
+.opportunity_sources.json
 .send_rate_limit.json
 .recipient_suppression.json

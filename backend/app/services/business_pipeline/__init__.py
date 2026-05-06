@@ -25,6 +25,14 @@ from app.services.business_pipeline.orchestrator import (
 # Side-effect import: registers the opportunity_discovery handler
 # with routine_autonomy on first import.
 from app.services.business_pipeline import routine_handler  # noqa: F401
+# Sprint-20 PR-2: register public source adapters declared in
+# backend/.opportunity_sources.json (gitignored). Missing config file
+# is a no-op -- manual_seed remains the only source until the operator
+# opts in.
+from app.services.business_pipeline.sources import (
+    register_public_sources_from_config,
+)
+register_public_sources_from_config()
 from app.models.business import OPPORTUNITY_TYPES
 
 __all__ = [
@@ -33,6 +41,7 @@ __all__ = [
     "DEFAULT_TOP_N",
     "register_source",
     "registered_sources",
+    "register_public_sources_from_config",
     "run_discovery_loop",
     "score_opportunity",
     "SOURCE_REGISTRY",

@@ -31,6 +31,7 @@ from app.models.business import Opportunity
 from app.services.business_pipeline.discoverer import (
     DiscoveredOpportunity,
     SOURCE_REGISTRY,
+    call_source,
 )
 from app.services.business_pipeline.scorer import score_opportunity
 
@@ -83,12 +84,15 @@ async def run_discovery_loop(
         started_at=datetime.now(UTC).isoformat(),
     )
 
-    # Step 1: collect from sources
+    # Step 1: collect from sources. Sources may be sync or async --
+    # call_source resolves either. Source failures are isolated; one
+    # adapter blowing up never aborts the discovery cycle.
     collected: list[DiscoveredOpportunity] = []
     for name, fn in SOURCE_REGISTRY.items():
         result.sources_queried.append(name)
         try:
-            for op in fn():
+            output = await call_source(fn)
+            for op in output:
                 if isinstance(op, DiscoveredOpportunity):
                     collected.append(op)
         except Exception as exc:  # noqa: BLE001

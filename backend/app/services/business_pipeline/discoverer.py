@@ -19,11 +19,12 @@ Hard rules:
 
 from __future__ import annotations
 
+import inspect
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Awaitable, Callable, Iterable, Union
 
 from app.core.logging import get_logger
 from app.models.business import OPPORTUNITY_TYPES
@@ -55,8 +56,22 @@ class DiscoveredOpportunity:
 # ────────────────────────────────────────────────────────────────────
 
 
-SourceFn = Callable[[], Iterable[DiscoveredOpportunity]]
+SyncSourceFn = Callable[[], Iterable[DiscoveredOpportunity]]
+AsyncSourceFn = Callable[[], Awaitable[Iterable[DiscoveredOpportunity]]]
+SourceFn = Union[SyncSourceFn, AsyncSourceFn]
 SOURCE_REGISTRY: dict[str, SourceFn] = {}
+
+
+async def call_source(fn: SourceFn) -> Iterable[DiscoveredOpportunity]:
+    """Call a source fn and return its output. Handles both sync and
+    async sources transparently so the orchestrator never has to branch.
+    """
+    if inspect.iscoroutinefunction(fn):
+        return await fn()  # type: ignore[no-any-return]
+    out = fn()
+    if inspect.isawaitable(out):
+        return await out  # type: ignore[no-any-return]
+    return out
 
 
 def register_source(name: str, fn: SourceFn) -> None:
