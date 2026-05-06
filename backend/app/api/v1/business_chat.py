@@ -41,8 +41,18 @@ async def business_chat(
     db: AsyncSession = Depends(get_db),
 ) -> BusinessChatResponse:
     result = await parse_and_run(
-        body.text, db=db, tenant_id=user.tenant_id,
+        body.text, db=db, tenant_id=user.tenant_id, user_id=user.id,
     )
+    # Sprint-20 PR-7: explicit-id commands mutate state. Persist on
+    # success so the workstream / draft / approval row survives the
+    # request (the outer dependency injection rolls back on exception
+    # but does not auto-commit on success).
+    if result.matched and result.command in {
+        "create_workstream_from_opp_by_id",
+        "draft_outreach_for_opp_to",
+        "send_approved_draft_by_id",
+    }:
+        await db.commit()
     logger.info(
         "business.chat.command",
         matched=result.matched, command=result.command,
