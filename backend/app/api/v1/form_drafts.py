@@ -42,6 +42,10 @@ from app.services.draft_enrichment import (
     EnrichmentRefused,
     enrich_form_draft,
 )
+from app.services.draft_qe_review import (
+    QECouncilUnavailable,
+    run_draft_qe_review,
+)
 from app.services.form_draft_service import (
     archive_draft,
     create_form_draft_from_html,
@@ -461,6 +465,108 @@ async def post_enrich_form_draft(
         needs_review=result.needs_review,
         llm_failed=result.llm_failed,
         metadata=result.metadata,
+    )
+
+
+# ──────────────────────────────────────────────────────────────────
+# Sprint-12 PR-3: QE/Council review for FormDraft
+# ──────────────────────────────────────────────────────────────────
+
+
+class FormQEReviewRequest(BaseModel):
+    allow_metered: bool = Field(default=False)
+    allow_web_grounding: bool = Field(default=False)
+
+
+class FormReviewerOutputDTO(BaseModel):
+    slot: str
+    runtime_id: str
+    cost_class: str
+    findings: list[str]
+    objections: list[str]
+    missing_evidence: list[str]
+    risk_flags: list[str]
+    confidence: float
+    notes: str | None
+    failed: bool
+
+
+class FormQEReviewResponse(BaseModel):
+    success: bool
+    draft_id: str
+    draft_kind: str
+    mode: str
+    mode_reason: str
+    distinct_runtime_ids: list[str]
+    proposer_outputs: list[FormReviewerOutputDTO]
+    synthesizer_runtime_id: str | None
+    findings: list[str]
+    objections: list[str]
+    missing_evidence: list[str]
+    risk_flags: list[str]
+    confidence: float
+    next_action: str
+    warnings: list[str]
+
+
+@router.post("/{draft_id}/qe-review", response_model=FormQEReviewResponse)
+async def post_qe_review_form_draft(
+    draft_id: uuid.UUID,
+    request: Request,
+    body: FormQEReviewRequest | None = None,
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> FormQEReviewResponse:
+    """Run QE/Council review on a FormDraft.
+
+    Mode is reported HONESTLY (full / degraded / unavailable). NEVER
+    claims a 'full council' when only one runtime contributed.
+    """
+    draft = await _load_draft(db, draft_id, user)
+    body = body or FormQEReviewRequest()
+    registry = getattr(request.app.state, "model_registry", None)
+
+    try:
+        result = await run_draft_qe_review(
+            db, draft,
+            allow_metered=body.allow_metered,
+            allow_web_grounding=body.allow_web_grounding,
+            registry=registry,
+            actor_id=user.id,
+        )
+    except QECouncilUnavailable as exc:
+        await db.commit()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "next_action": exc.next_action},
+        )
+    await db.commit()
+    return FormQEReviewResponse(
+        success=True,
+        draft_id=result.draft_id,
+        draft_kind=result.draft_kind,
+        mode=result.mode,
+        mode_reason=result.mode_reason,
+        distinct_runtime_ids=result.distinct_runtime_ids,
+        proposer_outputs=[
+            FormReviewerOutputDTO(
+                slot=p.slot, runtime_id=p.runtime_id,
+                cost_class=p.cost_class, findings=p.findings,
+                objections=p.objections,
+                missing_evidence=p.missing_evidence,
+                risk_flags=p.risk_flags, confidence=p.confidence,
+                notes=p.notes, failed=p.failed,
+            )
+            for p in result.proposer_outputs
+        ],
+        synthesizer_runtime_id=result.synthesizer_runtime_id,
+        findings=result.findings,
+        objections=result.objections,
+        missing_evidence=result.missing_evidence,
+        risk_flags=result.risk_flags,
+        confidence=result.confidence,
+        next_action=result.next_action,
+        warnings=result.warnings,
     )
 
 

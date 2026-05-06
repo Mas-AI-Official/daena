@@ -40,6 +40,10 @@ from app.services.draft_enrichment import (
     EnrichmentRefused,
     enrich_research_draft,
 )
+from app.services.draft_qe_review import (
+    QECouncilUnavailable,
+    run_draft_qe_review,
+)
 from app.services.research_flow import (
     ALLOWED_KINDS,
     ResearchFlowError,
@@ -321,4 +325,127 @@ async def post_enrich_research_draft(
         needs_review=result.needs_review,
         llm_failed=result.llm_failed,
         metadata=result.metadata,
+    )
+
+
+# ──────────────────────────────────────────────────────────────────
+# Sprint-12 PR-3: QE/Council review for work artifacts
+# ──────────────────────────────────────────────────────────────────
+
+
+class QEReviewRequest(BaseModel):
+    allow_metered: bool = Field(
+        default=False,
+        description="Allow metered_api runtimes to fill review slots.",
+    )
+    allow_web_grounding: bool = Field(
+        default=False,
+        description=(
+            "Allow Perplexity (web_grounder slot) to verify claims. "
+            "Metered; default False."
+        ),
+    )
+
+
+class ReviewerOutputDTO(BaseModel):
+    slot: str
+    runtime_id: str
+    cost_class: str
+    findings: list[str]
+    objections: list[str]
+    missing_evidence: list[str]
+    risk_flags: list[str]
+    confidence: float
+    notes: str | None
+    failed: bool
+
+
+class QEReviewResponse(BaseModel):
+    success: bool
+    draft_id: str
+    draft_kind: str
+    mode: str  # full | degraded | unavailable
+    mode_reason: str
+    distinct_runtime_ids: list[str]
+    proposer_outputs: list[ReviewerOutputDTO]
+    synthesizer_runtime_id: str | None
+    findings: list[str]
+    objections: list[str]
+    missing_evidence: list[str]
+    risk_flags: list[str]
+    confidence: float
+    next_action: str
+    warnings: list[str]
+
+
+@router.post("/drafts/{draft_id}/qe-review", response_model=QEReviewResponse)
+async def post_qe_review_research_draft(
+    draft_id: uuid.UUID,
+    request: Request,
+    body: QEReviewRequest | None = None,
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> QEReviewResponse:
+    """Run QE/Council review on a ResearchDraft.
+
+    Reads ``/system/qe-readiness`` first. Refuses with
+    ``qe_council_unavailable`` when no reviewers can fire under the
+    operator's allow flags. Mode is reported HONESTLY -- a single-
+    runtime review NEVER claims ``full`` regardless of what the
+    snapshot said.
+    """
+    row = (await db.execute(
+        select(ResearchDraft).where(
+            ResearchDraft.id == draft_id,
+            ResearchDraft.tenant_id == user.tenant_id,
+            ResearchDraft.user_id == user.id,
+        )
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="draft_not_found")
+
+    body = body or QEReviewRequest()
+    registry = getattr(request.app.state, "model_registry", None)
+
+    try:
+        result = await run_draft_qe_review(
+            db, row,
+            allow_metered=body.allow_metered,
+            allow_web_grounding=body.allow_web_grounding,
+            registry=registry,
+            actor_id=user.id,
+        )
+    except QECouncilUnavailable as exc:
+        await db.commit()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "next_action": exc.next_action},
+        )
+    await db.commit()
+    return QEReviewResponse(
+        success=True,
+        draft_id=result.draft_id,
+        draft_kind=result.draft_kind,
+        mode=result.mode,
+        mode_reason=result.mode_reason,
+        distinct_runtime_ids=result.distinct_runtime_ids,
+        proposer_outputs=[
+            ReviewerOutputDTO(
+                slot=p.slot, runtime_id=p.runtime_id,
+                cost_class=p.cost_class, findings=p.findings,
+                objections=p.objections,
+                missing_evidence=p.missing_evidence,
+                risk_flags=p.risk_flags, confidence=p.confidence,
+                notes=p.notes, failed=p.failed,
+            )
+            for p in result.proposer_outputs
+        ],
+        synthesizer_runtime_id=result.synthesizer_runtime_id,
+        findings=result.findings,
+        objections=result.objections,
+        missing_evidence=result.missing_evidence,
+        risk_flags=result.risk_flags,
+        confidence=result.confidence,
+        next_action=result.next_action,
+        warnings=result.warnings,
     )
