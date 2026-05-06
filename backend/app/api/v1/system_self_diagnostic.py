@@ -59,6 +59,54 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
+# ── Sprint-12A PR-1/2: runtime + router readiness ────────────────────
+
+
+@router.get("/runtime-readiness")
+async def runtime_readiness(
+    refresh: bool = False,
+    _user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return the readiness inventory + router summary.
+
+    Aggregates ``runtime_truth_registry`` items (CLIs, local LLM
+    endpoints, API providers) with the operational overlay
+    (cost_class, recommended_role, readiness_state). NEVER returns
+    secret values.
+
+    Query param:
+        refresh: when true, re-discover items first. Default false
+            so the endpoint stays cheap.
+    """
+    from app.services.runtime_readiness import get_runtime_readiness
+    return {"success": True, "data": await get_runtime_readiness(refresh=refresh)}
+
+
+@router.get("/router-readiness")
+async def router_readiness(
+    _user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return only the router_summary slice -- 'who would Daena pick
+    for each role right now'. Lightweight surface for chat / status
+    pills that don't need the full inventory."""
+    from app.services.runtime_readiness import get_runtime_readiness
+    full = await get_runtime_readiness(refresh=False)
+    return {"success": True, "data": full.get("router_summary")}
+
+
+@router.get("/router-policy")
+async def router_policy(
+    _user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return the static router policy matrix (no I/O).
+
+    Lets the UI render "where would Daena route X" without first
+    refreshing the truth registry.
+    """
+    from app.services.runtime_readiness import get_router_policy
+    return {"success": True, "data": get_router_policy()}
+
+
 # Stable status taxonomy. The worst status anywhere in `checks` becomes
 # overall_status (warning > healthy; blocked > warning).
 STATUS_HEALTHY = "healthy"
