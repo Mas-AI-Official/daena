@@ -57,37 +57,33 @@ def _good_request():
     )
 
 
-class TestApplyToolStaysOutOfWriteTools:
-    async def test_apply_tool_id_not_in_write_tools(self):
-        """The apply tool MUST NOT be unlocked in Sprint-15.
+class TestApplyToolUnlockedInSprint17:
+    """Sprint-17 PR-1 (2026-05-06): the apply tool is now in
+    WRITE_TOOLS. The Sprint-15 PR-5 lock has been deliberately
+    flipped in this same PR -- the operator-visible signal that
+    file-apply has been unlocked."""
 
-        When a future sprint adds it, this test fails on purpose --
-        the operator-visible signal that file-apply is being
-        unlocked. Update this test in the SAME PR that adds the
-        tool, not in a follow-up."""
+    async def test_apply_tool_id_in_write_tools(self):
         from app.services.controlled_execution_design import WRITE_TOOLS
         from app.services.file_proposal_apply_design import APPLY_TOOL_ID
 
         assert APPLY_TOOL_ID == "local.file_change_proposal.apply"
-        assert APPLY_TOOL_ID not in WRITE_TOOLS, (
-            f"{APPLY_TOOL_ID!r} unexpectedly in WRITE_TOOLS; if you "
-            f"are unlocking apply, update this test deliberately in "
-            f"the SAME PR."
+        assert APPLY_TOOL_ID in WRITE_TOOLS, (
+            f"{APPLY_TOOL_ID!r} expected in WRITE_TOOLS after Sprint-17 "
+            f"unlock; got {sorted(WRITE_TOOLS)}"
         )
 
-    async def test_no_apply_handler_registered(self):
-        """The dispatcher's handler registry must NOT carry an
-        entry for the apply tool. The Sprint-14 handlers package
-        must NOT side-effect-import an apply handler."""
-        # Force the handlers package import path so all Sprint-14
-        # handlers register, then assert the apply tool isn't there.
+    async def test_apply_handler_registered(self):
+        """The dispatcher's handler registry MUST carry an entry
+        for the apply tool now. The Sprint-17 handlers package
+        side-effect-imports the new handler module."""
         import app.services.controlled_execution_handlers  # noqa: F401
         from app.services.controlled_execution_dispatch import (
             registered_tool_ids,
         )
         from app.services.file_proposal_apply_design import APPLY_TOOL_ID
 
-        assert APPLY_TOOL_ID not in registered_tool_ids()
+        assert APPLY_TOOL_ID in registered_tool_ids()
 
 
 class TestContractShape:
@@ -172,20 +168,23 @@ class TestChangeTypeForbidsDelete:
         assert "change_type_must_be_modify_in_apply_v1" in str(ei.value)
 
 
-class TestNoHttpEndpointExists:
-    async def test_no_route_registers_apply(self):
-        """No FastAPI route exposes the apply tool. Sprint-16+
-        unlocks it deliberately."""
+class TestApplyOnlyViaControlledExecutionDispatch:
+    """Sprint-17: there is STILL no dedicated apply HTTP route.
+    The apply tool fires only via the controlled-execution dispatch
+    endpoint at POST /api/v1/integrations/controlled-execution/dispatch.
+    A direct apply route would skip the six dispatch gates."""
+
+    async def test_no_dedicated_apply_route(self):
         from app.api.v1 import router as v1_router
 
         for route in v1_router.routes:
             path = getattr(route, "path", "")
-            assert "file_change_proposal" not in path or "apply" not in path, (
-                f"route {path!r} appears to expose file-change apply; "
-                f"Sprint-15 design lock forbids this."
-            )
-            # Also forbid a generic 'apply' endpoint that crosses
-            # controlled-execution territory.
+            # Forbid a /file-apply or /apply-file-change-proposal
+            # endpoint anywhere. Apply must flow through the
+            # controlled-execution dispatch.
             assert not path.endswith("/file-apply"), (
-                f"route {path!r} suggests file apply surface"
+                f"route {path!r} would skip the dispatch gates"
+            )
+            assert "file_change_proposal/apply" not in path, (
+                f"route {path!r} would expose direct apply"
             )

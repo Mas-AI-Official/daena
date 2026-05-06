@@ -33,7 +33,6 @@ Locked refusals (in addition to dispatcher gates):
 from __future__ import annotations
 
 import json
-import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,6 +44,11 @@ from app.services.controlled_execution_dispatch import (
     HandlerContext,
     register_tool_handler,
 )
+from app.services.local_file_safety import (
+    REPO_ROOT as _REPO_ROOT,
+    is_secret_file as _is_secret_file,
+    resolve_under_repo as _resolve_under_repo,
+)
 
 logger = get_logger(__name__)
 
@@ -52,50 +56,8 @@ logger = get_logger(__name__)
 _TOOL_ID = "local.file_change_proposal"
 _REQUIRED_FIELDS: tuple[str, ...] = ("target_path", "change_type", "diff_text")
 
-# Repo root: backend/ + frontend/ + docs/ + tests/ are all under
-# this anchor. The handler resolves any submitted target_path to an
-# absolute path and refuses unless it is contained.
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-
 # Proposal artifact directory (gitignored via .gitignore).
 _PROPOSAL_DIR = Path(__file__).resolve().parents[3] / ".file_change_proposals"
-
-# Secret-file patterns. The handler refuses any path that matches.
-_SECRET_FILE_PATTERNS = (
-    re.compile(r"\.env(\..+)?$", re.IGNORECASE),
-    re.compile(r"\.pem$", re.IGNORECASE),
-    re.compile(r"\.key$", re.IGNORECASE),
-    re.compile(r"\.p12$", re.IGNORECASE),
-    re.compile(r"(?:^|[\\/])(?:\.)?secrets[\\/]", re.IGNORECASE),
-    re.compile(r"credentials.*\.json$", re.IGNORECASE),
-    re.compile(r"\.daena_oauth_overrides\.json$", re.IGNORECASE),
-    re.compile(r"\.autonomy_mode\.json$", re.IGNORECASE),
-    re.compile(r"\.credentials$", re.IGNORECASE),
-    re.compile(r"_token(s)?\.json$", re.IGNORECASE),
-)
-
-
-def _is_secret_file(path_str: str) -> bool:
-    return any(p.search(path_str) for p in _SECRET_FILE_PATTERNS)
-
-
-def _resolve_under_repo(target_path: str) -> Path:
-    """Resolve target_path against the repo root and refuse if it
-    escapes. Symlink-resolving + parent-traversal-safe via Path.resolve."""
-
-    p = Path(target_path)
-    if not p.is_absolute():
-        p = _REPO_ROOT / p
-    resolved = p.resolve()
-    try:
-        resolved.relative_to(_REPO_ROOT)
-    except ValueError as exc:
-        raise ControlledExecutionRefused(
-            "target_path_outside_repo",
-            f"{target_path!r} resolves to {resolved}, which is outside "
-            f"{_REPO_ROOT}.",
-        ) from exc
-    return resolved
 
 
 async def handle_file_change_proposal(ctx: HandlerContext) -> dict[str, Any]:

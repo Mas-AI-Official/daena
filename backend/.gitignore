@@ -2,4 +2,6 @@
 .autonomy_mode.json
 .llama-server.pid
 .file_change_proposals/
+.file_change_backups/
+.tmp_apply_test/
 .trust_ladder.json

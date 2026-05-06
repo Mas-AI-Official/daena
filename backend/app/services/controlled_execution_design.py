@@ -71,6 +71,7 @@ WriteToolId = Literal[
     "gmail.send_existing_draft",
     "calendar.create_tentative_event_without_invites",
     "local.file_change_proposal",
+    "local.file_change_proposal.apply",
 ]
 
 WRITE_TOOLS: Final[frozenset[str]] = frozenset({
@@ -78,6 +79,10 @@ WRITE_TOOLS: Final[frozenset[str]] = frozenset({
     "gmail.send_existing_draft",
     "calendar.create_tentative_event_without_invites",
     "local.file_change_proposal",
+    # Sprint-17 PR-1 (2026-05-06): apply an approved file change
+    # proposal. Backup-based rollback. Hash-verified at apply time.
+    # PR-5 adds local.git_commit_approved_patch for the commit wall.
+    "local.file_change_proposal.apply",
 })
 
 

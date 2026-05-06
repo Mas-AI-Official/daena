@@ -11,6 +11,10 @@ Sprint-14 ships:
 Sprint-15 adds:
   - gmail.send_existing_draft                            (PR-2)
 
+Sprint-17 adds:
+  - local.file_change_proposal.apply                     (PR-1)
+  - local.git_commit_approved_patch                      (PR-5)
+
 Adding a new handler module here is the SAME action as adding the
 tool_id to ``controlled_execution_design.WRITE_TOOLS``. They must
 move in lockstep; the dispatcher's ``register_tool_handler`` refuses
@@ -23,6 +27,7 @@ from __future__ import annotations
 from app.services.controlled_execution_handlers import (  # noqa: F401
     calendar_tentative_event,
     file_change_proposal,
+    file_change_proposal_apply,
     gmail_create_draft,
     gmail_send_existing_draft,
 )
