@@ -28,14 +28,28 @@
  *     "switch account" picker once both rows exist.
  */
 
+import { useState } from 'react'
 import {
   CheckCircle2, Circle, ExternalLink, KeyRound, Mail,
-  RefreshCw, ShieldAlert, User,
+  RefreshCw, ShieldAlert, User, Activity,
 } from 'lucide-react'
 
+import api from '@/lib/api'
 import {
   type GoogleAccountStatus, useGoogleSetupStatus,
 } from '@/hooks/useGoogleSetupStatus'
+
+// Sprint-16 PR-3: live readiness probe result.
+interface ReadinessResult {
+  provider: string
+  status: 'connected' | 'expired' | 'insufficient_scope' | 'failed' | 'not_connected'
+  reason: string
+}
+
+interface ReadinessResponse {
+  owner_email: string
+  results: ReadinessResult[]
+}
 
 
 // Sprint-15 PR-1: per-provider granularity for the two pinned accounts.
@@ -117,8 +131,46 @@ function AccountStatusLine({
 }
 
 
+function ReadinessBadge({ result }: { result: ReadinessResult }) {
+  const styles: Record<ReadinessResult['status'], string> = {
+    connected: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    expired: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    insufficient_scope: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    failed: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    not_connected: 'bg-white/5 text-starlight-400 border-white/10',
+  }
+  return (
+    <span
+      data-testid={`readiness-${result.provider}-${result.status}`}
+      className={`rounded border px-2 py-0.5 text-[10px] ${styles[result.status]}`}
+      title={result.reason}
+    >
+      {result.provider}: {result.status}
+    </span>
+  )
+}
+
+
 export default function GoogleAccountSetupGuide() {
   const { status, loading, error, refresh } = useGoogleSetupStatus()
+  // Sprint-16 PR-3: per-account live readiness probe state.
+  const [readinessByEmail, setReadinessByEmail] = useState<
+    Record<string, ReadinessResponse | { error: string } | { loading: true }>
+  >({})
+
+  const runReadinessTest = async (owner_email: string) => {
+    setReadinessByEmail(prev => ({ ...prev, [owner_email]: { loading: true } }))
+    try {
+      const { data } = await api.post<ReadinessResponse>(
+        '/connections/google-readiness-test',
+        { owner_email, providers: ['gmail', 'calendar', 'drive'] },
+      )
+      setReadinessByEmail(prev => ({ ...prev, [owner_email]: data }))
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Readiness probe failed'
+      setReadinessByEmail(prev => ({ ...prev, [owner_email]: { error: msg } }))
+    }
+  }
 
   return (
     <section
@@ -269,40 +321,53 @@ export default function GoogleAccountSetupGuide() {
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div
-          data-testid="google-role-founder"
-          className="rounded-md border border-white/5 bg-midnight-400/40 p-3"
-        >
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200">
-            <User size={12} />
-            Founder / operator
-          </div>
-          <p className="mt-2 font-mono text-xs text-starlight-100">
-            masoud.masoori@mas-ai.co
-          </p>
-          <p className="mt-2 text-[11px] text-starlight-300">
-            Your personal account. Read-only inbox / calendar / drive when you
-            ask Daena to summarize or search. Never used for posting on the
-            company's behalf.
-          </p>
-        </div>
-        <div
-          data-testid="google-role-agent"
-          className="rounded-md border border-white/5 bg-midnight-400/40 p-3"
-        >
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200">
-            <Mail size={12} />
-            Daena / agent voice
-          </div>
-          <p className="mt-2 font-mono text-xs text-starlight-100">
-            daena@mas-ai.co
-          </p>
-          <p className="mt-2 text-[11px] text-starlight-300">
-            Daena's own Google Workspace seat. Anything Daena sends or files
-            on the company's behalf goes through this account so the audit
-            trail is unambiguous. Never used to read your personal mail.
-          </p>
-        </div>
+        {[
+          { email: 'masoud.masoori@mas-ai.co', role: 'founder', label: 'Founder / operator', icon: <User size={12} />, blurb: "Your personal account. Read-only inbox / calendar / drive when you ask Daena to summarize or search. Never used for posting on the company's behalf." },
+          { email: 'daena@mas-ai.co', role: 'agent', label: 'Daena / agent voice', icon: <Mail size={12} />, blurb: "Daena's own Google Workspace seat. Anything Daena sends or files on the company's behalf goes through this account so the audit trail is unambiguous. Never used to read your personal mail." },
+        ].map(({ email, role, label, icon, blurb }) => {
+          const probeState = readinessByEmail[email]
+          const isLoadingProbe = probeState != null && 'loading' in probeState
+          const probeError = probeState && 'error' in probeState ? probeState.error : null
+          const probeResults = probeState && 'results' in probeState ? probeState.results : null
+          return (
+            <div
+              key={email}
+              data-testid={`google-role-${role}`}
+              className="rounded-md border border-white/5 bg-midnight-400/40 p-3"
+            >
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200">
+                {icon}
+                {label}
+              </div>
+              <p className="mt-2 font-mono text-xs text-starlight-100">{email}</p>
+              <p className="mt-2 text-[11px] text-starlight-300">{blurb}</p>
+              {/* Sprint-16 PR-3: Test read-only button + probe result */}
+              <div className="mt-3 border-t border-white/5 pt-2">
+                <button
+                  type="button"
+                  data-testid={`readiness-test-${role}`}
+                  onClick={() => { void runReadinessTest(email) }}
+                  disabled={isLoadingProbe}
+                  className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-starlight-300 hover:bg-white/10 disabled:opacity-50"
+                  title="Live read-only probe of Gmail / Calendar / Drive"
+                >
+                  <Activity size={10} className={isLoadingProbe ? 'animate-pulse' : ''} />
+                  Test read-only
+                </button>
+                {probeError && (
+                  <p className="mt-2 text-[10px] text-rose-300">{probeError}</p>
+                )}
+                {probeResults && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {probeResults.map(r => (
+                      <ReadinessBadge key={r.provider} result={r} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* Sprint-15 PR-1: Phase-3 refusal hint. When a controlled write

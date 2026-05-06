@@ -30,11 +30,15 @@ from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
-from app.models.connections import ConnectorInstance
+from app.models.connections import Connector, ConnectorInstance
+from app.services.google_readiness_test import (
+    GoogleReadinessProvider,
+    probe_google_provider,
+)
 from app.services.integrations import oauth_client_config_store
 
 router = APIRouter()
@@ -167,3 +171,106 @@ async def google_setup_status(
         "agent_account": agent,
         "ready": ready,
     }
+
+
+# ── Sprint-16 PR-3: Live readiness test ─────────────────────────────
+
+
+# Connector-name lookup for the three Google providers. Mirrors
+# google_setup.GOOGLE_CONNECTOR_SLUGS but returns the SQL-name we
+# use in the Connector table (NOT the OAuth provider id).
+_PROVIDER_TO_CONNECTOR_NAME: dict[str, str] = {
+    "gmail": "Gmail",
+    "calendar": "Google Calendar",
+    "drive": "Google Drive",
+}
+
+
+@router.post("/google-readiness-test")
+async def google_readiness_test(
+    body: dict = Body(...),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Live read-only liveness probe for Google providers.
+
+    Body:
+      ``{"owner_email": str, "providers": ["gmail","calendar","drive"]}``
+      Providers list is optional; defaults to all three.
+
+    Returns:
+      ``{"results": [{"provider","status","reason"}, ...]}``
+
+    Each result carries ONLY a status enum + opaque reason. NEVER
+    returns user data (no inbox metadata, no calendar list, no file
+    list). The probes are picked so that the responses are
+    metadata-only and we throw them away.
+    """
+    owner_email = (body.get("owner_email") or "").strip()
+    if not owner_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="owner_email is required",
+        )
+    requested = body.get("providers") or list(_PROVIDER_TO_CONNECTOR_NAME)
+    if not isinstance(requested, list):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="providers must be a list",
+        )
+
+    target = owner_email.lower()
+    results: list[dict] = []
+
+    for provider in requested:
+        if provider not in _PROVIDER_TO_CONNECTOR_NAME:
+            results.append({
+                "provider": provider,
+                "status": "failed",
+                "reason": f"unknown provider {provider!r}",
+            })
+            continue
+
+        connector_name = _PROVIDER_TO_CONNECTOR_NAME[provider]
+        conn_row = (await db.execute(
+            select(Connector).where(Connector.name == connector_name),
+        )).scalar_one_or_none()
+        if conn_row is None:
+            results.append({
+                "provider": provider,
+                "status": "not_connected",
+                "reason": f"connector {connector_name!r} not in catalog",
+            })
+            continue
+
+        rows = (await db.execute(
+            select(ConnectorInstance)
+            .where(ConnectorInstance.tenant_id == user.tenant_id)
+            .where(ConnectorInstance.user_id == user.id)
+            .where(ConnectorInstance.connector_id == conn_row.id),
+        )).scalars().all()
+        matched = next(
+            (
+                r for r in rows
+                if (r.owner_email or "").strip().lower() == target
+            ),
+            None,
+        )
+        if matched is None:
+            results.append({
+                "provider": provider,
+                "status": "not_connected",
+                "reason": (
+                    f"no ConnectorInstance for owner_email "
+                    f"{owner_email!r}"
+                ),
+            })
+            continue
+
+        access_token = (matched.credentials or {}).get("access_token") or ""
+        result = await probe_google_provider(
+            provider=provider, access_token=access_token,
+        )
+        results.append(result)
+
+    return {"owner_email": owner_email, "results": results}
