@@ -34,15 +34,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Activity, AlertTriangle, BookOpen, ExternalLink, Loader2, Power,
+  Activity, AlertTriangle, ExternalLink, Loader2, Power,
   ShieldAlert, Sparkles, Wrench,
 } from 'lucide-react'
 
 import {
   type PluginCard,
   type PluginAction,
-  officialityLabel,
-  officialityTone,
   pluginStatusTone,
 } from './pluginCard'
 import MCPInstallDrawer from './MCPInstallDrawer'
@@ -218,12 +216,23 @@ export default function PluginCardView({
                   {plugin.vendor} · {plugin.category_label}
                 </p>
               </div>
-              <RiskBadge risk={plugin.risk_level} />
+              {/* PR-CONNECTIONS-V3-PHASE1 (2026-05-07): risk badge only
+                  shown when high. Medium/Low risk is the default
+                  expectation; surfacing it on every card adds noise
+                  without changing operator behavior. */}
+              {plugin.risk_level === 'high' && <RiskBadge risk={plugin.risk_level} />}
             </div>
           </div>
         </header>
 
-        <p className="line-clamp-2 text-xs text-starlight-300">{plugin.description}</p>
+        {/* Description -- skill pack carries an inline "Skill pack:" prefix
+            so the kind is visible without a separate badge. */}
+        <p className="line-clamp-2 text-xs text-starlight-300">
+          {plugin.is_skill_pack && (
+            <span className="text-violet-300 font-medium">Skill pack: </span>
+          )}
+          {plugin.description}
+        </p>
 
         {/* PR-CONNECTIONS-MINI-SIMPLIFY (2026-05-06): the capability
             chip list ("Multi-turn coding sessions", "Native MCP client",
@@ -234,8 +243,12 @@ export default function PluginCardView({
             Technical-details expander (Skills section). */}
 
         <div className="mt-auto space-y-2">
-          {/* Status + officiality pill row */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* PR-CONNECTIONS-V3-PHASE1 (2026-05-07): one status pill, one
+              primary button. Officiality (community / vendor-official /
+              etc), the redundant skill-pack badge, and the "Or use API
+              key" fallback all moved to the Details drawer. The Details
+              drawer is reachable by clicking anywhere on the card body. */}
+          <div className="flex items-center gap-2">
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tone.border} ${tone.bg} ${tone.text}`}
               title={
@@ -247,38 +260,9 @@ export default function PluginCardView({
               <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
               {effectiveStatusLabel}
             </span>
-            {/* Officiality badge: trust signal from PR-CONN-MCP-CATALOG-SKILL-BUNDLES.
-                Always rendered so the operator can distinguish vendor-shipped
-                from community-curated entries at a glance. */}
-            {(() => {
-              const oTone = officialityTone(plugin.officiality)
-              const oLabel = officialityLabel(plugin.officiality)
-              return (
-                <span
-                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${oTone.border} ${oTone.bg} ${oTone.text}`}
-                  title={`Source tier: ${oLabel}`}
-                >
-                  <span className={`h-1.5 w-1.5 rounded-full ${oTone.dot}`} />
-                  {oLabel}
-                </span>
-              )
-            })()}
-            {/* Sprint-6 PR-3: the dedicated `coming_soon` PluginStatus
-                renders a slate pill via pluginStatusTone(); the old
-                redundant amber pill (which made the whole card look
-                like a warning) is removed. */}
-            {plugin.is_skill_pack && (
-              <span
-                className="rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-200"
-                title="Skill pack -- needs a runtime / MCP / app to execute"
-              >
-                <BookOpen size={9} className="mr-1 inline" />
-                skill pack
-              </span>
-            )}
           </div>
 
-          {/* Failure reason inline */}
+          {/* Failure reason inline -- honesty rule 17, never silent */}
           {plugin.status === 'failed' && plugin.failure_reason && (
             <div className="flex items-start gap-1.5 rounded-md border border-rose-500/30 bg-rose-500/5 px-2 py-1 text-[11px] text-rose-200">
               <AlertTriangle size={11} className="mt-0.5 shrink-0" />
@@ -286,9 +270,6 @@ export default function PluginCardView({
             </div>
           )}
 
-          {/* Sprint-6 PR-3: coming-soon honest notice. Slate, not amber/rose,
-              so the operator reads it as intentional roadmap parity rather
-              than a broken install. */}
           {plugin.status === 'coming_soon' && (
             <div
               data-testid="plugin-card-coming-soon-notice"
@@ -296,54 +277,25 @@ export default function PluginCardView({
             >
               <Wrench size={11} className="mt-0.5 shrink-0" />
               <span className="line-clamp-2">
-                Roadmap parity only. Daena cannot install or probe this
-                connector yet -- catalog metadata only.
+                Roadmap parity only -- catalog metadata only.
               </span>
             </div>
           )}
 
-          {/* Action row */}
-          <div className="flex items-center justify-between gap-2 pt-1">
+          {/* Single action row -- one primary button, right-aligned. */}
+          <div className="flex justify-end pt-1">
             <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setDrawerOpen(true)
-              }}
-              className="text-[10px] text-starlight-500 hover:text-starlight-300"
+              onClick={handleAction}
+              disabled={busy || (!plugin.action_enabled && !cliPrimary)}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[11px] font-medium disabled:opacity-50 ${
+                cliPrimary
+                  ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/25'
+                  : 'border-primary-500/30 bg-primary-500/10 text-primary-200 hover:bg-primary-500/20'
+              }`}
             >
-              Details
+              {busy ? <Loader2 size={11} className="animate-spin" /> : <ActionIcon size={11} />}
+              {busy ? 'Probing...' : effectiveActionLabel}
             </button>
-            <div className="flex items-center gap-2">
-              {cliPrimary && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    navigate('/account#provider-keys')
-                  }}
-                  className="text-[10px] text-starlight-500 hover:text-starlight-300 underline decoration-dotted"
-                  title="Fallback: paste an API key directly. Only needed if you do not want to use your CLI subscription."
-                >
-                  Or use API key
-                </button>
-              )}
-              <button
-                onClick={handleAction}
-                disabled={busy || (!plugin.action_enabled && !cliPrimary)}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[11px] font-medium disabled:opacity-50 ${
-                  cliPrimary
-                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/25'
-                    : 'border-primary-500/30 bg-primary-500/10 text-primary-200 hover:bg-primary-500/20'
-                }`}
-              >
-                {busy ? <Loader2 size={11} className="animate-spin" /> : <ActionIcon size={11} />}
-                {/* PR-CONN-PLUGIN-INSTALL-UX-POLISH (2026-05-03): make
-                    in-flight feedback explicit. The only action that
-                    flips parent busy=true on this card is Probe (Test);
-                    Configure / Install / Connect open drawers without
-                    setting busy. So a busy card == probe in flight. */}
-                {busy ? 'Probing...' : effectiveActionLabel}
-              </button>
-            </div>
           </div>
         </div>
       </article>

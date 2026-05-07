@@ -38,6 +38,8 @@ import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Circle,
   ExternalLink,
   Loader2,
@@ -175,6 +177,12 @@ export default function AcceptanceStatusPanel() {
   const [error, setError] = useState<string | null>(null)
   const { cards } = useMarketplaceCards()
   const { summary: marketplaceDiag } = useMarketplaceDiagnostic()
+  // PR-CONNECTIONS-V3-PHASE1 (2026-05-07): full 8-row grid lives behind
+  // an expander now. Default view shows the verdict + top-2 actionable
+  // blockers only. Founders never have to scan 8 rows of green pills to
+  // find the one row that needs them. Operators can expand for the full
+  // view; the data + APIs are unchanged.
+  const [allOpen, setAllOpen] = useState(false)
 
   const reload = () => {
     setLoading(true)
@@ -369,27 +377,73 @@ export default function AcceptanceStatusPanel() {
         </p>
       )}
 
-      {/* 8-row grid */}
-      <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-        {rows.map((r) => (
-          <li
-            key={r.key}
-            data-testid={`acceptance-row-${r.key}`}
-            className={`flex flex-col gap-1 rounded-md border px-3 py-2 ${rowToneClasses(r.status)}`}
-          >
-            <div className="flex items-center gap-2">
-              <StatusDot status={r.status} />
-              <span className="text-xs font-medium text-starlight-100">{r.label}</span>
-            </div>
-            <p className="pl-6 text-[11px] text-starlight-400">{r.detail}</p>
-            {r.nextAction && (
-              <p className="pl-6 text-[10px] text-amber-200/80">
-                <strong className="text-amber-200">Next:</strong> {r.nextAction}
-              </p>
-            )}
-          </li>
-        ))}
-      </ul>
+      {/* PR-CONNECTIONS-V3-PHASE1 (2026-05-07): default view = top-2
+          actionable blockers only. A row is "actionable" when status is
+          warning or blocked AND it has a nextAction. Healthy rows are
+          hidden by default. The full 8-row grid stays one click away. */}
+      {(() => {
+        const actionable = rows.filter((r) =>
+          (r.status === 'warning' || r.status === 'blocked') && !!r.nextAction,
+        )
+        const top2 = actionable.slice(0, 2)
+        if (top2.length === 0) return null
+        return (
+          <ul className="mt-4 space-y-2">
+            {top2.map((r) => (
+              <li
+                key={r.key}
+                data-testid={`acceptance-row-${r.key}`}
+                className={`flex flex-col gap-1 rounded-md border px-3 py-2 ${rowToneClasses(r.status)}`}
+              >
+                <div className="flex items-center gap-2">
+                  <StatusDot status={r.status} />
+                  <span className="text-xs font-medium text-starlight-100">{r.label}</span>
+                </div>
+                <p className="pl-6 text-[11px] text-starlight-400">{r.detail}</p>
+                {r.nextAction && (
+                  <p className="pl-6 text-[10px] text-amber-200/80">
+                    <strong className="text-amber-200">Next:</strong> {r.nextAction}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )
+      })()}
+
+      <button
+        type="button"
+        onClick={() => setAllOpen((v) => !v)}
+        aria-expanded={allOpen}
+        data-testid="acceptance-show-all-toggle"
+        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-starlight-500 hover:text-starlight-300"
+      >
+        {allOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        {allOpen ? 'Hide all checks' : 'Show all checks (8)'}
+      </button>
+
+      {allOpen && (
+        <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+          {rows.map((r) => (
+            <li
+              key={r.key}
+              data-testid={`acceptance-row-${r.key}`}
+              className={`flex flex-col gap-1 rounded-md border px-3 py-2 ${rowToneClasses(r.status)}`}
+            >
+              <div className="flex items-center gap-2">
+                <StatusDot status={r.status} />
+                <span className="text-xs font-medium text-starlight-100">{r.label}</span>
+              </div>
+              <p className="pl-6 text-[11px] text-starlight-400">{r.detail}</p>
+              {r.nextAction && (
+                <p className="pl-6 text-[10px] text-amber-200/80">
+                  <strong className="text-amber-200">Next:</strong> {r.nextAction}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* Boundary notice from the diagnostic, verbatim. */}
       {diag?.data.boundary_notice && (

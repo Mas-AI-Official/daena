@@ -67,7 +67,11 @@ const PRIMARY_TABS = [
   { key: 'plugins', label: 'Plugins', icon: AppWindow },
 ] as const
 
-const ADVANCED_TAB = { key: 'advanced', label: 'Advanced', icon: Wrench } as const
+// PR-CONNECTIONS-V3-PHASE1 (2026-05-07): renamed user-visible label
+// "Advanced" -> "Diagnostics" so the founder-facing UI never exposes
+// V1/V2/Legacy product terminology. The internal `key` stays "advanced"
+// to avoid breaking deep-link URLs and localStorage migration paths.
+const ADVANCED_TAB = { key: 'advanced', label: 'Diagnostics', icon: Wrench } as const
 
 type PrimaryKey = typeof PRIMARY_TABS[number]['key']
 type TabKey = PrimaryKey | typeof ADVANCED_TAB.key
@@ -248,18 +252,22 @@ export default function ConnectionsPage() {
                 )}
                 Discover installed tools
               </button>
-              <label
-                className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] text-starlight-400 hover:text-starlight-200"
-                title="Show registry / debug / legacy panels."
-              >
-                <input
-                  type="checkbox"
-                  checked={showAdvanced}
-                  onChange={handleShowAdvancedToggle}
-                  className="h-3 w-3 rounded border-white/20 bg-transparent text-primary-500"
-                />
-                <span>Show advanced</span>
-              </label>
+              {/* PR-CONNECTIONS-V3-PHASE1 (2026-05-07): the diagnostics
+                  toggle moved out of the prominent header row. Founders
+                  who never need it should never see it; those who do can
+                  reach it via the small footer link below the page body.
+                  When already showing, render the toggle here so it's
+                  one click to retreat. */}
+              {showAdvanced && (
+                <button
+                  onClick={handleShowAdvancedToggle}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200 hover:bg-amber-500/20"
+                  title="Hide diagnostics tab. Settings persist; reopen from page footer."
+                >
+                  <Wrench size={11} />
+                  <span>Hide diagnostics</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -309,6 +317,25 @@ export default function ConnectionsPage() {
             onBackToPlugins={() => setActiveTab('plugins')}
           />
         )}
+
+        {/* PR-CONNECTIONS-V3-PHASE1 (2026-05-07): quiet footer link for
+            diagnostics. Founders who don't need it never see it in the
+            tab row above. Operators or troubleshooters can reach it
+            from this single line. Clicking opens the tab inline; the
+            useEffect that auto-flips showAdvanced=true on tab change
+            handles the rest. */}
+        {!showAdvanced && activeTab !== 'advanced' && (
+          <div className="mt-12 border-t border-white/5 pt-4 text-center">
+            <button
+              onClick={() => setActiveTab('advanced')}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-starlight-500 hover:text-starlight-300"
+              title="Open diagnostics: per-kind registry, raw discovery payload, legacy compatibility surfaces."
+            >
+              <Wrench size={10} />
+              Open diagnostics
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -321,15 +348,18 @@ export default function ConnectionsPage() {
 // internal endpoint references.
 // -----------------------------------------------------------------
 
+// PR-CONNECTIONS-V3-PHASE1 (2026-05-07): keep stable internal section
+// keys for routing/persistence, but strip the user-visible "V1/V2"
+// terminology. Founder-facing labels read as plain product nouns.
 const ADVANCED_SECTIONS = [
   { key: 'overview', label: 'Registry overview', icon: Wrench },
-  { key: 'runtimes', label: 'Runtimes (V2)', icon: Terminal },
-  { key: 'mcp', label: 'MCP servers (V2)', icon: Server },
-  { key: 'apps', label: 'OAuth apps (V2)', icon: AppWindow },
-  { key: 'browser', label: 'Browser tools (V2)', icon: Globe },
-  { key: 'local', label: 'Local models (V2)', icon: Cpu },
-  { key: 'skill_packs', label: 'Skill packs (V2)', icon: BookOpen },
-  { key: 'legacy_v1', label: 'Legacy V1 panels', icon: AlertTriangle },
+  { key: 'runtimes', label: 'Runtimes', icon: Terminal },
+  { key: 'mcp', label: 'MCP servers', icon: Server },
+  { key: 'apps', label: 'OAuth apps', icon: AppWindow },
+  { key: 'browser', label: 'Browser tools', icon: Globe },
+  { key: 'local', label: 'Local models', icon: Cpu },
+  { key: 'skill_packs', label: 'Skill packs', icon: BookOpen },
+  { key: 'legacy_v1', label: 'Compatibility panels', icon: AlertTriangle },
   { key: 'debug', label: 'Discovery + endpoints', icon: Wrench },
 ] as const
 
@@ -350,11 +380,13 @@ function AdvancedPanel({
       <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
         <AlertTriangle size={16} className="mt-0.5 shrink-0" />
         <div className="flex-1">
-          <strong>Advanced registry / debug view.</strong>{' '}
-          Internal V2 / V1 surfaces. Normal users should use the Plugins
-          tab; this view exposes the per-kind catalog (mcp_server,
-          oauth_app, skill_pack, local_model, provider, cli_runtime),
-          the legacy V1 panels, and the raw discovery payload.
+          <strong>Diagnostics surface.</strong>{' '}
+          Internal registry views, raw discovery payload, and
+          compatibility panels for migration debugging. Normal users
+          should use the Plugins tab; this view exists for operators
+          who need to inspect the per-kind catalog (MCP servers, OAuth
+          apps, skill packs, local models, AI providers, CLI runtimes)
+          or trace a probe failure to its source.
         </div>
         <button
           onClick={onBackToPlugins}
@@ -423,12 +455,12 @@ function AdvancedPanel({
               <div className="flex items-start gap-3 rounded-md border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-200">
                 <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                 <div>
-                  <strong>Legacy / debug only.</strong>{' '}
+                  <strong>Compatibility view -- debug only.</strong>{' '}
                   Normal users should use the Plugins tab. Anything you
-                  install or connect from here writes to the OLD V1
-                  registry and may not mirror to the canonical V2 truth
+                  install or connect from here writes to the legacy
+                  registry and may not mirror to the canonical truth
                   ladder. Use this view ONLY for migration debugging or
-                  reading legacy state.
+                  reading historical state.
                 </div>
               </div>
               <section className="space-y-2">

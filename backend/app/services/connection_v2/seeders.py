@@ -58,6 +58,60 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+
+# PR-CONNECTIONS-V3-PHASE1 (2026-05-07): MCP-package-name sanity check.
+# Operators (and other CLIs) sometimes register an MCP entry whose npm
+# package name is the wrong identifier -- e.g. ``npx -y playwright``
+# (Playwright's Test runner CLI, prints help and exits) instead of
+# ``npx -y @playwright/mcp@latest`` (Microsoft's actual MCP server).
+# The runtime symptom is ``McpError: Connection closed`` during probe
+# initialize because the spawned process never speaks JSON-RPC.
+#
+# Heuristic: when the command is npx (any extension) and the meaningful
+# first positional arg is a bare unscoped npm name (no ``@scope/``, no
+# URL, no path-like form), tag the row config with
+# ``_likely_wrong_package=True`` so the operator sees a non-fatal hint
+# in the discovery debug payload + Diagnostics tab. Warning-only --
+# never auto-fixes, never blocks import. False positives are acceptable
+# (e.g. an MCP that is genuinely published as a bare name would still
+# import fine and the operator can ignore the hint).
+_NPX_COMMAND_TOKENS = {"npx", "npx.cmd", "npx.exe"}
+_NPX_FLAG_PREFIXES = ("-", "--")
+
+
+def _detect_likely_wrong_npm_package(command: str | None, args: list[str]) -> bool:
+    if not command or not args:
+        return False
+    cmd_lower = command.lower().rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+    if cmd_lower not in _NPX_COMMAND_TOKENS:
+        return False
+    # Find the first positional that isn't an npx flag.
+    pkg = None
+    for token in args:
+        if not token:
+            continue
+        if token.startswith(_NPX_FLAG_PREFIXES):
+            continue
+        pkg = token
+        break
+    if not pkg:
+        return False
+    # Strip a trailing version qualifier (e.g. ``mypkg@1.2.3``) so the
+    # bare-name detection doesn't trip on it.
+    bare = pkg.rsplit("@", 1)[0] if "@" in pkg and not pkg.startswith("@") else pkg
+    # Acceptable shapes: scoped (``@scope/x``), URL, file path,
+    # tarball, git+url. Bare lowercase identifiers are the suspect
+    # category that almost always means "wrong package."
+    if bare.startswith("@"):
+        return False
+    if "://" in bare:
+        return False
+    if "/" in bare or "\\" in bare:
+        return False
+    if bare.endswith((".tgz", ".tar.gz")):
+        return False
+    return True
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -308,6 +362,33 @@ class ConnectionDiscoveryService:
                     "_source_notes": m.notes,
                     "_seeded_by": "connection_discovery",
                 }
+                # PR-CONNECTIONS-V3-PHASE1 (2026-05-07): warn when the
+                # registered npm package looks unscoped (e.g.
+                # ``npx -y playwright`` -> Playwright Test runner CLI,
+                # not the MCP server). Tag the config flag so the
+                # discovery debug payload surfaces it and the Diagnostics
+                # tab can render an amber hint. Warning-only -- never
+                # auto-fixes, never blocks the import.
+                if _detect_likely_wrong_npm_package(m.command, list(m.args)):
+                    config["_likely_wrong_package"] = True
+                    logger.warning(
+                        "connection_discovery.mcp_likely_wrong_package",
+                        tenant_id=str(self.tenant_id),
+                        slug=slug,
+                        command=m.command,
+                        first_arg=next(
+                            (a for a in m.args if a and not a.startswith(("-", "--"))),
+                            None,
+                        ),
+                        hint=(
+                            "MCP entry uses an unscoped npm package name. Most vendor "
+                            "MCP servers ship under @scope/name (e.g. "
+                            "@playwright/mcp). The current package may be the wrong "
+                            "binary -- probe will likely fail with McpError: "
+                            "Connection closed. Verify the publisher's documented "
+                            "package name."
+                        ),
+                    )
                 # Strip empty / falsy fields so the discriminated-union
                 # validator picks a clean shape.
                 config = {k: v for k, v in config.items() if v not in (None, "")}
