@@ -70,16 +70,44 @@ async def _get_ollama_status() -> tuple[str, str | None]:
 
 @router.get("")
 async def health_check() -> dict:
-    """Liveness probe. Returns in <50ms. Used by Docker HEALTHCHECK
-    and Cloud Run liveness probe.
+    """Liveness probe. Returns in <50ms. Used by Docker HEALTHCHECK,
+    Cloud Run liveness probe, and the frontend ``BackendOfflineBanner``.
+
+    Stabilization 2026-04-30: Status now distinguishes optional vs
+    critical degradations. Redis is documented as an OPTIONAL cache
+    (CLAUDE.md: "Cache: Redis (optional, graceful fallback)"). When
+    Redis is offline the backend remains fully functional, so we no
+    longer flag the whole service as ``degraded`` -- which previously
+    triggered the red ``BackendOfflineBanner`` and blocked the Autopilot
+    button via ``backendBlocksRuntime`` for users running locally
+    without Redis. Redis status is still surfaced in ``checks.redis``
+    so /health/detailed can show it.
+
+    Status legend:
+        starting   -- essentials not ready (table create_all, redis probe)
+        warming    -- essentials done, deferred seedings still running
+        degraded   -- (reserved) critical subsystem unhealthy
+        healthy    -- essentials + seedings done; service fully functional
     """
+    from app.core.startup_state import startup_state
+
     redis_healthy = await check_redis_health()
 
+    if not startup_state.essentials_ready:
+        status = "starting"
+    elif not startup_state.seedings_complete:
+        status = "warming"
+    else:
+        status = "healthy"
+
     return {
-        "status": "healthy" if redis_healthy else "degraded",
+        "status": status,
         "checks": {
             "redis": "healthy" if redis_healthy else "unavailable",
             "database": "healthy",
+            "essentials_ready": startup_state.essentials_ready,
+            "seedings_complete": startup_state.seedings_complete,
+            "seed_phase": startup_state.seed_phase,
         },
         "version": _DAENA_VERSION,
     }
@@ -194,12 +222,13 @@ async def detailed_health_check() -> dict:
     hours, remainder = divmod(uptime_seconds, 3600)
     minutes, secs = divmod(remainder, 60)
 
+    from app.core.startup_state import startup_state
+
+    # /detailed status: redis is optional (cache), ollama is optional
+    # (only used when ollama_enabled=true). Only seed completion drives
+    # the headline status -- anything else is informational.
     return {
-        "status": (
-            "healthy"
-            if redis_healthy and ollama_status == "healthy"
-            else "degraded"
-        ),
+        "status": "healthy" if startup_state.seedings_complete else "warming",
         "uptime": f"{hours}h {minutes}m {secs}s",
         "uptime_seconds": uptime_seconds,
         "ollama": {
@@ -213,6 +242,7 @@ async def detailed_health_check() -> dict:
             "total_messages": total_messages,
             "last_activity": last_activity,
         },
+        "seedings": startup_state.to_dict(),
         "version": _DAENA_VERSION,
         "timestamp": datetime.now(UTC).isoformat(),
     }

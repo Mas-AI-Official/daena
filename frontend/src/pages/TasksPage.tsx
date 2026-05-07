@@ -3,6 +3,7 @@
  * Shows running, paused, completed, and failed tasks.
  */
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Play,
@@ -24,6 +25,7 @@ import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button, Shimmer, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
 import { batchDeleteWithToast } from '@/lib/mutations'
+import { toast } from '@/stores/toastStore'
 import type { TaskResponse, TaskStatus, ApiResponse } from '@/types/api'
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; variant: string; icon: React.ReactNode }> = {
@@ -35,13 +37,68 @@ const STATUS_CONFIG: Record<TaskStatus, { label: string; variant: string; icon: 
   CANCELLED: { label: 'Cancelled', variant: 'default',  icon: <RotateCcw size={12} /> },
 }
 
+const VALID_FILTERS: ReadonlyArray<TaskStatus | 'ALL'> = [
+  'ALL', 'PENDING', 'RUNNING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED',
+]
+
+interface BackgroundQueueStatus {
+  worker_running: boolean
+  persistent: boolean
+  storage: 'database' | 'memory_only' | string
+  queued_count: number
+  active_count: number
+  restart_policy: string
+}
+
+function readFilterFromUrl(searchParams: URLSearchParams): TaskStatus | 'ALL' {
+  const raw = searchParams.get('status')
+  if (raw && (VALID_FILTERS as ReadonlyArray<string>).includes(raw)) {
+    return raw as TaskStatus | 'ALL'
+  }
+  return 'ALL'
+}
+
 export function TasksPage() {
   usePageTitle('Tasks')
+  const [searchParams, setSearchParams] = useSearchParams()
   const [tasks, setTasks] = useState<TaskResponse[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<TaskStatus | 'ALL'>('ALL')
+  // Filter state syncs to URL ?status=... so refreshing or sharing the page
+  // preserves the operator's view. Bookmarkable filtered task lists.
+  const [filter, _setFilter] = useState<TaskStatus | 'ALL'>(() => readFilterFromUrl(searchParams))
+  const setFilter = (next: TaskStatus | 'ALL') => {
+    _setFilter(next)
+    setSearchParams((prev) => {
+      const sp = new URLSearchParams(prev)
+      if (next === 'ALL') sp.delete('status')
+      else sp.set('status', next)
+      return sp
+    }, { replace: true })
+  }
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [retryingId, setRetryingId] = useState<string | null>(null)
+  const [queueStatus, setQueueStatus] = useState<BackgroundQueueStatus | null>(null)
+  const [queueStatusError, setQueueStatusError] = useState<string | null>(null)
+
+  // Sync state when URL changes externally (back/forward buttons, deep link).
+  useEffect(() => {
+    const fromUrl = readFilterFromUrl(searchParams)
+    if (fromUrl !== filter) _setFilter(fromUrl)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  // When deep-linked from /projects/<id>?tab=tasks via #task-<id>, scroll to
+  // and highlight that row once tasks load.
+  useEffect(() => {
+    if (loading) return
+    if (window.location.hash.startsWith('#task-')) {
+      const id = window.location.hash.slice('#task-'.length)
+      const t = setTimeout(() => {
+        document.getElementById(`task-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 100)
+      return () => clearTimeout(t)
+    }
+  }, [loading, tasks.length])
 
   const fetchTasks = async () => {
     setLoading(true)
@@ -58,12 +115,42 @@ export function TasksPage() {
 
   useEffect(() => { fetchTasks() }, [filter])
 
-  // Auto-refresh when running tasks exist
+  const fetchQueueStatus = async () => {
+    try {
+      const { data } = await api.get<ApiResponse<BackgroundQueueStatus>>('/autopilot/queue/status')
+      setQueueStatus(data.data)
+      setQueueStatusError(null)
+    } catch {
+      setQueueStatus(null)
+      setQueueStatusError('Background queue status unavailable')
+    }
+  }
+
+  useEffect(() => { void fetchQueueStatus() }, [])
+
+  // Auto-refresh when running tasks exist — paused while tab is hidden
+  // so background tabs don't burn rate-limit budget polling for status
+  // updates the operator can't see.
   useEffect(() => {
     const hasRunning = tasks.some(t => t.status === 'RUNNING')
     if (!hasRunning) return
-    const interval = setInterval(() => { void fetchTasks() }, 15000)
-    return () => clearInterval(interval)
+
+    let interval: ReturnType<typeof setInterval> | null = null
+    const start = () => { if (!interval) interval = setInterval(() => { void fetchTasks() }, 15000) }
+    const stop = () => { if (interval) { clearInterval(interval); interval = null } }
+
+    if (!document.hidden) start()
+
+    const onVisibility = () => {
+      if (document.hidden) stop()
+      else { void fetchTasks(); start() }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks])
 
   // ── Selection helpers ──
@@ -86,8 +173,10 @@ export function TasksPage() {
     try {
       await api.post(`/execution/tasks/${taskId}/run`)
       await fetchTasks()
-    } catch {
-      // Graceful
+    } catch (err) {
+      // F-TASKS-CATCH fix: empty catch hid failures from the operator.
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg || 'Failed to run task. Check backend logs.')
     } finally {
       setRetryingId(null)
     }
@@ -106,39 +195,56 @@ export function TasksPage() {
       await api.patch(`/execution/tasks/${taskId}`, { status: 'PENDING' })
       await api.post(`/execution/tasks/${taskId}/run`)
       await fetchTasks()
-    } catch {
-      // Graceful
+    } catch (err) {
+      // F-TASKS-CATCH fix: empty catch hid failures.
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg || 'Failed to retry task. Check backend logs.')
     } finally {
       setRetryingId(null)
     }
   }
 
   // ── Batch run (kick off every selected PENDING task) ──
+  // Parallelized — a 50-task batch was previously 50 sequential round-trips.
+  // Promise.allSettled lets the slowest one set the wall-clock floor.
   const handleBatchRun = async () => {
     const runnable = tasks.filter(
       (t) => selectedIds.has(t.id) &&
         ['PENDING', 'FAILED', 'CANCELLED', 'PAUSED'].includes(t.status),
     )
     if (runnable.length === 0) return
-    for (const t of runnable) {
-      try {
+    await Promise.allSettled(
+      runnable.map(async (t) => {
         if (t.status !== 'PENDING') {
           await api.patch(`/execution/tasks/${t.id}`, { status: 'PENDING' })
         }
         await api.post(`/execution/tasks/${t.id}/run`)
-      } catch { /* continue */ }
-    }
+      }),
+    )
     setSelectedIds(new Set())
     await fetchTasks()
   }
 
-  // ── Batch archive ──
+  // ── Batch archive (parallelized) ──
   const handleBatchArchive = async () => {
-    for (const id of selectedIds) {
-      try { await api.patch(`/execution/tasks/${id}`, { status: 'CANCELLED' }) } catch { /* skip */ }
-    }
+    await Promise.allSettled(
+      [...selectedIds].map((id) =>
+        api.patch(`/execution/tasks/${id}`, { status: 'CANCELLED' }),
+      ),
+    )
     setSelectedIds(new Set())
     await fetchTasks()
+  }
+
+  // ── Cancel a running task ──
+  const handleCancel = async (taskId: string) => {
+    try {
+      await api.patch(`/execution/tasks/${taskId}`, { status: 'CANCELLED' })
+      await fetchTasks()
+    } catch {
+      const { toast } = await import('@/stores/toastStore')
+      toast.error('Could not cancel task')
+    }
   }
 
   // ── Batch delete ──
@@ -177,11 +283,29 @@ export function TasksPage() {
               <p className="text-sm text-starlight-400">Background tasks and autopilot status</p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={fetchTasks}>
+          <Button variant="ghost" size="sm" onClick={() => { void fetchTasks(); void fetchQueueStatus() }}>
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh
           </Button>
         </motion.div>
+
+        <Card variant="glass" padding="sm" className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Badge variant={queueStatus?.persistent ? 'success' : queueStatusError ? 'danger' : 'warning'}>
+              {queueStatus?.persistent ? 'DB-backed queue' : queueStatusError ? 'Queue unknown' : 'Memory-only queue'}
+            </Badge>
+            <span className="text-xs text-starlight-400">
+              {queueStatus
+                ? queueStatus.restart_policy
+                : queueStatusError || 'Checking background queue persistence...'}
+            </span>
+          </div>
+          {queueStatus && (
+            <span className="text-[11px] text-starlight-500">
+              worker {queueStatus.worker_running ? 'running' : 'stopped'} · {queueStatus.active_count} active · {queueStatus.queued_count} queued
+            </span>
+          )}
+        </Card>
 
         {/* Stats summary */}
         {!loading && tasks.length > 0 && (
@@ -267,12 +391,21 @@ export function TasksPage() {
                 return (
                   <motion.div
                     key={task.id}
+                    id={`task-${task.id}`}
                     layout
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.03 }}
                   >
-                    <Card variant="glass" padding="md" className="hover:border-white/10 transition-all">
+                    <Card
+                      variant="glass"
+                      padding="md"
+                      className={`hover:border-white/10 transition-all ${
+                        typeof window !== 'undefined' && window.location.hash === `#task-${task.id}`
+                          ? 'border-primary-500/40 bg-primary-500/5'
+                          : ''
+                      }`}
+                    >
                       <div className="flex items-start gap-3">
                         {/* Checkbox */}
                         <button onClick={() => toggleSelect(task.id)} className="shrink-0 mt-0.5 text-starlight-500 hover:text-primary-400 transition-colors cursor-pointer">
@@ -357,6 +490,20 @@ export function TasksPage() {
                               ? <Loader2 size={12} className="animate-spin" />
                               : <Play size={12} />}
                             {task.status === 'PENDING' ? 'Run' : 'Resume'}
+                          </button>
+                        )}
+
+                        {/* Cancel a RUNNING task. Operators previously had no
+                            way to stop a runaway task — only autopilot or
+                            timeout would end it. */}
+                        {task.status === 'RUNNING' && (
+                          <button
+                            onClick={() => handleCancel(task.id)}
+                            title="Cancel this running task"
+                            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer bg-status-error/10 text-status-error hover:bg-status-error/20"
+                          >
+                            <XCircle size={12} />
+                            Cancel
                           </button>
                         )}
 

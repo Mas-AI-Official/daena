@@ -32,9 +32,20 @@
   --color-status-info: #0070F3;
 
   /* ── Accent Colors ── */
+  /* 2026-04-29 brand alignment: accent-amber + accent-cyan now match the
+     locked Daena palette (gov-gold #D4A843 + gov-teal #2DD4BF). The old
+     values (#FCD34D yellow + #06B6D4 cyan) drifted off-brand across the
+     runtime-truth, scan, settings pages. Single re-point cascades to every
+     component using these Tailwind classes; gov-gold/gov-teal stay as
+     canonical aliases below. accent-purple stays as the QE signature.
+     accent-green / accent-red are aliased to status-success / status-error
+     so existing usages render with the locked status colors instead of
+     falling back to default Tailwind palette. */
   --color-accent-purple: #8B5CF6;
-  --color-accent-cyan: #06B6D4;
-  --color-accent-amber: #FCD34D;
+  --color-accent-cyan: #2DD4BF;
+  --color-accent-amber: #D4A843;
+  --color-accent-green: #00D68F;
+  --color-accent-red: #FF4757;
 
   /* ── Daena Brand (extracted from logo images) ── */
   --color-daena-blue: #00d4ff;

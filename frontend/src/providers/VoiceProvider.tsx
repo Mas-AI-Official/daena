@@ -681,9 +681,55 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isActive])
 
+  // ── Auto-OFF voice on tab/window blur (F-0010 fix) ────────────────────────
+  // Prevents the mic from continuing to capture (and auto-send) ambient audio
+  // when the user switches away from Daena. Without this, the user's
+  // environment microphone keeps streaming into the chat even when they're
+  // working in another window. Mirrors the polling-pause-on-tab-hide pattern
+  // used in TasksPage / GovernanceApprovalsPage.
+  useEffect(() => {
+    const stopOnBlur = () => {
+      if (isActiveRef.current) {
+        setIsActive(false)
+        toast.info('Voice paused (tab blurred). Click the mic to resume.')
+      }
+    }
+    window.addEventListener('blur', stopOnBlur)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) stopOnBlur()
+    })
+    return () => {
+      window.removeEventListener('blur', stopOnBlur)
+    }
+  }, [])
+
   // ── Actions ───────────────────────────────────────────────────────────────
 
-  const toggle = useCallback(() => setIsActive((prev) => !prev), [])
+  const toggle = useCallback(() => {
+    // F-0010 fix: first-time activation per browser shows a one-time
+    // confirmation. Without this, users can't distinguish "I activated
+    // voice and Daena will read my next sentence" from "I accidentally
+    // hovered the button". Voice in conversational mode AUTO-SENDS, which
+    // means an ambient utterance can trigger tool execution under EXE
+    // mode -- the user must explicitly opt in once.
+    setIsActive((prev) => {
+      if (!prev) {
+        const ackd = localStorage.getItem('daena:voice_conv_acknowledged') === '1'
+        if (!ackd) {
+          const ok = window.confirm(
+            'Voice conversation mode will AUTO-SEND what you say to Daena ' +
+            '(including ambient speech captured by your mic). ' +
+            'In EXE mode this could trigger tool execution. ' +
+            'Click OK to enable, or Cancel to keep voice off.\n\n' +
+            'You can disable mic auto-send anytime by clicking the floating "x" overlay.',
+          )
+          if (!ok) return prev
+          localStorage.setItem('daena:voice_conv_acknowledged', '1')
+        }
+      }
+      return !prev
+    })
+  }, [])
 
   const toggleTts = useCallback(() => {
     setTtsEnabled((prev) => {

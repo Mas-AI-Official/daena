@@ -9,17 +9,29 @@ Human gates at PROPOSAL, CONTRACT, DELIVERY require founder_approved=true.
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_role
 from app.core.database import get_db
+from app.core.sse_channels import pipeline_channel
 from app.services.pipeline_service import PipelineService
 
 router = APIRouter()
+
+
+# Standard SSE response headers; matches the chat + scan stream
+# convention so frontend EventSource clients see consistent framing.
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 
 def get_pipeline_service(db: AsyncSession = Depends(get_db)) -> PipelineService:
@@ -258,3 +270,45 @@ async def top_opportunities(
     """Get top-scored DISCOVERY projects for founder review."""
     projects = await service.get_top_opportunities(user.tenant_id, limit=limit)
     return {"success": True, "data": projects}
+
+
+@router.get("/events")
+async def stream_pipeline_events(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+) -> StreamingResponse:
+    """Server-sent events for project pipeline transitions.
+
+    Subscribes to ``pipeline_channel`` and yields each envelope as a
+    formatted SSE event. Tenant-scoped: only events whose
+    ``data.tenant_id`` matches the caller pass through.
+
+    Emits the following event types:
+
+    - ``pipeline.stage_advanced`` ``{project_id, tenant_id, from_stage,
+      to_stage, owner_department, founder_approved}`` -- a project moved
+      forward.
+    - ``pipeline.project_lost`` ``{project_id, tenant_id,
+      stage_at_loss, reason}`` -- the project was marked lost.
+    - ``ping`` synthetic heartbeat every 25s of idle time.
+
+    Connection stays open until the client disconnects.
+    """
+    tenant_id = str(user.tenant_id)
+
+    async def _event_stream():
+        async for envelope in pipeline_channel.subscribe():
+            if await request.is_disconnected():
+                break
+            payload = envelope.get("data") or {}
+            if envelope.get("type") != "ping":
+                if payload.get("tenant_id") and payload.get("tenant_id") != tenant_id:
+                    continue
+            data = json.dumps(envelope)
+            yield f"event: {envelope['type']}\ndata: {data}\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )

@@ -23,8 +23,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user
+from app.core.database import get_db
 from app.core.events import get_mcp_registry
 from app.core.logging import get_logger
 from app.services.mcp_registry import MCPTool
@@ -134,13 +136,15 @@ async def list_detected(
 async def import_mcp(
     req: MCPImportRequest,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> MCPImportResult:
     """Scan then register a detected MCP.
 
     The scan runs first and an unsafe entry is reported back with the
     specific blockers so the UI can surface them. A safe entry is
     registered in the shared :class:`MCPRegistry` at the default
-    governance tier (2 = NOTIFIED for external tools).
+    governance tier (2 = NOTIFIED for external tools) and persisted
+    to the ``mcp_servers`` table so it survives restart.
     """
     if not req.name:
         raise HTTPException(status_code=422, detail="name is required")
@@ -174,14 +178,46 @@ async def import_mcp(
     # carry schema info; a later MCPRegistry.discover_tools call can
     # enrich once the server is live.
     registry = get_mcp_registry()
+    connection_id = f"mcp_server:{req.name}"
     tool = MCPTool(
         name=req.name,
         description=f"Imported from CLI detection ({target})",
         input_schema={},
-        connection_id=f"mcp_sync:{user.id}",
+        connection_id=connection_id,
         governance_tier=2,
     )
-    registered_count = await registry.register_tools([tool])
+    registered_count = await registry.register_tools(
+        [tool], tenant_id=user.tenant_id,
+    )
+
+    # Persist the server registration so it survives a restart. The
+    # in-memory tool placeholder above will be re-derived from this
+    # row (or refreshed via discover_tools) on the next hydrate.
+    try:
+        await registry.persist_addition(
+            tenant_id=user.tenant_id,
+            entry={
+                "server_key": req.name,
+                "display_name": req.name,
+                "description": f"Imported from CLI detection ({target})",
+                "command": req.command or None,
+                "args": list(req.args or []),
+                "server_url": req.url or None,
+                "extra_metadata": {"env_keys": sorted((req.env or {}).keys())},
+            },
+            db=db,
+            created_by_user_id=user.id,
+        )
+        await db.commit()
+    except Exception as persist_exc:  # noqa: BLE001
+        await db.rollback()
+        logger.warning(
+            "mcp_sync.api.persist_failed",
+            user_id=str(user.id),
+            name=req.name,
+            error=str(persist_exc),
+            impact="MCP runtime-registered but will not survive a restart.",
+        )
 
     logger.info(
         "mcp_sync.api.import_ok",

@@ -1,16 +1,44 @@
 /**
  * Daena API client -- Axios instance with JWT interceptor + refresh logic.
  *
- * Error handling:
+ * Error handling philosophy (rewrite, 2026-04-29):
+ *   The previous shape silently swallowed every 5xx response on a wide
+ *   allowlist of polling endpoints (/heartbeat/, /governance/approvals/,
+ *   /runtimes/, /mcp/, /skills/, ...). When backends fell over, the user
+ *   saw nothing -- the app FELT broken even though no toast had ever
+ *   fired. That is a worse failure than a noisy toast, because the user
+ *   has no thread to pull on.
+ *
+ *   New shape:
+ *     - Every error is recorded to useErrorStore (no exception). The
+ *       ConnectionStatusIndicator reads from there and surfaces a small
+ *       navbar dot when an endpoint family starts failing.
+ *     - Every error is logged to console.warn with category, status,
+ *       url, code -- so devtools is the source of truth for diagnosis.
+ *     - Toasts are still suppressed by default for known polling
+ *       endpoints (the silent prefix list) so we don't spam the user
+ *       when the heartbeat blips. But the suppression is now per-call
+ *       overridable via `config.silent` -- a caller doing an explicit
+ *       user-initiated mutation can force a toast even on a "silent"
+ *       prefix, and a polling caller can opt out for a specific call.
+ *     - Default for `silent`: true if the request url matches a silent
+ *       prefix, false otherwise (any user-initiated mutation surfaces).
+ *
+ *   Cancellations (axios CanceledError) are skipped entirely -- they
+ *   represent intentional aborts (route change, fetch refresh) and
+ *   shouldn't lit the navbar or spam console.
+ *
+ * Other behavior:
  *  - 401: auto-refresh, fallback redirect to /login
- *  - 403: toast "Permission denied"
- *  - 404: toast "Not found"
- *  - 500: toast "Server error"
- *  - Network error: toast "Connection lost"
- *  - Timeout: 30s default, toast "Request timed out"
+ *  - 403: toast "Permission denied" unless silent
+ *  - 404: toast "Resource not found" for /api/ paths unless silent
+ *  - 5xx: toast "Server error" unless silent
+ *  - Timeout (ECONNABORTED): toast unless silent
+ *  - Network error (no response): toast unless silent
  */
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { toast } from '@/stores/toastStore'
+import { useErrorStore, extractEndpointPrefix, type ErrorEntry } from '@/stores/errorStore'
 
 const API_BASE = '/api/v1'
 
@@ -20,6 +48,48 @@ export const api = axios.create({
   withCredentials: true, // send httpOnly refresh cookie
   timeout: 30_000, // 30s request timeout
 })
+
+// ── Silent prefixes ──
+//
+// Polling / background endpoints whose failures should NOT pop a toast
+// by default. They still record to the error store + console.warn, so
+// the navbar indicator + devtools both see them. A caller can override
+// per-request with `config.silent = false`.
+//
+// Match is "url contains prefix" -- same logic the old wholesale block
+// used, only now consulted as a default rather than as a hard mute.
+const SILENT_PREFIXES = [
+  '/execution/tasks', '/heartbeat/', '/governance/approvals',
+  '/settings/user', '/billing/', '/chat/model-registry',
+  '/chat/sessions', '/runtimes/', '/health', '/agents/',
+  '/memory/', '/connections/', '/department-states',
+  '/department-messages', '/department-signals',
+  '/department-policies', '/department-budget',
+  '/security/', '/pipeline/', '/projects/', '/autopilot/',
+  '/dynamic-models/', '/mcp/', '/mcp-sync/', '/skills/',
+  '/integrations/', '/prompts/',
+]
+
+function isSilentByDefault(url: string): boolean {
+  return SILENT_PREFIXES.some((p) => url.includes(p))
+}
+
+// ── Augment axios config so callers can pass `silent` ──
+//
+// Declaration merging on InternalAxiosRequestConfig lets a caller do:
+//   api.get('/runtimes/foo', { silent: false })
+// without a TS cast. Defaults to undefined; the interceptor falls back
+// to the prefix-based default when undefined.
+declare module 'axios' {
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  export interface AxiosRequestConfig {
+    silent?: boolean
+  }
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  export interface InternalAxiosRequestConfig {
+    silent?: boolean
+  }
+}
 
 // ── Request interceptor: attach JWT ──
 
@@ -31,7 +101,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
-// ── Response interceptor: auto-refresh on 401 ──
+// ── Response interceptor: auto-refresh on 401 + classified error handling ──
 
 let isRefreshing = false
 let failedQueue: Array<{
@@ -47,12 +117,40 @@ const processQueue = (error: unknown, token: string | null) => {
   failedQueue = []
 }
 
+/** Pull a backend error code out of the response payload, if present. */
+function extractErrorCode(error: AxiosError): string | undefined {
+  const body = error.response?.data as Record<string, unknown> | undefined
+  if (!body) return undefined
+  const errField = body.error
+  if (typeof errField === 'object' && errField !== null) {
+    const code = (errField as Record<string, unknown>).code
+    if (typeof code === 'string') return code
+  }
+  return undefined
+}
+
+/** Classify the axios error so the store + console get a stable label. */
+function categorize(error: AxiosError): ErrorEntry['category'] {
+  if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) return 'timeout'
+  if (!error.response) return 'network'
+  const status = error.response.status
+  if (status >= 500) return 'server'
+  return 'client'
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
+    // Skip canceled requests entirely -- intentional aborts shouldn't
+    // pollute the error store or console.
+    if (axios.isCancel(error)) {
+      return Promise.reject(error)
+    }
+
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // ── 401 auto-refresh path ──
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({
@@ -85,67 +183,56 @@ api.interceptors.response.use(
       }
     }
 
-    // ── Classified error handling for non-401 errors ──
-    const status = error.response?.status
+    // ── Classified error handling ──
 
-    if (status === 403) {
-      // Log the specific endpoint for debugging
-      const url = error.config?.url || 'unknown'
-      const code = (error.response?.data as Record<string, unknown>)?.error
-        ? ((error.response?.data as Record<string, unknown>).error as Record<string, string>)?.code
-        : ''
-      console.warn(`[Daena 403] ${url} — ${code}`)
-      // Suppress toasts for background/polling endpoints that fire without user action
-      const silentOn403 = ['/governance/approvals', '/heartbeat/', '/runtimes/']
-      const isSilent403 = silentOn403.some((p) => url.includes(p))
-      if (!isSilent403) {
+    const url = originalRequest?.url || error.config?.url || 'unknown'
+    const status = error.response?.status ?? 0
+    const code = extractErrorCode(error)
+    const category = categorize(error)
+    const prefix = extractEndpointPrefix(url)
+
+    // Resolve the silent flag:
+    //   - Caller-supplied `config.silent` wins.
+    //   - Otherwise, fall back to the prefix-based default. Polling
+    //     endpoints are silent by default; user-initiated mutations to
+    //     non-polling paths surface toasts.
+    const callerSilent = originalRequest?.silent
+    const silent = callerSilent !== undefined
+      ? callerSilent
+      : isSilentByDefault(url)
+
+    // Always log -- this is the diagnosis breadcrumb. Format keeps the
+    // category, status, url, code on a single greppable line.
+    console.warn(
+      `[Daena api] category=${category} status=${status} url=${url} code=${code ?? '-'} silent=${silent}`,
+      error.message,
+    )
+
+    // Always record to the error store. The store is the source of
+    // truth for ConnectionStatusIndicator regardless of toast policy.
+    useErrorStore.getState().recordError({
+      prefix,
+      url,
+      status,
+      category,
+      code,
+      message: error.message ?? `HTTP ${status}`,
+      silent,
+    })
+
+    // Now decide whether to surface a toast.
+    if (!silent) {
+      if (status === 403) {
         toast.error(`Permission denied${code ? ` (${code})` : ''}. Check your role or governance settings.`)
-      }
-    } else if (status === 404) {
-      // Only toast for API calls, not page navigation
-      const url = error.config?.url || ''
-      if (url.includes('/api/')) {
+      } else if (status === 404 && url.includes('/api/')) {
         toast.error('Resource not found.')
-      }
-    } else if (status && status >= 500) {
-      // Suppress toasts for background/polling endpoints that fire
-      // without user action. Expanded 2026-04-18 after a backend
-      // restart produced transient 500s on several polling surfaces
-      // and the user saw 4 "Server error" toasts stack up even though
-      // no action they took had failed. Poll hooks catch their own
-      // errors; component-level fetchers should set their own inline
-      // error state instead of relying on the global toast.
-      const url = error.config?.url || ''
-      const silentPrefixes = [
-        '/execution/tasks', '/heartbeat/', '/governance/approvals',
-        '/settings/user', '/billing/', '/chat/model-registry',
-        '/chat/sessions', '/runtimes/', '/health', '/agents/',
-        '/memory/', '/connections/', '/department-states',
-        '/department-messages', '/department-signals',
-        '/department-policies', '/department-budget',
-        '/security/', '/pipeline/', '/projects/', '/autopilot/',
-        '/dynamic-models/', '/mcp/', '/mcp-sync/', '/skills/',
-        '/integrations/', '/prompts/',
-      ]
-      const isSilent = silentPrefixes.some((p) => url.includes(p))
-      if (!isSilent) {
+      } else if (status >= 500) {
         toast.error('Server error. Please try again in a moment.')
-      }
-    } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      const url = error.config?.url || ''
-      // Timeouts on polling endpoints are also transient -- don't
-      // toast for those. A long-running LLM call timing out is not a
-      // "please try again" situation; the caller decides what to do.
-      const silentOnTimeout = [
-        '/heartbeat/', '/governance/approvals', '/execution/tasks',
-        '/runtimes/', '/department-', '/security/', '/pipeline/',
-        '/chat/sessions', '/chat/model-registry',
-      ]
-      if (!silentOnTimeout.some((p) => url.includes(p))) {
+      } else if (category === 'timeout') {
         toast.error('Request timed out. Please check your connection.')
+      } else if (category === 'network') {
+        toast.error('Connection lost. Backend unreachable.')
       }
-    } else if (!error.response && error.message === 'Network Error') {
-      // Backend unreachable -- don't spam toasts, components handle their own fallback
     }
 
     return Promise.reject(error)

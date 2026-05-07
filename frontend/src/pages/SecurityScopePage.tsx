@@ -24,6 +24,7 @@ import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button, EmptyState } from '@/components/common'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
+import { useBackendHealthStore } from '@/stores/backendHealthStore'
 import { toast } from '@/stores/toastStore'
 
 interface ScopeResponse {
@@ -75,19 +76,74 @@ export function SecurityScopePage() {
   const isFounder = user?.role === 'FOUNDER'
 
   const [scope, setScope] = useState<ScopeResponse | null>(null)
+  const [serverScope, setServerScope] = useState<ScopeResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testTarget, setTestTarget] = useState('')
   const [testResult, setTestResult] = useState<ScopeTestResponse | null>(null)
   const [testing, setTesting] = useState(false)
 
+  // Track diff between local edits and last-saved server state.
+  const isDirty = !!scope && !!serverScope && (
+    JSON.stringify({ ...scope, has_any_entry: undefined }) !==
+    JSON.stringify({ ...serverScope, has_any_entry: undefined })
+  )
+
+  // beforeunload warning when local edits are unsaved.
+  useEffect(() => {
+    if (!isDirty) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
+
+  // Client-side validators so format errors surface inline at add-time
+  // rather than at PUT time after the operator's typed several entries.
+  const validateEntry = (key: BucketKey, value: string): string | null => {
+    const v = value.trim()
+    if (!v) return 'Entry cannot be empty'
+    if (key === 'ipv4_cidrs') {
+      const cidr = /^(?:(?:\d{1,3}\.){3}\d{1,3})(?:\/(?:[0-9]|[12][0-9]|3[0-2]))?$/
+      if (!cidr.test(v)) return 'Expected an IPv4 address (10.0.0.5) or CIDR (10.0.0.0/24)'
+      const parts = v.split('/')[0].split('.').map(Number)
+      if (parts.some((p) => p < 0 || p > 255)) return 'Each octet must be 0-255'
+    }
+    if (key === 'exact_domains' || key === 'wildcard_domains') {
+      const dom = /^(?!-)[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})*[A-Za-z0-9]$/
+      if (!dom.test(v)) return 'Expected a hostname like mas-ai.co (no protocol, no path)'
+    }
+    if (key === 'source_paths') {
+      if (v.length < 4) return 'Source path looks too short'
+    }
+    return null
+  }
+
+  // 2026-04-29 stabilization: bound the loading window and surface a
+  // clear empty-state when the backend is unreachable. Previously the
+  // page sat on "Loading scope..." for the full axios timeout (30s)
+  // when the backend was offline, which read as an infinite skeleton.
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const backendHealthStatus = useBackendHealthStore((s) => s.status)
+
   const loadScope = useCallback(async () => {
+    setLoadError(null)
     try {
-      const { data } = await api.get<ScopeResponse>('/security/authorized-scope')
+      const { data } = await api.get<ScopeResponse>('/security/authorized-scope', {
+        timeout: 5000,
+      })
       setScope(data)
+      setServerScope(data)
     } catch (err) {
       console.error('Failed to load scope:', err)
-      toast.error('Could not load authorized scope')
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not load authorized scope'
+      setLoadError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }
@@ -105,6 +161,11 @@ export function SecurityScopePage() {
   const addEntry = (key: BucketKey, value: string) => {
     const v = value.trim()
     if (!v || !scope) return
+    const validationError = validateEntry(key, v)
+    if (validationError) {
+      toast.error(validationError)
+      return
+    }
     const existing = scope[key] || []
     if (existing.includes(v)) {
       toast.info(`"${v}" already in ${key.replace('_', ' ')}`)
@@ -130,6 +191,7 @@ export function SecurityScopePage() {
       }
       const { data } = await api.put<ScopeResponse>('/security/authorized-scope', body)
       setScope(data)
+      setServerScope(data)
       toast.success('Authorized scope saved')
     } catch (err: unknown) {
       console.error('Save failed:', err)
@@ -183,6 +245,40 @@ export function SecurityScopePage() {
     )
   }
 
+  // Honest empty state when the load failed (5s timeout or network error).
+  // The BackendOfflineBanner at the top of the app already explains the
+  // global health story; this card explains the per-page consequence.
+  if (loadError && !scope) {
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="max-w-4xl mx-auto p-6">
+          <Card variant="glass" padding="md" className="border-status-error/30 bg-status-error/5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={18} className="text-status-error mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <h2 className="text-sm font-semibold text-starlight-100">Authorized scope unavailable</h2>
+                <p className="mt-1 text-xs text-starlight-400">
+                  {backendHealthStatus === 'down' || backendHealthStatus === 'degraded'
+                    ? 'Backend is offline or degraded. Authorized scope cannot be edited until the backend is reachable.'
+                    : 'Failed to load authorized scope. Check the network or backend logs.'}
+                </p>
+                <p className="mt-2 text-[11px] text-starlight-500 font-mono">
+                  Detail: {loadError}
+                </p>
+                <button
+                  onClick={() => { setLoading(true); void loadScope() }}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-starlight-200 hover:bg-white/10"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-4xl mx-auto p-6 space-y-6">
@@ -190,12 +286,16 @@ export function SecurityScopePage() {
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="text-2xl font-display font-bold text-starlight-100 flex items-center gap-2">
             <ShieldCheck size={22} className="text-primary-400" />
-            Authorized Scope
+            Scan Scope — Authorized Targets
           </h1>
           <p className="text-sm text-starlight-400 mt-1 max-w-2xl">
-            Declare the domains, IPs, and repos this tenant owns. YELLOW-tier security tools
-            (nmap, sqlmap, nuclei, BloodHound) only execute against targets inside this scope.
-            Empty scope blocks all YELLOW tools for the tenant.
+            Founder-only whitelist. Declare the exact domains, IPs, and repos you own.
+            YELLOW-tier defensive validation tools (nmap, sqlmap, nuclei, BloodHound) only run against
+            targets inside this list -- nothing else can be scanned.
+          </p>
+          <p className="text-xs text-starlight-600 mt-1">
+            This is NOT the security dashboard. To see live shield activity and scan history,
+            use <span className="text-primary-400">Security Ops</span> in the sidebar.
           </p>
         </motion.div>
 
@@ -228,8 +328,13 @@ export function SecurityScopePage() {
         </div>
 
         {/* Save */}
-        <div className="flex justify-end">
-          <Button variant="premium" size="md" isLoading={saving} onClick={save}>
+        <div className="flex items-center justify-end gap-3">
+          {isDirty && (
+            <span className="text-[11px] px-2 py-1 rounded-md bg-status-warning/10 text-status-warning border border-status-warning/30">
+              Unsaved changes
+            </span>
+          )}
+          <Button variant="premium" size="md" isLoading={saving} disabled={!isDirty} onClick={save}>
             <span className="flex items-center gap-2">
               <Save size={14} /> Save scope
             </span>

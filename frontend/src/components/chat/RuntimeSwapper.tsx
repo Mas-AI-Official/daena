@@ -4,17 +4,22 @@
  *
  * Shows current runtime, health status, capability stars, and
  * an "Auto" option that lets Daena choose per message.
+ *
+ * Honesty rewrite (2026-04-29): the in-component DEFAULT_RUNTIMES
+ * fallback that hardcoded all runtimes as "online" was deleted. The
+ * `runtimes` prop is now required -- callers MUST pass a real list,
+ * typically from useRuntimeRegistry(). When the parent has nothing yet
+ * (initial mount, fetch in flight, or backend unreachable) we render a
+ * "Detecting runtimes..." skeleton state with a spinning Cpu icon and
+ * disable the click target so the user is told the truth instead of
+ * being shown stale "Online" badges.
  */
 import { useState, useRef, useEffect, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ChevronDown,
   Cpu,
-  Settings,
   Sparkles,
-  Wifi,
-  WifiOff,
-  AlertTriangle,
   Zap,
 } from 'lucide-react'
 import type { RuntimeInfo, RuntimeStatus } from '@/types/api'
@@ -55,66 +60,25 @@ function bestCapability(caps: Record<string, number>): string {
   return best
 }
 
-// ── Default runtimes (in-memory demo data) ──
-
-const DEFAULT_RUNTIMES: RuntimeInfo[] = [
-  {
-    id: 'claude_code',
-    name: 'Claude Code (Anthropic)',
-    status: 'online',
-    capabilities: { complex_reasoning: 9.5, code_generation: 9.5, code_editing: 9.0 },
-    cost_per_1k_tokens: 0.015,
-    is_free: false,
-  },
-  {
-    id: 'codex',
-    name: 'Codex (OpenAI)',
-    status: 'online',
-    capabilities: { code_generation: 9.5, bulk_operations: 8.0, code_editing: 8.5 },
-    cost_per_1k_tokens: 0.01,
-    is_free: false,
-  },
-  {
-    id: 'gemini_cli',
-    name: 'Gemini CLI (Google)',
-    status: 'not_installed',
-    capabilities: { web_research: 8.0, data_analysis: 8.5, simple_chat: 7.5 },
-    cost_per_1k_tokens: 0.005,
-    is_free: false,
-  },
-  {
-    id: 'grok_cli',
-    name: 'Grok (xAI)',
-    status: 'not_installed',
-    capabilities: { web_research: 8.5, simple_chat: 7.0, data_analysis: 6.5 },
-    cost_per_1k_tokens: 0.01,
-    is_free: false,
-  },
-  {
-    id: 'ollama',
-    name: 'Ollama (Local)',
-    status: 'online',
-    capabilities: { simple_chat: 7.0, code_generation: 6.0, data_analysis: 5.5 },
-    cost_per_1k_tokens: 0,
-    is_free: true,
-  },
-]
-
 // ── RuntimeSwapper component ──
 
 interface RuntimeSwapperProps {
   selectedRuntime: string | null
   onSelectRuntime: (runtimeId: string | null) => void
-  runtimes?: RuntimeInfo[]
+  /** Live runtime list -- required. Pass the result of useRuntimeRegistry().runtimes. */
+  runtimes: RuntimeInfo[]
   className?: string
 }
 
 export const RuntimeSwapper = memo(function RuntimeSwapper({
   selectedRuntime,
   onSelectRuntime,
-  runtimes = DEFAULT_RUNTIMES,
+  runtimes,
   className = '',
 }: RuntimeSwapperProps) {
+  // Hooks MUST run in the same order every render -- so all hook
+  // calls happen before any conditional return. The "Detecting
+  // runtimes..." skeleton branch is taken below the hook section.
   const [open, setOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -137,6 +101,30 @@ export const RuntimeSwapper = memo(function RuntimeSwapper({
     if (open) document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
   }, [open])
+
+  // No data yet: the parent hasn't finished its first fetch (or the
+  // backend is unreachable). Show a skeleton button rather than a
+  // misleading "Auto" with hardcoded online badges.
+  if (!runtimes || runtimes.length === 0) {
+    return (
+      <div className={`relative ${className}`}>
+        <button
+          disabled
+          aria-disabled="true"
+          aria-busy="true"
+          aria-label="Detecting runtimes"
+          title="Waiting for the runtime registry to respond"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg
+                     bg-midnight-300/40 border border-white/5 text-sm
+                     opacity-60 cursor-not-allowed"
+        >
+          <Cpu size={14} className="text-primary-400 animate-spin" />
+          <span className="text-starlight-500 text-xs mr-0.5">Mind:</span>
+          <span className="text-starlight-400">Detecting runtimes...</span>
+        </button>
+      </div>
+    )
+  }
 
   const active = runtimes.find((r) => r.id === selectedRuntime)
   const isAuto = selectedRuntime === null

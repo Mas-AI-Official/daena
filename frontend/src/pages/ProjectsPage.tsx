@@ -27,7 +27,12 @@ import type { ProjectResponse } from '@/types/api'
 // ── Helpers ──
 
 function timeAgo(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime()
+  const then = new Date(isoDate).getTime()
+  // F-DATE-EPOCH defensive: legacy rows with NULL created_at coerce to
+  // Unix epoch 0 (1970-01-01), rendering "20568d ago". Anything before
+  // 2020 is treated as "no date" until backend backfill runs.
+  if (!Number.isFinite(then) || then < 1577836800000) return ''
+  const diff = Date.now() - then
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'just now'
   if (mins < 60) return `${mins}m ago`
@@ -157,17 +162,21 @@ function ProjectCard({ project, onEdit, onDelete, onClick }: ProjectCardProps) {
             )}
           </div>
 
-          {/* Actions (show on hover) */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Actions: visible on touch (no hover), brighter on hover for desktop */}
+          <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => { e.stopPropagation(); onEdit() }}
-              className="p-1.5 rounded-md hover:bg-white/5 text-starlight-400 hover:text-starlight-200 transition-colors"
+              aria-label="Edit project"
+              title="Edit project"
+              className="p-1.5 rounded-md hover:bg-white/5 text-starlight-400 hover:text-starlight-200 transition-colors cursor-pointer"
             >
               <Pencil size={13} />
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onDelete() }}
-              className="p-1.5 rounded-md hover:bg-status-error/10 text-starlight-400 hover:text-status-error transition-colors"
+              aria-label="Delete project"
+              title="Delete project"
+              className="p-1.5 rounded-md hover:bg-status-error/10 text-starlight-400 hover:text-status-error transition-colors cursor-pointer"
             >
               <Trash2 size={13} />
             </button>
@@ -204,6 +213,8 @@ export function ProjectsPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<ProjectResponse | null>(null)
   const [saving, setSaving] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortMode, setSortMode] = useState<'updated' | 'name' | 'tasks'>('updated')
 
   const fetchProjects = useCallback(async () => {
     setLoading(true)
@@ -271,6 +282,28 @@ export function ProjectsPage() {
           </Button>
         </motion.div>
 
+        {/* Search + sort controls — visible only when at least 2 projects */}
+        {!loading && projects.length > 1 && (
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search projects..."
+              className="flex-1 px-3 py-2 rounded-lg text-sm bg-white/5 border border-white/10 text-starlight-200 placeholder:text-starlight-500 focus:outline-none focus:border-primary-500/40"
+            />
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as 'updated' | 'name' | 'tasks')}
+              className="px-3 py-2 rounded-lg text-sm bg-white/5 border border-white/10 text-starlight-200 focus:outline-none focus:border-primary-500/40 cursor-pointer"
+            >
+              <option value="updated">Recently updated</option>
+              <option value="name">Name (A-Z)</option>
+              <option value="tasks">Most tasks</option>
+            </select>
+          </div>
+        )}
+
         {/* Project grid */}
         {loading ? (
           <Shimmer count={4} layout="list" />
@@ -289,7 +322,14 @@ export function ProjectsPage() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <AnimatePresence mode="popLayout">
-              {projects.map((project) => (
+              {projects
+                .filter((p) => !searchQuery.trim() || p.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) || (p.description ?? '').toLowerCase().includes(searchQuery.trim().toLowerCase()))
+                .sort((a, b) => {
+                  if (sortMode === 'name') return a.name.localeCompare(b.name)
+                  if (sortMode === 'tasks') return (b.task_count ?? 0) - (a.task_count ?? 0)
+                  return new Date(b.updated_at ?? 0).getTime() - new Date(a.updated_at ?? 0).getTime()
+                })
+                .map((project) => (
                 <ProjectCard
                   key={project.id}
                   project={project}

@@ -29,6 +29,12 @@ export interface DeleteOptions {
   failureMessage?: string
   /** Suppress the toast entirely (used by batch helpers). */
   silent?: boolean
+  /**
+   * When provided, a themed confirmation dialog is shown before the
+   * delete fires. The string is the dialog body. Returns false (and
+   * skips the network call) if the user cancels.
+   */
+  confirmMessage?: string
 }
 
 /**
@@ -42,6 +48,15 @@ export async function deleteWithToast(
   opts: DeleteOptions = {},
 ): Promise<boolean> {
   const entity = opts.entity ?? 'Item'
+  if (opts.confirmMessage) {
+    const ok = await confirmDialog({
+      title: `Delete ${entity.toLowerCase()}?`,
+      message: opts.confirmMessage,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    })
+    if (!ok) return false
+  }
   try {
     await api.delete(path)
     if (!opts.silent) {

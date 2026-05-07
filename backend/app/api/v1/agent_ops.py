@@ -19,6 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
 from app.core.logging import get_logger
+from app.models.execution import Task
+from app.services.approval import ApprovalService
+from app.services.audit import AuditService
 from app.services.departments.marketing_agent import create_marketing_agent
 from app.services.departments.sales_agent import create_sales_agent
 
@@ -38,6 +41,21 @@ class ProspectRequest(BaseModel):
     icp_description: str = Field(..., min_length=3, max_length=2000)
     limit: int = Field(default=5, ge=1, le=25)
     seed_company: str | None = None
+
+
+class CustomerAcquisitionWorkflowRequest(BaseModel):
+    """Draft-only MAS-AI customer acquisition workflow.
+
+    Creates a deterministic dev-safe prospect, qualifies it, drafts an
+    email, creates a follow-up task, opens an approval request, and logs
+    an audit entry. It never sends email or touches external platforms.
+    """
+
+    icp_description: str = Field(..., min_length=3, max_length=2000)
+    limit: int = Field(default=3, ge=1, le=10)
+    seed_company: str | None = None
+    signer: str = Field(default="Masoud", min_length=1, max_length=80)
+    template_id: str = Field(default="email_cold_v1", min_length=1, max_length=100)
 
 
 @sales_router.post("/prospect", status_code=status.HTTP_201_CREATED)
@@ -63,6 +81,177 @@ async def prospect(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     await db.commit()
     return {"success": True, "data": contacts}
+
+
+@sales_router.post(
+    "/customer-acquisition/draft-workflow",
+    status_code=status.HTTP_201_CREATED,
+)
+async def run_customer_acquisition_draft_workflow(
+    body: CustomerAcquisitionWorkflowRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Run the core founder demo workflow without external sends.
+
+    Flow:
+    1. Sales creates lead/contact rows from ICP.
+    2. Sales qualifies the top contact.
+    3. Marketing drafts outreach in ``DRAFT`` status.
+    4. Execution creates a follow-up task.
+    5. Governance creates an approval request for the send step.
+    6. Audit logs the workflow as ``APPROVAL_REQUIRED``.
+
+    This endpoint is deliberately draft-only: it does not send email,
+    submit forms, scrape restricted platforms, or scan third-party
+    systems. The approval request is for a future external send action.
+    """
+    sales = create_sales_agent(
+        db=db,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        governance_mode=getattr(user, "governance_mode", "BALANCED"),
+    )
+    marketing = create_marketing_agent(
+        db=db,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        governance_mode=getattr(user, "governance_mode", "BALANCED"),
+    )
+    approvals = ApprovalService(db)
+    audit = AuditService(db)
+
+    try:
+        contacts = await sales.prospect(
+            icp_description=body.icp_description,
+            limit=body.limit,
+            seed_company=body.seed_company,
+        )
+        if not contacts:
+            raise HTTPException(
+                status_code=500,
+                detail="Sales agent produced no contacts for the requested ICP.",
+            )
+
+        top_contact = contacts[0]
+        qualification = await sales.qualify(top_contact["contact_id"])
+        draft = await marketing.author_outreach(
+            contact_id=top_contact["contact_id"],
+            template_id=body.template_id,
+            channel="email",
+            signer=body.signer,
+        )
+
+        task_row = Task(
+            name=f"Follow up with {top_contact['full_name']}",
+            description=(
+                "Draft-only customer acquisition workflow. Review the "
+                f"outreach draft {draft['draft_id']} and decide from the "
+                "approval queue before any external send."
+            ),
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            session_id=None,
+            status="PENDING",
+            progress=0,
+        )
+        db.add(task_row)
+        await db.flush()
+        task = {
+            "id": str(task_row.id),
+            "user_id": str(task_row.user_id),
+            "tenant_id": str(task_row.tenant_id),
+            "session_id": None,
+            "name": task_row.name,
+            "description": task_row.description,
+            "status": task_row.status,
+            "progress": task_row.progress,
+            "result": task_row.result,
+            "error": task_row.error,
+            "checkpoint_data": task_row.checkpoint_data,
+            "started_at": None,
+            "completed_at": None,
+            "created_at": task_row.created_at.isoformat() if task_row.created_at else None,
+            "updated_at": task_row.updated_at.isoformat() if task_row.updated_at else None,
+        }
+
+        approval = await approvals.request_approval(
+            tenant_id=user.tenant_id,
+            user_id=user.id,
+            action_type="SEND_EXTERNAL_OUTREACH_DRAFT",
+            action_params={
+                "draft_id": draft["draft_id"],
+                "contact_id": draft["contact_id"],
+                "channel": draft["channel"],
+                "subject": draft["subject"],
+                "external_action_sent": False,
+                "requires_founder_approval": True,
+            },
+            risk_level="HIGH",
+            governance_tier=3,
+            session_id=None,
+            context={
+                "workflow": "customer_acquisition_draft",
+                "company": body.seed_company,
+                "icp_description": body.icp_description,
+                "task_id": task["id"],
+                "draft_id": draft["draft_id"],
+                "no_external_send": True,
+            },
+        )
+
+        await audit.log_decision(
+            tenant_id=user.tenant_id,
+            actor_id=user.id,
+            actor_type="FOUNDER",
+            action_type="CUSTOMER_ACQUISITION_DRAFT_WORKFLOW",
+            action_params={
+                "icp_description": body.icp_description,
+                "contact_id": top_contact["contact_id"],
+                "draft_id": draft["draft_id"],
+                "approval_id": approval["id"],
+                "task_id": task["id"],
+                "external_action_sent": False,
+            },
+            result="APPROVAL_REQUIRED",
+            risk_level="HIGH",
+            governance_tier=3,
+            session_id=None,
+        )
+        await db.commit()
+    except HTTPException:
+        await db.rollback()
+        raise
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except KeyError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {
+        "success": True,
+        "data": {
+            "mode": "draft_only",
+            "external_action_sent": False,
+            "requires_founder_approval": True,
+            "steps": [
+                "identified_icp",
+                "created_lead_research_task",
+                "created_crm_contacts",
+                "qualified_top_contact",
+                "drafted_outreach",
+                "created_follow_up_task",
+                "created_approval_request",
+                "logged_audit_trail",
+            ],
+            "contacts": contacts,
+            "qualified_contact": qualification,
+            "outreach_draft": draft,
+            "follow_up_task": task,
+            "approval_request": approval,
+        },
+    }
 
 
 class QualifyRequest(BaseModel):

@@ -99,16 +99,27 @@ export function DepartmentChatPage() {
     void fetchRegistry(true)
   }, [fetchRegistry])
 
-  // Fetch department info
+  // Fetch department info.
+  // F-DEPTCHAT-FETCH fix: previously refetched the FULL /agents/departments
+  // list on every mount just to find one name. With 10 departments + active
+  // counts that's a wasted O(N) round-trip per nav. Now hits the
+  // single-resource endpoint and falls back to the list only if the single
+  // endpoint isn't there yet on older backends.
   useEffect(() => {
     if (!departmentId) return
     api
-      .get<ApiResponse<DepartmentResponse[]>>('/agents/departments')
-      .then(({ data }) => {
-        const dept = data.data.find((d) => d.id === departmentId)
-        if (dept) setDepartment(dept)
+      .get<ApiResponse<DepartmentResponse>>(`/agents/departments/${departmentId}`)
+      .then(({ data }) => { if (data.data) setDepartment(data.data) })
+      .catch(async () => {
+        // Fallback for backends without the single-resource route.
+        try {
+          const { data } = await api.get<ApiResponse<DepartmentResponse[]>>('/agents/departments')
+          const dept = data.data.find((d) => d.id === departmentId)
+          if (dept) setDepartment(dept)
+        } catch {
+          // Last resort: leave department null so the header shows "Department"
+        }
       })
-      .catch(() => {})
   }, [departmentId])
 
   // Load session on mount / URL change
@@ -208,17 +219,43 @@ export function DepartmentChatPage() {
           <GovernanceEventStrip />
         </div>
 
-        {/* Messages */}
-        <MessageList
-          messages={messages}
-          isStreaming={stream.isStreaming}
-          thinkingContent={stream.thinkingContent}
-          streamedContent={stream.streamedContent}
-          isLoading={messagesLoading}
-          modelUsed={stream.modelUsed}
-          daenabotActivity={stream.daenabotActivity}
-          onEditMessage={editAndRegenerate}
-        />
+        {/* Messages — empty state previews what this department can do */}
+        {!sessionId && messages.length === 0 && !messagesLoading && !stream.isStreaming ? (
+          <div className="flex-1 flex items-center justify-center px-6">
+            <div className="max-w-md text-center space-y-4">
+              <div className={`inline-flex p-3 rounded-2xl bg-white/5 border border-white/10 ${deptColor}`}>
+                {deptIcon}
+              </div>
+              <div>
+                <h2 className="text-lg font-display font-semibold text-starlight-100">
+                  {deptName}
+                </h2>
+                <p className="text-sm text-starlight-400 mt-1">
+                  Six capabilities: <span className="text-starlight-300">MIND</span>,{' '}
+                  <span className="text-starlight-300">EYES</span>,{' '}
+                  <span className="text-starlight-300">HANDS</span>,{' '}
+                  <span className="text-starlight-300">VOICE</span>,{' '}
+                  <span className="text-starlight-300">SHIELD</span>,{' '}
+                  <span className="text-starlight-300">MEMORY</span>.
+                </p>
+              </div>
+              <p className="text-[11px] text-starlight-600 max-w-sm mx-auto">
+                Ask {deptName} to plan, research, draft, or execute work in its domain. Cross-department asks route automatically through Daena's VP layer.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <MessageList
+            messages={messages}
+            isStreaming={stream.isStreaming}
+            thinkingContent={stream.thinkingContent}
+            streamedContent={stream.streamedContent}
+            isLoading={messagesLoading}
+            modelUsed={stream.modelUsed}
+            daenabotActivity={stream.daenabotActivity}
+            onEditMessage={editAndRegenerate}
+          />
+        )}
 
         {/* Input */}
         <ChatInput

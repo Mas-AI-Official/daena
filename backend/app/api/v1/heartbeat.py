@@ -6,15 +6,28 @@ view history, and manage cron jobs.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
+from app.core.sse_channels import cron_channel
 
 router = APIRouter()
+
+
+# Standard SSE response headers for any streaming endpoint in this
+# router. ``X-Accel-Buffering: no`` defeats nginx buffering so events
+# arrive at the client as soon as the publisher fires them.
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 
 def _get_daemon():
@@ -24,12 +37,10 @@ def _get_daemon():
 
 
 def _get_scheduler():
-    from app.services.heartbeat.cron_scheduler import CronScheduler
+    from app.services.heartbeat.cron_scheduler import get_cron_scheduler
 
-    # Lazy singleton
-    if not hasattr(_get_scheduler, "_instance"):
-        _get_scheduler._instance = CronScheduler.with_defaults()
-    return _get_scheduler._instance
+    # API reads the same process-wide scheduler that lifespan starts.
+    return get_cron_scheduler()
 
 
 @router.get("/status")
@@ -130,6 +141,47 @@ async def list_cron_jobs(
     """List all registered cron jobs."""
     scheduler = _get_scheduler()
     return {"success": True, "data": scheduler.get_jobs()}
+
+
+@router.get("/cron/events")
+async def stream_cron_events(
+    request: Request,
+    _user: CurrentUser = Depends(get_current_user),
+) -> StreamingResponse:
+    """Server-sent events for cron run lifecycle.
+
+    Subscribes to ``cron_channel`` and yields each envelope as a
+    formatted SSE event. Emits the following event types (matched on
+    the SSE ``event:`` field by frontend consumers):
+
+    - ``cron.run_started`` ``{job_id, run_id, name, runtime, started_at}``
+      The scheduler dispatched a due job and the audit row was inserted.
+    - ``cron.run_completed`` ``{run_id, summary, cost_usd, duration_ms,
+      tokens_in, tokens_out, finished_at}`` -- runtime returned a
+      result and the row was finalized.
+    - ``cron.run_failed`` ``{run_id, error, duration_ms, finished_at}``
+      Runtime errored, cost cap exceeded, or audit insert failed; the
+      row was finalized with the error string.
+    - ``ping`` synthetic heartbeat every 25s of idle time so proxies
+      keep the connection alive.
+
+    Connection stays open until the client disconnects. The
+    subscriber's queue is detached automatically when the async
+    generator returns.
+    """
+
+    async def _event_stream():
+        async for envelope in cron_channel.subscribe():
+            if await request.is_disconnected():
+                break
+            data = json.dumps(envelope)
+            yield f"event: {envelope['type']}\ndata: {data}\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
 
 
 # ── Work Queue ──

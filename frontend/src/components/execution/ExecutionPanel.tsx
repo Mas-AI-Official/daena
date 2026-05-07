@@ -212,7 +212,7 @@ export function ExecutionPanel({
         <button
           onClick={onToggle}
           className="flex items-center gap-1.5 text-xs text-starlight-400 hover:text-starlight-200 transition-colors"
-          title={visible ? 'Hide execution details (saves tokens)' : 'Show execution details'}
+          title={visible ? 'Hide live execution feed - Daena\'s tool calls' : 'Show live execution feed - watch Daena work'}
         >
           {visible ? <Eye size={14} /> : <EyeOff size={14} />}
           {visible ? 'On' : 'Off'}

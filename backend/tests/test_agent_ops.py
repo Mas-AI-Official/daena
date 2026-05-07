@@ -13,6 +13,8 @@ import pytest
 from sqlalchemy import select
 
 from app.models.crm import Account, Contact, OutreachDraft
+from app.models.execution import Task
+from app.models.governance import GoaAuditEvent, GoaRequest
 from app.models.identity import Tenant, User
 from app.services.departments.marketing_agent import create_marketing_agent
 from app.services.departments.sales_agent import create_sales_agent
@@ -38,6 +40,32 @@ async def _seed_tenant_and_user(db) -> tuple[uuid.UUID, uuid.UUID]:
     db.add(user)
     await db.flush()
     return tenant.id, user.id
+
+
+async def _seed_tenant_and_user_ids(
+    db,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> None:
+    """Seed rows matching the JWT fixture IDs so FK-backed routes work."""
+    tenant = Tenant(
+        id=tenant_id,
+        name="AgentOpsRouteOrg",
+        slug=f"aops-route-{uuid.uuid4().hex[:6]}",
+    )
+    db.add(tenant)
+    await db.flush()
+    user = User(
+        id=user_id,
+        tenant_id=tenant_id,
+        email=f"route-{uuid.uuid4().hex[:6]}@example.com",
+        display_name="Agent Ops Route Tester",
+        password_hash="unused",
+        role="FOUNDER",
+    )
+    db.add(user)
+    await db.flush()
 
 
 # ── SalesAgent.prospect ──────────────────────────────────────────
@@ -193,3 +221,80 @@ async def test_author_outreach_enforces_tenant_isolation(db_session) -> None:
     )
     with pytest.raises(KeyError):
         await marketing_b.author_outreach(contact_id=contacts_a[0]["contact_id"])
+
+
+# ── Draft-only customer acquisition route ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_customer_acquisition_workflow_route_is_draft_only(
+    client,
+    db_session,
+    auth_headers,
+    test_tenant_id,
+    test_user_id,
+) -> None:
+    """The founder demo flow must create work, approval, and audit without sending."""
+    await _seed_tenant_and_user_ids(
+        db_session,
+        tenant_id=test_tenant_id,
+        user_id=test_user_id,
+    )
+
+    response = await client.post(
+        "/api/v1/sales/customer-acquisition/draft-workflow",
+        headers=auth_headers,
+        json={
+            "icp_description": (
+                "Founder-led AI and cybersecurity agencies that need governed "
+                "agents for sales and delivery"
+            ),
+            "seed_company": "Northstar Security Labs",
+            "limit": 2,
+            "signer": "Masoud",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()["data"]
+    assert payload["mode"] == "draft_only"
+    assert payload["external_action_sent"] is False
+    assert payload["requires_founder_approval"] is True
+    assert payload["outreach_draft"]["status"] == "DRAFT"
+    assert payload["approval_request"]["status"] == "PENDING"
+    assert "logged_audit_trail" in payload["steps"]
+
+    draft_id = uuid.UUID(payload["outreach_draft"]["draft_id"])
+    approval_id = uuid.UUID(payload["approval_request"]["id"])
+    task_id = uuid.UUID(payload["follow_up_task"]["id"])
+
+    draft = (
+        await db_session.execute(
+            select(OutreachDraft).where(OutreachDraft.id == draft_id)
+        )
+    ).scalar_one()
+    assert draft.status == "DRAFT"
+
+    approval = (
+        await db_session.execute(
+            select(GoaRequest).where(GoaRequest.id == approval_id)
+        )
+    ).scalar_one()
+    assert approval.action_type == "SEND_EXTERNAL_OUTREACH_DRAFT"
+    assert approval.status == "PENDING"
+    assert approval.action_params["external_action_sent"] is False
+
+    task = (
+        await db_session.execute(select(Task).where(Task.id == task_id))
+    ).scalar_one()
+    assert task.status == "PENDING"
+
+    audit = (
+        await db_session.execute(
+            select(GoaAuditEvent).where(
+                GoaAuditEvent.action_type == "CUSTOMER_ACQUISITION_DRAFT_WORKFLOW"
+            )
+        )
+    ).scalar_one()
+    assert audit.result == "APPROVAL_REQUIRED"
+    assert audit.action_params["external_action_sent"] is False

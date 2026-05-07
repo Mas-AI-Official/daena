@@ -78,6 +78,17 @@ export function MindDetailPage() {
     [slug],
   )
 
+  // Scroll to #proposals when arriving from MindsPage's "N pending" CTA.
+  // Runs once after the page mounts; the section's id="proposals" is below.
+  useEffect(() => {
+    if (window.location.hash === '#proposals') {
+      const t = setTimeout(() => {
+        document.getElementById('proposals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 200)
+      return () => clearTimeout(t)
+    }
+  }, [slug])
+
   useEffect(() => {
     let cancelled = false
     const load = async () => {
@@ -284,7 +295,7 @@ export function MindDetailPage() {
         </Card>
 
         {/* Proposals list */}
-        <div>
+        <div id="proposals">
           <h2 className="text-sm font-display font-semibold text-starlight-100 mb-3">
             Refinement proposals
           </h2>

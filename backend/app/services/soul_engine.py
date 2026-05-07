@@ -296,15 +296,20 @@ class SoulEngine:
         governance_mode: str = "GOVERNED",
         *,
         department: str | None = None,
+        company_context: Any = None,  # CompanyContext | None -- avoid import cycle
+        cli_profile: bool = False,
     ) -> str:
         """Return soul prompt adjusted for governance mode and department.
 
         Composition order (priority for LLM attention):
-            1. Core soul files (foundation, reasoning, personality, loyalty,
+            1. Company context inject (when activated) -- the founder's
+               actual company brief; first so every downstream layer
+               speaks in that company's voice (Phase 1 F4)
+            2. Core soul files (foundation, reasoning, personality, loyalty,
                shield, vp_mode) -- shared across all departments
-            2. Department overlay (when department is resolvable) -- gives the
+            3. Department overlay (when department is resolvable) -- gives the
                Mind its name, voice, preferred runtime, reasoning patterns
-            3. Governance mode addendum (UNLEASHED / BALANCED / GOVERNED)
+            4. Governance mode addendum (UNLEASHED / BALANCED / GOVERNED)
 
         A missing department overlay degrades silently to core-soul-only;
         this matches the Daena rule "never break existing passing tests."
@@ -313,13 +318,56 @@ class SoulEngine:
             governance_mode: UNLEASHED, BALANCED, or GOVERNED.
             department: Optional department name, slug, or Mind name. See
                 ``_DEPARTMENT_SLUG_ALIASES`` for accepted forms.
+            company_context: Optional CompanyContext from the runtime
+                store. When supplied, prepended to the prompt so the LLM
+                sees company brief BEFORE foundation/reasoning. Phase 1
+                F4 connector (was: brief saved on disk, never reached
+                the LLM). Typed as Any to dodge an import cycle.
+            cli_profile: Phase 1 F7. When True, returns a slimmed prompt
+                for the Claude Code CLI runtime which already has bash /
+                file / MCP / web tools natively. Drops the full soul +
+                department overlay, keeps only company context + 1-line
+                department badge + governance addendum. ~6kB instead of
+                ~30kB so Council / Quintessence stays under the CLI's
+                28kB threshold even with skills + cognition layered on.
 
         Returns:
             Complete soul prompt string ready for system prompt injection.
         """
+        company_section = ""
+        if company_context is not None:
+            try:
+                company_section = company_context.to_soul_inject(department) + "\n"
+            except Exception:
+                # Defensive: if a caller passes a malformed object, do
+                # NOT block the chat -- just skip the inject and log.
+                logger.warning("soul_engine.company_inject_failed", exc_info=True)
+
+        if cli_profile:
+            # Slim path: company brief + minimal department badge +
+            # governance addendum. Skips foundation/reasoning/etc.
+            # because the Claude Code CLI subprocess has its own native
+            # behavior baked in. Reduces system prompt by ~24kB.
+            slug = _normalize_department(department)
+            dept_badge = ""
+            if slug:
+                meta, _body = _load_department_soul(slug)
+                mind_name = meta.get("name") or slug.title()
+                runtime_pref = meta.get("runtime_preference", "")
+                dept_badge = (
+                    f"## Department: {mind_name} ({slug})\n"
+                    f"Preferred runtime: {runtime_pref}\n\n"
+                )
+            addendum = _GOVERNED_ADDENDUM
+            if governance_mode == "UNLEASHED":
+                addendum = _UNLEASHED_ADDENDUM
+            elif governance_mode == "BALANCED":
+                addendum = _BALANCED_ADDENDUM
+            return company_section + dept_badge + addendum
+
         base = _load_soul_files()
         if not base:
-            return ""
+            return company_section  # company-only is still useful
 
         dept_section = ""
         slug = _normalize_department(department)
@@ -341,7 +389,7 @@ class SoulEngine:
         elif governance_mode == "BALANCED":
             addendum = _BALANCED_ADDENDUM
 
-        return base + dept_section + addendum
+        return company_section + base + dept_section + addendum
 
     @classmethod
     def get_department_metadata(cls, department: str | None) -> dict[str, Any]:

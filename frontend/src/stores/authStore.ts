@@ -119,9 +119,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   loadFromStorage: () => {
     const token = localStorage.getItem('daena_token')
     if (token) {
-      // Decode JWT payload to get user info (no verification -- server validates)
+      // Decode JWT payload to get user info (no verification -- server validates).
+      // We DO check `exp` client-side so an expired token doesn't pretend to be
+      // valid -- otherwise every API call 401s while the UI says we're logged in.
+      // See QA finding F-AUTH-EXP.
       try {
         const payload = JSON.parse(atob(token.split('.')[1]))
+        if (payload.exp && payload.exp * 1000 < Date.now()) {
+          localStorage.removeItem('daena_token')
+          return
+        }
         const profileComplete = payload.profile_complete !== false
         set({
           token,

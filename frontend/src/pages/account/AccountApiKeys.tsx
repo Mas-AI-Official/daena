@@ -268,7 +268,7 @@ export function AccountApiKeys() {
       {/* Documentation link */}
       <div className="flex items-center gap-2 text-xs text-starlight-500">
         <ExternalLink size={12} />
-        <span>API documentation at docs.daena.mas-ai.co (coming soon)</span>
+        <span>API reference: send any /api/v1/* endpoint with Bearer auth. Full docs in progress.</span>
       </div>
     </div>
   )

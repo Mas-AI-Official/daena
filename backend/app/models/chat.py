@@ -82,6 +82,17 @@ class ChatSession(Base, TenantMixin, TimestampMixin):
         GUID(), ForeignKey("departments.id", ondelete="SET NULL"),
         nullable=True, index=True,
     )
+    # Workstream link (Council R3 lock + R4 Phase 2 hybrid, 2026-04-25).
+    # When a session enters EXE + autopilot + complexity >= VERY_COMPLEX,
+    # the orchestrator's Stage 7.6 either creates a new Workstream or
+    # reuses the existing one if it's still alive. ondelete=SET NULL so
+    # that archiving / hard-deleting a workstream does NOT cascade and
+    # erase the chat history (Hard Law #2 — "never delete, always
+    # archive": each side keeps its own lifecycle).
+    workstream_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("workstreams.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     autopilot: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )

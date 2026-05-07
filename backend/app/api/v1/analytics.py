@@ -326,17 +326,16 @@ async def get_dashboard(
     """
     tenant_id = current_user.tenant_id
 
-    # Run independent DB queries concurrently via asyncio
-    import asyncio
-
-    usage_task = asyncio.create_task(_query_usage(db, tenant_id))
-    governance_task = asyncio.create_task(_query_governance(db, tenant_id))
-    departments_task = asyncio.create_task(_query_departments(db, tenant_id))
-    daily_task = asyncio.create_task(_query_daily_usage(db, tenant_id))
-
-    usage, governance, departments, daily_usage = await asyncio.gather(
-        usage_task, governance_task, departments_task, daily_task,
-    )
+    # SQLAlchemy AsyncSession is not concurrency-safe. The previous
+    # version gathered four coroutines against this same request-scoped
+    # session, which raised:
+    #   InvalidRequestError: This session is provisioning a new connection;
+    #   concurrent operations are not permitted.
+    # Keep the endpoint stable by running the sections sequentially.
+    usage = await _query_usage(db, tenant_id)
+    governance = await _query_governance(db, tenant_id)
+    departments = await _query_departments(db, tenant_id)
+    daily_usage = await _query_daily_usage(db, tenant_id)
 
     return {
         "usage": usage,

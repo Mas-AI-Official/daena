@@ -119,11 +119,28 @@ class RuntimeRegistry:
                 rid, installed = result
                 results[rid] = installed
 
-        logger.info(
-            "runtime.discovery_complete",
-            installed=[r for r, ok in results.items() if ok],
-            not_installed=[r for r, ok in results.items() if not ok],
-        )
+        # Phase 2 efficiency (2026-04-24): only emit at INFO when the
+        # installed set CHANGES. The 60s discovery loop was logging an
+        # identical INFO line 1440x/day. Quiet observation -> DEBUG;
+        # state-change -> INFO so audit + alerts still surface real
+        # signals (a runtime appearing or disappearing).
+        installed_set = frozenset(r for r, ok in results.items() if ok)
+        previous_set = getattr(self, "_last_install_set", None)
+        if previous_set != installed_set:
+            logger.info(
+                "runtime.discovery_changed",
+                installed=sorted(installed_set),
+                not_installed=sorted(r for r, ok in results.items() if not ok),
+                added=sorted(installed_set - (previous_set or frozenset())),
+                removed=sorted((previous_set or frozenset()) - installed_set),
+            )
+            self._last_install_set = installed_set
+        else:
+            logger.debug(
+                "runtime.discovery_complete",
+                installed=sorted(installed_set),
+                not_installed=sorted(r for r, ok in results.items() if not ok),
+            )
         return results
 
     async def _check_installed(

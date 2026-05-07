@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
+import { BackendOfflineBanner } from '@/components/common/BackendOfflineBanner'
 import { useUiStore } from '@/stores/uiStore'
 
 interface PageLayoutProps {
@@ -49,6 +50,7 @@ export function PageLayout({ children }: PageLayoutProps) {
 
       {/* Header */}
       <Header />
+      <BackendOfflineBanner />
 
       {/* Body */}
       <div className="flex flex-1 overflow-hidden relative">

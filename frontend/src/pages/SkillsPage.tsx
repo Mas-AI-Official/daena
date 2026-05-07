@@ -30,6 +30,7 @@ import {
   Palette,
   DollarSign,
   MessageSquare,
+  AlertTriangle,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Shimmer, EmptyState } from '@/components/common'
@@ -323,16 +324,21 @@ export function SkillsPage() {
 
   const [skills, setSkills] = useState<SkillResponse[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<CategoryKey>('all')
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set())
   const autopilotActive = useUiStore((s) => s.autopilotActive)
-  const [permissions, setPermissions] = useState<Record<string, PermissionLevel>>(() => {
-    try {
-      const saved = localStorage.getItem('daena:skill_permissions')
-      return saved ? JSON.parse(saved) : {}
-    } catch { return {} }
-  })
+  // Backend is the source of truth: skill.governance_tier maps to permission.
+  // Previously this was dual-stored in localStorage + backend, which drifted
+  // any time the tier changed elsewhere (settings, multi-device, seeding).
+  const [permissions, setPermissions] = useState<Record<string, PermissionLevel>>({})
+
+  const tierToPermission = (tier: number | null | undefined): PermissionLevel => {
+    if (tier === 0) return 'ALWAYS_ALLOW'
+    if (tier === 4) return 'BLOCK'
+    return 'ASK_EACH_TIME'
+  }
 
   const fetchSkills = useCallback(async () => {
     try {
@@ -366,14 +372,23 @@ export function SkillsPage() {
       }
 
       setSkills(list)
-      setPermissions((prev) => {
-        const next = { ...prev }
+      // Derive permissions from backend governance_tier on every fetch.
+      // No localStorage layer — backend is canonical, no drift possible.
+      setPermissions(() => {
+        const next: Record<string, PermissionLevel> = {}
         list.forEach((s) => {
-          if (!next[s.id]) next[s.id] = 'ASK_EACH_TIME'
+          next[s.id] = tierToPermission(s.governance_tier)
         })
         return next
       })
-    } catch {
+      setLoadError(null)
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      setLoadError(
+        status
+          ? `Skills registry returned ${status}. Skill controls are unavailable until the backend recovers.`
+          : 'Skills registry is unreachable. Skill controls are unavailable until the backend responds.',
+      )
       setSkills([])
     } finally {
       setLoading(false)
@@ -384,15 +399,25 @@ export function SkillsPage() {
     fetchSkills()
   }, [fetchSkills])
 
-  const handlePermissionChange = useCallback((id: string, level: PermissionLevel) => {
-    setPermissions((prev) => {
-      const next = { ...prev, [id]: level }
-      localStorage.setItem('daena:skill_permissions', JSON.stringify(next))
-      return next
-    })
-    // Sync to backend: map permission to governance tier
+  const handlePermissionChange = useCallback(async (id: string, level: PermissionLevel) => {
     const tierMap: Record<PermissionLevel, number> = { ALWAYS_ALLOW: 0, ASK_EACH_TIME: 2, BLOCK: 4 }
-    api.patch(`/skills/${id}`, { governance_tier: tierMap[level] }).catch(() => {})
+    const prevPermissions = permissions
+    // Optimistic UI: update local state, then persist to backend. Roll back
+    // and toast on failure so the UI never lies about what's saved.
+    setPermissions((prev) => ({ ...prev, [id]: level }))
+    try {
+      await api.patch(`/skills/${id}`, { governance_tier: tierMap[level] })
+    } catch {
+      setPermissions(prevPermissions)
+      const { toast } = await import('@/stores/toastStore')
+      toast.error('Could not save skill permission. Reverted.')
+    }
+  }, [permissions])
+
+  // One-time migration: clear the old dual-store key so users coming from
+  // a previous version don't carry stale localStorage state forward.
+  useEffect(() => {
+    try { localStorage.removeItem('daena:skill_permissions') } catch { /* */ }
   }, [])
 
   // Active category matcher
@@ -534,6 +559,22 @@ export function SkillsPage() {
             </div>
           )}
 
+          {loadError && !loading && (
+            <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30">
+              <AlertTriangle size={16} className="text-status-warning shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-status-warning">Skills registry unavailable</p>
+                <p className="text-[11px] text-starlight-400 mt-0.5">{loadError}</p>
+              </div>
+              <button
+                onClick={() => { setLoading(true); void fetchSkills() }}
+                className="text-xs text-status-warning hover:text-status-warning/80 underline cursor-pointer shrink-0"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* Search bar */}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-starlight-500" />
@@ -555,15 +596,22 @@ export function SkillsPage() {
               return (
                 <button
                   key={level}
-                  onClick={() => {
+                  onClick={async () => {
                     const updated = { ...permissions }
                     finalFiltered.forEach((s) => { updated[s.id] = level })
                     setPermissions(updated)
-                    localStorage.setItem('daena:skill_permissions', JSON.stringify(updated))
-                    finalFiltered.forEach((s) => {
-                      api.patch(`/skills/${s.id}`, { governance_tier: level === 'ALWAYS_ALLOW' ? 0 : level === 'ASK_EACH_TIME' ? 2 : 4 }).catch(() => {})
-                    })
-                    toast.success(`Set ${finalFiltered.length} skills to ${cfg.label}`)
+                    const results = await Promise.allSettled(
+                      finalFiltered.map((s) =>
+                        api.patch(`/skills/${s.id}`, { governance_tier: level === 'ALWAYS_ALLOW' ? 0 : level === 'ASK_EACH_TIME' ? 2 : 4 }),
+                      ),
+                    )
+                    const failures = results.filter((r) => r.status === 'rejected').length
+                    if (failures > 0) {
+                      toast.error(`${finalFiltered.length - failures} of ${finalFiltered.length} skills updated. ${failures} failed.`)
+                      await fetchSkills()
+                    } else {
+                      toast.success(`Set ${finalFiltered.length} skills to ${cfg.label}`)
+                    }
                   }}
                   className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border} hover:brightness-125 transition-all cursor-pointer`}
                 >
@@ -585,28 +633,40 @@ export function SkillsPage() {
               <span className="text-xs text-primary-400 font-medium">{selectedSkills.size} selected</span>
               <div className="flex-1" />
               <button
-                onClick={() => {
+                onClick={async () => {
                   const toEnable = finalFiltered.filter((s) => selectedSkills.has(s.id))
-                  toEnable.forEach((s) => {
-                    api.patch(`/skills/${s.id}`, { is_active: true }).catch(() => {})
-                  })
-                  setSkills((prev) => prev.map((s) => selectedSkills.has(s.id) ? { ...s, is_active: true } : s))
-                  toast.success(`${selectedSkills.size} skills enabled`)
-                  setSelectedSkills(new Set())
+                  const results = await Promise.allSettled(
+                    toEnable.map((s) => api.patch(`/skills/${s.id}`, { is_active: true })),
+                  )
+                  const failures = results.filter((r) => r.status === 'rejected').length
+                  if (failures > 0) {
+                    toast.error(`${toEnable.length - failures} of ${toEnable.length} skills enabled. ${failures} failed.`)
+                    await fetchSkills()
+                  } else {
+                    setSkills((prev) => prev.map((s) => selectedSkills.has(s.id) ? { ...s, is_active: true } : s))
+                    toast.success(`${selectedSkills.size} skills enabled`)
+                    setSelectedSkills(new Set())
+                  }
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-green/10 text-accent-green hover:bg-accent-green/20 cursor-pointer"
               >
                 Enable selected
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   const toDisable = finalFiltered.filter((s) => selectedSkills.has(s.id))
-                  toDisable.forEach((s) => {
-                    api.patch(`/skills/${s.id}`, { is_active: false }).catch(() => {})
-                  })
-                  setSkills((prev) => prev.map((s) => selectedSkills.has(s.id) ? { ...s, is_active: false } : s))
-                  toast.success(`${selectedSkills.size} skills disabled`)
-                  setSelectedSkills(new Set())
+                  const results = await Promise.allSettled(
+                    toDisable.map((s) => api.patch(`/skills/${s.id}`, { is_active: false })),
+                  )
+                  const failures = results.filter((r) => r.status === 'rejected').length
+                  if (failures > 0) {
+                    toast.error(`${toDisable.length - failures} of ${toDisable.length} skills disabled. ${failures} failed.`)
+                    await fetchSkills()
+                  } else {
+                    setSkills((prev) => prev.map((s) => selectedSkills.has(s.id) ? { ...s, is_active: false } : s))
+                    toast.success(`${selectedSkills.size} skills disabled`)
+                    setSelectedSkills(new Set())
+                  }
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-red/10 text-accent-red hover:bg-accent-red/20 cursor-pointer"
               >
@@ -637,16 +697,22 @@ export function SkillsPage() {
                 {selectedSkills.size === finalFiltered.length ? 'Deselect all' : 'Select all'}
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   const allActive = finalFiltered.every((s) => s.is_active)
-                  finalFiltered.forEach((s) => {
-                    api.patch(`/skills/${s.id}`, { is_active: !allActive }).catch(() => {})
-                  })
-                  setSkills((prev) => prev.map((s) => {
-                    if (finalFiltered.some((f) => f.id === s.id)) return { ...s, is_active: !allActive }
-                    return s
-                  }))
-                  toast.success(allActive ? `${finalFiltered.length} skills disabled` : `${finalFiltered.length} skills enabled`)
+                  const results = await Promise.allSettled(
+                    finalFiltered.map((s) => api.patch(`/skills/${s.id}`, { is_active: !allActive })),
+                  )
+                  const failures = results.filter((r) => r.status === 'rejected').length
+                  if (failures > 0) {
+                    toast.error(`${finalFiltered.length - failures} of ${finalFiltered.length} skills updated. ${failures} failed.`)
+                    await fetchSkills()
+                  } else {
+                    setSkills((prev) => prev.map((s) => {
+                      if (finalFiltered.some((f) => f.id === s.id)) return { ...s, is_active: !allActive }
+                      return s
+                    }))
+                    toast.success(allActive ? `${finalFiltered.length} skills disabled` : `${finalFiltered.length} skills enabled`)
+                  }
                 }}
                 className="text-[10px] text-starlight-500 hover:text-accent-green cursor-pointer"
               >
@@ -662,21 +728,30 @@ export function SkillsPage() {
             <EmptyState
               icon={Sparkles}
               title={
-                search
+                loadError
+                  ? 'Skills registry unavailable'
+                  : search
                   ? 'No skills match your search'
                   : skills.length === 0
                     ? 'No skills registered yet'
                     : `No skills in ${categoryDef.label}`
               }
               description={
-                search
+                loadError
+                  ? 'Retry once the backend is reachable. Skill controls are hidden until Daena can verify the registry.'
+                  : search
                   ? undefined
                   : skills.length === 0
                     ? 'Import or create your first skill to get started.'
                     : `Switch to "All Skills" to see all ${skills.length} registered skills.`
               }
               action={
-                skills.length === 0 && !search
+                loadError
+                  ? {
+                      label: 'Retry',
+                      onClick: () => { setLoading(true); void fetchSkills() },
+                    }
+                  : skills.length === 0 && !search
                   ? {
                       label: 'Browse Skills',
                       onClick: () => setActiveCategory('all'),

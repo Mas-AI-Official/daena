@@ -120,7 +120,9 @@ function FileRow({ file, selected, onSelect, onDelete }: {
       <div className="relative shrink-0">
         <button
           onClick={() => setMenuOpen(!menuOpen)}
-          className="p-1 rounded hover:bg-white/5 text-starlight-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+          aria-label="File actions menu"
+          title="File actions"
+          className="p-1 rounded hover:bg-white/5 text-starlight-500 opacity-60 group-hover:opacity-100 transition-opacity cursor-pointer"
         >
           <MoreVertical size={14} />
         </button>
@@ -234,7 +236,12 @@ export function FilesPage() {
   }
 
   const handleDelete = async (fileId: string) => {
-    const ok = await deleteWithToast(`/files/${fileId}`, { entity: 'File' })
+    // Explicit copy: we DO delete from both disk and DB. Operator
+    // previously assumed the file would silently come back ("like spam").
+    const ok = await deleteWithToast(`/files/${fileId}`, {
+      entity: 'File',
+      confirmMessage: 'This permanently removes the file from both your storage and the database. The file will NOT be recoverable from the trash or by re-uploading the listing entry. Are you sure?',
+    })
     if (ok) {
       setFiles((prev) => prev.filter((f) => f.id !== fileId))
       setSelectedFiles((prev) => { const n = new Set(prev); n.delete(fileId); return n })

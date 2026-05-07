@@ -38,6 +38,40 @@ from app.services.providers.base import (
 
 logger = get_logger(__name__)
 
+
+# ── CLI auth-error sentinels ───────────────────────────────────────────
+# Strings that mean the CLI was reachable but rejected the request due
+# to missing/invalid credentials. When the CLI emits any of these as
+# content (instead of as a non-zero exit + stderr), we MUST raise rather
+# than treat the message as a successful response — otherwise the
+# orchestrator's fallback chain stops at the first auth failure and
+# never tries Codex / Gemini / Grok / Ollama.
+_CLI_AUTH_ERROR_MARKERS = (
+    "not logged in",
+    "please run /login",
+    "please run `claude login`",
+    "please run claude login",
+    "api error: 401",
+    "api error: 403",
+    "authentication_error",
+    "invalid authentication credentials",
+    "credentials are invalid",
+    "session expired",
+    "unauthorized",
+    "[claude code error",
+    "[claude cli error",
+    "[codex error",
+    "[gemini error",
+)
+
+
+def _looks_like_cli_auth_error(text: str) -> bool:
+    """True if the CLI's response content is an auth/credential error."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(marker in lower for marker in _CLI_AUTH_ERROR_MARKERS)
+
 # Model IDs that the registry and router use
 CLAUDE_CLI_MODEL_ID = "claude-code-cli"
 CODEX_CLI_MODEL_ID = "codex-cli"
@@ -137,7 +171,30 @@ def _run_cli(
     """Run CLI command synchronously (called from thread pool).
 
     Uses Popen + communicate so the process is properly killed on timeout.
+
+    WSL -> Windows interop env fix (Phase 1 F1.b, 2026-04-24): when the
+    binary is a Windows .exe under /mnt/c/, force USERPROFILE so the
+    Windows CLI can find its OAuth credentials in C:\\Users\\<user>\\.claude\\.
+    Without this the binary defaults to HOME=/root and 401s.
     """
+    import os
+
+    env = os.environ.copy()
+    bin_path = cmd[0] if cmd else ""
+    if bin_path.startswith("/mnt/"):
+        try:
+            parts = bin_path.lstrip("/").split("/")
+            if len(parts) >= 4 and parts[0] == "mnt" and parts[2].lower() == "users":
+                drive = parts[1].upper() + ":"
+                user_home = f"{drive}\\Users\\{parts[3]}"
+                env.setdefault("USERPROFILE", user_home)
+                env.setdefault("HOMEDRIVE", drive)
+                env.setdefault("HOMEPATH", f"\\Users\\{parts[3]}")
+                env.setdefault("APPDATA", f"{user_home}\\AppData\\Roaming")
+                env.setdefault("LOCALAPPDATA", f"{user_home}\\AppData\\Local")
+        except Exception:
+            pass
+
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE if stdin_input else subprocess.DEVNULL,
@@ -146,6 +203,7 @@ def _run_cli(
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
     try:
         stdout, stderr = proc.communicate(
@@ -172,13 +230,66 @@ class CliProvider(BaseProvider):
     def __init__(self, spec: CliRuntimeSpec) -> None:
         super().__init__(spec.provider)
         self._spec = spec
-        self._bin = shutil.which(spec.binary_name) or spec.binary_name
+        # Phase 1 F1 (2026-04-24). For Claude specifically, mirror the
+        # adapter's binary-resolution: env override -> /usr/bin/claude
+        # if its OAuth token is still fresh -> Windows .exe via WSL
+        # interop. The Council/Quintessence path was hitting 401s with
+        # the Linux native binary because the token expired Apr 22 even
+        # though `claude auth status` reported logged-in. Other CLIs
+        # (codex, gemini) still use plain shutil.which.
+        if spec.binary_name == "claude":
+            self._bin = self._resolve_claude_bin()
+        else:
+            self._bin = shutil.which(spec.binary_name) or spec.binary_name
         self._installed: bool | None = None
         logger.info(
             "cli_provider.init",
             runtime=spec.runtime_id,
             binary=self._bin,
         )
+
+    @staticmethod
+    def _resolve_claude_bin() -> str:
+        """Phase 1 F1 (2026-04-24) -- mirrors claude_code adapter logic.
+
+        See backend/app/services/runtimes/adapters/claude_code.py for the
+        full rationale. Short version: pick whichever binary actually has
+        valid OAuth credentials right now.
+        """
+        import json
+        import os
+
+        env_override = os.environ.get("DAENA_CLAUDE_BIN", "").strip()
+        if env_override and os.path.isfile(env_override):
+            return env_override
+
+        def _creds_unexpired(creds_path: str) -> bool:
+            try:
+                with open(creds_path, encoding="utf-8") as fh:
+                    data = json.load(fh)
+                inner = data.get("claudeAiOauth") or {}
+                ts = float(inner.get("expiresAt", 0)) / 1000.0
+                if ts <= 0:
+                    return False
+                from datetime import datetime, timezone
+                return datetime.now(timezone.utc).timestamp() < ts
+            except Exception:
+                return False
+
+        for candidate in ("/usr/bin/claude", "/usr/local/bin/claude"):
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                if _creds_unexpired(os.path.expanduser("~/.claude/.credentials.json")):
+                    return candidate
+                # else: fall through to WSL interop
+
+        for candidate in (
+            "/mnt/c/Users/masou/.local/bin/claude.exe",
+            "/mnt/c/Users/masou/.local/bin/claude",
+        ):
+            if os.path.isfile(candidate):
+                return candidate
+
+        return shutil.which("claude") or "claude"
 
     async def generate(self, request: GenerateRequest) -> LLMResponse:
         """Send prompt to CLI and return full response."""
@@ -253,12 +364,28 @@ class CliProvider(BaseProvider):
             if not result.stdout.strip():
                 raise ProviderError(_err_msg)
 
-        # Parse output
+        # Parse output. _parse_json_result may raise ProviderError on
+        # is_error=True (auth failure, etc.) — that bubbles up so the
+        # orchestrator's fallback chain can try the next runtime.
         if self._spec.json_output:
             content, cost_usd, duration_ms, num_turns = self._parse_json_result(result.stdout)
         else:
             content = result.stdout.strip()[:8000] or f"[No output from {self._spec.display_name}]"
             cost_usd, duration_ms, num_turns = 0.0, self._elapsed_ms(start), 1
+
+        # Final guard: detect known error sentinels in the content even
+        # when the CLI returned exit 0 + non-JSON output. Claude CLI
+        # sometimes emits "Not logged in" via stdout with rc=0 in older
+        # builds. Without this guard the cascade would treat the error
+        # message as a valid response.
+        if _looks_like_cli_auth_error(content):
+            from app.core.exceptions import ProviderError
+            logger.warning(
+                "cli_provider.auth_error_in_content",
+                runtime=self._spec.runtime_id,
+                excerpt=content[:120],
+            )
+            raise ProviderError(f"{self._spec.display_name}: {content[:200]}")
 
         return LLMResponse(
             content=content,
@@ -340,14 +467,37 @@ class CliProvider(BaseProvider):
 
     @staticmethod
     def _parse_json_result(stdout: str) -> tuple[str, float, int, int]:
-        """Parse JSON CLI output (Claude format)."""
+        """Parse JSON CLI output (Claude format).
+
+        Claude CLI emits one JSON event per line. The terminal "result"
+        event carries either a successful response (subtype="success",
+        is_error=False) OR a wrapped error (is_error=True, e.g. "Not
+        logged in"). Previously the parser blindly returned data.result
+        in both cases, so an auth failure was treated as a successful
+        empty-ish answer and the orchestrator's fallback chain never
+        advanced. Now we raise on is_error=True so the caller in
+        generate() catches it and the chain moves on.
+        """
+        from app.core.exceptions import ProviderError
+
         lines = stdout.strip().splitlines()
         for line in reversed(lines):
             try:
                 data = json.loads(line)
                 if data.get("type") == "result":
+                    if data.get("is_error") is True:
+                        # Surface the wrapped error so the orchestrator
+                        # treats this provider as failed and walks the chain.
+                        msg = data.get("result") or data.get("subtype") or "Claude CLI error"
+                        raise ProviderError(f"Claude CLI: {msg}")
+                    result_text = data.get("result", "")
+                    # Even when is_error is missing/false, some CLI builds
+                    # stuff "Not logged in" into the result text. Detect
+                    # and raise so the chain advances.
+                    if _looks_like_cli_auth_error(result_text):
+                        raise ProviderError(f"Claude CLI: {result_text[:200]}")
                     return (
-                        data.get("result", ""),
+                        result_text,
                         data.get("total_cost_usd", 0.0),
                         data.get("duration_ms", 0),
                         data.get("num_turns", 0),

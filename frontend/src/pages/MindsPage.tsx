@@ -132,7 +132,13 @@ export function MindsPage() {
           <div className="flex items-center gap-2">
             {totalPending > 0 && (
               <button
-                onClick={() => navigate('/minds/proposals')}
+                onClick={() => {
+                  // No standalone proposals route exists — jump to the first
+                  // department that has pending proposals. MindDetailPage
+                  // renders the per-department proposal review inline.
+                  const firstSlugWithPending = Object.keys(pendingBySlug)[0]
+                  if (firstSlugWithPending) navigate(`/minds/${firstSlugWithPending}#proposals`)
+                }}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg border border-status-warning/30 bg-status-warning/10 text-status-warning text-xs hover:bg-status-warning/15 transition-colors cursor-pointer"
                 title="Review pending soul proposals"
               >
@@ -146,9 +152,10 @@ export function MindsPage() {
                 size="sm"
                 isLoading={refining}
                 onClick={runRefineAll}
+                title="Runs the 3-pass refinement (gap-finder → improver → critic) across all 10 Minds in parallel. Takes 30-90 seconds depending on model latency."
               >
                 <span className="flex items-center gap-2">
-                  <Wand2 size={14} /> Refine all
+                  <Wand2 size={14} /> {refining ? 'Refining 10 Minds in parallel...' : 'Refine all'}
                 </span>
               </Button>
             )}

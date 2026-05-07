@@ -101,7 +101,11 @@ export function ThinkingProcess({
   governanceTier,
   steps,
 }: ThinkingProcessProps) {
-  const [userExpanded, setUserExpanded] = useState(false)
+  // F-OODA-COLLAPSE-DEFAULT (per founder feedback: "ooda etc be close and
+  // if i want i open it"): start collapsed, stay collapsed unless the user
+  // explicitly clicks. The streaming-feel is preserved via the rotating
+  // witty status message on the header line below ("marinating..." style).
+  const [userToggled, setUserToggled] = useState<boolean>(false)
   const stageTimers = useRef<Map<string, number>>(new Map())
 
   // Track when each stage becomes active
@@ -121,7 +125,38 @@ export function ThinkingProcess({
   const hasSteps = totalCount > 0
 
   // Collapsed by default. User clicks to expand/collapse.
-  const expanded = userExpanded
+  const expanded = userToggled
+
+  // F-DAENA-WITTY-STATUS (per founder feedback "like cooking, marinating
+  // etc but the daena version"): cycle through a rotating set of brand
+  // phrases while the pipeline is active. The actual stage label (e.g.
+  // "OODA: Observe") still wins when present - the witty rotation only
+  // fires for the gap between stages or when the orchestrator hasn't
+  // emitted a labelled step yet. Each phrase is short enough to fit on
+  // the header line and reads like Daena talking, not a spinner.
+  const WITTY_PHRASES = [
+    'Thinking...',
+    'Marinating ideas...',
+    'Pulling memory threads...',
+    'Consulting the council...',
+    'Threading governance...',
+    'Routing through soul...',
+    'Stitching context...',
+    'Synthesizing perspectives...',
+    'Polishing the answer...',
+    'Triangulating...',
+    'Cross-checking with experts...',
+    'Brewing reasoning...',
+  ]
+  const [wittyIdx, setWittyIdx] = useState(0)
+  useEffect(() => {
+    if (!isActive) return
+    const t = setInterval(() => {
+      setWittyIdx((i) => (i + 1) % WITTY_PHRASES.length)
+    }, 2200)
+    return () => clearInterval(t)
+  }, [isActive])
+  const wittyPhrase = WITTY_PHRASES[wittyIdx]
 
   return (
     <motion.div
@@ -133,8 +168,9 @@ export function ThinkingProcess({
     >
       {/* Header line: click to toggle */}
       <button
-        onClick={() => setUserExpanded(!userExpanded)}
+        onClick={() => setUserToggled(!expanded)}
         className="group flex items-center gap-2 py-1 text-[11px] w-full text-left cursor-pointer"
+        title="Click to expand the cognitive trace - see every step Daena is taking right now"
       >
         {isActive ? (
           <Loader2 size={13} className="animate-spin text-accent-cyan" />
@@ -146,7 +182,7 @@ export function ThinkingProcess({
           className={`font-medium ${isActive ? 'text-accent-cyan' : 'text-starlight-400'}`}
         >
           {isActive
-            ? steps?.find((s) => s.status === 'active')?.label || 'Processing...'
+            ? steps?.find((s) => s.status === 'active')?.label || wittyPhrase
             : `Completed in ${reachedCount} steps`}
         </span>
 

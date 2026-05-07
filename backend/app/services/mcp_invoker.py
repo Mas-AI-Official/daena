@@ -49,6 +49,35 @@ logger = get_logger(__name__)
 _DEFAULT_TIMEOUT_SECONDS: float = 20.0
 
 
+def _safe_exception_message(exc: BaseException, server_key: str) -> str:
+    """Return an operator-readable MCP failure without raw TaskGroup noise."""
+    if isinstance(exc, BaseExceptionGroup):
+        parts = [
+            _safe_exception_message(child, server_key)
+            for child in exc.exceptions
+            if child is not None
+        ]
+        unique: list[str] = []
+        for part in parts:
+            if part and part not in unique:
+                unique.append(part)
+        if unique:
+            return "; ".join(unique)
+        return f"{server_key} MCP process failed during startup."
+
+    text = str(exc).strip()
+    if (
+        not text
+        or "unhandled errors in a TaskGroup" in text
+        or text.lower() == "connection closed"
+    ):
+        return (
+            f"{server_key} MCP process exited before the MCP handshake completed. "
+            "Check its command, args, required env vars, and package install."
+        )
+    return text
+
+
 def _build_params(server_key: str) -> StdioServerParameters | None:
     """Resolve the subprocess argv for an installed MCP."""
     entry = get_installed_mcp(server_key)
@@ -104,12 +133,13 @@ async def list_server_tools(
             "error": f"{server_key} did not respond to tools/list in {timeout}s",
         }
     except Exception as exc:  # pragma: no cover - fail-safe
+        message = _safe_exception_message(exc, server_key)
         logger.warning(
             "mcp_invoker.list_tools_failed",
             server_key=server_key,
-            error=str(exc),
+            error=message,
         )
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": message}
 
 
 async def call_server_tool(
@@ -159,10 +189,11 @@ async def call_server_tool(
             "error": f"{server_key}.{tool_name} timed out after {timeout}s",
         }
     except Exception as exc:
+        message = _safe_exception_message(exc, server_key)
         logger.warning(
             "mcp_invoker.call_tool_failed",
             server_key=server_key,
             tool_name=tool_name,
-            error=str(exc),
+            error=message,
         )
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": message}

@@ -139,14 +139,51 @@ export default function ScanWalkthroughPage() {
   const startedAtRef = useRef<number>(Date.now())
   const logFeedRef = useRef<HTMLDivElement | null>(null)
 
+  // Track reconnect attempts so the operator can see "reconnecting (3/5)..."
+  const [reconnectAttempt, setReconnectAttempt] = useState(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // Subscribe to SSE events.
+  // SECURITY: do NOT pass auth token in the URL query string. The token
+  // would leak to browser history, server access logs, Referer headers,
+  // and DevTools network tab during screen-sharing. The backend SSE
+  // endpoint doesn't read it anyway; cookie-based auth would be the
+  // proper path if/when this stream needs hardening.
   useEffect(() => {
     if (!jobId) return
-    const token = localStorage.getItem('daena_token')
-    const url = token
-      ? `/api/v1/security/scans/${jobId}/events?token=${encodeURIComponent(token)}`
-      : `/api/v1/security/scans/${jobId}/events`
-    const es = new EventSource(url, { withCredentials: true })
+    const url = `/api/v1/security/scans/${jobId}/events`
+    let es: EventSource | null = null
+    let cancelled = false
+
+    const connect = () => {
+      if (cancelled) return
+      es = new EventSource(url, { withCredentials: true })
+
+      es.onopen = () => {
+        if (reconnectAttempt > 0) setReconnectAttempt(0)
+        if (status === 'connecting') setStatus('running')
+      }
+
+      es.onerror = () => {
+        // EventSource auto-reconnects on transient errors but the
+        // browser is silent about it. Surface a visible state and add
+        // bounded backoff so we don't hammer the server forever.
+        if (!es || es.readyState === EventSource.CLOSED) {
+          if (cancelled) return
+          if (reconnectAttempt < 5) {
+            const next = reconnectAttempt + 1
+            const delayMs = Math.min(1000 * 2 ** reconnectAttempt, 15000)
+            setReconnectAttempt(next)
+            reconnectTimerRef.current = setTimeout(connect, delayMs)
+          } else {
+            setError('Lost connection to scan stream after 5 retries. Refresh the page to retry.')
+            setStatus('failed')
+          }
+        }
+      }
+
+      attachListeners(es)
+    }
 
     function pushEvent(kind: EventKind, envelope: { data?: Record<string, unknown> }) {
       const now = Date.now()
@@ -160,7 +197,13 @@ export default function ScanWalkthroughPage() {
         observation: typeof data.observation === 'string' ? data.observation : undefined,
         data,
       }
-      setEvents(prev => [...prev, evt])
+      // Cap log feed at 500 events. Long scans accumulate hundreds of
+      // thinking/observation events; without a cap the DOM grows
+      // unbounded and the page chugs after ~10 minutes of streaming.
+      setEvents(prev => {
+        const next = [...prev, evt]
+        return next.length > 500 ? next.slice(-500) : next
+      })
     }
 
     function on(name: EventKind) {
@@ -221,13 +264,17 @@ export default function ScanWalkthroughPage() {
       }
     }
 
-    const kinds: EventKind[] = [
-      'scan_started', 'scan_thinking', 'scan_observation',
-      'scan_phase_change', 'scan_queue_decision', 'scan_checkpoint',
-      'scan_complete', 'scan_failed',
-    ]
-    kinds.forEach(k => es.addEventListener(k, on(k)))
-    es.onmessage = on('scan_thinking')  // default fallthrough
+    function attachListeners(source: EventSource) {
+      const kinds: EventKind[] = [
+        'scan_started', 'scan_thinking', 'scan_observation',
+        'scan_phase_change', 'scan_queue_decision', 'scan_checkpoint',
+        'scan_complete', 'scan_failed',
+      ]
+      kinds.forEach(k => source.addEventListener(k, on(k)))
+      source.onmessage = on('scan_thinking')  // default fallthrough
+    }
+
+    connect()
 
     // If the scan already completed before we opened this page, the SSE
     // stream may close without sending events. Fallback: poll status
@@ -287,7 +334,15 @@ export default function ScanWalkthroughPage() {
       }
     }).catch(() => {})
 
-    return () => es.close()
+    return () => {
+      cancelled = true
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+      es?.close()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId])
 
   // Auto-scroll the center log to the latest event.
@@ -357,10 +412,16 @@ export default function ScanWalkthroughPage() {
             <Clock size={12} />
             {elapsed}s
           </span>
-          {status === 'running' && (
+          {status === 'running' && reconnectAttempt === 0 && (
             <span className="flex items-center gap-1 text-primary-400">
               <Loader2 size={12} className="animate-spin" />
               Running
+            </span>
+          )}
+          {reconnectAttempt > 0 && status !== 'complete' && status !== 'failed' && (
+            <span className="flex items-center gap-1 text-status-warning">
+              <Loader2 size={12} className="animate-spin" />
+              Reconnecting ({reconnectAttempt}/5)...
             </span>
           )}
           {status === 'complete' && (
@@ -487,9 +548,9 @@ export default function ScanWalkthroughPage() {
                     <span className="text-accent-amber">queue</span>
                     <span className="text-starlight-500">.{String(evt.data?.cls ?? '?')}: </span>
                     <span className="text-starlight-200">
-                      {evt.data?.should_exploit ? 'dispatch' : 'skip'} (
+                      {evt.data?.should_exploit ? 'validate' : 'skip'} (
                       {String(evt.data?.vuln_count ?? 0)} vulns, {' '}
-                      {String(evt.data?.externally_exploitable_count ?? 0)} externally exploitable)
+                      {String(evt.data?.externally_exploitable_count ?? 0)} externally reachable)
                     </span>
                   </>
                 )}
@@ -527,13 +588,13 @@ export default function ScanWalkthroughPage() {
 
         {/* Right: findings as they arrive */}
         <aside className="border-l border-white/5 p-4 overflow-y-auto">
-          {/* Exploitation queue gate decisions (Shannon Pattern 1).
-              Shows per-OWASP-class whether the exploit agent would
+          {/* Proof-of-impact queue gate decisions (Shannon Pattern 1).
+              Shows per-OWASP-class whether the validation agent would
               dispatch or skip. Collapsed when empty. */}
           {Object.keys(queueDecisions).length > 0 && (
             <div className="mb-4">
               <p className="text-[10px] uppercase tracking-wider text-starlight-500 mb-2">
-                Exploit gate
+                Validation gate
               </p>
               <div className="space-y-1">
                 {Object.values(queueDecisions).map(d => (
@@ -549,7 +610,7 @@ export default function ScanWalkthroughPage() {
                     <span className="font-mono">{d.cls}</span>
                     <span>
                       {d.should_exploit
-                        ? `dispatch (${d.externally_exploitable_count}/${d.vuln_count})`
+                        ? `validate (${d.externally_exploitable_count}/${d.vuln_count})`
                         : (d.vuln_count === 0 ? 'clean' : `skip (${d.vuln_count})`)
                       }
                     </span>
@@ -613,7 +674,7 @@ export default function ScanWalkthroughPage() {
               {f.exploit_path && (
                 <p className="text-[10px] text-accent-amber flex items-center gap-1 mt-1">
                   <Crosshair size={10} />
-                  Exploit path attached
+                  Proof-of-impact path attached
                 </p>
               )}
             </motion.div>

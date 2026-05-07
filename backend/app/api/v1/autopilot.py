@@ -6,15 +6,29 @@ require authentication. State changes push WebSocket notifications.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.logging import get_logger
+from app.core.sse_channels import queue_channel
 
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+# Standard SSE response headers; matches the chat + scan stream
+# convention so frontend EventSource clients see consistent framing
+# across every Daena SSE endpoint.
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 
 # ── Request/Response models ──
@@ -236,4 +250,69 @@ async def get_summary(
         "total": len(state.completed_steps) + len(state.pending_steps),
         "total_cost": state.total_cost_usd,
         "notifications": state.notifications[-20:],  # Last 20 notifications
+    }
+
+
+@router.get("/queue/events")
+async def stream_queue_events(
+    request: Request,
+    _user: CurrentUser = Depends(get_current_user),
+) -> StreamingResponse:
+    """Server-sent events for background-queue task lifecycle.
+
+    Subscribes to ``queue_channel`` and yields each envelope as a
+    formatted SSE event. Emits the following event types:
+
+    - ``task.enqueued`` ``{task_id, session_id, tenant_id, description,
+      priority, created_at}`` -- a producer enqueued a new task.
+    - ``task.started`` ``{task_id, session_id, description, started_at}``
+      Worker pulled the task and the run is in progress.
+    - ``task.completed`` ``{task_id, session_id, result, finished_at}``
+      Executor returned successfully.
+    - ``task.failed`` ``{task_id, session_id, error, finished_at}``
+      Executor raised; the row was finalized with the error string.
+    - ``task.cancelled`` ``{task_id, session_id}`` -- operator cancel.
+    - ``task.cancel_all`` ``{session_id, cancelled}`` -- session-wide
+      kill switch fired.
+    - ``ping`` synthetic heartbeat every 25s of idle time.
+
+    Connection stays open until the client disconnects.
+    """
+
+    async def _event_stream():
+        async for envelope in queue_channel.subscribe():
+            if await request.is_disconnected():
+                break
+            data = json.dumps(envelope)
+            yield f"event: {envelope['type']}\ndata: {data}\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
+@router.get("/queue/status")
+async def get_queue_status(
+    _user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return truthful persistence/worker status for the background queue."""
+    from app.services.autopilot.background_queue import get_background_queue
+
+    queue = get_background_queue()
+    return {
+        "success": True,
+        "data": {
+            "worker_running": queue.is_running,
+            "persistent": queue.is_persistent,
+            "storage": "database" if queue.is_persistent else "memory_only",
+            "queued_count": queue.queued_count,
+            "active_count": queue.active_count,
+            "restart_policy": (
+                "queued rows restore from DB; running rows are marked failed_due_to_restart"
+                if queue.is_persistent
+                else "queue state is memory-only until app lifespan initializes persistence"
+            ),
+        },
     }

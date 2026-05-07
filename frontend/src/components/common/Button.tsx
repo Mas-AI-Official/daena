@@ -12,6 +12,7 @@ interface ButtonProps {
   className?: string
   disabled?: boolean
   type?: 'button' | 'submit' | 'reset'
+  title?: string
   onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void
 }
 
@@ -35,11 +36,12 @@ const sizeStyles: Record<Size, string> = {
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'primary', size = 'md', isLoading, children, className = '', disabled, type, onClick }, ref) => {
+  ({ variant = 'primary', size = 'md', isLoading, children, className = '', disabled, type, title, onClick }, ref) => {
     return (
       <motion.button
         ref={ref}
         type={type}
+        title={title}
         onClick={onClick}
         whileTap={{ scale: 0.98 }}
         className={`

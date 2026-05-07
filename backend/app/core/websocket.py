@@ -3,6 +3,14 @@
 Manages active WebSocket connections per chat session.
 Multiple connections per session are supported (e.g. multiple browser tabs).
 Includes server-side heartbeat to detect and prune stale connections.
+
+Status (2026-04-29): retained as infrastructure. The Phase 5 placeholder
+endpoint at app/api/v1/ws.py was removed because it had zero consumers
+(no frontend WebSocket client, no tests, only an echo of "LLM routing not
+yet active"). Chat SSE at /api/v1/chat/messages/stream is the canonical
+streaming surface. Future LLM-pipeline WebSocket streaming may reuse this
+ConnectionManager, and AutopilotController accepts an optional ws_manager
+arg for the same future use. voice_ws.py does NOT use this class.
 """
 
 from __future__ import annotations

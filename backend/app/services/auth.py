@@ -272,11 +272,44 @@ class AuthService(BaseService):
 
         Raises:
             AuthenticationError: If credentials are invalid or account deactivated.
+
+        Stabilization 2026-04-29 -- founder login race:
+            Founder accounts are seeded in the deferred startup phase
+            (after the port file publishes), so the first login attempts
+            during cold-start may arrive before the founder row exists.
+            For founder emails configured in settings, retry the SELECT
+            up to 3 times with 200ms backoff while ``startup_state`` is
+            still warming. For non-founder emails the original behaviour
+            (immediate "invalid email or password") is preserved.
         """
+        import asyncio as _asyncio
+
+        from app.core.startup_state import startup_state
+
         settings = get_settings()
+        founder_emails = {
+            (settings.founder_email or "").strip().lower(),
+            (settings.founder_personal_email or "").strip().lower(),
+        }
+        founder_emails.discard("")
+        is_founder_email = email.strip().lower() in founder_emails
 
         result = await self.db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
+
+        # Cold-start race: founder row is seeded by the deferred lifespan
+        # task. If we got here before that task ran, retry briefly.
+        if (
+            user is None
+            and is_founder_email
+            and not startup_state.seedings_complete
+        ):
+            for _attempt in range(3):
+                await _asyncio.sleep(0.2)
+                result = await self.db.execute(select(User).where(User.email == email))
+                user = result.scalar_one_or_none()
+                if user is not None or startup_state.seedings_complete:
+                    break
 
         if not user or not user.password_hash or not verify_password(password, user.password_hash):
             raise AuthenticationError("Invalid email or password")

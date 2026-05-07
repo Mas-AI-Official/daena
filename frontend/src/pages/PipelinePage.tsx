@@ -5,7 +5,7 @@
  *
  * Human gates (lock icon) at PROPOSAL, CONTRACT, DELIVERY.
  */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import {
   Kanban,
@@ -77,6 +77,46 @@ interface PipelineSummary {
   total: number
 }
 
+interface CustomerAcquisitionWorkflowResult {
+  mode: 'draft_only'
+  external_action_sent: boolean
+  requires_founder_approval: boolean
+  steps: string[]
+  contacts: Array<{
+    contact_id: string
+    account_id: string | null
+    full_name: string
+    title: string | null
+    email: string | null
+    stage: string
+  }>
+  qualified_contact: {
+    contact_id: string
+    stage: string
+    score: number
+  }
+  outreach_draft: {
+    draft_id: string
+    contact_id: string
+    channel: string
+    subject: string | null
+    body: string
+    status: string
+    template_id: string
+  }
+  follow_up_task: {
+    id: string
+    name: string
+    status: string
+  }
+  approval_request: {
+    id: string
+    status: string
+    risk_level: string
+    governance_tier: number
+  }
+}
+
 export function PipelinePage() {
   usePageTitle('Pipeline')
   const [summary, setSummary] = useState<PipelineSummary | null>(null)
@@ -85,6 +125,12 @@ export function PipelinePage() {
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
+  const [workflowIcp, setWorkflowIcp] = useState(
+    'Founder-led AI and cybersecurity agencies that need governed agents for sales, delivery, reporting, and security workflows',
+  )
+  const [workflowCompany, setWorkflowCompany] = useState('')
+  const [workflowRunning, setWorkflowRunning] = useState(false)
+  const [workflowResult, setWorkflowResult] = useState<CustomerAcquisitionWorkflowResult | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -97,8 +143,11 @@ export function PipelinePage() {
       if (sumRes.status === 'fulfilled') setSummary(sumRes.value.data.data || null)
       else setError('Failed to load pipeline summary')
       if (projRes.status === 'fulfilled') {
-        const p = projRes.value.data
-        setProjects((p as any).projects || (p as any).data?.projects || [])
+        // Backend wraps as { success, data: { projects, pagination } }.
+        // Defensively support both wrapped and unwrapped shapes.
+        const payload = projRes.value.data
+        const projects = payload.data?.projects ?? []
+        setProjects(projects)
       } else if (!error) setError('Failed to load pipeline projects')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load pipeline data')
@@ -125,6 +174,37 @@ export function PipelinePage() {
     finally { setCreating(false) }
   }
 
+  const handleRunCustomerAcquisition = async () => {
+    if (!workflowIcp.trim()) return
+    setWorkflowRunning(true)
+    setWorkflowResult(null)
+    try {
+      const { data } = await api.post<ApiResponse<CustomerAcquisitionWorkflowResult>>(
+        '/sales/customer-acquisition/draft-workflow',
+        {
+          icp_description: workflowIcp.trim(),
+          seed_company: workflowCompany.trim() || null,
+          limit: 3,
+          signer: 'Masoud',
+        },
+        { silent: false },
+      )
+      setWorkflowResult(data.data)
+      toast.success('Draft workflow created. Approval is waiting in Governance.')
+      await fetchData()
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string; error?: { message?: string } } } })
+          ?.response?.data?.detail ||
+        (err as { response?: { data?: { error?: { message?: string } } } })
+          ?.response?.data?.error?.message ||
+        'Could not run the draft workflow'
+      toast.error(msg)
+    } finally {
+      setWorkflowRunning(false)
+    }
+  }
+
   const handleAdvance = async (projectId: string, currentStage: string) => {
     const needsApproval = HUMAN_GATES.has(currentStage)
     try {
@@ -135,7 +215,9 @@ export function PipelinePage() {
       toast.success('Project advanced')
       await fetchData()
     } catch (err: unknown) {
-      const msg = (err as any)?.response?.data?.error?.message || 'Failed to advance'
+      const msg =
+        (err as { response?: { data?: { error?: { message?: string } } } })
+          ?.response?.data?.error?.message || 'Failed to advance'
       toast.error(msg)
     }
   }
@@ -167,12 +249,25 @@ export function PipelinePage() {
       await fetchData()
     } catch (err: unknown) {
       const msg =
-        (err as any)?.response?.data?.error?.message || 'Failed to mark lost'
+        (err as { response?: { data?: { error?: { message?: string } } } })
+          ?.response?.data?.error?.message || 'Failed to mark lost'
       toast.error(msg)
     }
   }
 
-  const getProjectsForStage = (stage: string) => projects.filter(p => p.stage === stage)
+  // Department filter — when set, kanban shows only projects owned by that department.
+  const [deptFilter, setDeptFilter] = useState<string>('')
+  const allDepartments = useMemo(() => {
+    const set = new Set<string>()
+    projects.forEach((p) => { if (p.owner_department) set.add(p.owner_department) })
+    return [...set].sort()
+  }, [projects])
+
+  const filteredProjects = deptFilter
+    ? projects.filter((p) => p.owner_department === deptFilter)
+    : projects
+
+  const getProjectsForStage = (stage: string) => filteredProjects.filter(p => p.stage === stage)
 
   if (loading) return <div className="p-6"><Shimmer count={8} layout="card-grid" /></div>
 
@@ -191,6 +286,18 @@ export function PipelinePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {allDepartments.length > 0 && (
+              <select
+                value={deptFilter}
+                onChange={(e) => setDeptFilter(e.target.value)}
+                className="px-3 py-2 rounded-lg text-sm bg-white/5 border border-white/10 text-starlight-200 focus:outline-none focus:border-primary-500/40 cursor-pointer"
+              >
+                <option value="">All departments</option>
+                {allDepartments.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            )}
             <div className="flex items-center gap-2">
               <input
                 type="text"
@@ -210,11 +317,122 @@ export function PipelinePage() {
           </div>
         </div>
 
+        <Card variant="glass" padding="md" className="mb-5 border-primary-500/20">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Badge variant="warning">Draft-only</Badge>
+                <Badge variant="info">Founder approval required</Badge>
+              </div>
+              <h2 className="text-sm font-display font-semibold text-starlight-100">
+                Customer acquisition workflow
+              </h2>
+              <p className="text-xs text-starlight-500 mt-1">
+                Creates CRM contacts, qualifies a lead, drafts outreach, creates a task, opens an approval, and logs audit. No external message is sent.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void handleRunCustomerAcquisition()}
+              disabled={workflowRunning || !workflowIcp.trim()}
+              isLoading={workflowRunning}
+            >
+              Run Draft Workflow
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_240px] gap-3 mt-4">
+            <textarea
+              value={workflowIcp}
+              onChange={(e) => setWorkflowIcp(e.target.value)}
+              className="glass-input min-h-[78px] px-3 py-2 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-500 resize-none"
+              placeholder="Describe the ideal customer profile..."
+            />
+            <input
+              type="text"
+              value={workflowCompany}
+              onChange={(e) => setWorkflowCompany(e.target.value)}
+              className="glass-input h-10 px-3 py-2 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-500"
+              placeholder="Optional seed company"
+            />
+          </div>
+
+          {workflowResult && (
+            <div className="mt-4 rounded-xl border border-white/10 bg-midnight-500/35 p-3 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="success">Draft saved</Badge>
+                <Badge variant="warning">Send blocked until approval</Badge>
+                <span className="text-[11px] text-starlight-500">
+                  Approval: {workflowResult.approval_request.id.slice(0, 8)}
+                </span>
+                <span className="text-[11px] text-starlight-500">
+                  Task: {workflowResult.follow_up_task.status}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div className="rounded-lg bg-white/[0.03] border border-white/5 p-3">
+                  <p className="text-xs font-semibold text-starlight-200">
+                    {workflowResult.contacts[0]?.full_name || 'Lead created'}
+                  </p>
+                  <p className="text-[11px] text-starlight-500 mt-0.5">
+                    {workflowResult.contacts[0]?.title || 'No title'} · score {workflowResult.qualified_contact.score}
+                  </p>
+                  <p className="text-[11px] text-starlight-500 mt-0.5">
+                    {workflowResult.contacts[0]?.email || 'No email stored'}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white/[0.03] border border-white/5 p-3">
+                  <p className="text-xs font-semibold text-starlight-200 truncate">
+                    {workflowResult.outreach_draft.subject || 'Outreach draft'}
+                  </p>
+                  <p className="text-[11px] text-starlight-500 mt-1 line-clamp-3 whitespace-pre-wrap">
+                    {workflowResult.outreach_draft.body}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href="/governance/approvals"
+                  className="text-xs text-primary-400 hover:text-primary-300 underline underline-offset-2"
+                >
+                  Open approval queue
+                </a>
+                <a
+                  href="/tasks"
+                  className="text-xs text-primary-400 hover:text-primary-300 underline underline-offset-2"
+                >
+                  Open follow-up task
+                </a>
+                <a
+                  href="/governance/audit"
+                  className="text-xs text-primary-400 hover:text-primary-300 underline underline-offset-2"
+                >
+                  Open audit log
+                </a>
+              </div>
+            </div>
+          )}
+        </Card>
+
         {error && (
           <div className="mb-4 px-4 py-3 rounded-xl bg-status-error/10 border border-status-error/20 flex items-center gap-2">
             <AlertCircle size={14} className="text-status-error shrink-0" />
             <p className="text-xs text-status-error">{error}</p>
             <button onClick={() => void fetchData()} className="ml-auto text-xs text-status-error hover:text-status-error/80 underline cursor-pointer">Retry</button>
+          </div>
+        )}
+
+        {!error && projects.length === 0 && (
+          <div className="mb-5 px-5 py-4 rounded-xl border border-dashed border-white/10 bg-white/[0.02] flex items-center gap-4">
+            <Kanban size={28} className="text-starlight-600 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-starlight-300">No projects in the pipeline yet</p>
+              <p className="text-xs text-starlight-500 mt-0.5">
+                Type a project name in the field above and press <kbd className="px-1 py-0.5 rounded bg-white/10 text-[10px] font-mono">Enter</kbd> or click <strong>Create</strong> to add your first project.
+                It will land in the <span className="text-primary-400">Discovery</span> stage automatically.
+              </p>
+            </div>
           </div>
         )}
 
@@ -298,7 +516,7 @@ export function PipelinePage() {
                                   e.stopPropagation()
                                   void handleMarkLost(project.id, project.title)
                                 }}
-                                className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-status-error/10 text-status-error hover:bg-status-error/20 transition-all cursor-pointer"
+                                className="opacity-70 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-status-error/10 text-status-error hover:bg-status-error/20 transition-all cursor-pointer"
                                 title="Mark deal as lost"
                               >
                                 <XCircle size={8} />
@@ -308,7 +526,7 @@ export function PipelinePage() {
                             {stage !== 'CLOSED' && !project.lost_at && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); void handleAdvance(project.id, stage) }}
-                                className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 transition-all cursor-pointer"
+                                className="opacity-70 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 transition-all cursor-pointer"
                                 title={isGate ? 'Approve and advance' : 'Advance to next stage'}
                               >
                                 <ArrowRight size={8} />

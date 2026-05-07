@@ -102,6 +102,14 @@ class SecurityGate:
         Protects source code, API keys, founder info, and system internals.
         This is the one wall that never comes down.
 
+        Phase 1 F6 (2026-04-24) added PII Guard as a second layer here:
+        founder-private exact-string blocks (home address, bank account,
+        SIN, etc.) AND high-severity regex patterns (credit cards, IBAN,
+        API keys) are evaluated alongside the legacy shield patterns.
+        Masoud's mandate: "the only governance is matter is not leaking
+        my personal data and information and my bank information address
+        etc." -- this is that gate.
+
         Args:
             message: The raw user message to scan.
 
@@ -111,7 +119,54 @@ class SecurityGate:
         for pattern, name in _SHIELD_PATTERNS:
             if pattern.search(message):
                 return ScanResult(safe=False, matched_pattern=name)
+
+        # PII Guard: only BLOCK-severity hits halt the request here. The
+        # REDACT-severity hits (generic email/phone/IP) are handled at
+        # the outbound boundary -- not in shield_scan because input
+        # legitimately contains the user's own email when they're
+        # asking Daena to draft a reply about themselves.
+        try:
+            from app.services.pii_guard import scan_text
+
+            pii = scan_text(message)
+            if pii.has_block:
+                blocking = next(
+                    (h for h in pii.hits if h.severity.value == "block"), None,
+                )
+                if blocking is not None:
+                    return ScanResult(
+                        safe=False,
+                        matched_pattern=f"pii.{blocking.name}",
+                    )
+        except Exception:
+            # Defensive: never let a PII-guard import error break shield.
+            pass
+
         return ScanResult(safe=True)
+
+    @classmethod
+    def redact_outbound(cls, message: str) -> tuple[str, list[str]]:
+        """Redact REDACT-severity PII before outbound delivery.
+
+        Returns ``(redacted_text, hit_names)``. Callers (LLM streamer,
+        email composer, social media poster) use this to swap generic
+        PII for typed tokens. BLOCK hits are NOT handled here -- those
+        should have been caught upstream by ``shield_scan``.
+
+        Phase 1 F6 (2026-04-24).
+        """
+        try:
+            from app.services.pii_guard import scan_text
+
+            result = scan_text(message)
+            if result.has_redact:
+                names = sorted({
+                    h.name for h in result.hits if h.severity.value == "redact"
+                })
+                return result.redacted_text, names
+        except Exception:
+            pass
+        return message, []
 
     @classmethod
     def scan(cls, message: str) -> ScanResult:

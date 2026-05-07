@@ -18,9 +18,10 @@ import {
   ShieldCheck,
   Bot,
   ChevronRight,
+  AlertTriangle,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
-import { Card, Badge, Shimmer } from '@/components/common'
+import { Card, Badge, Shimmer, EmptyState, Button } from '@/components/common'
 import { api } from '@/lib/api'
 import { useDepartmentStates, type DepartmentState } from '@/hooks/useDepartmentStates'
 import type { DepartmentResponse, ApiResponse } from '@/types/api'
@@ -29,8 +30,10 @@ import type { DepartmentResponse, ApiResponse } from '@/types/api'
 // the deleted CompanyDashboard so this page is the single source of
 // truth for department presence + activity.
 const STATUS_VARIANT: Record<string, 'default' | 'info' | 'warning' | 'success' | 'danger'> = {
-  IDLE:       'success',
-  WORKING:    'info',
+  // IDLE used to be 'success' (green) which read as "good". IDLE is
+  // not a positive state — it's neutral. WORKING is the active state.
+  IDLE:       'default',
+  WORKING:    'success',
   OVERLOADED: 'warning',
   OFFLINE:    'danger',
 }
@@ -73,10 +76,15 @@ export function DepartmentsPage() {
   const navigate = useNavigate()
   const [departments, setDepartments] = useState<DepartmentResponse[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
   // Live status polled every 5s from /api/v1/department-states. Merged
   // in from the deleted CompanyDashboard so operators do not need a
   // separate page to see who is WORKING vs IDLE.
   const { states } = useDepartmentStates()
+
+  // Search box state — filters the visible department cards by name.
+  const [searchQuery, setSearchQuery] = useState('')
   const stateByName: Record<string, DepartmentState | undefined> = Object.fromEntries(
     states.map((s) => [s.department_name, s]),
   )
@@ -88,28 +96,15 @@ export function DepartmentsPage() {
         const depts = data.data || []
         if (depts.length > 0) {
           setDepartments(depts)
+          setLoadError(null)
         } else {
-          // API returned empty or auth failed silently (200 + success:false)
-          // Fall back to defaults so the page is never blank
-          throw new Error('Empty department list from API')
+          setDepartments([])
+          setLoadError('Backend returned no departments. Seed or create departments before using this page.')
         }
       } catch (err) {
-        console.error('Failed to load departments, using defaults:', err)
-        setDepartments(
-          Object.keys(DEPT_META).map((name, i) => ({
-            id: `dept-${i}`,
-            tenant_id: '',
-            name,
-            description: `${name} department`,
-            sunflower_index: i,
-            cell_id: null,
-            config: null,
-            is_active: true,
-            agent_count: 6,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })),
-        )
+        console.error('Failed to load departments:', err)
+        setDepartments([])
+        setLoadError('Could not reach the departments API. Daena may be offline or your session may have expired.')
       } finally {
         setLoading(false)
       }
@@ -128,17 +123,87 @@ export function DepartmentsPage() {
         >
           <div>
             <h1 className="text-2xl font-display font-bold text-starlight-100">Departments</h1>
-            <p className="text-sm text-starlight-400">
-              10 department-agents x 6 sub-capabilities
-            </p>
+              <p className="text-sm text-starlight-400">
+                {departments.length > 0
+                  ? `${departments.length} department-agents × 6 sub-capabilities`
+                  : 'No live department data loaded'}
+              </p>
           </div>
+          {/* Live status summary — at-a-glance counters before the operator
+              has to scan every card. */}
+          {!loading && departments.length > 0 && (
+            <div className="flex items-center gap-2">
+              {(() => {
+                const counts = { WORKING: 0, IDLE: 0, OVERLOADED: 0, OFFLINE: 0 } as Record<string, number>
+                departments.forEach((d) => {
+                  const live = stateByName[d.name]
+                  const label = live?.status || 'IDLE'
+                  counts[label] = (counts[label] ?? 0) + 1
+                })
+                return (
+                  <>
+                    <span className="text-[11px] px-2 py-1 rounded-md bg-status-success/10 text-status-success border border-status-success/20">
+                      {counts.WORKING} working
+                    </span>
+                    <span className="text-[11px] px-2 py-1 rounded-md bg-white/5 text-starlight-300 border border-white/10">
+                      {counts.IDLE} idle
+                    </span>
+                    {counts.OVERLOADED > 0 && (
+                      <span className="text-[11px] px-2 py-1 rounded-md bg-status-warning/10 text-status-warning border border-status-warning/20">
+                        {counts.OVERLOADED} overloaded
+                      </span>
+                    )}
+                    {counts.OFFLINE > 0 && (
+                      <span className="text-[11px] px-2 py-1 rounded-md bg-status-error/10 text-status-error border border-status-error/20">
+                        {counts.OFFLINE} offline
+                      </span>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
+          )}
         </motion.div>
+
+        {/* Search filter — useful when N grows beyond the seeded 10. */}
+        {!loading && departments.length > 4 && (
+          <div className="relative max-w-md">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter departments..."
+              className="w-full px-3 py-2 rounded-lg text-sm bg-white/5 border border-white/10 text-starlight-200 placeholder:text-starlight-500 focus:outline-none focus:border-primary-500/40"
+            />
+          </div>
+        )}
+
+        {loadError && !loading && (
+          <div className="px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30 flex items-start gap-3">
+            <AlertTriangle size={16} className="text-status-warning shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm text-status-warning font-medium">Departments offline</p>
+              <p className="text-xs text-starlight-400 mt-0.5">{loadError}</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => window.location.reload()}>
+              Retry
+            </Button>
+          </div>
+        )}
 
         {loading ? (
           <Shimmer count={10} layout="card-grid" />
+        ) : departments.length === 0 ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title="No live departments loaded"
+            description={loadError || 'The department API returned no rows. This page will not render placeholder agents.'}
+          />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            {departments.map((dept, i) => {
+            {departments
+              .filter((d) => !searchQuery.trim() || d.name.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+              .map((dept, i) => {
               const meta = DEPT_META[dept.name] || FALLBACK
               return (
                 <motion.div

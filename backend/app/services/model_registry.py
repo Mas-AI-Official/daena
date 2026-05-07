@@ -96,6 +96,7 @@ class ModelRegistry:
         self._model_cache_ts: float = 0.0  # monotonic timestamp of last refill
         self._health_cache: dict[ModelProvider, HealthStatus] = {}
         self._initialized = False
+        self._post_startup_refresh_started = False
         self._snapshot_cache: dict[str, Any] | None = None
         self._snapshot_cache_ts: float = 0.0
         # TTL for the model catalog. Short enough that a user who
@@ -140,10 +141,34 @@ class ModelRegistry:
             except Exception:
                 logger.exception("provider.init_failed", provider=provider_enum.value)
 
+        for provider_enum in self._providers:
+            self._health_cache.setdefault(provider_enum, HealthStatus.DEGRADED)
+        self._initialized = True
+        logger.info(
+            "registry.initialized",
+            available=len(self._providers),
+            total=len(_PROVIDER_MAP),
+            health="pending_background_refresh",
+        )
+
+        self._start_background_refresh()
+
+    def _start_background_refresh(self) -> None:
+        """Schedule slow provider discovery without blocking FastAPI startup."""
+        if self._post_startup_refresh_started:
+            return
+        self._post_startup_refresh_started = True
+        try:
+            asyncio.create_task(self._post_startup_refresh())
+            logger.info("registry.post_startup_refresh_scheduled")
+        except RuntimeError:
+            self._post_startup_refresh_started = False
+            logger.debug("registry.post_startup_refresh_not_scheduled")
+
+    async def _post_startup_refresh(self) -> None:
+        """Probe CLI subscriptions, model catalogs, and health in the background."""
         # CLI runtime providers: use subscription auth (no API key needed).
-        # Auto-register for any provider slot that has no API key configured
-        # but DOES have an installed CLI binary. This allows Claude Code,
-        # Codex, and Gemini CLI to participate in Council/QE as proper providers.
+        # These checks can invoke external CLIs and must not block startup.
         try:
             from app.services.providers.claude_cli import ALL_CLI_SPECS, CliProvider
 
@@ -152,19 +177,17 @@ class ModelRegistry:
                     cli_provider = CliProvider(spec)
                     health = await cli_provider.health_check()
                     if health != HealthStatus.HEALTHY:
+                        logger.info(
+                            "provider.cli_unavailable",
+                            runtime=spec.runtime_id,
+                            health=health.value,
+                        )
                         continue
 
                     if spec.provider in self._providers:
-                        # API-key provider already has this slot.
-                        # Store CLI provider as secondary source so
-                        # Quintessence debates can use the CLI subscription
-                        # model (Pro/Max tier) alongside the API-key model.
                         if not hasattr(self, "_cli_providers"):
                             self._cli_providers: dict = {}
                         self._cli_providers[spec.runtime_id] = cli_provider
-                        # NOTE: CLI model is added to _model_cache AFTER
-                        # list_all_models() runs (see below). Adding it here
-                        # would cause list_all_models() to return early.
                         logger.info(
                             "provider.cli_coregistered",
                             provider=spec.provider.value,
@@ -173,6 +196,7 @@ class ModelRegistry:
                         )
                     else:
                         self._providers[spec.provider] = cli_provider
+                        self._health_cache.setdefault(spec.provider, HealthStatus.DEGRADED)
                         logger.info(
                             "provider.registered",
                             provider=spec.provider.value,
@@ -187,23 +211,13 @@ class ModelRegistry:
         except Exception:
             logger.debug("provider.cli_import_failed", exc_info=True)
 
-        self._initialized = True
-        logger.info(
-            "registry.initialized",
-            available=len(self._providers),
-            total=len(_PROVIDER_MAP),
-        )
-
-        # Populate model catalog and health caches so ModelRouter
-        # has data on first request (without this, _model_cache and
-        # _health_cache stay empty and the router finds zero candidates).
         if self._providers:
-            await self.list_all_models()
+            await self.list_all_models(force_refresh=True)
             await self.refresh_health()
 
         # Add CLI subscription models to cache AFTER list_all_models().
-        # These are sovereign-tier models (Opus 4.6, Gemini 3.1 Pro, Codex 5.4)
-        # that should participate in Quintessence debates alongside API models.
+        # These are sovereign-tier models that should participate in
+        # Quintessence debates alongside API models.
         if hasattr(self, "_cli_providers"):
             from app.services.providers.base import ModelInfo
             from app.services.providers.claude_cli import ALL_CLI_SPECS
@@ -223,6 +237,11 @@ class ModelRegistry:
                         model_id=spec.model_id,
                         provider=spec.provider.value,
                     )
+        logger.info(
+            "registry.post_startup_refresh_complete",
+            providers=len(self._providers),
+            models=len(self._model_cache),
+        )
 
     def get_provider(self, provider: ModelProvider) -> BaseProvider | None:
         """Get an instantiated provider, or None if unavailable."""

@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   MessageSquare,
   Loader2,
+  AlertTriangle,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { api } from '@/lib/api'
@@ -115,24 +116,46 @@ function MiniBarChart({ data, valueKey, color, height = 120 }: {
 
 // ── Stat Card ──
 
-function StatCard({ label, value, subtitle, icon: Icon, color, bg }: {
+function StatCard({ label, value, subtitle, icon: Icon, color, bg, drillTo }: {
   label: string
   value: string
   subtitle?: string
   icon: React.ElementType
   color: string
   bg: string
+  // Optional drill-down: when set the card becomes a clickable link to a
+  // page where the operator can act on the stat (e.g. "Pending approvals"
+  // → /governance/approvals?status=PENDING). Without this, stats are dead-end.
+  drillTo?: string
 }) {
+  const Inner = (
+    <>
+      <Icon size={18} className={`${color} mb-3`} />
+      <p className="text-2xl font-semibold text-starlight-100">{value}</p>
+      <p className="text-xs text-starlight-500 mt-1">{label}</p>
+      {subtitle && <p className="text-[10px] text-starlight-600 mt-0.5">{subtitle}</p>}
+      {drillTo && <p className="text-[9px] text-primary-400/70 mt-2 uppercase tracking-wider">View details →</p>}
+    </>
+  )
+  if (drillTo) {
+    return (
+      <motion.a
+        href={drillTo}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`block p-4 rounded-xl ${bg} border border-white/5 hover:border-white/15 hover:bg-opacity-100 transition-all cursor-pointer`}
+      >
+        {Inner}
+      </motion.a>
+    )
+  }
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       className={`p-4 rounded-xl ${bg} border border-white/5`}
     >
-      <Icon size={18} className={`${color} mb-3`} />
-      <p className="text-2xl font-semibold text-starlight-100">{value}</p>
-      <p className="text-xs text-starlight-500 mt-1">{label}</p>
-      {subtitle && <p className="text-[10px] text-starlight-600 mt-0.5">{subtitle}</p>}
+      {Inner}
     </motion.div>
   )
 }
@@ -164,6 +187,7 @@ export function AnalyticsPage() {
 
   const [data, setData] = useState<DashboardData>(EMPTY)
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('30d')
 
   const fetchData = useCallback(async () => {
@@ -178,8 +202,19 @@ export function AnalyticsPage() {
         providers: d?.providers || EMPTY.providers,
         daily_usage: d?.daily_usage || EMPTY.daily_usage,
       })
-    } catch {
+      setFetchError(null)
+    } catch (err) {
       setData(EMPTY)
+      // Surface the failure instead of silently rendering zeros — operators
+      // need to know "the analytics service is down" vs "we have no data".
+      const status = (err as { response?: { status?: number } })?.response?.status
+      setFetchError(
+        status === 401
+          ? 'Session expired. Please reload the page to sign in again.'
+          : status
+          ? `Analytics service returned ${status}. Metrics are unavailable until this endpoint recovers.`
+          : 'Analytics service unreachable. Metrics are unavailable until the backend responds.',
+      )
     } finally {
       setLoading(false)
     }
@@ -191,6 +226,7 @@ export function AnalyticsPage() {
 
   const { usage, costs, governance, departments, providers, daily_usage } = data
   const maxDeptCount = Math.max(...departments.map((d) => d.message_count), 1)
+  const analyticsUnavailable = Boolean(fetchError)
 
   return (
     <div className="h-full overflow-y-auto">
@@ -199,7 +235,9 @@ export function AnalyticsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-display font-semibold text-starlight-100">Analytics</h1>
-            <p className="text-sm text-starlight-400 mt-0.5">Usage, governance, and cost analytics</p>
+            <p className="text-sm text-starlight-400 mt-0.5">
+              Usage, governance, and cost analytics — scoped to your tenant only
+            </p>
           </div>
           <button
             onClick={() => { setLoading(true); void fetchData() }}
@@ -210,39 +248,59 @@ export function AnalyticsPage() {
           </button>
         </div>
 
+        {fetchError && !loading && (
+          <div className="px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30 flex items-start gap-3">
+            <AlertTriangle size={16} className="text-status-warning shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm text-status-warning font-medium">Analytics offline</p>
+              <p className="text-xs text-starlight-400 mt-0.5">{fetchError}</p>
+            </div>
+            <button
+              onClick={() => { setLoading(true); void fetchData() }}
+              className="text-xs text-status-warning hover:text-status-warning/80 underline cursor-pointer shrink-0"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Overview cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             label="Messages today"
-            value={String(usage.messages_today)}
-            subtitle={`${usage.messages_this_week} this week`}
+            value={analyticsUnavailable ? '--' : String(usage.messages_today)}
+            subtitle={analyticsUnavailable ? 'analytics unavailable' : `${usage.messages_this_week} this week`}
             icon={MessageSquare}
             color="text-primary-400"
             bg="bg-primary-500/10"
+            drillTo="/chat"
           />
           <StatCard
             label="Tokens used"
-            value={fmtTokens(usage.tokens_today)}
-            subtitle={`${fmtTokens(usage.tokens_this_week)} this week`}
+            value={analyticsUnavailable ? '--' : fmtTokens(usage.tokens_today)}
+            subtitle={analyticsUnavailable ? 'analytics unavailable' : `${fmtTokens(usage.tokens_this_week)} this week`}
             icon={TrendingUp}
             color="text-accent-cyan"
             bg="bg-accent-cyan/10"
+            drillTo="/settings/billing"
           />
           <StatCard
             label="Cost today"
-            value={fmtUsd(costs.cost_today_usd)}
-            subtitle={`${fmtUsd(costs.cost_this_month_usd)} this month`}
+            value={analyticsUnavailable ? '--' : fmtUsd(costs.cost_today_usd)}
+            subtitle={analyticsUnavailable ? 'analytics unavailable' : `${fmtUsd(costs.cost_this_month_usd)} this month`}
             icon={DollarSign}
             color="text-accent-amber"
             bg="bg-accent-amber/10"
+            drillTo="/settings/billing"
           />
           <StatCard
             label="Governance actions"
-            value={String(governance.approvals_decided_today)}
-            subtitle={`${governance.approvals_pending} pending`}
+            value={analyticsUnavailable ? '--' : String(governance.approvals_decided_today)}
+            subtitle={analyticsUnavailable ? 'analytics unavailable' : `${governance.approvals_pending} pending`}
             icon={Shield}
             color="text-accent-purple"
             bg="bg-accent-purple/10"
+            drillTo="/governance/approvals?status=PENDING"
           />
         </div>
 
@@ -304,9 +362,13 @@ export function AnalyticsPage() {
                   <DeptBar key={dept.name} name={dept.name} count={dept.message_count} maxCount={maxDeptCount} />
                 ))
               ) : (
-                ['Engineering', 'Product', 'Research', 'Marketing', 'Finance', 'Operations', 'Sales', 'Legal', 'Skill Governance', 'Security Ops'].map((name) => (
-                  <DeptBar key={name} name={name} count={0} maxCount={1} />
-                ))
+                <div className="rounded-lg border border-dashed border-white/10 bg-midnight-800/20 px-4 py-6 text-center">
+                  <p className="text-xs text-starlight-500">
+                    {analyticsUnavailable
+                      ? 'Department activity is unavailable while analytics is offline.'
+                      : 'No department activity recorded for this period.'}
+                  </p>
+                </div>
               )}
             </div>
           </div>
@@ -352,11 +414,11 @@ export function AnalyticsPage() {
         </div>
 
         {/* Provider breakdown */}
-        {providers.length > 0 && (
-          <div className="rounded-xl border border-white/5 p-6">
-            <h3 className="flex items-center gap-2 text-sm font-medium text-starlight-200 mb-4">
-              <Zap size={14} /> Provider breakdown
-            </h3>
+        <div className="rounded-xl border border-white/5 p-6">
+          <h3 className="flex items-center gap-2 text-sm font-medium text-starlight-200 mb-4">
+            <Zap size={14} /> Provider breakdown
+          </h3>
+          {providers.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {providers.map((p) => (
                 <div key={p.provider} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-midnight-400/30 border border-white/5">
@@ -368,8 +430,14 @@ export function AnalyticsPage() {
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="text-xs text-starlight-500">
+              {analyticsUnavailable
+                ? 'Provider usage is unavailable while analytics is offline.'
+                : 'No provider usage recorded in this period.'}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )

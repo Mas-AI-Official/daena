@@ -295,6 +295,7 @@ class ModelRouter:
         metadata: dict[str, Any] | None = None,
         founder_policy: dict[str, Any] | None = None,
         primary_mind: str | None = None,
+        effort_level: str = "medium",
     ) -> RoutingDecision:
         """Produce a routing decision from a query understanding.
 
@@ -514,6 +515,7 @@ class ModelRouter:
                 scored, needed,
                 intent=qu.intent,
                 primary_mind_provider=_primary_mind_provider,
+                effort_level=effort_level,
             )
             if len(council) < 2:
                 if requested_mode == RoutingMode.QUINTESSENCE:
@@ -848,10 +850,30 @@ class ModelRouter:
             if tier == ModelTier.SOVEREIGN:
                 tier_mult = _sov_mult.get(effective_complexity, 1.15)
             elif tier == ModelTier.TACTICAL:
-                tier_mult = 1.0
+                # F-COUNCIL-MODELS fix (2026-04-25, founder-driven):
+                # In power_mode (Council/QE/AGI+EXE), TACTICAL providers
+                # like Groq/Together/OpenRouter shouldn't compete with
+                # SOVEREIGN frontier models. Previously tactical kept a
+                # 1.0 multiplier and won via cheap cost+locality scores
+                # (Kimi/Llama-4-scout beat Claude Sonnet because they're
+                # free on Groq). Demote tactical to 0.55 in power_mode so
+                # the council picks subscription-backed frontier models
+                # (Claude Code CLI, Codex, Gemini CLI, Anthropic API,
+                # OpenAI API, Gemini API, Perplexity Pro) when those are
+                # available, falling back to tactical only if nothing
+                # sovereign exists. Outside power_mode tactical stays
+                # neutral (1.0) so cost-optimized routing still works.
+                tier_mult = 0.55 if power_mode else 1.0
             else:  # LOCAL
                 tier_mult = _loc_mult.get(effective_complexity, 0.8)
             composite = composite * tier_mult
+
+            # F-COUNCIL-MODELS fix continued: extra boost for the
+            # frontier+priority tagged candidates so within SOVEREIGN
+            # the actual flagship (Sonnet 4.x, GPT-5.x, Gemini 2.5 Pro,
+            # Sonar Pro) wins over any older sovereign sibling.
+            if power_mode and ("frontier" in lower_tags or "priority" in lower_tags):
+                composite = composite * 1.20
 
             # Priority boost (2026-04-18). Models tagged ``priority``
             # in their provider catalog are the founder-specified
@@ -1000,28 +1022,46 @@ class ModelRouter:
         count: int,
         intent: IntentType | None = None,
         primary_mind_provider: ModelProvider | None = None,
+        effort_level: str = "medium",
     ) -> list[ModelCandidate]:
         """Pick up to ``count`` models for Council/Quintessence debate.
 
         Task-aware selection strategy:
         1. Only SOVEREIGN-tier models participate in debates
         2. Prefer providers from the debate roster for this intent
-        3. Exclude the Primary Mind's provider (it's the judge, not a debater)
+        3. Default: exclude the Primary Mind's provider so the Chairman
+           gets diverse views, not a self-confirming echo
         4. Diverse providers: avoid picking 2 models from same provider
         5. Fallback: if not enough sovereign models, include tactical tier
+        6. **Quorum fallback (Council R4 Phase 3, GPT-5.5 verdict)**: if
+           the diverse roster would yield FEWER than 3 debaters AND
+           ``effort_level`` ∈ {high, xhigh}, re-admit the Primary Mind's
+           provider so the chamber has at least 3 voices. This is the
+           sole legitimate path for same-provider debater admission —
+           prior policy of "always admit on HIGH effort" was over-broad
+           (R2 critique: "buying confidence theater with 25-50K tokens"
+           when diversity is sufficient).
         """
-        # Phase 1: filter to sovereign-tier candidates
+        # Phase 0: try the diverse roster FIRST (provider-diversity-only).
+        # If the result has >=3 debaters, ship it. Same-provider admission
+        # is reserved for the QUORUM FALLBACK below.
+        _effort_allows_quorum_fallback = effort_level in ("high", "xhigh")
+        # Audit telemetry — populated through the function so we can log
+        # the founder-visible reason at the end.
+        _admission_reason: str = "diverse_roster"
+        _allow_same_provider = False
+
+        # Phase 1: filter to sovereign-tier candidates (DIVERSE PASS)
         sovereign = [
             c for c in scored
             if self.classify_tier(c) == ModelTier.SOVEREIGN
         ]
 
-        # Exclude Primary Mind's provider (it will be the judge/synthesizer)
-        if primary_mind_provider:
-            sovereign = [
-                c for c in sovereign
-                if c.provider != primary_mind_provider
-            ]
+        # Exclude Primary Mind's provider for the diverse pass (default).
+        sovereign_diverse_only = (
+            [c for c in sovereign if c.provider != primary_mind_provider]
+            if primary_mind_provider else list(sovereign)
+        )
 
         # Phase 2: sort by debate roster priority for this intent,
         # then by model strength within each provider.
@@ -1052,17 +1092,52 @@ class ModelRouter:
             return s
 
         sovereign.sort(key=lambda c: (_roster_priority(c), -_strength_score(c)))
+        sovereign_diverse_only.sort(key=lambda c: (_roster_priority(c), -_strength_score(c)))
 
-        # Phase 3: pick diverse providers
+        # Phase 3: pick diverse providers FROM THE DIVERSE-ONLY POOL FIRST
         selected: list[ModelCandidate] = []
         seen_providers: set[ModelProvider] = set()
 
-        for c in sovereign:
+        for c in sovereign_diverse_only:
             if c.provider not in seen_providers:
                 selected.append(c)
                 seen_providers.add(c.provider)
             if len(selected) >= count:
                 break
+
+        # Count provider diversity AFTER the diverse pass — this is the
+        # number GPT-5.5 R4 wanted in the audit telemetry so the founder
+        # can see when quorum protection kicks in.
+        _provider_diversity_count = len(seen_providers)
+
+        # Phase 3b: QUORUM FALLBACK (Phase 3 Council verdict, 2026-04-25).
+        # If we couldn't find 3 diverse debaters AND HIGH effort gives us
+        # permission, admit the Primary Mind's provider as a debater.
+        # This produces the slim-Claude-as-proposer + full-Claude-as-
+        # Chairman pattern from R2, but ONLY when no real diversity is
+        # available. Avoids R2's "confidence theater" failure mode where
+        # we waste tokens admitting the same model when other providers
+        # would have served just fine.
+        if (
+            _effort_allows_quorum_fallback
+            and len(selected) < min(3, count)
+            and primary_mind_provider is not None
+        ):
+            same_provider_pool = [
+                c for c in sovereign
+                if c.provider == primary_mind_provider
+                and c not in selected
+            ]
+            same_provider_pool.sort(key=lambda c: -_strength_score(c))
+            for c in same_provider_pool:
+                # Allow even though provider is "seen" — the whole point
+                # of the fallback is to admit the same provider.
+                selected.append(c)
+                seen_providers.add(c.provider)
+                _allow_same_provider = True
+                _admission_reason = "roster_quorum_fallback"
+                if len(selected) >= count:
+                    break
 
         # Phase 4: if not enough sovereign, include tactical tier
         if len(selected) < count:
@@ -1070,7 +1145,7 @@ class ModelRouter:
                 c for c in scored
                 if self.classify_tier(c) == ModelTier.TACTICAL
                 and c.provider not in seen_providers
-                and c.provider != primary_mind_provider
+                and (_allow_same_provider or c.provider != primary_mind_provider)
             ]
             for c in tactical:
                 if c.provider not in seen_providers:
@@ -1082,11 +1157,37 @@ class ModelRouter:
         # Phase 5: last resort, allow any remaining model
         if len(selected) < count:
             for c in scored:
-                if c not in selected and c.provider != primary_mind_provider:
+                if c not in selected and (
+                    _allow_same_provider or c.provider != primary_mind_provider
+                ):
                     selected.append(c)
                 if len(selected) >= count:
                     break
 
+        # Audit signal when Primary Mind's provider was admitted as a
+        # debater alongside being the Chairman. Surfaces in the Governed
+        # Execution Timeline as `same_provider_debater_admitted`.
+        _same_provider_debater = (
+            primary_mind_provider is not None
+            and any(c.provider == primary_mind_provider for c in selected)
+        )
+        # Estimate added cost when same-provider was admitted (R4 Phase 3
+        # second-signal request from GPT-5.5 — make the cost visible).
+        _est_extra_tokens = 0
+        _est_extra_cost = 0.0
+        if _same_provider_debater and _admission_reason == "roster_quorum_fallback":
+            same_prov_extras = [
+                c for c in selected if c.provider == primary_mind_provider
+            ]
+            for c in same_prov_extras:
+                # Round-trip estimate: ~30K input + 1K output for a slim
+                # proposer call at ~$5/M input + $15/M output.
+                _est_extra_tokens += 31_000
+                _est_extra_cost += round(
+                    (c.cost_per_1m_input * 30_000 + c.cost_per_1m_output * 1_000)
+                    / 1_000_000,
+                    4,
+                )
         logger.info(
             "router.debate_roster_selected",
             intent=intent.value if intent else "none",
@@ -1094,6 +1195,12 @@ class ModelRouter:
             models=[c.model_id for c in selected],
             tiers=[self.classify_tier(c).value for c in selected],
             primary_mind_excluded=primary_mind_provider.value if primary_mind_provider else "none",
+            effort_level=effort_level,
+            same_provider_debater_admitted=_same_provider_debater,
+            admission_reason=_admission_reason,
+            provider_diversity_count=_provider_diversity_count,
+            est_extra_tokens=_est_extra_tokens,
+            est_extra_cost=_est_extra_cost,
         )
 
         return selected

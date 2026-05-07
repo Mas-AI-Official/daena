@@ -41,16 +41,27 @@ interface StatCardProps {
   trendUp?: boolean
   color: string
   delay?: number
+  /** F-DASH-CLICKABLE fix: optional click target so e.g. "Pending Approvals: 5"
+   *  navigates to /governance/approvals instead of being decoration-only. */
+  linkTo?: string
+  onClick?: () => void
 }
 
-const StatCard = memo(function StatCard({ label, value, icon, trend, trendUp, color, delay = 0 }: StatCardProps) {
+const StatCard = memo(function StatCard({ label, value, icon, trend, trendUp, color, delay = 0, linkTo, onClick }: StatCardProps) {
+  const navigate = useNavigate()
+  const interactive = Boolean(linkTo || onClick)
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.3 }}
+      onClick={interactive ? () => { if (onClick) onClick(); else if (linkTo) navigate(linkTo) } : undefined}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onKeyDown={interactive ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick ? onClick() : (linkTo && navigate(linkTo)) } } : undefined}
+      className={interactive ? 'cursor-pointer' : undefined}
     >
-      <Card variant="glass" padding="md" className="group hover:border-white/10 transition-all">
+      <Card variant="glass" padding="md" className={`group transition-all ${interactive ? 'hover:border-primary-400/30 hover:bg-white/[0.03]' : 'hover:border-white/10'}`}>
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs text-starlight-400 mb-1">{label}</p>
@@ -116,6 +127,11 @@ const ICON_MAP = {
 function formatRelativeTime(dateString: string): string {
   const now = Date.now()
   const then = new Date(dateString).getTime()
+  // F-DATE-EPOCH defensive: legacy rows with NULL created_at coerce to
+  // Unix epoch 0 (1970-01-01) and render as "20568d ago". Treat any
+  // pre-2020 timestamp as "no date" to hide the symptom while the
+  // backend backfill migration runs.
+  if (!Number.isFinite(then) || then < 1577836800000) return ''
   const diffMs = now - then
   if (diffMs < 0) return 'just now'
   const diffSec = Math.floor(diffMs / 1000)
@@ -155,32 +171,80 @@ function shortenDeptName(name: string): string {
   return DEPT_SHORT_NAMES[name] || name
 }
 
+// ── Module-level cache for the 9-call dashboard burst.
+// Without this, every remount (sidebar nav, focus return, StrictMode double
+// invoke in dev) refetches everything. TTL=30s matches the health poll
+// cadence below — it's stale enough that one tab refresh always works,
+// fresh enough that quick nav back is instant.
+const CACHE_TTL_MS = 30_000
+interface DashboardCache {
+  ts: number
+  stats: {
+    sessions: number
+    pendingApprovals: number
+    blockedApprovals: number
+    memories: number
+    activeAgents: number
+    pipelineTotal: number
+    runtimesOnline: number
+    runtimesTotal: number  // F-DASH-4 fix: dynamic denominator instead of hardcoded /5
+  }
+  departments: HiveDepartment[]
+  systemHealth: SystemHealth | null
+  recentActivity: ActivityItem[]
+}
+type SystemHealth = {
+  uptime?: string
+  ollama?: { status: string; model_loaded?: string | null }
+  redis?: string
+  database?: { total_sessions: number; total_messages: number; last_activity?: string | null }
+}
+let dashboardCache: DashboardCache | null = null
+
 // ── Main component ──
 
 export function DashboardPage() {
   usePageTitle('Dashboard')
   const navigate = useNavigate()
   const { autopilotActive } = useUiStore()
-  const [stats, setStats] = useState({
-    sessions: 0,
-    pendingApprovals: 0,
-    blockedApprovals: 0,
-    memories: 0,
-    activeAgents: 10,  // 10 departments
-    pipelineTotal: 0,
-    runtimesOnline: 0,
-  })
-  const [departments, setDepartments] = useState<HiveDepartment[]>([])
-  const [loading, setLoading] = useState(true)
-  const [systemHealth, setSystemHealth] = useState<{
-    uptime?: string
-    ollama?: { status: string; model_loaded?: string | null }
-    redis?: string
-    database?: { total_sessions: number; total_messages: number; last_activity?: string | null }
-  } | null>(null)
-  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([])
+  const [stats, setStats] = useState(
+    () => (dashboardCache && Date.now() - dashboardCache.ts < CACHE_TTL_MS)
+      ? dashboardCache.stats
+      : {
+          sessions: 0,
+          pendingApprovals: 0,
+          blockedApprovals: 0,
+          memories: 0,
+          activeAgents: 10,  // 10 departments
+          pipelineTotal: 0,
+          runtimesOnline: 0,
+          runtimesTotal: 6,  // F-DASH-4 fix: matches actual runtime count (claude_code, codex, gemini_cli, grok_cli, vllm, ollama)
+        },
+  )
+  // Initialize from cache if fresh — instant remount with no network hit.
+  const cached = dashboardCache && (Date.now() - dashboardCache.ts < CACHE_TTL_MS)
+    ? dashboardCache
+    : null
+  const [departments, setDepartments] = useState<HiveDepartment[]>(cached?.departments ?? [])
+  const [loading, setLoading] = useState(!cached)
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(cached?.systemHealth ?? null)
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>(cached?.recentActivity ?? [])
 
   useEffect(() => {
+    // Skip the 9-call burst entirely if cache is fresh (set by a sibling
+    // mount within the last 30s). The 30s health poll below still runs
+    // to keep liveness fresh.
+    if (dashboardCache && Date.now() - dashboardCache.ts < CACHE_TTL_MS) {
+      // Schedule a background re-warm after TTL expires so the next mount
+      // also gets cache hits.
+      const remaining = CACHE_TTL_MS - (Date.now() - dashboardCache.ts)
+      const t = setTimeout(() => {
+        // Triggers full reload by clearing cache. Component is unaware.
+        dashboardCache = null
+      }, remaining)
+      return () => clearTimeout(t)
+    }
+
     const loadData = async () => {
       try {
         // Parallel fetch: stats + departments + memories + audit
@@ -196,23 +260,25 @@ export function DashboardPage() {
           api.get('/runtimes'),
         ])
 
-        // Parse health data for live stats
-        const health = healthRes.status === 'fulfilled' ? healthRes.value.data : null
-        if (health) setSystemHealth(health)
+        // Compute every value into a local first so we can both setState
+        // AND seed the module cache from the same snapshot.
+        const health: SystemHealth | null = healthRes.status === 'fulfilled' ? healthRes.value.data : null
 
-        // Parse memory count
         const memoryCount = memoriesRes.status === 'fulfilled'
           ? memoriesRes.value.data?.pagination?.total ?? 0
           : 0
-
         const pipelineTotal = pipelineRes.status === 'fulfilled'
           ? pipelineRes.value.data?.data?.total ?? 0
           : 0
         const runtimesOnline = runtimesRes.status === 'fulfilled'
           ? (runtimesRes.value.data?.data?.runtimes?.filter((r: { status: string }) => r.status === 'online')?.length ?? 0)
           : 0
+        // F-DASH-4 fix: pull total from same response so the denominator is live.
+        const runtimesTotal = runtimesRes.status === 'fulfilled'
+          ? (runtimesRes.value.data?.data?.runtimes?.length ?? 6)
+          : 6
 
-        setStats({
+        const nextStats = {
           sessions: sessionsRes.status === 'fulfilled'
             ? sessionsRes.value.data?.pagination?.total ?? 0
             : 0,
@@ -224,9 +290,10 @@ export function DashboardPage() {
             : 10,
           pipelineTotal,
           runtimesOnline,
-        })
+          runtimesTotal,
+        }
 
-        // Parse audit entries into recent activity
+        let nextActivity: ActivityItem[]
         if (auditRes.status === 'fulfilled' && auditRes.value.data?.data) {
           const entries = auditRes.value.data.data as Array<{
             id: string
@@ -235,27 +302,42 @@ export function DashboardPage() {
             result?: Record<string, unknown>
             created_at: string
           }>
-          setRecentActivity(
-            entries.map((entry) => ({
+          // F-DASH-3 fix: previously dumped EVERY action_params field into a
+          // comma-joined blob, which leaked top_candidates / diagnostics /
+          // selection_reason / etc to the user-visible feed (same class of
+          // bug as F-0011 codex stderr). Now we extract a short, useful
+          // summary - just the user message excerpt + model + latency -
+          // and skip the heavy debug fields. Operators who need the full
+          // payload click into /governance/audit which has the AuditDetail
+          // panel with the complete JSON.
+          const SAFE_KEYS = new Set(['user_message', 'model', 'provider', 'latency_ms', 'intent', 'risk', 'tier', 'target', 'tool_name', 'action'])
+          nextActivity = entries.map((entry) => {
+            const params = (entry.action_params || {}) as Record<string, unknown>
+            const result = (entry.result || {}) as Record<string, unknown>
+            const src = Object.keys(params).length > 0 ? params : result
+            const summary = Object.entries(src)
+              .filter(([k]) => SAFE_KEYS.has(k))
+              .map(([k, v]) => {
+                const sv = typeof v === 'string' ? v : JSON.stringify(v)
+                return `${k}: ${sv.slice(0, 80)}`
+              })
+              .slice(0, 4)
+              .join(' . ')
+            return {
               id: entry.id,
               type: mapActionType(entry.action_type),
               title: formatActionTitle(entry.action_type),
-              description:
-                (entry.action_params && Object.keys(entry.action_params).length > 0
-                  ? Object.entries(entry.action_params).map(([k, v]) => `${k}: ${typeof v === 'object' && v !== null ? JSON.stringify(v) : v}`).join(', ')
-                  : entry.result && Object.keys(entry.result).length > 0
-                    ? Object.entries(entry.result).map(([k, v]) => `${k}: ${typeof v === 'object' && v !== null ? JSON.stringify(v) : v}`).join(', ')
-                    : 'No details available'),
+              description: summary || 'No details available',
               time: formatRelativeTime(entry.created_at),
-            }))
-          )
+            }
+          })
         } else {
-          setRecentActivity([
+          nextActivity = [
             { id: 'empty', type: 'alert', title: 'No recent activity', description: 'Audit log is empty or unavailable', time: '' },
-          ])
+          ]
         }
 
-        // Map departments to hive format
+        let nextDepartments: HiveDepartment[] = []
         if (deptsRes.status === 'fulfilled' && deptsRes.value.data?.data) {
           const depts = deptsRes.value.data.data as Array<{
             id: string
@@ -263,15 +345,29 @@ export function DashboardPage() {
             agent_count: number
             is_active: boolean
           }>
-          setDepartments(
-            depts.map((d) => ({
-              id: d.id,
-              name: shortenDeptName(d.name),
-              agentCount: d.agent_count,
-              activeCount: d.is_active ? d.agent_count : 0,
-              efficiency: d.is_active ? 95 : 0,
-            }))
-          )
+          nextDepartments = depts.map((d) => ({
+            id: d.id,
+            name: shortenDeptName(d.name),
+            agentCount: d.agent_count,
+            activeCount: d.is_active ? d.agent_count : 0,
+            efficiency: d.is_active ? 95 : 0,
+          }))
+        }
+
+        // Apply to React state.
+        if (health) setSystemHealth(health)
+        setStats(nextStats)
+        setRecentActivity(nextActivity)
+        if (nextDepartments.length > 0) setDepartments(nextDepartments)
+
+        // Seed module cache from the same snapshot — next mount within
+        // CACHE_TTL_MS reuses without firing the 9-call burst.
+        dashboardCache = {
+          ts: Date.now(),
+          stats: nextStats,
+          departments: nextDepartments.length > 0 ? nextDepartments : (dashboardCache?.departments ?? []),
+          systemHealth: health ?? dashboardCache?.systemHealth ?? null,
+          recentActivity: nextActivity,
         }
       } catch (err) {
         console.error('Dashboard data load failed:', err)
@@ -280,16 +376,30 @@ export function DashboardPage() {
       }
     }
     loadData()
-    // Auto-refresh health every 30 seconds
-    const interval = setInterval(async () => {
+
+    // Auto-refresh health every 30s — paused when tab is hidden so
+    // background tabs don't keep hammering /health/detailed for liveness
+    // the user isn't watching.
+    let interval: ReturnType<typeof setInterval> | null = null
+    const refreshHealth = async () => {
       try {
         const { data } = await api.get('/health/detailed')
         if (data) setSystemHealth(data)
-      } catch {
-        // Silent refresh failure
-      }
-    }, 30_000)
-    return () => clearInterval(interval)
+      } catch { /* silent */ }
+    }
+    const start = () => { if (!interval) interval = setInterval(refreshHealth, 30_000) }
+    const stop = () => { if (interval) { clearInterval(interval); interval = null } }
+    if (!document.hidden) start()
+    const onVisibility = () => {
+      if (document.hidden) stop()
+      else { void refreshHealth(); start() }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   // Fallback departments if API fails
@@ -320,6 +430,7 @@ export function DashboardPage() {
             trend="Today"
             color="bg-primary-500/15 text-primary-400"
             delay={0.05}
+            linkTo="/chat"
           />
           <StatCard
             label="Pending Approvals"
@@ -329,6 +440,7 @@ export function DashboardPage() {
             trendUp={stats.pendingApprovals === 0}
             color="bg-status-warning/15 text-status-warning"
             delay={0.1}
+            linkTo="/governance/approvals"
           />
           <StatCard
             label="Memories"
@@ -337,15 +449,17 @@ export function DashboardPage() {
             trend="NBMF 5-tier"
             color="bg-accent-purple/15 text-accent-purple"
             delay={0.15}
+            linkTo="/settings/memory"
           />
           <StatCard
-            label="Active Agents"
+            label="Active Capabilities"
             value={loading ? '—' : `${stats.activeAgents * 6}`}
             icon={<Bot size={20} />}
-            trend="10 departments x 6 capabilities"
+            trend={`${stats.activeAgents} active department${stats.activeAgents === 1 ? '' : 's'} × 6 capabilities`}
             trendUp
             color="bg-accent-cyan/15 text-accent-cyan"
             delay={0.2}
+            linkTo="/departments"
           />
           <StatCard
             label="Pipeline"
@@ -354,15 +468,17 @@ export function DashboardPage() {
             trend="Active projects"
             color="bg-accent-purple/15 text-accent-purple"
             delay={0.25}
+            linkTo="/pipeline"
           />
           <StatCard
             label="Runtimes"
-            value={loading ? '—' : `${stats.runtimesOnline}/5`}
+            value={loading ? '—' : `${stats.runtimesOnline}/${stats.runtimesTotal || 6}`}
             icon={<Cpu size={20} />}
             trend="Online"
             trendUp={stats.runtimesOnline >= 3}
             color="bg-status-success/15 text-status-success"
             delay={0.3}
+            linkTo="/connections"
           />
         </div>
 
@@ -436,14 +552,16 @@ export function DashboardPage() {
                   icon={<Zap size={12} />}
                   variant="info"
                 />
-                {systemHealth?.redis === 'healthy' && (
-                  <StatusBadge
-                    label="Redis"
-                    value="Connected"
-                    icon={<Shield size={12} />}
-                    variant="success"
-                  />
-                )}
+                {/* F-0001 fix: Redis status was hidden when unhealthy, so the
+                    operator never knew the queue / rate limiter / SSE pubsub
+                    was silently degraded. Now always rendered with variant
+                    matching the actual state. */}
+                <StatusBadge
+                  label="Redis"
+                  value={systemHealth?.redis === 'healthy' ? 'Connected' : (systemHealth?.redis ?? 'Unknown')}
+                  icon={<Shield size={12} />}
+                  variant={systemHealth?.redis === 'healthy' ? 'success' : 'warning'}
+                />
                 <StatusBadge
                   label="Runtime"
                   value={useUiStore.getState().selectedRuntime ?? 'Auto'}
@@ -526,19 +644,29 @@ export function DashboardPage() {
               </div>
             </div>
             <div className="divide-y divide-white/5">
-              {recentActivity.map((item) => (
-                <div key={item.id} className="px-5 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors">
-                  <div className="mt-0.5">{ICON_MAP[item.type]}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-starlight-200">{item.title}</p>
-                    <p className="text-[11px] text-starlight-500 truncate">{item.description}</p>
-                  </div>
-                  <span className="text-[10px] text-starlight-600 shrink-0 flex items-center gap-1">
-                    <Clock size={10} />
-                    {item.time}
-                  </span>
+              {recentActivity.length === 0 || (recentActivity.length === 1 && recentActivity[0].id === 'empty') ? (
+                <div className="px-5 py-8 text-center">
+                  <Clock size={20} className="text-starlight-600 mx-auto mb-2" />
+                  <p className="text-sm text-starlight-400">No recent activity</p>
+                  <p className="text-[11px] text-starlight-600 mt-1">
+                    Send a message in <button onClick={() => navigate('/chat')} className="text-primary-400 hover:text-primary-300 underline cursor-pointer">chat</button> to generate audit events.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                recentActivity.map((item) => (
+                  <div key={item.id} className="px-5 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors">
+                    <div className="mt-0.5">{ICON_MAP[item.type]}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-starlight-200">{item.title}</p>
+                      <p className="text-[11px] text-starlight-500 truncate">{item.description}</p>
+                    </div>
+                    <span className="text-[10px] text-starlight-600 shrink-0 flex items-center gap-1">
+                      <Clock size={10} />
+                      {item.time}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </Card>
         </motion.div>

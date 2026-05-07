@@ -292,7 +292,7 @@ export function ProjectDetailPage() {
                       <ListTodo size={14} className="text-starlight-400" />
                       <code className="text-xs font-mono text-starlight-300 flex-1">{taskId}</code>
                       <Link
-                        to="/tasks"
+                        to={`/tasks#task-${taskId}`}
                         className="text-xs text-primary-400 hover:underline"
                       >
                         View

@@ -109,11 +109,35 @@ class InstallScanner:
         return result
 
     async def scan_mcp_server(self, server_url: str, server_name: str = "") -> ScanResult:
-        """Scan MCP server before connecting."""
+        """Scan MCP server before connecting.
+
+        Validator accepts every legitimate MCP launcher we have ever seen on
+        Windows + WSL + Linux: HTTP(S), npx/uvx/bun launchers, native cmd /
+        powershell / docker invocations, and direct executable paths. The
+        original whitelist (http/https/npx/uvx only) was rejecting Masoud's
+        gitnexus, MCP_DOCKER, and local-llm bridges -- which left Daena with
+        zero tool surface even though Claude Code, Codex and Gemini CLI all
+        had them installed. Per Phase 1 plan F2 (2026-04-24).
+        """
         result = ScanResult()
 
-        # URL validation
-        if not server_url.startswith(("http://", "https://", "npx ", "uvx ")):
+        # URL/command validation -- broadened to cover real-world MCP launchers
+        valid_prefixes = (
+            "http://", "https://",
+            "npx ", "uvx ", "bun ",
+            "cmd /c", "cmd.exe",
+            "docker ",
+            "powershell", "pwsh ",
+            "python ", "node ",
+        )
+        is_exe_path = (
+            server_url.lower().endswith(".exe")
+            or server_url.lower().endswith(".cmd")
+            or server_url.lower().endswith(".bat")
+            or "\\" in server_url
+            or server_url.startswith("/")
+        )
+        if not (server_url.startswith(valid_prefixes) or is_exe_path):
             result.add_check("url_valid", False, f"Invalid URL/command: {server_url}")
             return result
         result.add_check("url_valid", True)

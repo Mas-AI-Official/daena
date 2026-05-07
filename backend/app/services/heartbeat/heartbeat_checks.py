@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -173,7 +174,10 @@ async def check_git_status(repo_path: str = ".") -> HeartbeatCheckResult:
     t0 = _time.perf_counter()
     try:
         result = await asyncio.to_thread(
-            _run_sync, ["git", "status", "--porcelain"], cwd=repo_path, timeout=10.0,
+            _run_sync,
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=repo_path,
+            timeout=2.0,
         )
         lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
 
@@ -289,12 +293,28 @@ async def check_test_suite(backend_path: str = ".") -> HeartbeatCheckResult:
     import time as _time
 
     t0 = _time.perf_counter()
+    if os.environ.get("HEARTBEAT_RUN_FULL_TEST_SUITE", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return HeartbeatCheckResult(
+            check_type="test_suite",
+            status="warning",
+            summary=(
+                "Full pytest is disabled for heartbeat. "
+                "Set HEARTBEAT_RUN_FULL_TEST_SUITE=true to run it in this check."
+            ),
+            details={"mode": "disabled_by_default", "backend_path": backend_path},
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+
     try:
         result = await asyncio.to_thread(
             _run_sync,
             ["python", "-m", "pytest", "tests/", "-x", "-q", "--tb=no", "--no-header"],
             cwd=backend_path,
-            timeout=300.0,
+            timeout=5.0,
         )
         output = result.stdout.strip()
         # Parse "945 passed in 152.32s"
@@ -349,7 +369,7 @@ async def check_test_suite(backend_path: str = ".") -> HeartbeatCheckResult:
         return HeartbeatCheckResult(
             check_type="test_suite",
             status="warning",
-            summary="Test suite timed out (5 min limit)",
+            summary="Test suite timed out (5 second heartbeat limit)",
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
     except Exception as exc:
@@ -375,7 +395,7 @@ async def check_github_issues(
     try:
         cmd = gh_command or f"gh issue list --repo {repo} --state open --label bug --json number,title,createdAt --limit 20"
         result = await asyncio.to_thread(
-            _run_sync, cmd.split(), timeout=15.0,
+            _run_sync, cmd.split(), timeout=5.0,
         )
 
         issues: list[dict[str, Any]] = []
@@ -655,7 +675,7 @@ async def generate_daily_report(
                 _run_sync,
                 ["python", "-m", "pytest", "tests/", "-q", "--tb=no", "--no-header", "-x"],
                 cwd=str(Path(__file__).resolve().parents[3]),
-                timeout=300.0,
+                timeout=5.0,
             )
             last_line = test_result.stdout.strip().splitlines()[-1] if test_result.stdout.strip() else "unknown"
             sections.append("## Test Suite")
@@ -669,7 +689,7 @@ async def generate_daily_report(
         # Runtime status
         try:
             ollama_result = await asyncio.to_thread(
-                _run_sync, ["ollama", "list"], timeout=10.0,
+                _run_sync, ["ollama", "list"], timeout=5.0,
             )
             model_lines = ollama_result.stdout.strip().splitlines()
             sections.append("## Ollama Models")

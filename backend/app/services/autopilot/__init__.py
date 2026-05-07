@@ -9,6 +9,10 @@ loop with kill switch, cost ceiling, and WebSocket notifications.
 from app.services.autopilot.background_queue import (
     BackgroundQueue,
     BackgroundTask,
+    get_background_queue,
+    init_background_queue,
+    set_background_queue,
+    shutdown_background_queue,
 )
 from app.services.autopilot.continuation import (
     AutopilotController,
@@ -28,4 +32,8 @@ __all__ = [
     "AutopilotState",
     "BackgroundQueue",
     "BackgroundTask",
+    "get_background_queue",
+    "set_background_queue",
+    "init_background_queue",
+    "shutdown_background_queue",
 ]

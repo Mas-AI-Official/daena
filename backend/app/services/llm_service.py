@@ -244,6 +244,24 @@ class LLMService:
         chain = [decision.primary, *decision.fallback_chain]
         last_error: Exception | None = None
 
+        # Sentinels that indicate a provider returned content but it's
+        # actually a wrapped auth/permission error. Without this guard,
+        # a CLI provider that streams "Not logged in" as a normal chunk
+        # would be treated as success and the cascade would stop.
+        _ERROR_CONTENT_MARKERS = (
+            "not logged in",
+            "please run /login",
+            "please run `claude login`",
+            "api error: 401",
+            "api error: 403",
+            "authentication_error",
+            "invalid authentication credentials",
+            "[claude code error",
+            "[claude cli error",
+            "[codex error",
+            "[gemini error",
+        )
+
         for candidate in chain:
             provider = self._get_provider(candidate)
             if provider is None:
@@ -252,9 +270,46 @@ class LLMService:
             adapted = self._adapt_request(request, candidate)
 
             try:
+                # Buffer chunks until we know they're not an error sentinel.
+                # If the WHOLE response matches an auth-error pattern, treat
+                # the provider as failed and advance the chain instead of
+                # emitting the error to the user as content.
+                buffered: list[LLMChunk] = []
+                accumulated = ""
+                MAX_BUFFER_CHARS = 200  # Auth errors are short; flush after this.
+                buffer_phase = True
+
                 async for chunk in provider.stream(adapted):
-                    yield chunk
-                # Stream completed successfully
+                    if buffer_phase:
+                        buffered.append(chunk)
+                        accumulated += chunk.content
+                        if len(accumulated) >= MAX_BUFFER_CHARS:
+                            # Buffer big enough to judge — if it's an auth
+                            # error, raise so the chain advances. Otherwise
+                            # flush the buffer and pass through.
+                            lower = accumulated.lower()
+                            if any(m in lower for m in _ERROR_CONTENT_MARKERS):
+                                raise ProviderUnavailableError(
+                                    f"{candidate.provider.value} returned auth-error content: {accumulated[:200]}"
+                                )
+                            buffer_phase = False
+                            for b in buffered:
+                                yield b
+                            buffered = []
+                    else:
+                        yield chunk
+
+                # Stream completed. Flush any small remaining buffer after
+                # one final auth-error check (covers responses shorter than
+                # MAX_BUFFER_CHARS — most "Not logged in" messages).
+                if buffered:
+                    lower = accumulated.lower()
+                    if any(m in lower for m in _ERROR_CONTENT_MARKERS):
+                        raise ProviderUnavailableError(
+                            f"{candidate.provider.value} returned auth-error content: {accumulated[:200]}"
+                        )
+                    for b in buffered:
+                        yield b
                 return
             except Exception as exc:
                 last_error = exc

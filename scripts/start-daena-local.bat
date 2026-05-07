@@ -124,7 +124,7 @@ if "!FRONTEND_OK!"=="1" (
         echo               port. Open the URL printed below.
     )
 ) else (
-    echo        [WARN] Frontend did not respond on any of 5173..5180 (IPv4 or IPv6) within ~30s.
+    echo        [WARN] Frontend did not respond on any of 5173..5180 ^(IPv4 or IPv6^) within ~30s.
 )
 
 echo.

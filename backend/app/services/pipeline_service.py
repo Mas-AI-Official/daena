@@ -217,6 +217,19 @@ class PipelineService:
             founder_approved=founder_approved,
             owner=project.owner_department,
         )
+        # SSE fanout for the pipeline view. The board listens on
+        # /api/v1/pipeline/events and re-positions cards as they move.
+        await _emit_pipeline_event(
+            "pipeline.stage_advanced",
+            {
+                "project_id": str(project_id),
+                "tenant_id": str(tenant_id),
+                "from_stage": current,
+                "to_stage": next_stage,
+                "owner_department": project.owner_department,
+                "founder_approved": founder_approved,
+            },
+        )
 
         # Border Agent emit: broadcast stage-transition events to peer
         # departments. Mapping uses the fact that the stage the project
@@ -321,6 +334,17 @@ class PipelineService:
             project_id=str(project_id),
             stage_at_loss=stage_at_loss,
             reason=reason,
+        )
+        # SSE fanout: the board removes the card from the active
+        # column and grays it out under "Lost" without a refresh.
+        await _emit_pipeline_event(
+            "pipeline.project_lost",
+            {
+                "project_id": str(project_id),
+                "tenant_id": str(tenant_id),
+                "stage_at_loss": stage_at_loss,
+                "reason": reason,
+            },
         )
 
         # Border Agent emit: Sales.lost_deal so peer departments
@@ -495,3 +519,23 @@ class PipelineService:
         )
         result = await self.db.execute(stmt)
         return [p.to_dict() for p in result.scalars().all()]
+
+
+async def _emit_pipeline_event(
+    event_type: str, data: dict[str, Any],
+) -> None:
+    """Publish a lifecycle event to the pipeline SSE channel.
+
+    Best-effort: import or publisher errors are swallowed so a SSE
+    fanout hiccup never rolls back a stage transition.
+    """
+    try:
+        from app.core.sse_channels import pipeline_channel
+
+        await pipeline_channel.publish(event_type, data)
+    except Exception as exc:
+        logger.debug(
+            "pipeline.event_emit_failed",
+            event_type=event_type,
+            error=str(exc),
+        )
