@@ -5,7 +5,14 @@ Predecessor: `8fdaa4d` (OAuth runbook + probe script)
 
 ## Why this exists
 
-The OAuth runbook (`DAENA_GOOGLE_OAUTH_LIVE_PROOF_COMPLETION.md`) ends at step 4 with `READY=True` and tells the operator to ping me before continuing. While the operator is doing OAuth, I'm pre-flighting everything that runs the moment they ping back — so the drill itself is friction-free and every refusal code is pre-mapped.
+The OAuth runbook (`DAENA_GOOGLE_OAUTH_LIVE_PROOF_COMPLETION.md`) ends at step 3 with founder-only connected (`founder.connected=True`, `agent.connected=False`, `READY=False` cosmetically) and tells the operator to ping me before continuing. While the operator is doing OAuth, I'm pre-flighting everything that runs the moment they ping back — so the drill itself is friction-free and every refusal code is pre-mapped.
+
+**Founder-only first proof (operator's call 2026-05-07).** First live send goes
+FROM `masoud.masoori@mas-ai.co`. Lower-risk for first proof (clearly
+human-authored). Agent account `daena@mas-ai.co` connects post-proof when
+multi-account agent autonomy is needed. The `READY=False` flag is
+cosmetic for this path — the dispatch checks ConnectorInstance for the
+specific owner_email, not the global READY computation.
 
 This document captures the full safety architecture, the gates each dispatch traverses, what audit rows look like, and the test coverage that proves the wall holds.
 
@@ -150,7 +157,7 @@ POST /api/v1/integrations/controlled-execution/dispatch
   "consent_grant_id": "<created here>",
   "payload_hash": "<sha256 of canonical payload>",
   "tool_id": "gmail.create_draft",
-  "owner_email": "daena@mas-ai.co",
+  "owner_email": "masoud.masoori@mas-ai.co",
   "asset_shield_pass": true,
   "policy_allowlist_pass": true,
   "audit_preflight_row_id": "...",
@@ -173,7 +180,7 @@ I dispatch:
 ```
 {
   "tool_id": "gmail.send_existing_draft",
-  "owner_email": "daena@mas-ai.co",
+  "owner_email": "masoud.masoori@mas-ai.co",
   "draft_id": "<from Step A response>",
   "rollback_or_undo_instruction": "this is irreversible -- operator initiated send"
 }

@@ -108,22 +108,42 @@ Expected:
 - `founder_account.connected_services=gmail, drive, calendar`
 - `agent_account.connected=False` (still)
 
-### Step 4 — Connect the agent account
+### Step 4 — Connect the agent account (DEFERRED for first proof)
 
-Same dance, but choose **Agent account** (`daena@mas-ai.co`) for each Gmail / Drive / Calendar card.
+**Founder-only path (operator's call 2026-05-07):** the agent account
+(`daena@mas-ai.co`) is intentionally skipped for the first live-send proof.
+Sending FROM the founder account is safer for the first send (clearly
+human-authored, not an AI-bot mailbox; lower bounce/spam risk). The agent
+account is added later when Daena needs to send AS the bot account in a
+multi-account workflow.
 
-After all three, the probe should show:
+After step 3 only (founder connected), the probe will show:
 
 ```
 client_configured     : True
 founder.connected     : True
 founder.connected_services : gmail, drive, calendar
-agent.connected       : True
-agent.connected_services   : gmail, drive, calendar
-READY                 : True
+agent.connected       : False
+agent.connected_services   :
+READY                 : False     <-- EXPECTED for founder-only path
 ```
 
-If `READY=True` and both `connected_services` rows include all three, you're past the OAuth blocker. **Stop here and tell me.** I'll resume the controlled-execution drill.
+**`READY=False` is expected and not a blocker for the first proof.** The
+backend's `google_setup_status` computes `ready = client_configured AND
+founder.connected AND agent.connected`. The drill dispatch path does NOT
+check `READY` — it checks the `ConnectorInstance` row for the specific
+`owner_email`, which exists for the founder after step 3.
+
+If founder is `connected=True` and `connected_services` includes
+`gmail, drive, calendar`, you are past the OAuth blocker for the
+founder-only proof. **Stop here and tell me.** I'll resume the
+controlled-execution drill with `owner_email=masoud.masoori@mas-ai.co`.
+
+### Optional step 4b — Connect agent account (POST first proof)
+
+Same dance for `daena@mas-ai.co` once the founder-only proof is done +
+audited. This is needed for full Daena-VP autonomy where Daena sends
+AS the bot account. Not required tonight.
 
 ### Step 5 — Create one safe outreach draft (DO NOT proceed without operator approval)
 
