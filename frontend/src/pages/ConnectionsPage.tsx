@@ -128,8 +128,21 @@ export default function ConnectionsPage() {
 
   // Show-advanced toggle persists per-browser. Auto-flip ON when the
   // operator deep-links into the advanced tab so they're never trapped.
+  //
+  // PR-CONNECTIONS-MINI-SIMPLIFY (2026-05-06): one-time migration that
+  // clears the prior "true" stickiness. Operators ticked "Show advanced"
+  // months ago to debug something, then localStorage trapped them on the
+  // V1/V2 debug surface across every session. Plugins tab is the
+  // canonical view -- Advanced is opt-in. After this migration runs
+  // once, the toggle behaves normally: tick to opt in, untick to opt
+  // out, localStorage remembers the choice for the next session.
   const [showAdvanced, setShowAdvanced] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
+    const MIGRATION_KEY = 'connections.showAdvanced.migrated.2026-05-06'
+    if (window.localStorage.getItem(MIGRATION_KEY) !== 'true') {
+      window.localStorage.removeItem(SHOW_ADVANCED_LS_KEY)
+      window.localStorage.setItem(MIGRATION_KEY, 'true')
+    }
     return window.localStorage.getItem(SHOW_ADVANCED_LS_KEY) === 'true'
   })
   useEffect(() => {
