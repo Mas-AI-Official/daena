@@ -225,23 +225,13 @@ export default function PluginCardView({
 
         <p className="line-clamp-2 text-xs text-starlight-300">{plugin.description}</p>
 
-        {plugin.included_skills.length > 0 && (
-          <ul className="flex flex-wrap gap-1.5">
-            {plugin.included_skills.slice(0, 4).map((cap) => (
-              <li
-                key={cap}
-                className="rounded bg-white/[0.04] px-2 py-0.5 text-[10px] text-starlight-300"
-              >
-                {cap}
-              </li>
-            ))}
-            {plugin.included_skills.length > 4 && (
-              <li className="rounded bg-white/[0.04] px-2 py-0.5 text-[10px] text-starlight-500">
-                +{plugin.included_skills.length - 4}
-              </li>
-            )}
-          </ul>
-        )}
+        {/* PR-CONNECTIONS-MINI-SIMPLIFY (2026-05-06): the capability
+            chip list ("Multi-turn coding sessions", "Native MCP client",
+            ...) used to render here. Removed to bring the card visually
+            closer to Codex Desktop / Claude Desktop where the front of
+            the card is one-sentence summary + status + action. The full
+            skill list is still available in the Details drawer's
+            Technical-details expander (Skills section). */}
 
         <div className="mt-auto space-y-2">
           {/* Status + officiality pill row */}

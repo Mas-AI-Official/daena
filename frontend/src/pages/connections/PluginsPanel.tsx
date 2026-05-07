@@ -30,6 +30,7 @@ import {
   useMarketplaceCards,
 } from '@/hooks/useMarketplace'
 import { useConnectionsV2 } from '@/hooks/useConnectionsV2'
+import { useGoogleSetupStatus } from '@/hooks/useGoogleSetupStatus'
 import { toast } from '@/stores/toastStore'
 
 import PluginCardView from './PluginCardView'
@@ -45,6 +46,12 @@ import {
 // Overview, which is exactly the confusion this PR removes.
 import AcceptanceStatusPanel from './AcceptanceStatusPanel'
 import FirstCallableWizard from './FirstCallableWizard'
+// PR-CONNECTIONS-F1 (2026-05-06): the operator-visible copy in
+// AccountStatusLine reads "Open the Plugins tab below and click Connect
+// on Gmail" -- but the guide itself was only mounted under
+// Advanced > apps. Mount it AT THE TOP of the Plugins tab when Google
+// is not yet ready so the UI matches the copy.
+import GoogleAccountSetupGuide from './GoogleAccountSetupGuide'
 
 // Status filter chips (UI ordering)
 const STATUS_FILTERS: Array<{ key: 'all' | PluginStatus; label: string }> = [
@@ -88,6 +95,14 @@ export default function PluginsPanel({
 }: PluginsPanelProps) {
   const { cards, loading, error, refresh } = useMarketplaceCards()
   const { probe, enable } = useConnectionsV2()
+  // PR-CONNECTIONS-F1 (2026-05-06): gate the Google setup guide on the
+  // live readiness probe. Renders the guide ONLY while Google is not
+  // ready -- once both accounts are connected + the OAuth client is
+  // configured, the guide self-removes and the operator sees a clean
+  // grid. Loading state passes through (status === null) so the page
+  // does not flash a guide that disappears half a second later.
+  const { status: googleStatus } = useGoogleSetupStatus()
+  const showGoogleGuide = googleStatus !== null && !googleStatus.ready
   // PR-CONNECTIONS-FIX-5 (2026-05-06): pull V2 cli_runtime rows so we
   // know which CLI subscriptions (Claude Code / Codex / Gemini CLI)
   // are callable on this machine. AI provider cards consult this and
@@ -265,6 +280,12 @@ export default function PluginsPanel({
 
   return (
     <div className="space-y-4">
+      {/* PR-CONNECTIONS-F1 (2026-05-06): Google setup guide -- only when
+          activation is incomplete. The copy in AccountStatusLine sends
+          the operator HERE; this is the canonical render now. The
+          duplicate render in AppsStorePanel was removed in the same PR. */}
+      {showGoogleGuide && <GoogleAccountSetupGuide />}
+
       {/* Acceptance status -- "Can I use Daena right now?" */}
       <AcceptanceStatusPanel />
 

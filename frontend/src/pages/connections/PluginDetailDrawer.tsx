@@ -72,6 +72,15 @@ export default function PluginDetailDrawer({
   const [browserProbe, setBrowserProbe] = useState<BrowserProbeReport | null>(null)
   const [browserProbeLoading, setBrowserProbeLoading] = useState(false)
   const [browserProbeError, setBrowserProbeError] = useState<string | null>(null)
+  // PR-CONNECTIONS-MINI-SIMPLIFY (2026-05-06): collapse all technical
+  // sections behind one expander. The Codex/Claude Desktop equivalent
+  // is one card with one button -- the drawer used to expose 8 stacked
+  // sections (suggested prompts, ladder, skills, permissions, governance,
+  // probe status, install steps, source, compatibility) which is the
+  // exact "too much frontend" the operator flagged 2026-05-06.
+  // Default closed. The header + one-line description + failure banner
+  // (when failed) are the only things visible above the expander.
+  const [techOpen, setTechOpen] = useState(false)
 
   const isBrowserOrComputerUse =
     plugin.source.catalog.kind === 'browser_tool' ||
@@ -217,7 +226,51 @@ export default function PluginDetailDrawer({
           </button>
         </header>
 
-        <div className="space-y-5 p-5">
+        <div className="space-y-3 p-5">
+          {/* PR-CONNECTIONS-MINI-SIMPLIFY (2026-05-06): one-sentence
+              status. The catalog short_description IS the operator-
+              facing summary; suggested prompts moved into the technical
+              details expander below. */}
+          <p className="text-sm text-starlight-200">{plugin.description}</p>
+
+          {/* Failure banner -- visible above the expander so the operator
+              never has to click to learn that something is broken
+              (honesty rule 17: no silent error suppression). The full
+              probe ladder + WSL hints stay inside the expander. */}
+          {plugin.status === 'failed' && plugin.failure_reason && (
+            <div className="flex items-start gap-2 rounded-md border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-[12px] text-rose-200">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <span>
+                <strong className="text-rose-100">Last failure:</strong>{' '}
+                {plugin.failure_reason}
+              </span>
+            </div>
+          )}
+
+          {/* Single expander -- everything below is technical detail.
+              Default closed. One click opens the FULL drawer the way it
+              used to render. No information is lost; only hidden by
+              default. */}
+          <div className="rounded-md border border-white/5">
+            <button
+              type="button"
+              onClick={() => setTechOpen((v) => !v)}
+              data-testid="plugin-detail-tech-expander"
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-starlight-400 hover:text-starlight-200"
+              aria-expanded={techOpen}
+            >
+              <span className="flex items-center gap-2">
+                {techOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                Technical details
+              </span>
+              <span className="text-[10px] normal-case tracking-normal text-starlight-500">
+                {techOpen ? 'click to hide' : 'skills · permissions · probe · install · source'}
+              </span>
+            </button>
+          </div>
+
+          {techOpen && (
+          <div className="space-y-5 border-t border-white/5 pt-4">
           {/* ── What Daena can do ──
               PR-CONN-PLUGIN-SKILLS-UX-WIRING (2026-05-03): leads with
               concrete suggested_prompts when the catalog has them
@@ -628,6 +681,8 @@ export default function PluginDetailDrawer({
               </a>
             )}
           </Section>
+          </div>
+          )}
         </div>
 
         {/* ── Footer action bar ── */}
@@ -917,6 +972,29 @@ function PermissionsBlock({ plugin }: { plugin: PluginCard }) {
   )
 }
 
+/** Kind-aware noun for the community-warning copy. Avoids the
+ * "third-party MCP code" wording leaking onto api_provider /
+ * oauth_app / cli_runtime cards (raised by operator 2026-05-06). */
+function communityKindNoun(plugin: PluginCard): string {
+  const kind = plugin.source.catalog.kind
+  switch (kind) {
+    case 'mcp_server':
+      return 'MCP code'
+    case 'api_provider':
+      return 'API services'
+    case 'oauth_app':
+      return 'OAuth integrations'
+    case 'cli_runtime':
+      return 'CLI tools'
+    case 'local_model':
+      return 'local-model software'
+    case 'skill_pack':
+      return 'skill packs'
+    default:
+      return 'code or services'
+  }
+}
+
 /** SourceTrustBlock -- collapsible source attribution section.
  * Open by default for community entries (operator should self-vet);
  * collapsed for high-trust tiers (vendor-official etc) where the
@@ -958,8 +1036,8 @@ function SourceTrustBlock({ plugin }: { plugin: PluginCard }) {
             <p className="mb-2 flex items-start gap-1.5 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-amber-100">
               <ShieldAlert size={11} className="mt-0.5 shrink-0" />
               <span>
-                Community-maintained. Review the source repository before
-                installing -- Daena does not vet third-party MCP code.
+                Community-maintained. Review the source before installing
+                -- Daena does not vet third-party {communityKindNoun(plugin)}.
               </span>
             </p>
           )}

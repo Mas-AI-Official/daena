@@ -11,6 +11,7 @@ import {
   Zap,
   Plug,
   Crosshair,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ListTodo,
@@ -48,6 +49,14 @@ interface NavGroup {
   title: string
   color: string
   items: NavItem[]
+  /** PR-CONNECTIONS-MINI-SIMPLIFY (2026-05-06): collapsible groups
+   *  render their title as a button with a chevron. Default closed.
+   *  Open/closed state persists in localStorage. Pending badges still
+   *  surface on the collapsed group header so the operator never
+   *  misses a real signal. */
+  collapsible?: boolean
+  /** Stable key for localStorage when collapsible. */
+  key?: string
 }
 
 const navGroups: NavGroup[] = [
@@ -118,6 +127,8 @@ const navGroups: NavGroup[] = [
   {
     title: 'Governance',
     color: 'text-accent-amber',
+    collapsible: true,
+    key: 'gov',
     items: [
       { label: 'Security Ops', path: '/security', icon: <Shield size={18} /> },
       // Authorized-scope editor: declares which domains/CIDRs YELLOW-
@@ -154,6 +165,36 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
   const [activeTasks, setActiveTasks] = useState(0)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // PR-CONNECTIONS-MINI-SIMPLIFY (2026-05-06): collapsible group state.
+  // Keyed by NavGroup.key (only populated for collapsible groups).
+  // Default closed. Hydrated from localStorage on mount so the
+  // operator's preference survives reloads.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {}
+    for (const g of navGroups) {
+      if (g.collapsible && g.key) {
+        try {
+          initial[g.key] = localStorage.getItem(`daena.sidebar.${g.key}.open`) === 'true'
+        } catch {
+          initial[g.key] = false
+        }
+      }
+    }
+    return initial
+  })
+  const toggleGroup = useCallback((key: string) => {
+    setOpenGroups((prev) => {
+      const next = { ...prev, [key]: !prev[key] }
+      try {
+        localStorage.setItem(`daena.sidebar.${key}.open`, next[key] ? 'true' : 'false')
+      } catch {
+        // localStorage may be blocked (private mode, test runner) -- the
+        // in-memory state still persists for this session.
+      }
+      return next
+    })
+  }, [])
 
   const pollDelayRef = useRef(30_000)
   const fetchNotificationCounts = useCallback(async () => {
@@ -254,22 +295,63 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
 
       {/* Nav groups */}
       <nav className="flex-1 overflow-y-auto scrollbar-hide py-3 px-2 space-y-4">
-        {navGroups.map((group) => (
+        {navGroups.map((group) => {
+          // PR-CONNECTIONS-MINI-SIMPLIFY (2026-05-06): collapsible group
+          // logic. The expanded sidebar shows the title as a clickable
+          // header with a chevron + a summary badge if any item carries
+          // a pending count. The collapsed sidebar (icon-only) keeps the
+          // group dot visible -- the parent never hides routes outright,
+          // only the group label.
+          const groupOpen = group.collapsible && group.key
+            ? openGroups[group.key] === true
+            : true
+          const itemsVisible = !group.collapsible || groupOpen
+          const groupBadgeCount = group.items.reduce((sum, i) => {
+            if (!i.badgeKey) return sum
+            return sum + (badgeCounts[i.badgeKey] ?? 0)
+          }, 0)
+        return (
           <div key={group.title}>
             <AnimatePresence>
               {effectiveOpen && (
-                <motion.p
-                  className={`text-[10px] font-mono uppercase tracking-widest px-3 mb-1.5 ${group.color}`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  {group.title}
-                </motion.p>
+                group.collapsible && group.key ? (
+                  <motion.button
+                    type="button"
+                    onClick={() => toggleGroup(group.key!)}
+                    aria-expanded={groupOpen}
+                    data-testid={`sidebar-group-toggle-${group.key}`}
+                    className={`flex w-full items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest px-3 mb-1.5 ${group.color} hover:text-starlight-100`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    {groupOpen
+                      ? <ChevronDown size={10} className="shrink-0 opacity-70" />
+                      : <ChevronRight size={10} className="shrink-0 opacity-70" />}
+                    <span>{group.title}</span>
+                    {!groupOpen && groupBadgeCount > 0 && (
+                      <span
+                        data-testid={`sidebar-group-badge-${group.key}`}
+                        className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-medium min-w-[20px] text-center bg-status-warning/20 text-status-warning normal-case tracking-normal"
+                      >
+                        {groupBadgeCount}
+                      </span>
+                    )}
+                  </motion.button>
+                ) : (
+                  <motion.p
+                    className={`text-[10px] font-mono uppercase tracking-widest px-3 mb-1.5 ${group.color}`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    {group.title}
+                  </motion.p>
+                )
               )}
             </AnimatePresence>
 
-            <div className="space-y-0.5">
+            <div className={`space-y-0.5 ${itemsVisible ? '' : 'hidden'}`}>
               {group.items.map((item) => {
                 const isActive = location.pathname.startsWith(item.path)
                 const badgeCount = item.badgeKey ? badgeCounts[item.badgeKey] ?? 0 : 0
@@ -323,7 +405,8 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
               })}
             </div>
           </div>
-        ))}
+        )
+        })}
       </nav>
 
       {/* Bottom: User avatar + Org row (Perplexity-style) */}

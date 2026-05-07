@@ -352,6 +352,8 @@ _CLI_RUNTIMES: tuple[CatalogEntry, ...] = (
         probe_type="binary_check",
         matches_v2_slug="cli-claude_code",
         setup_notes="Install: npm install -g @anthropic-ai/claude-code. Auth: claude login.",
+        officiality="vendor-official",
+        source_refs=("https://docs.anthropic.com/claude-code",),
     ),
     _entry(
         id="cli-codex",
@@ -374,6 +376,8 @@ _CLI_RUNTIMES: tuple[CatalogEntry, ...] = (
         probe_type="binary_check",
         matches_v2_slug="cli-codex",
         setup_notes="Install: see official Codex CLI repo. Auth: codex login.",
+        officiality="vendor-official",
+        source_refs=("https://github.com/openai/codex",),
     ),
     _entry(
         id="cli-gemini",
@@ -396,6 +400,8 @@ _CLI_RUNTIMES: tuple[CatalogEntry, ...] = (
         probe_type="binary_check",
         matches_v2_slug="cli-gemini_cli",
         setup_notes="Install: npm install -g @google/gemini-cli. Auth: gemini auth.",
+        officiality="vendor-official",
+        source_refs=("https://github.com/google-gemini/gemini-cli",),
     ),
 )
 
@@ -419,6 +425,8 @@ _AI_PROVIDERS: tuple[CatalogEntry, ...] = (
         probe_type="http_get",
         matches_v2_slug="anthropic",
         setup_notes="Add ANTHROPIC_API_KEY in Settings -> API Keys.",
+        officiality="vendor-official",
+        source_refs=("https://docs.anthropic.com",),
     ),
     _entry(
         id="provider-openai",
@@ -437,6 +445,8 @@ _AI_PROVIDERS: tuple[CatalogEntry, ...] = (
         probe_type="http_get",
         matches_v2_slug="openai",
         setup_notes="Add OPENAI_API_KEY in Settings -> API Keys.",
+        officiality="vendor-official",
+        source_refs=("https://platform.openai.com/docs",),
     ),
     _entry(
         id="provider-google-gemini",
@@ -455,6 +465,8 @@ _AI_PROVIDERS: tuple[CatalogEntry, ...] = (
         probe_type="http_get",
         matches_v2_slug="gemini",
         setup_notes="Add GEMINI_API_KEY in Settings -> API Keys.",
+        officiality="vendor-official",
+        source_refs=("https://ai.google.dev",),
     ),
     _entry(
         id="provider-perplexity",
@@ -473,6 +485,8 @@ _AI_PROVIDERS: tuple[CatalogEntry, ...] = (
         probe_type="http_get",
         matches_v2_slug="perplexity",
         setup_notes="Add PERPLEXITY_API_KEY in Settings -> API Keys.",
+        officiality="vendor-official",
+        source_refs=("https://docs.perplexity.ai",),
     ),
     _entry(
         id="provider-groq",
@@ -491,6 +505,8 @@ _AI_PROVIDERS: tuple[CatalogEntry, ...] = (
         probe_type="http_get",
         matches_v2_slug="groq",
         setup_notes="Add GROQ_API_KEY in Settings -> API Keys.",
+        officiality="vendor-official",
+        source_refs=("https://console.groq.com/docs",),
     ),
     _entry(
         id="provider-openrouter",
@@ -509,6 +525,8 @@ _AI_PROVIDERS: tuple[CatalogEntry, ...] = (
         probe_type="http_get",
         matches_v2_slug="openrouter",
         setup_notes="Add OPENROUTER_API_KEY in Settings -> API Keys.",
+        officiality="vendor-official",
+        source_refs=("https://openrouter.ai/docs",),
     ),
     _entry(
         id="provider-together",
@@ -527,6 +545,8 @@ _AI_PROVIDERS: tuple[CatalogEntry, ...] = (
         probe_type="http_get",
         matches_v2_slug="together",
         setup_notes="Add TOGETHER_API_KEY in Settings -> API Keys.",
+        officiality="vendor-official",
+        source_refs=("https://docs.together.ai",),
     ),
 )
 
@@ -554,6 +574,8 @@ _LOCAL_LLMS: tuple[CatalogEntry, ...] = (
             "Install Ollama from ollama.com. Daena reads OLLAMA_BASE_URL "
             "(default http://127.0.0.1:11434). Note: Daena prefers llama-server."
         ),
+        officiality="official",
+        source_refs=("https://github.com/ollama/ollama",),
     ),
     _entry(
         id="local-vllm",
@@ -580,6 +602,11 @@ _LOCAL_LLMS: tuple[CatalogEntry, ...] = (
             "Daena's preferred local runtime. Launch via "
             "backend/start-llama-server.ps1 or any vLLM / LM Studio "
             "OpenAI-compatible endpoint."
+        ),
+        officiality="official",
+        source_refs=(
+            "https://github.com/ggerganov/llama.cpp",
+            "https://github.com/vllm-project/vllm",
         ),
     ),
 )
@@ -1905,6 +1932,8 @@ _OAUTH_APPS: tuple[CatalogEntry, ...] = (
             "Create an OAuth App at github.com/settings/developers. "
             "Set the callback URL to your Daena instance's OAuth callback."
         ),
+        officiality="vendor-official",
+        source_refs=("https://docs.github.com/en/apps/oauth-apps",),
     ),
     _entry(
         id="app-figma",
@@ -1923,6 +1952,8 @@ _OAUTH_APPS: tuple[CatalogEntry, ...] = (
         probe_type="oauth_token",
         matches_v2_slug="oauth-figma",
         setup_notes="Create an OAuth app at figma.com/developers/apps.",
+        officiality="vendor-official",
+        source_refs=("https://www.figma.com/developers/api",),
     ),
     _entry(
         id="app-slack",
@@ -1941,6 +1972,8 @@ _OAUTH_APPS: tuple[CatalogEntry, ...] = (
         probe_type="oauth_token",
         matches_v2_slug="oauth-slack",
         setup_notes="Create a Slack app, add the OAuth callback URL, install to a workspace.",
+        officiality="vendor-official",
+        source_refs=("https://api.slack.com/apps",),
     ),
     _entry(
         id="app-canva",
@@ -1959,6 +1992,8 @@ _OAUTH_APPS: tuple[CatalogEntry, ...] = (
         probe_type="oauth_token",
         matches_v2_slug="oauth-canva",
         setup_notes="Create an OAuth app via the Canva developer portal.",
+        officiality="vendor-official",
+        source_refs=("https://www.canva.dev/docs/connect",),
     ),
     _entry(
         id="app-notion-oauth",
