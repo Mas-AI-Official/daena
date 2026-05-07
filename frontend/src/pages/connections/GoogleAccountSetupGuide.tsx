@@ -125,7 +125,7 @@ function AccountStatusLine({
         data-testid={`google-${role}-status-todo`}
         className="mt-1 text-[11px] text-amber-300"
       >
-        Not connected yet. Open the Apps tab below and click Connect on
+        Not connected yet. Open the Plugins tab below and click Connect on
         Gmail (or Drive / Calendar). Sign in as{' '}
         <code className="text-starlight-200">{account.email}</code>.
       </p>

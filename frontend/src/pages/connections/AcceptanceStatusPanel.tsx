@@ -310,7 +310,7 @@ export default function AcceptanceStatusPanel() {
         ? `${googleConnected} Google account(s) connected.`
         : 'No Google account connected yet. Manual step required.',
       nextAction: googleStatus !== 'healthy'
-        ? 'Open Apps tab and follow the GoogleAccountSetupGuide. masoud.masoori@mas-ai.co + daena@mas-ai.co.'
+        ? 'Open the Plugins tab and follow the Google Account Setup Guide. masoud.masoori@mas-ai.co + daena@mas-ai.co.'
         : undefined,
     },
     {

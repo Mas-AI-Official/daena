@@ -18,13 +18,15 @@
  *    cards hook refreshes and the Configure button flips to Test
  *    without a manual reload.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   AlertTriangle, Check, ExternalLink, Eye, EyeOff, KeyRound,
-  Loader2, Save, ShieldCheck, Trash2,
+  Loader2, Save, ShieldCheck, Sparkles, Trash2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
+import { useConnectionsV2 } from '@/hooks/useConnectionsV2'
 
 interface ProviderKeyRow {
   slug: string
@@ -66,6 +68,89 @@ function relativeTime(iso: string): string {
   if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`
   return new Date(iso).toLocaleDateString()
 }
+
+/**
+ * CliSubscriptionHint -- PR-CONNECTIONS-FIX-4 (2026-05-06).
+ *
+ * Anthropic / OpenAI / Gemini paste-an-API-key flow is the wrong path
+ * for operators who already have the corresponding CLI runtime
+ * authenticated as a subscription (Claude Code, Codex CLI, Gemini
+ * CLI). Detect that case from V2 truth and surface a clear "you
+ * already have this — go to Connections > Brain" hint instead of
+ * silently making them paste a key they don't need.
+ *
+ * Maps:
+ *   anthropic -> Claude Code (subscription)
+ *   openai    -> Codex CLI (subscription)
+ *   gemini    -> Gemini CLI (subscription)
+ */
+function CliSubscriptionHint() {
+  const { rows: cliRows } = useConnectionsV2('cli_runtime')
+  const callable = useMemo(() => {
+    const out: { provider: string; cli_label: string }[] = []
+    const map: Record<string, string> = {
+      claude_code: 'Claude Code subscription (Pro / Max)',
+      codex: 'Codex CLI (ChatGPT Plus / Pro)',
+      gemini_cli: 'Gemini CLI',
+    }
+    const providerOf: Record<string, string> = {
+      claude_code: 'Anthropic',
+      codex: 'OpenAI',
+      gemini_cli: 'Google Gemini',
+    }
+    for (const r of cliRows) {
+      const rid = String(r.config?._runtime_id || r.slug || '').toLowerCase()
+      if (r.label !== 'healthy' && r.label !== 'healthy_stale') continue
+      if (map[rid]) {
+        out.push({ provider: providerOf[rid], cli_label: map[rid] })
+      }
+    }
+    return out
+  }, [cliRows])
+
+  if (callable.length === 0) return null
+
+  return (
+    <div
+      className="p-4 rounded-xl bg-gradient-to-br from-violet-500/10 to-cyan-500/10 border border-violet-500/20 max-w-2xl"
+      data-testid="cli-subscription-hint"
+    >
+      <div className="flex items-start gap-3">
+        <Sparkles size={18} className="text-violet-300 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-medium text-starlight-100">
+            You already have a callable CLI subscription — no API key
+            needed
+          </h3>
+          <ul className="mt-1 space-y-0.5 text-xs text-starlight-300">
+            {callable.map((c) => (
+              <li key={c.provider}>
+                <span className="text-violet-200">{c.provider}</span> is
+                already callable through{' '}
+                <span className="font-mono text-starlight-100">
+                  {c.cli_label}
+                </span>
+                .
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-starlight-400 mt-2">
+            Pasting an API key below is a separate path. If you only
+            want Daena to use your subscription, skip this page and{' '}
+            <Link
+              to="/connections"
+              className="text-violet-200 underline decoration-dotted hover:text-starlight-100"
+            >
+              pick the CLI as your Main Brain on the Connections page
+            </Link>
+            .
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 export function AccountProviderKeys() {
   const [rows, setRows] = useState<ProviderKeyRow[]>([])
@@ -160,6 +245,8 @@ export function AccountProviderKeys() {
 
   return (
     <div className="space-y-6">
+      <CliSubscriptionHint />
+
       <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 border border-emerald-500/20 max-w-2xl">
         <div className="flex items-start gap-3">
           <ShieldCheck size={18} className="text-emerald-300 mt-0.5" />

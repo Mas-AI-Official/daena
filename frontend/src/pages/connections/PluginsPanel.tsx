@@ -92,12 +92,27 @@ export default function PluginsPanel({
   const [activeStatus, setActiveStatus] = useState<'all' | PluginStatus>('all')
   const [activeCategory, setActiveCategory] = useState<'all' | CatalogCategory>('all')
   const [busyId, setBusyId] = useState<string | null>(null)
+  // PR-CONNECTIONS-FIX-3 (2026-05-06): hide catalog-only "Coming soon"
+  // entries by default. They are roadmap parity (Daena cannot install
+  // or probe them yet) and dilute the operator's signal-to-noise on
+  // the main grid. Reveal via the inline toggle in the header. Stored
+  // per-tab state, not localStorage, so a fresh session starts clean.
+  const [showRoadmap, setShowRoadmap] = useState(false)
 
   const plugins = useMemo<PluginCard[]>(() => {
-    return cards
+    const all = cards
       .map(pluginCardFromMarketplaceCard)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [cards])
+    if (showRoadmap) return all
+    return all.filter((p) => p.status !== 'coming_soon')
+  }, [cards, showRoadmap])
+
+  const hiddenRoadmapCount = useMemo(
+    () => cards
+      .map(pluginCardFromMarketplaceCard)
+      .filter((p) => p.status === 'coming_soon').length,
+    [cards],
+  )
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -229,6 +244,20 @@ export default function PluginsPanel({
             {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
             Refresh
           </button>
+          {hiddenRoadmapCount > 0 && (
+            <label
+              className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] text-starlight-400 hover:bg-white/10 cursor-pointer"
+              title="Roadmap-only entries are catalog metadata for connectors Daena cannot install or probe yet. Hidden by default to keep the grid focused on actionable cards."
+            >
+              <input
+                type="checkbox"
+                checked={showRoadmap}
+                onChange={(e) => setShowRoadmap(e.target.checked)}
+                className="accent-primary-500"
+              />
+              Show roadmap ({hiddenRoadmapCount})
+            </label>
+          )}
         </div>
       </div>
 

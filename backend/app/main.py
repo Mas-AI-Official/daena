@@ -666,6 +666,39 @@ async def _run_deferred_initialization(app: FastAPI) -> None:
 
     await _step("provider_v2_seed", _provider_v2_seed)
 
+    async def _heal_stale_probes() -> None:
+        """Re-probe ConnectionV2 rows with stale ``probe_unavailable:`` reasons.
+
+        Safety net for the case where rows were last probed BEFORE
+        ``install_all_probes()`` registered the real per-kind probes.
+        Without this, callable runtimes (Claude Code / Codex / Gemini)
+        keep showing Failed in the operator UI until they manually
+        click Discover. Bounded to 50 rows; per-row failures swallowed.
+        """
+        from app.core.database import async_session_factory
+        from app.services.connection_v2._self_heal import heal_stale_probes
+
+        try:
+            async with async_session_factory() as db:
+                report = await heal_stale_probes(db, limit=50)
+                if report.get("scanned", 0) > 0:
+                    await db.commit()
+            logger.info(
+                "probe.heal.complete",
+                scanned=report.get("scanned"),
+                healed=report.get("healed"),
+                restamped=report.get("restamped"),
+                errored=report.get("errored"),
+            )
+        except Exception as exc:  # noqa: BLE001 — never break startup
+            logger.warning(
+                "probe.heal.failed",
+                error_type=type(exc).__name__,
+                error=str(exc)[:200],
+            )
+
+    await _step("heal_stale_probes", _heal_stale_probes)
+
     async def _evilbob_init() -> None:
         from app.services.security.evilbob_mode import auto_activate_if_configured
 
