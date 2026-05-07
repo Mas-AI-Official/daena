@@ -3,7 +3,7 @@
  * Export data, delete data, memory preferences, consent toggles.
  */
 import { useState, useEffect } from 'react'
-import { Download, Trash2, Database, Shield, AlertTriangle } from 'lucide-react'
+import { Download, Trash2, Database, Shield, AlertTriangle, ChevronRight, ChevronDown } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
 import { Card, Switch, Badge } from '@/components/common'
 import { api } from '@/lib/api'
@@ -16,6 +16,7 @@ export function SettingsPrivacy() {
   const [improveUsage, setImproveUsage] = useState(false)
   const [locationMeta, setLocationMeta] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [showRoadmap, setShowRoadmap] = useState(false)
   const handleExport = async () => {
     try {
       const res = await api.get('/settings/user/export')
@@ -158,40 +159,51 @@ export function SettingsPrivacy() {
         </Card>
       </section>
 
-      {/* Data Processing */}
+      {/* Data Processing -- roadmap, collapsed by default */}
       <section className="space-y-3">
-        <div>
-          <h3 className="text-sm font-display font-semibold text-starlight-100">Data Processing</h3>
-          <p className="text-xs text-starlight-400 mt-0.5">Control how your data is used beyond your conversations.</p>
-        </div>
-        <Card variant="glass" padding="md" className="space-y-4">
-          <div
-            className="flex items-center justify-between"
-            title="Phase 10C-D: setting persists; no consumer code reads it yet. Founder must define the semantic before Phase 11 wires enforcement."
+        <Card variant="glass" padding="md">
+          <button
+            onClick={() => setShowRoadmap((v) => !v)}
+            className="flex w-full items-center justify-between text-left"
+            aria-expanded={showRoadmap}
           >
-            <div>
-              <p className="text-sm text-starlight-200">
-                Allow Daena to improve from your usage
-                <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
-              </p>
-              <p className="text-[10px] text-starlight-500">Conversations may improve Daena's capabilities. Never shared externally. (Toggle persists; semantic + enforcement pending.)</p>
+            <div className="flex items-center gap-2">
+              {showRoadmap ? <ChevronDown size={14} className="text-starlight-300" /> : <ChevronRight size={14} className="text-starlight-300" />}
+              <h3 className="text-sm font-display font-semibold text-starlight-100">Data Processing (not active yet)</h3>
             </div>
-            <Switch checked={improveUsage} onChange={() => { setImproveUsage(!improveUsage); persistUiPref('improve_from_usage', !improveUsage) }} label="" size="sm" disabled />
-          </div>
+            <Badge variant="warning" size="sm">2 items</Badge>
+          </button>
+          {showRoadmap && (
+            <div className="mt-4 space-y-4 border-t border-white/5 pt-4">
+              <div
+                className="flex items-center justify-between"
+                title="Phase 10C-D: setting persists; no consumer code reads it yet. Founder must define the semantic before Phase 11 wires enforcement."
+              >
+                <div>
+                  <p className="text-sm text-starlight-200">
+                    Allow Daena to improve from your usage
+                    <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
+                  </p>
+                  <p className="text-[10px] text-starlight-500">Conversations may improve Daena's capabilities. Never shared externally. (Toggle persists; semantic + enforcement pending.)</p>
+                </div>
+                <Switch checked={improveUsage} onChange={() => { setImproveUsage(!improveUsage); persistUiPref('improve_from_usage', !improveUsage) }} label="" size="sm" disabled />
+              </div>
 
-          <div
-            className="flex items-center justify-between"
-            title="Phase 10C-D: setting persists; no consumer code reads it yet."
-          >
-            <div>
-              <p className="text-sm text-starlight-200">
-                Location metadata
-                <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
-              </p>
-              <p className="text-[10px] text-starlight-500">Allow coarse location for local recommendations. (Toggle persists; backend consumer pending.)</p>
+              <div
+                className="flex items-center justify-between"
+                title="Phase 10C-D: setting persists; no consumer code reads it yet."
+              >
+                <div>
+                  <p className="text-sm text-starlight-200">
+                    Location metadata
+                    <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
+                  </p>
+                  <p className="text-[10px] text-starlight-500">Allow coarse location for local recommendations. (Toggle persists; backend consumer pending.)</p>
+                </div>
+                <Switch checked={locationMeta} onChange={() => { setLocationMeta(!locationMeta); persistUiPref('location_metadata', !locationMeta) }} label="" size="sm" disabled />
+              </div>
             </div>
-            <Switch checked={locationMeta} onChange={() => { setLocationMeta(!locationMeta); persistUiPref('location_metadata', !locationMeta) }} label="" size="sm" disabled />
-          </div>
+          )}
         </Card>
       </section>
     </div>

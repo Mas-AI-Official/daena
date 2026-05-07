@@ -149,9 +149,21 @@ def test_plugins_panel_hoist_renders_above_grid():
 
 def test_legacy_v1_section_carries_clear_warning():
     src = CONNECTIONS_PAGE.read_text(encoding="utf-8")
-    # The legacy_v1 branch must include an explicit warning block.
-    assert "Legacy / debug only" in src, (
-        "legacy_v1 section must carry the 'Legacy / debug only' warning"
+    # The legacy_v1 branch must carry a clear "do not mistake this for canonical"
+    # warning. V3 Phase 1 (2026-05-07) renamed user-facing copy from
+    # "Legacy / debug only" to "Compatibility view -- debug only" as part of
+    # stripping V1/V2 vocabulary from the founder-facing UI. The test now
+    # accepts either phrasing so future copy changes do not silently weaken
+    # the gate; the contract is "explicit warning present", not the exact
+    # literal string.
+    expected_phrasings = (
+        "Legacy / debug only",
+        "Compatibility view -- debug only",
+        "Compatibility view — debug only",
+    )
+    assert any(p in src for p in expected_phrasings), (
+        "legacy_v1 section must carry an explicit 'debug only' warning "
+        f"(one of: {expected_phrasings})"
     )
 
 

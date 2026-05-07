@@ -15,7 +15,7 @@ import { Card, Switch, Badge, Input, Button } from '@/components/common'
 import { useUiStore, persistUiPref } from '@/stores/uiStore'
 import { toast } from '@/stores/toastStore'
 import { api } from '@/lib/api'
-import { Code, Key, Webhook, Bug, ChevronRight } from 'lucide-react'
+import { Code, Key, Webhook, Bug, ChevronRight, ChevronDown } from 'lucide-react'
 
 interface SettingsResponse {
   app_env?: string
@@ -39,6 +39,7 @@ export function SettingsDeveloper() {
   const [appEnv, setAppEnv] = useState<string>('loading...')
   const [developerMode, setDeveloperMode] = useState<boolean>(false)
   const [version, setVersion] = useState<string>('loading...')
+  const [showRoadmap, setShowRoadmap] = useState<boolean>(false)
   const handleDebugToggle = () => {
     const next = !debugMode
     toggleDebugMode()
@@ -101,82 +102,98 @@ export function SettingsDeveloper() {
       </Card>
 
       <Card variant="glass" padding="lg">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-display font-semibold text-starlight-100 flex items-center gap-2">
-            <Webhook size={14} /> Webhooks
-          </h3>
-          <Badge variant="warning" size="sm">Coming soon</Badge>
-        </div>
-        <p
-          className="text-[10px] text-starlight-500 mb-3"
-          title="Atlas I.3 + Phase 10b §3: no webhook dispatcher exists in backend; the URL field, event checkboxes, and Save button persist nothing today."
+        <button
+          onClick={() => setShowRoadmap((v) => !v)}
+          className="flex w-full items-center justify-between text-left"
+          aria-expanded={showRoadmap}
         >
-          Webhook dispatcher pending. Saved values would not fire today.
-        </p>
-        <div className="space-y-3 max-w-md opacity-60 pointer-events-none select-none" aria-disabled="true">
-          <Input
-            label="Webhook URL"
-            value=""
-            placeholder="https://your-server.com/webhook"
-            onChange={() => {}}
-          />
-          <div className="flex gap-3 text-xs text-starlight-400">
-            <label className="flex items-center gap-1">
-              <input type="checkbox" className="rounded" disabled /> Task complete
-            </label>
-            <label className="flex items-center gap-1">
-              <input type="checkbox" className="rounded" disabled /> Approval needed
-            </label>
-            <label className="flex items-center gap-1">
-              <input type="checkbox" className="rounded" disabled /> Errors
-            </label>
-          </div>
-          <div title="Coming in next release">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="opacity-60 cursor-not-allowed"
-              disabled
-              onClick={() => toast.info('Webhook configuration coming in next release')}
-            >
-              Save Webhook
-            </Button>
-          </div>
-        </div>
-      </Card>
-
-      <Card variant="glass" padding="lg">
-        <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
-          <Bug size={14} /> Debug
-        </h3>
-        <div className="space-y-3 max-w-md">
-          <div
-            className="flex items-center justify-between"
-            title="Phase 10C-D: setting persists, but no debug-overlay component reads debugMode yet. Phase 11 ships the overlay."
-          >
+          <h3 className="text-sm font-display font-semibold text-starlight-100 flex items-center gap-2">
+            {showRoadmap ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            Roadmap (not active yet)
+          </h3>
+          <Badge variant="warning" size="sm">Webhooks · Debug Mode · Verbose Logging</Badge>
+        </button>
+        {showRoadmap && (
+          <div className="mt-4 space-y-6 border-t border-white/5 pt-4">
             <div>
-              <p className="text-sm text-starlight-200">
-                Debug Mode
-                <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-display font-semibold text-starlight-100 flex items-center gap-2">
+                  <Webhook size={14} /> Webhooks
+                </h4>
+                <Badge variant="warning" size="sm">Coming soon</Badge>
+              </div>
+              <p
+                className="text-[10px] text-starlight-500 mb-3"
+                title="Atlas I.3 + Phase 10b §3: no webhook dispatcher exists in backend."
+              >
+                Webhook dispatcher pending. Saved values would not fire today.
               </p>
-              <p className="text-xs text-starlight-500">Show raw API responses and timing. (Persists; no consumer reads it yet.)</p>
+              <div className="space-y-3 max-w-md opacity-60 pointer-events-none select-none" aria-disabled="true">
+                <Input
+                  label="Webhook URL"
+                  value=""
+                  placeholder="https://your-server.com/webhook"
+                  onChange={() => {}}
+                />
+                <div className="flex gap-3 text-xs text-starlight-400">
+                  <label className="flex items-center gap-1">
+                    <input type="checkbox" className="rounded" disabled /> Task complete
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input type="checkbox" className="rounded" disabled /> Approval needed
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input type="checkbox" className="rounded" disabled /> Errors
+                  </label>
+                </div>
+                <div title="Coming in next release">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="opacity-60 cursor-not-allowed"
+                    disabled
+                    onClick={() => toast.info('Webhook configuration coming in next release')}
+                  >
+                    Save Webhook
+                  </Button>
+                </div>
+              </div>
             </div>
-            <Switch checked={debugMode} onChange={handleDebugToggle} label="" size="sm" disabled />
-          </div>
-          <div
-            className="flex items-center justify-between"
-            title="Phase 10C-D: setting persists, but no logger setup reads verboseLogging. Phase 11."
-          >
-            <div>
-              <p className="text-sm text-starlight-200">
-                Verbose Logging
-                <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
-              </p>
-              <p className="text-xs text-starlight-500">Log all agent decisions to console. (Persists; no consumer reads it yet.)</p>
+            <div className="border-t border-white/5 pt-4">
+              <h4 className="text-xs font-display font-semibold text-starlight-100 mb-3 flex items-center gap-2">
+                <Bug size={14} /> Debug
+              </h4>
+              <div className="space-y-3 max-w-md">
+                <div
+                  className="flex items-center justify-between"
+                  title="Phase 10C-D: setting persists, but no debug-overlay component reads debugMode yet."
+                >
+                  <div>
+                    <p className="text-sm text-starlight-200">
+                      Debug Mode
+                      <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
+                    </p>
+                    <p className="text-xs text-starlight-500">Show raw API responses and timing. (Persists; no consumer reads it yet.)</p>
+                  </div>
+                  <Switch checked={debugMode} onChange={handleDebugToggle} label="" size="sm" disabled />
+                </div>
+                <div
+                  className="flex items-center justify-between"
+                  title="Phase 10C-D: setting persists, but no logger setup reads verboseLogging."
+                >
+                  <div>
+                    <p className="text-sm text-starlight-200">
+                      Verbose Logging
+                      <Badge variant="warning" size="sm" className="ml-2 align-middle">Coming soon</Badge>
+                    </p>
+                    <p className="text-xs text-starlight-500">Log all agent decisions to console. (Persists; no consumer reads it yet.)</p>
+                  </div>
+                  <Switch checked={verboseLogging} onChange={handleVerboseToggle} label="" size="sm" disabled />
+                </div>
+              </div>
             </div>
-            <Switch checked={verboseLogging} onChange={handleVerboseToggle} label="" size="sm" disabled />
           </div>
-        </div>
+        )}
       </Card>
 
       <Card variant="glass" padding="lg">
