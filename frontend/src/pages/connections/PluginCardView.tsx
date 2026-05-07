@@ -35,7 +35,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Activity, AlertTriangle, BookOpen, ExternalLink, Loader2, Power,
-  ShieldAlert, Wrench,
+  ShieldAlert, Sparkles, Wrench,
 } from 'lucide-react'
 
 import {
@@ -61,6 +61,20 @@ interface PluginCardViewProps {
   onOpen?: (plugin: PluginCard) => void
   /** Spinner the action button when busy. */
   busy?: boolean
+  /**
+   * PR-CONNECTIONS-FIX-5 (2026-05-06): for AI provider cards (Anthropic,
+   * OpenAI, Gemini, ...), if the operator already has the paired CLI
+   * subscription callable, surface it as the primary path on this card
+   * instead of bouncing them to /account#provider-keys to paste an API
+   * key they don't need. ``callable=true`` flips the card's status pill
+   * to emerald + the primary action to "Use as Main Brain". When falsy
+   * the card behaves exactly as before.
+   */
+  cliAlternative?: {
+    runtime_id: string
+    label: string
+    callable: boolean
+  } | null
 }
 
 const ACTION_ICON: Record<PluginAction, typeof Activity> = {
@@ -73,13 +87,29 @@ const ACTION_ICON: Record<PluginAction, typeof Activity> = {
 }
 
 export default function PluginCardView({
-  plugin, onProbe, onEnable, onOpen, busy = false,
+  plugin, onProbe, onEnable, onOpen, busy = false, cliAlternative = null,
 }: PluginCardViewProps) {
-  const tone = pluginStatusTone(plugin.status)
   const navigate = useNavigate()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [installDrawerOpen, setInstallDrawerOpen] = useState(false)
   const [oauthDrawerOpen, setOauthDrawerOpen] = useState(false)
+
+  // PR-CONNECTIONS-FIX-5: when a paired CLI subscription is callable,
+  // override the card's status pill + primary action so the operator
+  // sees the working path FIRST and the API-key path as a quiet
+  // fallback. Only active for api_provider cards that aren't already
+  // connected via API key (so we never demote a real V2 callable=true
+  // status to a CLI alternative).
+  const cliPrimary =
+    cliAlternative
+    && cliAlternative.callable
+    && plugin.source.catalog.kind === 'api_provider'
+    && plugin.status !== 'connected'
+
+  const tone = pluginStatusTone(cliPrimary ? 'connected' : plugin.status)
+  const effectiveStatusLabel = cliPrimary
+    ? `Reachable via ${cliAlternative!.label}`
+    : plugin.status_label
 
   // PR-CONN-MCP-INSTALL-INTO-CLI: MCP catalog entries with a real
   // command_template open the new install drawer instead of the
@@ -99,6 +129,12 @@ export default function PluginCardView({
 
   function handleAction(e: React.MouseEvent) {
     e.stopPropagation()
+    // PR-CONNECTIONS-FIX-5: CLI subscription takes precedence over the
+    // adapter's derived primary_action for AI provider cards.
+    if (cliPrimary) {
+      navigate('/connections#brain')
+      return
+    }
     switch (plugin.primary_action) {
       case 'install':
         if (supportsMcpInstall) {
@@ -154,7 +190,10 @@ export default function PluginCardView({
     }
   }
 
-  const ActionIcon = ACTION_ICON[plugin.primary_action]
+  const ActionIcon = cliPrimary ? Sparkles : ACTION_ICON[plugin.primary_action]
+  const effectiveActionLabel = cliPrimary
+    ? 'Use as Main Brain'
+    : plugin.primary_action_label
   const Icon = pluginIconFor(plugin.id, plugin.source.catalog.kind, plugin.name)
   const iconBg = pluginIconTone(plugin.risk_level)
 
@@ -209,9 +248,14 @@ export default function PluginCardView({
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tone.border} ${tone.bg} ${tone.text}`}
+              title={
+                cliPrimary
+                  ? `${cliAlternative!.label} is callable on this machine. Use it as Main Brain instead of pasting an API key.`
+                  : undefined
+              }
             >
               <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-              {plugin.status_label}
+              {effectiveStatusLabel}
             </span>
             {/* Officiality badge: trust signal from PR-CONN-MCP-CATALOG-SKILL-BUNDLES.
                 Always rendered so the operator can distinguish vendor-shipped
@@ -279,19 +323,37 @@ export default function PluginCardView({
             >
               Details
             </button>
-            <button
-              onClick={handleAction}
-              disabled={busy || !plugin.action_enabled}
-              className="inline-flex items-center gap-1.5 rounded-md border border-primary-500/30 bg-primary-500/10 px-3 py-1.5 text-[11px] font-medium text-primary-200 hover:bg-primary-500/20 disabled:opacity-50"
-            >
-              {busy ? <Loader2 size={11} className="animate-spin" /> : <ActionIcon size={11} />}
-              {/* PR-CONN-PLUGIN-INSTALL-UX-POLISH (2026-05-03): make
-                  in-flight feedback explicit. The only action that
-                  flips parent busy=true on this card is Probe (Test);
-                  Configure / Install / Connect open drawers without
-                  setting busy. So a busy card == probe in flight. */}
-              {busy ? 'Probing...' : plugin.primary_action_label}
-            </button>
+            <div className="flex items-center gap-2">
+              {cliPrimary && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigate('/account#provider-keys')
+                  }}
+                  className="text-[10px] text-starlight-500 hover:text-starlight-300 underline decoration-dotted"
+                  title="Fallback: paste an API key directly. Only needed if you do not want to use your CLI subscription."
+                >
+                  Or use API key
+                </button>
+              )}
+              <button
+                onClick={handleAction}
+                disabled={busy || (!plugin.action_enabled && !cliPrimary)}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[11px] font-medium disabled:opacity-50 ${
+                  cliPrimary
+                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/25'
+                    : 'border-primary-500/30 bg-primary-500/10 text-primary-200 hover:bg-primary-500/20'
+                }`}
+              >
+                {busy ? <Loader2 size={11} className="animate-spin" /> : <ActionIcon size={11} />}
+                {/* PR-CONN-PLUGIN-INSTALL-UX-POLISH (2026-05-03): make
+                    in-flight feedback explicit. The only action that
+                    flips parent busy=true on this card is Probe (Test);
+                    Configure / Install / Connect open drawers without
+                    setting busy. So a busy card == probe in flight. */}
+                {busy ? 'Probing...' : effectiveActionLabel}
+              </button>
+            </div>
           </div>
         </div>
       </article>

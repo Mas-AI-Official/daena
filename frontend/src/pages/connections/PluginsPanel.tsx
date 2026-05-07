@@ -88,6 +88,11 @@ export default function PluginsPanel({
 }: PluginsPanelProps) {
   const { cards, loading, error, refresh } = useMarketplaceCards()
   const { probe, enable } = useConnectionsV2()
+  // PR-CONNECTIONS-FIX-5 (2026-05-06): pull V2 cli_runtime rows so we
+  // know which CLI subscriptions (Claude Code / Codex / Gemini CLI)
+  // are callable on this machine. AI provider cards consult this and
+  // surface the CLI as the primary path when applicable.
+  const { rows: cliRows } = useConnectionsV2('cli_runtime')
   const [search, setSearch] = useState('')
   const [activeStatus, setActiveStatus] = useState<'all' | PluginStatus>('all')
   const [activeCategory, setActiveCategory] = useState<'all' | CatalogCategory>('all')
@@ -99,12 +104,69 @@ export default function PluginsPanel({
   // per-tab state, not localStorage, so a fresh session starts clean.
   const [showRoadmap, setShowRoadmap] = useState(false)
 
+  // ── PR-CONNECTIONS-FIX-5: CLI subscription map ──
+  //
+  // Maps the api_provider catalog id (lowercased + dashed) to the
+  // paired CLI runtime's display label + callable state. Used by the
+  // PluginCardView to flip the AI provider card's primary action from
+  // "Configure" (paste API key) to "Use as Main Brain" (deep-link to
+  // the Brain tab) when the subscription path is the right one.
+  //
+  // The mapping is intentionally narrow -- only the three CLI runtimes
+  // whose providers a Daena operator typically pays for as a
+  // subscription. Adding more later requires explicit catalog work.
+  const cliSubscriptionByProviderId = useMemo<
+    Record<string, { runtime_id: string; label: string; callable: boolean }>
+  >(() => {
+    const out: Record<string, { runtime_id: string; label: string; callable: boolean }> = {}
+    const RUNTIME_TO_PROVIDER: Record<string, { providerId: string; label: string }> = {
+      claude_code: { providerId: 'provider-anthropic', label: 'Claude Code subscription' },
+      codex: { providerId: 'provider-openai', label: 'Codex CLI subscription' },
+      gemini_cli: { providerId: 'provider-google-gemini', label: 'Gemini CLI subscription' },
+    }
+    for (const r of cliRows) {
+      const config = (r.config ?? {}) as Record<string, unknown>
+      const rid = String(
+        (typeof config._runtime_id === 'string' && config._runtime_id) || r.slug || '',
+      ).toLowerCase()
+      const map = RUNTIME_TO_PROVIDER[rid]
+      if (!map) continue
+      const callable = r.label === 'healthy' || r.label === 'healthy_stale'
+      out[map.providerId] = {
+        runtime_id: rid,
+        label: map.label,
+        callable,
+      }
+    }
+    return out
+  }, [cliRows])
+
+  // ── Status-priority sort ──
+  //
+  // Connected first, then needs_auth, installed, available, failed,
+  // not_supported, coming_soon (when shown). Inside each band, sort by
+  // name. This puts working connections at the top so the operator's
+  // first read of the page tells the truth about what they have, not
+  // a 57-card alphabetical pile.
+  const STATUS_RANK: Record<PluginStatus, number> = {
+    connected: 0,
+    needs_auth: 1,
+    installed: 2,
+    available: 3,
+    failed: 4,
+    not_supported_on_os: 5,
+    coming_soon: 6,
+  }
+
   const plugins = useMemo<PluginCard[]>(() => {
-    const all = cards
-      .map(pluginCardFromMarketplaceCard)
-      .sort((a, b) => a.name.localeCompare(b.name))
-    if (showRoadmap) return all
-    return all.filter((p) => p.status !== 'coming_soon')
+    const all = cards.map(pluginCardFromMarketplaceCard)
+    const filtered = showRoadmap ? all : all.filter((p) => p.status !== 'coming_soon')
+    return filtered.sort((a, b) => {
+      const ra = STATUS_RANK[a.status] ?? 99
+      const rb = STATUS_RANK[b.status] ?? 99
+      if (ra !== rb) return ra - rb
+      return a.name.localeCompare(b.name)
+    })
   }, [cards, showRoadmap])
 
   const hiddenRoadmapCount = useMemo(
@@ -348,6 +410,7 @@ export default function PluginsPanel({
                   busy={busyId !== null && busyId === plugin.v2_row_id}
                   onProbe={handleProbe}
                   onEnable={handleEnable}
+                  cliAlternative={cliSubscriptionByProviderId[plugin.id] ?? null}
                 />
               ))}
             </div>

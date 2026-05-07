@@ -81,10 +81,28 @@ export default function ConnectionsPage() {
   usePageTitle('Connections')
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window === 'undefined') return 'plugins'
+    // PR-CONNECTIONS-FIX-DEEP-LINK (2026-05-06): hash-based deep-links so
+    // sibling pages (Provider Keys, AI provider card "Use as Main Brain"
+    // button) can route the operator straight to a specific tab.
+    // Hash wins over localStorage so a fresh deep-link is never trapped
+    // by a previously remembered tab.
+    const hash = window.location.hash.replace('#', '').toLowerCase()
+    if (hash === 'brain' || hash === 'plugins' || hash === 'advanced') return hash
     const saved = window.localStorage.getItem(ACTIVE_TAB_LS_KEY)
     if (saved === 'brain' || saved === 'plugins' || saved === 'advanced') return saved
     return 'plugins'
   })
+
+  // Clear the URL hash after consuming it so a later interaction (close
+  // + reopen / nav back) does not silently re-pin the deep-linked tab.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!window.location.hash) return
+    const h = window.location.hash.replace('#', '').toLowerCase()
+    if (h !== 'brain' && h !== 'plugins' && h !== 'advanced') return
+    const next = `${window.location.pathname}${window.location.search}`
+    window.history.replaceState({}, '', next)
+  }, [])
   const [discovering, setDiscovering] = useState(false)
   const [lastReport, setLastReport] = useState<DiscoveryReport | null>(() => {
     if (typeof window === 'undefined') return null
