@@ -650,6 +650,60 @@ class ChatOrchestrator:
         system_prompt = (
             (_soul_prefix + "\n\n") if _soul_prefix else ""
         ) + _SYSTEM_PROMPT_DEFAULT
+
+        # ── Ground-truth Runtime Truth Block ───────────────────────
+        # 2026-05-09: operator complaint — Daena hallucinated
+        # "Claude Sonnet 4.6" when asked which mind was active. The
+        # underlying LLM has zero ground truth about which runtime
+        # is currently primary, what model is loaded, or what
+        # routing decision the orchestrator just made. Inject those
+        # facts here so the LLM speaks honestly about its own state.
+        try:
+            _facts: list[str] = []
+            _resolved_primary = primary_mind or "claude_code"
+            _facts.append(f"primary_runtime: {_resolved_primary}")
+
+            # Resolved primary model from user settings (with sane default)
+            _primary_model: str | None = None
+            if user_obj and user_obj.settings:
+                _primary_model = (
+                    user_obj.settings.get("preferred_model")
+                    or user_obj.settings.get("primary_runtime_model")
+                )
+            if _primary_model:
+                _facts.append(f"primary_model: {_primary_model}")
+
+            # Authenticated runtimes right now (subscription-truth)
+            with contextlib.suppress(Exception):
+                from app.core.events import get_runtime_registry
+                from app.services.runtimes.base_adapter import RuntimeStatus
+                _rt_reg = get_runtime_registry()
+                _online = [
+                    rid for rid in ("claude_code", "codex", "gemini_cli", "grok_cli", "vllm", "ollama")
+                    if _rt_reg.get_health(rid) == RuntimeStatus.ONLINE
+                ]
+                if _online:
+                    _facts.append(f"online_runtimes: {', '.join(_online)}")
+
+            _facts.append(f"chat_mode: {chat_mode.value}")
+            _facts.append(f"governance_mode: {governance_mode.value}")
+            _facts.append(f"requested_routing_mode: {requested_routing_mode.value}")
+
+            if _facts:
+                system_prompt += (
+                    "\n\n---\nDAENA RUNTIME TRUTH (this turn — answer "
+                    "factually if asked which mind/brain/model you "
+                    "are using):\n  - "
+                    + "\n  - ".join(_facts)
+                    + "\n\nWhen the operator asks 'which mind/brain/model are you using?', "
+                    "answer with the values above. Do NOT invent model names. "
+                    "If they ask to switch the primary mind in CMD mode, tell them "
+                    "the exact one-line command: 'switch primary mind to <runtime_id>' "
+                    "(also accepts model ids like claude-opus-4-7 -> claude_code) — "
+                    "and that this requires EXE mode or saying 'do it'.\n---"
+                )
+        except Exception:
+            logger.debug("orchestrator.runtime_truth_block_failed", exc_info=True)
         # Emotional-awareness overlay (per-turn, volatile). Always
         # appended AFTER the soul + default rules so the turn-specific
         # tonal read wins on attention. When disabled or no signal was

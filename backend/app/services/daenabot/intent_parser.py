@@ -118,6 +118,74 @@ _TERMINAL_PATTERNS: list[tuple[re.Pattern[str], dict[str, str]]] = [
     ), {"command_group": "1"}),
 ]
 
+# ── Settings (self-config) patterns ────────────────────────────
+# 2026-05-09 — operator complaint: "i asked switch to claude 4.7 and
+# Daena replied 'go to settings > model'." That's chatbot, not agent.
+# These patterns let "switch primary mind to claude 4.7" become a
+# real settings.set_primary_mind call.
+
+_SETTINGS_PATTERNS: list[tuple[str, re.Pattern[str], dict[str, str]]] = [
+    # "switch (your) primary mind/brain to X"  /  "switch to X (mind|brain)"
+    # /  "set primary mind to X"  /  "use X as primary"
+    ("set_primary_mind", re.compile(
+        r'(?:'
+        r'(?:switch|set|change|make|use)\s+'
+        r'(?:(?:my|your|the|it)\s+)?'
+        r'(?:(?:primary\s+)?(?:mind|brain|runtime|model)\s+)?'
+        r'(?:to\s+)'
+        r'|'
+        r'(?:switch|change|set|change\s+to)\s+(?:to\s+)?'
+        r')'
+        r'(?P<alias>[A-Za-z][\w\.\-\s]+?)'
+        r'(?:\s+(?:as|as\s+(?:my|the|primary|main))\s+(?:primary|main|brain|mind))?'
+        r'\s*$',
+        re.IGNORECASE,
+    ), {"alias_group": "alias"}),
+
+    # "(use|set|make) X (as)? (my|the|main)* (primary|mind|brain|...)?"
+    # Covers: "use codex as primary", "use grok as my main brain",
+    # "make claude my primary", "make claude primary", "set X as the brain".
+    ("set_primary_mind", re.compile(
+        r'(?:use|set|make)\s+'
+        r'(?P<alias>[A-Za-z][\w\.\-\s]+?)'
+        r'\s+(?:as\s+)?(?:(?:my|the|main)\s+)*'
+        r'(?:primary(?:\s+(?:mind|brain|runtime|model))?'
+        r'|(?:mind|brain|runtime|model))'
+        r'\b',
+        re.IGNORECASE,
+    ), {"alias_group": "alias"}),
+
+    # "which (mind|brain|model|runtime) (are you using|am i on)"
+    # /  "tell me (which|what) mind"  /  "what's the current mind"
+    ("get_runtime_state", re.compile(
+        r'(?:'
+        r'which\s+(?:mind|brain|model|runtime|primary|llm)'
+        r'|'
+        r'what\s+(?:mind|brain|model|runtime|llm|is\s+(?:my|the)\s+(?:primary|current))'
+        r'|'
+        r'(?:tell\s+me|show\s+me)\s+'
+        r'(?:which|what|the\s+current)\s+(?:mind|brain|model|runtime)'
+        r'|'
+        r'(?:current|active)\s+(?:mind|brain|model|runtime|primary)'
+        r')',
+        re.IGNORECASE,
+    ), {}),
+
+    # "list (available) minds/brains" /  "what minds (are available|can i use)"
+    ("list_available_minds", re.compile(
+        r'(?:'
+        r'list\s+(?:my|the|available)?\s*(?:minds|brains|runtimes|models)'
+        r'|'
+        r'what\s+(?:minds|brains|runtimes|models)\s+'
+        r'(?:are\s+(?:available|installed)|can\s+i\s+(?:use|switch\s+to))'
+        r'|'
+        r'show\s+me\s+(?:my|the|available)?\s*(?:minds|brains|runtimes|models)'
+        r')',
+        re.IGNORECASE,
+    ), {}),
+]
+
+
 # ── Browser patterns ──────────────────────────────────────────
 
 _BROWSER_PATTERNS: list[tuple[str, re.Pattern[str], dict[str, str]]] = [
@@ -158,9 +226,11 @@ class IntentParser:
         """Attempt to extract a DaenaBot tool call from a user message.
 
         Priority order (matches ``QueryUnderstandingService``):
-            1. Browser (URL present → strong signal)
-            2. Terminal (explicit run/execute prefix)
-            3. File operations (list, read, create, write, move, delete)
+            1. Self-config (matches before Browser/Terminal because
+               "switch X" / "use X" verbs would otherwise be over-matched)
+            2. Browser (URL present → strong signal)
+            3. Terminal (explicit run/execute prefix)
+            4. File operations (list, read, create, write, move, delete)
 
         Returns:
             ``ToolCall`` if a match is found, ``None`` otherwise.
@@ -169,21 +239,59 @@ class IntentParser:
         if not stripped:
             return None
 
-        # 1. Browser — URL presence is a strong signal
+        # 1. Settings / self-config — must match BEFORE terminal "run"
+        # patterns because "switch to claude" should NOT be misread as
+        # a shell command.
+        result = cls._try_settings(stripped)
+        if result:
+            return result
+
+        # 2. Browser — URL presence is a strong signal
         result = cls._try_browser(stripped)
         if result:
             return result
 
-        # 2. Terminal — explicit command prefix or backticks
+        # 3. Terminal — explicit command prefix or backticks
         result = cls._try_terminal(stripped)
         if result:
             return result
 
-        # 3. File operations
+        # 4. File operations
         result = cls._try_file(stripped)
         if result:
             return result
 
+        return None
+
+    @classmethod
+    def _try_settings(cls, message: str) -> ToolCall | None:
+        """Match self-config intent: switch primary mind, query state."""
+        for operation, pattern, groups in _SETTINGS_PATTERNS:
+            m = pattern.search(message)
+            if m:
+                params: dict[str, Any] = {}
+                alias_group = groups.get("alias_group")
+                if alias_group:
+                    raw = m.group(alias_group).strip()
+                    # Strip trailing modal/aux tokens that the user might
+                    # tack on: "claude 4.7 max" should resolve as "claude
+                    # 4.7" once "max" is stripped.
+                    for tail in (" max", " mode", " please", " now"):
+                        if raw.lower().endswith(tail):
+                            raw = raw[: -len(tail)].rstrip()
+                    if raw:
+                        params["mind_alias"] = raw
+                tc = ToolCall(
+                    agent="settings",
+                    operation=operation,
+                    params=params,
+                )
+                logger.info(
+                    "intent_parser.settings_matched",
+                    operation=operation,
+                    params=params,
+                )
+                return tc
         return None
 
     # ── Agent-specific parsers ─────────────────────────────────

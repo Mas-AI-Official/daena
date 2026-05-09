@@ -458,7 +458,9 @@ class ExecutionService(BaseService):
 
             # Actual tool execution would be dispatched here.
             # For now, we record the attempt and return a stub.
-            result = await self._dispatch_tool(tool_name, params)
+            # 2026-05-09: pass user_id so settings.* agent can scope
+            # to User.settings JSONB without re-querying.
+            result = await self._dispatch_tool(tool_name, params, user_id=user_id)
 
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
             execution.status = ExecutionStatus.COMPLETED.value
@@ -1071,13 +1073,16 @@ class ExecutionService(BaseService):
         )
 
     async def _dispatch_tool(
-        self, tool_name: str, params: dict,
+        self, tool_name: str, params: dict, user_id: UUID | None = None,
     ) -> dict:
         """Dispatch tool execution to the appropriate DaenaBot agent.
 
         Tool names use dot notation: ``file.read_file``,
         ``terminal.execute_command``, ``browser.navigate``.
         The prefix selects the agent; the suffix selects the operation.
+
+        ``user_id`` is required for agents that mutate per-user state
+        (currently: ``settings``). Other agents ignore it.
 
         Gated by the ``enable_daenabot`` feature flag.
         """
@@ -1107,6 +1112,28 @@ class ExecutionService(BaseService):
             agent = FileAgent(
                 allowed_paths=settings.daenabot_allowed_paths,
             )
+            return await agent.execute(operation, params)
+
+        elif agent_prefix == "settings":
+            # 2026-05-09: self-config tool surface. Lets Daena answer
+            # "which mind are you using?" with truth, and act on
+            # "switch primary mind to X" instead of replying like a
+            # chatbot. Stays local to User.settings JSONB; never
+            # touches external state.
+            if user_id is None:
+                return {
+                    "agent": "settings",
+                    "success": False,
+                    "operation": operation,
+                    "output": None,
+                    "error": (
+                        "settings.* tools require user_id at dispatch time. "
+                        "Caller did not provide one."
+                    ),
+                }
+            from app.services.daenabot.daena_self_agent import DaenaSelfAgent
+
+            agent = DaenaSelfAgent(db=self.db, user_id=user_id)
             return await agent.execute(operation, params)
 
         elif agent_prefix == "terminal":
