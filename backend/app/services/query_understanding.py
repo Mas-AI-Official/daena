@@ -201,21 +201,13 @@ _INTENT_KEYWORDS: dict[IntentType, dict[str, Any]] = {
             "take screenshot", "extract text from",
             "list directory", "show directory",
             "create a file", "make a file",
-            # Self-config (settings.* agent — Daena's own runtime).
-            # 2026-05-09: tightens classification so "switch primary
-            # mind to X" auto-escalates to EXE instead of getting a
-            # chatbot reply about toggling EXE in the header.
-            "switch primary", "switch to claude", "switch to codex",
-            "switch to gemini", "switch to grok", "switch to ollama",
-            "switch the brain", "switch the mind", "switch your mind",
-            "switch your brain", "change primary", "set primary mind",
-            "use claude as", "use codex as", "use gemini as",
-            "use grok as", "make claude", "make codex", "make gemini",
-            "primary mind", "primary brain", "primary runtime",
-            "which mind", "which brain", "which model are you",
-            "what mind are you", "what brain are you", "current mind",
-            "active mind", "active brain", "list available minds",
-            "list minds", "list brains",
+            # Self-config triggers — KEPT minimal as triggers only,
+            # NOT for resolving the user's request. The LLM uses the
+            # daena_* tool catalog + its own world knowledge to handle
+            # the actual "claude 4.7" -> runtime/model mapping.
+            "switch primary mind", "switch primary brain",
+            "which mind", "which brain", "primary mind",
+            "primary brain", "list available minds",
         ],
         "weight": 1.2,
         "threshold": 0.30,
@@ -770,16 +762,13 @@ class QueryUnderstandingService:
         "how do I pentest?" stays a SEARCH / ANALYSIS question rather
         than kicking off a scan.
         """
-        # 2026-05-09 SETTINGS FAST-PATH: ask the regex-based IntentParser
-        # for self-config matches specifically. Keyword scoring is too
-        # brittle for "switch it to claude 4.7 max" / "which mind are
-        # you using" style natural phrasings. When IntentParser matches
-        # a settings.* tool call, force TOOL_USE classification so the
-        # auto-escalate path fires and Daena ACTS instead of replying
-        # like a chatbot. Limited to the settings agent so file /
-        # terminal / browser keep their existing routing — and
-        # SECURITY_SCAN / DANGEROUS still win when their own keywords
-        # are present.
+        # SETTINGS TRIGGER: when the message looks like a self-config
+        # request ("switch X to Y", "which mind", "list minds"), force
+        # TOOL_USE so chat_orchestrator auto-escalates to EXE and the
+        # LLM gets the daena_* tool catalog to act on it. The trigger
+        # is just a CLASSIFIER hint — actual resolution of "claude 4.7"
+        # -> (claude_code, claude-opus-4-7) happens in the LLM's head
+        # via tool calling, not here.
         try:
             from app.services.daenabot.intent_parser import IntentParser
 

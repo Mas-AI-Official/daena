@@ -60,6 +60,11 @@ def build_tool_schema(
     if include_system:
         tools.extend(_system_tools())
 
+    # Self-config tools — always included so Daena can answer "which
+    # mind are you using?" with truth and act on "switch primary mind
+    # to X" requests via real-time LLM reasoning.
+    tools.extend(_self_config_tools())
+
     if include_daenabot:
         tools.extend(_daenabot_tools())
 
@@ -628,6 +633,80 @@ def _system_tools() -> list[dict[str, Any]]:
     ]
 
 
+def _self_config_tools() -> list[dict[str, Any]]:
+    """Daena's self-management tools.
+
+    Lets the LLM act on user requests like "switch primary mind to
+    claude 4.7" instead of replying with chatbot text. The LLM reasons
+    in real-time:
+      1. Calls daena_list_available_minds to see what's REGISTERED
+         and which models the model registry has actually discovered.
+      2. Maps the user's natural-language phrase to a concrete
+         (runtime_id, model_id) using its world knowledge + the
+         live list.
+      3. Calls daena_set_primary_mind with explicit IDs.
+      4. Reports the new state.
+
+    Critical: NO STATIC ALIAS MAP server-side. The LLM does the
+    aliasing because it knows the model family better than any
+    hardcoded dict ever could.
+    """
+    return [
+        {
+            "name": "daena_get_runtime_state",
+            "description": (
+                "Read Daena's current runtime configuration: which "
+                "primary_runtime is active right now, which "
+                "preferred_model the router uses, which runtimes are "
+                "online. Use this BEFORE answering any 'which "
+                "mind/brain/model are you using?' question — never "
+                "guess, always read."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+        {
+            "name": "daena_list_available_minds",
+            "description": (
+                "Enumerate every runtime adapter Daena has registered + "
+                "the models the live model_registry has discovered, "
+                "grouped per provider. Use this when the user wants "
+                "to switch primary mind to a specific model — you "
+                "consult the live list to map their phrase (e.g. "
+                "'claude 4.7 max', 'cheapest gemini', 'fastest one') "
+                "to a concrete (runtime_id, model_id) pair."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+        {
+            "name": "daena_set_primary_mind",
+            "description": (
+                "Switch Daena's primary mind to a specific runtime. "
+                "Writes User.settings.primary_runtime + optional "
+                "preferred_model. The runtime_id MUST be one of the "
+                "ids returned by daena_list_available_minds. If the "
+                "user says 'claude 4.7', YOU resolve that to "
+                "runtime_id='claude_code' + model_id='claude-opus-4-7' "
+                "using your knowledge of the model families plus the "
+                "live list — never call this with an unresolved alias."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "runtime_id": {
+                        "type": "string",
+                        "description": "Exact runtime adapter id (e.g. 'claude_code', 'codex', 'gemini_cli', 'grok_cli', 'vllm', 'ollama').",
+                    },
+                    "model_id": {
+                        "type": "string",
+                        "description": "Optional exact model id within that runtime (e.g. 'claude-opus-4-7', 'gpt-5.5', 'gemini-2.5-pro').",
+                    },
+                },
+                "required": ["runtime_id"],
+            },
+        },
+    ]
+
+
 def _daenabot_tools() -> list[dict[str, Any]]:
     """DaenaBot agent tools (browser automation, MCP bridge)."""
     return [
@@ -1005,6 +1084,11 @@ def _mcp_tools(mcp_registry: Any) -> list[dict[str, Any]]:
 # Maps schema tool names to execution dispatch paths
 
 TOOL_DISPATCH_MAP: dict[str, tuple[str, str]] = {
+    # Daena self-config — LLM-callable names (underscore form) map to
+    # the daena.* dispatch branch in tool_use_loop.
+    "daena_get_runtime_state": ("daena", "get_runtime_state"),
+    "daena_list_available_minds": ("daena", "list_available_minds"),
+    "daena_set_primary_mind": ("daena", "set_primary_mind"),
     # System tools -> agent_prefix.operation
     "read_file": ("file", "read_file"),
     "write_file": ("file", "write_file"),

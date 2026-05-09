@@ -815,6 +815,14 @@ class ToolUseLoop:
                 }
 
         try:
+            # ── Self-config (Daena managing her own runtime) ──
+            # daena_get_runtime_state, daena_list_available_minds,
+            # daena_set_primary_mind. The LLM uses these to ACT on
+            # "which mind are you using?" / "switch primary mind to X"
+            # via real-time reasoning, not hardcoded patterns.
+            if prefix == "daena" or qualified_name.startswith("daena_"):
+                return await self._exec_daena_self(qualified_name, resolved_params)
+
             # ── File system tools ──
             if prefix == "file":
                 return await self._exec_file(operation, resolved_params)
@@ -1061,6 +1069,43 @@ class ToolUseLoop:
             logger.debug("auto_install.npm_failed", error=str(exc))
 
         return {"success": False, "error": f"Failed to install {package}"}
+
+    async def _exec_daena_self(
+        self, qualified_name: str, params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Daena's own runtime configuration tools.
+
+        qualified_name is one of:
+          - daena_get_runtime_state    / daena.get_runtime_state
+          - daena_list_available_minds / daena.list_available_minds
+          - daena_set_primary_mind     / daena.set_primary_mind
+        """
+        # Map either underscore or dot form to the internal operation
+        # key. The schema_builder uses underscore (Anthropic style);
+        # internal regex/intent_parser uses dot.
+        if qualified_name.startswith("daena_"):
+            operation = qualified_name[len("daena_"):]
+        elif "." in qualified_name:
+            operation = qualified_name.split(".", 1)[1]
+        else:
+            operation = qualified_name
+
+        # Pass the live model_registry from app.state so
+        # list_available_minds returns currently-discovered models.
+        # Threaded through via self._app_state if available; otherwise
+        # the agent falls back to a fresh ModelRegistry.
+        live_registry = getattr(self, "_app_state_model_registry", None)
+
+        from app.services.daenabot.daena_self_agent import DaenaSelfAgent
+        agent = DaenaSelfAgent(
+            db=self.db,
+            user_id=self.user_id,
+            model_registry=live_registry,
+        )
+        try:
+            return await agent.execute(operation, params)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
 
     async def _exec_file(self, operation: str, params: dict[str, Any]) -> dict[str, Any]:
         """File system operations via SystemAccess."""

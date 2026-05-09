@@ -5,25 +5,28 @@ Gmail, MCP servers, vulnerabilities. This agent reaches INWARD: changes
 which mind is primary, which model the router prefers, which routing
 mode is active.
 
-Why this exists (2026-05-09): the operator complaint was "I asked Daena
-to switch primary mind to claude-4.7 and she replied 'go to Settings
-> Model' — that's a chatbot answer, not an agent answer." The agentic
-answer is "done, primary_mind = claude_code, model = claude-opus-4-7"
-backed by a real settings write.
+Why this exists (2026-05-09 — operator's frustration with hardcoded
+aliasing): "i want daena think, real-time think, not hardcoded".
+This agent stays INTENTIONALLY DUMB about which model maps to which
+runtime. It exposes:
 
-Operations are LOW-RISK by design:
-  - get_runtime_state   READ-ONLY. Returns the live truth: which runtime
-                        is primary, which model, what's online, what
-                        subscriptions are valid. Drives "which mind are
-                        you using?" honestly.
-  - set_primary_mind    Updates User.settings JSONB primary_runtime +
-                        preferred_model. Does NOT touch external state,
-                        does NOT escape the tenant, does NOT write to
-                        provider configs. Reversible at any time by
-                        re-calling with the previous values.
-  - list_available_minds READ-ONLY. Returns runtime_id + display_name +
-                        installed/online/authenticated for each known
-                        runtime. The set the operator can switch to.
+  - get_runtime_state        — read the live truth from User.settings
+                               + the runtime_registry. NO INTERPRETATION.
+  - list_available_minds     — enumerate the LIVE registry: which
+                               runtime adapters are loaded right now,
+                               which models the registry knows about.
+                               This is the source of truth the LLM
+                               consults instead of any static map.
+  - set_primary_mind         — write explicit runtime_id (+ optional
+                               explicit model_id) to User.settings.
+                               Validates the runtime_id exists in the
+                               live registry. NO ALIAS RESOLUTION.
+
+WHY no alias map: when the user says "switch to claude 4.7 max", the
+LLM (Claude/Codex/Gemini) has the world knowledge to map that string
+to runtime_id="claude_code" + model_id="claude-opus-4-7". My job is
+to give the LLM the LIVE LIST and let it reason. Hardcoding aliases
+would make Daena dumber than her own brain.
 
 Governance: tier 1 (Logged). Just-an-audit-log, no approval queue.
 The action is bounded to the operator's own settings; nothing else
@@ -35,94 +38,12 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.logging import get_logger
 from app.services.daenabot._base_agent import BaseAgent
 
 logger = get_logger(__name__)
-
-
-# Aliases the user may type in chat. Maps any token to the canonical
-# runtime_id Daena uses internally. Kept here (not in intent_parser)
-# so the agent can self-report the supported aliases via list_available_minds.
-_RUNTIME_ALIASES: dict[str, str] = {
-    # Anthropic / Claude
-    "claude": "claude_code",
-    "claude code": "claude_code",
-    "claude-code": "claude_code",
-    "claude_code": "claude_code",
-    "claude cli": "claude_code",
-    "anthropic": "claude_code",
-    # OpenAI / Codex
-    "codex": "codex",
-    "openai": "codex",
-    "chatgpt": "codex",
-    "gpt": "codex",
-    # Google / Gemini
-    "gemini": "gemini_cli",
-    "gemini cli": "gemini_cli",
-    "gemini_cli": "gemini_cli",
-    "google": "gemini_cli",
-    # xAI / Grok
-    "grok": "grok_cli",
-    "grok_cli": "grok_cli",
-    "xai": "grok_cli",
-    # Local
-    "ollama": "ollama",
-    "vllm": "vllm",
-    "llama": "vllm",
-    "local": "vllm",
-    "llama-server": "vllm",
-}
-
-
-# Map model-name shorthand to (runtime_id, canonical_model_id) so
-# "switch to claude-opus-4-7" or "use claude 4.7" set BOTH the runtime
-# and the model preference.
-_MODEL_ALIASES: dict[str, tuple[str, str]] = {
-    "claude-opus-4-7": ("claude_code", "claude-opus-4-7"),
-    "claude opus 4.7": ("claude_code", "claude-opus-4-7"),
-    "claude 4.7": ("claude_code", "claude-opus-4-7"),
-    "opus 4.7": ("claude_code", "claude-opus-4-7"),
-    "claude-sonnet-4-6": ("claude_code", "claude-sonnet-4-6"),
-    "claude 4.6": ("claude_code", "claude-sonnet-4-6"),
-    "sonnet 4.6": ("claude_code", "claude-sonnet-4-6"),
-    "claude-haiku-4-5": ("claude_code", "claude-haiku-4-5-20251001"),
-    "haiku 4.5": ("claude_code", "claude-haiku-4-5-20251001"),
-    "gpt-5.5": ("codex", "gpt-5.5"),
-    "gpt 5.5": ("codex", "gpt-5.5"),
-    "gemini 2.5 pro": ("gemini_cli", "gemini-2.5-pro"),
-    "gemini-2.5-pro": ("gemini_cli", "gemini-2.5-pro"),
-}
-
-
-def resolve_mind_alias(text: str) -> tuple[str, str | None]:
-    """Resolve a free-text mind name to (runtime_id, model_id_or_None).
-
-    Returns the runtime_id and an optional model_id. Raises ValueError
-    if the alias can't be resolved.
-    """
-    norm = text.strip().lower().replace("_", " ").replace("-", " ")
-    # Tightest match first: full model alias
-    if norm in _MODEL_ALIASES:
-        rt, mid = _MODEL_ALIASES[norm]
-        return rt, mid
-    # Then runtime aliases
-    norm_token = norm.replace(" ", "_")
-    if norm_token in _RUNTIME_ALIASES:
-        return _RUNTIME_ALIASES[norm_token], None
-    if norm in _RUNTIME_ALIASES:
-        return _RUNTIME_ALIASES[norm], None
-    # Last try: substring match on common keywords
-    for alias, runtime_id in _RUNTIME_ALIASES.items():
-        if alias in norm:
-            return runtime_id, None
-    raise ValueError(
-        f"Unknown mind/brain alias: {text!r}. "
-        f"Try one of: claude, codex, gemini, grok, ollama, vllm."
-    )
 
 
 class DaenaSelfAgent(BaseAgent):
@@ -136,13 +57,23 @@ class DaenaSelfAgent(BaseAgent):
         "list_available_minds": "READ",
     }
 
-    def __init__(self, db, user_id: UUID | str) -> None:
+    def __init__(
+        self,
+        db,
+        user_id: UUID | str,
+        model_registry: Any = None,
+    ) -> None:
         # Stateful: the agent needs the per-request DB session and the
         # acting user's id so it can resolve and rewrite User.settings.
         self._db = db
         # Accept str (orchestrator path) or UUID (DaenaBot direct path);
         # normalize so SQL bindings always get the right type.
         self._user_id = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
+        # Optional: live ModelRegistry instance from app.state. When the
+        # orchestrator dispatches into us it can pass the live registry
+        # so list_available_minds returns CURRENT discovered models
+        # instead of a fresh-but-uninitialized instance.
+        self._model_registry = model_registry
 
     async def execute(
         self, operation: str, params: dict[str, Any],
@@ -206,16 +137,29 @@ class DaenaSelfAgent(BaseAgent):
         return self._result("get_runtime_state", result)
 
     async def list_available_minds(self) -> dict[str, Any]:
-        """Enumerate every runtime Daena can switch primary to.
+        """Enumerate every runtime Daena can switch primary to + the
+        models the live model_registry knows about.
 
-        Returns runtime_id + display_name + installed/online/authenticated
-        flags. The UI uses this to render a picker; the LLM uses it to
-        validate a switch request before calling set_primary_mind.
+        This is the LLM's source of truth when it needs to translate
+        user phrases like "claude 4.7 max" or "the cheapest gemini"
+        into a concrete (runtime_id, model_id). NO STATIC ALIAS MAP —
+        the answer comes from what's actually registered RIGHT NOW.
+
+        Returns:
+          {
+            "runtimes": [
+              {runtime_id, display_name, status, models: [model_id, ...]},
+              ...
+            ],
+            "default_models_per_provider": {provider_value: model_id, ...}
+          }
         """
+        out: dict[str, Any] = {"runtimes": [], "default_models_per_provider": {}}
+
+        # 1. Live runtime adapters
         try:
             from app.core.events import get_runtime_registry
             reg = get_runtime_registry()
-            entries = []
             for rid in ("claude_code", "codex", "gemini_cli", "grok_cli", "vllm", "ollama"):
                 adapter = reg.get_adapter(rid) if hasattr(reg, "get_adapter") else None
                 if adapter is None:
@@ -223,66 +167,110 @@ class DaenaSelfAgent(BaseAgent):
                 health = "unknown"
                 with _silent():
                     health = str(reg.get_health(rid))
-                entries.append({
+                out["runtimes"].append({
                     "runtime_id": rid,
                     "display_name": getattr(adapter, "display_name", rid),
-                    "installed": True,
                     "status": health,
+                    "models": [],  # filled below from model_registry
                 })
-            return self._result("list_available_minds", {"runtimes": entries})
         except Exception as exc:
-            logger.warning("daena_self.list_failed", error=str(exc))
-            return self._error("list_available_minds", str(exc))
+            logger.debug("daena_self.runtime_list_failed", error=str(exc))
+
+        # 2. Live model registry — every model_id the registry has
+        # discovered, grouped by provider so the LLM can map user
+        # phrases like "the new claude" to a concrete model.
+        try:
+            mreg = self._model_registry
+            if mreg is None:
+                from app.services.model_registry import ModelRegistry
+                mreg = ModelRegistry()
+            all_models = []
+            if hasattr(mreg, "list_all_models"):
+                all_models = await mreg.list_all_models()
+            by_provider: dict[str, list[str]] = {}
+            for m in all_models:
+                pid = getattr(getattr(m, "provider", None), "value", None) or "unknown"
+                mid = getattr(m, "model_id", None) or getattr(m, "id", None)
+                if not mid:
+                    continue
+                by_provider.setdefault(pid, []).append(str(mid))
+            # Map provider -> runtime_id and attach models
+            provider_to_runtime = {
+                "ANTHROPIC": "claude_code",
+                "OPENAI": "codex",
+                "GEMINI": "gemini_cli",
+                "GOOGLE": "gemini_cli",
+                "GROK": "grok_cli",
+                "XAI": "grok_cli",
+                "OLLAMA": "ollama",
+                "VLLM": "vllm",
+            }
+            for entry in out["runtimes"]:
+                rid = entry["runtime_id"]
+                matching_models: list[str] = []
+                for prov, models in by_provider.items():
+                    if provider_to_runtime.get(prov.upper()) == rid:
+                        matching_models.extend(models)
+                # Dedup, stable order
+                seen: set[str] = set()
+                entry["models"] = [m for m in matching_models if not (m in seen or seen.add(m))]
+            out["default_models_per_provider"] = {
+                p: (models[0] if models else None) for p, models in by_provider.items()
+            }
+        except Exception as exc:
+            logger.debug("daena_self.model_list_failed", error=str(exc))
+
+        return self._result("list_available_minds", out)
 
     async def set_primary_mind(
         self,
-        runtime_id: str | None = None,
+        runtime_id: str,
         model_id: str | None = None,
-        mind_alias: str | None = None,
     ) -> dict[str, Any]:
-        """Update primary_runtime + preferred_model in User.settings JSONB.
+        """Write explicit runtime_id (and optional model_id) to User.settings.
 
-        Accepts either an explicit runtime_id (and optional model_id)
-        OR a free-text alias like "claude 4.7" or "gpt-5.5". Resolves
-        the alias via the module-level alias table, validates that the
-        runtime exists, then writes the JSONB and returns the new state.
+        REQUIRES explicit IDs. NO alias resolution. The caller (typically
+        the LLM acting on a user message like "switch to claude 4.7") is
+        expected to:
+          1. Call ``list_available_minds`` to see what's actually
+             registered + online right now.
+          2. Use its world knowledge to map the user's natural language
+             to the correct runtime_id (and optionally a model_id from
+             the model list).
+          3. Call this with the resolved IDs.
+
+        If you call with an unknown runtime_id, this returns an error
+        listing the registered ones so the LLM can retry.
 
         Returns the previous + current values so the audit row can show
         what actually changed.
         """
-        # Resolve free-text alias if explicit values weren't given
-        resolved_runtime = runtime_id
-        resolved_model = model_id
-        if not resolved_runtime:
-            if not mind_alias:
-                return self._error(
-                    "set_primary_mind",
-                    "Either runtime_id or mind_alias is required.",
-                )
-            try:
-                resolved_runtime, alias_model = resolve_mind_alias(mind_alias)
-                if not resolved_model:
-                    resolved_model = alias_model
-            except ValueError as exc:
-                return self._error("set_primary_mind", str(exc))
+        if not runtime_id:
+            return self._error(
+                "set_primary_mind",
+                "runtime_id is required. Call list_available_minds first to see options.",
+            )
 
-        # Validate the runtime exists
+        # Validate against live registry
         try:
             from app.core.events import get_runtime_registry
             reg = get_runtime_registry()
-            registered = list(getattr(reg, "registered_ids", lambda: [])() if callable(getattr(reg, "registered_ids", None)) else getattr(reg, "registered_ids", []))
-            if registered and resolved_runtime not in registered:
+            registered: list[str] = []
+            ri_attr = getattr(reg, "registered_ids", None)
+            if callable(ri_attr):
+                registered = list(ri_attr())
+            elif ri_attr is not None:
+                registered = list(ri_attr)
+            if registered and runtime_id not in registered:
                 return self._error(
                     "set_primary_mind",
-                    f"Unknown runtime_id: {resolved_runtime!r}. "
-                    f"Available: {sorted(registered)}",
+                    f"Unknown runtime_id {runtime_id!r}. "
+                    f"Registered runtimes: {sorted(registered)}. "
+                    f"Call list_available_minds to see what's online + authenticated.",
                 )
         except Exception as exc:
-            # Registry not populated (e.g. tests); fall through and trust
-            # the alias map. The setting write is reversible anyway.
             logger.debug("daena_self.registry_check_skipped", error=str(exc))
 
-        # Read current state, write new state, persist
         from app.models.identity import User
 
         user = await self._db.get(User, self._user_id)
@@ -298,11 +286,10 @@ class DaenaSelfAgent(BaseAgent):
             "preferred_model": current.get("preferred_model"),
         }
 
-        current["primary_runtime"] = resolved_runtime
-        if resolved_model:
-            current["preferred_model"] = resolved_model
+        current["primary_runtime"] = runtime_id
+        if model_id is not None:
+            current["preferred_model"] = model_id
         user.settings = current
-        # JSONB columns require explicit dirty marking on SQLAlchemy
         flag_modified(user, "settings")
         await self._db.flush()
         await self._db.commit()
