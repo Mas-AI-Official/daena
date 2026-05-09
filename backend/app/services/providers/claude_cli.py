@@ -352,12 +352,19 @@ class CliProvider(BaseProvider):
             from app.core.exceptions import ProviderError
 
             stderr = (result.stderr or "").strip()[:500]
-            _err_msg = f"{self._spec.display_name} CLI exit code {result.returncode}: {stderr}"
+            stdout_snippet = (result.stdout or "").strip()[:500]
+            _err_msg = f"{self._spec.display_name} CLI exit code {result.returncode}: {stderr or stdout_snippet[:200] or '<empty>'}"
             logger.warning(
                 "cli_provider.cli_error",
                 runtime=self._spec.runtime_id,
                 returncode=result.returncode,
                 stderr=stderr[:200],
+                # Capture stdout snippet too so an empty-stderr failure
+                # (Windows .exe via WSL interop sometimes prints the auth
+                # error to stdout) is diagnosable from logs alone.
+                stdout_snippet=stdout_snippet[:200],
+                binary=self._bin,
+                prompt_size=len(prompt),
             )
             # If there IS stdout content despite error exit code, use it
             # (some CLIs return useful output with non-zero exit)

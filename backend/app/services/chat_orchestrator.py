@@ -1559,17 +1559,26 @@ class ChatOrchestrator:
                     "Routing mode preserved for Council/QE synthesis.",
                 }
 
+                # ALWAYS run the router so we capture its fallback_chain.
+                # The override only forces the PRIMARY model -- fallbacks
+                # remain critical so a primary_mind failure (CLI auth
+                # expiry, network blip) cascades to the next-best
+                # available provider instead of bubbling a 401 to the UI.
+                # Bug fix 2026-05-08: prior code only ran router.route()
+                # for COUNCIL/QE and built RoutingDecision with empty
+                # fallback_chain, so STANDARD chats had no cascade.
+                _router_decision = router.route(
+                    qu_result, requested_mode=_applied_mode,
+                    founder_policy=founder_policy,
+                    primary_mind=primary_mind,
+                )
+
                 # For Council/QE: populate council_models from router.
                 # Primary Mind as Judge: the override model (Primary Mind) is the
                 # JUDGE/SYNTHESIZER, NOT a debater. Council models are the debaters
                 # picked from other sovereign-tier providers via task-aware roster.
                 _council = []
                 if _applied_mode in (RoutingMode.COUNCIL, RoutingMode.QUINTESSENCE):
-                    _router_decision = router.route(
-                        qu_result, requested_mode=_applied_mode,
-                        founder_policy=founder_policy,
-                        primary_mind=primary_mind,
-                    )
                     # Debaters only: exclude Primary Mind from council_models
                     for cm in _router_decision.council_models:
                         if cm.model_id != override_candidate.model_id and len(_council) < 5:
@@ -1578,9 +1587,17 @@ class ChatOrchestrator:
                     override_metadata["judge_model"] = override_candidate.model_id
                     override_metadata["debate_strategy"] = "primary_mind_as_judge"
 
+                # Build fallback chain from router's plan, dropping any
+                # candidate equal to the override (would be a no-op retry).
+                _fallback_chain = [
+                    fb for fb in [_router_decision.primary, *_router_decision.fallback_chain]
+                    if fb.model_id != override_candidate.model_id
+                ]
+
                 decision = RoutingDecision(
                     mode=_applied_mode,
                     primary=override_candidate,
+                    fallback_chain=_fallback_chain,
                     council_models=_council,
                     metadata=override_metadata,
                 )
