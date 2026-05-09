@@ -32,6 +32,27 @@ _PROBE_ROUNDTRIP_TIMEOUT = 25.0
 _PROBE_PING_PROMPT = "ping"
 
 
+def _gemini_config_search_paths() -> list[Path]:
+    """Return every plausible location for a `~/.gemini/` style folder.
+
+    On WSL Linux we run from /root, but the user's real Gemini auth lives
+    in their Windows home (mounted at /mnt/c/Users/<user>/). Returning
+    BOTH lets Strategy 2 find auth wherever it actually was written.
+    """
+    candidates: list[Path] = [Path.home() / ".gemini"]
+    # WSL -> Windows home enumeration (only matters when we're inside WSL)
+    try:
+        users_root = Path("/mnt/c/Users")
+        if users_root.is_dir():
+            for child in users_root.iterdir():
+                cfg = child / ".gemini"
+                if cfg.is_dir():
+                    candidates.append(cfg)
+    except (OSError, PermissionError):
+        pass
+    return candidates
+
+
 def _run_cmd(
     cmd: list[str],
     *,
@@ -213,16 +234,54 @@ class GeminiCLIAdapter(BaseRuntimeAdapter):
                     setup_command="gemini auth login",
                     login_url="https://gemini.google.com",
                 )
-        except (TimeoutError, FileNotFoundError, OSError):
-            pass
+        except (subprocess.TimeoutExpired, TimeoutError, FileNotFoundError, OSError) as exc:
+            # subprocess.run raises TimeoutExpired (NOT TimeoutError) on
+            # timeout; without catching it explicitly the exception
+            # propagated up the gather chain, killed Strategy 2, and the
+            # UI lost the gemini subscription card. 2026-05-09 fix.
+            logger.info(
+                "gemini_cli.strategy1_skipped",
+                reason=type(exc).__name__,
+                detail=str(exc)[:120],
+            )
 
-        # Strategy 2: Check ~/.gemini/ config files (Gemini CLI stores auth here)
+        # Strategy 2: Check every ~/.gemini/ config file we can find
+        # (own home AND every Windows home visible via WSL /mnt/c).
         try:
-            gemini_dir = Path.home() / ".gemini"
+            for gemini_dir in _gemini_config_search_paths():
+                if not gemini_dir.is_dir():
+                    continue
+                oauth_file = gemini_dir / "oauth_creds.json"
+                if not oauth_file.exists():
+                    # Some installs keep only google_accounts.json + tokens
+                    # in google_accounts.json itself; walk that as fallback.
+                    accounts_file = gemini_dir / "google_accounts.json"
+                    if accounts_file.exists():
+                        try:
+                            accts = _json.loads(accounts_file.read_text(encoding="utf-8"))
+                            if accts.get("active") or accts.get("accounts"):
+                                user_email = (
+                                    accts.get("active")
+                                    or next(iter(accts.get("accounts", {}).keys()), "Google account")
+                                )
+                                logger.info(
+                                    "gemini_cli.auth_detected_via_accounts",
+                                    email=user_email,
+                                    config_dir=str(gemini_dir),
+                                )
+                                return SubscriptionAuth(
+                                    method=AuthMethod.SUBSCRIPTION,
+                                    status=SubscriptionStatus.AUTHENTICATED,
+                                    user_display=user_email,
+                                    plan_name="Google/Gemini",
+                                    setup_command="gemini auth login",
+                                    login_url="https://gemini.google.com",
+                                )
+                        except (_json.JSONDecodeError, OSError):
+                            pass
+                    continue
 
-            # Check oauth_creds.json (primary auth file)
-            oauth_file = gemini_dir / "oauth_creds.json"
-            if oauth_file.exists():
+                # oauth_creds.json present:
                 try:
                     creds = _json.loads(oauth_file.read_text(encoding="utf-8"))
                     has_token = bool(
@@ -275,11 +334,22 @@ class GeminiCLIAdapter(BaseRuntimeAdapter):
                 except (_json.JSONDecodeError, OSError):
                     pass
 
-            # Fallback: check other possible config locations
-            fallback_paths = [
+            # Fallback: check other possible config locations (own home
+            # AND every Windows home visible via WSL /mnt/c).
+            fallback_paths: list[Path] = [
                 Path.home() / ".config" / "gemini-cli" / "settings.json",
                 Path.home() / ".config" / "gemini" / "auth.json",
             ]
+            try:
+                users_root = Path("/mnt/c/Users")
+                if users_root.is_dir():
+                    for child in users_root.iterdir():
+                        for tail in ("gemini-cli/settings.json", "gemini/auth.json"):
+                            cand = child / "AppData" / "Roaming" / tail
+                            if cand.exists():
+                                fallback_paths.append(cand)
+            except (OSError, PermissionError):
+                pass
             for cfg_path in fallback_paths:
                 if cfg_path.exists():
                     try:
