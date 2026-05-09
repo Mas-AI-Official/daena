@@ -645,6 +645,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 governance: 'Checking governance policies...',
                 routing: 'Selecting optimal strategy...',
                 routing_override_unavailable: 'Adapting to available resources...',
+                routing_simple_query: 'Routing to fast model...',
                 // Council/Quintessence stages -- show intelligence, not API names
                 council_synthesizing: 'Consulting multiple perspectives...',
                 council_completed: 'Cross-validation complete',

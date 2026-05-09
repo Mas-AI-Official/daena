@@ -3231,8 +3231,23 @@ class ChatOrchestrator:
                         error=str(exc),
                         mode=decision.mode.value,
                     )
-                # Fall back to primary model streaming (not Ollama fallback)
-                yield {"type": "thinking", "stage": "fallback_streaming"}
+                # Fall back to primary model streaming (not Ollama fallback).
+                # UX (2026-05-09): only show "Switching to backup pathway..."
+                # when there was a REAL council failure. A QE_SKIP_TO_STANDARD
+                # is the intentional fast-path for SIMPLE queries -- the user
+                # should NOT see a "switching to backup" hint, that suggests
+                # something went wrong. Show a neutral routing hint instead.
+                if _is_simple_skip:
+                    yield {
+                        "type": "thinking",
+                        "stage": "routing_simple_query",
+                    }
+                else:
+                    yield {
+                        "type": "thinking",
+                        "stage": "fallback_streaming",
+                        "reason": str(exc)[:120],
+                    }
                 try:
                     async for chunk in llm.stream(request, decision):
                         if getattr(chunk, "finish_reason", None) == "error":
