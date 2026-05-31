@@ -7,7 +7,8 @@
  *
  * Behavior
  * --------
- * - Subscribe with EventSource (cookie-auth via withCredentials: true).
+ * - Subscribe via fetch + ReadableStream so the JWT bearer token can be
+ *   sent as an Authorization header (EventSource cannot set headers).
  * - On open, status flips to ``connected``.
  * - On close (transient network blip, server restart, proxy timeout)
  *   we wait an exponential delay and retry. Backoff: 1s -> 2s -> 4s
@@ -28,10 +29,10 @@
  *
  * Notes
  * -----
- * - Auth: relies on cookie auth (``withCredentials: true``). Bearer
- *   tokens cannot be passed via EventSource headers, and putting them
- *   in the URL leaks them to access logs / referer / DevTools. Use
- *   cookie auth or accept the public-stream tradeoff.
+ * - Auth: sends the JWT bearer token from localStorage as a fetch
+ *   Authorization header. EventSource could not (no header API), which
+ *   401'd every authed stream. The token never goes in the URL, so it
+ *   does not leak to access logs / referer / DevTools.
  * - The hook is referentially stable across renders so consumers can
  *   safely read ``status`` and ``reconnectAttempt`` without re-binding
  *   the EventSource on every state change.
@@ -102,7 +103,6 @@ export function useResilientSSE(opts: SSEOptions): UseResilientSSEReturn {
     maxRetries = 5,
     initialBackoffMs = 1000,
     maxBackoffMs = 15000,
-    eventTypes,
     onEvent,
     onError,
     onReconnecting,
@@ -114,8 +114,7 @@ export function useResilientSSE(opts: SSEOptions): UseResilientSSEReturn {
 
   // Refs let us mutate state from inside the EventSource callbacks
   // without triggering re-renders (which would re-fire the effect).
-  const esRef = useRef<EventSource | null>(null)
-  const cancelledRef = useRef(false)
+  const abortRef = useRef<AbortController | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const attemptRef = useRef(0)
 
@@ -134,90 +133,157 @@ export function useResilientSSE(opts: SSEOptions): UseResilientSSEReturn {
   fallbackPollRef.current = fallbackPoll
 
   useEffect(() => {
-    cancelledRef.current = false
     attemptRef.current = 0
+    // Per-run cancellation flag. A ref shared across effect runs races
+    // with React 19 StrictMode's mount/cleanup/mount cycle: run 1's
+    // aborted fetch would observe the flag already reset by run 2 and
+    // spuriously reconnect. A local closes over THIS run only.
+    let stopped = false
 
-    const connect = () => {
-      if (cancelledRef.current) return
-      const es = new EventSource(url, { withCredentials })
-      esRef.current = es
-
-      es.onopen = () => {
-        if (cancelledRef.current) return
-        attemptRef.current = 0
-        setReconnectAttempt(0)
-        setStatus('connected')
+    // Empty url = consumer opted out (e.g. stream disabled). Stay idle
+    // instead of firing a bogus request.
+    if (!url) {
+      setStatus('closed')
+      return () => {
+        stopped = true
       }
+    }
 
-      es.onerror = (err) => {
-        if (cancelledRef.current) return
-        onErrorRef.current?.(err)
-        // EventSource auto-reconnects on transient errors but the
-        // browser is silent about it. We force a hard close + manual
-        // reconnect so the operator sees the reconnect status.
-        if (es.readyState === EventSource.CLOSED) {
-          if (attemptRef.current < maxRetries) {
-            const next = attemptRef.current + 1
-            attemptRef.current = next
-            setReconnectAttempt(next)
-            setStatus('reconnecting')
-            onReconnectingRef.current?.(next, maxRetries)
-            const delayMs = Math.min(
-              initialBackoffMs * 2 ** (next - 1),
-              maxBackoffMs,
-            )
-            reconnectTimerRef.current = setTimeout(connect, delayMs)
-          } else {
-            setStatus('fallback')
-            // Fire-and-forget: errors inside fallbackPoll do not
-            // change the SSE status further; the caller can surface
-            // a toast from inside their own function if they want.
-            try {
-              const result = fallbackPollRef.current?.()
-              if (result && typeof (result as Promise<unknown>).catch === 'function') {
-                (result as Promise<unknown>).catch(() => undefined)
-              }
-            } catch {
-              /* swallow */
-            }
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    // Parse complete SSE frames out of a rolling buffer and forward each
+    // to the consumer. A frame is the text between blank lines; its
+    // ``event:`` line sets the type, ``data:`` lines the payload.
+    const dispatchFrames = (frames: string[]) => {
+      for (const frame of frames) {
+        if (!frame.trim()) continue
+        let frameType = 'message'
+        let frameData = ''
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event:')) {
+            frameType = line.slice(6).trim()
+          } else if (line.startsWith('data:')) {
+            frameData += (frameData ? '\n' : '') + line.replace(/^data:\s?/, '')
           }
+          // ':' comment / heartbeat lines are ignored.
         }
-      }
-
-      // Handler factory: every backend SSE event is JSON; parse once
-      // and forward both the type and the parsed data to the consumer.
-      const handle = (evt: MessageEvent) => {
-        if (cancelledRef.current) return
-        let parsed: unknown = evt.data
+        if (!frameData) continue
+        let parsed: unknown = frameData
         try {
-          parsed = JSON.parse(evt.data)
+          parsed = JSON.parse(frameData)
         } catch {
           // Not JSON -- forward the raw string so consumers can decide.
         }
-        onEventRef.current({ type: evt.type, data: parsed })
+        if (!stopped) onEventRef.current({ type: frameType, data: parsed })
       }
+    }
 
-      // Default ``message`` event covers backends that don't set
-      // ``event:`` lines. Concrete types are added on top.
-      es.onmessage = handle
-      if (eventTypes && eventTypes.length > 0) {
-        for (const t of eventTypes) {
-          es.addEventListener(t, handle as EventListener)
+    const scheduleReconnect = () => {
+      if (stopped) return
+      if (attemptRef.current < maxRetries) {
+        const next = attemptRef.current + 1
+        attemptRef.current = next
+        setReconnectAttempt(next)
+        setStatus('reconnecting')
+        onReconnectingRef.current?.(next, maxRetries)
+        const delayMs = Math.min(initialBackoffMs * 2 ** (next - 1), maxBackoffMs)
+        reconnectTimerRef.current = setTimeout(() => {
+          void connect()
+        }, delayMs)
+      } else {
+        // Retries exhausted: flip to fallback + let the consumer pull a
+        // REST snapshot once. We do NOT retry forever (masks outages).
+        setStatus('fallback')
+        try {
+          const result = fallbackPollRef.current?.()
+          if (result && typeof (result as Promise<unknown>).catch === 'function') {
+            (result as Promise<unknown>).catch(() => undefined)
+          }
+        } catch {
+          /* swallow */
         }
       }
     }
 
+    // Fetch-based SSE so we can send the JWT bearer token (EventSource
+    // cannot set headers). Reconnects on error AND on clean EOF (server
+    // restart / proxy timeout), matching EventSource semantics, with the
+    // same bounded backoff: 1s -> 2s -> 4s -> 8s -> 15s.
+    const connect = async () => {
+      if (stopped) return
+      let response: Response
+      try {
+        const token = localStorage.getItem('daena_token')
+        response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            Accept: 'text/event-stream',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          credentials: withCredentials ? 'include' : 'same-origin',
+          signal: controller.signal,
+        })
+      } catch (err) {
+        if (stopped) return
+        onErrorRef.current?.(err)
+        scheduleReconnect()
+        return
+      }
+
+      if (!response.ok || !response.body) {
+        if (stopped) return
+        onErrorRef.current?.(new Error(`SSE open failed: ${response.status}`))
+        scheduleReconnect()
+        return
+      }
+
+      attemptRef.current = 0
+      if (!stopped) {
+        setReconnectAttempt(0)
+        setStatus('connected')
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      try {
+        while (true) {
+          if (stopped) {
+            try { await reader.cancel() } catch { /* ignore */ }
+            return
+          }
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          // SSE frames end with a blank line. Keep the trailing partial
+          // frame in the buffer for the next read.
+          const frames = buffer.split('\n\n')
+          buffer = frames.pop() ?? ''
+          dispatchFrames(frames)
+        }
+      } catch (err) {
+        if (stopped) return
+        onErrorRef.current?.(err)
+        scheduleReconnect()
+        return
+      }
+
+      // Clean EOF: reconnect like EventSource would on a dropped stream.
+      if (!stopped) scheduleReconnect()
+    }
+
     setStatus('connecting')
-    connect()
+    void connect()
 
     return () => {
-      cancelledRef.current = true
+      stopped = true
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
       }
-      esRef.current?.close()
-      esRef.current = null
+      abortRef.current?.abort()
+      abortRef.current = null
       setStatus('closed')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -227,13 +293,12 @@ export function useResilientSSE(opts: SSEOptions): UseResilientSSEReturn {
     status,
     reconnectAttempt,
     close: () => {
-      cancelledRef.current = true
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
       }
-      esRef.current?.close()
-      esRef.current = null
+      abortRef.current?.abort()
+      abortRef.current = null
       setStatus('closed')
     },
   }
