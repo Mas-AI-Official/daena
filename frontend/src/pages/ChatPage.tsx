@@ -241,34 +241,6 @@ export function ChatPage() {
     }
   }, [sessionId, setActiveSession, navigate])
 
-  /** Auto-name a session from the first message content */
-  const autoNameSession = useCallback(async (sessionIdToName: string, firstMessage: string) => {
-    // Generate a short title: first 50 chars, trim to last word boundary
-    const raw = firstMessage.replace(/\n/g, ' ').trim()
-    let title = raw.slice(0, 50)
-    if (raw.length > 50) {
-      const lastSpace = title.lastIndexOf(' ')
-      if (lastSpace > 20) title = title.slice(0, lastSpace)
-      title += '...'
-    }
-    if (!title) return
-    try {
-      const token = localStorage.getItem('daena_token')
-      await fetch(`/api/v1/chat/sessions/${sessionIdToName}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ title }),
-      })
-      // Update in store
-      useChatStore.getState().updateSession(sessionIdToName, { title })
-    } catch {
-      // Non-critical — session works fine without a title
-    }
-  }, [])
-
   const handleSend = async (content: string) => {
     if (!sessionId) {
       const store = useChatStore.getState()
@@ -284,8 +256,10 @@ export function ChatPage() {
         },
         onSessionResolved: (session) => {
           navigate(`/chat/${session.id}`, { replace: true })
-          // Auto-name the new session from the first message
-          void autoNameSession(session.id, content)
+          // Title is generated + persisted server-side and pushed via the
+          // session_title / _session_title SSE events (chatStore applies it
+          // to local state). No client PATCH here: it raced the session
+          // commit and surfaced a false 404 to the user.
         },
       })
       return
