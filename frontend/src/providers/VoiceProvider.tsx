@@ -186,6 +186,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   // (the LLM round-trip). Surfaced as "Thinking..." so the floating pill
   // is never a misleading "Voice active" while a request is in flight.
   const [isProcessing, setIsProcessing] = useState(false)
+  // The TTS provider that actually rendered the last spoken response, read from
+  // the backend X-Daena-TTS-Provider header ("f5" | "edge"). Empty until a
+  // backend synthesis succeeds, so the UI never fakes a provider / "F5 ready".
+  const [activeTtsProvider, setActiveTtsProvider] = useState('')
   const [transcript, setTranscript] = useState('')
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
   const [selectedVoice, setSelectedVoiceState] = useState('')
@@ -383,11 +387,18 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ text: text.slice(0, 5000), voice }),
+        // provider:'auto' = backend tries F5-TTS (Daena's cloned voice) first,
+        // then Edge-TTS. A non-2xx (e.g. 503 both down) throws and falls
+        // through below to ElevenLabs then browser speechSynthesis.
+        body: JSON.stringify({ text: text.slice(0, 5000), voice, provider: 'auto' }),
       })
       if (!res.ok) {
-        throw new Error(`edge-tts HTTP ${res.status}`)
+        throw new Error(`backend tts HTTP ${res.status}`)
       }
+      // Surface which provider actually rendered (f5 | edge). Honest: only set
+      // when the backend confirms via the response header.
+      const renderedBy = res.headers.get('X-Daena-TTS-Provider')
+      if (renderedBy) setActiveTtsProvider(renderedBy)
       const blob = await res.blob()
       if (blob.size < 100) {
         // Empty/truncated response -- treat as failure so caller falls back.
@@ -831,7 +842,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
             />
             <span className="text-xs font-medium">
               {isSpeaking
-                ? 'Daena speaking...'
+                ? (activeTtsProvider ? `Daena speaking (${activeTtsProvider})...` : 'Daena speaking...')
                 : isProcessing
                   ? 'Thinking...'
                   : isListening
