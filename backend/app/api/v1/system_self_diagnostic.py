@@ -51,6 +51,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, get_db
 from app.core.config import get_settings
+from app.core.db_concurrent import gather_with_sessions
 from app.core.logging import get_logger
 from app.services.connection_v2.marketplace_service import MarketplaceService
 
@@ -642,15 +643,26 @@ async def system_self_diagnostic(
     started = _time.monotonic()
 
     checks = {}
-    # Run the network probes concurrently to keep the endpoint snappy
-    # (~1.5s timeout each, but several can race).
-    backend, database, migration, frontend, local_models, callability = await asyncio.gather(
+    # Run the checks concurrently to keep the endpoint snappy (~1.5s
+    # timeout each, but several can race).
+    #
+    # 2026-06-01: the network-only probes (no DB) race directly via
+    # asyncio.gather. The DB-backed checks MUST NOT share the request
+    # ``db`` session concurrently -- a single AsyncSession is not
+    # concurrency-safe and raises InvalidRequestError ("this session is
+    # provisioning a new connection; concurrent operations are not
+    # permitted") under load. They each get their OWN fresh session via
+    # gather_with_sessions. All three are read-only, so a separate
+    # session per check is correct and side-effect-free.
+    backend, frontend, local_models = await asyncio.gather(
         _check_backend(),
-        _check_database(db),
-        _check_migration_head(db),
         _check_frontend_reachable(),
         _check_local_models(),
-        _check_connector_callability(db, user.tenant_id),
+    )
+    database, migration, callability = await gather_with_sessions(
+        lambda s: _check_database(s),
+        lambda s: _check_migration_head(s),
+        lambda s: _check_connector_callability(s, user.tenant_id),
     )
     checks["backend"] = backend
     checks["database"] = database
