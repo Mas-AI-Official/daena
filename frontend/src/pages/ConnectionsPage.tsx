@@ -28,7 +28,7 @@
  *   - Advanced tab is opt-in (operator must enable Show advanced)
  */
 
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import {
   AlertTriangle,
   AppWindow,
@@ -50,17 +50,32 @@ import {
   runDiscoveryRefresh,
 } from '@/hooks/useConnectionsV2'
 
-import AppsStorePanel from './connections/AppsStorePanel'
-import BrowserComputerUsePanel from './connections/BrowserComputerUsePanel'
-import LocalModelsPanel from './connections/LocalModelsPanel'
-import MainBrainPanel from './connections/MainBrainPanel'
-import McpServersPanel from './connections/McpServersPanel'
-import McpStorePanel from './connections/McpStorePanel'
-import OverviewPanel from './connections/OverviewPanel'
-import PluginsCatalogBrowser from './connections/PluginsCatalogBrowser'
-import PluginsPanel from './connections/PluginsPanel'
-import RuntimesPanel from './connections/RuntimesPanel'
-import SkillPacksPanel from './connections/SkillPacksPanel'
+// Lazy-load the 11 subpanels so navigating to /connections does not pull in
+// 300+ kB of panel code up front. Each panel arrives only when the user
+// opens its tab. Audit found ConnectionsPage was the single biggest chunk
+// at 306 kB / 75 kB gzip; splitting these out cuts the initial route load
+// to the size of the page shell + the default tab's panel.
+const AppsStorePanel = lazy(() => import('./connections/AppsStorePanel'))
+const BrowserComputerUsePanel = lazy(() => import('./connections/BrowserComputerUsePanel'))
+const LocalModelsPanel = lazy(() => import('./connections/LocalModelsPanel'))
+const MainBrainPanel = lazy(() => import('./connections/MainBrainPanel'))
+const McpServersPanel = lazy(() => import('./connections/McpServersPanel'))
+const McpStorePanel = lazy(() => import('./connections/McpStorePanel'))
+const OverviewPanel = lazy(() => import('./connections/OverviewPanel'))
+const PluginsCatalogBrowser = lazy(() => import('./connections/PluginsCatalogBrowser'))
+const PluginsPanel = lazy(() => import('./connections/PluginsPanel'))
+const RuntimesPanel = lazy(() => import('./connections/RuntimesPanel'))
+const SkillPacksPanel = lazy(() => import('./connections/SkillPacksPanel'))
+
+// Minimal panel fallback - the page shell stays mounted so tabs/nav remain
+// usable while the panel chunk loads. Honest "Loading" label, no fake state.
+function PanelLoading() {
+  return (
+    <div className="flex items-center justify-center py-12 text-sm text-starlight-400">
+      Loading panel...
+    </div>
+  )
+}
 
 const PRIMARY_TABS = [
   { key: 'brain', label: 'Brain', icon: BrainCircuit },
@@ -305,18 +320,20 @@ export default function ConnectionsPage() {
       </div>
 
       <div className="mx-auto max-w-7xl px-6 py-5">
-        {activeTab === 'brain' && <MainBrainPanel />}
-        {activeTab === 'plugins' && (
-          <PluginsPanel onDiscover={runDiscover} discovering={discovering} />
-        )}
-        {activeTab === 'advanced' && (
-          <AdvancedPanel
-            discoveryReport={lastReport}
-            onDiscover={runDiscover}
-            discovering={discovering}
-            onBackToPlugins={() => setActiveTab('plugins')}
-          />
-        )}
+        <Suspense fallback={<PanelLoading />}>
+          {activeTab === 'brain' && <MainBrainPanel />}
+          {activeTab === 'plugins' && (
+            <PluginsPanel onDiscover={runDiscover} discovering={discovering} />
+          )}
+          {activeTab === 'advanced' && (
+            <AdvancedPanel
+              discoveryReport={lastReport}
+              onDiscover={runDiscover}
+              discovering={discovering}
+              onBackToPlugins={() => setActiveTab('plugins')}
+            />
+          )}
+        </Suspense>
 
         {/* PR-CONNECTIONS-V3-PHASE1 (2026-05-07): quiet footer link for
             diagnostics. Founders who don't need it never see it in the
@@ -425,6 +442,7 @@ function AdvancedPanel({
         </aside>
 
         <div>
+          <Suspense fallback={<PanelLoading />}>
           {section === 'overview' && (
             <OverviewPanel
               onNavigateTab={(tab) => {
@@ -495,6 +513,7 @@ function AdvancedPanel({
               discovering={discovering}
             />
           )}
+          </Suspense>
         </div>
       </div>
     </div>
