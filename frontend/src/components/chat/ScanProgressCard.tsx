@@ -1,19 +1,23 @@
 /**
  * ScanProgressCard -- inline security scan progress under an assistant
- * message. Opens its own SSE connection to the workflow events URL and
- * renders phase transitions + final findings summary with severity
+ * message. Subscribes to the workflow events URL via useResilientSSE
+ * and renders phase transitions + final findings summary with severity
  * badges.
  *
  * Lifecycle:
  *   1. Mounted when a `scan_dispatched` governance event fires.
- *   2. Opens EventSource on `eventsUrl`.
+ *   2. Opens an authenticated fetch-based SSE stream on `eventsUrl`.
+ *      (K-1 hardening, 2026-06-01: the route now requires a bearer
+ *      access token; native EventSource cannot send headers, so we
+ *      use useResilientSSE which forwards Authorization: Bearer.)
  *   3. Updates local state as scan_phase_change / scan_complete /
  *      scan_failed events arrive.
- *   4. Closes EventSource on scan_complete, scan_failed, or unmount.
+ *   4. Tears down on scan_complete, scan_failed, or unmount.
  */
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ShieldAlert, CheckCircle2, XCircle, Loader2, ExternalLink } from 'lucide-react'
+import { useResilientSSE } from '../../lib/sse'
 
 export interface ScanProgressCardProps {
   jobId: string
@@ -85,54 +89,54 @@ export function ScanProgressCard({
     }
   }, [jobId, tier])
 
-  useEffect(() => {
-    if (!eventsUrl) return
-    const token = localStorage.getItem('daena_token')
-    // EventSource does not support custom headers; if the events
-    // endpoint is behind auth we piggy-back on cookie-based auth that
-    // the rest of the app already uses via `withCredentials: true`.
-    const url = token
-      ? `${eventsUrl}?token=${encodeURIComponent(token)}`
-      : eventsUrl
-    const es = new EventSource(url, { withCredentials: true })
+  // Terminal-event flag so we can tear the stream down once the scan
+  // resolves (useResilientSSE auto-reconnects otherwise).
+  const [terminated, setTerminated] = useState(false)
 
-    const handle = (ev: MessageEvent) => {
-      try {
-        const envelope = JSON.parse(ev.data)
-        const type = envelope.type as string
-        const data = (envelope.data || {}) as Record<string, unknown>
-
-        if (type === 'scan_phase_change') {
-          const p = String(data.phase || 'scanning') as Phase
-          setPhase(p)
-        } else if (type === 'scan_complete') {
-          setPhase('complete')
-          setSummary({
-            findings_count: Number(data.findings_count ?? 0),
-            critical: Number(data.critical ?? 0),
-            high: Number(data.high ?? 0),
-            cost_usd: Number(data.cost_usd ?? 0),
-            duration_secs: Number(data.duration_secs ?? 0),
-          })
-          es.close()
-        } else if (type === 'scan_failed') {
-          setPhase('failed')
-          setSummary({ reason: String(data.reason || 'Scan failed.') })
-          es.close()
-        }
-      } catch {
-        // Malformed event; ignore.
+  // K-1 hardening (2026-06-01): the events route now requires a bearer
+  // access token. Native EventSource cannot set Authorization headers,
+  // and the prior workaround of putting the token in the query string
+  // (?token=...) leaked the bearer to browser history, server access
+  // logs, Referer headers, and DevTools network panel during screen
+  // sharing. useResilientSSE uses fetch with a real Bearer header.
+  useResilientSSE({
+    url: terminated || !eventsUrl ? '' : eventsUrl,
+    eventTypes: [
+      'scan_started',
+      'scan_phase_change',
+      'scan_complete',
+      'scan_failed',
+    ],
+    onEvent: (ev) => {
+      // The backend emits envelope = {"type": str, "data": {...}}. Prefer
+      // envelope.type, fall back to the SSE event-name from the frame.
+      const envelope = (ev.data ?? {}) as {
+        type?: string
+        data?: Record<string, unknown>
       }
-    }
+      const type = envelope.type || ev.type
+      const data = envelope.data ?? {}
 
-    es.addEventListener('scan_started', handle)
-    es.addEventListener('scan_phase_change', handle)
-    es.addEventListener('scan_complete', handle)
-    es.addEventListener('scan_failed', handle)
-    es.onmessage = handle
-
-    return () => es.close()
-  }, [eventsUrl])
+      if (type === 'scan_phase_change') {
+        const p = String(data.phase || 'scanning') as Phase
+        setPhase(p)
+      } else if (type === 'scan_complete') {
+        setPhase('complete')
+        setSummary({
+          findings_count: Number(data.findings_count ?? 0),
+          critical: Number(data.critical ?? 0),
+          high: Number(data.high ?? 0),
+          cost_usd: Number(data.cost_usd ?? 0),
+          duration_secs: Number(data.duration_secs ?? 0),
+        })
+        setTerminated(true)
+      } else if (type === 'scan_failed') {
+        setPhase('failed')
+        setSummary({ reason: String(data.reason || 'Scan failed.') })
+        setTerminated(true)
+      }
+    },
+  })
 
   const isRunning = phase !== 'complete' && phase !== 'failed'
   const phaseIcon = phase === 'complete'

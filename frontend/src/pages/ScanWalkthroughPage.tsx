@@ -11,6 +11,12 @@
  * Unlike the inline ScanProgressCard (which is a compact chat-adjacent
  * badge), this page is a full-screen walkthrough for operators who
  * want to watch the adversarial pipeline think through each step.
+ *
+ * K-1 hardening (2026-06-01): /security/scans/{id}/events now requires
+ * a bearer access token. We use useResilientSSE (fetch + Authorization
+ * header) instead of native EventSource because EventSource cannot
+ * send headers, and the prior cookie-only fallback would not work
+ * since Daena's auth cookie path is scoped to /api/v1/auth/*.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -33,6 +39,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Badge } from '@/components/common'
 import { api } from '@/lib/api'
+import { useResilientSSE } from '@/lib/sse'
 
 // ──────────────────────────────────────────────────────────────
 // Types
@@ -139,163 +146,122 @@ export default function ScanWalkthroughPage() {
   const startedAtRef = useRef<number>(Date.now())
   const logFeedRef = useRef<HTMLDivElement | null>(null)
 
-  // Track reconnect attempts so the operator can see "reconnecting (3/5)..."
-  const [reconnectAttempt, setReconnectAttempt] = useState(0)
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Reconnect count in a ref (not state) so the EventSource error handler
-  // reads the live value. Reading the reconnectAttempt state here would be a
-  // stale closure (effect deps are [jobId]), which previously froze the count
-  // at 0 -> infinite 1s reconnect loop that never backed off or gave up.
-  const attemptRef = useRef(0)
+  // K-1 hardening (2026-06-01): /security/scans/{id}/events now requires
+  // a bearer access token. Native EventSource cannot set Authorization
+  // headers, and Daena's auth cookie is scoped to /api/v1/auth/* so it
+  // would not have been sent here anyway. useResilientSSE uses fetch +
+  // Bearer (token from localStorage) and handles bounded backoff (1s ->
+  // 2s -> 4s -> 8s -> 15s, 5 retries) internally, so the manual
+  // attemptRef + reconnectTimerRef dance is no longer needed.
+  const sseUrl = jobId ? `/api/v1/security/scans/${jobId}/events` : ''
 
-  // Subscribe to SSE events.
-  // SECURITY: do NOT pass auth token in the URL query string. The token
-  // would leak to browser history, server access logs, Referer headers,
-  // and DevTools network tab during screen-sharing. The backend SSE
-  // endpoint doesn't read it anyway; cookie-based auth would be the
-  // proper path if/when this stream needs hardening.
-  useEffect(() => {
-    if (!jobId) return
-    const url = `/api/v1/security/scans/${jobId}/events`
-    let es: EventSource | null = null
-    let cancelled = false
-
-    const connect = () => {
-      if (cancelled) return
-      es = new EventSource(url, { withCredentials: true })
-
-      es.onopen = () => {
-        attemptRef.current = 0
-        setReconnectAttempt(0)
-        setStatus((s) => (s === 'connecting' ? 'running' : s))
+  const { status: sseStatus, reconnectAttempt } = useResilientSSE({
+    url: sseUrl,
+    eventTypes: [
+      'scan_started', 'scan_thinking', 'scan_observation',
+      'scan_phase_change', 'scan_queue_decision', 'scan_checkpoint',
+      'scan_complete', 'scan_failed',
+    ],
+    onEvent: (ev) => {
+      // Each frame's payload is the parsed envelope. Backend emits
+      // {"type": "<kind>", "data": {...}}; prefer envelope.type, fall
+      // back to the SSE event-name from the frame.
+      const parsed = (ev.data ?? {}) as {
+        type?: string
+        data?: Record<string, unknown>
       }
+      const name = ((parsed.type as EventKind | undefined)
+        ?? (ev.type as EventKind))
+      const data = parsed.data ?? {}
 
-      es.onerror = () => {
-        // EventSource auto-reconnects on transient errors but the
-        // browser is silent about it. Surface a visible state and add
-        // bounded backoff so we don't hammer the server forever.
-        if (!es || es.readyState === EventSource.CLOSED) {
-          if (cancelled) return
-          // Use the ref, not reconnectAttempt state: this closure is built
-          // once (effect deps [jobId]); reading the state value would be
-          // frozen at 0, giving an infinite 1s reconnect loop.
-          if (attemptRef.current < 5) {
-            const next = attemptRef.current + 1
-            attemptRef.current = next
-            const delayMs = Math.min(1000 * 2 ** (next - 1), 15000)
-            setReconnectAttempt(next)
-            reconnectTimerRef.current = setTimeout(connect, delayMs)
-          } else {
-            setError('Lost connection to scan stream after 5 retries. Refresh the page to retry.')
-            setStatus('failed')
-          }
+      if (name === 'scan_started') {
+        if (typeof data.target === 'string') setTarget(data.target)
+        if (typeof data.tier === 'string') setTier(data.tier)
+        setStatus('running')
+      }
+      if (name === 'scan_complete') {
+        setStatus('complete')
+        // Fetch final report for the right column.
+        api.get<ScanReport>(`/security/scans/${jobId}/report`)
+          .then(resp => setReport(resp.data))
+          .catch(() => setError('Scan complete but report fetch failed.'))
+      }
+      if (name === 'scan_failed') {
+        setStatus('failed')
+        setError(typeof data.reason === 'string' ? data.reason : 'Scan failed')
+      }
+      if (name === 'scan_checkpoint') {
+        const ph = typeof data.phase === 'string' ? data.phase : ''
+        const h = typeof data.short_hash === 'string'
+          ? data.short_hash
+          : (typeof data.commit_hash === 'string' ? data.commit_hash.slice(0, 12) : '')
+        if (ph && h) {
+          setCheckpoints(prev => ({ ...prev, [ph]: h }))
+        }
+      }
+      if (name === 'scan_queue_decision') {
+        // Backend Phase 3.5 tells us whether each OWASP-class exploit
+        // agent would dispatch or skip. Accumulate into the per-class
+        // decision map.
+        const cls = typeof data.cls === 'string' ? data.cls : ''
+        if (cls) {
+          setQueueDecisions(prev => ({
+            ...prev,
+            [cls]: {
+              cls,
+              should_exploit: Boolean(data.should_exploit),
+              vuln_count: Number(data.vuln_count ?? 0),
+              externally_exploitable_count: Number(data.externally_exploitable_count ?? 0),
+              reason: String(data.reason ?? ''),
+            },
+          }))
         }
       }
 
-      attachListeners(es)
-    }
-
-    function pushEvent(kind: EventKind, envelope: { data?: Record<string, unknown> }) {
-      const now = Date.now()
-      const data = envelope.data ?? {}
-      const evt: TimelineEvent = {
-        id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
-        kind,
-        timestamp: now,
-        phase: typeof data.phase === 'string' ? data.phase : undefined,
-        text: typeof data.text === 'string' ? data.text : undefined,
-        observation: typeof data.observation === 'string' ? data.observation : undefined,
-        data,
-      }
-      // Cap log feed at 500 events. Long scans accumulate hundreds of
+      // Push to the timeline regardless (after type-specific handling).
+      // Cap log feed at 500 events: long scans accumulate hundreds of
       // thinking/observation events; without a cap the DOM grows
       // unbounded and the page chugs after ~10 minutes of streaming.
+      const now = Date.now()
       setEvents(prev => {
-        const next = [...prev, evt]
+        const next: TimelineEvent[] = [...prev, {
+          id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+          kind: name,
+          timestamp: now,
+          phase: typeof data.phase === 'string' ? data.phase : undefined,
+          text: typeof data.text === 'string' ? data.text : undefined,
+          observation: typeof data.observation === 'string' ? data.observation : undefined,
+          data,
+        }]
         return next.length > 500 ? next.slice(-500) : next
       })
+    },
+  })
+
+  // Mirror SSE-level status into the page-level status badge. Stays
+  // 'connecting' until the first event arrives (which flips it to
+  // 'running'); flips to 'failed' once useResilientSSE exhausts its
+  // bounded retries.
+  useEffect(() => {
+    if (sseStatus === 'fallback') {
+      setError('Lost connection to scan stream after 5 retries. Refresh the page to retry.')
+      setStatus('failed')
     }
+  }, [sseStatus])
 
-    function on(name: EventKind) {
-      return (ev: MessageEvent) => {
-        try {
-          const parsed = JSON.parse(ev.data)
-          if (name === 'scan_started') {
-            const d = parsed.data ?? {}
-            if (typeof d.target === 'string') setTarget(d.target)
-            if (typeof d.tier === 'string') setTier(d.tier)
-            setStatus('running')
-          }
-          if (name === 'scan_complete') {
-            setStatus('complete')
-            // Fetch final report for the right column.
-            api.get<ScanReport>(`/security/scans/${jobId}/report`)
-              .then(resp => setReport(resp.data))
-              .catch(() => setError('Scan complete but report fetch failed.'))
-          }
-          if (name === 'scan_failed') {
-            setStatus('failed')
-            const d = parsed.data ?? {}
-            setError(typeof d.reason === 'string' ? d.reason : 'Scan failed')
-          }
-          if (name === 'scan_checkpoint') {
-            const d = parsed.data ?? {}
-            const ph = typeof d.phase === 'string' ? d.phase : ''
-            const h = typeof d.short_hash === 'string'
-              ? d.short_hash
-              : (typeof d.commit_hash === 'string' ? d.commit_hash.slice(0, 12) : '')
-            if (ph && h) {
-              setCheckpoints(prev => ({ ...prev, [ph]: h }))
-            }
-          }
-          if (name === 'scan_queue_decision') {
-            // Backend Phase 3.5 tells us whether each OWASP-class
-            // exploit agent would dispatch or skip. Accumulate into
-            // the per-class decision map.
-            const d = parsed.data ?? {}
-            const cls = typeof d.cls === 'string' ? d.cls : ''
-            if (cls) {
-              setQueueDecisions(prev => ({
-                ...prev,
-                [cls]: {
-                  cls,
-                  should_exploit: Boolean(d.should_exploit),
-                  vuln_count: Number(d.vuln_count ?? 0),
-                  externally_exploitable_count: Number(d.externally_exploitable_count ?? 0),
-                  reason: String(d.reason ?? ''),
-                },
-              }))
-            }
-          }
-          pushEvent(name, parsed)
-        } catch {
-          // malformed; ignore
-        }
-      }
-    }
-
-    function attachListeners(source: EventSource) {
-      const kinds: EventKind[] = [
-        'scan_started', 'scan_thinking', 'scan_observation',
-        'scan_phase_change', 'scan_queue_decision', 'scan_checkpoint',
-        'scan_complete', 'scan_failed',
-      ]
-      kinds.forEach(k => source.addEventListener(k, on(k)))
-      source.onmessage = on('scan_thinking')  // default fallthrough
-    }
-
-    connect()
-
-    // If the scan already completed before we opened this page, the SSE
-    // stream may close without sending events. Fallback: poll status
-    // once at mount and fetch the report if already complete, and
-    // reconstruct a minimal phases/events list from the report so the
-    // Phases column and reasoning feed have content instead of the
-    // "Waiting for first event..." placeholder.
+  // Already-complete fallback: if the scan finished before we opened
+  // this page, the live stream may close without sending events. Poll
+  // status once at mount and synthesize a minimal timeline so the page
+  // is not stuck on 'Waiting for first event...'.
+  useEffect(() => {
+    if (!jobId) return
+    let cancelled = false
     api.get<{ status: string }>(`/security/scans/${jobId}/status`).then(resp => {
+      if (cancelled) return
       if (resp.data.status === 'complete') {
         setStatus('complete')
         api.get<ScanReport>(`/security/scans/${jobId}/report`).then(r => {
+          if (cancelled) return
           setReport(r.data)
           // Populate tier from the report so the header badge ("Founder")
           // renders even for scans that completed before we subscribed.
@@ -343,15 +309,7 @@ export default function ScanWalkthroughPage() {
         setStatus('failed')
       }
     }).catch(() => {})
-
-    return () => {
-      cancelled = true
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current)
-        reconnectTimerRef.current = null
-      }
-      es?.close()
-    }
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId])
 

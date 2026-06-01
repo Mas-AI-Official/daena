@@ -686,7 +686,9 @@ def _get_opsec_manager():
 
 @router.get("/scans/{job_id}/events")
 async def stream_scan_events(
-    job_id: str, request: Request,
+    job_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
 ) -> StreamingResponse:
     """Server-sent events for a scan job.
 
@@ -698,7 +700,23 @@ async def stream_scan_events(
 
     Connection closes when the scan terminates (complete or failed)
     or when the client disconnects.
+
+    Auth: requires a valid bearer access token (K-1 hardening,
+    2026-06-01). Prior versions of this route were unauthenticated,
+    which meant anyone who could guess a job_id could stream live
+    scan reasoning, findings, and exploit decisions. Native browser
+    EventSource cannot send custom headers, so frontend consumers
+    use the fetch-based ``useResilientSSE`` hook which forwards
+    ``Authorization: Bearer <token>`` from localStorage. Job-level
+    tenant ownership is intentionally NOT enforced here yet (see
+    KLYNTAR_SECURITY_MODULE_AUDIT.md "Next sprint - tenant scoping"
+    section); the workflow object is currently process-global and
+    not tenant-keyed, so the right place to add ownership is in
+    ScanWorkflow itself, paired with a job-to-tenant migration.
     """
+    # Reference the authenticated user so static analyzers don't
+    # flag it as unused; future tenant scoping will read user.tenant_id.
+    _ = user
     workflow = _get_workflow()
 
     try:
