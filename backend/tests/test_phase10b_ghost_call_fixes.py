@@ -222,17 +222,27 @@ async def test_b3_scans_list_default_excludes_archive(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default ``GET /security/scans`` reads from the live reports dir."""
+    """Default ``GET /security/scans`` reads from the live reports dir.
+
+    K-3 (2026-06-01): GET /security/scans now filters to scans owned by the
+    caller's tenant (and fail-closes legacy reports with no tenant_id, to
+    avoid leaking other tenants' scan history). The seeded reports therefore
+    carry the auth_headers tenant id (11111111-...) so they represent a
+    real, owned scan - which is the only kind a production list ever shows.
+    """
+    tid = "11111111-1111-1111-1111-111111111111"  # matches auth_headers tenant
     reports = tmp_path / "security_reports"
     archive = reports / ".archive"
     reports.mkdir()
     archive.mkdir()
     (reports / "live-1.json").write_text(
-        '{"job_id":"live-1","target":"live.example","tier":"SCOUT","findings":[]}',
+        '{"job_id":"live-1","target":"live.example","tier":"SCOUT",'
+        f'"findings":[],"tenant_id":"{tid}"}}',
         encoding="utf-8",
     )
     (archive / "archived-1.report.123.json").write_text(
-        '{"job_id":"archived-1","target":"old.example","tier":"SCOUT","findings":[]}',
+        '{"job_id":"archived-1","target":"old.example","tier":"SCOUT",'
+        f'"findings":[],"tenant_id":"{tid}"}}',
         encoding="utf-8",
     )
     monkeypatch.setenv("SECURITY_REPORTS_DIR", str(reports))
@@ -257,17 +267,27 @@ async def test_b3_scans_list_archived_true_reads_archive(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``archived=true`` swaps the loader to read the .archive folder."""
+    """``archived=true`` swaps the loader to read the .archive folder.
+
+    K-3 (2026-06-01): both seeded reports carry the auth_headers tenant id
+    so they pass the ownership filter. This also pins the K-3 fix that the
+    archived view filters on the tenant_id read from the ARCHIVE payload
+    (the prior filter consulted only the live dir and hid the whole
+    archive even from its owner).
+    """
+    tid = "11111111-1111-1111-1111-111111111111"  # matches auth_headers tenant
     reports = tmp_path / "security_reports"
     archive = reports / ".archive"
     reports.mkdir()
     archive.mkdir()
     (reports / "live-2.json").write_text(
-        '{"job_id":"live-2","target":"live2.example","tier":"SCOUT","findings":[]}',
+        '{"job_id":"live-2","target":"live2.example","tier":"SCOUT",'
+        f'"findings":[],"tenant_id":"{tid}"}}',
         encoding="utf-8",
     )
     (archive / "archived-2.report.456.json").write_text(
-        '{"job_id":"archived-2","target":"old2.example","tier":"SCOUT","findings":[]}',
+        '{"job_id":"archived-2","target":"old2.example","tier":"SCOUT",'
+        f'"findings":[],"tenant_id":"{tid}"}}',
         encoding="utf-8",
     )
     monkeypatch.setenv("SECURITY_REPORTS_DIR", str(reports))

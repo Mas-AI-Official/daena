@@ -425,23 +425,24 @@ async def list_scans(
     tenant_id (pre-PR-SCAN-DISK-TENANT) are dropped fail-closed so this
     list cannot be used to enumerate other tenants' scan history. To
     surface those, re-run the scan (which writes the new tenant_id).
+
+    K-3 fix (2026-06-01): filter on the ``tenant_id`` that
+    ``_load_scan_history`` reads from each report payload, NOT on
+    ``get_scan_owner_tenant_id`` - the latter only consults the LIVE
+    reports dir, so for ``archived=true`` it returned None for every
+    archived report and hid the whole archive even from its owner.
+    Reading tenant_id from the same payload the loader already parsed
+    works uniformly for live AND archived scans.
     """
-    workflow = _get_workflow()
     caller_tenant = str(user.tenant_id)
     raw = _load_scan_history(limit, archived=archived)
-    # Filter to scans owned by the caller's tenant. We load extra (4x the
-    # limit, already wired into _load_scan_history's max_candidates) so
-    # tenant filtering does not starve the list down to nothing on busy
-    # multi-tenant deployments.
-    filtered: list[dict[str, Any]] = []
-    for row in raw:
-        sid = row.get("scan_id")
-        if not sid:
-            continue
-        owner = workflow.get_scan_owner_tenant_id(str(sid))
-        if owner == caller_tenant:
-            filtered.append(row)
-    return filtered
+    # Filter to scans owned by the caller's tenant. _load_scan_history
+    # surfaces ``tenant_id`` from each report payload (None for legacy
+    # pre-tenant reports + legacy adversarial traces, which fail closed).
+    return [
+        row for row in raw
+        if row.get("scan_id") and row.get("tenant_id") == caller_tenant
+    ]
 
 
 @router.get("/scans/{scan_id}")
@@ -1722,6 +1723,9 @@ def _load_scan_history(
             "timestamp": data.get("timestamp", ""),
             "created_at": data.get("created_at", ""),
             "finding_count": data.get("total_findings", 0),
+            # K-3: surface tenant_id (legacy traces predate it -> None,
+            # which fail-closes in the list_scans ownership filter).
+            "tenant_id": data.get("tenant_id"),
         }
 
     # Persisted real-scan reports
@@ -1753,6 +1757,11 @@ def _load_scan_history(
                 s: severities.count(s)
                 for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
             },
+            # K-3: tenant_id drives the list_scans ownership filter. Works
+            # for both live and archived reports (this loader reads the
+            # right dir per the ``archived`` flag). Reports written before
+            # PR-SCAN-DISK-TENANT have no tenant_id -> None -> fail-closed.
+            "tenant_id": data.get("tenant_id"),
         }
 
     history = list(by_id.values())
