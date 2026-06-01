@@ -23,14 +23,31 @@ from app.api.v1 import security_dashboard as dash_module
 def client_with_tmp_dirs(tmp_path, monkeypatch):
     """Create a FastAPI TestClient with DAENA_VAR + SECURITY_REPORTS_DIR
     pointed at a temp dir so deletes don't clobber real data.
+
+    Overrides ``get_current_user`` to return a fake FOUNDER so the K-2
+    auth gate (2026-06-01) doesn't reject these focused delete-behavior
+    tests. Auth itself is covered by tests/test_scan_events_auth.py.
     """
+    import uuid as _uuid
+    from fastapi import FastAPI
+    from app.api.deps import CurrentUser, get_current_user
+
     monkeypatch.setenv("DAENA_VAR", str(tmp_path / "var"))
     monkeypatch.setenv(
         "SECURITY_REPORTS_DIR", str(tmp_path / "var" / "security_reports"),
     )
 
-    from fastapi import FastAPI
+    def _fake_current_user() -> CurrentUser:
+        return CurrentUser(
+            id=_uuid.UUID("22222222-2222-2222-2222-222222222222"),
+            tenant_id=_uuid.UUID("11111111-1111-1111-1111-111111111111"),
+            email="test@daena.local",
+            role="FOUNDER",
+            display_name="Test",
+        )
+
     app = FastAPI()
+    app.dependency_overrides[get_current_user] = _fake_current_user
     app.include_router(dash_module.router, prefix="/security")
     yield TestClient(app), tmp_path
 
