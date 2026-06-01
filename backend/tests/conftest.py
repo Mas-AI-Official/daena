@@ -5,6 +5,31 @@ Provides:
 - In-memory SQLite test database with PG type compilation overrides
 - Mock user authentication
 - Common test data factories
+
+TEST-HYGIENE GUARDRAILS (2026-06-01, learned from two real suite-hang
+incidents that stalled the full run at ~72%):
+
+1. NEVER let a unit test invoke a real network scanner / external
+   subprocess. ScanWorkflow.start_scan, for URL targets, shells out to
+   live tools (nuclei, etc.) - one ARCHITECT-tier test ran nuclei for 270s.
+   Stub the I/O boundary instead (see test_scan_workflow.py's
+   ``_stub_real_scanner`` autouse fixture for the canonical pattern:
+   monkeypatch ``scan_workflow._real_scan_target`` to a fast ScanOutcome).
+
+2. NEVER leak a fire-and-forget asyncio task past the test. start_scan
+   does ``asyncio.create_task(self._execute_scan(job))`` (correct in prod -
+   the route returns the job id immediately). A test that does not drain
+   that task leaves it running into pytest-asyncio's event-loop teardown,
+   where ``_cancel_all_tasks`` can hang on a non-cancellable IOCP wait.
+   Either drain it (poll to completion) or stub the work to a no-op.
+
+3. The ``--timeout=120 --timeout-method=thread`` addopts in pyproject.toml
+   is the backstop: any hang becomes a named FAILED with a stack dump
+   instead of a silent stall. Do not rely on it as a substitute for (1)/(2).
+
+4. Tests start from a CLEAN DB every time (see _clean_db_between_tests).
+   Do not depend on rows another test created. If an endpoint writes a
+   tenant/actor-FK'd row, seed the principal first (see seed_auth_principal).
 """
 
 from __future__ import annotations

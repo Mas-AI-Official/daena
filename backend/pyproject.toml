@@ -57,6 +57,10 @@ dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
+    # pytest-timeout (2026-06-01): converts a hung test into a named
+    # failure instead of stalling the whole suite. Required by the
+    # ``--timeout`` addopts below; without it pytest errors on the flag.
+    "pytest-timeout>=2.3.0",
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
@@ -76,6 +80,19 @@ ignore = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Hang guardrail (2026-06-01): a per-test wall-clock cap so a single hung
+# test (e.g. a unit test that accidentally launches a real network scanner,
+# or leaks a non-cancellable asyncio task into event-loop teardown - both
+# real incidents fixed this date) can never stall the whole suite. It is
+# converted into a named FAILED with a full thread-stack dump instead.
+#   - 120s is generous: the slowest legitimate test (a real-network E2E
+#     like test_3vilbob_e2e) finishes well under it; a UNIT test exceeding
+#     120s is itself a defect.
+#   - thread method (not the default signal) is required on Windows, where
+#     signal-based timeouts do not fire.
+# If a future test genuinely needs longer, mark it explicitly with
+# @pytest.mark.timeout(<seconds>) rather than raising this global default.
+addopts = "--timeout=120 --timeout-method=thread"
 
 [tool.mypy]
 python_version = "3.11"
