@@ -60,8 +60,16 @@ interface SessionListProps {
 export function SessionList({ departmentId }: SessionListProps = {}) {
   const navigate = useNavigate()
   const { sessionId } = useParams()
-  const { sessions, sessionsLoading, fetchSessions, createSession, setActiveSession, deleteSession, messages } =
-    useChatStore()
+  // Individual selectors instead of whole-store destructure - SessionList
+  // appears next to ChatPage, so any whole-store subscription cascades
+  // re-renders on every stream tick.
+  const sessions = useChatStore((s) => s.sessions)
+  const sessionsLoading = useChatStore((s) => s.sessionsLoading)
+  const fetchSessions = useChatStore((s) => s.fetchSessions)
+  const createSession = useChatStore((s) => s.createSession)
+  const setActiveSession = useChatStore((s) => s.setActiveSession)
+  const deleteSession = useChatStore((s) => s.deleteSession)
+  const messages = useChatStore((s) => s.messages)
   const { chatMode } = useUiStore()
 
   // Context menu

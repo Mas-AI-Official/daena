@@ -68,15 +68,15 @@ export function DepartmentChatPage() {
   usePageTitle('Department Chat')
   const { departmentId, sessionId } = useParams()
   const navigate = useNavigate()
-  const {
-    messages,
-    messagesLoading,
-    stream,
-    sendMessageStream,
-    editAndRegenerate,
-    cancelStream,
-    setActiveSession,
-  } = useChatStore()
+  // Individual selectors instead of whole-store destructure - mirrors the
+  // ChatPage fix to avoid re-rendering on every unrelated chatStore mutation.
+  const messages = useChatStore((s) => s.messages)
+  const messagesLoading = useChatStore((s) => s.messagesLoading)
+  const stream = useChatStore((s) => s.stream)
+  const sendMessageStream = useChatStore((s) => s.sendMessageStream)
+  const editAndRegenerate = useChatStore((s) => s.editAndRegenerate)
+  const cancelStream = useChatStore((s) => s.cancelStream)
+  const setActiveSession = useChatStore((s) => s.setActiveSession)
 
   const historySidebarOpen = useUiStore((s) => s.historySidebarOpen)
   const toggleHistorySidebar = useUiStore((s) => s.toggleHistorySidebar)

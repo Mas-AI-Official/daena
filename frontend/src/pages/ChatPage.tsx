@@ -101,16 +101,21 @@ export function ChatPage() {
     return () => clearTimeout(t)
   }, [recentDraftPluginName])
 
-  const {
-    messages,
-    messagesLoading,
-    stream,
-    sendMessageStream,
-    editAndRegenerate,
-    regenerateLastResponse,
-    cancelStream,
-    setActiveSession,
-  } = useChatStore()
+  // Subscribe to chatStore via individual selectors (NOT useChatStore() with
+  // destructure, which subscribes to the whole store and re-renders this page
+  // on every mutation - including unrelated fields like sessions, error,
+  // governanceEvents, stream.thinkingContent. The chat page is the hottest
+  // surface in the app; this matters on every stream tick.)
+  const messages = useChatStore((s) => s.messages)
+  const messagesLoading = useChatStore((s) => s.messagesLoading)
+  const stream = useChatStore((s) => s.stream)
+  // Actions are stable refs in Zustand (the store factory creates them once),
+  // so subscribing to each is cheap and avoids the whole-store storm.
+  const sendMessageStream = useChatStore((s) => s.sendMessageStream)
+  const editAndRegenerate = useChatStore((s) => s.editAndRegenerate)
+  const regenerateLastResponse = useChatStore((s) => s.regenerateLastResponse)
+  const cancelStream = useChatStore((s) => s.cancelStream)
+  const setActiveSession = useChatStore((s) => s.setActiveSession)
 
   const historySidebarOpen = useUiStore((s) => s.historySidebarOpen)
   const toggleHistorySidebar = useUiStore((s) => s.toggleHistorySidebar)
