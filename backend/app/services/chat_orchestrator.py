@@ -584,6 +584,11 @@ class ChatOrchestrator:
         # shape is documented in ``ExecutionService._get_user_tool_pref``.
         primary_mind: str | None = None
         ext_perms_for_session: dict[str, Any] = {}
+        # PR-S3 Phase 11 (2026-06-01): SettingsLLM routing toggles from
+        # user.settings now actually reach ModelRouter._score_candidates as
+        # weight multipliers. Default {} -> no-op (router sees None and
+        # keeps historical scoring behavior).
+        user_routing_prefs: dict[str, Any] = {}
         try:
             from app.models.identity import User
             user_stmt = select(User).where(User.id == user_id)
@@ -594,6 +599,16 @@ class ChatOrchestrator:
                 _ep = user_obj.settings.get("extension_permissions")
                 if isinstance(_ep, dict):
                     ext_perms_for_session = _ep
+                # Forward the routing toggles only when explicitly set so
+                # we never claim a preference the user did not configure.
+                if "local_first_routing" in user_obj.settings:
+                    user_routing_prefs["local_first_routing"] = bool(
+                        user_obj.settings.get("local_first_routing")
+                    )
+                if "cost_aware_routing" in user_obj.settings:
+                    user_routing_prefs["cost_aware_routing"] = bool(
+                        user_obj.settings.get("cost_aware_routing")
+                    )
         except Exception:
             logger.debug("orchestrator.primary_mind_lookup_failed", exc_info=True)
 
@@ -1625,6 +1640,7 @@ class ChatOrchestrator:
                     qu_result, requested_mode=_applied_mode,
                     founder_policy=founder_policy,
                     primary_mind=primary_mind,
+                    user_routing_prefs=user_routing_prefs or None,
                 )
 
                 # For Council/QE: populate council_models from router.
@@ -1673,6 +1689,7 @@ class ChatOrchestrator:
                 },
                 founder_policy=founder_policy,
                 primary_mind=primary_mind,
+                user_routing_prefs=user_routing_prefs or None,
             )
             routing_source = "think_mode"
 
@@ -1686,6 +1703,7 @@ class ChatOrchestrator:
                 },
                 founder_policy=founder_policy,
                 primary_mind=primary_mind,
+                user_routing_prefs=user_routing_prefs or None,
             )
 
         # Cost-aware task classification (0 tokens, keyword-based)
@@ -1907,6 +1925,37 @@ class ChatOrchestrator:
                     )
         except Exception:
             logger.debug("orchestrator.skill_retrieval_failed", exc_info=True)
+
+        # ── Stage 6.55: Universal ragx retrieval (2026-05-25) ──
+        # Query the operator's universal RAG service in parallel with the
+        # Stage 6.5 skill lookup. Pulls citations from daena-docs, wiki,
+        # and shared-memory (conversation summaries) so the LLM has cross-
+        # collection grounding alongside the skill evidence above.
+        #
+        # Fails open: if ragx is unreachable, this skips silently and the
+        # chat pipeline continues with skill evidence only. Same failure
+        # contract as Stage 6.5.
+        ragx_citation_count = 0
+        try:
+            from app.services.ragx_bridge import (
+                format_ragx_evidence_block,
+                query_ragx,
+            )
+
+            ragx_result = await query_ragx(query=user_content)
+            if ragx_result.citations:
+                ragx_block = format_ragx_evidence_block(ragx_result)
+                if ragx_block:
+                    system_prompt += ragx_block
+                    ragx_citation_count = len(ragx_result.citations)
+                    logger.info(
+                        "orchestrator.ragx_citations_injected",
+                        count=ragx_citation_count,
+                        elapsed_ms=int(ragx_result.elapsed_ms),
+                        abstained=ragx_result.abstained_collections,
+                    )
+        except Exception:
+            logger.debug("orchestrator.ragx_retrieval_failed", exc_info=True)
 
         # ── Stage 6.6: Filesystem skills (OpenClaw pattern) ─────
         # Inject a compact manifest of SKILL.md-based skills so the

@@ -198,27 +198,21 @@ export function SettingsLLM() {
         <div className="space-y-3 max-w-md">
           <div
             className="flex items-center justify-between"
-            title="Phase 10C-D: setting persists to user.settings; ModelRouter does not yet read it. Phase 11 PR-S4 wires the per-request override."
+            title="When ON (default), ModelRouter keeps its full locality weight (local Ollama models get an edge in scoring). When OFF, locality weight is multiplied by 0.5 so cloud models are not penalized for being remote."
           >
             <div>
-              <p className="text-sm text-starlight-200">
-                Local-First Routing
-                <Badge variant="warning" size="sm" className="ml-2 align-middle">Wiring pending</Badge>
-              </p>
-              <p className="text-xs text-starlight-500">Route 70%+ queries through Ollama. (Persists; ModelRouter consumption is a Phase 11 item.)</p>
+              <p className="text-sm text-starlight-200">Local-First Routing</p>
+              <p className="text-xs text-starlight-500">When ON, ModelRouter weights local models higher. When OFF, locality weight is halved.</p>
             </div>
             <Switch checked={localFirstRouting} onChange={handleLocalFirstToggle} label="" size="sm" />
           </div>
           <div
             className="flex items-center justify-between"
-            title="Phase 10C-D: setting persists; ModelRouter scoring weight is configured in code, not driven by this toggle yet. Phase 11 PR-S4."
+            title="When ON (default), ModelRouter keeps its full cost weight (cheaper models score higher). When OFF, cost weight is multiplied by 0.5 so quality is not auto-downranked by price."
           >
             <div>
-              <p className="text-sm text-starlight-200">
-                Cost-Aware Routing
-                <Badge variant="warning" size="sm" className="ml-2 align-middle">Wiring pending</Badge>
-              </p>
-              <p className="text-xs text-starlight-500">Prefer cheaper models when quality is sufficient. (Persists; ModelRouter consumption is a Phase 11 item.)</p>
+              <p className="text-sm text-starlight-200">Cost-Aware Routing</p>
+              <p className="text-xs text-starlight-500">When ON, ModelRouter weights cheaper models higher. When OFF, cost weight is halved.</p>
             </div>
             <Switch checked={costAwareRouting} onChange={handleCostAwareToggle} label="" size="sm" />
           </div>

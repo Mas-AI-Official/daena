@@ -296,6 +296,7 @@ class ModelRouter:
         founder_policy: dict[str, Any] | None = None,
         primary_mind: str | None = None,
         effort_level: str = "medium",
+        user_routing_prefs: dict[str, Any] | None = None,
     ) -> RoutingDecision:
         """Produce a routing decision from a query understanding.
 
@@ -391,6 +392,7 @@ class ModelRouter:
             qu,
             preferred_tags=preferred_tags,
             power_mode=_power_mode,
+            user_routing_prefs=user_routing_prefs,
         )
 
         # Boost Primary Mind: when the user explicitly sets a Primary Mind,
@@ -759,6 +761,7 @@ class ModelRouter:
         *,
         preferred_tags: list[str] | None = None,
         power_mode: bool = False,
+        user_routing_prefs: dict[str, Any] | None = None,
     ) -> list[ModelCandidate]:
         """Score each candidate on tag match, cost, locality, and context.
 
@@ -776,6 +779,28 @@ class ModelRouter:
         own complexity classification. Local tier collapses to 0.25x,
         sovereign tier jumps to 1.75x -- cloud wins unless nothing else
         is reachable.
+
+        ``user_routing_prefs`` (Phase 11 PR-S3 wire-up, 2026-06-01): the
+        founder's per-user routing toggles from SettingsLLM. Currently
+        honored:
+
+            local_first_routing: bool (default True)
+                When True (the default and the historical behavior), the
+                computed locality weight is used as-is. When the user
+                turns this OFF in SettingsLLM, the locality weight is
+                multiplied by 0.5 so cloud models no longer get penalized
+                for being remote.
+
+            cost_aware_routing: bool (default True)
+                Symmetric: when True (default), the cost weight is used
+                as-is. When OFF, cost weight is multiplied by 0.5 so the
+                user can pick higher-quality models without the router
+                automatically downranking them on price.
+
+        Both default True -> default behavior is unchanged. Turning
+        either OFF de-emphasizes that factor in scoring rather than
+        flipping a hard switch. This is the same shape the
+        complexity-adaptive weights use.
         """
         preferred_tags = list(preferred_tags or _INTENT_TAGS.get(qu.intent, []))
 
@@ -790,6 +815,16 @@ class ModelRouter:
         w_tag, w_loc, w_cost, w_ctx = _weights.get(
             qu.complexity_label, (0.35, 0.25, 0.25, 0.15)
         )
+
+        # PR-S3 Phase 11 (2026-06-01): user-level routing preferences from
+        # SettingsLLM. Both default True (matches the historical scoring
+        # behavior). Turning either OFF in the UI de-emphasizes that factor
+        # by 50% rather than flipping a hard switch.
+        if user_routing_prefs is not None:
+            if user_routing_prefs.get("local_first_routing") is False:
+                w_loc *= 0.5
+            if user_routing_prefs.get("cost_aware_routing") is False:
+                w_cost *= 0.5
 
         scored: list[ModelCandidate] = []
         for c in candidates:
