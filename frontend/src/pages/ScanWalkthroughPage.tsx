@@ -142,6 +142,11 @@ export default function ScanWalkthroughPage() {
   // Track reconnect attempts so the operator can see "reconnecting (3/5)..."
   const [reconnectAttempt, setReconnectAttempt] = useState(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Reconnect count in a ref (not state) so the EventSource error handler
+  // reads the live value. Reading the reconnectAttempt state here would be a
+  // stale closure (effect deps are [jobId]), which previously froze the count
+  // at 0 -> infinite 1s reconnect loop that never backed off or gave up.
+  const attemptRef = useRef(0)
 
   // Subscribe to SSE events.
   // SECURITY: do NOT pass auth token in the URL query string. The token
@@ -160,8 +165,9 @@ export default function ScanWalkthroughPage() {
       es = new EventSource(url, { withCredentials: true })
 
       es.onopen = () => {
-        if (reconnectAttempt > 0) setReconnectAttempt(0)
-        if (status === 'connecting') setStatus('running')
+        attemptRef.current = 0
+        setReconnectAttempt(0)
+        setStatus((s) => (s === 'connecting' ? 'running' : s))
       }
 
       es.onerror = () => {
@@ -170,9 +176,13 @@ export default function ScanWalkthroughPage() {
         // bounded backoff so we don't hammer the server forever.
         if (!es || es.readyState === EventSource.CLOSED) {
           if (cancelled) return
-          if (reconnectAttempt < 5) {
-            const next = reconnectAttempt + 1
-            const delayMs = Math.min(1000 * 2 ** reconnectAttempt, 15000)
+          // Use the ref, not reconnectAttempt state: this closure is built
+          // once (effect deps [jobId]); reading the state value would be
+          // frozen at 0, giving an infinite 1s reconnect loop.
+          if (attemptRef.current < 5) {
+            const next = attemptRef.current + 1
+            attemptRef.current = next
+            const delayMs = Math.min(1000 * 2 ** (next - 1), 15000)
             setReconnectAttempt(next)
             reconnectTimerRef.current = setTimeout(connect, delayMs)
           } else {
