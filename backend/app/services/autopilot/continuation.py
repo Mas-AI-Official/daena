@@ -151,6 +151,14 @@ class AutopilotController:
         )
         self._active_sessions[session_id] = state
 
+        # Goal-derived plans surface the review gate SYNCHRONOUSLY so the
+        # /start response (and the UI) show "plan review" immediately, never a
+        # misleading "running" state before the first poll. The background loop
+        # re-affirms the gate and blocks on approval before any step executes.
+        if ctx.get("require_initial_approval") and plan:
+            state.paused_step = PLAN_REVIEW_GATE
+            state.awaiting_plan_approval = True
+
         # Run the continuation loop as a background task
         task = asyncio.create_task(
             self._continuation_loop(state, plan, ctx),
