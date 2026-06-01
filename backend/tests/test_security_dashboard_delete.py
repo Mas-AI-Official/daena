@@ -52,13 +52,30 @@ def client_with_tmp_dirs(tmp_path, monkeypatch):
     yield TestClient(app), tmp_path
 
 
-def _write_fake_scan(tmp_path, scan_id: str, with_trace=True, with_report=True):
+_FAKE_TENANT_ID = "11111111-1111-1111-1111-111111111111"
+
+
+def _write_fake_scan(
+    tmp_path,
+    scan_id: str,
+    with_trace=True,
+    with_report=True,
+    tenant_id: str = _FAKE_TENANT_ID,
+):
+    """Write a synthetic scan trace + report to disk.
+
+    K-3 ownership (2026-06-01): the report payload now includes a
+    ``tenant_id`` so ``ScanWorkflow.get_scan_owner_tenant_id`` returns
+    a real owner and the ownership check passes. Pass a different
+    tenant_id to simulate cross-tenant access.
+    """
     var = tmp_path / "var"
     if with_trace:
         trace_dir = var / "scan_traces"
         trace_dir.mkdir(parents=True, exist_ok=True)
         (trace_dir / f"{scan_id}.json").write_text(json.dumps({
             "scan_id": scan_id, "target": "example.com", "total_findings": 3,
+            "tenant_id": tenant_id,
         }), encoding="utf-8")
     if with_report:
         reports_dir = var / "security_reports"
@@ -66,6 +83,7 @@ def _write_fake_scan(tmp_path, scan_id: str, with_trace=True, with_report=True):
         (reports_dir / f"{scan_id}.json").write_text(json.dumps({
             "job_id": scan_id, "tier": "SCOUT", "target": "example.com",
             "findings": [], "summary": "",
+            "tenant_id": tenant_id,
         }), encoding="utf-8")
 
 
@@ -156,3 +174,50 @@ def test_install_all_dry_run_lists_plan(client_with_tmp_dirs, monkeypatch):
     assert body["planned"] == 2
     names = sorted(t["name"] for t in body["tools"])
     assert names == ["alpha", "beta"]
+
+
+# ---------------------------------------------------------------------------
+# K-3 (2026-06-01): cross-tenant ownership tests for the scan surface
+# ---------------------------------------------------------------------------
+
+
+_OTHER_TENANT_ID = "99999999-9999-9999-9999-999999999999"
+
+
+def test_delete_scan_cross_tenant_returns_404(client_with_tmp_dirs):
+    """A scan owned by a DIFFERENT tenant returns 404 to the caller -
+    cannot probe id-existence cross-tenant, cannot delete cross-tenant.
+    """
+    client, tmp_path = client_with_tmp_dirs
+    _write_fake_scan(tmp_path, "other-tenant-scan", tenant_id=_OTHER_TENANT_ID)
+    resp = client.delete("/security/scans/other-tenant-scan")
+    assert resp.status_code == 404
+
+
+def test_delete_all_scans_only_archives_callers_tenant(client_with_tmp_dirs):
+    """Bulk DELETE /security/scans must NOT wipe other tenants' scans.
+
+    Writes 2 owned scans + 2 cross-tenant scans + 1 legacy (no tenant_id).
+    Expects processed=2, skipped_cross_tenant=2, skipped_legacy_no_tenant=1.
+    """
+    client, tmp_path = client_with_tmp_dirs
+    _write_fake_scan(tmp_path, "mine-1")
+    _write_fake_scan(tmp_path, "mine-2")
+    _write_fake_scan(tmp_path, "other-1", tenant_id=_OTHER_TENANT_ID)
+    _write_fake_scan(tmp_path, "other-2", tenant_id=_OTHER_TENANT_ID)
+    # Legacy scan (pre-PR-SCAN-DISK-TENANT): write the report payload by hand
+    # with NO tenant_id field.
+    var = tmp_path / "var"
+    reports_dir = var / "security_reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "legacy-1.json").write_text(json.dumps({
+        "job_id": "legacy-1", "tier": "SCOUT", "target": "example.com",
+        "findings": [], "summary": "",
+    }), encoding="utf-8")
+
+    resp = client.delete("/security/scans")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["processed"] == 2
+    assert body["skipped_cross_tenant"] == 2
+    assert body["skipped_legacy_no_tenant"] == 1

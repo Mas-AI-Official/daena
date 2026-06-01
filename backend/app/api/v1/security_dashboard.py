@@ -419,9 +419,29 @@ async def list_scans(
     Previously this endpoint was unauthenticated, enumerating every
     scan ever run with target paths, severity counts, findings totals,
     and cost - a direct information-disclosure surface.
+
+    Ownership (K-3, 2026-06-01): the result is filtered to scans owned
+    by the caller's tenant. Legacy scans on disk without a persisted
+    tenant_id (pre-PR-SCAN-DISK-TENANT) are dropped fail-closed so this
+    list cannot be used to enumerate other tenants' scan history. To
+    surface those, re-run the scan (which writes the new tenant_id).
     """
-    _ = user
-    return _load_scan_history(limit, archived=archived)
+    workflow = _get_workflow()
+    caller_tenant = str(user.tenant_id)
+    raw = _load_scan_history(limit, archived=archived)
+    # Filter to scans owned by the caller's tenant. We load extra (4x the
+    # limit, already wired into _load_scan_history's max_candidates) so
+    # tenant filtering does not starve the list down to nothing on busy
+    # multi-tenant deployments.
+    filtered: list[dict[str, Any]] = []
+    for row in raw:
+        sid = row.get("scan_id")
+        if not sid:
+            continue
+        owner = workflow.get_scan_owner_tenant_id(str(sid))
+        if owner == caller_tenant:
+            filtered.append(row)
+    return filtered
 
 
 @router.get("/scans/{scan_id}")
@@ -429,8 +449,19 @@ async def get_scan_detail(
     scan_id: str,
     user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Get full detail of a specific scan trace."""
-    _ = user
+    """Get full detail of a specific scan trace.
+
+    Auth (K-2): authenticated. Ownership (K-3, 2026-06-01): the caller's
+    tenant must own this scan. Cross-tenant access is mapped to 404
+    (not 403) so this endpoint cannot be used to probe which scan ids
+    exist for other tenants. Legacy scans on disk without a tenant_id
+    field fail-closed (404) - same posture as the create_remediation
+    route documented in PR-SCAN-DISK-TENANT.
+    """
+    workflow = _get_workflow()
+    owner_tenant_id = workflow.get_scan_owner_tenant_id(scan_id)
+    if owner_tenant_id is None or owner_tenant_id != str(user.tenant_id):
+        raise HTTPException(status_code=404, detail=f"Scan trace {scan_id} not found")
     trace_dir = os.path.join(os.environ.get("DAENA_VAR", "var"), "scan_traces")
     trace_path = os.path.join(trace_dir, f"{scan_id}.json")
     if not os.path.isfile(trace_path):
@@ -589,9 +620,15 @@ async def get_scan_status(
     job_id: str,
     user: CurrentUser = Depends(get_current_user),
 ) -> ScanStatusResponse:
-    """Poll scan progress. Returns current status and completion percentage."""
-    _ = user
+    """Poll scan progress. Returns current status and completion percentage.
+
+    Ownership (K-3): the caller's tenant must own this scan; cross-tenant
+    access is mapped to 404 to avoid id-existence probing.
+    """
     workflow = _get_workflow()
+    owner_tenant_id = workflow.get_scan_owner_tenant_id(job_id)
+    if owner_tenant_id is None or owner_tenant_id != str(user.tenant_id):
+        raise HTTPException(status_code=404, detail=f"Scan job {job_id} not found")
 
     try:
         status = await workflow.get_scan_status(job_id)
@@ -613,9 +650,14 @@ async def get_scan_report(
     job_id: str,
     user: CurrentUser = Depends(get_current_user),
 ) -> ScanReportResponse:
-    """Get the completed scan report with findings, cost, and summary."""
-    _ = user
+    """Get the completed scan report with findings, cost, and summary.
+
+    Ownership (K-3): caller's tenant must own this scan; 404 on miss.
+    """
     workflow = _get_workflow()
+    owner_tenant_id = workflow.get_scan_owner_tenant_id(job_id)
+    if owner_tenant_id is None or owner_tenant_id != str(user.tenant_id):
+        raise HTTPException(status_code=404, detail=f"Scan job {job_id} not found")
 
     try:
         report = await workflow.get_scan_report(job_id)
@@ -649,9 +691,13 @@ async def download_scan_report_pdf(
     when reportlab was available at generation time, markdown when it
     fell back. This matches what actually landed on disk so browsers
     pick the right viewer.
+
+    Ownership (K-3): caller's tenant must own this scan; 404 on miss.
     """
-    _ = user
     workflow = _get_workflow()
+    owner_tenant_id = workflow.get_scan_owner_tenant_id(job_id)
+    if owner_tenant_id is None or owner_tenant_id != str(user.tenant_id):
+        raise HTTPException(status_code=404, detail=f"Scan job {job_id} not found")
 
     try:
         report = await workflow.get_scan_report(job_id)
@@ -734,13 +780,18 @@ async def stream_scan_events(
     tenant ownership is intentionally NOT enforced here yet (see
     KLYNTAR_SECURITY_MODULE_AUDIT.md "Next sprint - tenant scoping"
     section); the workflow object is currently process-global and
-    not tenant-keyed, so the right place to add ownership is in
-    ScanWorkflow itself, paired with a job-to-tenant migration.
+    not tenant-keyed at the workflow lifecycle level, so the right place
+    to scope it more deeply is in ScanWorkflow itself, paired with a
+    job-to-tenant migration.
+
+    Ownership (K-3, 2026-06-01): the caller's tenant must own this scan.
+    Cross-tenant access is mapped to 404 (not 403) to avoid leaking which
+    scan ids exist for other tenants.
     """
-    # Reference the authenticated user so static analyzers don't
-    # flag it as unused; future tenant scoping will read user.tenant_id.
-    _ = user
     workflow = _get_workflow()
+    owner_tenant_id = workflow.get_scan_owner_tenant_id(job_id)
+    if owner_tenant_id is None or owner_tenant_id != str(user.tenant_id):
+        raise HTTPException(status_code=404, detail=f"Scan {job_id} not found")
 
     try:
         # Confirm the job exists before opening the stream.
@@ -936,8 +987,17 @@ async def rerun_scan(
     Previously this endpoint was unauthenticated, which meant any
     network-reachable caller could trigger expensive LLM-driven scans
     on the founder's machine (cost amplification / DoS).
+
+    Ownership (K-3, 2026-06-01): the caller's tenant must own the
+    ORIGINAL scan being rerun, and the NEW scan is attributed to the
+    caller (not "system" / "default" as it was previously - that was a
+    tenant-bypass bug that mis-attributed every rerun to a fake tenant).
     """
-    _ = user
+    workflow = _get_workflow()
+    owner_tenant_id = workflow.get_scan_owner_tenant_id(scan_id)
+    if owner_tenant_id is None or owner_tenant_id != str(user.tenant_id):
+        raise HTTPException(status_code=404, detail=f"Scan {scan_id} not found")
+
     import json
     trace_path = _scan_trace_path(scan_id)
     report_path = _scan_report_path(scan_id)
@@ -963,9 +1023,12 @@ async def rerun_scan(
             detail="Original scan record missing 'target' field; cannot rerun.",
         )
 
-    workflow = _get_workflow()
-    user_id = "system"
-    tenant_id = "default"
+    # K-3 fix: the NEW scan inherits the calling user's identity instead
+    # of being attributed to "system" / "default" (which broke tenant
+    # isolation and caused rerun-spawned scans to never appear in the
+    # caller's history).
+    user_id = str(user.id)
+    tenant_id = str(user.tenant_id)
     try:
         job = await workflow.start_scan(
             target=str(target),
@@ -1012,8 +1075,17 @@ async def delete_scan(
     Auth (K-2, 2026-06-01): now requires a valid bearer access token.
     Previously this endpoint was unauthenticated, allowing any
     network-reachable caller to archive or hard-delete any scan.
+
+    Ownership (K-3, 2026-06-01): the caller's tenant must own this scan.
+    Cross-tenant deletes are blocked with 404 (id-existence not leaked).
     """
-    _ = user
+    workflow = _get_workflow()
+    owner_tenant_id = workflow.get_scan_owner_tenant_id(scan_id)
+    if owner_tenant_id is None or owner_tenant_id != str(user.tenant_id):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Scan {scan_id} has no trace or report on disk",
+        )
     trace = _scan_trace_path(scan_id)
     report = _scan_report_path(scan_id)
     if not os.path.isfile(trace) and not os.path.isfile(report):
@@ -1037,8 +1109,17 @@ async def delete_all_scans(
     Previously this BULK destructive endpoint was unauthenticated,
     meaning any network-reachable caller could archive (or with
     ``hard=true``, irrecoverably delete) every scan in history.
+
+    Ownership (K-3, 2026-06-01): only scans owned by the caller's
+    tenant are archived/deleted. Legacy scans on disk without a
+    persisted tenant_id (pre-PR-SCAN-DISK-TENANT) are skipped
+    fail-closed so this endpoint cannot be used to wipe other tenants'
+    data. The response counts include both processed and skipped so
+    the caller has an honest report of what happened.
     """
-    _ = user
+    workflow = _get_workflow()
+    caller_tenant = str(user.tenant_id)
+
     trace_dir = os.path.join(os.environ.get("DAENA_VAR", "var"), "scan_traces")
     base = os.environ.get("SECURITY_REPORTS_DIR", os.path.join("var", "security_reports"))
     scan_ids: set[str] = set()
@@ -1051,9 +1132,24 @@ async def delete_all_scans(
             if name.endswith(".json"):
                 scan_ids.add(name[:-5])
 
-    results = [_archive_scan(sid, hard=hard) for sid in sorted(scan_ids)]
+    owned: list[str] = []
+    skipped_cross_tenant = 0
+    skipped_legacy_no_tenant = 0
+    for sid in sorted(scan_ids):
+        owner = workflow.get_scan_owner_tenant_id(sid)
+        if owner is None:
+            skipped_legacy_no_tenant += 1
+            continue
+        if owner != caller_tenant:
+            skipped_cross_tenant += 1
+            continue
+        owned.append(sid)
+
+    results = [_archive_scan(sid, hard=hard) for sid in owned]
     return {
         "processed": len(results),
+        "skipped_cross_tenant": skipped_cross_tenant,
+        "skipped_legacy_no_tenant": skipped_legacy_no_tenant,
         "hard": hard,
         "results": results,
     }
