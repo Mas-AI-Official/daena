@@ -431,8 +431,11 @@ class TestApiSurface:
 
     @pytest.mark.asyncio
     async def test_integrations_execute_accepts_owner_email(
-        self, client, auth_headers,
+        self, client, auth_headers, seed_auth_principal,
     ):
+        # seed_auth_principal: the blocked-tool call writes a goa_audit_events
+        # row FK'd to the caller's tenant + actor; with per-test DB isolation
+        # those must be seeded (previously leaked from another test).
         # The endpoint accepts the field even when the user has no
         # connections; the call returns an error_type, not 422.
         resp = await client.post(
@@ -455,8 +458,10 @@ class TestApiSurface:
 
     @pytest.mark.asyncio
     async def test_integrations_qualified_accepts_owner_email(
-        self, client, auth_headers,
+        self, client, auth_headers, seed_auth_principal,
     ):
+        # seed_auth_principal: see sibling test - the qualified path also
+        # writes a tenant/actor-FK'd audit row on the blocked call.
         resp = await client.post(
             "/api/v1/integrations/execute/qualified",
             headers=auth_headers,

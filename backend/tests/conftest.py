@@ -16,7 +16,7 @@ from collections.abc import AsyncGenerator
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import (
@@ -173,3 +173,49 @@ def auth_headers(test_user_id: uuid.UUID, test_tenant_id: uuid.UUID) -> dict[str
         role="FOUNDER",
     )
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+async def seed_auth_principal(
+    db_session: AsyncSession,
+    test_tenant_id: uuid.UUID,
+    test_user_id: uuid.UUID,
+):
+    """Persist the canonical auth_headers Tenant + User into the (now clean)
+    DB so endpoints that write tenant/actor-FK'd rows (e.g. the goa_audit_events
+    audit row on a blocked integration call) have valid FK targets.
+
+    Opt-in (NOT autouse): tests that drive a tenant-scoped HTTP endpoint with
+    ``auth_headers`` but do not otherwise seed their principal should request
+    this. It is deliberately NOT autouse because many tests create their OWN
+    tenant with this same fixed id (e.g. via /auth/register) and a global
+    pre-seed would re-introduce the UNIQUE-collision this suite's
+    _clean_db_between_tests fixture just removed.
+
+    Before _clean_db_between_tests landed (2026-06-01), these tests passed
+    only because a prior test had leaked the same tenant/user row into the
+    shared DB. Cleaning between tests correctly exposed the missing seed;
+    this fixture is the proper, explicit replacement for that accidental
+    leak. Returns the (tenant_id, user_id) for convenience.
+    """
+    from app.models.identity import Tenant, User
+
+    existing_t = (
+        await db_session.execute(select(Tenant).where(Tenant.id == test_tenant_id))
+    ).scalar_one_or_none()
+    if existing_t is None:
+        db_session.add(Tenant(
+            id=test_tenant_id, name="Test Tenant", slug="test-tenant", settings={},
+        ))
+        await db_session.flush()
+    existing_u = (
+        await db_session.execute(select(User).where(User.id == test_user_id))
+    ).scalar_one_or_none()
+    if existing_u is None:
+        db_session.add(User(
+            id=test_user_id, tenant_id=test_tenant_id,
+            email="test-principal@example.com", password_hash="x",
+            role="FOUNDER", is_active=True,
+        ))
+        await db_session.flush()
+    return {"tenant_id": test_tenant_id, "user_id": test_user_id}
