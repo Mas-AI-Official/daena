@@ -41,6 +41,7 @@ BACKGROUND PATH OK -- these endpoints never block the scan hot path.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Literal
 
 import httpx
@@ -72,10 +73,31 @@ def _f5_base_url() -> str:
 
 
 def _f5_reference_wav() -> str | None:
-    """Optional clone-reference override. Unset -> let the F5 service use its
-    own $F5_VOICE_REF default (keeps Daena free of hardcoded wav paths)."""
+    """Resolve the F5 voice-clone reference WAV.
+
+    Resolution order (no hardcoded personal path; repo-relative auto-discovery):
+      1. $F5_TTS_REFERENCE_WAV env override (explicit founder choice).
+      2. the repo's bundled ``daena_voice.wav`` auto-discovered relative to this
+         file -- tts.py lives at <repo>/backend/app/api/v1/, so the repo root is
+         parents[4]. This FIXES the known path mismatch: the F5 service defaults
+         to D:/Ideas/daena_voice.wav (frequently absent) while the real brand
+         reference ships at <repo>/daena_voice.wav.
+      3. None -> let the F5 service fall back to its own $F5_VOICE_REF default.
+
+    Note: daena_voice.wav is git-untracked, so on a fresh clone step 2 yields
+    nothing and the founder must set F5_TTS_REFERENCE_WAV (or the F5 service's
+    F5_VOICE_REF) explicitly.
+    """
     ref = os.environ.get("F5_TTS_REFERENCE_WAV", "").strip()
-    return ref or None
+    if ref:
+        return ref
+    try:
+        repo_wav = Path(__file__).resolve().parents[4] / "daena_voice.wav"
+        if repo_wav.is_file():
+            return str(repo_wav)
+    except (IndexError, OSError):
+        pass
+    return None
 
 
 # Health probe stays short so a down/absent F5 service fails fast to Edge.

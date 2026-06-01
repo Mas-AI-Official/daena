@@ -132,3 +132,20 @@ async def test_defaults_reports_providers_honestly(
     assert tts["providers"]["f5"]["available"] is False
     assert tts["providers"]["f5"]["reason"]
     assert tts["active_provider"] in ("edge", "none")
+
+
+def test_reference_wav_env_override(monkeypatch) -> None:
+    """An explicit F5_TTS_REFERENCE_WAV env wins over auto-discovery."""
+    from app.api.v1 import tts as tts_mod
+    monkeypatch.setenv("F5_TTS_REFERENCE_WAV", "X:/custom/ref.wav")
+    assert tts_mod._f5_reference_wav() == "X:/custom/ref.wav"
+
+
+def test_reference_wav_autodiscovers_or_none(monkeypatch) -> None:
+    """With no env override, resolve to the repo's daena_voice.wav if present,
+    else None (delegate to the F5 service default) - never a crash, never a
+    hardcoded personal path."""
+    from app.api.v1 import tts as tts_mod
+    monkeypatch.delenv("F5_TTS_REFERENCE_WAV", raising=False)
+    ref = tts_mod._f5_reference_wav()
+    assert ref is None or ref.replace("\\", "/").endswith("daena_voice.wav")
