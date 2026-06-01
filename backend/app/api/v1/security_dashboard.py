@@ -404,6 +404,7 @@ async def recommend_tools(
 async def list_scans(
     limit: int = 50,
     archived: bool = False,
+    user: CurrentUser = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """List recent scan traces.
 
@@ -413,13 +414,23 @@ async def list_scans(
     Without this flag the previous behavior is preserved (active list
     only). Closes the "archive makes reports disappear with no recovery
     surface" gap from the Phase 9B matrix.
+
+    Auth (K-2, 2026-06-01): now requires a valid bearer access token.
+    Previously this endpoint was unauthenticated, enumerating every
+    scan ever run with target paths, severity counts, findings totals,
+    and cost - a direct information-disclosure surface.
     """
+    _ = user
     return _load_scan_history(limit, archived=archived)
 
 
 @router.get("/scans/{scan_id}")
-async def get_scan_detail(scan_id: str) -> dict[str, Any]:
+async def get_scan_detail(
+    scan_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """Get full detail of a specific scan trace."""
+    _ = user
     trace_dir = os.path.join(os.environ.get("DAENA_VAR", "var"), "scan_traces")
     trace_path = os.path.join(trace_dir, f"{scan_id}.json")
     if not os.path.isfile(trace_path):
@@ -574,8 +585,12 @@ async def start_scan(
 
 
 @router.get("/scans/{job_id}/status", response_model=ScanStatusResponse)
-async def get_scan_status(job_id: str) -> ScanStatusResponse:
+async def get_scan_status(
+    job_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> ScanStatusResponse:
     """Poll scan progress. Returns current status and completion percentage."""
+    _ = user
     workflow = _get_workflow()
 
     try:
@@ -594,8 +609,12 @@ async def get_scan_status(job_id: str) -> ScanStatusResponse:
 
 
 @router.get("/scans/{job_id}/report", response_model=ScanReportResponse)
-async def get_scan_report(job_id: str) -> ScanReportResponse:
+async def get_scan_report(
+    job_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> ScanReportResponse:
     """Get the completed scan report with findings, cost, and summary."""
+    _ = user
     workflow = _get_workflow()
 
     try:
@@ -619,7 +638,10 @@ async def get_scan_report(job_id: str) -> ScanReportResponse:
 
 
 @router.get("/scans/{job_id}/report/pdf")
-async def download_scan_report_pdf(job_id: str) -> FileResponse:
+async def download_scan_report_pdf(
+    job_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> FileResponse:
     """Download the report file for a completed scan.
 
     The URL keeps its ``/pdf`` suffix for backward compatibility, but
@@ -628,6 +650,7 @@ async def download_scan_report_pdf(job_id: str) -> FileResponse:
     fell back. This matches what actually landed on disk so browsers
     pick the right viewer.
     """
+    _ = user
     workflow = _get_workflow()
 
     try:
@@ -892,7 +915,10 @@ def _archive_scan(scan_id: str, *, hard: bool = False) -> dict[str, Any]:
 
 
 @router.post("/scans/{scan_id}/rerun")
-async def rerun_scan(scan_id: str) -> ScanJobResponse:
+async def rerun_scan(
+    scan_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> ScanJobResponse:
     """Re-run a scan with the same target + tier as the original.
 
     Phase 2.7 (2026-04-25): added so the user can repeat a scan from
@@ -905,7 +931,13 @@ async def rerun_scan(scan_id: str) -> ScanJobResponse:
     this endpoint reads the ORIGINAL scan record (a JSON file in
     ``var/security_reports/``) and starts a NEW scan. It does NOT
     modify or delete any actual files on disk.
+
+    Auth (K-2, 2026-06-01): now requires a valid bearer access token.
+    Previously this endpoint was unauthenticated, which meant any
+    network-reachable caller could trigger expensive LLM-driven scans
+    on the founder's machine (cost amplification / DoS).
     """
+    _ = user
     import json
     trace_path = _scan_trace_path(scan_id)
     report_path = _scan_report_path(scan_id)
@@ -967,12 +999,21 @@ async def rerun_scan(scan_id: str) -> ScanJobResponse:
 
 
 @router.delete("/scans/{scan_id}")
-async def delete_scan(scan_id: str, hard: bool = False) -> dict[str, Any]:
+async def delete_scan(
+    scan_id: str,
+    hard: bool = False,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """Archive (default) or hard-delete a scan's trace + report.
 
     CLAUDE.md rule 2: archive by default; dev mode must pass ``hard=true``
     to actually unlink. Returns which artifacts were moved and where.
+
+    Auth (K-2, 2026-06-01): now requires a valid bearer access token.
+    Previously this endpoint was unauthenticated, allowing any
+    network-reachable caller to archive or hard-delete any scan.
     """
+    _ = user
     trace = _scan_trace_path(scan_id)
     report = _scan_report_path(scan_id)
     if not os.path.isfile(trace) and not os.path.isfile(report):
@@ -984,11 +1025,20 @@ async def delete_scan(scan_id: str, hard: bool = False) -> dict[str, Any]:
 
 
 @router.delete("/scans")
-async def delete_all_scans(hard: bool = False) -> dict[str, Any]:
+async def delete_all_scans(
+    hard: bool = False,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """Bulk archive (default) every scan in history. ``hard=true`` hard-
     deletes. Scoped to the scan_traces + security_reports directories
     owned by this process. Returns counts + per-scan status.
+
+    Auth (K-2, 2026-06-01): now requires a valid bearer access token.
+    Previously this BULK destructive endpoint was unauthenticated,
+    meaning any network-reachable caller could archive (or with
+    ``hard=true``, irrecoverably delete) every scan in history.
     """
+    _ = user
     trace_dir = os.path.join(os.environ.get("DAENA_VAR", "var"), "scan_traces")
     base = os.environ.get("SECURITY_REPORTS_DIR", os.path.join("var", "security_reports"))
     scan_ids: set[str] = set()

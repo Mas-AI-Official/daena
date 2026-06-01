@@ -47,3 +47,71 @@ async def test_scan_events_rejects_bogus_token(client: AsyncClient) -> None:
         headers={"Authorization": "Bearer this-is-not-a-real-token"},
     )
     assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# K-2 (2026-06-01): the rest of /security/scans/* surface
+#
+# Survey during K-1 verification found every /scans route except
+# POST /scans/start and POST /scans/{id}/findings/{id}/create-remediation
+# was unauthenticated. Worst-case routes are DELETE /scans (bulk archive
+# or hard-delete every scan) and POST /scans/{id}/rerun (cost
+# amplification: anyone could trigger expensive LLM-driven re-scans).
+# These tests lock in the K-2 hardening route-by-route.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scans_list_requires_auth(client: AsyncClient) -> None:
+    """GET /security/scans without a token must not enumerate any scans."""
+    res = await client.get("/api/v1/security/scans")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_scan_detail_requires_auth(client: AsyncClient) -> None:
+    """GET /security/scans/{id} (trace JSON) requires auth."""
+    res = await client.get("/api/v1/security/scans/some-fake-id")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_scan_status_requires_auth(client: AsyncClient) -> None:
+    """GET /security/scans/{id}/status requires auth."""
+    res = await client.get("/api/v1/security/scans/some-fake-id/status")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_scan_report_requires_auth(client: AsyncClient) -> None:
+    """GET /security/scans/{id}/report requires auth."""
+    res = await client.get("/api/v1/security/scans/some-fake-id/report")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_scan_report_pdf_requires_auth(client: AsyncClient) -> None:
+    """GET /security/scans/{id}/report/pdf requires auth."""
+    res = await client.get("/api/v1/security/scans/some-fake-id/report/pdf")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_scan_rerun_requires_auth(client: AsyncClient) -> None:
+    """POST /security/scans/{id}/rerun requires auth (cost-amp gate)."""
+    res = await client.post("/api/v1/security/scans/some-fake-id/rerun")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_scan_delete_one_requires_auth(client: AsyncClient) -> None:
+    """DELETE /security/scans/{id} requires auth (destructive)."""
+    res = await client.delete("/api/v1/security/scans/some-fake-id")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_scan_delete_all_requires_auth(client: AsyncClient) -> None:
+    """DELETE /security/scans (bulk) requires auth (catastrophic destructive)."""
+    res = await client.delete("/api/v1/security/scans")
+    assert res.status_code == 401
