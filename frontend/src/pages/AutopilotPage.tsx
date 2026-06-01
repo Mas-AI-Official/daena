@@ -34,6 +34,12 @@ import { useChatStore } from '@/stores/chatStore'
 import { toast } from '@/stores/toastStore'
 
 // ── Backend contracts (exact, from autopilot.py + continuation.py) ──
+interface PlanStepDto {
+  id: string
+  description: string
+  task_type: string
+  estimated_cost_usd: number
+}
 interface AutopilotStateDto {
   enabled: boolean
   session_id: string
@@ -45,6 +51,8 @@ interface AutopilotStateDto {
   cost_ceiling_usd: number
   killed: boolean
   total_notifications: number
+  awaiting_plan_approval?: boolean
+  plan?: PlanStepDto[]
 }
 interface AutopilotResponseDto {
   success: boolean
@@ -74,6 +82,8 @@ interface QueueFeedItem {
 
 const GOVERNANCE_PRESETS = ['BALANCED', 'GOVERNED', 'UNLEASHED'] as const
 const POLL_MS = 4_000
+// Synthetic gate id the backend sets for goal-derived plan review (DECISION-002).
+const PLAN_REVIEW_GATE = '__plan_review__'
 const FEED_LABELS: Record<string, string> = {
   'task.enqueued': 'Enqueued',
   'task.started': 'Started',
@@ -130,6 +140,7 @@ export default function AutopilotPage() {
   // Start-form inputs.
   const [costCeiling, setCostCeiling] = useState('1.0')
   const [preset, setPreset] = useState<(typeof GOVERNANCE_PRESETS)[number]>('BALANCED')
+  const [goal, setGoal] = useState('')
 
   const refresh = useCallback(async () => {
     if (!sessionId) return
@@ -188,25 +199,44 @@ export default function AutopilotPage() {
   })
 
   async function startRun() {
-    if (!sessionId) {
-      toast.error('Enter a session id (or open an Autopilot chat) first.')
-      return
-    }
     const ceiling = Number(costCeiling)
     if (!Number.isFinite(ceiling) || ceiling <= 0) {
       toast.error('Cost ceiling must be a positive number.')
       return
     }
-    setBusy('start')
+    const trimmedGoal = goal.trim()
+    // Resolve the session: use the entered/active one, or create a fresh
+    // EXE + autopilot session when starting from a goal with none selected.
+    let sid = sessionId
+    if (!sid) {
+      if (!trimmedGoal) {
+        toast.error('Enter a goal (or a session id) to start a run.')
+        return
+      }
+      setBusy('start')
+      try {
+        const session = await useChatStore.getState().createSession({ mode: 'EXE', autopilot: true })
+        sid = session.id
+        setSessionId(sid)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to create a session')
+        setBusy(null)
+        return
+      }
+    } else {
+      setBusy('start')
+    }
     try {
       const res = await api.post<AutopilotResponseDto>('/autopilot/start', {
-        session_id: sessionId,
+        session_id: sid,
         cost_ceiling: ceiling,
         governance_preset: preset,
+        ...(trimmedGoal ? { goal: trimmedGoal } : {}),
       })
       if (res.data?.state) setState(res.data.state)
       toast.success(res.data?.message || 'Autopilot started')
-      await refresh()
+      // The start response carries the initial state; the visibility-gated
+      // poll (enabled once sessionId is set) takes over for live updates.
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status
       if (status === 409) toast.info('Autopilot is already running for this session.')
@@ -246,6 +276,8 @@ export default function AutopilotPage() {
 
   const status = runStatus(state)
   const naLabel = 'not available from backend yet'
+  const planById = (id: string): PlanStepDto | undefined => state?.plan?.find((p) => p.id === id)
+  const stepLabel = (id: string): string => planById(id)?.description || id
 
   return (
     <div className="h-full overflow-y-auto">
@@ -257,8 +289,8 @@ export default function AutopilotPage() {
               <Rocket size={20} className="text-accent-amber" /> Autopilot - Accept &amp; Go
             </h1>
             <p className="text-sm text-starlight-400 mt-1">
-              Start, monitor, and approve a governed autopilot run. Daena builds the plan when the
-              session runs in Autopilot (EXE) chat mode; this console controls and audits that run.
+              Enter a goal and Daena generates a governed plan. You review it and approve before any
+              step executes; the plan, live feed, and gates update here as it runs.
             </p>
           </div>
           <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={loading || !sessionId}>
@@ -268,10 +300,20 @@ export default function AutopilotPage() {
 
         {/* Session + start controls */}
         <Card variant="glass" padding="md" className="space-y-3">
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-starlight-500 font-semibold">Company goal</label>
+            <textarea
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+              placeholder="e.g. Research our top 3 competitors and draft a positioning summary"
+              rows={2}
+              className="w-full glass-input px-3 py-2 rounded-lg text-xs text-starlight-200 mt-1 resize-y"
+            />
+          </div>
           <div className="flex flex-col gap-3 md:flex-row md:items-end">
             <div className="flex-1">
-              <label className="text-[10px] uppercase tracking-wider text-starlight-500 font-semibold">Session id</label>
-              <Input value={sessionId} onChange={(e) => setSessionId(e.target.value)} placeholder="active chat session id" />
+              <label className="text-[10px] uppercase tracking-wider text-starlight-500 font-semibold">Session id (optional)</label>
+              <Input value={sessionId} onChange={(e) => setSessionId(e.target.value)} placeholder="auto-created from your goal" />
             </div>
             <div className="w-28">
               <label className="text-[10px] uppercase tracking-wider text-starlight-500 font-semibold">Cost ceiling ($)</label>
@@ -288,8 +330,9 @@ export default function AutopilotPage() {
               </select>
             </div>
             <div className="flex gap-2">
-              <Button onClick={() => void startRun()} disabled={busy === 'start' || !sessionId}>
-                {busy === 'start' ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />} Start run
+              <Button onClick={() => void startRun()} disabled={busy === 'start' || (!sessionId && !goal.trim())}>
+                {busy === 'start' ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
+                {goal.trim() ? ' Generate governed plan' : ' Start run'}
               </Button>
               {state?.enabled && !state.killed && (
                 <Button variant="danger" onClick={() => void stopRun()} disabled={busy === 'stop'}>
@@ -299,8 +342,8 @@ export default function AutopilotPage() {
             </div>
           </div>
           <p className="text-[11px] text-starlight-500">
-            New goal? Open Daena chat, switch to Autopilot (EXE) mode, and describe the goal - the
-            generated plan and its gates appear here for approval.
+            Daena decomposes the goal into a governed plan and pauses for your review before running
+            anything. No step executes (and no budget is spent) until you approve the plan.
           </p>
         </Card>
 
@@ -333,15 +376,27 @@ export default function AutopilotPage() {
           <Card variant="glass" padding="md" className="border-accent-amber/40 bg-accent-amber/5">
             <div className="flex items-center gap-2 mb-2">
               <ShieldAlert size={16} className="text-accent-amber" />
-              <h2 className="text-sm font-semibold text-starlight-100">Approval gate</h2>
+              <h2 className="text-sm font-semibold text-starlight-100">
+                {state.paused_step === PLAN_REVIEW_GATE ? 'Plan review' : 'Approval gate'}
+              </h2>
             </div>
-            <p className="text-xs text-starlight-300">
-              Step <span className="font-mono text-starlight-100">{state.paused_step}</span> is paused and needs your decision.
-            </p>
-            <p className="text-[11px] text-starlight-500 mt-1">Per-step risk and detail: {naLabel}.</p>
+            {state.paused_step === PLAN_REVIEW_GATE ? (
+              <p className="text-xs text-starlight-300">
+                Daena generated a {state.pending_steps.length}-step plan (below). Approve to begin execution,
+                or reject to discard it. Nothing runs and no budget is spent until you approve.
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-starlight-300">
+                  Step <span className="text-starlight-100">{stepLabel(state.paused_step)}</span> is paused and needs your decision.
+                </p>
+                <p className="text-[11px] text-starlight-500 mt-1">Per-step risk: {naLabel}.</p>
+              </>
+            )}
             <div className="flex gap-2 mt-3">
               <Button onClick={() => void decideGate('approve')} disabled={busy === 'approve'}>
-                {busy === 'approve' ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Approve &amp; continue
+                {busy === 'approve' ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                {state.paused_step === PLAN_REVIEW_GATE ? ' Approve & start' : ' Approve & continue'}
               </Button>
               <Button variant="danger" onClick={() => void decideGate('reject')} disabled={busy === 'reject'}>
                 {busy === 'reject' ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />} Reject
@@ -369,13 +424,13 @@ export default function AutopilotPage() {
             <div>
               <p className="text-[11px] font-semibold text-starlight-300 flex items-center gap-1.5 mb-1.5"><ListChecks size={12} /> Steps</p>
               {state.completed_steps.length === 0 && state.pending_steps.length === 0 ? (
-                <p className="text-[11px] text-starlight-500">Plan is empty. It populates when Daena plans this session in Autopilot chat mode.</p>
+                <p className="text-[11px] text-starlight-500">Plan is empty. Enter a goal above to generate a governed plan, or run this session in Autopilot chat mode.</p>
               ) : (
                 <div className="space-y-1">
                   {state.completed_steps.map((id) => (
                     <div key={`c-${id}`} className="flex items-center gap-2 text-xs">
                       <CheckCircle2 size={12} className="text-status-success shrink-0" />
-                      <span className="font-mono text-starlight-300 truncate">{id}</span>
+                      <span className="text-starlight-300 truncate">{stepLabel(id)}</span>
                       <Badge variant="success" size="sm">done</Badge>
                     </div>
                   ))}
@@ -384,7 +439,10 @@ export default function AutopilotPage() {
                       {id === state.paused_step
                         ? <ShieldAlert size={12} className="text-accent-amber shrink-0" />
                         : <Clock size={12} className="text-starlight-500 shrink-0" />}
-                      <span className="font-mono text-starlight-300 truncate">{id}</span>
+                      <span className="text-starlight-300 truncate">{stepLabel(id)}</span>
+                      {planById(id)?.estimated_cost_usd
+                        ? <span className="text-[10px] text-starlight-500 shrink-0">~${planById(id)!.estimated_cost_usd.toFixed(4)}</span>
+                        : null}
                       <Badge variant={id === state.paused_step ? 'warning' : 'default'} size="sm">
                         {id === state.paused_step ? 'gate' : 'pending'}
                       </Badge>
@@ -392,7 +450,9 @@ export default function AutopilotPage() {
                   ))}
                 </div>
               )}
-              <p className="text-[10px] text-starlight-500 mt-1.5">Per-step description / risk / cost: {naLabel} (state exposes step ids only).</p>
+              {!state.plan?.length && (
+                <p className="text-[10px] text-starlight-500 mt-1.5">Per-step description / cost: {naLabel} (this run exposes step ids only).</p>
+              )}
             </div>
           </Card>
         )}

@@ -34,6 +34,11 @@ APPROVAL_TIMEOUT_SECONDS = 300.0  # 5 minutes
 # Default cost ceiling per autopilot run
 DEFAULT_COST_CEILING_USD = 1.0
 
+# Synthetic gate id for the initial plan-review pause on goal-derived runs.
+# Approving this gate (via /autopilot/approve) begins execution; rejecting it
+# stops the run before any step executes or budget is spent.
+PLAN_REVIEW_GATE = "__plan_review__"
+
 
 @dataclass
 class AutopilotState:
@@ -52,6 +57,8 @@ class AutopilotState:
     total_cost_usd: float = 0.0
     cost_ceiling_usd: float = DEFAULT_COST_CEILING_USD
     killed: bool = False
+    awaiting_plan_approval: bool = False
+    plan: list[dict] = field(default_factory=list)
     notifications: list[dict] = field(default_factory=list)
     _approval_event: asyncio.Event | None = field(
         default=None, repr=False, compare=False,
@@ -69,6 +76,8 @@ class AutopilotState:
             "total_cost_usd": self.total_cost_usd,
             "cost_ceiling_usd": self.cost_ceiling_usd,
             "killed": self.killed,
+            "awaiting_plan_approval": self.awaiting_plan_approval,
+            "plan": self.plan,
             "total_notifications": len(self.notifications),
         }
 
@@ -130,6 +139,15 @@ class AutopilotController:
             session_id=session_id,
             pending_steps=[step.id for step in plan],
             cost_ceiling_usd=ctx.get("cost_ceiling", DEFAULT_COST_CEILING_USD),
+            plan=[
+                {
+                    "id": step.id,
+                    "description": step.description,
+                    "task_type": step.task_type,
+                    "estimated_cost_usd": getattr(step, "estimated_cost_usd", 0.0),
+                }
+                for step in plan
+            ],
         )
         self._active_sessions[session_id] = state
 
@@ -235,6 +253,23 @@ class AutopilotController:
         before each execution.
         """
         try:
+            # Governed-first (council DECISION-002): a goal-derived plan pauses
+            # for founder review BEFORE any step executes or budget is spent.
+            # The plan is the first criticality gate. Approving the synthetic
+            # PLAN_REVIEW_GATE via /autopilot/approve begins execution.
+            if context.get("require_initial_approval") and plan:
+                state.paused_step = PLAN_REVIEW_GATE
+                state.awaiting_plan_approval = True
+                await self._notify(state, "plan_ready_for_review", {
+                    "total_steps": len(plan),
+                    "message": "Plan generated. Review and approve to begin execution.",
+                })
+                approved = await self._wait_for_approval(state, PLAN_REVIEW_GATE)
+                state.awaiting_plan_approval = False
+                if not approved:
+                    return
+                state.paused_step = None
+
             for step in plan:
                 # Check kill switch
                 if state.killed:

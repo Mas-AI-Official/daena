@@ -35,10 +35,17 @@ _SSE_HEADERS = {
 
 
 class AutopilotStartRequest(BaseModel):
-    """Request to start autopilot for a session."""
+    """Request to start autopilot for a session.
+
+    If ``goal`` is provided, the goal is decomposed into a real plan via the
+    SwarmPlanner and the run starts PAUSED for founder plan-review before any
+    step executes (governed-first; see DECISION-002). If ``goal`` is omitted,
+    the run starts with an empty plan (the chat-orchestrator activation path).
+    """
     session_id: str
     cost_ceiling: float = Field(default=1.0, ge=0.01, le=100.0)
     governance_preset: str = "BALANCED"
+    goal: str | None = None
 
 
 class AutopilotApproveRequest(BaseModel):
@@ -118,22 +125,57 @@ async def start_autopilot(
             detail="Autopilot is already running for this session",
         )
 
-    # For now, start with an empty plan. The chat_orchestrator will
-    # populate the plan when it detects autopilot mode and calls
-    # the SwarmPlanner. This endpoint is for explicit user activation.
+    # Build the plan. With a goal, decompose it into real subtasks via the
+    # SwarmPlanner and require an initial plan-review approval before any step
+    # executes (governed-first, DECISION-002). Without a goal, start empty (the
+    # chat-orchestrator activation path) - unchanged behavior.
+    plan: list = []
+    require_initial_approval = False
+    if body.goal and body.goal.strip():
+        from app.core.events import get_runtime_registry
+        from app.services.runtimes.cost_estimator import CostEstimator
+        from app.services.swarm.planner import SwarmPlanner
+
+        try:
+            planner = SwarmPlanner(get_runtime_registry(), CostEstimator())
+            plan = await planner.decompose_and_route(
+                body.goal.strip(),
+                context={
+                    "cost_ceiling": body.cost_ceiling,
+                    "governance_preset": body.governance_preset,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - surface a clear 502, never a silent fail
+            logger.warning("autopilot.decompose_failed", error=str(exc))
+            raise HTTPException(
+                status_code=502,
+                detail=f"Plan generation failed: {exc}",
+            ) from exc
+        if not plan:
+            raise HTTPException(
+                status_code=422,
+                detail="The goal could not be decomposed into a plan. Rephrase and retry.",
+            )
+        require_initial_approval = True
+
     state = await controller.start(
         session_id=body.session_id,
-        plan=[],
+        plan=plan,
         context={
             "cost_ceiling": body.cost_ceiling,
             "governance_preset": body.governance_preset,
             "user_id": str(user.id),
+            "require_initial_approval": require_initial_approval,
         },
     )
 
     return AutopilotResponse(
         success=True,
-        message="Autopilot started",
+        message=(
+            "Plan generated. Review and approve to begin execution."
+            if require_initial_approval
+            else "Autopilot started"
+        ),
         state=state.to_dict(),
     )
 
