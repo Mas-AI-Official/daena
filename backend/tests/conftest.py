@@ -88,6 +88,36 @@ async def test_engine():
     await engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+async def _clean_db_between_tests(test_engine) -> AsyncGenerator[None, None]:
+    """Reset the shared in-memory DB to empty before every test.
+
+    Root cause of the bulk of the 2026-06-01 backend test-health cluster
+    (159 ``UNIQUE constraint failed: tenants.id`` + connectors.name errors,
+    concentrated in test_department_* and test_connection_v2_*): the
+    ``test_engine`` is session-scoped, so the schema + any COMMITTED rows
+    live for the whole run. The ``db_session`` fixture only ``rollback()``s,
+    which cannot undo a ``commit()`` (API endpoints like /auth/register and
+    many tests commit a tenant with the shared fixed id
+    ``11111111-1111-1111-1111-111111111111``). The first such test passes;
+    the next one inserting that id collides at setup -> ERROR. Each file
+    passes in isolation (fresh DB) but errors in the full run.
+
+    Fix: wipe all tables BEFORE each test (setup-time, not teardown, so we
+    never contend with a still-open db_session for the SQLite write lock).
+    Children-first (reversed dependency order) honors the FK pragma. This
+    makes every test start from a clean slate regardless of what committed
+    before it. No test in this suite relies on cross-test DB state (the only
+    non-function-scoped fixtures are event_loop, test_engine, and an env-var
+    bypass in test_3vilbob_e2e -- none seed rows), so this is pure isolation
+    with no behavioral change to passing tests.
+    """
+    async with test_engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
+    yield
+
+
 @pytest.fixture
 async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """Provide a transactional test database session.
