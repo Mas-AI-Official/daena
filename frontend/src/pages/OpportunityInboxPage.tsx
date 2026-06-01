@@ -74,7 +74,7 @@ export default function OpportunityInboxPage() {
   useEffect(() => {
     let cancelled = false
     api.get<{ used: number; cap: number; remaining: number; today_utc: string }>(
-      '/api/v1/opportunities/send-rate-limit',
+      '/opportunities/send-rate-limit',
     ).then((r) => {
       if (!cancelled) setRateLimit(r.data)
     }).catch(() => {
@@ -85,7 +85,7 @@ export default function OpportunityInboxPage() {
 
   useEffect(() => {
     let cancelled = false
-    api.get<OpportunityRow[]>('/api/v1/opportunities/')
+    api.get<OpportunityRow[]>('/opportunities/')
       .then((r) => {
         if (cancelled) return
         setRows(r.data)
@@ -102,7 +102,7 @@ export default function OpportunityInboxPage() {
     setRunning(true)
     setLastRunSummary(null)
     try {
-      const r = await api.post('/api/v1/opportunities/run-discovery', { top_n: 10 })
+      const r = await api.post('/opportunities/run-discovery', { top_n: 10 })
       const d = r.data as Record<string, unknown>
       const persisted = Number(d.persisted_count ?? 0)
       const updated = Number(d.updated_count ?? 0)
@@ -120,7 +120,7 @@ export default function OpportunityInboxPage() {
 
   async function setStatus(id: string, action: 'archive' | 'reject') {
     try {
-      await api.post(`/api/v1/opportunities/${id}/${action}`)
+      await api.post(`/opportunities/${id}/${action}`)
       setReloadCount((c) => c + 1)
     } catch {
       // surfaced via api error store
@@ -130,7 +130,7 @@ export default function OpportunityInboxPage() {
   async function createWorkstream(id: string) {
     try {
       const r = await api.post<{ workstream_id: string; department_name: string }>(
-        `/api/v1/opportunities/${id}/create-workstream`,
+        `/opportunities/${id}/create-workstream`,
       )
       setLastRunSummary(
         `Promoted to ${r.data.department_name}. Workstream ${r.data.workstream_id.slice(0, 8)} created.`,
