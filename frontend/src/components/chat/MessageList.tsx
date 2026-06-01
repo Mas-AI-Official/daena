@@ -28,17 +28,21 @@ const THINKING_VERBS = [
 
 function ThinkingBubble({ stages }: { stages?: { label: string; status: string }[] }) {
   const [verbIndex, setVerbIndex] = useState(0)
+  const activeStage = stages?.find(s => s.status === 'active')
 
-  // Cycle through verbs every 2.5s, or use real pipeline stages if available
+  // Cycle through verbs every 2.5s ONLY when there is no active pipeline
+  // stage to display. Previously the interval ran unconditionally even when
+  // displayText was using activeStage.label, wasting CPU on a hot path (this
+  // component renders during every assistant stream).
   useEffect(() => {
+    if (activeStage) return undefined
     const interval = setInterval(() => {
       setVerbIndex((prev) => (prev + 1) % THINKING_VERBS.length)
     }, 2500)
     return () => clearInterval(interval)
-  }, [])
+  }, [activeStage])
 
   // Use real stage label if available, otherwise use rotating verbs
-  const activeStage = stages?.find(s => s.status === 'active')
   const displayText = activeStage?.label || THINKING_VERBS[verbIndex]
 
   return (

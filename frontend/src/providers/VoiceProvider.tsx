@@ -273,9 +273,15 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
     loadVoices()
     syn.onvoiceschanged = loadVoices
-    // Fallback for browsers that don't fire onvoiceschanged on first load
-    setTimeout(loadVoices, 500)
-    return () => { syn.onvoiceschanged = null }
+    // Fallback for browsers that don't fire onvoiceschanged on first load.
+    // Capture the id so we can clear it on unmount; otherwise the 500ms timer
+    // can fire after the component is gone and trigger a "setState on
+    // unmounted component" warning in React strict mode + a minor leak.
+    const voiceLoadTimer = setTimeout(loadVoices, 500)
+    return () => {
+      clearTimeout(voiceLoadTimer)
+      syn.onvoiceschanged = null
+    }
   }, [])
 
   // ── TTS: browser SpeechSynthesis ──────────────────────────────────────────

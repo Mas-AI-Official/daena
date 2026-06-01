@@ -75,29 +75,56 @@ export function AccountDetails() {
         )}
       </div>
 
-      {/* Password */}
+      {/* Password
+        *
+        * ADR-001 honesty (2026-06-01): the Change Password button was a
+        * dead control - clicking it did nothing (no onClick handler, no
+        * backend route to call). Disabled + Coming Soon label until the
+        * /auth/change-password flow ships. Founder workaround in the
+        * meantime: use the password reset email flow (/forgot-password).
+        */}
       <div className="space-y-2">
         <label className="flex items-center gap-2 text-sm font-medium text-starlight-200">
           <Key size={14} /> Password
         </label>
-        <button className="px-4 py-2 rounded-lg bg-midnight-300/50 border border-white/10 text-sm text-starlight-300 hover:text-starlight-100 hover:border-white/20 transition-colors cursor-pointer">
+        <button
+          disabled
+          title="Use the password reset email flow at /forgot-password until in-app change ships."
+          className="px-4 py-2 rounded-lg bg-midnight-300/30 border border-white/5 text-sm text-starlight-500 cursor-not-allowed flex items-center gap-2"
+        >
           Change password
+          <span className="text-[10px] uppercase tracking-wider text-starlight-600 px-1.5 py-0.5 rounded bg-midnight-400/60">
+            Coming soon
+          </span>
         </button>
       </div>
 
-      {/* OAuth Connections */}
+      {/* OAuth Connections
+        *
+        * ADR-001 honesty (2026-06-01): the prior version of this panel
+        * hardcoded the 'Google' and 'GitHub' rows even when the user had
+        * never connected them - the only real signal was a string compare
+        * against user.oauth_provider, so the Connect buttons did nothing.
+        * Replaced with an honest reference to the /connections page (where
+        * real OAuth instances are managed, lifecycle-tracked, and tested).
+        */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-starlight-200">Connected accounts</h3>
-        <div className="space-y-2 max-w-md">
-          {['Google', 'GitHub'].map((provider) => (
-            <div key={provider} className="flex items-center justify-between px-4 py-3 rounded-lg bg-midnight-300/30 border border-white/5">
-              <span className="text-sm text-starlight-300">{provider}</span>
-              <button className="text-xs text-primary-400 hover:text-primary-300 transition-colors cursor-pointer">
-                {user?.oauth_provider === provider.toLowerCase() ? 'Connected' : 'Connect'}
-              </button>
-            </div>
-          ))}
-        </div>
+        <p className="text-xs text-starlight-500 max-w-md">
+          {user?.oauth_provider
+            ? `Signed in via ${user.oauth_provider}.`
+            : 'No OAuth provider linked to this account.'}
+          {' '}
+          Manage all OAuth connections from the
+          {' '}
+          <a
+            href="/connections"
+            className="text-primary-400 hover:text-primary-300 underline underline-offset-2"
+          >
+            Connections page
+          </a>
+          .
+        </p>
       </div>
 
       {/* Save */}
