@@ -263,11 +263,21 @@ class CostGuard:
         tenant_id: uuid.UUID,
         estimated_cost: float = 0.0,
         user_id: uuid.UUID | None = None,
+        alert_threshold_pct: float | None = None,
     ) -> BudgetStatus:
         """Check if the tenant can afford an upcoming LLM call.
 
         Raises BudgetExceededError if the estimated cost would
         push the tenant over their monthly budget.
+
+        ``alert_threshold_pct`` (DECISION-003, 2026-06-01): optional 0..1
+        fraction from the user's SettingsBilling ``budget_alert_threshold``
+        (which the UI stores as a 0..100 percent). When provided and the
+        user is NOT yet over quota but has crossed this fraction of their
+        monthly credit, a best-effort "approaching budget" notification is
+        emitted (deduped by the same per-user window as the over-quota
+        warning). This NEVER changes enforcement; it only changes when the
+        warning bell rings. Default None = exact prior behavior.
         """
         status = await self.get_budget_status(tenant_id)
 
@@ -357,6 +367,50 @@ class CostGuard:
                             user_id=str(user_id),
                             error=str(_notif_exc),
                         )
+
+            # DECISION-003 (2026-06-01): early-warning at the user's chosen
+            # threshold (SettingsBilling.budget_alert_threshold). Fires only
+            # when NOT yet over quota (the over path above already warns) and
+            # the user has crossed alert_threshold_pct of their monthly
+            # credit. Best-effort, deduped by the same window, never raises.
+            elif (
+                alert_threshold_pct is not None
+                and user_status.monthly_credit_usd > 0
+            ):
+                _pct = (
+                    user_status.spend_this_month_usd
+                    / user_status.monthly_credit_usd
+                )
+                if _pct >= alert_threshold_pct:
+                    _now = time.time()
+                    _last = self._recent_warn_emits.get(user_id, 0.0)
+                    if (_now - _last) >= _BUDGET_WARN_WINDOW_SECONDS:
+                        self._recent_warn_emits[user_id] = _now
+                        try:
+                            from app.services.notification_service import (
+                                NotificationService,
+                            )
+                            await NotificationService(self._db).emit(
+                                tenant_id=tenant_id,
+                                user_id=user_id,
+                                type="budget_alert",
+                                title="Approaching monthly budget",
+                                message=(
+                                    f"Spent ${user_status.spend_this_month_usd:.2f} of "
+                                    f"${user_status.monthly_credit_usd:.2f} this month "
+                                    f"({round(_pct * 100)}%, alert at "
+                                    f"{round(alert_threshold_pct * 100)}%). "
+                                    f"LLM calls will continue."
+                                ),
+                                severity="info",
+                                source="cost_guard.preflight_check",
+                            )
+                        except Exception as _notif_exc:  # noqa: BLE001
+                            logger.warning(
+                                "cost_guard.notify_failed",
+                                user_id=str(user_id),
+                                error=str(_notif_exc),
+                            )
 
         return status
 

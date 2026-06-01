@@ -362,23 +362,23 @@ export function SettingsBilling() {
         <h3 className="text-sm font-display font-semibold text-starlight-100 mb-4 flex items-center gap-2">
           <Bell size={14} /> Budget Settings
         </h3>
-        {/* Phase 10C-D: these three values persist to user.settings, but the
-            cost-guard reads Subscription.monthly_budget_usd (parallel source
-            of truth) and BudgetManager hard-codes the over-budget action
-            default. Phase 11 PR-S3 unifies the vocabulary and wires the
-            user.settings read. */}
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-accent-amber/20 bg-accent-amber/5 px-3 py-2">
-          <Badge variant="warning" size="sm">Wiring pending</Badge>
+        {/* DECISION-003 (2026-06-01): these three controls are now wired
+            into real per-user enforcement. On save, monthly_budget +
+            over_budget_action sync into the user's UserQuota row, which
+            CostGuard.preflight_check enforces on every chat. The alert
+            threshold drives an early-warning notification. */}
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-status-success/20 bg-status-success/5 px-3 py-2">
+          <Badge variant="success" size="sm">Enforced</Badge>
           <p className="text-[10px] text-starlight-400 leading-relaxed">
-            These three preferences persist to <code>user.settings</code>, but the
-            cost-guard currently reads <code>Subscription.monthly_budget_usd</code> and
-            <code>BudgetManager</code> hard-codes the over-budget action default.
-            Phase 11 PR-S3 unifies the vocabulary and wires the user.settings read.
+            These preferences drive real per-user budget enforcement.
+            <code>Monthly Budget</code> and <code>Over-budget action</code> sync into your
+            personal usage quota on save, which the cost guard checks before every
+            request. <code>Alert at %</code> triggers an early-warning notification.
           </p>
         </div>
         <div className="space-y-4 max-w-md">
           <div
-            title="Persists to user.settings.monthly_budget. Cost enforcement reads Subscription.monthly_budget_usd (different column). Phase 11 PR-S3 unifies."
+            title="Saved to your personal usage quota (UserQuota.monthly_credit_usd). CostGuard enforces this cap on every chat request."
           >
             <label className="block text-xs text-starlight-400 mb-1">Monthly Budget (USD)</label>
             <input
@@ -393,7 +393,7 @@ export function SettingsBilling() {
             />
           </div>
           <div
-            title="Persists. Alert emit pending — depends on Phase 11 notification emitter (PR-S2)."
+            title="When your monthly spend crosses this percentage of your budget, Daena emits an 'approaching budget' notification (deduped to once per hour)."
           >
             <label className="block text-xs text-starlight-400 mb-1">Alert at (%)</label>
             <input
@@ -411,7 +411,7 @@ export function SettingsBilling() {
             <p className="text-[10px] text-starlight-500 mt-0.5">Alert when usage reaches {alertThreshold}% of budget</p>
           </div>
           <div
-            title="Persists. Vocabulary mismatch with BudgetManager enum (warn/fallback/block <-> warn_only/pause_tasks/free_models_only) blocks wiring until Phase 11 PR-S3."
+            title="Saved to your personal usage quota (UserQuota.overage_action). warn = notify only; fallback = route to a free model; block = refuse the request."
           >
             <label className="block text-xs text-starlight-400 mb-1">Over-budget action</label>
             <select

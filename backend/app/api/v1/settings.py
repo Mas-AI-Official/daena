@@ -19,6 +19,75 @@ from app.core.database import get_db
 router = APIRouter()
 
 
+# ── Budget settings -> UserQuota sync (DECISION-003, 2026-06-01) ──
+
+# The SettingsBilling UI uses these three over-budget action values.
+# The per-user enforcement model (UserQuota.overage_action, read by
+# CostGuard.preflight_check) uses a slightly different vocabulary. This
+# map is the single source of truth for the translation.
+#   warn     -> warn          (log + best-effort notification, never blocks)
+#   fallback -> fallback_free (route the request to a free local model)
+#   block    -> block         (raise BudgetExceededError; refuse the call)
+_OVER_BUDGET_ACTION_MAP: dict[str, str] = {
+    "warn": "warn",
+    "fallback": "fallback_free",
+    "block": "block",
+}
+
+
+async def _sync_budget_to_user_quota(
+    db: "AsyncSession",
+    *,
+    user_id,
+    tenant_id,
+    role: str,
+    monthly_budget: int | None,
+    over_budget_action: str | None,
+) -> None:
+    """Mirror the SettingsBilling budget controls into the user's
+    UserQuota row so the existing CostGuard enforcement honors them.
+
+    Idempotent upsert: creates the UserQuota row with plan defaults if it
+    does not exist yet (reusing CostGuard's lazy-provision path), then
+    overwrites only the fields the user explicitly set. Never raises into
+    the settings save (best-effort): a budget-sync failure must not block
+    the user from saving an unrelated preference.
+    """
+    from app.core.logging import get_logger
+
+    logger = get_logger(__name__)
+    try:
+        from app.services.cost_guard import CostGuard
+
+        guard = CostGuard(db)
+        # Reuse the lazy-provision so a brand-new user gets a row with the
+        # correct plan-tier defaults before we overlay their choices.
+        quota = await guard._get_or_create_user_quota(tenant_id, user_id)
+
+        if monthly_budget is not None:
+            # The UI sends an integer dollar amount; the column is Numeric.
+            quota.monthly_credit_usd = float(monthly_budget)
+        if over_budget_action is not None:
+            mapped = _OVER_BUDGET_ACTION_MAP.get(over_budget_action)
+            if mapped is not None:
+                quota.overage_action = mapped
+
+        await db.flush()
+        logger.info(
+            "settings.budget_synced_to_quota",
+            user_id=str(user_id),
+            role=role,
+            monthly_budget=monthly_budget,
+            over_budget_action=over_budget_action,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "settings.budget_sync_failed",
+            user_id=str(user_id),
+            error=str(exc),
+        )
+
+
 # ── Schemas ────────────────────────────────────────────────────────
 
 
@@ -440,6 +509,23 @@ async def _update_user_preferences_impl(
         from sqlalchemy.orm.attributes import flag_modified
         flag_modified(db_user, "settings")
         await db.flush()
+
+        # DECISION-003 (2026-06-01): sync the budget controls into the
+        # per-user UserQuota row so the existing CostGuard enforcement
+        # (which runs on every chat) actually honors them. Only fields
+        # explicitly present in this PUT are synced, so a user who never
+        # touches these keeps their plan-default quota (a FOUNDER stays
+        # uncapped). This is the write path; CostGuard is the read/enforce
+        # path and is left untouched.
+        if body.monthly_budget is not None or body.over_budget_action is not None:
+            await _sync_budget_to_user_quota(
+                db,
+                user_id=user.id,
+                tenant_id=user.tenant_id,
+                role=user.role,
+                monthly_budget=body.monthly_budget,
+                over_budget_action=body.over_budget_action,
+            )
 
         user_settings = current_settings  # Use the dict we just wrote, not the ORM reload
         preferred_model = user_settings.get("preferred_model") if isinstance(user_settings, dict) else None

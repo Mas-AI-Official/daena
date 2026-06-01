@@ -589,6 +589,10 @@ class ChatOrchestrator:
         # weight multipliers. Default {} -> no-op (router sees None and
         # keeps historical scoring behavior).
         user_routing_prefs: dict[str, Any] = {}
+        # DECISION-003 (2026-06-01): budget_alert_threshold (0..100 percent
+        # in user.settings) -> 0..1 fraction passed to CostGuard.preflight
+        # for an early-warning notification. None = no custom threshold.
+        budget_alert_threshold_pct: float | None = None
         try:
             from app.models.identity import User
             user_stmt = select(User).where(User.id == user_id)
@@ -609,6 +613,9 @@ class ChatOrchestrator:
                     user_routing_prefs["cost_aware_routing"] = bool(
                         user_obj.settings.get("cost_aware_routing")
                     )
+                _bat = user_obj.settings.get("budget_alert_threshold")
+                if isinstance(_bat, (int, float)) and 0 < _bat <= 100:
+                    budget_alert_threshold_pct = float(_bat) / 100.0
         except Exception:
             logger.debug("orchestrator.primary_mind_lookup_failed", exc_info=True)
 
@@ -1536,7 +1543,8 @@ class ChatOrchestrator:
 
         try:
             await cost_guard.preflight_check(
-                tenant_id=tenant_id, user_id=user_id, estimated_cost=_estimated_cost
+                tenant_id=tenant_id, user_id=user_id, estimated_cost=_estimated_cost,
+                alert_threshold_pct=budget_alert_threshold_pct,
             )
         except UserQuotaExhaustedError as uqe:
             # Graceful degradation: route to free local model
