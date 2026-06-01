@@ -30,6 +30,48 @@ from app.services.security.report_tiers import ReportTier, FindingSeverity
 
 # ---- Fixtures ----
 
+@pytest.fixture(autouse=True)
+def _stub_real_scanner(monkeypatch) -> None:
+    """Replace the real network/subprocess scanner with a fast deterministic
+    stub for EVERY test in this module.
+
+    Root cause of the full-suite ~72% hang (2026-06-01): for URL targets
+    (example.com, github.com/...), ScanWorkflow._execute_scan calls
+    ``real_scanner.scan_target`` which shells out to live tools (nuclei et al.)
+    against the real network. A single ARCHITECT-tier test ran nuclei for 270s
+    before timing out - to the suite that looked like a hang. Unit tests must
+    never invoke real network scanners (slow, flaky, network- and
+    tool-install-dependent).
+
+    Stubbing the ``_real_scan_target`` boundary keeps the workflow orchestration
+    under test (profiling, status progression, aggregation, enrichment, Zero-FP
+    gate, tier-aware report generation) while removing the external I/O. The
+    stub reports a realistic file count derived from the target so the
+    files_total/files_scanned assertions still exercise the profiling merge.
+    """
+    from app.services.security import scan_workflow as _swf
+    from app.services.security.real_scanner import ScanOutcome
+
+    async def _fake_scan_target(target: str, _opts: dict | None = None) -> ScanOutcome:
+        # Derive a file count from comma-separated path targets so the
+        # multi-file profiling assertions remain meaningful; URLs -> 1.
+        is_pathish = ("," in target) or (
+            "/" not in target and "." in target and not target.startswith("http")
+        )
+        n = len([p for p in target.split(",") if p.strip()]) if is_pathish else 1
+        kind = "path" if is_pathish else "url"
+        return ScanOutcome(
+            files_scanned=n,
+            findings=[],
+            target_kind=kind,
+            tools_used=["stub_scanner"],
+            tools_missing=[],
+            notes="stubbed in tests (no real network scan)",
+        )
+
+    monkeypatch.setattr(_swf, "_real_scan_target", _fake_scan_target)
+
+
 @pytest.fixture
 def workflow() -> ScanWorkflow:
     return ScanWorkflow()
@@ -39,6 +81,31 @@ def workflow() -> ScanWorkflow:
 
 class TestStartScanCreatesJob:
     """Verify that start_scan creates a tracked job with correct fields."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_execute(self, monkeypatch) -> None:
+        """Stop the fire-and-forget scan pipeline from leaking into teardown.
+
+        ``start_scan`` schedules ``asyncio.create_task(self._execute_scan(job))``
+        and returns immediately - the correct production shape (the HTTP route
+        returns the job id without blocking on the scan). But the tests in THIS
+        class assert only the synchronous job-creation contract; they never
+        drain that background task (unlike TestScanStatusProgression, which
+        polls until COMPLETE). A still-running ``_execute_scan`` then outlives
+        the test and lands in pytest-asyncio's event-loop teardown, where
+        ``_cancel_all_tasks`` -> ``run_until_complete(gather(...))`` hung the
+        ENTIRE suite at ~72% on Windows (the mid-flight scan task sat on a
+        non-cancellable IOCP wait). Stubbing the pipeline to a no-op keeps the
+        spawned task trivial so nothing survives the test. The completion-path
+        tests keep the real pipeline and drain it themselves.
+
+        This is a TEST-HYGIENE fix; the production fire-and-forget design is
+        intentional and unchanged.
+        """
+        async def _noop(_self, _job) -> None:
+            return None
+
+        monkeypatch.setattr(ScanWorkflow, "_execute_scan", _noop)
 
     @pytest.mark.asyncio
     async def test_creates_job_with_id(self, workflow: ScanWorkflow) -> None:
