@@ -41,7 +41,19 @@ def test_panel_calls_health_endpoint_separately():
     # The probe must use raw fetch, NOT the api client (which carries
     # the JWT interceptor + would also 401-redirect to /login on a
     # missing token).
-    assert "fetch(`${base}/health`" in src or "fetch(`${" in src and "/health" in src
+    #
+    # 2026-06-01: the panel was intentionally refactored to hit the bare
+    # ``fetch('/api/v1/health', ...)`` path instead of ``${base}/health``
+    # (its own comments document the CORS reason). The contract is "raw
+    # fetch to a /health path, not the axios api client" - assert THAT,
+    # not the exact URL-construction syntax. Guard against regressing to
+    # the api client by also forbidding ``api.get(.../health)``.
+    assert "fetch(" in src and "/health" in src, (
+        "panel must probe /health via raw fetch (not the api client)"
+    )
+    assert "api.get('/health')" not in src and 'api.get("/health")' not in src, (
+        "panel must NOT route /health through the JWT api client"
+    )
 
 
 def test_panel_decouples_backend_from_self_diagnostic():
