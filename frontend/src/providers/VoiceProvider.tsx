@@ -182,6 +182,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [isSttMode, setIsSttMode] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
+  // True between sending a voice utterance and the response returning
+  // (the LLM round-trip). Surfaced as "Thinking..." so the floating pill
+  // is never a misleading "Voice active" while a request is in flight.
+  const [isProcessing, setIsProcessing] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
   const [selectedVoice, setSelectedVoiceState] = useState('')
@@ -468,6 +472,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   const sendViaChat = useCallback(async (text: string) => {
     try { recognitionRef.current?.stop() } catch {}
+    setIsProcessing(true)
     try {
       const store = useChatStore.getState()
       // Prefix once so the LLM knows to keep it short.
@@ -505,6 +510,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       console.error('[VoiceProvider] sendViaChat error:', err)
+    } finally {
+      setIsProcessing(false)
     }
     // Restart mic after a delay (TTS auto-read will handle speaking)
     if (isActiveRef.current) {
@@ -694,12 +701,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         toast.info('Voice paused (tab blurred). Click the mic to resume.')
       }
     }
-    window.addEventListener('blur', stopOnBlur)
-    document.addEventListener('visibilitychange', () => {
+    const onVisibilityChange = () => {
       if (document.hidden) stopOnBlur()
-    })
+    }
+    window.addEventListener('blur', stopOnBlur)
+    document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       window.removeEventListener('blur', stopOnBlur)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [])
 
@@ -818,14 +827,16 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           >
             <AudioLines
               size={16}
-              className={isListening || isSpeaking ? 'animate-pulse' : ''}
+              className={isListening || isSpeaking || isProcessing ? 'animate-pulse' : ''}
             />
             <span className="text-xs font-medium">
               {isSpeaking
                 ? 'Daena speaking...'
-                : isListening
-                  ? 'Listening...'
-                  : 'Voice active'}
+                : isProcessing
+                  ? 'Thinking...'
+                  : isListening
+                    ? 'Listening...'
+                    : 'Voice active'}
             </span>
             {transcript && !isSpeaking && (
               <span className="ml-1 max-w-[160px] truncate text-[10px] opacity-70">

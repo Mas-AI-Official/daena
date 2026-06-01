@@ -86,12 +86,31 @@ export const VoiceControls = memo(function VoiceControls({
     return () => document.removeEventListener('mousedown', handleClick)
   }, [settingsOpen])
 
-  if (!srSupported && !ttsSupported) return null
+  // Neither speech input nor speech output exists (old / locked-down
+  // browser). Render one disabled, explained control instead of silently
+  // rendering nothing (ADR-001: clearly say why it cannot work).
+  if (!srSupported && !ttsSupported) {
+    return (
+      <div className={`flex items-center ${className}`}>
+        <button
+          type="button"
+          disabled
+          aria-label="Voice unavailable in this browser"
+          title="Voice is unavailable in this browser. Use Chrome or Edge for speech input and neural text-to-speech."
+          className="p-2 rounded-lg text-starlight-500 opacity-40 cursor-not-allowed"
+        >
+          <MicOff size={18} />
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className={`flex items-center gap-1 ${className}`}>
-      {/* Mic button: STT-only mode (fills text input) */}
-      {srSupported && (
+      {/* Mic button: STT-only mode (fills text input). When SpeechRecognition
+          is unsupported we show a disabled mic WITH a reason rather than
+          hiding it, so the control is never silently missing. */}
+      {srSupported ? (
         <button
           onClick={handleMicClick}
           disabled={disabled}
@@ -110,6 +129,16 @@ export const VoiceControls = memo(function VoiceControls({
           ) : (
             <Mic size={18} />
           )}
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled
+          aria-label="Speech input unavailable in this browser"
+          title="Speech input needs Chrome or Edge (SpeechRecognition is unavailable in this browser). Text-to-speech still works."
+          className="p-2 rounded-lg text-starlight-500 opacity-40 cursor-not-allowed"
+        >
+          <MicOff size={18} />
         </button>
       )}
 
