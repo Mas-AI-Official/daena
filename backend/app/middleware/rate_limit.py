@@ -31,6 +31,8 @@ ENDPOINT_RATE_LIMITS: dict[str, tuple[int, int]] = {
     "/api/v1/auth/oauth": (10, 60),         # 10 OAuth attempts/min per IP
     "/api/v1/chat/stream": (30, 60),        # 30 chat messages/min per user
     "/api/v1/governance/approvals": (60, 60),  # 60 req/min for admin
+    "/api/v1/tts/speak": (60, 60),          # 60 TTS syntheses/min (edge-tts proxy abuse guard)
+    "/api/v1/tts/voices": (20, 60),         # 20 voice-catalog fetches/min (upstream list call)
 }
 
 

@@ -30,10 +30,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_current_user
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -79,7 +80,7 @@ class TtsRequest(BaseModel):
     volume: str = Field(default="+0%")
 
 
-@router.get("/defaults")
+@router.get("/defaults", dependencies=[Depends(get_current_user)])
 async def tts_defaults() -> dict[str, Any]:
     """Return the recommended default voice + a short shortlist the UI
     can render without fetching the full ~300-voice catalog."""
@@ -89,7 +90,7 @@ async def tts_defaults() -> dict[str, Any]:
     }
 
 
-@router.get("/voices")
+@router.get("/voices", dependencies=[Depends(get_current_user)])
 async def list_voices(
     locale: str = Query(default="en", min_length=0, max_length=12),
 ) -> list[dict[str, Any]]:
@@ -128,7 +129,7 @@ async def list_voices(
     return out
 
 
-@router.post("/speak")
+@router.post("/speak", dependencies=[Depends(get_current_user)])
 async def speak(body: TtsRequest) -> StreamingResponse:
     """Stream neural-voice MP3 audio for ``text`` via Edge-TTS.
 
