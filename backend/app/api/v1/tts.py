@@ -259,7 +259,19 @@ async def tts_defaults() -> dict[str, Any]:
                     "url": _f5_base_url(),
                     "device": health.get("device"),
                     "model_loaded": health.get("model_loaded"),
-                    "reference_exists": health.get("default_reference_exists"),
+                    # Report Daena's resolved reference (env override or
+                    # repo-relative daena_voice.wav), not the F5 service's
+                    # internal default. The F5 service /health may report
+                    # ``default_reference_exists=false`` because its own
+                    # hardcoded default points at a path that doesn't exist
+                    # on this machine, but Daena overrides that path on
+                    # every /synthesize call. The truthful answer to "is the
+                    # voice reference usable" is: does Daena's resolved
+                    # reference file exist on disk right now.
+                    "reference_path": _f5_reference_wav(),
+                    "reference_exists": bool(
+                        _f5_reference_wav() and Path(_f5_reference_wav() or "").is_file()
+                    ),
                 },
                 "edge": {
                     "available": edge_ok,

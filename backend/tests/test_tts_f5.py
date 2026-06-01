@@ -149,3 +149,47 @@ def test_reference_wav_autodiscovers_or_none(monkeypatch) -> None:
     monkeypatch.delenv("F5_TTS_REFERENCE_WAV", raising=False)
     ref = tts_mod._f5_reference_wav()
     assert ref is None or ref.replace("\\", "/").endswith("daena_voice.wav")
+
+
+@pytest.mark.asyncio
+async def test_defaults_reports_daena_resolved_reference_not_f5_default(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch, tmp_path,
+) -> None:
+    """/tts/defaults must report Daena's RESOLVED reference path and whether
+    THAT file exists - never the F5 service's internal default path.
+
+    Regression: F5 service /health returns its own hardcoded
+    ``default_reference`` and ``default_reference_exists``. On founder
+    machines that path may be missing (the service ships with a generic
+    default), while Daena's resolved path (env override or repo-relative
+    ``daena_voice.wav``) is the one actually used on every synth call. The
+    /defaults UI was reading the F5-side flag and showing a misleading
+    'reference missing' even when synthesis was working.
+    """
+    # Make Daena's resolved reference a real file in tmp_path.
+    real_ref = tmp_path / "daena_voice.wav"
+    real_ref.write_bytes(b"RIFF....fake-wav-for-test")
+    monkeypatch.setenv("F5_TTS_REFERENCE_WAV", str(real_ref))
+
+    # F5 service reports its own internal default as missing (the common
+    # case after upgrading or moving the repo).
+    async def fake_probe() -> dict:
+        return {
+            "available": True,
+            "reason": "ok",
+            "health": {
+                "default_reference": "C:/some/old/path/daena_voice.wav",
+                "default_reference_exists": False,
+                "device": "cuda",
+                "model_loaded": True,
+            },
+        }
+    monkeypatch.setattr(f"{TTS}._f5_probe", fake_probe)
+
+    res = await client.get("/api/v1/tts/defaults", headers=auth_headers)
+    assert res.status_code == 200
+    f5 = res.json()["tts"]["providers"]["f5"]
+    # Daena reports its OWN resolved path, not the F5 service default.
+    assert f5["reference_path"] == str(real_ref)
+    # And reports whether THAT file exists - which it does.
+    assert f5["reference_exists"] is True
