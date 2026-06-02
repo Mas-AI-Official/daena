@@ -55,6 +55,41 @@ from app.core.database import get_db
 from app.core.security import create_access_token
 from app.main import create_app
 from app.models.base import Base
+from app.services import controlled_execution_dispatch as _ce_dispatch
+
+# ---------------------------------------------------------------------------
+# Controlled-execution handler registry: snapshot + restore (test hygiene).
+# test_controlled_execution_dispatch.py::test_no_handlers_registered_yet calls
+# reset_handlers_for_tests() (i.e. _TOOL_HANDLERS.clear()) and never restores
+# it. In the full suite that leaves the registry empty for every handler-
+# registry / dispatch test that runs afterwards (they pass in isolation only
+# because importing the package populated it). Re-importing the package does
+# NOT help: it is cached in sys.modules, so the side-effect registration will
+# not re-run. So snapshot the populated dict once here and restore it between
+# tests.
+# ---------------------------------------------------------------------------
+try:
+    import app.services.controlled_execution_handlers  # noqa: F401  (side-effect registration)
+
+    _HANDLER_REGISTRY_SNAPSHOT: dict = dict(_ce_dispatch._TOOL_HANDLERS)
+except Exception:  # pragma: no cover - handlers package optional in some envs
+    _HANDLER_REGISTRY_SNAPSHOT = {}
+
+
+@pytest.fixture(autouse=True)
+def _restore_handler_registry():
+    """Restore the controlled-execution handler registry after each test.
+
+    Guards against the reset_handlers_for_tests() polluter so later tests
+    always observe the populated registry. No-op when nothing changed.
+    """
+    yield
+    if (
+        _HANDLER_REGISTRY_SNAPSHOT
+        and _ce_dispatch._TOOL_HANDLERS != _HANDLER_REGISTRY_SNAPSHOT
+    ):
+        _ce_dispatch._TOOL_HANDLERS.clear()
+        _ce_dispatch._TOOL_HANDLERS.update(_HANDLER_REGISTRY_SNAPSHOT)
 
 # ---------------------------------------------------------------------------
 # SQLite compatibility: compile PostgreSQL types for SQLite test engine
