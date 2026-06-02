@@ -459,7 +459,7 @@ async def test_user_default_governance_mode_applies_when_request_omits_it(
     """DECISION-007 (founder-approved): a user's explicitly-saved
     default_governance_mode becomes the chat default when the request omits
     governance_mode; an explicit request value still wins (precedence:
-    request > user setting > system default BALANCED)."""
+    request > user setting > system default GOVERNED)."""
     import json
 
     auth = await _register_and_login(client)

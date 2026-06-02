@@ -264,7 +264,7 @@ async def _stream_message_response(
             user_id=user.id,
             user_role=user.role,
             preferred_model=body.preferred_model,
-            governance_mode_str=body.governance_mode or _user_default_gov or "BALANCED",
+            governance_mode_str=body.governance_mode or _user_default_gov or "GOVERNED",
             governance_mode_override=body.governance_mode,
             routing_mode_override=body.routing_mode,
             action_mode_override=body.mode,
