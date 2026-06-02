@@ -342,10 +342,14 @@ def test_frontend_setup_guide_pins_both_emails():
     assert "masoud.masoori@mas-ai.co" in src
     assert "daena@mas-ai.co" in src
     # Live checklist test-ids must be present so a future redesign
-    # cannot silently drop the live wiring.
+    # cannot silently drop the live wiring. V3 Phase 1 collapse removed
+    # the standalone "ready" step row -- the guide now hides itself once
+    # status.ready (PluginsPanel gates it via showGoogleGuide), so
+    # google-step-ready is no longer a guide element. The remaining four
+    # ids are the live wiring.
     for testid in (
         "google-setup-checklist", "google-step-client",
-        "google-step-founder", "google-step-agent", "google-step-ready",
+        "google-step-founder", "google-step-agent",
     ):
         assert testid in src, f"missing test-id {testid!r}"
 

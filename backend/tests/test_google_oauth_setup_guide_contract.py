@@ -26,9 +26,12 @@ GUIDE = (
     REPO_ROOT / "frontend" / "src" / "pages" / "connections"
     / "GoogleAccountSetupGuide.tsx"
 )
-APPS_PANEL = (
+# PR-CONNECTIONS-F1 (2026-05-06) moved the guide out of AppsStorePanel
+# into PluginsPanel (the canonical surface operators land on) to keep a
+# single source of truth.
+PLUGINS_PANEL = (
     REPO_ROOT / "frontend" / "src" / "pages" / "connections"
-    / "AppsPanel.tsx"
+    / "PluginsPanel.tsx"
 )
 
 
@@ -83,20 +86,26 @@ def test_guide_does_not_start_oauth_flow():
 
 
 def test_guide_carries_test_ids():
+    # V3 Phase 1 (2026-05-07) collapsed the two role cards into status
+    # rows: data-testid google-role-{founder,agent} -> google-step-{...}.
+    # The section wrapper is a literal data-testid; the per-row ids are
+    # passed via SetupRow's `testid` prop (rendered as data-testid). Match
+    # the source form: `testid="..."` is a substring of both.
     src = GUIDE.read_text(encoding="utf-8")
     assert 'data-testid="google-account-setup-guide"' in src
-    assert 'data-testid="google-role-founder"' in src
-    assert 'data-testid="google-role-agent"' in src
+    assert 'testid="google-step-founder"' in src
+    assert 'testid="google-step-agent"' in src
 
 
-def test_apps_panel_renders_the_guide():
-    src = APPS_PANEL.read_text(encoding="utf-8")
+def test_plugins_panel_renders_the_guide():
+    # PR-CONNECTIONS-F1 (2026-05-06) moved the guide into PluginsPanel.
+    # Contract preserved: the guide renders BEFORE the search input so the
+    # operator sees the two-account split before they pick a row to Connect.
+    src = PLUGINS_PANEL.read_text(encoding="utf-8")
     assert "import GoogleAccountSetupGuide" in src
     assert "<GoogleAccountSetupGuide" in src
-    # Render order: guide must come BEFORE the apps list/search so
-    # operators see the split BEFORE they click Connect on a row.
     guide_idx = src.find("<GoogleAccountSetupGuide")
-    search_idx = src.find('placeholder="Search apps')
+    search_idx = src.find('placeholder="Search plugins')
     assert guide_idx > 0, "guide not rendered"
     assert guide_idx < search_idx, (
         "guide must render BEFORE the Search input, so the operator sees the "

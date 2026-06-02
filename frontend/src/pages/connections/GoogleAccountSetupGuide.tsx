@@ -18,8 +18,8 @@
  *     automatically and we never ask the operator to paste credentials
  *     anywhere. The actual Connect button stays in OAuthConnectDrawer
  *     (already wired).
- *   - The component reads status only -- no secrets, no client_id /
- *     client_secret values. Backend strips before serializing.
+ *   - The component reads status only -- no secrets, no client ID /
+ *     client secret values. Backend strips before serializing.
  *   - Phase-3 refusal honesty hint stays reachable behind a "Why this
  *     matters" expander so the audit-trail truth is never silently
  *     dropped from the UI.
@@ -140,13 +140,13 @@ export default function GoogleAccountSetupGuide() {
       )}
 
       {/* 3-row status grid -- the only thing visible by default */}
-      <ul className="mt-3 space-y-2">
+      <ul data-testid="google-setup-checklist" className="mt-3 space-y-2">
         <SetupRow
           done={clientConfigured}
           label="OAuth client configured"
           detail={clientConfigured
-            ? 'client_id + client_secret present.'
-            : 'Paste the Google client_id + client_secret you created at console.cloud.google.com.'}
+            ? 'client ID + client secret present.'
+            : 'Paste the Google client ID + client secret you created at console.cloud.google.com.'}
           action={!clientConfigured ? {
             label: 'Configure',
             onClick: () => navigate('/account#oauth-clients'),
