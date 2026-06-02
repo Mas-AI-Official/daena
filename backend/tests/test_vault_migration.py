@@ -47,6 +47,30 @@ KEK_SEED = b"k" * 32  # deterministic seed for tests
 # ──────────────────────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _setup_vault_key_for_tests():
+    """Provide a real (non-placeholder) vault key for the legacy v1 path.
+
+    The default config vault_encryption_key is a placeholder. With a
+    placeholder key, app.core.vault.encrypt_dict() SKIPS encryption (stores
+    plaintext) and decrypt_dict() then returns None instead of the dict, so
+    every legacy-credentials decrypt in these migration tests fails. Patching
+    get_settings() to a real key enables the full v1 encrypt/decrypt roundtrip
+    the migration exercises. (vault_v2 DEK provisioning uses KEK_SEED directly
+    and is unaffected.) Mirrors tests/test_vault.py's proven pattern. The key
+    lives only in memory during the test; it is never persisted or logged.
+    """
+    from unittest.mock import patch
+
+    from app.core.vault import reset_key_cache
+
+    reset_key_cache()
+    with patch("app.core.vault.get_settings") as mock:
+        mock.return_value.vault_encryption_key = "test-vault-key-for-unit-tests-32b"
+        yield
+    reset_key_cache()
+
+
 @pytest.fixture
 async def seeded_world(db_session, test_tenant_id):
     """Tenant + User + Connector to satisfy ConnectorInstance FKs."""

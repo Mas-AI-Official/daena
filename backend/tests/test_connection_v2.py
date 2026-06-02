@@ -245,6 +245,25 @@ class TestSecretsViaV2:
 
 
 class TestDualRead:
+    @pytest.fixture(autouse=True)
+    def _real_vault_key(self):
+        """Real vault key so encrypt_dict actually encrypts (enc:v1:) and the
+        legacy dual-read fallback can decrypt it. With the default placeholder
+        key, encrypt_dict stores plaintext JSON that the legacy read path does
+        not treat as encrypted, so the seeded credentials read back as None.
+        Test-only; no change to the production credential read path
+        (hard-gate #7 respected). Mirrors tests/test_vault.py's pattern.
+        """
+        from unittest.mock import patch
+
+        from app.core.vault import reset_key_cache
+
+        reset_key_cache()
+        with patch("app.core.vault.get_settings") as mock:
+            mock.return_value.vault_encryption_key = "test-vault-key-for-unit-tests-32b"
+            yield
+        reset_key_cache()
+
     @pytest.mark.asyncio
     async def test_legacy_connector_instance_readable_via_dual_read(
         self, db_session, registry, test_tenant_id,
