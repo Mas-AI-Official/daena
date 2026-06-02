@@ -177,7 +177,13 @@ async def test_20_governance_stage_in_response(client: AsyncClient, app) -> None
         m = MagicMock()
         m.stream = _llm("Starting deployment ", "process...")
         M.return_value = m
-        events = await _stream(client, sid, auth["headers"], "Deploy to production")
+        # GOVERNED forces the full governance pre-check so the stage emits.
+        # BALANCED would take the tier-0 fast-path for this query and skip the
+        # governance thinking-stage by design.
+        events = await _stream(
+            client, sid, auth["headers"], "Deploy to production",
+            governance_mode="GOVERNED",
+        )
 
     stages = [e.get("stage") for e in events if e.get("type") == "thinking"]
     assert "governance" in stages, f"Missing governance stage. Stages: {stages}"
@@ -214,16 +220,24 @@ async def test_22_audit_log_populated(client: AsyncClient, app) -> None:
     sid = await _session(client, auth["headers"])
     await client.post(
         f"/api/v1/chat/sessions/{sid}/messages",
-        json={"content": "Check system status", "role": "USER"},
+        json={"content": "What is quantum computing?", "role": "USER"},
         headers=auth["headers"],
     )
 
     app.state.model_registry = _reg()
     with patch("app.services.llm_service.LLMService") as M:
         m = MagicMock()
-        m.stream = _llm("All systems operational.")
+        m.stream = _llm("Quantum computing uses qubits.")
         M.return_value = m
-        await _stream(client, sid, auth["headers"], "Check system status")
+        # Use a normal knowledge query: "...system status" trips the Stage-0c
+        # self-diagnostic short-circuit, which bypasses the WHOLE pipeline
+        # (governance + audit) -> no audit row at all. GOVERNED then runs the
+        # full governance evaluate, which writes the audit row this test checks
+        # (the BALANCED fast-path skips evaluate + its audit write for latency).
+        await _stream(
+            client, sid, auth["headers"], "What is quantum computing?",
+            governance_mode="GOVERNED",
+        )
 
     # Check audit log endpoint
     audit_resp = await client.get(
