@@ -539,7 +539,13 @@ class TestSecurityDashboardAPI:
     def test_load_scan_history_empty(self):
         """Scan history returns empty list when no traces."""
         from app.api.v1.security_dashboard import _load_scan_history
-        with patch.dict(os.environ, {"DAENA_VAR": tempfile.mkdtemp()}):
+        # Patch BOTH source dirs: _load_scan_history merges DAENA_VAR/scan_traces
+        # AND SECURITY_REPORTS_DIR (default var/security_reports, which holds real
+        # report JSON in the repo). Patching only DAENA_VAR still reads real data.
+        with patch.dict(os.environ, {
+            "DAENA_VAR": tempfile.mkdtemp(),
+            "SECURITY_REPORTS_DIR": tempfile.mkdtemp(),
+        }):
             result = _load_scan_history()
             assert result == []
 
@@ -563,7 +569,10 @@ class TestSecurityDashboardAPI:
                 "waf_detected": "",
             }, f)
 
-        with patch.dict(os.environ, {"DAENA_VAR": tmp}):
+        with patch.dict(os.environ, {
+            "DAENA_VAR": tmp,
+            "SECURITY_REPORTS_DIR": tempfile.mkdtemp(),
+        }):
             result = _load_scan_history()
             assert len(result) == 1
             assert result[0]["target"] == "example.com"

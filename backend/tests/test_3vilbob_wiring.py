@@ -1455,17 +1455,20 @@ class TestSecurityDashboardAPI:
 
     def test_load_scan_history_empty(self):
         """_load_scan_history handles missing directory gracefully."""
-        from app.api.v1.security_dashboard import _load_scan_history
         import os
-        old_var = os.environ.get("DAENA_VAR", "")
-        os.environ["DAENA_VAR"] = "/tmp/nonexistent_test_dir_xyz"
-        try:
+        import tempfile
+        from unittest.mock import patch
+
+        from app.api.v1.security_dashboard import _load_scan_history
+
+        # Isolate BOTH source dirs (scan_traces under DAENA_VAR + the persisted
+        # reports under SECURITY_REPORTS_DIR, which defaults to the repo's
+        # var/security_reports). Patching only DAENA_VAR still reads real reports.
+        with patch.dict(os.environ, {
+            "DAENA_VAR": tempfile.mkdtemp(),
+            "SECURITY_REPORTS_DIR": tempfile.mkdtemp(),
+        }):
             assert _load_scan_history(10) == []
-        finally:
-            if old_var:
-                os.environ["DAENA_VAR"] = old_var
-            else:
-                os.environ.pop("DAENA_VAR", None)
 
     def test_self_improvement_metrics_empty(self):
         """_get_self_improvement_metrics handles missing dir."""
