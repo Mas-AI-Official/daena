@@ -940,8 +940,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     await conn.execute(
                         _text(f"ALTER TABLE memory_entries ADD COLUMN {col_name} {col_type}")
                     )
-                except Exception:
-                    pass  # Column already exists
+                except Exception as exc:
+                    # Idempotent migration: "column already exists" is expected.
+                    # Anything else (locked DB, permission, syntax) must be visible.
+                    if "already exists" not in str(exc).lower():
+                        logger.warning("schema.alter_memory_entries_failed", column=col_name, error=str(exc))
 
             _chat_session_cols = {
                 "governance_mode": "VARCHAR(20) DEFAULT 'BALANCED'",
@@ -951,8 +954,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     await conn.execute(
                         _text(f"ALTER TABLE chat_sessions ADD COLUMN {col_name} {col_type}")
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Idempotent migration: "column already exists" is expected.
+                    if "already exists" not in str(exc).lower():
+                        logger.warning("schema.alter_chat_sessions_failed", column=col_name, error=str(exc))
 
     logger.info("essentials.tables_ready", ms=int((_time.perf_counter() - _ts) * 1000))
 

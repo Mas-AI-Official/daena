@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -39,6 +40,7 @@ from app.services.plugin_catalog import (
 )
 
 router = APIRouter()
+logger = structlog.get_logger(__name__)
 
 
 # ── Connector Catalog (public, cached) ──
@@ -71,8 +73,8 @@ def _read_catalog_version() -> str:
         if _CATALOG_VERSION_PATH.is_file():
             payload = json.loads(_CATALOG_VERSION_PATH.read_text(encoding="utf-8"))
             return str(payload.get("version") or "unknown")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("connector_catalog.version_read_failed", error=str(exc))
     return "unknown"
 
 
@@ -85,8 +87,8 @@ def _read_rich_catalog_entries() -> list[dict]:
         entries = payload.get("connectors") or []
         if isinstance(entries, list):
             return [entry for entry in entries if isinstance(entry, dict)]
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("connector_catalog.entries_read_failed", error=str(exc))
     return []
 
 
