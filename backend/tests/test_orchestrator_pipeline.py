@@ -147,7 +147,16 @@ async def test_full_pipeline_10_stages(client: AsyncClient, app) -> None:
         # Call the streaming endpoint
         resp = await client.post(
             f"/api/v1/chat/sessions/{session_id}/messages/stream",
-            json={"content": "What is quantum computing?", "role": "USER"},
+            json={
+                "content": "What is quantum computing?",
+                "role": "USER",
+                # GOVERNED forces the full governance pre-check (Stage 3) so all
+                # 10 stages emit. BALANCED would take the tier-0 fast-path for
+                # this SIMPLE/low-risk query and intentionally skip the
+                # governance thinking-stage (that fast-path is verified
+                # elsewhere). This test asserts the FULL pipeline.
+                "governance_mode": "GOVERNED",
+            },
             headers=auth["headers"],
         )
         assert resp.status_code == 200, f"Stream endpoint failed: {resp.text}"
@@ -413,7 +422,12 @@ async def test_pipeline_with_governance_slider(client: AsyncClient, app) -> None
             json={
                 "content": "What is the weather today?",
                 "role": "USER",
-                "governance_slider": "STRICT",
+                # The stream endpoint reads body.governance_mode (which accepts
+                # legacy slider values too). STRICT -> GOVERNED, so the full
+                # governance pre-check runs and the stage emits. The old field
+                # name "governance_slider" was silently ignored by the endpoint,
+                # which is why this assertion regressed.
+                "governance_mode": "STRICT",
             },
             headers=auth["headers"],
         )

@@ -1348,8 +1348,11 @@ class ChatOrchestrator:
             #
             # The fast-path still:
             #   - records the skip in structured log for audit trail
-            #   - emits a governance_notice event (tier=0) so the UI
-            #     continues to reflect governance activity
+            #   - does NOT emit a governance thinking-stage or notice
+            #     event -- tier-0 auto-approval is invisible by design
+            #     (see _should_notify below); routine BALANCED traffic
+            #     stays calm and we never claim governance "ran" when the
+            #     engine was intentionally bypassed (honesty rule 17)
             #   - respects governance_mode overrides by only kicking in
             #     when governance_mode == BALANCED (GOVERNED keeps the
             #     full path unchanged)
