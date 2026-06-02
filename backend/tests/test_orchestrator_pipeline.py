@@ -588,6 +588,134 @@ async def test_unavailable_multi_model_modes_downgrade_truthfully(
     )
 
 
+class _FakeOODAEngine:
+    """Stand-in for OODAEngine that streams a known tool_use_response.
+
+    Mirrors the real engine's event contract: it yields a
+    ``tool_use_response`` carrying the final answer (the file listing in
+    the live repro) followed by a ``cognitive_complete`` success marker.
+    The orchestrator must capture that content as the persisted ASSISTANT
+    message (F-2 bug: EXE/OODA answers streamed but were never saved).
+    """
+
+    ANSWER = "Files in the current directory:\nREADME.md\napp\ntests\npyproject.toml"
+
+    def __init__(self, *args, **kwargs) -> None:  # accept db=, user_id=, ...
+        pass
+
+    async def run(self, *args, **kwargs):
+        yield {"type": "tool_use_response", "tool_name": "list_directory", "content": self.ANSWER}
+        yield {"type": "cognitive_complete", "success": True}
+
+
+@pytest.mark.asyncio
+async def test_exe_cognitive_answer_is_persisted(client: AsyncClient, app) -> None:
+    """F-2 regression: an EXE-mode turn answered by the OODA/cognitive engine
+    (tool_use_response path) must persist the answer as an ASSISTANT message,
+    and a follow-up turn must see it in history.
+
+    Before the fix, collected_content stayed empty for the EXE/OODA path, so
+    Stage 9 never wrote an ASSISTANT row -- the session kept only the USER turn
+    even though the answer streamed to the UI.
+    """
+    import json
+
+    auth = await _register_and_login(client)
+    session_id = await _create_session(client, auth["headers"])
+
+    mock_registry = _make_mock_registry()
+    app.state.model_registry = mock_registry
+
+    with (
+        patch(
+            "app.services.cognition.ooda_engine.OODAEngine",
+            _FakeOODAEngine,
+        ),
+        patch("app.services.llm_service.LLMService") as MockLLMCls,
+    ):
+        # If the bug regresses, the orchestrator would re-call the LLM at
+        # Stage 8 and persist THIS instead -- a sentinel that must NOT win.
+        async def _wrong_stream(request, decision):
+            for text in ["WRONG", "_LLM", "_FALLBACK"]:
+                yield LLMChunk(
+                    content=text,
+                    model_id="llama3.1:8b",
+                    provider=ModelProvider.OLLAMA,
+                    finish_reason=None,
+                    token_index=0,
+                )
+
+        mock_llm = MagicMock()
+        mock_llm.stream = _wrong_stream
+        MockLLMCls.return_value = mock_llm
+
+        resp = await client.post(
+            f"/api/v1/chat/sessions/{session_id}/messages/stream",
+            json={
+                "content": "List the files in the current directory.",
+                "role": "USER",
+                "mode": "EXE",
+            },
+            headers=auth["headers"],
+        )
+        assert resp.status_code == 200, resp.text
+
+        events = []
+        for line in resp.text.split("\n"):
+            if line.startswith("data: "):
+                try:
+                    events.append(json.loads(line[6:]))
+                except json.JSONDecodeError:
+                    pass
+
+    # The cognitive engine's answer must have streamed via tool_use_response.
+    tur = [e for e in events if e.get("type") == "tool_use_response"]
+    assert tur, f"Expected a tool_use_response event. Got types: {[e.get('type') for e in events]}"
+    assert _FakeOODAEngine.ANSWER in tur[0]["content"]
+
+    # Pipeline completed (no 'No content generated' error).
+    assert not any(e.get("type") == "error" for e in events), \
+        f"Unexpected error event: {[e for e in events if e.get('type') == 'error']}"
+    done = [e for e in events if e.get("type") == "done"]
+    assert len(done) == 1, f"Expected exactly 1 done event. Got {len(done)}"
+
+    # ── Core assertion: the ASSISTANT message is persisted with the answer ──
+    msgs_resp = await client.get(
+        f"/api/v1/chat/sessions/{session_id}/messages",
+        headers=auth["headers"],
+    )
+    assert msgs_resp.status_code == 200
+    messages = msgs_resp.json()["data"]
+    assistant_msgs = [m for m in messages if m["role"] == "ASSISTANT"]
+    assert len(assistant_msgs) == 1, (
+        f"Expected exactly 1 persisted ASSISTANT message (no drop, no double-persist). "
+        f"Got {len(assistant_msgs)}: {[m['content'][:60] for m in assistant_msgs]}"
+    )
+    saved = assistant_msgs[0]["content"]
+    assert _FakeOODAEngine.ANSWER in saved, (
+        f"Persisted ASSISTANT content must be the cognitive answer, got: {saved!r}"
+    )
+    assert "WRONG_LLM_FALLBACK" not in saved, (
+        "Stage 8 must NOT re-generate via the LLM for an already-answered "
+        f"cognitive turn; got: {saved!r}"
+    )
+
+    # ── Follow-up turn sees the prior assistant answer in history ──
+    await _send_user_message(
+        client, session_id, auth["headers"], "Thanks, that's all."
+    )
+    history_resp = await client.get(
+        f"/api/v1/chat/sessions/{session_id}/messages",
+        headers=auth["headers"],
+    )
+    assert history_resp.status_code == 200
+    history_roles = [m["role"] for m in history_resp.json()["data"]]
+    assert history_roles.count("ASSISTANT") >= 1, (
+        f"Follow-up history must still contain the persisted assistant turn. "
+        f"Roles: {history_roles}"
+    )
+
+
 @pytest.mark.asyncio
 async def test_memory_recall_uses_data_payload_shape(client: AsyncClient, app) -> None:
     """Verify memory recall enriches the prompt from the service's data payload."""

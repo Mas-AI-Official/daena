@@ -2349,14 +2349,41 @@ class ChatOrchestrator:
                         _cognitive_success = event.get("success", False)
 
                 if _cognitive_output_lines or _cognitive_success:
+                    # The cognitive engine already STREAMED its answer to the
+                    # UI via the tool_use_response events yielded above. That
+                    # text is the final assistant turn -- capture it into
+                    # collected_content so Stage 9 persists it (and Stage 10.5
+                    # writes it to memory), exactly like the ToolUseLoop branch
+                    # does for source=="tool_use_loop". The "source" tag below
+                    # makes Stage 8 treat this turn as already handled so it
+                    # does NOT re-call the LLM and overwrite/blank the answer.
+                    # Without this, collected_content stayed "" for the
+                    # EXE/OODA path -> no ASSISTANT row was saved (the bug:
+                    # the answer streamed but session history kept only the
+                    # USER turn).
+                    _cognitive_answer = "\n".join(_cognitive_output_lines).strip()
+                    _result_payload = {
+                        "success": _cognitive_success,
+                        "runtime": "cognitive_engine",
+                        "display_name": "Daena Cognitive Engine",
+                        "output": _cognitive_answer[:4000],
+                    }
+                    # Only short-circuit Stage 8 when the engine actually
+                    # produced displayable answer text. In that case the
+                    # answer was already streamed to the UI, so we capture it
+                    # for persistence and tag the result with the tool_use_loop
+                    # sentinel that Stage 8's _tool_loop_handled gate reads --
+                    # this skips LLM regeneration and lets Stage 9 persist the
+                    # answer (Stage 10.5 then writes it to memory). When there
+                    # is no displayable text (e.g. a silent success), we leave
+                    # collected_content unset so the legacy path lets the LLM
+                    # summarize the structured result, unchanged.
+                    if _cognitive_answer:
+                        collected_content = _cognitive_answer
+                        _result_payload["source"] = "tool_use_loop"
                     daenabot_result = {
                         "status": "COMPLETED" if _cognitive_success else "PARTIAL",
-                        "result": {
-                            "success": _cognitive_success,
-                            "runtime": "cognitive_engine",
-                            "display_name": "Daena Cognitive Engine",
-                            "output": "\n".join(_cognitive_output_lines)[:4000],
-                        },
+                        "result": _result_payload,
                     }
                     _last_tool_name = "cognitive_engine"
                     _last_tool_desc = "Executed via OODA-R Cognitive Engine"
@@ -3433,8 +3460,14 @@ class ChatOrchestrator:
                         collected_content += chunk.content
                         token_count += 1
                         yield {"type": "chunk", "content": chunk.content}
-        elif not _cli_benchmark_used:
-            # Standard streaming (with error-chunk detection)
+        elif not _cli_benchmark_used and not _tool_loop_handled:
+            # Standard streaming (with error-chunk detection).
+            # Gated on ``not _tool_loop_handled`` so a sub-engine that already
+            # produced and streamed the final answer (ToolUseLoop or the OODA
+            # cognitive engine, both tagged source=="tool_use_loop") is NOT
+            # re-generated here -- otherwise this branch would append a second
+            # LLM response onto the captured answer. The COUNCIL/QE branch
+            # above already carries the same guard.
             _stream_error: str | None = None
             try:
                 async for chunk in llm.stream(request, decision):
