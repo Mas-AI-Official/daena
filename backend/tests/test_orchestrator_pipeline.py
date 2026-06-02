@@ -54,6 +54,7 @@ async def _register_and_login(client: AsyncClient) -> dict:
         "token": data["access_token"],
         "headers": {"Authorization": f"Bearer {data['access_token']}"},
         "user": data["user"],
+        "email": email,
     }
 
 
@@ -449,6 +450,79 @@ async def test_pipeline_with_governance_slider(client: AsyncClient, app) -> None
     # Pipeline should complete successfully
     done_events = [e for e in events if e.get("type") == "done"]
     assert len(done_events) == 1, "Pipeline should complete with STRICT governance"
+
+
+@pytest.mark.asyncio
+async def test_user_default_governance_mode_applies_when_request_omits_it(
+    client: AsyncClient, app, db_session
+) -> None:
+    """DECISION-007 (founder-approved): a user's explicitly-saved
+    default_governance_mode becomes the chat default when the request omits
+    governance_mode; an explicit request value still wins (precedence:
+    request > user setting > system default BALANCED)."""
+    import json
+
+    auth = await _register_and_login(client)
+    session_id = await _create_session(client, auth["headers"])
+
+    # Seed the user's EXPLICIT default_governance_mode = GOVERNED (sparse settings,
+    # exactly as PUT /settings/user stores it -- only the key the user set).
+    from sqlalchemy import select
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.models.identity import User
+
+    db_user = (
+        await db_session.execute(select(User).where(User.email == auth["email"]))
+    ).scalar_one()
+    db_user.settings = {**(db_user.settings or {}), "default_governance_mode": "GOVERNED"}
+    flag_modified(db_user, "settings")
+    await db_session.commit()
+
+    app.state.model_registry = _make_mock_registry()
+
+    def _stages(text: str) -> list[str]:
+        out = []
+        for line in text.split("\n"):
+            if line.startswith("data: "):
+                try:
+                    e = json.loads(line[6:])
+                    if e.get("type") == "thinking":
+                        out.append(e.get("stage"))
+                except json.JSONDecodeError:
+                    pass
+        return out
+
+    with patch("app.services.llm_service.LLMService") as MockLLMCls:
+        mock_llm = MagicMock()
+        mock_llm.stream = _mock_llm_stream_factory()
+        MockLLMCls.return_value = mock_llm
+
+        # (1) No governance_mode in the request + a fast-path-eligible query.
+        # The saved GOVERNED default must apply -> full governance pre-check emits.
+        r1 = await client.post(
+            f"/api/v1/chat/sessions/{session_id}/messages/stream",
+            json={"content": "What is quantum computing?", "role": "USER"},
+            headers=auth["headers"],
+        )
+        assert r1.status_code == 200, r1.text
+        assert "governance" in _stages(r1.text), (
+            "saved default_governance_mode=GOVERNED should force the governance stage "
+            f"when the request omits the mode; got {_stages(r1.text)}"
+        )
+
+        # (2) Explicit request governance_mode=UNLEASHED must WIN over the saved
+        # GOVERNED default -> UNLEASHED skips governance entirely (no stage).
+        r2 = await client.post(
+            f"/api/v1/chat/sessions/{session_id}/messages/stream",
+            json={"content": "What is quantum computing?", "role": "USER", "governance_mode": "UNLEASHED"},
+            headers=auth["headers"],
+        )
+        assert r2.status_code == 200, r2.text
+        assert "governance" not in _stages(r2.text), (
+            "explicit request governance_mode=UNLEASHED must win over the user default; "
+            f"governance stage should be absent, got {_stages(r2.text)}"
+        )
 
 
 @pytest.mark.asyncio

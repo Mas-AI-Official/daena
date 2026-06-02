@@ -230,6 +230,28 @@ async def _stream_message_response(
     # Collect memory writeback data to schedule as background task
     _pending_writeback: list[dict] = []
 
+    # DECISION-007 (founder-approved): per-user default_governance_mode.
+    # Precedence = request value > explicit user setting > system default (BALANCED).
+    # Read the RAW stored settings (sparse: only keys the user explicitly PUT), so a
+    # user who never chose a mode keeps the BALANCED chat default -- we deliberately do
+    # NOT promote the settings-layer display default (GOVERNED) onto every chat.
+    _user_default_gov: str | None = None
+    if body.governance_mode is None:
+        try:
+            from sqlalchemy import select as _select
+
+            from app.models.identity import User as _User
+
+            _row = (
+                await db.execute(_select(_User.settings).where(_User.id == user.id))
+            ).scalar_one_or_none()
+            if isinstance(_row, dict):
+                _val = _row.get("default_governance_mode")
+                if _val in ("UNLEASHED", "BALANCED", "GOVERNED"):
+                    _user_default_gov = _val
+        except Exception as _exc:  # never block a chat on a settings read
+            _chat_logger.warning("chat.user_governance_default_read_failed err=%s", _exc)
+
     async def event_generator():
         if created_session is not None:
             yield f"data: {json.dumps({'type': 'session_created', 'data': created_session})}\n\n"
@@ -242,7 +264,7 @@ async def _stream_message_response(
             user_id=user.id,
             user_role=user.role,
             preferred_model=body.preferred_model,
-            governance_mode_str=body.governance_mode or "BALANCED",
+            governance_mode_str=body.governance_mode or _user_default_gov or "BALANCED",
             governance_mode_override=body.governance_mode,
             routing_mode_override=body.routing_mode,
             action_mode_override=body.mode,
