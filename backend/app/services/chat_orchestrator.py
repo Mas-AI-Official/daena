@@ -2349,50 +2349,70 @@ class ChatOrchestrator:
                         _cognitive_success = event.get("success", False)
 
                 if _cognitive_output_lines or _cognitive_success:
-                    # The cognitive engine already STREAMED its answer to the
-                    # UI via the tool_use_response events yielded above. That
-                    # text is the final assistant turn -- capture it into
-                    # collected_content so Stage 9 persists it (and Stage 10.5
-                    # writes it to memory), exactly like the ToolUseLoop branch
-                    # does for source=="tool_use_loop". The "source" tag below
-                    # makes Stage 8 treat this turn as already handled so it
-                    # does NOT re-call the LLM and overwrite/blank the answer.
-                    # Without this, collected_content stayed "" for the
-                    # EXE/OODA path -> no ASSISTANT row was saved (the bug:
-                    # the answer streamed but session history kept only the
-                    # USER turn).
                     _cognitive_answer = "\n".join(_cognitive_output_lines).strip()
-                    _result_payload = {
-                        "success": _cognitive_success,
-                        "runtime": "cognitive_engine",
-                        "display_name": "Daena Cognitive Engine",
-                        "output": _cognitive_answer[:4000],
-                    }
-                    # Only short-circuit Stage 8 when the engine actually
-                    # produced displayable answer text. In that case the
-                    # answer was already streamed to the UI, so we capture it
-                    # for persistence and tag the result with the tool_use_loop
-                    # sentinel that Stage 8's _tool_loop_handled gate reads --
-                    # this skips LLM regeneration and lets Stage 9 persist the
-                    # answer (Stage 10.5 then writes it to memory). When there
-                    # is no displayable text (e.g. a silent success), we leave
-                    # collected_content unset so the legacy path lets the LLM
-                    # summarize the structured result, unchanged.
-                    if _cognitive_answer:
-                        collected_content = _cognitive_answer
-                        _result_payload["source"] = "tool_use_loop"
-                    daenabot_result = {
-                        "status": "COMPLETED" if _cognitive_success else "PARTIAL",
-                        "result": _result_payload,
-                    }
-                    _last_tool_name = "cognitive_engine"
-                    _last_tool_desc = "Executed via OODA-R Cognitive Engine"
 
-                    logger.info(
-                        "orchestrator.cognitive_dispatched",
-                        success=_cognitive_success,
-                        output_lines=len(_cognitive_output_lines),
+                    # ── F-3 FIX: detect CLI auth-error surfaced as cognitive
+                    # engine output.  The OODAEngine yields the runtime's
+                    # auth-error as a tool_use_response (the runtime returns
+                    # it as content, not as an exception).  If we accept it,
+                    # the raw error becomes the persisted assistant answer.
+                    # Detect it here using the canonical single-sourced
+                    # detector and fail over -- leave daenabot_result=None so
+                    # the Step-0 runtime path / llm.stream fallback runs.
+                    from app.services.providers.claude_cli import (
+                        _looks_like_cli_auth_error as _cli_auth_check,
                     )
+
+                    if _cognitive_answer and _cli_auth_check(_cognitive_answer):
+                        yield {
+                            "type": "governance_notice",
+                            "tier": 1,
+                            "title": "Primary Mind unavailable",
+                            "message": (
+                                "Cognitive engine received an auth error "
+                                "from the primary runtime. Falling over "
+                                "to the next available brain."
+                            ),
+                        }
+                        logger.warning(
+                            "orchestrator.cognitive_auth_error_failover",
+                            output_preview=_cognitive_answer[:200],
+                        )
+                        # daenabot_result stays None -> fall through to
+                        # legacy cascade / Step-0 / llm.stream.
+                    else:
+                        # Normal cognitive engine success path.
+                        # The engine already STREAMED its answer to the UI
+                        # via the tool_use_response events yielded above.
+                        # Capture it into collected_content so Stage 9
+                        # persists it (and Stage 10.5 writes it to memory),
+                        # exactly like the ToolUseLoop branch does for
+                        # source=="tool_use_loop".  The "source" tag makes
+                        # Stage 8 treat this turn as already handled so it
+                        # does NOT re-call the LLM and overwrite the answer.
+                        _result_payload = {
+                            "success": _cognitive_success,
+                            "runtime": "cognitive_engine",
+                            "display_name": "Daena Cognitive Engine",
+                            "output": _cognitive_answer[:4000],
+                        }
+                        # Only short-circuit Stage 8 when the engine
+                        # actually produced displayable answer text.
+                        if _cognitive_answer:
+                            collected_content = _cognitive_answer
+                            _result_payload["source"] = "tool_use_loop"
+                        daenabot_result = {
+                            "status": "COMPLETED" if _cognitive_success else "PARTIAL",
+                            "result": _result_payload,
+                        }
+                        _last_tool_name = "cognitive_engine"
+                        _last_tool_desc = "Executed via OODA-R Cognitive Engine"
+
+                        logger.info(
+                            "orchestrator.cognitive_dispatched",
+                            success=_cognitive_success,
+                            output_lines=len(_cognitive_output_lines),
+                        )
 
             except Exception as cog_exc:
                 logger.warning("orchestrator.cognitive_engine_failed", error=str(cog_exc))

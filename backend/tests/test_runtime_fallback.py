@@ -323,3 +323,202 @@ async def test_runtime_happy_path_still_streams_as_answer(
     assert not notice_events, (
         f"Auth-error notice fired on the happy path: {notice_events}"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  F-3: Cognitive engine (OODA/EXE) auth-error must fall over, not persist     #
+# --------------------------------------------------------------------------- #
+
+def _make_auth_error_ooda():
+    """OODAEngine stand-in that yields a CLI auth-error as its tool_use_response.
+
+    This simulates the cognitive engine calling the claude_code runtime,
+    receiving the auth-error as content, and surfacing it as a successful
+    tool_use_response event -- the exact F-3 bug path.
+    """
+    class _AuthErrorOODA:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            pass
+
+        async def run(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            yield {"type": "cognitive_phase", "phase": "observe", "cycle": 1}
+            yield {"type": "cognitive_phase", "phase": "act", "cycle": 1}
+            # The key event: auth error surfaced as tool_use_response content
+            yield {"type": "tool_use_response", "content": AUTH_ERROR_LINE}
+            yield {"type": "cognitive_complete", "success": True}
+
+    return _AuthErrorOODA
+
+
+@pytest.mark.asyncio
+async def test_cognitive_engine_auth_error_fails_over(
+    client: AsyncClient, app,
+) -> None:
+    """F-3: cognitive engine CLI auth-error must not be persisted as an answer.
+
+    When OODAEngine yields an auth-error as a tool_use_response, the
+    orchestrator must detect it, emit a governance_notice, and let the
+    fallback (Step-0 / llm.stream) produce the real answer.
+    """
+    auth = await _register_and_login(client)
+    session_id = await _create_session(client, auth["headers"])
+
+    user_msg = "What is the capital of France?"
+    await client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages",
+        json={"content": user_msg, "role": "USER"},
+        headers=auth["headers"],
+    )
+
+    app.state.model_registry = _make_mock_registry()
+
+    # Step-0 runtime adapter also needs to fail over (after the cognitive
+    # engine is skipped, control reaches Step-0 which tries claude_code
+    # again).  Mock the runtime registry to provide a claude_code adapter
+    # that also returns the auth error, so F-1's fix kicks in and
+    # control falls through to llm.stream.
+    claude_adapter = _make_auth_error_adapter()
+    fake_registry = _make_fake_runtime_registry(claude_adapter)
+
+    with (
+        patch("app.core.events.get_runtime_registry", return_value=fake_registry),
+        patch(
+            "app.services.cognition.ooda_engine.OODAEngine",
+            _make_auth_error_ooda(),
+        ),
+        patch("app.services.llm_service.LLMService") as MockLLMCls,
+    ):
+        mock_llm = MagicMock()
+        mock_llm.stream = _fallback_stream_factory()
+        MockLLMCls.return_value = mock_llm
+
+        resp = await client.post(
+            f"/api/v1/chat/sessions/{session_id}/messages/stream",
+            json={
+                "content": user_msg,
+                "role": "USER",
+                "mode": "EXE",
+                "routing_mode": "STANDARD",
+                "governance_mode": "BALANCED",
+            },
+            headers=auth["headers"],
+        )
+        assert resp.status_code == 200, f"Stream failed: {resp.text}"
+        events = _parse_sse(resp.text)
+
+    # (a) The assistant content must be the FALLBACK answer, not the auth error.
+    chunk_content = "".join(
+        e.get("content", "") for e in events if e.get("type") == "chunk"
+    )
+    assert FALLBACK_ANSWER in chunk_content, (
+        f"Expected fallback answer in chunks. Got: {chunk_content!r}"
+    )
+    assert "Not logged in" not in chunk_content, (
+        f"Auth error leaked into chunk content: {chunk_content!r}"
+    )
+
+    # (b) A governance_notice was emitted for the cognitive engine failover.
+    notice_events = [e for e in events if e.get("type") == "governance_notice"]
+    assert notice_events, (
+        f"No governance_notice emitted. Event types: "
+        f"{[e.get('type') for e in events]}"
+    )
+    # At least one notice should mention auth/fallback from the cognitive path
+    assert any(
+        "auth error" in e.get("message", "").lower()
+        or "falling over" in e.get("message", "").lower()
+        or "not logged in" in (e.get("message", "") + e.get("title", "")).lower()
+        for e in notice_events
+    ), f"Notice did not mention auth error / fallback. Notices: {notice_events}"
+
+
+@pytest.mark.asyncio
+async def test_cognitive_engine_happy_path_still_persists(
+    client: AsyncClient, app,
+) -> None:
+    """Guard: when the cognitive engine returns a REAL answer, it must persist.
+
+    This ensures the F-3 auth-error detection does NOT interfere with
+    the F-2 fix (real cognitive answers are captured + persisted).
+    """
+    auth = await _register_and_login(client)
+    session_id = await _create_session(client, auth["headers"])
+
+    user_msg = "Tell me about Mars."
+    await client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages",
+        json={"content": user_msg, "role": "USER"},
+        headers=auth["headers"],
+    )
+
+    app.state.model_registry = _make_mock_registry()
+
+    real_answer = "Mars is the fourth planet from the Sun."
+
+    class _HappyOODA:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            pass
+
+        async def run(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            yield {"type": "cognitive_phase", "phase": "observe", "cycle": 1}
+            yield {"type": "cognitive_phase", "phase": "act", "cycle": 1}
+            yield {"type": "tool_use_response", "content": real_answer}
+            yield {"type": "cognitive_complete", "success": True}
+
+    # The runtime registry is still needed for the EXE path setup, but
+    # since the cognitive engine succeeds, control should NOT reach the
+    # runtime adapter dispatch.
+    claude_adapter = _make_auth_error_adapter()
+    fake_registry = _make_fake_runtime_registry(claude_adapter)
+
+    with (
+        patch("app.core.events.get_runtime_registry", return_value=fake_registry),
+        patch("app.services.cognition.ooda_engine.OODAEngine", _HappyOODA),
+        patch("app.services.llm_service.LLMService") as MockLLMCls,
+    ):
+        mock_llm = MagicMock()
+        mock_llm.stream = _fallback_stream_factory()
+        MockLLMCls.return_value = mock_llm
+
+        resp = await client.post(
+            f"/api/v1/chat/sessions/{session_id}/messages/stream",
+            json={
+                "content": user_msg,
+                "role": "USER",
+                "mode": "EXE",
+                "routing_mode": "STANDARD",
+                "governance_mode": "BALANCED",
+            },
+            headers=auth["headers"],
+        )
+        assert resp.status_code == 200, f"Stream failed: {resp.text}"
+        events = _parse_sse(resp.text)
+
+    # The cognitive engine's real answer must appear as a tool_use_response
+    # event (it was yielded + streamed).
+    tool_content = "".join(
+        e.get("content", "") for e in events
+        if e.get("type") == "tool_use_response"
+    )
+    assert real_answer in tool_content, (
+        f"Cognitive engine answer not in tool_use_response. Got: {tool_content!r}"
+    )
+
+    # No auth-error notice should have fired.
+    auth_notices = [
+        e for e in events
+        if e.get("type") == "governance_notice"
+        and "auth error" in e.get("message", "").lower()
+    ]
+    assert not auth_notices, (
+        f"Auth-error notice fired on the happy path: {auth_notices}"
+    )
+
+    # The fallback answer must NOT appear (cognitive engine handled it).
+    chunk_content = "".join(
+        e.get("content", "") for e in events if e.get("type") == "chunk"
+    )
+    assert FALLBACK_ANSWER not in chunk_content, (
+        f"Fallback answer appeared even though cognitive engine succeeded: "
+        f"{chunk_content!r}"
+    )
