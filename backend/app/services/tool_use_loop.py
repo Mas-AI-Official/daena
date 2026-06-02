@@ -51,6 +51,11 @@ logger = get_logger(__name__)
 MAX_TOOL_ITERATIONS = 10
 TOOL_RESULT_MAX_LENGTH = 4000
 
+# Sentinel returned by _generate when every backend in the tool-loop's own
+# provider chain is unavailable. run() treats this as "no response" (not an
+# answer) so the orchestrator falls through to LLMService.stream.
+_NO_LLM_SENTINEL = "[No LLM available for tool-use loop]"
+
 # Lazy-initialized singletons for the cognitive security layer
 _loop_detector_cls = None
 _classifier_cls = None
@@ -222,7 +227,18 @@ class ToolUseLoop:
             tool_calls = parse_tool_calls(full_response)
 
             if not tool_calls:
-                # No tool calls -- this is the final response
+                # No tool calls -- this is the final response.
+                # BUT: if the tool-loop's own provider chain is exhausted (every
+                # backend failed, or the only "online" runtime is a not-logged-in
+                # CLI that yielded its auth error -> skipped in _generate), do NOT
+                # surface the no-LLM sentinel as the answer. Yield nothing so the
+                # orchestrator leaves daenabot_result=None and falls through to the
+                # standard LLMService.stream provider chain (the next available
+                # brain: Perplexity/Anthropic). Surfacing the sentinel here would
+                # dead-end the visible fallback chain.
+                if full_response.strip() == _NO_LLM_SENTINEL:
+                    logger.warning("tool_loop.no_llm_available_failover")
+                    break
                 # Stream the response to the user
                 yield {"type": "tool_use_response", "content": full_response}
                 break
@@ -556,6 +572,7 @@ class ToolUseLoop:
         # Fallback: try runtime adapters
         try:
             from app.core.events import get_runtime_registry
+            from app.services.providers.claude_cli import _looks_like_cli_auth_error
             from app.services.runtimes.base_adapter import RuntimeStatus
 
             registry = get_runtime_registry()
@@ -575,12 +592,24 @@ class ToolUseLoop:
                             context={"session_id": str(self.session_id or "tool-loop")},
                         ):
                             output_lines.append(line)
-                        yield "\n".join(output_lines)
+                        runtime_text = "\n".join(output_lines)
+                        # A reachable-but-not-logged-in CLI returns its auth
+                        # error AS content. Do NOT surface it as the answer --
+                        # skip this adapter and try the next available brain so
+                        # the fallback chain stays visible (Primary Mind -> next
+                        # available -> ...). Reuse the canonical detector.
+                        if _looks_like_cli_auth_error(runtime_text):
+                            logger.warning(
+                                "tool_loop.runtime_auth_error_skipped",
+                                runtime=rid,
+                            )
+                            continue
+                        yield runtime_text
                         return
         except Exception as exc:
             logger.warning("tool_loop.runtime_failed", error=str(exc))
 
-        yield "[No LLM available for tool-use loop]"
+        yield _NO_LLM_SENTINEL
 
     # Error patterns that trigger OpenClaw-parity auto-heal.
     _HEAL_TRIGGERS = (

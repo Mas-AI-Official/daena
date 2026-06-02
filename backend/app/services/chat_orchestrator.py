@@ -2550,7 +2550,22 @@ class ChatOrchestrator:
                     }
 
                     try:
-                        output_lines: list[str] = []
+                        from app.services.providers.claude_cli import (
+                            _looks_like_cli_auth_error,
+                        )
+
+                        # BUFFER runtime output instead of streaming each line
+                        # immediately. A CLI runtime (claude_code, codex,
+                        # gemini_cli) that is reachable-but-not-logged-in emits
+                        # its auth error AS a content line (e.g.
+                        # "[Claude Code error: Not logged in -- Please run
+                        # /login]"). If we streamed line-by-line we'd surface
+                        # that raw error to the UI as the assistant's answer
+                        # BEFORE we could detect it. Buffer first, detect on the
+                        # accumulated text, and only emit runtime_output once we
+                        # know it is a real response -- otherwise fail over to
+                        # the LLMService provider chain (Perplexity/Anthropic).
+                        output_lines = []
                         async for line in adapter.execute(
                             task=user_content,
                             context={
@@ -2560,22 +2575,65 @@ class ChatOrchestrator:
                             },
                         ):
                             output_lines.append(line)
-                            # Stream runtime output chunks to frontend
-                            yield {
-                                "type": "runtime_output",
-                                "runtime_id": selected_rid,
-                                "content": line,
-                            }
 
                         runtime_output = "\n".join(output_lines)
+                        _is_auth_error = _looks_like_cli_auth_error(runtime_output)
 
-                        # Check if runtime returned an error (timeout, crash)
-                        _has_error = any(
+                        # CLI auth-error -> do NOT surface as the answer; fail
+                        # over to the next available brain (standard llm.stream
+                        # provider chain below). Reuse the canonical detector so
+                        # the marker list stays single-sourced.
+                        if _is_auth_error:
+                            yield {
+                                "type": "governance_notice",
+                                "runtime_id": selected_rid,
+                                "tier": 1,
+                                "title": "Primary Mind unavailable",
+                                "message": (
+                                    f"{adapter.display_name} is not logged in. "
+                                    f"Falling over to the next available brain."
+                                ),
+                            }
+                            yield {
+                                "type": "runtime_activity",
+                                "runtime_id": selected_rid,
+                                "display_name": adapter.display_name,
+                                "status": "failed",
+                                "description": (
+                                    f"{adapter.display_name} not logged in. "
+                                    f"Routing to next available brain..."
+                                ),
+                            }
+                            logger.warning(
+                                "orchestrator.runtime_auth_error_failover",
+                                runtime=selected_rid,
+                            )
+                            # Leave daenabot_result=None so control flows to the
+                            # standard streaming fallback (llm.stream).
+                        else:
+                            # Not an auth error -- this is a real response (or a
+                            # non-auth runtime error). Stream the buffered output
+                            # to the frontend exactly as before.
+                            for line in output_lines:
+                                yield {
+                                    "type": "runtime_output",
+                                    "runtime_id": selected_rid,
+                                    "content": line,
+                                }
+
+                        # Check if runtime returned an error (timeout, crash).
+                        # Auth errors already handled above (and excluded here so
+                        # we don't double-emit a failed runtime_activity).
+                        _has_error = not _is_auth_error and any(
                             "[" in line and ("error" in line.lower() or "timed out" in line.lower() or "killed" in line.lower())
                             for line in output_lines
                         )
 
-                        if _has_error:
+                        if _is_auth_error:
+                            # Already emitted notice + failed activity above;
+                            # skip the success/error branches so the fallback runs.
+                            pass
+                        elif _has_error:
                             # Runtime failed silently -- do NOT mark as complete.
                             # Let it fall through to agentic loop fallback.
                             yield {
