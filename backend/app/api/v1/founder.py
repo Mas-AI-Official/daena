@@ -356,3 +356,51 @@ async def reset_routing_policy(
         await db.commit()
 
     return {"success": True, "data": _DEFAULT_POLICY}
+
+
+@router.get("/error-events")
+async def list_error_events(
+    db: AsyncSession = Depends(get_db),
+    _user: CurrentUser = Depends(require_role("FOUNDER")),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict[str, Any]:
+    """Recent runtime error events for founder review (DEP-007 sink).
+
+    FOUNDER-gated. Returns SAFE fields only -- the ErrorEvent sink never
+    stores secrets, raw exception text, tokens, credentials, request
+    bodies, or stack traces (the full traceback stays in the server logs,
+    correlated by request_id). Newest first, capped.
+    """
+    from sqlalchemy import desc as _desc
+
+    from app.models.error_event import ErrorEvent
+
+    rows = (
+        await db.execute(
+            select(ErrorEvent).order_by(_desc(ErrorEvent.created_at)).limit(limit)
+        )
+    ).scalars().all()
+    return {
+        "success": True,
+        "count": len(rows),
+        "data": [
+            {
+                "id": str(e.id),
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+                "severity": e.severity,
+                "source": e.source,
+                "route": e.route,
+                "method": e.method,
+                "status_code": e.status_code,
+                "error_code": e.error_code,
+                "error_type": e.error_type,
+                "safe_message": e.safe_message,
+                "request_id": e.request_id,
+                "run_id": e.run_id,
+                "provider": e.provider,
+                "tenant_id": str(e.tenant_id) if e.tenant_id else None,
+                "user_id": str(e.user_id) if e.user_id else None,
+            }
+            for e in rows
+        ],
+    }
