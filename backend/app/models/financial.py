@@ -131,3 +131,10 @@ class UserQuota(Base, TenantMixin, TimestampMixin):
     period_start: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Monthly anchor (BILL-002): period_start is bumped on every DAILY reset,
+    # so it cannot detect a month rollover. month_period_start is the separate
+    # anchor for the monthly window; when its month/year differs from "now",
+    # spend_this_month_usd is reset. Nullable so legacy rows backfill lazily.
+    month_period_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )

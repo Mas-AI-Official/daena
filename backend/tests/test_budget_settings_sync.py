@@ -259,3 +259,70 @@ async def test_alert_threshold_silent_below_threshold(
         )
     ).scalars().all()
     assert rows == []
+
+
+# --- BILL-002: monthly spend reset ------------------------------------------
+
+async def test_monthly_spend_resets_on_new_month(
+    client: AsyncClient, db_session: AsyncSession,
+) -> None:
+    """BILL-002: spend_this_month_usd resets when the month rolls over.
+
+    Before the fix, spend_this_month_usd accumulated forever (period_start
+    tracked only the daily window), so a user's monthly quota looked
+    permanently exhausted after their first month. The lazy monthly reset
+    keyed on month_period_start fixes this.
+    """
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    from sqlalchemy import update
+
+    auth = await _register_and_login(client)
+    cg = CostGuard(db_session)
+
+    # Provision the quota, then simulate last month's accumulated spend.
+    await cg._get_or_create_user_quota(auth["tenant_id"], auth["user_id"])
+    await db_session.execute(
+        update(UserQuota)
+        .where(UserQuota.user_id == auth["user_id"])
+        .values(
+            spend_this_month_usd=5.0,
+            month_period_start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+    )
+    await db_session.flush()
+
+    # Next access in a new month must reset the monthly counter to 0.
+    quota = await cg._get_or_create_user_quota(auth["tenant_id"], auth["user_id"])
+    assert float(quota.spend_this_month_usd) == 0.0, (
+        f"monthly spend should reset on a new month; got {quota.spend_this_month_usd}"
+    )
+    assert quota.month_period_start is not None
+    assert quota.month_period_start.year >= 2026
+
+
+async def test_monthly_spend_preserved_within_same_month(
+    client: AsyncClient, db_session: AsyncSession,
+) -> None:
+    """Guard: within the same month, spend_this_month_usd must NOT reset."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import update
+
+    auth = await _register_and_login(client)
+    cg = CostGuard(db_session)
+
+    await cg._get_or_create_user_quota(auth["tenant_id"], auth["user_id"])
+    now = datetime.now(timezone.utc)
+    await db_session.execute(
+        update(UserQuota)
+        .where(UserQuota.user_id == auth["user_id"])
+        .values(spend_this_month_usd=3.0, month_period_start=now)
+    )
+    await db_session.flush()
+
+    quota = await cg._get_or_create_user_quota(auth["tenant_id"], auth["user_id"])
+    assert float(quota.spend_this_month_usd) == 3.0, (
+        "within-month spend must be preserved, not reset"
+    )

@@ -171,13 +171,26 @@ class CostGuard:
         quota = result.scalar_one_or_none()
 
         if quota is not None:
-            # Lazy daily reset: if period_start is from a previous day, reset daily spend
+            # Lazy resets: daily (spend_today) and monthly (spend_this_month).
+            # period_start tracks the DAILY window and is bumped every day, so
+            # it cannot detect a month rollover -- month_period_start is the
+            # separate monthly anchor (BILL-002). Without the monthly reset,
+            # spend_this_month_usd accumulated forever and the monthly quota
+            # looked permanently exhausted after the user's first month.
             today = date.today()
+            reset_values: dict = {}
             if quota.period_start.date() < today:
+                reset_values["spend_today_usd"] = 0
+                reset_values["period_start"] = func.now()
+            _mps = quota.month_period_start
+            if _mps is None or (_mps.year, _mps.month) != (today.year, today.month):
+                reset_values["spend_this_month_usd"] = 0
+                reset_values["month_period_start"] = func.now()
+            if reset_values:
                 await self._db.execute(
                     update(UserQuota)
                     .where(UserQuota.id == quota.id)
-                    .values(spend_today_usd=0, period_start=func.now())
+                    .values(**reset_values)
                 )
                 await self._db.flush()
                 # Re-read to get updated values
