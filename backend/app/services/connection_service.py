@@ -95,6 +95,9 @@ class ConnectionService(BaseService):
             "user_id": str(inst.user_id),
             "tenant_id": str(inst.tenant_id),
             "status": inst.status,
+            # Non-secret presence flag so the UI can render "configured"
+            # without ever receiving the raw secret values (SEC-01).
+            "has_credentials": bool(inst.credentials),
             "credentials": creds,
             "last_used": inst.last_used.isoformat() if inst.last_used else None,
             "created_at": inst.created_at.isoformat() if inst.created_at else None,
@@ -352,7 +355,10 @@ class ConnectionService(BaseService):
             connector_id=str(connector_id),
             user_id=str(user_id),
         )
-        return self._instance_to_dict(instance, include_credentials=True)
+        # SEC-01: never echo raw decrypted credentials in an HTTP response,
+        # even right after the user submits them. has_credentials signals
+        # success; internal flows decrypt at the point of use.
+        return self._instance_to_dict(instance, include_credentials=False)
 
     async def install(
         self,
@@ -455,7 +461,10 @@ class ConnectionService(BaseService):
             instance_id=str(instance.id),
             connector_id=str(instance.connector_id),
         )
-        return self._instance_to_dict(instance, include_credentials=True)
+        # SEC-01: never echo raw decrypted credentials in an HTTP response,
+        # even right after the user submits them. has_credentials signals
+        # success; internal flows decrypt at the point of use.
+        return self._instance_to_dict(instance, include_credentials=False)
 
     async def install_recommended(
         self,
@@ -759,12 +768,20 @@ class ConnectionService(BaseService):
     async def get_instance(
         self, instance_id: UUID, tenant_id: UUID
     ) -> dict:
-        """Get a connector instance by ID (includes decrypted credentials)."""
+        """Get a connector instance by ID.
+
+        SEC-01: does NOT return decrypted credentials. This feeds the
+        GET /instances/{id} HTTP response, which any same-tenant
+        authenticated user can call; returning raw secrets there leaked
+        OAuth/API credentials. The response carries has_credentials
+        (non-secret presence flag) instead. Internal flows that genuinely
+        need the secret decrypt at the point of use, not via this dict.
+        """
         instance = await self._get_or_404(
             ConnectorInstance, instance_id, "Connector instance",
             tenant_id=tenant_id,
         )
-        return self._instance_to_dict(instance, include_credentials=True)
+        return self._instance_to_dict(instance, include_credentials=False)
 
     async def list_instances(
         self,

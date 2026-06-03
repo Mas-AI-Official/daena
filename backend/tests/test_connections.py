@@ -207,7 +207,11 @@ async def test_connect_account_promotes_installed_connector(client: AsyncClient)
     assert connect_resp.status_code == 200
     data = connect_resp.json()["data"]
     assert data["status"] == "CONNECTED"
-    assert data["credentials"]["api_key"] == "sk-after-install"
+    # SEC-01: connect promotes to CONNECTED + signals has_credentials, but
+    # must NOT echo the raw secret back in the response.
+    assert data.get("has_credentials") is True
+    assert not data.get("credentials"), "raw credentials must not be echoed"
+    assert "sk-after-install" not in connect_resp.text
 
 
 @pytest.mark.asyncio
@@ -503,8 +507,13 @@ async def test_set_and_list_permissions(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_connect_returns_decrypted_credentials(client: AsyncClient) -> None:
-    """POST /instances returns credentials back to the user (decrypted)."""
+async def test_connect_does_not_echo_decrypted_credentials(client: AsyncClient) -> None:
+    """SEC-01: POST /instances must NOT echo raw secrets back in the response.
+
+    (Previously this asserted the credentials were returned decrypted -- that
+    encoded the SEC-01 leak. The secure contract: no raw secret values in the
+    HTTP response; a non-secret has_credentials flag signals success.)
+    """
     auth = await _register_and_login(client)
     connector = await _create_connector(client, auth["headers"])
 
@@ -518,14 +527,18 @@ async def test_connect_returns_decrypted_credentials(client: AsyncClient) -> Non
     )
     assert resp.status_code == 201
     data = resp.json()["data"]
-    # Credentials should be returned decrypted to the owning user
-    assert data["credentials"] is not None
-    assert data["credentials"]["api_key"] == "sk-secret-vault-test"
+    assert data.get("has_credentials") is True
+    assert not data.get("credentials"), "raw credentials must not be echoed"
+    assert "sk-secret-vault-test" not in resp.text
 
 
 @pytest.mark.asyncio
-async def test_get_instance_returns_decrypted_credentials(client: AsyncClient) -> None:
-    """GET /instances/{id} returns decrypted credentials for the owner."""
+async def test_get_instance_does_not_return_decrypted_credentials(client: AsyncClient) -> None:
+    """SEC-01: GET /instances/{id} must NOT return decrypted credentials.
+
+    Any same-tenant authenticated user can call this; returning raw secrets
+    leaked OAuth/API credentials. The response carries has_credentials only.
+    """
     auth = await _register_and_login(client)
     connector = await _create_connector(client, auth["headers"])
 
@@ -544,8 +557,10 @@ async def test_get_instance_returns_decrypted_credentials(client: AsyncClient) -
         headers=auth["headers"],
     )
     assert get_resp.status_code == 200
-    creds = get_resp.json()["data"]["credentials"]
-    assert creds == {"token": "oauth-abc-123"}
+    data = get_resp.json()["data"]
+    assert data.get("has_credentials") is True
+    assert not data.get("credentials"), "raw credentials must not be returned"
+    assert "oauth-abc-123" not in get_resp.text
 
 
 @pytest.mark.asyncio
