@@ -123,7 +123,7 @@ export const SunflowerHive = memo(function SunflowerHive({
             transition={{ delay: i * 0.06, duration: 0.3 }}
             whileHover={{ scale: 1.06 }}
             onClick={() => navigate(`/departments/${dept.id}`)}
-            title={`${dept.name}: ${dept.activeCount}/${dept.agentCount} active, ${dept.efficiency}% efficiency`}
+            title={`${dept.name}: ${dept.activeCount}/${dept.agentCount} active`}
             aria-label={`${dept.name} department`}
           >
             <span
@@ -142,7 +142,7 @@ export const SunflowerHive = memo(function SunflowerHive({
               className="text-starlight-500 mt-0.5"
               style={{ fontSize: Math.max(7, 7 * scale) }}
             >
-              {dept.efficiency}%
+              {dept.activeCount}/{dept.agentCount} active
             </span>
           </motion.button>
         )
