@@ -26,6 +26,7 @@ from app.models.department_state import DepartmentState
 from app.models.department_task import DepartmentTask
 from app.models.execution import Skill, Task, ToolExecution
 from app.models.files import FileRecord
+from app.models.error_event import ErrorEvent
 from app.models.financial import Subscription, UsageLedger, UserQuota, VaultSecret
 from app.models.governance import GoaAuditEvent, GoaPolicyState, GoaRequest, PendingApproval
 from app.models.identity import RefreshToken, Tenant, User
@@ -67,7 +68,7 @@ __all__ = [
     "ResearchDraft",
     "FormDraft", "FormDraftField",
     "DepartmentBudget", "ExpenseProposal", "DepartmentState", "DepartmentMessage", "DepartmentPolicy",
-    "UsageLedger", "VaultSecret", "Subscription", "UserQuota",
+    "UsageLedger", "VaultSecret", "Subscription", "UserQuota", "ErrorEvent",
     "ProjectPipeline",
     "Project",
     "ApiKey",

@@ -1157,6 +1157,22 @@ def create_app() -> FastAPI:
     @app.exception_handler(DaenaError)
     async def daena_error_handler(request: Request, exc: DaenaError) -> JSONResponse:
         """Handle all custom Daena exceptions."""
+        _rid = _request_id(request)
+        # DEP-007: record only server-side (5xx) DaenaErrors -- 4xx domain
+        # errors (validation/not-found/auth) are expected + would be noise.
+        if getattr(exc, "status_code", 400) >= 500:
+            from app.services.error_sink import record_error_event
+            await record_error_event(
+                source="exception_handler",
+                severity="error",
+                route=request.url.path,
+                method=request.method,
+                status_code=exc.status_code,
+                error_code=exc.error_code,
+                error_type=type(exc).__name__,
+                safe_message=exc.message,
+                request_id=_rid,
+            )
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -1164,7 +1180,7 @@ def create_app() -> FastAPI:
                 "error": {
                     "code": exc.error_code,
                     "message": exc.message,
-                    "request_id": _request_id(request),
+                    "request_id": _rid,
                 },
             },
         )
@@ -1183,6 +1199,20 @@ def create_app() -> FastAPI:
             error_type=type(exc).__name__,
             error=str(exc),
             traceback=_tb.format_exc(),
+            request_id=_rid,
+        )
+        # DEP-007: persist a SAFE error event (class name + generic message
+        # only -- never str(exc) or the traceback) for post-hoc review.
+        from app.services.error_sink import record_error_event
+        await record_error_event(
+            source="exception_handler",
+            severity="error",
+            route=request.url.path,
+            method=request.method,
+            status_code=500,
+            error_code="INTERNAL_ERROR",
+            error_type=type(exc).__name__,
+            safe_message="Something went wrong. Please try again.",
             request_id=_rid,
         )
         return JSONResponse(
