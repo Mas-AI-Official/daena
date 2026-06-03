@@ -38,7 +38,7 @@ import logging
 from typing import Final
 from uuid import UUID
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select, update
 
 from app.models.identity import User
 from app.models.notification import Notification
@@ -246,6 +246,55 @@ class NotificationService(BaseService):
             stmt = stmt.where(Notification.read_at.is_(None))
         rows = (await self.db.execute(stmt)).scalars().all()
         return [self._to_dict(r) for r in rows]
+
+    async def unread_count(self, *, tenant_id: UUID, user_id: UUID) -> int:
+        """Count this user's unread notifications (read_at IS NULL)."""
+        stmt = (
+            select(func.count())
+            .select_from(Notification)
+            .where(
+                Notification.tenant_id == tenant_id,
+                Notification.user_id == user_id,
+                Notification.read_at.is_(None),
+            )
+        )
+        return int((await self.db.execute(stmt)).scalar_one() or 0)
+
+    async def mark_read(
+        self, *, notification_id: UUID, tenant_id: UUID, user_id: UUID
+    ) -> bool:
+        """Mark ONE notification read. Returns True if a row was updated.
+
+        Scoped to (tenant_id, user_id, id): a notification belonging to a
+        different user matches zero rows (no cross-user mark-read / IDOR),
+        so the caller gets False rather than touching another user's data.
+        Idempotent: re-marking an already-read row still returns True.
+        """
+        result = await self.db.execute(
+            update(Notification)
+            .where(
+                Notification.id == notification_id,
+                Notification.tenant_id == tenant_id,
+                Notification.user_id == user_id,
+            )
+            .values(read_at=func.now())
+        )
+        await self.db.commit()
+        return (result.rowcount or 0) > 0
+
+    async def mark_all_read(self, *, tenant_id: UUID, user_id: UUID) -> int:
+        """Mark all of this user's UNREAD notifications read. Returns count."""
+        result = await self.db.execute(
+            update(Notification)
+            .where(
+                Notification.tenant_id == tenant_id,
+                Notification.user_id == user_id,
+                Notification.read_at.is_(None),
+            )
+            .values(read_at=func.now())
+        )
+        await self.db.commit()
+        return int(result.rowcount or 0)
 
     @staticmethod
     def _to_dict(row: Notification) -> dict:

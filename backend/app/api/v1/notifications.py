@@ -17,8 +17,9 @@ forged "governance_rejection" rows.
 from __future__ import annotations
 
 from typing import Literal
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +51,14 @@ class NotificationDTO(BaseModel):
 class NotificationListResponse(BaseModel):
     success: bool = True
     data: list[NotificationDTO]
+    unread_count: int = 0
+
+
+class MarkReadResponse(BaseModel):
+    success: bool = True
+    # For one row: read=True if it was marked (or already read). For
+    # read-all: marked = how many unread rows were flipped.
+    marked: int = 0
 
 
 class TestNotificationBody(BaseModel):
@@ -82,15 +91,52 @@ async def list_notifications(
     unread_only: bool = Query(False),
 ) -> NotificationListResponse:
     """Return this user's recent in-app notifications, newest first."""
-    rows = await NotificationService(db).list_recent(
+    svc = NotificationService(db)
+    rows = await svc.list_recent(
         tenant_id=user.tenant_id,
         user_id=user.id,
         limit=limit,
         unread_only=unread_only,
     )
+    unread = await svc.unread_count(tenant_id=user.tenant_id, user_id=user.id)
     return NotificationListResponse(
         data=[NotificationDTO(**r) for r in rows],
+        unread_count=unread,
     )
+
+
+@router.post("/notifications/{notification_id}/read", response_model=MarkReadResponse)
+async def mark_notification_read(
+    notification_id: UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MarkReadResponse:
+    """Mark ONE of the current user's notifications read (NOTIF-02).
+
+    Scoped to (tenant, user, id): a notification owned by another user
+    matches nothing -> 404 (no cross-user mark-read).
+    """
+    ok = await NotificationService(db).mark_read(
+        notification_id=notification_id,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="notification_not_found")
+    return MarkReadResponse(marked=1)
+
+
+@router.post("/notifications/read-all", response_model=MarkReadResponse)
+async def mark_all_notifications_read(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MarkReadResponse:
+    """Mark ALL of the current user's unread notifications read (NOTIF-02)."""
+    count = await NotificationService(db).mark_all_read(
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+    )
+    return MarkReadResponse(marked=count)
 
 
 @router.post(
