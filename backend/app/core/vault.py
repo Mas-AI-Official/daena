@@ -110,7 +110,10 @@ def decrypt_dict(value: str) -> dict | None:
         try:
             return json.loads(value)
         except (json.JSONDecodeError, TypeError):
-            logger.error("vault.decrypt_failed_plaintext", value_preview=value[:20])
+            # Do NOT log a preview of the value: on a legacy plaintext row
+            # this would leak the first chars of a live secret into logs
+            # (violates the no-secret-logging rule). Log length only.
+            logger.error("vault.decrypt_failed_plaintext", value_len=len(value))
             return None
 
     cipher = _get_aesgcm()
