@@ -3872,6 +3872,17 @@ class ChatOrchestrator:
         )
         self._db.add(assistant_msg)
         await self._db.flush()
+        # MEM-03: commit the assistant turn NOW, before the disconnect-prone
+        # tail (the `done` yield delivery + Stage 10 cost/audit + memory
+        # writeback). get_db() commits only AFTER stream_reply fully returns
+        # and ROLLS BACK on client disconnect (CancelledError) -- so without
+        # this explicit commit a mid-stream disconnect would discard the
+        # just-generated answer (the "no memory" class of bug). The session
+        # uses expire_on_commit=False, so assistant_msg stays usable below.
+        try:
+            await self._db.commit()
+        except Exception:
+            logger.warning("orchestrator.stage9_commit_failed", exc_info=True)
 
         # Slop scoring (non-blocking, audit only)
         try:
