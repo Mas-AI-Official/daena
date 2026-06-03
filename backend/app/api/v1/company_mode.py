@@ -165,7 +165,9 @@ async def activate_company(
         )
     except Exception as exc:
         logger.error("company_mode.activation_failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=f"activation_failed: {exc}") from exc
+        # EH-01: keep the operational label, drop the raw exc from the body
+        # (full detail is in the log line above).
+        raise HTTPException(status_code=500, detail="activation_failed") from exc
 
     payload = result.to_dict()
     if warning:
@@ -337,7 +339,7 @@ async def delete_seed_brief(
     except OSError as exc:
         logger.error("company_mode.seed_archive_failed", error=str(exc))
         raise HTTPException(
-            status_code=500, detail=f"seed_archive_failed: {exc}",
+            status_code=500, detail="seed_archive_failed",  # EH-01: no raw exc
         ) from exc
 
     # Best-effort: also clear the runtime context for this tenant so
@@ -368,7 +370,7 @@ async def save_seed_brief(
     except OSError as exc:
         logger.error("company_mode.seed_write_failed", error=str(exc))
         raise HTTPException(
-            status_code=500, detail=f"seed_write_failed: {exc}",
+            status_code=500, detail="seed_write_failed",  # EH-01: no raw exc
         ) from exc
 
     # Phase 1 F4: a save-without-activate still updates the runtime

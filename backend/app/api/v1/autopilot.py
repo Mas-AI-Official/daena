@@ -149,7 +149,7 @@ async def start_autopilot(
             logger.warning("autopilot.decompose_failed", error=str(exc))
             raise HTTPException(
                 status_code=502,
-                detail=f"Plan generation failed: {exc}",
+                detail="Plan generation failed",  # EH-01: no raw exc in body
             ) from exc
         if not plan:
             raise HTTPException(
