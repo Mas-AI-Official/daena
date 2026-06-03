@@ -3613,19 +3613,46 @@ class ChatOrchestrator:
                             tried_models = [decision.primary.model_id] + [
                                 c.model_id for c in decision.fallback_chain
                             ]
+                            # MBR-02: the user-facing message lists the tried
+                            # models (non-sensitive) but NEVER the raw
+                            # exception string (fallback_exc may carry provider
+                            # internals). The full error stays in the log +
+                            # the error sink, correlated by request_id.
                             error_detail = (
-                                f"All models failed (tried: {', '.join(tried_models)}, "
-                                f"then Ollama emergency fallback, then CLI runtimes). "
-                                f"Last error: {fallback_exc}"
+                                f"All available models failed to respond (tried: "
+                                f"{', '.join(tried_models)}, then local + CLI "
+                                f"fallbacks). Please try again."
                             )
                             logger.error(
                                 "orchestrator.all_models_failed",
                                 tried=tried_models,
                                 final_error=str(fallback_exc),
                             )
+                            try:
+                                import structlog as _sl
+                                _rid = _sl.contextvars.get_contextvars().get("request_id")
+                            except Exception:
+                                _rid = None
+                            try:
+                                from app.services.error_sink import record_error_event
+                                await record_error_event(
+                                    source="sse_stream",
+                                    severity="error",
+                                    error_code="ALL_MODELS_FAILED",
+                                    error_type=type(fallback_exc).__name__,
+                                    safe_message="All available models failed to respond.",
+                                    request_id=_rid,
+                                    user_id=user_id,
+                                    tenant_id=tenant_id,
+                                    run_id=str(session_id) if session_id else None,
+                                    metadata_json={"tried_models": tried_models},
+                                )
+                            except Exception:
+                                pass
                             yield {
                                 "type": "error",
                                 "message": error_detail,
+                                "request_id": _rid,
                                 "can_retry": True,
                             }
                             return
