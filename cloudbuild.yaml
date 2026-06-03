@@ -53,7 +53,7 @@ steps:
       # array and comma-separated string forms; we use JSON here for
       # clarity. Production guardrail at backend/app/main.py:758 refuses
       # to start the app if this is left at the localhost-only default.
-      - '--update-env-vars=^@^APP_ENV=production@LOG_LEVEL=info@USE_CONNECTION_REGISTRY_V2=false@DISABLE_AUTH=false@CORS_ORIGINS=["https://daena.mas-ai.co","https://mas-ai.co","http://localhost:5173"]'
+      - '--update-env-vars=^@^APP_ENV=production@LOG_LEVEL=info@USE_CONNECTION_REGISTRY_V2=false@DISABLE_AUTH=false@CORS_ORIGINS=["https://daena.mas-ai.co","https://mas-ai.co"]'
       - '--allow-unauthenticated'
 
 images:

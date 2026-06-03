@@ -101,7 +101,10 @@ fi
 # --- Step 4: Load env vars from .env.production ---
 echo ""
 echo "[Step 4] Loading environment variables..."
-ENV_VARS="DAENA_VERSION=${DAENA_VERSION},BUILD_DATE=${BUILD_DATE},GIT_SHA=${GIT_SHA},DEMO_MODE=true"
+# NOTE: DEMO_MODE is intentionally NOT defaulted to true here. A production
+# deploy must run in real mode. If a demo deployment is wanted, set
+# DEMO_MODE=true explicitly in .env.production (it will be appended below).
+ENV_VARS="DAENA_VERSION=${DAENA_VERSION},BUILD_DATE=${BUILD_DATE},GIT_SHA=${GIT_SHA}"
 if [ -f .env.production ]; then
     while IFS='=' read -r key value; do
         # Skip comments, empty lines, and lines without =
