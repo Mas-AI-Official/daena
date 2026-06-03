@@ -772,3 +772,74 @@ async def test_memory_recall_uses_data_payload_shape(client: AsyncClient, app) -
     assert "Relevant context from memory" in prompt
     assert "User prefers concise summaries." in prompt
     assert "Prioritize launch blockers first." in prompt
+
+
+# --- S-01: saved routing/chat defaults applied with correct precedence ---
+
+@pytest.mark.asyncio
+async def test_user_default_routing_and_chat_mode_apply_when_omitted(
+    client: AsyncClient, app, db_session
+) -> None:
+    """S-01: saved default_routing_mode + default_chat_mode become the chat
+    defaults when the request omits them; an explicit request value wins.
+
+    Patches ChatOrchestrator.stream_reply to capture the overrides the
+    endpoint resolves, so the test is deterministic and does not depend on
+    model availability (COUNCIL would otherwise downgrade with <2 models).
+    """
+    import json as _json
+
+    from sqlalchemy import select
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.models.identity import User
+
+    auth = await _register_and_login(client)
+    session_id = await _create_session(client, auth["headers"])
+
+    db_user = (
+        await db_session.execute(select(User).where(User.email == auth["email"]))
+    ).scalar_one()
+    db_user.settings = {
+        **(db_user.settings or {}),
+        "default_routing_mode": "COUNCIL",
+        "default_chat_mode": "EXE",
+    }
+    flag_modified(db_user, "settings")
+    await db_session.commit()
+
+    app.state.model_registry = _make_mock_registry()
+
+    captured: list[dict] = []
+
+    async def _capture(self, **kwargs):  # noqa: ANN001, ANN003
+        captured.append(kwargs)
+        yield {"type": "done", "data": {"id": "x", "content": "ok"}}
+
+    with patch(
+        "app.services.chat_orchestrator.ChatOrchestrator.stream_reply", _capture
+    ):
+        # (1) Request OMITS mode + routing_mode -> saved defaults apply.
+        r1 = await client.post(
+            f"/api/v1/chat/sessions/{session_id}/messages/stream",
+            json={"content": "hello", "role": "USER"},
+            headers=auth["headers"],
+        )
+        assert r1.status_code == 200, r1.text
+        assert captured, "stream_reply was not called"
+        assert captured[-1]["routing_mode_override"] == "COUNCIL"
+        assert captured[-1]["action_mode_override"] == "EXE"
+
+        # (2) Explicit request values WIN over the saved defaults.
+        r2 = await client.post(
+            f"/api/v1/chat/sessions/{session_id}/messages/stream",
+            json={
+                "content": "hello", "role": "USER",
+                "mode": "CMD", "routing_mode": "STANDARD",
+            },
+            headers=auth["headers"],
+        )
+        assert r2.status_code == 200, r2.text
+        assert captured[-1]["routing_mode_override"] == "STANDARD"
+        assert captured[-1]["action_mode_override"] == "CMD"
+    _ = _json  # keep import used

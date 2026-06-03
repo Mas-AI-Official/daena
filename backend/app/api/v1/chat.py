@@ -235,8 +235,18 @@ async def _stream_message_response(
     # Read the RAW stored settings (sparse: only keys the user explicitly PUT), so a
     # user who never chose a mode keeps the BALANCED chat default -- we deliberately do
     # NOT promote the settings-layer display default (GOVERNED) onto every chat.
+    # Apply the user's saved chat defaults when the request omits a field
+    # (S-01). Precedence: explicit request value > saved user setting >
+    # system default. ONE sparse-settings read covers all three keys. Saved
+    # values are validated against the exact enum sets (the orchestrator does
+    # RoutingMode(...)/ChatMode(...), so an invalid string would raise). None
+    # of these bypass governance: GOVERNED stays the governance default, and
+    # EXE/COUNCIL still run the full pipeline + approval gates. autopilot is
+    # deliberately NOT defaulted here (DECISION-007 B / S-03).
     _user_default_gov: str | None = None
-    if body.governance_mode is None:
+    _user_default_routing: str | None = None
+    _user_default_chat: str | None = None
+    if body.governance_mode is None or body.routing_mode is None or body.mode is None:
         try:
             from sqlalchemy import select as _select
 
@@ -249,8 +259,14 @@ async def _stream_message_response(
                 _val = _row.get("default_governance_mode")
                 if _val in ("UNLEASHED", "BALANCED", "GOVERNED"):
                     _user_default_gov = _val
+                _route = _row.get("default_routing_mode")
+                if _route in ("STANDARD", "COUNCIL", "QUINTESSENCE"):
+                    _user_default_routing = _route
+                _cmode = _row.get("default_chat_mode")
+                if _cmode in ("CMD", "EXE"):
+                    _user_default_chat = _cmode
         except Exception as _exc:  # never block a chat on a settings read
-            _chat_logger.warning("chat.user_governance_default_read_failed err=%s", _exc)
+            _chat_logger.warning("chat.user_defaults_read_failed err=%s", _exc)
 
     async def event_generator():
         if created_session is not None:
@@ -266,8 +282,8 @@ async def _stream_message_response(
             preferred_model=body.preferred_model,
             governance_mode_str=body.governance_mode or _user_default_gov or "GOVERNED",
             governance_mode_override=body.governance_mode,
-            routing_mode_override=body.routing_mode,
-            action_mode_override=body.mode,
+            routing_mode_override=body.routing_mode or _user_default_routing,
+            action_mode_override=body.mode or _user_default_chat,
         ):
             # Intercept memory writeback events (not sent to client)
             if isinstance(event, dict) and event.get("type") == "_memory_writeback":
