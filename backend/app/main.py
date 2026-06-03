@@ -1142,6 +1142,18 @@ def create_app() -> FastAPI:
     # --- Exception Handlers ---
     from app.core.exceptions import DaenaError
 
+    def _request_id(request: Request) -> str:
+        """The correlation id bound by RequestIDMiddleware (header X-Request-ID).
+
+        Surfacing it in the error body lets a user/support quote one id that
+        also appears in the server logs (EH-02). Non-secret.
+        """
+        return (
+            getattr(request.state, "request_id", None)
+            or request.headers.get("X-Request-ID")
+            or "unknown"
+        )
+
     @app.exception_handler(DaenaError)
     async def daena_error_handler(request: Request, exc: DaenaError) -> JSONResponse:
         """Handle all custom Daena exceptions."""
@@ -1152,6 +1164,7 @@ def create_app() -> FastAPI:
                 "error": {
                     "code": exc.error_code,
                     "message": exc.message,
+                    "request_id": _request_id(request),
                 },
             },
         )
@@ -1162,6 +1175,7 @@ def create_app() -> FastAPI:
         import traceback as _tb
         from app.core.logging import get_logger
         _log = get_logger("error_handler")
+        _rid = _request_id(request)
         _log.error(
             "unhandled_exception",
             path=request.url.path,
@@ -1169,6 +1183,7 @@ def create_app() -> FastAPI:
             error_type=type(exc).__name__,
             error=str(exc),
             traceback=_tb.format_exc(),
+            request_id=_rid,
         )
         return JSONResponse(
             status_code=500,
@@ -1176,7 +1191,10 @@ def create_app() -> FastAPI:
                 "success": False,
                 "error": {
                     "code": "INTERNAL_ERROR",
+                    # Safe generic message + correlation id so the user can
+                    # quote one id that ties to the full server-side log.
                     "message": "Something went wrong. Please try again.",
+                    "request_id": _rid,
                 },
             },
         )

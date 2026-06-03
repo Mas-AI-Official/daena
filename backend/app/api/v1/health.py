@@ -115,8 +115,13 @@ async def health_check() -> dict:
 
 @router.get("/ready")
 async def readiness_check() -> dict:
-    """Readiness probe. Verifies DB connection + Redis before accepting traffic.
-    Used by Cloud Run startup probe and load balancer.
+    """Readiness probe. Used by the Cloud Run startup probe + load balancer.
+
+    Only the DATABASE is a required dependency and gates readiness. Redis is
+    OPTIONAL (graceful fallback per the architecture) -- gating readiness on
+    it (RT-02) made every deploy without a Redis sidecar fail its startup
+    probe even though Daena runs fine without Redis. Redis is reported as a
+    non-gating status instead.
     """
     import contextlib
 
@@ -132,12 +137,15 @@ async def readiness_check() -> dict:
 
     redis_ok = await check_redis_health()
 
-    ready = db_ok and redis_ok
+    # Required deps only. Redis absence is NOT a readiness failure.
+    ready = db_ok
     return {
         "status": "ready" if ready else "not_ready",
         "checks": {
             "database": "connected" if db_ok else "unavailable",
-            "redis": "connected" if redis_ok else "unavailable",
+            # optional_unavailable = present-but-down is fine; we degrade
+            # gracefully (no cache) rather than refuse traffic.
+            "redis": "connected" if redis_ok else "optional_unavailable",
         },
         "version": _DAENA_VERSION,
     }
