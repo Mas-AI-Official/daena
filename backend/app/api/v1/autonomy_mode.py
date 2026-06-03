@@ -44,7 +44,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, get_current_user, get_db
+from app.api.deps import CurrentUser, get_current_user, get_db, require_role
 from app.core.logging import get_logger
 from app.models.governance import GoaRequest
 from app.models.workstream import Workstream, WorkstreamStatus
@@ -236,13 +236,23 @@ async def get_autonomy_mode(
     )
 
 
-@router.put("/autonomy-mode", response_model=AutonomyState)
+@router.put(
+    "/autonomy-mode",
+    response_model=AutonomyState,
+    dependencies=[Depends(require_role("FOUNDER"))],
+)
 async def set_autonomy_mode(
     body: AutonomyModeUpdate,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AutonomyState:
-    """Persist a new autonomy mode. Never executes any action."""
+    """Persist a new autonomy mode. Never executes any action.
+
+    FOUNDER-gated: the mode is persisted to a single process-wide file
+    (``.autonomy_mode.json``), not tenant-scoped, so it governs the whole
+    instance's autonomous posture. Only the instance owner (FOUNDER) may
+    change it. (Per-tenant autonomy scoping is a separate design item.)
+    """
 
     if body.mode not in AutonomyMode:
         raise HTTPException(status_code=422, detail="invalid autonomy mode")

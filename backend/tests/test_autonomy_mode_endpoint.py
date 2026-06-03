@@ -55,6 +55,30 @@ class TestEndpointMounted:
                 methods_for_path.update(getattr(r, "methods", set()) or set())
         assert {"GET", "PUT"}.issubset(methods_for_path)
 
+    async def test_put_is_role_gated(self):
+        """GOV-01: the PUT (mutation) must be FOUNDER-gated.
+
+        Autonomy mode is persisted to a single process-wide file (not
+        tenant-scoped), so it governs the whole instance. Before the fix
+        any authenticated user could change it. This asserts the PUT route
+        carries the require_role dependency so the gate cannot silently
+        regress; the GET (read) stays open to any authenticated user.
+        """
+        from app.api.v1 import router as api_v1_router
+
+        put_route = next(
+            r for r in api_v1_router.routes
+            if getattr(r, "path", None) == "/system/autonomy-mode"
+            and "PUT" in (getattr(r, "methods", set()) or set())
+        )
+        dep_calls = " ".join(
+            repr(getattr(d, "call", d)) for d in put_route.dependant.dependencies
+        )
+        assert "check_role" in dep_calls or "require_role" in dep_calls, (
+            "PUT /system/autonomy-mode must carry a require_role dependency "
+            f"(GOV-01). Dependencies seen: {dep_calls}"
+        )
+
 
 class TestEnumLocked:
     async def test_five_states_locked(self):
