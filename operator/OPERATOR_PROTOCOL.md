@@ -23,8 +23,9 @@ DAENA_RESUME_PROMPT.md + DAENA_NEXT_PROMPT.md so the NEXT iteration resumes corr
 - NEEDS_USER_LOOP.md -- written when no usable+enabled agent CLI exists; says manual /loop is required.
 
 ## 4. State machine
-IDLE -> LOAD_PROMPT -> RUN_AGENT -> MONITOR -> PARSE_RESULT -> UPDATE_DOCS -> CONTINUE -> (loop) / DONE
-Exits: HARD_GATE (gate detected, stop) and ERROR (no prompt / launch failure / unexpected).
+IDLE -> LOAD_PROMPT -> RUN_AGENT -> MONITOR -> PARSE_RESULT -> VERIFY -> UPDATE_DOCS -> CONTINUE -> (loop) / DONE
+Exits: HARD_GATE (gate detected, stop), VERIFY_FAILED (agent edits failed the operator's tests -- held, not
+committed, stop), and ERROR (no prompt / launch failure / unexpected).
 - dry-run path: IDLE -> LOAD_PROMPT -> (plan) -> DONE. No agent. No side effects beyond logs.
 
 ## 5. Stop only for TRUE hard gates (decide + proceed on everything else)
@@ -96,3 +97,18 @@ fixture/doc fixes): run a short internal debate, written into the DOC (not chat)
 path + risk/rollback) / Codex view (architecture, regression, test risk) / Gemini view (product/UX/ecosystem/
 business) / Decision (selected path, why, rejected alternatives, tests, rollback). Use real Codex/Gemini/Perplexity
 tools if available + safe; otherwise simulate and label SIMULATED_DEBATE.
+
+## 14. Post-agent self-verify (the operator verifies; the agent only edits)
+Headless agents can EDIT code but cannot reliably run pytest/Docker under their permission mode, so the OPERATOR
+verifies after every agent run (config: `post_agent_verify`). This is what lets --loop advance autonomously
+instead of deferring to "an interactive turn":
+1. Snapshot `git status` BEFORE the agent runs; after it exits, the agent's changes = the diff vs that snapshot
+   (isolates the agent's work from the pre-existing dirty tree -- the runner never touches/commits pre-existing dirt).
+2. Classify changed paths: backend_code / migration_or_model / frontend / docs / other.
+3. Run SAFE checks for what changed: backend -> targeted pytest (-k runtime|trace|memory|stream|governance|
+   settings|error_event) + full suite if a hot-path file changed; migration/model -> alembic heads (+ full suite);
+   frontend -> npm run build; always -> verify_runtime_local.ps1 smoke when runtime-relevant.
+4. GREEN -> commit ONLY the agent-changed scoped files (never `git add -A`). RED -> do NOT commit; write
+   verify_failed.md, hold the changes for review, stop (VERIFY_FAILED).
+5. Docs-only / no tracked code -> just update last_result and continue.
+The verify step runs only safe local commands; it never sends, deploys, migrates prod, or touches secrets.

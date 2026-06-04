@@ -42,7 +42,10 @@ exists). State machine: IDLE -> LOAD_PROMPT -> RUN_AGENT -> MONITOR -> PARSE_RES
 DONE, with HARD_GATE / ERROR exits. It stops ONLY on a TRUE_HARD_GATE (the agent says it cannot do the next action
 without a founder-only action); it CONTINUES when output merely mentions gated items (MENTION_ONLY -- e.g. "DEP-001
 later", "founder-gated items remain"). For safe work it chooses the next step automatically by the priority order
-in OPERATOR_PROTOCOL.md section 13 -- it never asks the founder to pick a safe next step.
+in OPERATOR_PROTOCOL.md section 13 -- it never asks the founder to pick a safe next step. After an agent run it
+SELF-VERIFIES (post_agent_verify, section 14): runs the right tests/build/smoke for whatever the agent changed and
+commits the scoped files if green (headless agents can edit but can't run pytest) -- so --loop advances without an
+interactive turn. Red verification holds the changes (no commit) and stops.
 
 ## Enabling real autonomous runs (deliberate cost decision)
 1. Verify by hand that your chosen CLI runs a prompt non-interactively and safely, e.g.

@@ -176,6 +176,8 @@ def build_plan(cfg: dict, tools: dict, usable: list, prompt: str | None, agent_e
         f"- Agent CLIs usable now: {', '.join(usable) if usable else 'NONE'}",
         f"- agent_exec.enabled: {agent_enabled}",
         f"- SELF_START available: {self_start}",
+        f"- post_agent_verify enabled: {bool((cfg.get('post_agent_verify') or {}).get('enabled'))} "
+        f"(operator runs tests for the agent's changes + commits scoped if green)",
         "", "## Would do (no agent invoked in dry-run):",
     ]
     if self_start == "YES":
@@ -255,6 +257,119 @@ def run_agent(cfg: dict, agent: str, prompt_path: str, session_log: Path) -> dic
             "done_hits": scan(tail_text, DONE_MARKERS)}
 
 
+# Backend files whose change warrants a full-suite regression (hot paths).
+HOT_PATH_FILES = ("chat_orchestrator.py", "llm_service.py", "tool_use_loop.py", "query_understanding.py", "security_gate.py")
+
+
+def git_status_map(root: str) -> dict:
+    """{path: 'XY'} from `git status --porcelain` -- the current working-tree state."""
+    try:
+        out = subprocess.run(["git", "status", "--porcelain"], cwd=root,
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    except Exception:  # noqa: BLE001
+        return {}
+    m = {}
+    for line in out.stdout.splitlines():
+        if len(line) > 3:
+            m[line[3:].strip().strip('"')] = line[:2]
+    return m
+
+
+def classify_change(path: str) -> str:
+    p = path.replace("\\", "/")
+    if p.startswith("backend/migrations/") or "/models/" in p:
+        return "migration_or_model"
+    if p.startswith("backend/") and p.endswith(".py"):
+        return "backend_code"
+    if p.startswith("frontend/"):
+        return "frontend"
+    if p.endswith(".md") or p.startswith("Doc/") or p.startswith("docs/"):
+        return "docs"
+    return "other"
+
+
+def _run_cmd(cmd: list, cwd: str, session_log: Path, timeout_s: int) -> int:
+    """Run a SAFE local command, append redacted output to the session log. Returns exit code."""
+    with open(session_log, "a", encoding="utf-8") as log:
+        log.write(f"\n$ ({cwd}) {' '.join(str(c) for c in cmd)}\n")
+        try:
+            out = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
+                                 encoding="utf-8", errors="replace", timeout=timeout_s)
+        except Exception as e:  # noqa: BLE001
+            log.write(f"CMD_ERROR: {e}\n")
+            return 1
+        log.write(redact((out.stdout or "") + (out.stderr or ""))[-3000:] + f"\n[exit {out.returncode}]\n")
+        return out.returncode
+
+
+def post_agent_verify(cfg: dict, before: dict, after: dict, session_log: Path) -> dict:
+    """Operator-side verification: headless agents can edit but cannot run pytest/Docker, so after an agent run
+    the OPERATOR classifies THIS run's changes (diff vs the pre-run snapshot -- never the pre-existing dirty tree),
+    runs the safe test/build/smoke commands for what changed, and commits ONLY those scoped files if green.
+    Never sends, deploys, touches secrets, or runs `git add -A`."""
+    pv = cfg.get("post_agent_verify") or {}
+    if not pv.get("enabled", False):
+        return {"ran": False, "reason": "post_agent_verify disabled"}
+    root = cfg.get("root", str(HERE))
+    backend = str(Path(root) / "backend")
+    py = str(Path(backend) / ".venv" / "Scripts" / "python.exe")
+    changed = sorted(p for p, code in after.items() if before.get(p) != code)
+    if not changed:
+        return {"ran": True, "changed": [], "committed": False, "reason": "no new changes from this agent run"}
+    kinds = sorted({classify_change(p) for p in changed})
+    results: list = []
+    green = True
+
+    def runc(cmd, cwd, timeout_s, label):
+        nonlocal green
+        rc = _run_cmd(cmd, cwd, session_log, timeout_s)
+        results.append({"label": label, "exit": rc})
+        if rc != 0:
+            green = False
+        return rc
+
+    if ("backend_code" in kinds or "migration_or_model" in kinds) and pv.get("run_backend_targeted", True):
+        runc([py, "-m", "pytest", "-q", "tests", "-k",
+              "runtime or trace or memory or stream or governance or settings or error_event",
+              "--timeout=120"], backend, 1800, "backend_targeted")
+        hot = any(any(h in p for h in HOT_PATH_FILES) for p in changed)
+        if hot and green and pv.get("full_suite_after_backend_hot_path", True):
+            runc([py, "-m", "pytest", "-q", "--timeout=120"], backend, 3600, "full_suite")
+    if "migration_or_model" in kinds:
+        runc([py, "-m", "alembic", "-c", "migrations/alembic.ini", "heads"], backend, 120, "alembic_heads")
+        if (pv.get("full_suite_after_migration", True) and green
+                and not any(r["label"].startswith("full_suite") for r in results)):
+            runc([py, "-m", "pytest", "-q", "--timeout=120"], backend, 3600, "full_suite_migration")
+    if "frontend" in kinds and pv.get("run_frontend_build_if_changed", True):
+        runc(["npm", "run", "build"], str(Path(root) / "frontend"), 900, "frontend_build")
+    runtime_relevant = any(k in kinds for k in ("backend_code", "migration_or_model", "frontend"))
+    if pv.get("run_smoke", True) and runtime_relevant:
+        runc(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/verify_runtime_local.ps1"],
+             root, 300, "smoke")
+
+    committed = False
+    if green and pv.get("commit_if_green", True):
+        subprocess.run(["git", "add", "--"] + changed, cwd=root, capture_output=True, text=True, timeout=120)
+        msg = ("chore(operator): verified + committed agent changes [" + ", ".join(kinds) + "]\n\n"
+               "Auto-committed by the operator post_agent_verify step after GREEN tests (the headless agent cannot "
+               "run pytest). Scoped to this run's changes only; no git add -A.\n\n"
+               "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>")
+        cm = subprocess.run(["git", "commit", "-q", "-m", msg], cwd=root, capture_output=True, text=True, timeout=300)
+        committed = cm.returncode == 0
+    return {"ran": True, "changed": changed, "kinds": kinds, "results": results,
+            "green": green, "committed": committed}
+
+
+def render_verify(v: dict) -> str:
+    if not v.get("ran"):
+        return f"\n## Post-agent verify\n\nNOT RUN ({v.get('reason')}).\n"
+    lines = [f"  - {r['label']}: exit {r['exit']}" for r in v.get("results", [])]
+    return (f"\n## Post-agent verify\n\n- Changed (this run): {v.get('changed')}\n- Kinds: {v.get('kinds')}\n"
+            f"- Green: {v.get('green')}\n- Committed (scoped): {v.get('committed')}\n"
+            + (f"- Reason: {v['reason']}\n" if v.get("reason") else "")
+            + ("- Verify commands:\n" + "\n".join(lines) + "\n" if lines else ""))
+
+
 def operator_loop(cfg: dict, mode: str, max_iter: int, dry_run: bool) -> int:
     LOGS.mkdir(parents=True, exist_ok=True)
     session_log = LOGS / f"session_{ts_slug()}.log"
@@ -306,12 +421,13 @@ def operator_loop(cfg: dict, mode: str, max_iter: int, dry_run: bool) -> int:
         state.update(state="RUN_AGENT", agent=agent, ts=now_iso())
         write_state(state)
         log(f"invoking agent={agent}")
+        before = git_status_map(cfg.get("root", str(HERE)))
         res = run_agent(cfg, agent, prompt, session_log)
         state.update(state="PARSE_RESULT", ts=now_iso(), exit_code=res.get("exit_code"))
         write_state(state)
-        write_text("last_result.md", render_result(agent, prompt, res))
 
         if res.get("gate_hits"):
+            write_text("last_result.md", render_result(agent, prompt, res))
             write_text("hard_gate.md",
                        f"# HARD_GATE\n\n{now_iso()}\n\nAgent signalled a gate/block:\n- "
                        + "\n- ".join(res["gate_hits"])
@@ -320,6 +436,22 @@ def operator_loop(cfg: dict, mode: str, max_iter: int, dry_run: bool) -> int:
             write_state(state)
             log("HARD_GATE detected in agent output -- stopping")
             return 4
+
+        # Post-agent SELF-VERIFY: operator runs tests for what THIS agent run changed (headless agents can't run
+        # pytest), then commits the scoped changes only if green. Never sends/deploys/touches secrets.
+        state.update(state="VERIFY", ts=now_iso())
+        write_state(state)
+        verify = post_agent_verify(cfg, before, git_status_map(cfg.get("root", str(HERE))), session_log)
+        write_text("last_result.md", render_result(agent, prompt, res) + render_verify(verify))
+        log(f"verify ran={verify.get('ran')} green={verify.get('green')} committed={verify.get('committed')}")
+        if verify.get("ran") and verify.get("changed") and not verify.get("green", True):
+            write_text("verify_failed.md",
+                       f"# VERIFY_FAILED\n\n{now_iso()}\n\nAgent edits failed verification -- NOT committed (held "
+                       f"for review).\nChanged: {verify.get('changed')}\nResults: {verify.get('results')}\n")
+            state.update(state="VERIFY_FAILED", ts=now_iso())
+            write_state(state)
+            log("post-agent verify FAILED -- changes held, stopping")
+            return 5
 
         if mode == "once":
             state.update(state="DONE", loops_done=i, ts=now_iso())
