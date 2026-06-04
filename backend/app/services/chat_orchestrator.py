@@ -3926,10 +3926,26 @@ class ChatOrchestrator:
         # this explicit commit a mid-stream disconnect would discard the
         # just-generated answer (the "no memory" class of bug). The session
         # uses expire_on_commit=False, so assistant_msg stays usable below.
+        _mem_persisted_ok = True
         try:
             await self._db.commit()
         except Exception:
+            _mem_persisted_ok = False
             logger.warning("orchestrator.stage9_commit_failed", exc_info=True)
+        # MEM-03 trace span: record that the assistant turn was durably committed
+        # (and whether). Flag-gated + fail-open via _emit_trace. SAFE fields only --
+        # model/provider identifiers + sizes, never message content.
+        await _emit_trace(
+            "memory.persisted",
+            stage="9_persist",
+            provider=provider_name,
+            model=model_id,
+            status="ok" if _mem_persisted_ok else "error",
+            metadata={
+                "content_len": len(collected_content or ""),
+                "latency_ms": latency_ms,
+            },
+        )
 
         # Slop scoring (non-blocking, audit only)
         try:

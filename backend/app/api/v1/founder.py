@@ -404,3 +404,57 @@ async def list_error_events(
             for e in rows
         ],
     }
+
+
+@router.get("/run-trace/{request_id}")
+async def get_run_trace(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: CurrentUser = Depends(require_role("FOUNDER")),
+    limit: int = Query(500, ge=1, le=2000),
+) -> dict[str, Any]:
+    """Ordered run-trace spans for one request_id (local tracing adopt).
+
+    FOUNDER-gated. Returns the chronological span timeline for a single chat
+    run -- the OpenAI-Agents-SDK-style view, served locally without any
+    external telemetry SaaS. SAFE fields only: run_tracer never stores
+    prompts, responses, system prompts, request bodies, credentials, tokens,
+    or raw provider error text, and it strips secret-looking metadata keys +
+    caps value sizes at write time. metadata_json is therefore safe to echo.
+    """
+    from app.models.run_trace_event import RunTraceEvent
+
+    rid = (request_id or "").strip()[:64]
+    rows = (
+        await db.execute(
+            select(RunTraceEvent)
+            .where(RunTraceEvent.request_id == rid)
+            .order_by(RunTraceEvent.created_at.asc(), RunTraceEvent.id.asc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    return {
+        "success": True,
+        "request_id": rid,
+        "count": len(rows),
+        "data": [
+            {
+                "id": str(e.id),
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+                "event_type": e.event_type,
+                "stage": e.stage,
+                "status": e.status,
+                "provider": e.provider,
+                "model": e.model,
+                "governance_mode": e.governance_mode,
+                "safe_summary": e.safe_summary,
+                "request_id": e.request_id,
+                "run_id": e.run_id,
+                "session_id": str(e.session_id) if e.session_id else None,
+                "tenant_id": str(e.tenant_id) if e.tenant_id else None,
+                "user_id": str(e.user_id) if e.user_id else None,
+                "metadata": e.metadata_json,
+            }
+            for e in rows
+        ],
+    }
