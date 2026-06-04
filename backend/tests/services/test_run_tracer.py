@@ -105,6 +105,70 @@ async def test_secret_metadata_is_stripped(test_engine) -> None:
 
 
 @pytest.mark.asyncio
+async def test_governance_effective_mode_span(test_engine) -> None:
+    """The governance.effective_mode span stores the resolved mode in
+    safe_summary (the closure stamps the REQUESTED mode on governance_mode;
+    the effective/resolved value rides safe_summary to avoid a duplicate kwarg)."""
+    factory = _factory(test_engine)
+    with patch.object(run_tracer, "_TRACE_ENABLED", True), patch(
+        "app.core.database.async_session_factory", factory
+    ):
+        await run_tracer.record_trace_event(
+            event_type="governance.effective_mode",
+            request_id="req-gov-1",
+            stage="4_governance",
+            governance_mode="BALANCED",  # requested (closure default)
+            safe_summary="GOVERNED",      # effective (resolved)
+        )
+
+    async with factory() as s:
+        row = (
+            await s.execute(
+                select(RunTraceEvent).where(RunTraceEvent.request_id == "req-gov-1")
+            )
+        ).scalars().one()
+
+    assert row.event_type == "governance.effective_mode"
+    assert row.governance_mode == "BALANCED"
+    assert row.safe_summary == "GOVERNED"  # the resolved/effective mode
+
+
+@pytest.mark.asyncio
+async def test_fallback_used_span_carries_only_model_names(test_engine) -> None:
+    """The fallback.used span records tried model NAMES (MBR-02: non-sensitive)
+    and never leaks raw provider error text."""
+    factory = _factory(test_engine)
+    with patch.object(run_tracer, "_TRACE_ENABLED", True), patch(
+        "app.core.database.async_session_factory", factory
+    ):
+        await run_tracer.record_trace_event(
+            event_type="fallback.used",
+            request_id="req-fb-1",
+            stage="9_stream",
+            status="error",
+            safe_summary="primary stream failed; entering fallback chain",
+            metadata={"tried_models": ["claude-opus-4-8", "llama3.1:latest"]},
+        )
+
+    async with factory() as s:
+        row = (
+            await s.execute(
+                select(RunTraceEvent).where(RunTraceEvent.request_id == "req-fb-1")
+            )
+        ).scalars().one()
+
+    assert row.event_type == "fallback.used"
+    assert row.status == "error"
+    meta = row.metadata_json or {}
+    # _safe_metadata stringifies values (size-cap + sanitize), so tried_models is stored as a
+    # string repr of the list; assert the model NAMES are present (the real contract), not the type.
+    tried = str(meta.get("tried_models", ""))
+    assert "claude-opus-4-8" in tried and "llama3.1:latest" in tried
+    # No raw provider error text persisted -- safe_summary is a static string.
+    assert "Traceback" not in (row.safe_summary or "")
+
+
+@pytest.mark.asyncio
 async def test_never_raises_when_db_broken() -> None:
     def _boom():
         raise RuntimeError("db down")

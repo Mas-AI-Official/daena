@@ -442,6 +442,16 @@ class ChatOrchestrator:
             except ValueError:
                 governance_mode = GovernanceMode.BALANCED
 
+        # Trace span: the EFFECTIVE governance mode after override + config
+        # resolution (may differ from the requested governance_mode_str the
+        # closure stamps on every span). safe_summary only -- re-passing
+        # governance_mode here would duplicate the closure's kwarg.
+        await _emit_trace(
+            "governance.effective_mode",
+            stage="4_governance",
+            safe_summary=governance_mode.value,
+        )
+
         if governance_mode != GovernanceMode.UNLEASHED:
             scan = SecurityGate.scan(user_content)
             if not scan.safe:
@@ -3562,6 +3572,21 @@ class ChatOrchestrator:
 
             # If primary + fallback chain failed, try emergency Ollama
             if _stream_error and not collected_content:
+                # Trace span: the primary stream failed and we are entering the
+                # emergency fallback chain (local Ollama -> CLI runtimes). Fires
+                # regardless of which sub-fallback ultimately wins; the outcome
+                # is captured by the later chat.end / stream.error span. SAFE
+                # only -- model NAMES per MBR-02, never the raw _stream_error.
+                await _emit_trace(
+                    "fallback.used",
+                    stage="9_stream",
+                    status="error",
+                    safe_summary="primary stream failed; entering fallback chain",
+                    metadata={
+                        "tried_models": [decision.primary.model_id]
+                        + [c.model_id for c in decision.fallback_chain],
+                    },
+                )
                 yield {
                     "type": "thinking",
                     "stage": "fallback_streaming",
