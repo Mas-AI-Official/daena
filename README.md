@@ -30,13 +30,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-1651_passing-00C853?style=flat-square&logo=pytest&logoColor=white" />
+  <img src="https://img.shields.io/badge/tests-6%2C000%2B_passing-00C853?style=flat-square&logo=pytest&logoColor=white" />
   <img src="https://img.shields.io/badge/TypeScript-0_errors-3178C6?style=flat-square&logo=typescript&logoColor=white" />
   <img src="https://img.shields.io/badge/agents-60-7C3AED?style=flat-square" />
   <img src="https://img.shields.io/badge/departments-10-7C3AED?style=flat-square" />
   <img src="https://img.shields.io/badge/skills-133-7C3AED?style=flat-square" />
   <img src="https://img.shields.io/badge/license-BSL_1.1-F59E0B?style=flat-square" />
-  <img src="https://img.shields.io/badge/patents-3_pending-0EA5E9?style=flat-square" />
+  <img src="https://img.shields.io/badge/patents-2_pending-0EA5E9?style=flat-square" />
 </p>
 
 <br/>
@@ -606,7 +606,7 @@ Add in Settings or `backend/.env`. Zero required.
 
 <br/>
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Run `cd backend && python -m pytest tests/ -v` (1424 tests). Run `cd frontend && npx tsc --noEmit` (0 errors).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Run `cd backend && python -m pytest tests/ -v` (6,000+ tests). Run `cd frontend && npx tsc --noEmit` (0 errors).
 
 </details>
 
