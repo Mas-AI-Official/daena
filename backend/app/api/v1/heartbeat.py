@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
+import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
 from app.core.sse_channels import cron_channel
 
+logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
@@ -100,6 +102,19 @@ async def heartbeat_configure(
     """Update heartbeat configuration."""
     daemon = _get_daemon()
     daemon.configure(updates)
+    # S-02: persist the full normalized config so the change survives a
+    # restart (daemon.hydrate_from_db() reads it on next start). Fail-open:
+    # a storage error must not fail the configure call -- the in-process
+    # change still took effect.
+    try:
+        from app.services.heartbeat.heartbeat_config_store import (
+            extract_persistable,
+            save_persisted,
+        )
+
+        await save_persisted(extract_persistable(daemon.config))
+    except Exception:
+        logger.warning("heartbeat.configure_persist_failed", exc_info=True)
     return {"success": True, "data": daemon.config.to_dict()}
 
 

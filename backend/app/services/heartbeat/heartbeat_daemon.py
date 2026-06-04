@@ -131,6 +131,12 @@ class HeartbeatDaemon:
             )
             return
 
+        # S-02: hydrate persisted operator config (interval / active-hours /
+        # autopilot / cost-caps / per-check toggles) from the DB before the
+        # loop spins up, so a restart honors the last /configure call instead
+        # of silently reverting to defaults (ADR-001 hydrate-from-DB).
+        await self.hydrate_from_db()
+
         self.config.state = HeartbeatState.RUNNING
         self._task = asyncio.create_task(self._loop())
         logger.info(
@@ -221,6 +227,23 @@ class HeartbeatDaemon:
                     check_cfg.enabled = enabled_by_type[key]
 
         logger.info("heartbeat.configured", updates=updates)
+
+    async def hydrate_from_db(self) -> None:
+        """Load the persisted operator config and apply it (S-02).
+
+        Fail-open: any DB error leaves the in-process defaults untouched and
+        is logged at debug, so a storage hiccup never blocks daemon start.
+        Reuses ``configure()`` so there is no second apply path to drift.
+        """
+        try:
+            from app.services.heartbeat.heartbeat_config_store import load_persisted
+
+            stored = await load_persisted()
+            if stored:
+                self.configure(stored)
+                logger.info("heartbeat.hydrated_from_db", keys=sorted(stored.keys()))
+        except Exception:
+            logger.debug("heartbeat.hydrate_failed", exc_info=True)
 
     # ── Internal ──
 
