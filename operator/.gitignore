@@ -1,0 +1,6 @@
+# Operator runtime data -- never commit.
+# Logs may contain (redacted) agent output; the real config may hold local paths or enable flags.
+logs/*
+!logs/.gitkeep
+operator_config.json
+NEEDS_USER_LOOP.md

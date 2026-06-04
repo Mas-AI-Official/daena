@@ -1,0 +1,46 @@
+{
+  "root": "D:\\Ideas\\Daena",
+  "production_docs": "D:\\Ideas\\Daena\\Doc\\production-readiness",
+  "company_ops_docs": "D:\\Ideas\\Daena\\Doc\\company-ops",
+  "next_prompt_priority": [
+    "D:\\Ideas\\Daena\\Doc\\production-readiness\\DAENA_NEXT_PROMPT.md",
+    "D:\\Ideas\\Daena\\Doc\\company-ops\\MAS_AI_NEXT_PROMPT.md",
+    "D:\\Ideas\\Daena\\Doc\\production-readiness\\DAENA_RESUME_PROMPT.md"
+  ],
+  "agent_order": [
+    "claude",
+    "codex",
+    "gemini"
+  ],
+  "max_loops": 3,
+  "max_minutes_per_loop": 90,
+  "checkpoint_minutes": 15,
+  "allow_web_research": true,
+  "allow_code_changes": true,
+  "allow_tests": true,
+  "allow_commits": true,
+  "allow_sends": false,
+  "allow_paid_deploy": false,
+  "allow_secret_access": false,
+  "hard_gates": [
+    "secrets",
+    "paid_deploy",
+    "real_external_send",
+    "unsafe_scan",
+    "production_deploy",
+    "dns_change",
+    "destructive_migration",
+    "legal_business_tax_patent",
+    "public_submission",
+    "delete_founder_work"
+  ],
+  "agent_exec": {
+    "enabled": false,
+    "_comment": "OFF by default. Set true ONLY after you verify your chosen agent CLI runs a prompt non-interactively AND safely. Enabling lets the runner spend your agent quota unattended. Copy this file to operator_config.json (gitignored) to set real values.",
+    "commands": {
+      "claude": "claude -p \"<prompt>\"   (headless print; autonomous tool-exec needs a permission mode -- verify before enabling)",
+      "codex": "codex exec \"<prompt>\" --skip-git-repo-check",
+      "gemini": "gemini -p \"<prompt>\""
+    }
+  }
+}

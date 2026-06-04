@@ -1,0 +1,1 @@
+# Keeps the logs/ directory in git. Operator logs themselves are gitignored (see ../.gitignore).
