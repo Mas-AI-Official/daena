@@ -82,11 +82,12 @@ cadence). allow_sends / allow_paid_deploy / allow_secret_access are hard-false a
 When multiple SAFE next steps exist, the operator/agent CHOOSES automatically by this priority -- it does NOT ask
 the founder to pick, and does NOT stop to ask whether to continue / fix P1-P2 / write docs / run tests / commit
 scoped safe changes / scan local projects / draft business plans / create next prompts:
-  1 P0 security/reliability/data-loss blockers. 2 self-start/runner reliability blockers. 3 P1 production
-  readiness. 4 closed-beta launch blockers. 5 deploy dry-run / rollback / smoke / observability. 6 OAuth/Gmail
-  checklist + safe local verification. 7 company-ops revenue path. 8 hackathon/grant/customer opportunity.
-  9 code review / refactor / cleanup. 10 UI polish. 11 speculative features.
-Tie-break: unlocks revenue/closed-beta fastest > lower-risk > clearer tests > reduces future founder workload.
+  1 P0 security/data-loss/auth/deploy blockers. 2 self-start runner reliability. 3 closed-beta readiness blockers.
+  4 production readiness / observability / tracing / rollback / smoke. 5 deployment dry-run + OAuth/Gmail checklist.
+  6 company revenue path. 7 hackathon/grant/customer opportunity. 8 code review + cleanup. 9 UX polish.
+  10 speculative feature.
+Tie-break: highest revenue impact > fastest path to closed beta > lowest risk > strongest test coverage >
+reduces founder workload > improves Daena's core VP / company-OS vision.
 State the decision as: "DECISION: I choose <step> because <reason>. Proceeding." NEVER "Founder picks." Founder
 approval is required ONLY for the TRUE hard gates in section 5.
 
