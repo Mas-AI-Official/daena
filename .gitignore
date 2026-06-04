@@ -239,6 +239,10 @@ pitch-deck/
 
 # Temp files
 backend/tmp_*
+# Dot-prefixed local scratch + live-session artifacts (may hold JWTs/session ids).
+# Untracked-not-ignored before; a stray `git add -A` would have leaked them.
+backend/.tmp_*
+backend/.live_*
 DEPLOYED-URL.txt
 
 # Archive (internal, keep locally)
