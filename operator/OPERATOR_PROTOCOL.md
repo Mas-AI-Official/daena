@@ -24,8 +24,9 @@ DAENA_RESUME_PROMPT.md + DAENA_NEXT_PROMPT.md so the NEXT iteration resumes corr
 
 ## 4. State machine
 IDLE -> LOAD_PROMPT -> RUN_AGENT -> MONITOR -> PARSE_RESULT -> VERIFY -> UPDATE_DOCS -> CONTINUE -> (loop) / DONE
-Exits: HARD_GATE (gate detected, stop), VERIFY_FAILED (agent edits failed the operator's tests -- held, not
-committed, stop), and ERROR (no prompt / launch failure / unexpected).
+Exits: HARD_GATE (gate detected, stop), AGENT_FAILED (agent auth/API failure e.g. 401 -- recorded honestly, not
+reported as DONE), VERIFY_FAILED (agent edits failed the operator's tests -- held, not committed, stop), and
+ERROR (no prompt / launch failure / unexpected).
 - dry-run path: IDLE -> LOAD_PROMPT -> (plan) -> DONE. No agent. No side effects beyond logs.
 
 ## 5. Stop only for TRUE hard gates (decide + proceed on everything else)

@@ -437,6 +437,21 @@ def operator_loop(cfg: dict, mode: str, max_iter: int, dry_run: bool) -> int:
             log("HARD_GATE detected in agent output -- stopping")
             return 4
 
+        # Agent run FAILED (e.g. headless auth 401) -- record honestly; do NOT report DONE (ADR-001: visible failure).
+        _tail_low = (res.get("tail") or "").lower()
+        if res.get("exit_code") not in (0, None) and any(
+            m in _tail_low for m in ("401", "invalid authentication", "failed to authenticate", "api error: 4")
+        ):
+            write_text("last_result.md", render_result(agent, prompt, res))
+            write_text("agent_failed.md",
+                       f"# AGENT_FAILED\n\n{now_iso()}\n\nAgent {agent} exited {res.get('exit_code')} with an "
+                       f"auth/API failure (e.g. 401). No work done; nothing to verify. Likely transient headless-"
+                       f"auth expiry -- re-auth the CLI; codex/gemini fallbacks are currently unusable here.\n")
+            state.update(state="AGENT_FAILED", ts=now_iso())
+            write_state(state)
+            log(f"agent {agent} auth/API failure (exit {res.get('exit_code')}) -- stopping, not DONE")
+            return 6
+
         # Post-agent SELF-VERIFY: operator runs tests for what THIS agent run changed (headless agents can't run
         # pytest), then commits the scoped changes only if green. Never sends/deploys/touches secrets.
         state.update(state="VERIFY", ts=now_iso())
