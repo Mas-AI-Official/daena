@@ -34,7 +34,10 @@ LOGS = HERE / "logs"
 # Known non-interactive invocation templates. UNVERIFIED for safe autonomous tool-exec here;
 # only used when agent_exec.enabled is true in the real config. {prompt_text}/{prompt_path} substituted.
 AGENT_COMMANDS = {
-    "claude": ["claude", "-p", "{prompt_text}"],
+    # claude headless: --permission-mode acceptEdits = functional (auto-accepts edits) yet SAFE -- the founder's
+    # pretooluse_guard PreToolUse hook still fires on every tool call (blocks sends/secrets/deploy/NEVERs). No
+    # danger flag (never --dangerously-skip-permissions / bypassPermissions for an unattended loop).
+    "claude": ["claude", "-p", "{prompt_text}", "--permission-mode", "acceptEdits"],
     # Flags MUST precede the prompt positional or codex silently ignores them (verified 2026-06-04).
     # --sandbox workspace-write: confine writes to repo+temp and disable network (blocks MCP sends).
     # Codex defaults to danger-full-access here; never run it unattended without this downgrade.

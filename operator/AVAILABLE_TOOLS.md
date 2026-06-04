@@ -17,7 +17,16 @@ Detected 2026-06-04 on the founder machine (win32). Detection only -- nothing in
 | rtk | AVAILABLE | C:\Users\masou\.cargo\bin\rtk.exe | output-token compressor for verbose commands. |
 | ollama | AVAILABLE | C:\Users\masou\...\ollama.exe | local models (note: Daena backend uses llama-server, not ollama). |
 
-## SELF_START_STATUS: BUILT + CORRECT, BUT NO CLI CAN SAFELY SELF-DRIVE ON THIS WINDOWS BOX (verified 2026-06-04)
+## SELF_START_STATUS: claude headless = SAFE_AGENT (verified 2026-06-04)
+
+UPDATE 2026-06-04 (later same day): `claude -p "say READY"` now returns READY (exit 0) -- the earlier 401 was a
+transient/expired token that refreshed. claude IS the safe self-drive agent: it runs with `--permission-mode
+acceptEdits` (no danger flag) and the founder's pretooluse_guard PreToolUse hook governs every tool call
+(mechanical send/secret/deploy/NEVER enforcement). So agent_exec is re-ENABLED with agent_order = [claude, codex,
+gemini]. codex stays FALLBACK-ONLY (workspace-write tool-use broken on Windows; danger-full-access unsafe), gemini
+and WSL both timed out. The original (still-valid) detail for codex/gemini/WSL is below.
+
+### Original finding (codex/gemini/WSL -- still valid):
 
 Live verification (founder-authorized enable + run):
 - codex: runs non-interactively, BUT its SAFE sandbox mode (`--sandbox workspace-write`) is INERT on this Windows
