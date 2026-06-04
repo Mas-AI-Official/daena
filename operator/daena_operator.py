@@ -35,7 +35,10 @@ LOGS = HERE / "logs"
 # only used when agent_exec.enabled is true in the real config. {prompt_text}/{prompt_path} substituted.
 AGENT_COMMANDS = {
     "claude": ["claude", "-p", "{prompt_text}"],
-    "codex": ["codex", "exec", "{prompt_text}", "--skip-git-repo-check"],
+    # Flags MUST precede the prompt positional or codex silently ignores them (verified 2026-06-04).
+    # --sandbox workspace-write: confine writes to repo+temp and disable network (blocks MCP sends).
+    # Codex defaults to danger-full-access here; never run it unattended without this downgrade.
+    "codex": ["codex", "exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt_text}"],
     "gemini": ["gemini", "-p", "{prompt_text}"],
 }
 TOOLS = ["claude", "codex", "gemini", "perplexity", "python", "node", "git", "gh", "rtk", "ollama"]
@@ -204,7 +207,8 @@ def run_agent(cfg: dict, agent: str, prompt_path: str, session_log: Path) -> dic
         log.write(f"\n=== RUN_AGENT {agent} @ {now_iso()} (prompt inline; secrets redacted) ===\n")
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, bufsize=1, cwd=cfg.get("root", str(HERE)))
+                                    text=True, encoding="utf-8", errors="replace", bufsize=1,
+                                    cwd=cfg.get("root", str(HERE)))
         except Exception as e:  # noqa: BLE001 -- report, never raise into the loop
             log.write(f"AGENT_LAUNCH_ERROR: {e}\n")
             return {"exit_code": None, "tail": "", "gate_hits": [], "done_hits": [],

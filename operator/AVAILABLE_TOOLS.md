@@ -17,13 +17,25 @@ Detected 2026-06-04 on the founder machine (win32). Detection only -- nothing in
 | rtk | AVAILABLE | C:\Users\masou\.cargo\bin\rtk.exe | output-token compressor for verbose commands. |
 | ollama | AVAILABLE | C:\Users\masou\...\ollama.exe | local models (note: Daena backend uses llama-server, not ollama). |
 
-## SELF_START_STATUS: PARTIAL
+## SELF_START_STATUS: BUILT + CORRECT, BUT NO CLI CAN SAFELY SELF-DRIVE ON THIS WINDOWS BOX (verified 2026-06-04)
 
-Three agent CLIs (claude, codex, gemini) exist with documented non-interactive flags, AND python is present to run
-the supervisor. BUT none is verified for SAFE autonomous tool-executing sprint continuation in this loop (Phase 1
-is detect-only). Therefore the runner ships with `agent_exec.enabled = false` and will NOT invoke an agent until
-the founder verifies a chosen CLI and flips that flag. Until then the runner produces a plan + NEEDS_USER_LOOP.md
-and requires a manual `/loop`. It does not fake automation.
+Live verification (founder-authorized enable + run):
+- codex: runs non-interactively, BUT its SAFE sandbox mode (`--sandbox workspace-write`) is INERT on this Windows
+  machine -- "windows sandbox: setup refresh failed with status exit code: 1" makes shell + MCP + file tools all
+  fail, so codex correctly refused to act ("can't safely inspect or edit ... right now"). Its only FUNCTIONAL mode
+  is `--sandbox danger-full-access` (full filesystem + network + MCP) = UNSAFE for an unattended loop. So codex is
+  either safe-but-useless or useful-but-unsafe here. Flag order matters: `--sandbox` MUST precede the prompt
+  positional (verified -- SANDBOXCHECK reported workspace-write only with flags-first; placing it after the prompt
+  silently leaves danger-full-access).
+- claude -p: 401 Invalid authentication credentials (headless not logged in; needs re-auth + a verified
+  non-interactive permission mode before tool use).
+- gemini -p: timed out non-interactively (needs config/auth verification).
+
+Conclusion: the runner is BUILT, correct, and bug-fixed (flag order + UTF-8 stream decode verified end-to-end via
+a clean --once that reached DONE), but `agent_exec.enabled = false` because no CLI can safely AND functionally
+self-drive here yet. Path to TRUE self-start: (a) fix codex's Windows sandbox so workspace-write works (codex
+platform issue), or (b) re-auth claude + verify its headless permission mode, or (c) configure gemini
+non-interactive. Until one passes, use a manual `/loop`. The runner does not fake automation.
 
 ## Classification key
 - AVAILABLE: installed + usable as-is for the runner's purpose.
