@@ -301,6 +301,36 @@ class ChatOrchestrator:
 
         user_content = last_user_msg.content
 
+        # ── Local run-tracing emit (benchmark adopt) ─────────────
+        # Flag-gated (TRACE_ENABLED, default off) + fully fail-open: a tracing
+        # error -- including arg evaluation -- can never break a chat turn.
+        # request_id comes from the X-Request-ID contextvar; run_id = session_id.
+        # SAFE fields only (no prompt/response/credential text ever passed).
+        async def _emit_trace(event_type, **kw):
+            try:
+                from app.services.run_tracer import is_enabled, record_trace_event
+                if not is_enabled():
+                    return
+                try:
+                    import structlog as _sl
+                    _rid = _sl.contextvars.get_contextvars().get("request_id")
+                except Exception:
+                    _rid = None
+                await record_trace_event(
+                    event_type=event_type,
+                    request_id=_rid,
+                    run_id=str(session_id) if session_id else None,
+                    session_id=session_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    governance_mode=governance_mode_str,
+                    **kw,
+                )
+            except Exception:
+                pass
+
+        await _emit_trace("chat.start", stage="0_start")
+
         # ── Eager auto-title ─────────────────────────────────────
         # Generate a title from the user message NOW, before the
         # pipeline runs. Previously the title was only set after the
@@ -1749,6 +1779,16 @@ class ChatOrchestrator:
             source=routing_source,
             reason=decision.metadata.get("selection_reason"),
             fallbacks=len(decision.fallback_chain),
+        )
+        await _emit_trace(
+            "provider.selected",
+            stage="6_model_router",
+            provider=decision.primary.provider.value,
+            model=decision.primary.model_id,
+            metadata={
+                "applied_mode": decision.mode.value,
+                "fallbacks": len(decision.fallback_chain),
+            },
         )
 
         # ── Stage 6: Memory recall ────────────────────────────
@@ -3649,6 +3689,13 @@ class ChatOrchestrator:
                                 )
                             except Exception:
                                 pass
+                            await _emit_trace(
+                                "stream.error",
+                                stage="9_stream",
+                                status="error",
+                                safe_summary="all available models failed",
+                                metadata={"tried_models": tried_models},
+                            )
                             yield {
                                 "type": "error",
                                 "message": error_detail,
@@ -3906,6 +3953,15 @@ class ChatOrchestrator:
             done_data["_session_title"] = title
         if slop_score:
             done_data["_slop_score"] = slop_score.to_dict()
+        await _emit_trace(
+            "chat.end",
+            stage="9_done",
+            status="ok",
+            metadata={
+                "elapsed_ms": int((time.perf_counter() - start_time) * 1000),
+                "content_len": len(collected_content or ""),
+            },
+        )
         yield {"type": "done", "data": done_data}
 
         # ── Stage 10: Record cost + audit ─────────────────────

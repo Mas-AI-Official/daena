@@ -29,6 +29,7 @@ from app.models.files import FileRecord
 from app.models.error_event import ErrorEvent
 from app.models.financial import Subscription, UsageLedger, UserQuota, VaultSecret
 from app.models.heartbeat_config import HeartbeatConfigRow
+from app.models.run_trace_event import RunTraceEvent
 from app.models.governance import GoaAuditEvent, GoaPolicyState, GoaRequest, PendingApproval
 from app.models.identity import RefreshToken, Tenant, User
 from app.models.memory import LearningLog, MemoryEntry
@@ -71,6 +72,7 @@ __all__ = [
     "DepartmentBudget", "ExpenseProposal", "DepartmentState", "DepartmentMessage", "DepartmentPolicy",
     "UsageLedger", "VaultSecret", "Subscription", "UserQuota", "ErrorEvent",
     "HeartbeatConfigRow",
+    "RunTraceEvent",
     "ProjectPipeline",
     "Project",
     "ApiKey",
