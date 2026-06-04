@@ -27,12 +27,21 @@ IDLE -> LOAD_PROMPT -> RUN_AGENT -> MONITOR -> PARSE_RESULT -> UPDATE_DOCS -> CO
 Exits: HARD_GATE (gate detected, stop) and ERROR (no prompt / launch failure / unexpected).
 - dry-run path: IDLE -> LOAD_PROMPT -> (plan) -> DONE. No agent. No side effects beyond logs.
 
-## 5. Stop only for hard gates
-secrets / backend/.env, paid deploy or spend, real external sends, unsafe scans, production deploy, DNS change,
-destructive DB migration, legal/business/tax/patent decisions, public posting/submission, deleting founder work.
-For anything else: make a safe default decision and continue. The runner detects a gate by scanning the AGENT'S
-OUTPUT for decision/block markers (HARD_GATE, STOPPED_ONLY_BECAUSE, BLOCKED_NEEDS_FOUNDER, founder-gated,
-NEEDS_USER, "requires founder"). It does NOT classify the policy text inside a prompt as a gate.
+## 5. Stop only for TRUE hard gates (decide + proceed on everything else)
+Hard gates: secrets / backend/.env / keys / passwords, paid deploy or spend, real external sends, unsafe scans,
+production deploy / DNS, destructive prod DB migration, legal/business/tax/patent decisions, public posting/
+submission, deleting founder work, anything irreversible. For ALL other (safe local) work: DECIDE and PROCEED --
+never ask the founder which safe step to do next (see section 13).
+
+Gate classification -- the runner stops ONLY on TRUE_HARD_GATE, and CONTINUES on MENTION_ONLY:
+- TRUE_HARD_GATE (STOP): the agent says it cannot perform the NEXT action now without a founder-only action --
+  e.g. "TRUE_HARD_GATE: ...", "BLOCKED_NEEDS_FOUNDER", "I cannot proceed without {secret/deploy/send/...}",
+  "needs founder approval to ...". Agents MUST emit `TRUE_HARD_GATE: <founder action needed>` when genuinely blocked.
+- MENTION_ONLY (CONTINUE): the output merely references gated items or future founder actions -- "founder-gated
+  items remain", "DEP-001 later", "founder should eventually ...". Mentioning a gate is NOT hitting one. The runner
+  does not stop just because a report lists gated remainders; it picks the next safe step and keeps going.
+The runner classifies from the AGENT'S OUTPUT (GATE_MARKERS vs MENTION_ONLY_MARKERS in daena_operator.py); it never
+treats a prompt's policy text as a gate.
 
 ## 6. Sprint boundary handling
 If an agent stops at a sprint boundary (clean completion, not a gate): the runner reads the next-prompt again. If
@@ -68,3 +77,21 @@ gh pat, PEM private keys -> [REDACTED]). The runner never opens or prints backen
 ## 12. Limits (from config)
 max_loops (hard cap on iterations), max_minutes_per_loop (per-iteration timeout), checkpoint_minutes (heartbeat
 cadence). allow_sends / allow_paid_deploy / allow_secret_access are hard-false and not overridable at runtime.
+
+## 13. Autonomous decision policy (no "founder picks" for safe work)
+When multiple SAFE next steps exist, the operator/agent CHOOSES automatically by this priority -- it does NOT ask
+the founder to pick, and does NOT stop to ask whether to continue / fix P1-P2 / write docs / run tests / commit
+scoped safe changes / scan local projects / draft business plans / create next prompts:
+  1 P0 security/reliability/data-loss blockers. 2 self-start/runner reliability blockers. 3 P1 production
+  readiness. 4 closed-beta launch blockers. 5 deploy dry-run / rollback / smoke / observability. 6 OAuth/Gmail
+  checklist + safe local verification. 7 company-ops revenue path. 8 hackathon/grant/customer opportunity.
+  9 code review / refactor / cleanup. 10 UI polish. 11 speculative features.
+Tie-break: unlocks revenue/closed-beta fastest > lower-risk > clearer tests > reduces future founder workload.
+State the decision as: "DECISION: I choose <step> because <reason>. Proceeding." NEVER "Founder picks." Founder
+approval is required ONLY for the TRUE hard gates in section 5.
+
+MYTHOS / debate (only for risky architecture/security/production/business/product-direction choices -- NOT tiny
+fixture/doc fixes): run a short internal debate, written into the DOC (not chat): MYTHOS (safest codebase-grounded
+path + risk/rollback) / Codex view (architecture, regression, test risk) / Gemini view (product/UX/ecosystem/
+business) / Decision (selected path, why, rejected alternatives, tests, rollback). Use real Codex/Gemini/Perplexity
+tools if available + safe; otherwise simulate and label SIMULATED_DEBATE.

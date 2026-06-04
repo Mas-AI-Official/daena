@@ -39,8 +39,10 @@ PowerShell dry-run that also never invokes an agent.
 ## How it decides
 Next-prompt priority: `DAENA_NEXT_PROMPT.md` -> `MAS_AI_NEXT_PROMPT.md` -> `DAENA_RESUME_PROMPT.md` (first that
 exists). State machine: IDLE -> LOAD_PROMPT -> RUN_AGENT -> MONITOR -> PARSE_RESULT -> UPDATE_DOCS -> CONTINUE ->
-DONE, with HARD_GATE / ERROR exits. It stops when the agent's OUTPUT signals a gate (HARD_GATE,
-STOPPED_ONLY_BECAUSE, BLOCKED_NEEDS_FOUNDER, founder-gated, ...). It does not treat a prompt's policy text as a gate.
+DONE, with HARD_GATE / ERROR exits. It stops ONLY on a TRUE_HARD_GATE (the agent says it cannot do the next action
+without a founder-only action); it CONTINUES when output merely mentions gated items (MENTION_ONLY -- e.g. "DEP-001
+later", "founder-gated items remain"). For safe work it chooses the next step automatically by the priority order
+in OPERATOR_PROTOCOL.md section 13 -- it never asks the founder to pick a safe next step.
 
 ## Enabling real autonomous runs (deliberate cost decision)
 1. Verify by hand that your chosen CLI runs a prompt non-interactively and safely, e.g.

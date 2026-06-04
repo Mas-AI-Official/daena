@@ -54,14 +54,27 @@ SECRET_PATTERNS = [
     re.compile(r"(?i)(ghp|github_pat)_[A-Za-z0-9_]{20,}"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 ]
-# Markers in agent OUTPUT meaning "stop -- a gate/block was hit" (not topic words inside a prompt).
+# TRUE_HARD_GATE (STOP): the agent says it cannot perform the NEXT action NOW without a founder-only action
+# (secret/.env/deploy/spend/real send/unsafe scan/delete/prod migration/legal-business/public submit). Merely
+# MENTIONING that gated items exist is NOT a gate -- see MENTION_ONLY_MARKERS; the runner CONTINUES on those.
+# Agents must emit "TRUE_HARD_GATE: <founder action needed>" when genuinely blocked.
 GATE_MARKERS = [
+    re.compile(r"(?i)\bTRUE_HARD_GATE\b"),
     re.compile(r"(?i)\bHARD_GATE\b"),
-    re.compile(r"(?i)STOPPED_ONLY_BECAUSE"),
     re.compile(r"(?i)BLOCKED_NEEDS_FOUNDER"),
+    re.compile(r"(?i)STOPPED_ONLY_BECAUSE"),
+    re.compile(r"(?i)\bI cannot (safely |now )?(proceed|continue)\b"),
+    re.compile(r"(?i)cannot (proceed|continue|do this|do that) without (a |an |the )?(secret|key|password|credential|deploy|spend|payment|real send|approval|founder)"),
+    re.compile(r"(?i)need(s)? founder approval to\b"),
+    re.compile(r"(?i)require(s)? founder approval\b"),
+]
+# MENTION_ONLY (CONTINUE): output merely references gated items / future founder actions. NEVER a stop.
+MENTION_ONLY_MARKERS = [
+    re.compile(r"(?i)founder[ _-]?gated (item|remainder|step|remain)"),
+    re.compile(r"(?i)\bDEP-001\b"),
+    re.compile(r"(?i)founder should (later|eventually|then|approve)"),
+    re.compile(r"(?i)remain(s)? founder[ _-]?gated"),
     re.compile(r"(?i)\bfounder[ _-]?gated\b"),
-    re.compile(r"(?i)\bNEEDS_USER\b"),
-    re.compile(r"(?i)requires (the )?founder"),
 ]
 # Markers meaning the agent reached a clean boundary / finished a chunk.
 DONE_MARKERS = [
@@ -187,7 +200,8 @@ def render_result(agent: str, prompt: str, res: dict) -> str:
     return (
         f"# last_result\n\nGenerated {now_iso()}\n\n"
         f"- Agent: {agent}\n- Prompt: {prompt}\n- Exit code: {res.get('exit_code')}\n"
-        f"- Timed out: {res.get('timed_out')}\n- Gate markers: {res.get('gate_hits')}\n"
+        f"- Timed out: {res.get('timed_out')}\n- TRUE_HARD_GATE markers (STOP): {res.get('gate_hits')}\n"
+        f"- MENTION_ONLY markers (informational, NOT a stop): {res.get('mention_hits')}\n"
         f"- Done markers: {res.get('done_hits')}\n"
         + (f"- Launch error: {res['error']}\n" if res.get("error") else "")
         + f"\n## Tail (redacted, last 4k chars)\n\n```\n{(res.get('tail') or '')[-4000:]}\n```\n"
@@ -236,7 +250,9 @@ def run_agent(cfg: dict, agent: str, prompt_path: str, session_log: Path) -> dic
         proc.wait()
     tail_text = "\n".join(tail)
     return {"exit_code": proc.returncode, "tail": tail_text, "timed_out": timed_out,
-            "gate_hits": scan(tail_text, GATE_MARKERS), "done_hits": scan(tail_text, DONE_MARKERS)}
+            "gate_hits": scan(tail_text, GATE_MARKERS),
+            "mention_hits": scan(tail_text, MENTION_ONLY_MARKERS),
+            "done_hits": scan(tail_text, DONE_MARKERS)}
 
 
 def operator_loop(cfg: dict, mode: str, max_iter: int, dry_run: bool) -> int:
