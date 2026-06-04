@@ -51,6 +51,9 @@ _PROVIDER_MAP: dict[ModelProvider, tuple[str, str, str]] = {
     ModelProvider.VLLM: (
         "app.services.providers.vllm", "VLLMProvider", "vllm_base_url",
     ),
+    ModelProvider.QWEN_CLOUD: (
+        "app.services.providers.qwen_cloud", "QwenCloudProvider", "qwen_cloud_api_key",
+    ),
 }
 
 _PROVIDER_DISPLAY_NAMES: dict[ModelProvider, str] = {
@@ -63,6 +66,7 @@ _PROVIDER_DISPLAY_NAMES: dict[ModelProvider, str] = {
     ModelProvider.TOGETHER: "Together",
     ModelProvider.GROQ: "Groq",
     ModelProvider.VLLM: "vLLM",
+    ModelProvider.QWEN_CLOUD: "Qwen Cloud",
 }
 
 _PROVIDER_KINDS: dict[ModelProvider, str] = {
@@ -75,6 +79,7 @@ _PROVIDER_KINDS: dict[ModelProvider, str] = {
     ModelProvider.TOGETHER: "cloud",
     ModelProvider.GROQ: "cloud",
     ModelProvider.VLLM: "local",
+    ModelProvider.QWEN_CLOUD: "cloud",
 }
 
 

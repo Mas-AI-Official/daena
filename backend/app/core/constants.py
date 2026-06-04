@@ -67,6 +67,7 @@ class ModelProvider(str, enum.Enum):
     TOGETHER = "TOGETHER"
     GROQ = "GROQ"
     VLLM = "VLLM"
+    QWEN_CLOUD = "QWEN_CLOUD"
 
 
 class HealthStatus(str, enum.Enum):

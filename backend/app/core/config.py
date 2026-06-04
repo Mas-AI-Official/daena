@@ -270,6 +270,12 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     together_api_key: str = ""
     groq_api_key: str = ""
+    # Qwen Cloud (Alibaba Model Studio / DashScope) -- OpenAI-compatible.
+    # Credential-gated activation: the model registry registers the
+    # Qwen Cloud provider only when this key is set. Base URL defaults
+    # to the international (Singapore) region; override for US/Beijing.
+    qwen_cloud_api_key: str = ""
+    qwen_cloud_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     vllm_base_url: str = "http://localhost:8100/v1"
     vllm_default_model: str = ""  # empty = auto-detect first available
     # LlamaServerManager mode. Controls whether Daena owns the
@@ -423,6 +429,10 @@ class Settings(BaseSettings):
             "together": {
                 "configured": bool(self.together_api_key),
                 "source": self._field_source("together_api_key"),
+            },
+            "qwen_cloud": {
+                "configured": bool(self.qwen_cloud_api_key),
+                "source": self._field_source("qwen_cloud_api_key"),
             },
             "perplexity": {
                 "configured": bool(self.perplexity_api_key),

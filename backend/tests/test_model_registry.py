@@ -61,6 +61,7 @@ class TestModelRegistryInit:
         mock_settings.perplexity_api_key = ""
         mock_settings.together_api_key = ""
         mock_settings.vllm_base_url = ""
+        mock_settings.qwen_cloud_api_key = ""
 
         with patch("app.services.model_registry.get_settings", return_value=mock_settings):
             await registry.initialize()

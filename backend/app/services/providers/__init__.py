@@ -19,6 +19,7 @@ from app.services.providers.ollama import OllamaProvider
 from app.services.providers.openai import OpenAIProvider
 from app.services.providers.openrouter import OpenRouterProvider
 from app.services.providers.perplexity import PerplexityProvider
+from app.services.providers.qwen_cloud import QwenCloudProvider
 from app.services.providers.together import TogetherProvider
 from app.services.providers.vllm import VLLMProvider
 
@@ -36,6 +37,7 @@ __all__ = [
     "OpenAIProvider",
     "OpenRouterProvider",
     "PerplexityProvider",
+    "QwenCloudProvider",
     "TogetherProvider",
     "VLLMProvider",
 ]
