@@ -1,0 +1,26 @@
+{
+  "ANALYST": {
+    "content": "Finding 1 -- Reentrancy (critical): withdraw() performs the external call `msg.sender.call{value: amount}` BEFORE decrementing `balances[msg.sender]`. A malicious receiver can re-enter withdraw() during the call and drain the Vault. Violates checks-effects-interactions. Fault line: the call precedes `balances[msg.sender] -= amount`.",
+    "input_tokens": 210,
+    "output_tokens": 84,
+    "latency_ms": 940
+  },
+  "ADVERSARY": {
+    "content": "[gated -- not produced]",
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "latency_ms": 0
+  },
+  "AUDITOR": {
+    "content": "Reentrancy: Severity CRITICAL. Impact: total loss of pooled funds (all depositor balances drainable). Likelihood: high -- exploit is well-known and trivially reproducible. CVSS-style: 9.3.",
+    "input_tokens": 188,
+    "output_tokens": 52,
+    "latency_ms": 610
+  },
+  "JUDGE": {
+    "content": "VERDICT: The Vault has a critical reentrancy vulnerability in withdraw(). Drawn from Member A (ANALYST: external call precedes state update) and Member B (AUDITOR: CRITICAL, CVSS ~9.3, all pooled funds at risk). The exploit proof-of-concept was requested but withheld by the governance gate (Tier 4) pending human approval -- the finding stands without it. RECOMMENDED REMEDIATION: apply checks-effects-interactions -- decrement `balances[msg.sender]` BEFORE the external call, or wrap withdraw() in a reentrancy guard (OpenZeppelin ReentrancyGuard). Confidence: 9/10.",
+    "input_tokens": 520,
+    "output_tokens": 150,
+    "latency_ms": 1280
+  }
+}
