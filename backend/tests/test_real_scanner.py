@@ -12,6 +12,7 @@ Asserts:
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 
 import pytest
@@ -21,6 +22,37 @@ from app.services.security.real_scanner import (
     scan_target,
     _scan_file_with_rules,
 )
+
+
+# Heavy/network external pentest tools that real_scanner shells out to when
+# they happen to be on PATH. scan_target() fires nuclei for ANY url target
+# whenever shutil.which("nuclei") is truthy (it is NOT gated on reachability),
+# and nuclei downloads templates over the network + can run for minutes. On a
+# dev box where these are installed (e.g. ~/go/bin/nuclei) the URL-probe tests
+# below invoke the REAL tool, and the full suite intermittently HANGS past the
+# 120s timeout -- the exact "unit test ran a real network scanner" hazard that
+# conftest.py documents. These tests assert the built-in python rules + the
+# http_probe, never the external tools, so we make real_scanner behave like a
+# clean CI box: the heavy tools report as absent and the deterministic
+# pure-python path runs.
+_EXTERNAL_SCANNERS = {
+    "nuclei", "semgrep", "bandit", "trivy", "grype", "nikto",
+    "sqlmap", "ffuf", "gobuster", "katana", "nmap",
+}
+
+
+@pytest.fixture(autouse=True)
+def _no_external_scanners(monkeypatch):
+    """Hermetic guard: never invoke a real external scanner subprocess."""
+    _real_which = shutil.which
+
+    def _which(cmd, *args, **kwargs):
+        base = os.path.basename(str(cmd)).lower().split(".")[0]
+        if base in _EXTERNAL_SCANNERS:
+            return None
+        return _real_which(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "which", _which)
 
 
 @pytest.fixture
