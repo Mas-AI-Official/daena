@@ -948,6 +948,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
             _chat_session_cols = {
                 "governance_mode": "VARCHAR(20) DEFAULT 'BALANCED'",
+                "workstream_id": "CHAR(36)",
+                "autopilot": "BOOLEAN NOT NULL DEFAULT 0",
+                "think_mode": "BOOLEAN NOT NULL DEFAULT 0",
             }
             for col_name, col_type in _chat_session_cols.items():
                 try:
@@ -958,6 +961,45 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     # Idempotent migration: "column already exists" is expected.
                     if "already exists" not in str(exc).lower():
                         logger.warning("schema.alter_chat_sessions_failed", column=col_name, error=str(exc))
+
+            # Other tables whose dev DB may predate later migrations.
+            # create_all() never adds columns to an EXISTING table, so a dev DB
+            # created before these migrations 500s on any query touching the
+            # missing column (e.g. "no such column: tenants.dek_wrapped" ->
+            # register/founder-seed; "chat_sessions has no column workstream_id"
+            # -> chat session create). Every column here is nullable or has a
+            # default, so the idempotent ALTER is safe on a non-empty table.
+            # Production gets all of these via alembic.
+            _extra_table_cols = {
+                "tenants": {  # alembic 006 secrets-envelope vault
+                    "dek_wrapped": "JSON",
+                },
+                "project_pipeline": {
+                    "lost_at": "DATETIME",
+                    "lost_reason": "VARCHAR(200)",
+                },
+                "research_drafts": {
+                    "structured_payload": "JSON",
+                },
+                "connector_instances": {
+                    "owner_email": "VARCHAR(254)",
+                },
+            }
+            for _tbl, _cols in _extra_table_cols.items():
+                for col_name, col_type in _cols.items():
+                    try:
+                        await conn.execute(
+                            _text(f"ALTER TABLE {_tbl} ADD COLUMN {col_name} {col_type}")
+                        )
+                    except Exception as exc:
+                        # Idempotent: column-already-present is expected after
+                        # the first boot (SQLite: "duplicate column name").
+                        _m = str(exc).lower()
+                        if "already exists" not in _m and "duplicate column" not in _m:
+                            logger.warning(
+                                "schema.alter_table_failed",
+                                table=_tbl, column=col_name, error=str(exc),
+                            )
 
     logger.info("essentials.tables_ready", ms=int((_time.perf_counter() - _ts) * 1000))
 
