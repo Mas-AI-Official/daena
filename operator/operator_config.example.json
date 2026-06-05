@@ -34,6 +34,15 @@
     "public_submission",
     "delete_founder_work"
   ],
+  "post_agent_verify": {
+    "enabled": true,
+    "run_backend_targeted": true,
+    "run_frontend_build_if_changed": true,
+    "run_smoke": true,
+    "commit_if_green": true,
+    "full_suite_after_backend_hot_path": true,
+    "full_suite_after_migration": true
+  },
   "agent_exec": {
     "enabled": false,
     "_comment": "OFF by default. Set true ONLY after you verify your chosen agent CLI runs a prompt non-interactively AND safely. Enabling lets the runner spend your agent quota unattended. Copy this file to operator_config.json (gitignored) to set real values.",
