@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -77,6 +77,18 @@ class AuditService(BaseService):
         # Build the hash payload — use Python datetime for microsecond
         # precision (SQLite CURRENT_TIMESTAMP is second-level only).
         now_dt = datetime.utcnow()
+        # AUD-002: guarantee a strictly-monotonic created_at per tenant so the
+        # hash chain has exactly ONE tail. datetime.utcnow() is only ~15.6ms-
+        # resolution on Windows, so a burst of log_decision calls ties on
+        # created_at; _get_last_hash orders by created_at and under ties could
+        # pick a non-tail row -> two events share a prev_hash -> the tamper-
+        # evident ledger FORKS. Clamp to last+1us to remove the tie at source
+        # (the read-path verify already walks prev_hash links, not timestamps).
+        last_created_at = await self._get_last_created_at(tenant_id)
+        if last_created_at is not None:
+            last_naive = last_created_at.replace(tzinfo=None)
+            if now_dt <= last_naive:
+                now_dt = last_naive + timedelta(microseconds=1)
         now = now_dt.isoformat()
         entry_hash = self._compute_hash(
             actor_id=actor_id,
@@ -508,11 +520,23 @@ class AuditService(BaseService):
         stmt = (
             select(GoaAuditEvent.entry_hash)
             .where(GoaAuditEvent.tenant_id == tenant_id)
-            .order_by(GoaAuditEvent.created_at.desc())
+            .order_by(GoaAuditEvent.created_at.desc(), GoaAuditEvent.id.desc())
             .limit(1)
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def _get_last_created_at(self, tenant_id: UUID):
+        """Max created_at for a tenant.
+
+        Used by log_decision to keep created_at strictly monotonic per tenant
+        (AUD-002) so the hash chain has a single unambiguous tail. Returns None
+        when the tenant has no audit events yet.
+        """
+        stmt = select(func.max(GoaAuditEvent.created_at)).where(
+            GoaAuditEvent.tenant_id == tenant_id
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     @staticmethod
     def _compute_hash(

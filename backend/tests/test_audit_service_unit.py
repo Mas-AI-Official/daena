@@ -486,6 +486,53 @@ async def test_chain_integrity_across_larger_sequence(
     assert result["total_entries"] == 15
 
 
+@pytest.mark.asyncio
+async def test_chain_integrity_with_clock_ties(
+    db_session: AsyncSession,
+    seeded_tenant_user: tuple[uuid.UUID, uuid.UUID],
+    monkeypatch,
+):
+    """AUD-002 regression: a burst of audit writes that all land on the SAME
+    created_at must NOT fork the tamper-evident hash chain.
+
+    datetime.utcnow() is only ~15.6ms-resolution on Windows, so rapid
+    log_decision calls tie on created_at. The write-path chain-head selector
+    (_get_last_hash) orders by created_at; under ties it can pick a non-tail
+    row, so two events end up sharing one prev_hash -> fork -> verify reports
+    valid=False. This freezes the clock (worst case: every event ties) -- the
+    residual cause of the timing-/order-dependent full-suite flake on the chain
+    tests. The fix makes created_at strictly monotonic per tenant so the chain
+    always has exactly one tail regardless of timestamp resolution.
+    """
+    import app.services.audit as audit_mod
+
+    _, test_user_id = seeded_tenant_user
+    t = uuid.uuid4()
+    await _seed_extra_tenant(db_session, t)
+
+    # Freeze the clock so EVERY insert ties on created_at (worst case).
+    frozen = datetime(2026, 1, 1, 12, 0, 0)
+
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def utcnow(cls):
+            return frozen
+
+    monkeypatch.setattr(audit_mod, "datetime", _FrozenDateTime)
+
+    svc = AuditService(db_session)
+    for i in range(15):
+        await svc.log_decision(
+            tenant_id=t, actor_id=test_user_id, actor_type="USER",
+            action_type=f"T{i}", result="ALLOWED",
+            risk_level="LOW", governance_tier=1,
+        )
+
+    result = await svc.verify_chain_integrity(tenant_id=t)
+    assert result["valid"] is True, f"clock-tie burst forked the chain: {result}"
+    assert result["total_entries"] == 15
+
+
 # ----------------------------------------------------------------------
 # PR-AUDIT-VERIFY: deep mode (recompute every payload hash)
 # ----------------------------------------------------------------------
