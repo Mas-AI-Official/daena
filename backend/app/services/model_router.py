@@ -114,6 +114,26 @@ _HEALTH_SORT_ORDER: dict[HealthStatus, int] = {
     HealthStatus.UNAVAILABLE: 2,
 }
 
+# Cost-control (DECISION-023, 2026-06-05): score penalty applied to DEGRADED
+# providers for non-SEARCH intents, so a HEALTHY local/free model wins ordinary
+# prompts instead of a degraded paid provider (e.g. Perplexity 400ing every
+# call). Large enough to overcome the +0.5 priority boost + the sovereign tier
+# multiplier; degraded providers stay in the fallback chain, and SEARCH/research
+# is exempt so a degraded web provider can still be used when actually needed.
+# Tuned so a degraded provider drops below a healthy peer in the common case
+# (degraded Perplexity ~1.08 -> ~0.08, below any healthy local), while a much
+# stronger degraded model can still win a genuinely complex task ("unless
+# governance requires stronger").
+_DEGRADED_SCORE_PENALTY = 1.0
+
+# Cost-control (DECISION-023): boost a HEALTHY local/free model for ordinary
+# (non-SEARCH, SIMPLE/MODERATE) prompts so it wins over external providers --
+# the FREE-tier "$0 local chat" + the documented "Auto mode: local handles cheap
+# tasks" policy. COMPLEX/VERY_COMPLEX keep cloud-first (the tier bias already
+# de-prioritizes local there), SEARCH stays external, and an explicit
+# preferred_model override always wins (handled in the orchestrator).
+_LOCAL_ORDINARY_BOOST = 0.6
+
 # Maximum models for each routing mode
 _MODE_MODEL_COUNTS: dict[RoutingMode, int] = {
     RoutingMode.STANDARD: 1,
@@ -692,6 +712,27 @@ class ModelRouter:
             provider_strategy = "all_available_after_suggested_exhausted"
             candidates = self._collect_from_providers(providers_considered)
 
+        # Cost-control (DECISION-023): always let a HEALTHY local/free model
+        # compete for ordinary prompts. The intent->provider suggestion map
+        # (query_understanding._INTENT_PROVIDERS) names OLLAMA (deprecated /
+        # UNAVAILABLE) for "local" and never VLLM (the live llama-server), so
+        # the real local model was never an AUTO candidate and routing fell to
+        # paid providers. For non-SEARCH intents, add any configured + HEALTHY
+        # LOCAL-tier provider not already considered. SEARCH is exempt (web
+        # research is the cloud providers' job).
+        if qu.intent != IntentType.SEARCH:
+            local_extra = [
+                p for p in configured
+                if _PROVIDER_TIER.get(p) == ModelTier.LOCAL
+                and p not in providers_considered
+                and self._registry.get_health(p) == HealthStatus.HEALTHY
+            ]
+            if local_extra:
+                extra_candidates = self._collect_from_providers(local_extra)
+                if extra_candidates:
+                    candidates = candidates + extra_candidates
+                    providers_considered = providers_considered + local_extra
+
         return candidates, {
             "provider_strategy": provider_strategy,
             "providers_considered": [provider.value for provider in providers_considered],
@@ -922,6 +963,29 @@ class ModelRouter:
             # discipline for non-priority models.
             if "priority" in lower_tags:
                 composite += 0.5
+
+            # Cost-control (DECISION-023): demote DEGRADED providers for
+            # non-SEARCH intents so a HEALTHY local/free model wins ordinary
+            # prompts instead of a degraded paid provider. The provider stays a
+            # candidate (fallback chain), just not primary over a healthy
+            # alternative. SEARCH is exempt so a degraded web provider (e.g.
+            # Perplexity Sonar) can still be selected for research.
+            if qu.intent != IntentType.SEARCH:
+                if self._registry.get_health(c.provider) == HealthStatus.DEGRADED:
+                    composite -= _DEGRADED_SCORE_PENALTY
+
+            # Cost-control (DECISION-023): for ordinary (non-SEARCH, SIMPLE/
+            # MODERATE) prompts, boost a HEALTHY local/free model so it wins over
+            # external providers -- the FREE-tier "$0 local chat" / "Auto mode:
+            # local handles cheap tasks" policy. COMPLEX+ keeps cloud-first via
+            # the tier bias above; SEARCH is exempt; explicit override still wins.
+            if (
+                qu.intent != IntentType.SEARCH
+                and qu.complexity_label in (ComplexityLabel.SIMPLE, ComplexityLabel.MODERATE)
+                and tier == ModelTier.LOCAL
+                and self._registry.get_health(c.provider) == HealthStatus.HEALTHY
+            ):
+                composite += _LOCAL_ORDINARY_BOOST
 
             scored.append(
                 ModelCandidate(
