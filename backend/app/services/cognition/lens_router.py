@@ -103,6 +103,16 @@ def select_lenses(
         if "consequence_chain" not in lenses:
             lenses.append("consequence_chain")
 
+    # Mythos mode directive: a framing lens that rides ON TOP of the
+    # detail lenses. Fires when a mode keyword hits on a non-trivial
+    # turn (another lens already selected, or complexity above simple).
+    # Prepended because it frames HOW to think; the others supply WHAT
+    # to think about. Existing lens selection is unchanged.
+    from app.services.cognition.mythos_mode import classify as _mythos_classify
+    mode = _mythos_classify(query)
+    if mode and (lenses or complexity_upper not in ("", "TRIVIAL", "SIMPLE", "LOW")):
+        return ["mythos_mode", *lenses[:3]]
+
     # Cap at 3 lenses per turn to keep the prompt lean.
     return lenses[:3]
 
@@ -163,10 +173,21 @@ async def _run_consequence_chain(query: str) -> str:
     return "\n".join(parts)
 
 
+async def _run_mythos_mode(query: str) -> str:
+    from app.services.cognition.mythos_mode import MythosMode
+    result = await MythosMode().analyze(task=query)
+    mode = result.get("mode") or ""
+    directive = result.get("directive") or ""
+    if not mode or not directive:
+        return ""
+    return f"Mythos mode [{mode}] (how to reason about this turn):\n{directive}"
+
+
 _RUNNERS: dict[str, Any] = {
     "first_principles": _run_first_principles,
     "inversion": _run_inversion,
     "consequence_chain": _run_consequence_chain,
+    "mythos_mode": _run_mythos_mode,
 }
 
 
