@@ -13,15 +13,36 @@ sync with the operator-side hook at
 Codex, and Daena share one cognitive layer. If you change a mode here,
 change it there in the same commit.
 
-Zero LLM, zero I/O. Pure string logic, well under the lens router's
-150ms budget.
+Dream parity (Tier 2): the nightly dream pipeline distills operator
+corrections into ``mythos_lessons.json``. When that file exists and is
+fresh (under 7 days), the top 2 lessons are appended to the directive,
+so Daena's Council and Quintessence learn from the same corrections as
+the operator-side runtimes. Path overridable via ``MYTHOS_LESSONS_FILE``
+for Docker and cloud deployments; absent or stale file means the lens
+silently runs without lessons.
+
+Zero LLM. The only I/O is the lessons file read, cached for 5 minutes
+and fail-open, well under the lens router's 150ms budget.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import time
+from datetime import datetime
 
 __all__ = ["MythosMode", "classify"]
+
+_LESSONS_FILE = os.getenv(
+    "MYTHOS_LESSONS_FILE",
+    r"D:\agents\AI_COMPANY_OS\state\mythos_lessons.json",
+)
+_LESSONS_TTL_S = 300.0
+_LESSONS_MAX_AGE_DAYS = 7
+# (monotonic timestamp of last read, rendered lessons line)
+_lessons_cache: tuple[float, str] = (0.0, "")
 
 # Mode detection -- first match wins, ordered by specificity
 # (audit > debug > decide > build).
@@ -71,6 +92,37 @@ _DIRECTIVES: dict[str, str] = {
 }
 
 
+def _learned_line() -> str:
+    """Render the top 2 fresh dream lessons as a directive line.
+
+    Cached for ``_LESSONS_TTL_S`` seconds. Fail-open: any problem
+    (missing file, bad JSON, stale timestamp) yields the empty string.
+    """
+    global _lessons_cache
+    now = time.monotonic()
+    cached_at, cached_line = _lessons_cache
+    if cached_at and now - cached_at < _LESSONS_TTL_S:
+        return cached_line
+    line = ""
+    try:
+        with open(_LESSONS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        generated = datetime.fromisoformat(data["generated"])
+        if (datetime.now() - generated).days <= _LESSONS_MAX_AGE_DAYS:
+            lessons = [
+                str(x).strip() for x in data.get("lessons", []) if str(x).strip()
+            ][:2]
+            if lessons:
+                line = (
+                    "  - Learned from recent operator corrections: "
+                    + " | ".join(lessons)
+                )
+    except Exception:
+        line = ""
+    _lessons_cache = (now, line)
+    return line
+
+
 def classify(task: str) -> str:
     """Return the Mythos mode for ``task``, or the empty string when no
     mode keyword hits (the lens then simply does not fire).
@@ -99,4 +151,8 @@ class MythosMode:
         mode = classify(task)
         if not mode:
             return {"mode": "", "directive": ""}
-        return {"mode": mode, "directive": _DIRECTIVES[mode]}
+        directive = _DIRECTIVES[mode]
+        learned = _learned_line()
+        if learned:
+            directive = f"{directive}\n{learned}"
+        return {"mode": mode, "directive": directive}

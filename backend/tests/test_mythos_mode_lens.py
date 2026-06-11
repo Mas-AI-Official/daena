@@ -60,6 +60,50 @@ def test_analyze_empty_on_no_match() -> None:
     assert result == {"mode": "", "directive": ""}
 
 
+# ── dream lessons injection ──────────────────────────────────────────
+
+def _write_lessons(tmp_path, generated: str, lessons: list[str]) -> str:
+    import json
+    p = tmp_path / "mythos_lessons.json"
+    p.write_text(
+        json.dumps({"generated": generated, "lessons": lessons}),
+        encoding="utf-8",
+    )
+    return str(p)
+
+
+def _reset_lessons(monkeypatch, path: str) -> None:
+    import app.services.cognition.mythos_mode as mm
+    monkeypatch.setattr(mm, "_LESSONS_FILE", path)
+    monkeypatch.setattr(mm, "_lessons_cache", (0.0, ""))
+
+
+def test_fresh_lessons_appended_to_directive(tmp_path, monkeypatch) -> None:
+    from datetime import datetime
+    path = _write_lessons(
+        tmp_path, datetime.now().isoformat(), ["always dry-run scripts", "pin versions"]
+    )
+    _reset_lessons(monkeypatch, path)
+    result = asyncio.run(MythosMode().analyze(task="fix the flaky scheduler"))
+    assert "Learned from recent operator corrections" in result["directive"]
+    assert "always dry-run scripts | pin versions" in result["directive"]
+
+
+def test_stale_lessons_ignored(tmp_path, monkeypatch) -> None:
+    path = _write_lessons(tmp_path, "2020-01-01T00:00:00", ["ancient lesson"])
+    _reset_lessons(monkeypatch, path)
+    result = asyncio.run(MythosMode().analyze(task="fix the flaky scheduler"))
+    assert "Learned" not in result["directive"]
+
+
+def test_missing_lessons_file_fails_open(tmp_path, monkeypatch) -> None:
+    _reset_lessons(monkeypatch, str(tmp_path / "nope.json"))
+    result = asyncio.run(MythosMode().analyze(task="fix the flaky scheduler"))
+    assert result["mode"] == "DEBUG"
+    assert "Reproduce first" in result["directive"]
+    assert "Learned" not in result["directive"]
+
+
 # ── select_lenses integration ────────────────────────────────────────
 
 def test_select_prepends_mythos_on_complex_turn() -> None:
