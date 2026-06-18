@@ -1,0 +1,413 @@
+%%{init: {'theme':'dark', 'themeVariables': {'fontSize': '12px'}, 'flowchart': {'curve': 'basis', 'nodeSpacing': 35, 'rankSpacing': 55}}}%%
+%%
+%% DAENA SYSTEM GRAPH (Architecture Atlas, 2026-05-01)
+%% Companion to docs/Ultraview/DAENA_ARCHITECTURE_ATLAS.md
+%%
+%% Legend:
+%%   solid arrow  = implemented and exercised by the hot path
+%%   dashed arrow = partial / planned / background-only / opt-in
+%%   ║─ red note   = duplicate-truth, fake surface, or unsafe pattern
+%%
+%% Layers (top to bottom):
+%%   1. Founder / User
+%%   2. Frontend surfaces
+%%   3. Command Center (header + bell + sidebar)
+%%   4. Department brains
+%%   5. OODA / Cognitive / QE Council
+%%   6. Governance + Shield + Asset Shield
+%%   7. Capability Registry (Skills + Tools + Connections V2)
+%%   8. Runtimes / CLI providers / MCP / Skills
+%%   9. Tasks / Execution / Workstreams
+%%   10. Security / Scan / Reports
+%%   11. Memory: NBMF / RAG / Obsidian / Dream / CKG
+%%   12. Audit ledger + Notifications
+%%   13. Cloud / Local deployment
+%%
+
+flowchart TB
+
+%% ============================================================
+%% LAYER 1 — Founder / User
+%% ============================================================
+FOUNDER([Founder / Operator])
+
+%% ============================================================
+%% LAYER 2 — Frontend surfaces
+%% ============================================================
+subgraph FE [Frontend surfaces]
+  direction TB
+  FE_CHAT[ChatPage /chat]
+  FE_DASH[DashboardPage /dashboard]
+  FE_DEPTCHAT[DepartmentChatPage /departments/:slug/chat]
+  FE_CONN[ConnectionsPage /connections]
+  FE_SETTINGS[SettingsPage /settings ~13 tabs]
+  FE_GOV[GovernanceApprovalsPage /governance/approvals]
+  FE_AUDIT[GovernanceAuditPage /governance/audit]
+  FE_SCAN[ScanPage /scan]
+  FE_SECDASH[SecurityDashboardPage /security]
+  FE_ENG[EngagementConsolePage /engagements]
+  FE_COMPANY[CompanyModePage /company-mode]
+  FE_TASKS[TasksPage /tasks]
+  FE_WORK[WorkstreamsPage /workstreams]
+  FE_PIPE[PipelinePage /pipeline]
+  FE_PROJ[ProjectsPage /projects]
+  FE_FILES[FilesPage /files]
+  FE_MINDS[MindsPage /minds + MindDetailPage]
+  FE_DEPTS[DepartmentsPage /departments]
+  FE_SKILLS[SkillsPage /skills]
+  FE_POL[PoliciesPage /policies]
+  FE_ANA[AnalyticsPage /analytics]
+  FE_ACCT[AccountPage /account]
+end
+
+%% ============================================================
+%% LAYER 3 — Command Center
+%% ============================================================
+subgraph HDR [Command Center header bar]
+  direction LR
+  HDR_BELL[Bell - notifications hydrate from /notifications]
+  HDR_HEART[Heartbeat indicator]
+  HDR_VOICE[Voice toggle]
+  HDR_GOV[Governance mode UNLEASHED/BALANCED/GOVERNED]
+  HDR_AUTO[Autopilot ON/OFF]
+end
+
+%% ============================================================
+%% LAYER 4 — Department brains 10 departments x 6 capabilities
+%% ============================================================
+subgraph DEPTS [10 Department Brains, 6 capabilities each]
+  direction TB
+  DEPT_TBL[(Department + Agent + SubCapability rows<br/>unique constraint dept x sub_capability)]
+  DEPT_ROUTER[department_router.py<br/>17 task_type to dept x cap mappings]
+  SOULS[soul_engine.py + 10 named personas<br/>Aria Nova Zephyr Orion Sterling<br/>Atlas Iris Themis Kira Rourke]
+end
+
+%% ============================================================
+%% LAYER 5 — Cognition: OODA + Council + Quintessence
+%% ============================================================
+subgraph COG [OODA / Cognitive / Council / Quintessence]
+  direction TB
+  OODA[ooda_engine.py<br/>OBSERVE - ORIENT - DECIDE - ACT - REFLECT]
+  META[meta_reasoner.py<br/>framework selection]
+  FRAMEWORKS[20+ reasoning modules<br/>first_principles, five_whys, inversion,<br/>pre_mortem, completeness_probe,<br/>consequence_chain, constraint_*]
+  COUNCIL[council_engine.py<br/>3+ models in parallel + synthesis]
+  QE[quintessence_engine.py<br/>Council + DCP expert lenses]
+  DCP[(dcps.json<br/>25 of 55 DCPs shipped<br/>6 empty domain stubs)]
+  TIER_ROUTER[Three-Tier Escalation Router<br/>downgrade Council to single mind on simple]
+end
+
+%% ============================================================
+%% LAYER 6 — Governance + Shield + Asset Shield
+%% ============================================================
+subgraph GOV [Governance + Shield always on]
+  direction TB
+  GATE[security_gate.py<br/>regex injection scan + shield_scan]
+  BEHAV[BehaviorGuard<br/>session-aware, escalating risk score]
+  ASSET[Asset Shield<br/>vault adapter + egress filter +<br/>consent token + initiator-aware tier]
+  POLICY[Plain-English Policy Compiler<br/>natural English to YAML, hot reload]
+  HARDLAW[9 Hard Laws]
+  GOVENG[GovernanceEngine<br/>tier 0..4 evaluation]
+  APPROV[ApprovalService<br/>24h expiry + SSE]
+end
+
+%% ============================================================
+%% LAYER 7 — Capability Registry
+%% ============================================================
+subgraph REG [Capability Registry V2]
+  direction TB
+  CONNV2[(connection_v2 table<br/>6 boolean truth dims +<br/>per-dim failure_at + failure_reason)]
+  OPLOCK[(connection_v2_op_lock<br/>auth_in_progress + probe_in_flight)]
+  TLM[Tool Lifecycle Manager<br/>phase_detector + session_manager +<br/>activation_proxy + tool_discovery]
+  TOOLCAT[(TOOL_CATALOG hardcoded<br/>~170 known tools)]
+end
+
+%% ============================================================
+%% LAYER 8 — Runtimes / CLI / MCP / Skills
+%% ============================================================
+subgraph RT [Runtime adapters + MCP + Skills]
+  direction TB
+  RUNREG[runtimes/registry.py<br/>HealthStatus + capability matrix]
+  CLAUDE_CLI[claude_code adapter]
+  CODEX_CLI[codex adapter]
+  GEMINI_CLI[gemini_cli adapter]
+  GROK_CLI[grok_cli adapter]
+  OLLAMA[ollama_adapter llama-server]
+  VLLM[vllm_adapter]
+  MCP_V2[mcp_bridge_runtime_adapter.py V2 canonical]
+  MCP_V1[mcp_invoker.py + mcp_registry.py V1 legacy]
+  SKILL_CRUD[skill_service.py CRUD + GovernanceTier]
+  REFINERY[skill_refinery 3-pass<br/>extraction + refinement + retrieval]
+end
+
+%% ============================================================
+%% LAYER 9 — Tasks / Execution
+%% ============================================================
+subgraph EXEC [Tasks + Workstreams + Background Queue]
+  direction TB
+  CHAT_ORCH[chat_orchestrator.py<br/>10-stage pipeline]
+  EXEC_SVC[execution_service.py<br/>Task lifecycle - PENDING to COMPLETED]
+  WORKSTREAM[workstreams.py<br/>autonomous unit Council R3 lock]
+  BG_QUEUE[(background_tasks table<br/>restart-recovery via Phase 10c fix)]
+  CRON[(cron_runs table<br/>per-tick executions)]
+  HEART[heartbeat_daemon.py<br/>8 check types]
+  AUTOPILOT[autopilot/continuation.py]
+end
+
+%% ============================================================
+%% LAYER 10 — Security / Scan / Engagements
+%% ============================================================
+subgraph SEC [Security reasoning + scans]
+  direction TB
+  SCAN_WF[scan_workflow.py<br/>9-stage pipeline T1..T5]
+  LAEVATEINN[laevateinn 60+ reasoning modules<br/>debate, deep_think, code_verifier,<br/>causal_graph, adversarial_gate]
+  EVILBOB[evilbob_mode.py<br/>founder + LOCAL + KEY gated]
+  SCOPE[(authorized_scope per tenant)]
+  ENGAGE[engagements + cost billing]
+  REPORT[ReportTierEngine + BugBountyReportGenerator]
+end
+
+%% ============================================================
+%% LAYER 11 — Memory / NBMF / RAG / Obsidian / Dream / CKG
+%% ============================================================
+subgraph MEM [Memory + Knowledge stores]
+  direction TB
+  NBMF[(memory_entries table<br/>5 tiers: WORKING / SHORT_TERM / LONG_TERM / CORE / IMMUTABLE<br/>CAS dedup + L2Q quarantine + trust_score)]
+  EXP[(Agent experiences subset:<br/>AGENT_DECISION SKILL_OUTCOME<br/>PATTERN_LEARNED APPROACH_FAILED<br/>DEFINED but NO WRITER yet)]
+  REFINEDSKILL[(refined_skills T0..T4 maturity)]
+  VAULT[Daena-Mind vault<br/>Obsidian-compatible markdown<br/>D:/Ideas/Daena-Mind/T0..T4/]
+  DREAM[dream_engine.py<br/>MERGE PROMOTE CONTRADICT<br/>SYNTHESIZE DECAY SENSITIVE_REENCODE]
+  RAG[RAG retrieval<br/>NOT IMPLEMENTED - no service file]
+  CKG[laevateinn knowledge_graph.py<br/>local SQLite, NOT tenant-isolated]
+  LEARN[learning_service.py<br/>tracks outcomes IN-MEMORY only]
+  EDNA[eDNA enterprise behavior<br/>CONCEPT only, RoutingPolicy partial]
+end
+
+%% ============================================================
+%% LAYER 12 — Audit ledger + Notifications
+%% ============================================================
+subgraph AUDIT [Audit + Notifications]
+  direction TB
+  AUDITLOG[(goa_audit_events<br/>hash-chained tamper-evident<br/>18+ action_type values)]
+  NOTIF[notification_service.py<br/>Phase 11 PR-S2 / PR-S2.1<br/>7 event types, 5 backend gates]
+  NOTIF_ROW[(notifications table)]
+  SSE_BUS[SSE channels<br/>chat stream + approvals + scans]
+end
+
+%% ============================================================
+%% LAYER 13 — Deployment
+%% ============================================================
+subgraph DEP [Deployment surfaces]
+  direction LR
+  LOCAL[Local-First PRIMARY<br/>WSL2 + RTX 4060 + SQLite WAL<br/>llama-server :8080]
+  CLOUD[Cloud Run PAUSED<br/>Postgres + Cloud SQL]
+end
+
+%% ============================================================
+%% EDGES — primary data and action flow
+%% ============================================================
+
+FOUNDER --> FE
+FOUNDER --> HDR
+
+%% Frontend to Command Center
+FE_CHAT --> HDR
+FE_DASH --> HDR
+
+%% Frontend to backend hot path
+FE_CHAT -->|POST /chat/messages/stream SSE| CHAT_ORCH
+FE_GOV -->|GET POST /governance/approvals| APPROV
+FE_AUDIT -->|GET /governance/audit| AUDITLOG
+FE_TASKS -->|/execution/tasks| EXEC_SVC
+FE_WORK -->|/workstreams| WORKSTREAM
+FE_SCAN -->|/security/scans/start| SCAN_WF
+FE_ENG -->|/engagements| SCAN_WF
+FE_SECDASH -->|/security/*| SCAN_WF
+FE_COMPANY -->|/company-mode/activate| EXEC_SVC
+FE_CONN -->|GET POST /connections/v2/*| CONNV2
+FE_SETTINGS -->|PUT /settings/user| NBMF
+FE_MINDS -->|/souls| SOULS
+FE_DEPTS -->|/departments| DEPT_TBL
+FE_SKILLS -->|/skills| SKILL_CRUD
+FE_POL -->|/policies| POLICY
+FE_ANA -->|/analytics| AUDITLOG
+FE_FILES -->|/files| BG_QUEUE
+FE_PROJ -->|/projects| EXEC_SVC
+FE_PIPE -->|/projects?stage=| EXEC_SVC
+
+HDR_BELL -->|hydrate /notifications| NOTIF_ROW
+HDR_HEART -->|GET /heartbeat/status| HEART
+HDR_GOV -->|persistUiPref| NBMF
+
+%% Chat 10-stage pipeline
+CHAT_ORCH -->|Stage 0a| BEHAV
+CHAT_ORCH -->|Stage 0b| GATE
+CHAT_ORCH -->|Stage 2| TIER_ROUTER
+CHAT_ORCH -->|Stage 3| GOVENG
+CHAT_ORCH -->|Stage 4 cost preflight| AUDITLOG
+CHAT_ORCH -->|Stage 5 select| RUNREG
+CHAT_ORCH -->|Stage 6 recall| NBMF
+CHAT_ORCH -->|Stage 6 skills| REFINERY
+CHAT_ORCH -->|Stage 7 system prompt| SOULS
+CHAT_ORCH -->|Stage 8 stream| SSE_BUS
+CHAT_ORCH -->|Stage 9 persist| NBMF
+CHAT_ORCH -->|Stage 10 audit| AUDITLOG
+
+%% EXE mode: orchestrator -> daenabot/tools
+CHAT_ORCH -->|EXE Stage 7.5 dispatch| EXEC_SVC
+EXEC_SVC -->|tool call| MCP_V2
+EXEC_SVC -->|tool call| SKILL_CRUD
+EXEC_SVC -->|background| BG_QUEUE
+EXEC_SVC -->|completion| NOTIF
+
+%% Cognition wiring
+TIER_ROUTER -->|simple| RUNREG
+TIER_ROUTER -.->|complex / risky| COUNCIL
+TIER_ROUTER -.->|QE selected| QE
+COUNCIL --> QE
+QE -->|inject lenses| DCP
+COUNCIL -->|synthesizer| RUNREG
+OODA -->|EXE only - feature flagged| CHAT_ORCH
+OODA --> META
+META --> FRAMEWORKS
+OODA -.->|reflect| LEARN
+OODA -->|recall + store| NBMF
+
+%% Governance edges
+GATE --> HARDLAW
+BEHAV --> HARDLAW
+ASSET --> HARDLAW
+POLICY --> GOVENG
+GOVENG -->|tier 3+| APPROV
+APPROV -->|reject| NOTIF
+APPROV -->|emit| AUDITLOG
+HARDLAW -->|always| AUDITLOG
+
+%% Department routing
+CHAT_ORCH -->|VP Stage 2.8 if flag on| DEPT_ROUTER
+DEPT_ROUTER --> DEPT_TBL
+DEPT_ROUTER --> SOULS
+DEPT_TBL --> EXEC_SVC
+
+%% Capability registry
+RUNREG --> CONNV2
+CONNV2 --> OPLOCK
+SKILL_CRUD --> TLM
+TLM --> TOOLCAT
+TLM -->|inject schemas| CHAT_ORCH
+
+%% Runtime adapters
+RUNREG --> CLAUDE_CLI
+RUNREG --> CODEX_CLI
+RUNREG --> GEMINI_CLI
+RUNREG --> GROK_CLI
+RUNREG --> OLLAMA
+RUNREG --> VLLM
+RUNREG --> MCP_V2
+
+%% MCP V1 legacy still active
+FE_CONN -.->|legacy V1 panel| MCP_V1
+MCP_V1 -.-> CONNV2
+
+%% Refinery
+REFINERY --> REFINEDSKILL
+REFINERY -.->|vault export STUB| VAULT
+
+%% Security pipeline
+SCAN_WF --> SCOPE
+SCAN_WF --> LAEVATEINN
+LAEVATEINN --> CKG
+SCAN_WF -.->|founder + LOCAL + KEY| EVILBOB
+SCAN_WF --> ENGAGE
+SCAN_WF --> REPORT
+SCAN_WF -->|emit| AUDITLOG
+
+%% Heartbeat
+HEART --> CRON
+HEART -->|emit| NOTIF
+HEART -.->|finding| EXEC_SVC
+
+%% Memory + Dream + Learning
+NBMF -.->|background| DREAM
+DREAM -.->|MERGE PROMOTE| NBMF
+DREAM -.->|emit| AUDITLOG
+LEARN -.->|in-memory only - NOT PERSISTED| NBMF
+LEARN -.->|future| REFINEDSKILL
+EXP -.->|DEFINED but no writer| NBMF
+
+%% Notifications
+NOTIF --> NOTIF_ROW
+NOTIF_ROW -->|GET poll| HDR_BELL
+
+%% Audit
+AUDITLOG -->|FE read| FE_AUDIT
+
+%% Deployment
+LOCAL -->|active| CHAT_ORCH
+CLOUD -.->|paused| CHAT_ORCH
+
+%% ============================================================
+%% RED NOTES — duplicates / risky / fake surfaces
+%% ============================================================
+
+DUP_CONN[/RED V1 vs V2 connections panels coexist<br/>McpServersPanel vs McpServersV2Panel<br/>PluginsCatalogBrowser vs PluginsV2Panel<br/>USE_CONNECTION_REGISTRY_V2 still false in prod/]
+DUP_SCAN[/RED two scan launchers<br/>ScanPage vs EngagementConsolePage<br/>both submit target plus tier/]
+DUP_PROFILE[/RED display_name editable in two places<br/>SettingsGeneral vs AccountDetails/]
+DUP_HEART_CFG[/RED Heartbeat config in daemon memory<br/>resets on restart<br/>not in users.settings JSONB/]
+RISK_RAG[/RED RAG advertised but NOT implemented<br/>NBMF online but no real retrieval/]
+RISK_DREAM[/RED Dream Engine defined but UNSCHEDULED<br/>no cron entry, manual only/]
+RISK_LEARN[/RED LearningService in-memory only<br/>patterns wiped on restart<br/>Rule 17 violation/]
+RISK_EXP[/RED Agent experiences defined but no writer<br/>learning loop never closes/]
+RISK_EDNA[/RED eDNA: NOT FOUND in code<br/>CLAUDE.md and patent doc only/]
+RISK_AUDIT[/RED Audit hash chain not validated on read<br/>operator-deletable rows break tamper-evidence/]
+RISK_SETTINGS[/RED 7 of 47 settings keys wired<br/>40 keys are display-only - dead consumers/]
+RISK_DCPS[/RED only 25 of 55 DCPs shipped<br/>6 empty domain stubs in dcps.json/]
+RISK_CKG[/RED Laevateinn knowledge graph NOT tenant-isolated<br/>privacy gap if multi-tenant/]
+RISK_VAULT[/RED Daena-Mind vault sync STUB<br/>Phase E promised bidirectional, not done/]
+
+DUP_CONN -.-> FE_CONN
+DUP_SCAN -.-> FE_SCAN
+DUP_SCAN -.-> FE_ENG
+DUP_PROFILE -.-> FE_SETTINGS
+DUP_PROFILE -.-> FE_ACCT
+DUP_HEART_CFG -.-> HEART
+RISK_RAG -.-> RAG
+RISK_DREAM -.-> DREAM
+RISK_LEARN -.-> LEARN
+RISK_EXP -.-> EXP
+RISK_EDNA -.-> EDNA
+RISK_AUDIT -.-> AUDITLOG
+RISK_SETTINGS -.-> NBMF
+RISK_DCPS -.-> DCP
+RISK_CKG -.-> CKG
+RISK_VAULT -.-> VAULT
+
+%% ============================================================
+%% STYLES
+%% ============================================================
+classDef founder fill:#D4A843,stroke:#0F1419,color:#0F1419,stroke-width:2px
+classDef frontend fill:#1f2937,stroke:#2DD4BF,color:#e2e8f0
+classDef header fill:#0f172a,stroke:#D4A843,color:#fef3c7
+classDef cog fill:#1e1b4b,stroke:#a78bfa,color:#ddd6fe
+classDef gov fill:#7f1d1d,stroke:#fca5a5,color:#fef2f2
+classDef reg fill:#0f172a,stroke:#22d3ee,color:#cffafe
+classDef rt fill:#0c4a6e,stroke:#38bdf8,color:#dbeafe
+classDef exec fill:#064e3b,stroke:#34d399,color:#d1fae5
+classDef sec fill:#7c2d12,stroke:#fb923c,color:#ffedd5
+classDef mem fill:#312e81,stroke:#818cf8,color:#e0e7ff
+classDef audit fill:#3f3f46,stroke:#fbbf24,color:#fef3c7
+classDef deploy fill:#1e293b,stroke:#94a3b8,color:#cbd5e1
+classDef risk fill:#7f1d1d,stroke:#fb7185,color:#fff,stroke-width:2px,stroke-dasharray: 5 3
+
+class FOUNDER founder
+class FE_CHAT,FE_DASH,FE_DEPTCHAT,FE_CONN,FE_SETTINGS,FE_GOV,FE_AUDIT,FE_SCAN,FE_SECDASH,FE_ENG,FE_COMPANY,FE_TASKS,FE_WORK,FE_PIPE,FE_PROJ,FE_FILES,FE_MINDS,FE_DEPTS,FE_SKILLS,FE_POL,FE_ANA,FE_ACCT frontend
+class HDR_BELL,HDR_HEART,HDR_VOICE,HDR_GOV,HDR_AUTO header
+class OODA,META,FRAMEWORKS,COUNCIL,QE,DCP,TIER_ROUTER cog
+class GATE,BEHAV,ASSET,POLICY,HARDLAW,GOVENG,APPROV gov
+class CONNV2,OPLOCK,TLM,TOOLCAT reg
+class RUNREG,CLAUDE_CLI,CODEX_CLI,GEMINI_CLI,GROK_CLI,OLLAMA,VLLM,MCP_V2,MCP_V1,SKILL_CRUD,REFINERY rt
+class CHAT_ORCH,EXEC_SVC,WORKSTREAM,BG_QUEUE,CRON,HEART,AUTOPILOT exec
+class SCAN_WF,LAEVATEINN,EVILBOB,SCOPE,ENGAGE,REPORT sec
+class NBMF,EXP,REFINEDSKILL,VAULT,DREAM,RAG,CKG,LEARN,EDNA mem
+class AUDITLOG,NOTIF,NOTIF_ROW,SSE_BUS audit
+class LOCAL,CLOUD deploy
+class DUP_CONN,DUP_SCAN,DUP_PROFILE,DUP_HEART_CFG,RISK_RAG,RISK_DREAM,RISK_LEARN,RISK_EXP,RISK_EDNA,RISK_AUDIT,RISK_SETTINGS,RISK_DCPS,RISK_CKG,RISK_VAULT risk

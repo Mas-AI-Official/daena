@@ -1,0 +1,1102 @@
+diff --git a/backend/app/core/constants.py b/backend/app/core/constants.py
+index 4d63f28..56d5eb1 100644
+--- a/backend/app/core/constants.py
++++ b/backend/app/core/constants.py
+@@ -271,6 +271,7 @@ class AuthType(str, enum.Enum):
+ 
+ class ConnectorStatus(str, enum.Enum):
+     """Connector instance state."""
++    INSTALLED = "INSTALLED"
+     CONNECTED = "CONNECTED"
+     DISCONNECTED = "DISCONNECTED"
+     ERROR = "ERROR"
+diff --git a/backend/app/core/database.py b/backend/app/core/database.py
+index 1930b13..579794e 100644
+--- a/backend/app/core/database.py
++++ b/backend/app/core/database.py
+@@ -21,9 +21,13 @@ SQLite pool strategy (2026-04-18):
+ 
+ from __future__ import annotations
+ 
++import contextlib
++import logging
+ from collections.abc import AsyncGenerator
+ from typing import Any
+ 
++logger = logging.getLogger(__name__)
++
+ from sqlalchemy import event
+ from sqlalchemy.ext.asyncio import (
+     AsyncSession,
+@@ -138,13 +142,46 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
+     Usage in routes:
+         async def my_route(db: AsyncSession = Depends(get_db)):
+             ...
++
++    Cancellation guard (Phase 2 efficiency, 2026-04-24): a long-running
++    SSE chat stream that the user aborts (Stop button or browser close)
++    propagates ``CancelledError`` UP through this generator. The original
++    code then tried ``session.commit()`` -- which crashed with
++    ``sqlite3.OperationalError: no active connection`` because aiosqlite
++    had already torn down the connection during cancellation. The crash
++    surfaces as ``unhandled_exception`` 500s in the logs and erases any
++    helpful chat error from the audit trail. We now treat cancellation
++    as a clean exit: rollback if possible, swallow connection-gone
++    errors, and let the cancellation propagate so FastAPI completes the
++    response cycle properly. Other exceptions still re-raise.
+     """
++    import asyncio
++    from sqlalchemy.exc import OperationalError
++
+     async with async_session_factory() as session:
+         try:
+             yield session
+-            await session.commit()
++            try:
++                await session.commit()
++            except (asyncio.CancelledError, OperationalError) as exc:
++                # Cancellation race: connection may already be gone.
++                logger.debug(
++                    "get_db.commit_skipped_cancelled",
++                    error=str(exc)[:200],
++                )
++                # Re-raise CancelledError so the task tree unwinds correctly.
++                if isinstance(exc, asyncio.CancelledError):
++                    raise
++        except asyncio.CancelledError:
++            # Best-effort rollback; never block cancellation propagation
++            # on a hung connection.
++            with contextlib.suppress(Exception):
++                await session.rollback()
++            raise
+         except Exception:
+-            await session.rollback()
++            with contextlib.suppress(Exception):
++                await session.rollback()
+             raise
+         finally:
+-            await session.close()
++            with contextlib.suppress(Exception):
++                await session.close()
+diff --git a/backend/app/main.py b/backend/app/main.py
+index f82ce1a..c3b9f91 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -30,10 +30,74 @@ from fastapi.responses import FileResponse, JSONResponse
+ 
+ from app.core.config import get_settings
+ from app.core.logging import get_logger, setup_logging
++from app.core.startup_state import startup_state
+ 
+ logger = get_logger(__name__)
+ 
+ 
++def _publish_ready_port_file() -> None:
++    """Publish frontend proxy port only after FastAPI startup is complete.
++
++    When ``backend/run.py`` is the entry point, ``DAENA_BOUND_PORT`` +
++    ``DAENA_PORT_FILE`` are set explicitly (so we capture the
++    auto-fallback port from ``find_free_port``). When uvicorn is invoked
++    directly (e.g. via the launch.json config), those env vars are
++    missing -- in that case we fall back to ``settings.port`` and
++    write to ``backend/.daena-port`` so the Vite proxy still self-heals.
++    """
++    bound_port = os.environ.get("DAENA_BOUND_PORT")
++    port_file_raw = os.environ.get("DAENA_PORT_FILE")
++
++    # Fallbacks for direct-uvicorn / IDE launch paths.
++    if not bound_port:
++        try:
++            bound_port = str(get_settings().port)
++        except Exception:
++            return
++    if not port_file_raw:
++        port_file_raw = str(Path(__file__).resolve().parent.parent / ".daena-port")
++
++    port_file = Path(port_file_raw)
++    tmp_file = port_file.with_suffix(port_file.suffix + ".tmp")
++    try:
++        port_file.parent.mkdir(parents=True, exist_ok=True)
++        tmp_file.write_text(bound_port, encoding="utf-8")
++        os.replace(tmp_file, port_file)
++        # Also export the env vars so the shutdown handler can find them.
++        os.environ["DAENA_BOUND_PORT"] = bound_port
++        os.environ["DAENA_PORT_FILE"] = str(port_file)
++        logger.info("backend_port_file_published", port=bound_port, path=str(port_file))
++    except Exception as exc:  # noqa: BLE001
++        logger.warning(
++            "backend_port_file_publish_failed",
++            port=bound_port,
++            path=str(port_file),
++            error=str(exc),
++        )
++
++
++def _clear_ready_port_file() -> None:
++    """Remove `.daena-port` on shutdown if it still points to this process."""
++    bound_port = os.environ.get("DAENA_BOUND_PORT")
++    port_file_raw = os.environ.get("DAENA_PORT_FILE")
++    if not bound_port or not port_file_raw:
++        return
++    port_file = Path(port_file_raw)
++    try:
++        if port_file.read_text(encoding="utf-8").strip() == bound_port:
++            port_file.unlink()
++            logger.info("backend_port_file_removed", port=bound_port, path=str(port_file))
++    except FileNotFoundError:
++        return
++    except Exception as exc:  # noqa: BLE001
++        logger.warning(
++            "backend_port_file_remove_failed",
++            port=bound_port,
++            path=str(port_file),
++            error=str(exc),
++        )
++
++
+ async def _seed_founder_accounts() -> None:
+     """Ensure founder accounts exist so Masoud can log in.
+ 
+@@ -125,18 +189,125 @@ async def _seed_founder_accounts() -> None:
+             logger.warning("founder_seed_failed", error=str(exc))
+ 
+ 
++async def _seed_connector_catalog() -> None:
++    """Seed the global ``connectors`` table from the bundled JSON catalog.
++
++    The frontend Plugins tab used to hardcode a ~110 entry CONNECTORS
++    array; this function migrates that list into the existing
++    ``Connector`` model so the catalog can grow without a frontend
++    release. Idempotent: each run upserts by ``Connector.name`` (which
++    is unique per the model). Fail-safe: any error is logged + we
++    continue startup so a malformed JSON file never bricks the app.
++    """
++    import json
++    from pathlib import Path
++
++    from sqlalchemy import select
++
++    from app.core.database import async_session_factory
++    from app.models.connections import Connector
++
++    catalog_path = Path(__file__).resolve().parent / "config" / "connector_catalog.json"
++    if not catalog_path.is_file():
++        logger.debug(
++            "connector_catalog_seed_skipped",
++            reason="connector_catalog.json missing",
++            path=str(catalog_path),
++        )
++        return
++
++    try:
++        payload = json.loads(catalog_path.read_text(encoding="utf-8"))
++    except Exception as exc:
++        logger.warning(
++            "connector_catalog_seed_failed_parse",
++            error=str(exc),
++            path=str(catalog_path),
++        )
++        return
++
++    version = payload.get("version", "unknown")
++    raw_entries = payload.get("connectors") or []
++    if not isinstance(raw_entries, list):
++        logger.warning(
++            "connector_catalog_seed_failed_shape",
++            reason="connectors key must be a list",
++        )
++        return
++
++    upserted = 0
++    skipped = 0
++    async with async_session_factory() as db:
++        try:
++            for entry in raw_entries:
++                if not isinstance(entry, dict):
++                    continue
++                name = (entry.get("name") or "").strip()
++                if not name:
++                    continue
++                desired = {
++                    "description": entry.get("description"),
++                    "auth_type": (entry.get("auth_type") or "none").strip(),
++                    "config_schema": entry.get("config_schema") or {},
++                    "tools": entry.get("tools") or [],
++                    "icon_url": entry.get("icon_url"),
++                    "category": entry.get("category"),
++                }
++
++                existing = (
++                    await db.execute(select(Connector).where(Connector.name == name))
++                ).scalar_one_or_none()
++
++                if existing is None:
++                    db.add(Connector(name=name, **desired))
++                    upserted += 1
++                    continue
++
++                # Update only when something actually changed -- keeps
++                # the audit log quiet on no-op restarts.
++                changed = False
++                for field, new_value in desired.items():
++                    if getattr(existing, field) != new_value:
++                        setattr(existing, field, new_value)
++                        changed = True
++                if changed:
++                    upserted += 1
++                else:
++                    skipped += 1
++
++            await db.commit()
++            logger.info(
++                "connector_catalog_seeded",
++                version=version,
++                count=upserted,
++                unchanged=skipped,
++                total=len(raw_entries),
++            )
++        except Exception as exc:
++            await db.rollback()
++            logger.warning(
++                "connector_catalog_seed_failed",
++                error=str(exc),
++                version=version,
++            )
++
++
+ async def _seed_departments_for_all_tenants() -> None:
+     """Seed 10 default departments for every tenant that has none.
+ 
+     Runs once on startup. Idempotent -- skips tenants that already
+     have departments. Uses AgentService.seed_defaults() which also
+     creates the 60 sub-capability agents per tenant.
++
++    Stabilization 2026-04-29: Demoted ``tenant_seeded`` to DEBUG when
++    nothing was created (the loop fired ``tenant_seeded`` per tenant on
++    every restart, even on no-ops, producing the "tons of tenant
++    hydration lines" log spam the user reported).
+     """
+-    from sqlalchemy import func, select
++    from sqlalchemy import select
+ 
+     from app.core.database import async_session_factory
+     from app.models.identity import Tenant
+-    from app.models.organization import Department
+     from app.services.agents import AgentService
+ 
+     async with async_session_factory() as db:
+@@ -144,12 +315,13 @@ async def _seed_departments_for_all_tenants() -> None:
+             tenants_result = await db.execute(select(Tenant))
+             tenants = list(tenants_result.scalars().all())
+ 
+-            seeded = 0
++            seeded_any = 0
++            noop = 0
+             for tenant in tenants:
+-                # Always run seed_defaults — it's idempotent and creates
+-                # any missing departments, agents, AND skills.
+-                # Previously only ran when dept_count == 0, which meant
+-                # skills added after initial deployment were never seeded.
++                # Always run seed_defaults -- it's idempotent and creates
++                # any missing departments, agents, AND skills. Previously
++                # only ran when dept_count == 0, which meant skills added
++                # after initial deployment were never seeded.
+                 svc = AgentService(db)
+                 result = await svc.seed_defaults(tenant_id=tenant.id)
+                 created = (
+@@ -158,7 +330,7 @@ async def _seed_departments_for_all_tenants() -> None:
+                     + result["skills_created"]
+                 )
+                 if created > 0:
+-                    seeded += 1
++                    seeded_any += 1
+                     logger.info(
+                         "tenant_seeded",
+                         tenant_id=str(tenant.id),
+@@ -166,190 +338,113 @@ async def _seed_departments_for_all_tenants() -> None:
+                         agents=result["agents_created"],
+                         skills=result["skills_created"],
+                     )
++                else:
++                    noop += 1
+ 
+             await db.commit()
+-            if seeded:
+-                logger.info("auto_seed_complete", tenants_seeded=seeded)
++            if seeded_any:
++                logger.info(
++                    "auto_seed_complete",
++                    tenants_seeded=seeded_any,
++                    tenants_noop=noop,
++                    tenants_total=len(tenants),
++                )
+             else:
+-                logger.debug("auto_seed_skipped", reason="all tenants fully seeded")
++                # Quiet path -- everything was already seeded. Single DEBUG
++                # line replaces the per-tenant info spam.
++                logger.debug(
++                    "auto_seed_skipped",
++                    reason="all tenants fully seeded",
++                    tenants=len(tenants),
++                )
+         except Exception as exc:
+             await db.rollback()
+             logger.warning("auto_seed_failed", error=str(exc))
+ 
+ 
+-@asynccontextmanager
+-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+-    """Application lifespan: startup and shutdown events.
++async def _run_deferred_initialization(app: FastAPI) -> None:
++    """Run all idempotent seedings + slow registry hydrations in the background.
++
++    Stabilization 2026-04-29: This function used to be inline in `lifespan()`,
++    which made cold-start take 10-30s and meant `.daena-port` was never
++    published if any step raised. Now we publish the port file the moment
++    essentials complete (Redis health + tables) and run everything else
++    here, in parallel with FastAPI serving requests.
+ 
+-    Startup:
+-        - Configures structured logging
+-        - Checks Redis connectivity (warns if unavailable, does not block)
+-        - Logs EventBus readiness
++    Order constraints:
++      * founder_seed must run before dept_seed (dept seed walks every
++        tenant; founder seed may create the MAS-AI tenant on first boot)
++      * everything else is independent
+ 
+-    Shutdown:
+-        - Closes Redis connection pool
+-        - Logs shutdown
++    All errors are caught + recorded to ``startup_state``; nothing here
++    can break the running server.
+     """
++    import asyncio
+     import time as _time
+ 
+     settings = get_settings()
+-    setup_logging(log_level=settings.log_level, json_output=settings.is_production)
+-    _t0 = _time.perf_counter()
+-    diagnostics = settings.runtime_diagnostics()
+-    logger.info(
+-        "daena_starting",
+-        app_name=settings.app_name,
+-        env=settings.app_env,
+-        debug=settings.debug,
+-    )
+-    logger.info(
+-        "runtime_config_truth",
+-        app_env=diagnostics["app_env"],
+-        env_precedence=diagnostics["env_precedence"],
+-        allows_unsafe_dev_features=diagnostics["allows_unsafe_dev_features"],
+-        debug=diagnostics["debug"],
+-        disable_auth=diagnostics["disable_auth"],
+-        jwt_secret_key=diagnostics["jwt_secret_key"],
+-        vault_encryption_key=diagnostics["vault_encryption_key"],
+-        cors_origins=diagnostics["cors_origins"],
+-        ollama_default_model=diagnostics["ollama_default_model"],
+-        provider_keys=diagnostics["provider_keys"],
+-        rate_limit_fail_open=diagnostics["rate_limit_fail_open"],
+-        env_file=diagnostics["env_file"],
+-        env_file_present=diagnostics["env_file_present"],
+-    )
+ 
+-    guardrail_issues = diagnostics["guardrail_issues"]
+-    if guardrail_issues:
+-        if settings.allows_unsafe_dev_features and not settings.is_production:
+-            for issue in guardrail_issues:
+-                logger.warning("runtime_guardrail_warning", issue=issue)
+-        else:
+-            for issue in guardrail_issues:
+-                logger.critical("runtime_guardrail_failed", issue=issue)
+-            raise RuntimeError(
+-                "Unsafe runtime configuration: " + "; ".join(guardrail_issues)
+-            )
+-
+-    # --- Auth bypass warning ---
+-    if settings.disable_auth:
+-        logger.warning("AUTH_DISABLED — all endpoints return dev user. Do NOT deploy this.")
+-
+-    # --- Auto-create tables (idempotent — only creates missing tables) ---
+-    # create_all is safe for both SQLite and PostgreSQL: it checks for
+-    # existing tables first and only creates those that are missing.
+-    _skip_auto_create = False  # Always ensure tables exist
+-    if not _skip_auto_create:
++    async def _step(name: str, coro_factory) -> None:
++        """Run one deferred step, log timing, record errors to startup_state."""
++        startup_state.set_seed_phase(name)
+         _ts = _time.perf_counter()
+-        from app.core.database import engine
+-        from app.models import Base  # noqa: F401 — triggers all model imports
+-
+-        async with engine.begin() as conn:
+-            await conn.run_sync(Base.metadata.create_all)
+-
+-            # Migrate existing memory_entries table: add NBMF columns if missing
+-            from sqlalchemy import text as _text
+-            # SQLite doesn't support ALTER COLUMN, but VARCHAR is flexible.
+-            # For PostgreSQL, we'd need ALTER COLUMN content_type TYPE VARCHAR(30).
+-            _nbmf_cols = {
+-                "agent_id": "TEXT",
+-                "is_quarantined": "BOOLEAN DEFAULT 0",
+-                "trust_score": "REAL DEFAULT 0.0",
+-                "content_hash": "VARCHAR(64)",
+-                "skill_id": "VARCHAR(200)",
+-                "success_flag": "BOOLEAN",
+-                "is_sensitive": "BOOLEAN DEFAULT 0",
+-                "encoding_mode": "VARCHAR(20) DEFAULT 'semantic'",
+-                "contradiction": "BOOLEAN DEFAULT 0",
+-            }
+-            for col_name, col_type in _nbmf_cols.items():
+-                try:
+-                    await conn.execute(
+-                        _text(f"ALTER TABLE memory_entries ADD COLUMN {col_name} {col_type}")
+-                    )
+-                except Exception:
+-                    pass  # Column already exists
+-
+-            # Migrate chat_sessions: add columns added after initial schema
+-            _chat_session_cols = {
+-                "governance_mode": "VARCHAR(20) DEFAULT 'BALANCED'",
+-            }
+-            for col_name, col_type in _chat_session_cols.items():
+-                try:
+-                    await conn.execute(
+-                        _text(f"ALTER TABLE chat_sessions ADD COLUMN {col_name} {col_type}")
+-                    )
+-                except Exception:
+-                    pass  # Column already exists
+-
+-        logger.info("dev_tables_created", ms=int((_time.perf_counter() - _ts) * 1000))
++        try:
++            await coro_factory()
++            logger.info(
++                f"deferred.{name}.complete",
++                ms=int((_time.perf_counter() - _ts) * 1000),
++            )
++        except Exception as exc:
++            logger.warning(
++                f"deferred.{name}.failed",
++                error=str(exc),
++                ms=int((_time.perf_counter() - _ts) * 1000),
++            )
++            startup_state.record_seed_error(name, str(exc))
+ 
+-        # Auto-seed founder accounts FIRST so they exist before dept
+-        # seeding runs (dept seed touches tenants; founder seed may
+-        # create the MAS-AI tenant). Idempotent + skips silently if
+-        # FOUNDER_DEFAULT_PASSWORD is unset in .env.
+-        _ts = _time.perf_counter()
+-        await _seed_founder_accounts()
+-        logger.info("founder_seed_complete", ms=int((_time.perf_counter() - _ts) * 1000))
++    # 1. Founder accounts (before any tenant-walking step)
++    await _step("founder_seed", _seed_founder_accounts)
+ 
+-        # Auto-seed 10 departments for any tenant missing them
+-        _ts = _time.perf_counter()
+-        await _seed_departments_for_all_tenants()
+-        logger.info("departments_seeded", ms=int((_time.perf_counter() - _ts) * 1000))
++    # 2. Departments for every tenant
++    await _step("dept_seed", _seed_departments_for_all_tenants)
+ 
+-    # --- Demo mode seeding ---
+-    from app.services.demo_mode import is_demo_mode, seed_demo_data
++    # 3. Connector catalog (independent of tenants)
++    await _step("connector_catalog", _seed_connector_catalog)
+ 
+-    if is_demo_mode():
+-        _ts = _time.perf_counter()
+-        demo_result = await seed_demo_data()
+-        logger.info("demo_mode.active", ms=int((_time.perf_counter() - _ts) * 1000), **demo_result)
+-    else:
+-        logger.debug("demo_mode.inactive")
++    # 4. Demo mode seeding (gated on env)
++    async def _demo_seed() -> None:
++        from app.services.demo_mode import is_demo_mode, seed_demo_data
+ 
+-    # --- Redis connectivity check (non-blocking) ---
+-    _ts = _time.perf_counter()
+-    from app.core.redis import check_redis_health, get_redis_client
++        if is_demo_mode():
++            demo_result = await seed_demo_data()
++            logger.info("demo_mode.active", **demo_result)
++        else:
++            logger.debug("demo_mode.inactive")
+ 
+-    redis_ok = await check_redis_health()
+-    _redis_ms = int((_time.perf_counter() - _ts) * 1000)
+-    if redis_ok:
+-        logger.info("redis_connected", ms=_redis_ms)
+-    else:
+-        logger.warning("redis_unavailable", ms=_redis_ms, impact="Caching degraded")
++    await _step("demo_mode", _demo_seed)
+ 
+-    # --- EventBus is a singleton, ready at import ---
+-    from app.core.events import event_bus
++    # 5. Company context (soul vault hydrate)
++    async def _company_context() -> None:
++        from pathlib import Path
+ 
+-    logger.info("event_bus_ready", subscriptions=len(event_bus._handlers))
++        from app.services.company_context import company_context_store
+ 
+-    # --- Model Registry (singleton, all providers) ---
+-    _ts = _time.perf_counter()
+-    from app.services.model_registry import ModelRegistry
++        _soul_root = Path(__file__).resolve().parent / "soul"
++        _hydrated = company_context_store.hydrate_from_disk(_soul_root)
++        logger.info(
++            "company_context.hydrated",
++            count=_hydrated,
++            soul_root=str(_soul_root),
++        )
+ 
+-    registry = ModelRegistry()
+-    await registry.initialize()
+-    app.state.model_registry = registry
+-    logger.info(
+-        "model_registry_ready",
+-        providers=len(registry._providers),
+-        ms=int((_time.perf_counter() - _ts) * 1000),
+-    )
++    await _step("company_context", _company_context)
+ 
+-    # --- Ollama warm-up: background task (non-blocking) ---
+-    # Server accepts requests immediately. First LLM call may be
+-    # slow if warm-up hasn't finished yet.
+-    async def _warmup_ollama() -> None:
+-        _ws = _time.perf_counter()
+-        try:
++    # 6. Ollama warm-up (gated on flag, fire-and-forget so a slow
++    # warm-up doesn't gate other deferred steps)
++    if settings.ollama_enabled:
++        async def _warmup_ollama() -> None:
+             import httpx
+ 
+-            # Use the WSL-aware resolver instead of the raw settings
+-            # URL so a Windows-side Ollama is reachable from a WSL
+-            # backend via host.docker.internal. Otherwise the warmup
+-            # fails with "All connection attempts failed" even when
+-            # every other Ollama code path works fine -- which is the
+-            # exact footgun the user hit 2026-04-18.
+             from app.services.providers.ollama import (
+                 OllamaProvider,
+                 resolve_ollama_base_url,
+@@ -358,11 +453,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+             ollama_url = resolve_ollama_base_url(
+                 settings.ollama_base_url
+             ).rstrip("/")
+-
+-            # Resolve actual model name (handles "auto" -> best installed,
+-            # falls back to an installed model if the requested one
+-            # isn't pulled -- e.g. ``mistral:7b`` requested but only
+-            # ``llama3.1:8b`` available).
+             _prov = OllamaProvider()
+             warmup_model = await _prov._resolve_model(settings.ollama_default_model)
+             await _prov.close()
+@@ -381,26 +471,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+                     },
+                 )
+                 warmup_resp.raise_for_status()
+-            logger.info(
+-                "ollama_warmup_complete",
+-                model=warmup_model,
+-                ms=int((_time.perf_counter() - _ws) * 1000),
+-            )
+-        except Exception as exc:
+-            logger.warning(
+-                "ollama_warmup_failed",
+-                error=str(exc),
+-                impact="First request will be slow (model loads on demand)",
+-            )
+-
+-    import asyncio
++            logger.info("ollama_warmup_complete", model=warmup_model)
+ 
+-    # Ollama warm-up is gated on the OLLAMA_ENABLED flag. When users
+-    # migrate to llama.cpp llama-server (see .env + start-llama-server.ps1),
+-    # the flag flips to False and we skip the 11434 probe + model
+-    # warmup entirely. Without this gate, every startup logged
+-    # "ollama_no_models" + "ollama_warmup_failed" noise.
+-    if settings.ollama_enabled:
++        # Fire-and-forget: don't await, this can take a while.
+         asyncio.create_task(_warmup_ollama())
+     else:
+         logger.info(
+@@ -408,106 +481,65 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+             hint="Set OLLAMA_ENABLED=true in .env to re-enable.",
+         )
+ 
+-    # --- Runtime Registry: discover CLIs, check health, probe subscriptions ---
+-    _ts = _time.perf_counter()
+-    from app.core.events import initialize_runtime_registry
++    # 7. Runtime registry (CLI discovery + health + subscriptions)
++    async def _runtime_registry_init() -> None:
++        from app.core.events import initialize_runtime_registry
+ 
+-    try:
+         installed = await initialize_runtime_registry()
+         installed_names = [k for k, v in installed.items() if v]
+         logger.info(
+             "runtime_registry_ready",
+             installed=installed_names,
+             total=len(installed),
+-            ms=int((_time.perf_counter() - _ts) * 1000),
+-        )
+-    except Exception as rt_exc:
+-        logger.warning(
+-            "runtime_registry_init_failed",
+-            error=str(rt_exc),
+-            impact="CLI runtimes unavailable until next health check",
+         )
+ 
+-    # --- Periodic rediscovery: pick up CLIs/Ollama that come or go
+-    # AFTER the backend boots. Without this, installing Claude CLI /
+-    # Codex / Ollama models while Daena is running requires a full
+-    # backend restart to see them. Now they appear within ~60s.
+-    #
+-    # Invalidates:
+-    #   * runtime registry install cache (Claude/Codex/Gemini CLIs)
+-    #   * Ollama URL resolver (in case Ollama moved between localhost
+-    #     / host.docker.internal / VPN addresses)
+-    #   * model catalog TTL (happens naturally on next list_all_models)
+-    async def _periodic_runtime_rescan() -> None:
+-        import asyncio as _asyncio
++    await _step("runtime_registry", _runtime_registry_init)
+ 
+-        # First scan fires after 60s (not immediately, since we just
+-        # scanned at startup); then every 60s thereafter.
+-        from app.core.events import get_runtime_registry
+-        from app.services.providers.ollama import (
+-            invalidate_ollama_resolver_cache,
+-        )
++    # 8. MCP Registry hydrate
++    async def _mcp_init() -> None:
++        from app.services.mcp_registry import init_mcp_registry
+ 
+-        while True:
+-            try:
+-                await _asyncio.sleep(60)
+-                try:
+-                    registry = get_runtime_registry()
+-                    await registry.rediscover_all()
+-                except Exception as _r_exc:  # noqa: BLE001 -- best-effort
+-                    logger.debug(
+-                        "runtime_rescan_failed", error=str(_r_exc),
+-                    )
+-                # Also bump the Ollama resolver so the next call
+-                # re-probes instead of trusting the last URL forever.
+-                try:
+-                    invalidate_ollama_resolver_cache()
+-                except Exception:  # noqa: BLE001
+-                    pass
+-            except _asyncio.CancelledError:
+-                break
+-            except Exception:  # noqa: BLE001 -- never kill the loop
+-                logger.exception("runtime_rescan_loop_error")
++        mcp_count = await init_mcp_registry(app)
++        logger.info("mcp_registry_ready", count=mcp_count)
+ 
+-    import asyncio as _asyncio_init
+-    _asyncio_init.create_task(_periodic_runtime_rescan())
++    await _step("mcp_registry", _mcp_init)
+ 
+-    # --- MCP Bootstrap (Option A): spawn-on-first-call adapters for
+-    # every MCP entry in claude_desktop_config.json. This closes the
+-    # gap between "install via Plugins tab" and "chat can actually
+-    # invoke the MCP's tools". Fail-safe -- a broken entry never
+-    # takes startup down. ---
+-    _ts = _time.perf_counter()
+-    try:
+-        from app.services.mcp_bootstrap import bootstrap_installed_mcps
++    # 9. Background queue + cron scheduler + dream engine + TLM + evilbob
++    async def _background_queue() -> None:
++        from app.services.autopilot import init_background_queue
+ 
+-        registry = await bootstrap_installed_mcps()
+-        logger.info(
+-            "mcp_bootstrap_ready",
+-            count=len(registry),
+-            ms=int((_time.perf_counter() - _ts) * 1000),
+-        )
+-    except Exception as mcp_exc:
+-        logger.warning(
+-            "mcp_bootstrap_failed",
+-            error=str(mcp_exc),
+-            impact="Installed MCPs invisible to chat until next startup",
++        await init_background_queue(app)
++
++    await _step("background_queue", _background_queue)
++
++    async def _cron_scheduler() -> None:
++        from app.core.events import get_runtime_registry
++        from app.services.heartbeat.cron_scheduler import (
++            set_runtime_registry_resolver,
++            start_cron_scheduler,
+         )
+ 
+-    # --- Dream Engine: autonomous memory consolidation ---
+-    from app.services.dream_engine import get_dream_engine
++        set_runtime_registry_resolver(get_runtime_registry)
++        await start_cron_scheduler()
+ 
+-    dream_engine = get_dream_engine()
+-    app.state.dream_engine = dream_engine
++    await _step("cron_scheduler", _cron_scheduler)
+ 
+-    # Auto-schedule Dream Engine via APScheduler (every 15 min if idle 5+ min)
+-    try:
+-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+-        from apscheduler.triggers.interval import IntervalTrigger
++    async def _dream_engine() -> None:
++        from app.services.dream_engine import get_dream_engine
++
++        dream_engine = get_dream_engine()
++        app.state.dream_engine = dream_engine
++
++        try:
++            from apscheduler.schedulers.asyncio import AsyncIOScheduler
++            from apscheduler.triggers.interval import IntervalTrigger
++        except ImportError:
++            logger.info("dream_engine_ready", scheduled=False, reason="apscheduler_not_installed")
++            return
+ 
+         dream_scheduler = AsyncIOScheduler()
+ 
+-        async def _dream_job():
++        async def _dream_job() -> None:
+             if not dream_engine.should_run(idle_seconds=300):
+                 return
+             if dream_engine.is_running:
+@@ -518,10 +550,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+                     report = await dream_engine.run_cycle(
+                         db_session=db_session, tenant_id="system"
+                     )
+-                    logger.info(
+-                        "dream_engine.auto_cycle",
+-                        **report.summary(),
+-                    )
++                    logger.info("dream_engine.auto_cycle", **report.summary())
+             except Exception as dream_exc:
+                 logger.warning("dream_engine.auto_cycle_failed", error=str(dream_exc))
+ 
+@@ -535,38 +564,270 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+         dream_scheduler.start()
+         app.state.dream_scheduler = dream_scheduler
+         logger.info("dream_engine_ready", scheduled=True, interval_min=15)
+-    except ImportError:
+-        logger.info("dream_engine_ready", scheduled=False, reason="apscheduler_not_installed")
+ 
+-    # ── Initialize Tool Lifecycle Manager ──
+-    try:
++    await _step("dream_engine", _dream_engine)
++
++    async def _tlm_init() -> None:
+         from app.services.tool_lifecycle.orchestra_integration import initialize_tlm
++
+         initialize_tlm()
+         logger.info("tlm_initialized")
+-    except Exception as tlm_exc:
+-        logger.warning("tlm_init_failed", error=str(tlm_exc))
+ 
+-    # ── Auto-activate /3vilbob on local ──
+-    try:
++    await _step("tlm", _tlm_init)
++
++    async def _evilbob_init() -> None:
+         from app.services.security.evilbob_mode import auto_activate_if_configured
++
+         evilbob_state = auto_activate_if_configured()
+         if evilbob_state and evilbob_state.active:
+             logger.info("evilbob_auto_active", capabilities=len(evilbob_state.capabilities))
+-    except Exception as eb_exc:
+-        logger.debug("evilbob_auto_activate_skipped", error=str(eb_exc))
+ 
+-    logger.info("daena_startup_complete", total_ms=int((_time.perf_counter() - _t0) * 1000))
++    await _step("evilbob", _evilbob_init)
++
++    # All deferred steps done.
++    startup_state.mark_seedings_complete()
++    logger.info(
++        "deferred_initialization_complete",
++        seed_errors=len(startup_state.seed_errors),
++        snapshot=startup_state.to_dict(),
++    )
++
++    # Notify any consumer that strictly needs seed data to be ready.
++    try:
++        from app.core.events import event_bus
++
++        await event_bus.publish(
++            "daena.seedings_complete",
++            **startup_state.to_dict(),
++        )
++    except Exception as exc:
++        logger.debug("seedings_complete_emit_failed", error=str(exc))
++
++    # Periodic runtime rescan loop (lifelong) -- separate from the
++    # one-shot deferred init.
++    async def _periodic_runtime_rescan() -> None:
++        from app.core.events import get_runtime_registry
++        from app.services.providers.ollama import (
++            invalidate_ollama_resolver_cache,
++        )
++
++        while True:
++            try:
++                await asyncio.sleep(60)
++                try:
++                    rt_registry = get_runtime_registry()
++                    await rt_registry.rediscover_all()
++                except Exception as _r_exc:
++                    logger.debug("runtime_rescan_failed", error=str(_r_exc))
++                try:
++                    invalidate_ollama_resolver_cache()
++                except Exception:
++                    pass
++            except asyncio.CancelledError:
++                break
++            except Exception:
++                logger.exception("runtime_rescan_loop_error")
++
++    asyncio.create_task(_periodic_runtime_rescan())
++
++
++@asynccontextmanager
++async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
++    """Application lifespan: split into essentials + deferred phases.
++
++    ESSENTIALS (sync, must complete before serving):
++        - Structured logging
++        - Guardrail validation
++        - Auto-create tables + ALTER TABLE migrations
++        - Redis connectivity probe (timeout-bounded)
++        - ModelRegistry instantiation (no health probes)
++        - EventBus readiness log
++
++    Once essentials complete, ``.daena-port`` is published and lifespan
++    yields -- uvicorn starts accepting requests within ~1s of `python run.py`.
++
++    DEFERRED (background, runs concurrently with serving):
++        - Founder seed, department seed, connector catalog, demo mode
++        - Company context hydrate, Ollama warmup, runtime registry,
++          MCP registry, background queue, cron scheduler, dream engine,
++          TLM, evilbob auto-activate
++
++    SHUTDOWN:
++        - Clear .daena-port (if owned by this process)
++        - Cancel deferred task
++        - Stop cron scheduler, background queue
++        - Close model registry, Redis pool
++    """
++    import asyncio
++    import time as _time
++
++    startup_state.mark_started()
++    settings = get_settings()
++    setup_logging(log_level=settings.log_level, json_output=settings.is_production)
++    _t0 = _time.perf_counter()
++    diagnostics = settings.runtime_diagnostics()
++    logger.info(
++        "daena_starting",
++        app_name=settings.app_name,
++        env=settings.app_env,
++        debug=settings.debug,
++    )
++    logger.info(
++        "runtime_config_truth",
++        app_env=diagnostics["app_env"],
++        env_precedence=diagnostics["env_precedence"],
++        allows_unsafe_dev_features=diagnostics["allows_unsafe_dev_features"],
++        debug=diagnostics["debug"],
++        disable_auth=diagnostics["disable_auth"],
++        jwt_secret_key=diagnostics["jwt_secret_key"],
++        vault_encryption_key=diagnostics["vault_encryption_key"],
++        cors_origins=diagnostics["cors_origins"],
++        ollama_default_model=diagnostics["ollama_default_model"],
++        provider_keys=diagnostics["provider_keys"],
++        rate_limit_fail_open=diagnostics["rate_limit_fail_open"],
++        env_file=diagnostics["env_file"],
++        env_file_present=diagnostics["env_file_present"],
++    )
++
++    guardrail_issues = diagnostics["guardrail_issues"]
++    if guardrail_issues:
++        if settings.allows_unsafe_dev_features and not settings.is_production:
++            for issue in guardrail_issues:
++                logger.warning("runtime_guardrail_warning", issue=issue)
++        else:
++            for issue in guardrail_issues:
++                logger.critical("runtime_guardrail_failed", issue=issue)
++            raise RuntimeError(
++                "Unsafe runtime configuration: " + "; ".join(guardrail_issues)
++            )
++
++    # --- Auth bypass warning ---
++    if settings.disable_auth:
++        logger.warning("AUTH_DISABLED — all endpoints return dev user. Do NOT deploy this.")
++
++    # === ESSENTIALS START ===
++
++    # --- Auto-create tables (idempotent) + ALTER TABLE migrations ---
++    _ts = _time.perf_counter()
++    from app.core.database import engine
++    from app.models import Base  # noqa: F401 -- triggers all model imports
++
++    async with engine.begin() as conn:
++        await conn.run_sync(Base.metadata.create_all)
++
++        from sqlalchemy import text as _text
++        # SQLite doesn't support ALTER COLUMN, but VARCHAR is flexible.
++        _nbmf_cols = {
++            "agent_id": "TEXT",
++            "is_quarantined": "BOOLEAN DEFAULT 0",
++            "trust_score": "REAL DEFAULT 0.0",
++            "content_hash": "VARCHAR(64)",
++            "skill_id": "VARCHAR(200)",
++            "success_flag": "BOOLEAN",
++            "is_sensitive": "BOOLEAN DEFAULT 0",
++            "encoding_mode": "VARCHAR(20) DEFAULT 'semantic'",
++            "contradiction": "BOOLEAN DEFAULT 0",
++        }
++        for col_name, col_type in _nbmf_cols.items():
++            try:
++                await conn.execute(
++                    _text(f"ALTER TABLE memory_entries ADD COLUMN {col_name} {col_type}")
++                )
++            except Exception:
++                pass  # Column already exists
++
++        _chat_session_cols = {
++            "governance_mode": "VARCHAR(20) DEFAULT 'BALANCED'",
++        }
++        for col_name, col_type in _chat_session_cols.items():
++            try:
++                await conn.execute(
++                    _text(f"ALTER TABLE chat_sessions ADD COLUMN {col_name} {col_type}")
++                )
++            except Exception:
++                pass
++
++    logger.info("essentials.tables_ready", ms=int((_time.perf_counter() - _ts) * 1000))
++
++    # --- Redis connectivity check (timeout-bounded, fail-open) ---
++    _ts = _time.perf_counter()
++    from app.core.redis import check_redis_health, get_redis_client
++
++    try:
++        redis_ok = await asyncio.wait_for(check_redis_health(), timeout=1.0)
++    except asyncio.TimeoutError:
++        redis_ok = False
++        logger.warning("essentials.redis_timeout", impact="Caching degraded; continuing")
++    _redis_ms = int((_time.perf_counter() - _ts) * 1000)
++    if redis_ok:
++        logger.info("essentials.redis_connected", ms=_redis_ms)
++    else:
++        logger.warning("essentials.redis_unavailable", ms=_redis_ms, impact="Caching degraded")
++
++    # --- EventBus is a singleton, ready at import ---
++    from app.core.events import event_bus
++
++    logger.info("essentials.event_bus_ready", subscriptions=len(event_bus._handlers))
++
++    # --- Model Registry instantiation (no health probes here) ---
++    _ts = _time.perf_counter()
++    from app.services.model_registry import ModelRegistry
++
++    registry = ModelRegistry()
++    await registry.initialize()
++    app.state.model_registry = registry
++    logger.info(
++        "essentials.model_registry_ready",
++        providers=len(registry._providers),
++        ms=int((_time.perf_counter() - _ts) * 1000),
++    )
++
++    # === ESSENTIALS COMPLETE ===
++    startup_state.mark_essentials_ready()
++    logger.info(
++        "daena_essentials_ready",
++        total_ms=int((_time.perf_counter() - _t0) * 1000),
++    )
++    # Publish .daena-port now: frontend proxy can follow within 2s.
++    _publish_ready_port_file()
++
++    # === DEFERRED START (background) ===
++    deferred_task = asyncio.create_task(_run_deferred_initialization(app))
++    logger.info("deferred_initialization_scheduled")
+ 
+     yield
+ 
+-    # --- Shutdown ---
+-    # Close WebSocket connections and heartbeat
+-    from app.api.v1.ws import manager as ws_manager
++    # === SHUTDOWN ===
++    _clear_ready_port_file()
+ 
++    # Cancel deferred task if still running.
++    if not deferred_task.done():
++        deferred_task.cancel()
++        try:
++            await asyncio.wait_for(deferred_task, timeout=2.0)
++        except (asyncio.CancelledError, asyncio.TimeoutError):
++            pass
++    # WebSocket placeholder route removed 2026-04-29 (no consumers).
++    # ConnectionManager retained at app/core/websocket.py for future use.
++    # voice_ws does not use ConnectionManager, so no shutdown call needed here.
++
++    # Stop the cron scheduler singleton.
+     try:
+-        await ws_manager.shutdown()
++        from app.services.heartbeat.cron_scheduler import stop_cron_scheduler
++
++        await stop_cron_scheduler()
++        logger.info("cron_scheduler_stopped")
++    except Exception:
++        logger.debug("cron_scheduler_stop_skipped")
++
++    # Stop the background queue worker.
++    try:
++        from app.services.autopilot import shutdown_background_queue
++
++        await shutdown_background_queue(app)
++        logger.info("background_queue_stopped")
+     except Exception:
+-        logger.debug("ws_manager_close_skipped")
++        logger.debug("background_queue_stop_skipped")
+ 
+     # Close model registry (provider HTTP clients)
+     try:
+diff --git a/backend/app/models/__init__.py b/backend/app/models/__init__.py
+index 362bf8a..8409b41 100644
+--- a/backend/app/models/__init__.py
++++ b/backend/app/models/__init__.py
+@@ -23,7 +23,17 @@ from app.models.pipeline import ProjectPipeline
+ from app.models.project import Project
+ from app.models.skill import RefinedSkill
+ from app.models.api_key import ApiKey
++from app.models.background_task import BackgroundTask
++from app.models.cron_run import CronRun
++from app.models.mcp_server import McpServer
+ from app.models.waitlist import WaitlistEntry
++from app.models.workstream import (
++    Workstream,
++    WorkstreamEscalationLevel,
++    WorkstreamEvent,
++    WorkstreamEventKind,
++    WorkstreamStatus,
++)
+ 
+ __all__ = [
+     "Base", "TimestampMixin", "TenantMixin", "SoftDeleteMixin",
+@@ -41,5 +51,10 @@ __all__ = [
+     "ProjectPipeline",
+     "Project",
+     "ApiKey",
++    "BackgroundTask",
++    "CronRun",
++    "McpServer",
+     "WaitlistEntry",
++    "Workstream", "WorkstreamEvent",
++    "WorkstreamStatus", "WorkstreamEscalationLevel", "WorkstreamEventKind",
+ ]

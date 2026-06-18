@@ -1,0 +1,754 @@
+%% DAENA Backend Module Graph
+%% Companion to DAENA_BACKEND_BLINDSPOT_INVENTORY.md
+%% 2026-05-01 @ branch rebuild-connections-mcp-runtime f71892c
+%%
+%% Conventions:
+%%   solid arrow  ──>   active wiring (importer + caller chain verified)
+%%   dashed arrow -.->   conditional / feature-flag-gated
+%%   red node      :::orphan      0 importers OR visible-in-UI-but-never-started
+%%   amber node    :::stub        NotImplementedError / hardcoded-fake / placebo
+%%   purple node   :::founderonly EVILBOB-gated, LOCAL-only
+%%   blue node     :::p0          P0 production blocker (notifications migration)
+
+graph TD
+
+    %% ============================================================
+    %% Layer 0 — External entry surfaces
+    %% ============================================================
+    subgraph LAYER_0[" Layer 0 - Entry Points "]
+        BROWSER[Frontend SPA<br/>frontend/src]
+        WS_BR[WebSocket /ws/bridge<br/>DaenaBot bridge]
+        WS_VOICE[WebSocket /voice/ws/:session<br/>realtime voice]
+        SSE_CHAT[SSE /chat/.../stream]
+        CLI_DAEMON[python -m DaenaDaemon<br/>CLI-only entry]:::orphan
+        OPERATOR[Founder / Operator]
+        OPERATOR --> BROWSER
+        OPERATOR -.-> CLI_DAEMON
+        BROWSER --> SSE_CHAT
+        BROWSER --> WS_BR
+        BROWSER --> WS_VOICE
+    end
+
+    %% ============================================================
+    %% Layer 1 — API routers (FastAPI)
+    %% ============================================================
+    subgraph LAYER_1[" Layer 1 - API Routers (45 routers / 396 routes / 2 WS) "]
+        R_AUTH[auth - 11]
+        R_HEALTH[health - 6]
+        R_CHAT[chat - 11]
+        R_AGENTS[agents - 7]
+        R_GOV[governance - 9]
+        R_MEM[memory - 14]
+        R_EXE[execution - 11]
+        R_SKILLS[skills - 8]
+        R_SKILLREF[skill_refinery - 15]
+        R_NOTIF[notifications - 2 NEW Phase 11]:::p0
+        R_BILL[billing - 7]
+        R_SET[settings - 8]
+        R_CONN_V1[connections V1 - 25]
+        R_CONN_V2[connections V2 - 11]:::stub
+        R_RT_S[runtime singular - 7]
+        R_RT_P[runtimes plural - 8]
+        R_HB[heartbeat - 18]
+        R_AUTOPILOT[autopilot - 8]
+        R_BENCH[benchmark - 15]:::orphan
+        R_LAEV[laevateinn - 4]:::orphan
+        R_DBOT[daenabot - 2]:::orphan
+        R_MCP_SYNC[mcp_sync - 2]:::orphan
+        R_SEC_SCOPE[security_authorized_scope - 3]:::stub
+        R_SEC_DASH[security_dashboard - 21]
+        R_SEC_MODE[security_mode - 3]
+        R_SOULS[souls - 8]:::orphan
+        R_DEPT_BUDG[dept-budget]
+        R_DEPT_MSG[dept-messages]
+        R_DEPT_POL[dept-policies]
+        R_DEPT_STATE[dept-states]
+        R_MISSIONS[missions - 16]:::orphan
+        R_PIPELINE[pipeline - 12]:::orphan
+        R_CMODE[company_mode - 9]:::orphan
+        R_TTS[tts - 3]
+        R_VOICE_WS[voice_ws - 1]
+        R_BRIDGE[bridge - 4]
+        R_PROMPTS[prompts]
+        R_DYN_MODELS[dynamic-models]
+        R_FOUNDER[founder - 5]:::founderonly
+        R_WAITLIST[waitlist - 2]:::orphan
+        R_ORG[org - 6]
+        R_ANALYTICS[analytics]
+        R_WORKSTREAMS[workstreams - 9]
+    end
+
+    SSE_CHAT --> R_CHAT
+    BROWSER --> R_NOTIF
+    BROWSER --> R_SET
+    BROWSER --> R_HB
+    BROWSER --> R_GOV
+    BROWSER --> R_BILL
+    BROWSER --> R_RT_P
+    BROWSER --> R_HEALTH
+    BROWSER --> R_AGENTS
+    BROWSER --> R_MEM
+    BROWSER --> R_EXE
+    BROWSER --> R_CONN_V1
+    BROWSER --> R_AUTOPILOT
+    BROWSER --> R_SKILLS
+    WS_BR --> R_BRIDGE
+    WS_VOICE --> R_VOICE_WS
+
+    %% ============================================================
+    %% Layer 2 — Execution spine (the chat hot path)
+    %% ============================================================
+    subgraph LAYER_2[" Layer 2 - Execution Spine (hot path) "]
+        ORCH[chat_orchestrator.py<br/>10-stage pipeline<br/>2300+ LOC, 70+ importers]
+        QU[query_understanding.py]
+        ROUTER[model_router.py]
+        REG[model_registry.py]
+        MROUTE_DEC[RoutingDecision]
+        LLM_SVC[llm_service.py<br/>20+ importers]
+        EXE_SVC[execution_service.py<br/>1100 LOC]
+        APPR[approval.py<br/>500 LOC]
+        DBOT_ROUTER[daenabot/router.py<br/>20+ importers]
+        ACTION_PLANNER[daenabot/planner.py]
+        WORKSPACE[daenabot/workspace.py]
+    end
+
+    R_CHAT --> ORCH
+    R_EXE --> EXE_SVC
+    R_GOV --> APPR
+    ORCH --> QU
+    ORCH --> ROUTER
+    ROUTER --> REG
+    ROUTER --> MROUTE_DEC
+    ORCH --> LLM_SVC
+    ORCH --> DBOT_ROUTER
+    DBOT_ROUTER --> ACTION_PLANNER
+    DBOT_ROUTER --> WORKSPACE
+    EXE_SVC --> DBOT_ROUTER
+
+    %% ============================================================
+    %% Layer 3 — Cognition / Intelligence
+    %% ============================================================
+    subgraph LAYER_3[" Layer 3 - Cognition / Intelligence "]
+        OODA[ooda_engine.py<br/>OODA-R loop, 585 LOC]
+        COG_REASONER[cognitive_reasoner.py]
+        META[meta_reasoner.py]
+        COUNCIL[council_engine.py<br/>362 LOC]
+        QE[quintessence_engine.py<br/>397 LOC]
+        APEX[apex_cognition.py<br/>CognitiveDeceptionEngine]
+        KH[knowledge_hunter.py]
+        KG[knowledge_graph.py<br/>writes files]
+        SELF_UP[self_upgrader.py]
+        FRAMEWORKS[20+ analyzer modules<br/>first_principles five_whys inversion<br/>pre_mortem consequence_chain<br/>constraint_analyzer constraint_probe<br/>task_prioritizer weakness_tracker<br/>resource_finder beyond_mythos unreplicable]
+        LENS_R[lens_router.py]
+        MIND_R[mind_router.py - duplicate of lens?]:::stub
+        COMPLETE[completeness_probe.py 0 importers]:::orphan
+    end
+
+    ORCH --> OODA
+    ORCH --> COUNCIL
+    ORCH --> QE
+    QE --> COG_REASONER
+    COUNCIL --> COG_REASONER
+    OODA --> META
+    OODA --> APEX
+    QE --> FRAMEWORKS
+    COG_REASONER --> LENS_R
+    COG_REASONER -.-> MIND_R
+    OODA --> KH
+    KH --> KG
+
+    %% ============================================================
+    %% Layer 4 — Governance / Shield / Asset Shield (always-on)
+    %% ============================================================
+    subgraph LAYER_4[" Layer 4 - Governance + Shield + Asset Shield (always-on) "]
+        SEC_GATE[security_gate.py<br/>injection scan + shield scan]
+        BG[behavior_guard.py<br/>anti-RE honeypot]
+        GOV[governance.py engine]
+        AUDIT[audit.py<br/>hash-chain ledger, 345 LOC]
+        AS_VAULT[asset_shield/vault_adapter.py]
+        AS_EGR[asset_shield/egress_filter.py]
+        AS_CONS[asset_shield/consent_token.py]
+        AS_OP[asset_shield/operator_initiation.py]
+        PII[pii_guard.py]
+        PROMPT_INJ[security/prompt_injection_scanner.py]
+        ZERO_FP[security/zero_fp_gate.py]
+        YELLOW[security/yellow_runtime_gate.py]
+        TOOL_CLASS[security/tool_call_classifier.py]
+        LOOP[security/loop_detector.py]
+        POLICY_C[policy_compiler.py<br/>plain-English to YAML]
+        POLICY_S[policy_store.py]
+        PERM_R[permission_resolver.py]
+        PERM_D[permission_dispatch.py]
+    end
+
+    ORCH --> SEC_GATE
+    SEC_GATE --> PROMPT_INJ
+    SEC_GATE --> BG
+    ORCH --> GOV
+    GOV --> POLICY_S
+    POLICY_S --> POLICY_C
+    APPR --> AUDIT
+    EXE_SVC --> AUDIT
+    ORCH --> AUDIT
+    ORCH --> AS_EGR
+    AS_EGR --> AS_VAULT
+    AS_OP --> AS_CONS
+    GOV --> PERM_R
+    PERM_R --> PERM_D
+    LLM_SVC --> PII
+
+    %% ============================================================
+    %% Layer 5 — Memory / NBMF / Dream / Learning / Skill Refinery
+    %% ============================================================
+    subgraph LAYER_5[" Layer 5 - Memory + NBMF + Dream + Skills "]
+        MEM_SVC[memory.py<br/>NBMF, 674 LOC, audit-emit]
+        MEM_IMP[memory_import.py 0 importers]:::orphan
+        NBMF_ARCH[nbmf_archive.py<br/>exports to Daena-Mind vault]
+        DREAM[dream_engine.py<br/>540 LOC, 15min APScheduler]
+        LEARN[learning_service.py<br/>in-memory only - P0 in Backlog]:::stub
+        EPI_MEM[laevateinn/episodic_memory.py]
+        FAIL_MEM[laevateinn/failure_memory.py]
+        SR_REF[skill_refinery/refinement_service.py<br/>3-pass: gap improver critic]
+        SR_EXT[skill_refinery/extraction_service.py]
+        SR_STORE[skill_refinery/skill_store.py]
+        SR_RET[skill_refinery/retrieval_service.py]
+        SR_NEWS[skill_refinery/news_monitor.py]
+        SKILL_SVC[skill_service.py]
+        SKILL_LOAD[skills/skill_loader.py]
+    end
+
+    ORCH --> MEM_SVC
+    MEM_SVC --> NBMF_ARCH
+    DREAM --> MEM_SVC
+    R_MEM --> MEM_SVC
+    R_MEM --> DREAM
+    R_SKILLREF --> SR_REF
+    SR_REF --> SR_EXT
+    SR_REF --> SR_STORE
+    SR_REF --> SR_RET
+    SR_RET --> SR_NEWS
+    R_SKILLS --> SKILL_SVC
+    SKILL_SVC --> SKILL_LOAD
+    OODA --> EPI_MEM
+    OODA --> FAIL_MEM
+    LEARN -.-> MEM_SVC
+
+    %% ============================================================
+    %% Layer 6 — Soul / Senses / Department brains
+    %% ============================================================
+    subgraph LAYER_6[" Layer 6 - Soul + Senses + Departments "]
+        SOUL[soul_engine.py<br/>10 personas, 300 LOC]
+        SOUL_STORE[soul_maker/store.py]
+        SOUL_RES[soul_maker/research.py]
+        SOUL_REF[soul_maker/refinement.py]
+        EMOTION[emotional_intelligence.py]
+        VOICE_STT[voice/stt_pipeline.py]:::stub
+        VOICE_TTS[voice/tts_pipeline.py]:::stub
+        VOICE_RT[voice/realtime_voice_llm.py 0 importers]:::orphan
+        VOICE_OUT[voice/outbound.py NotImplementedError]:::stub
+        VOICE_SVC[voice_service.py]
+        VOICE_CONV[voice/conversation_session.py]
+        VISION[vision_loop.py 9 importers]
+        WEB_EYES[web_eyes.py 0 importers]:::orphan
+        DEPT_AGENT[departments/department_agent.py]
+        DEPT_SECOPS[departments/security_operations_agent.py]
+        DEPT_SALES[departments/sales_agent.py]
+        DEPT_MKT[departments/marketing_agent.py]
+        DEPT_BORDER[departments/border_agent.py]
+        DEPT_ROUTER[department_router.py]
+        DEPT_PROMPTS[department_prompts.py]
+        DEPT_BUDGET[department_budget_service.py]
+        DEPT_MSG[department_message_service.py]
+        DEPT_POL[department_policy_service.py]
+        DEPT_STATE[department_state_service.py]
+        DEPT_WF[department_workflows.py]
+        DYN_DEPT[dynamic_departments.py]
+        DAENA_VP[daena_vp.py]
+    end
+
+    ORCH --> SOUL
+    SOUL --> SOUL_STORE
+    SOUL --> SOUL_REF
+    SOUL_REF --> SOUL_RES
+    R_VOICE_WS --> VOICE_SVC
+    VOICE_SVC --> VOICE_CONV
+    VOICE_CONV --> VOICE_STT
+    VOICE_CONV --> VOICE_TTS
+    R_TTS --> VOICE_TTS
+    DEPT_ROUTER --> DEPT_AGENT
+    DEPT_AGENT --> DEPT_SECOPS
+    DEPT_AGENT --> DEPT_SALES
+    DEPT_AGENT --> DEPT_MKT
+    DEPT_AGENT --> DEPT_BORDER
+    DEPT_AGENT --> DEPT_PROMPTS
+    R_DEPT_BUDG --> DEPT_BUDGET
+    R_DEPT_MSG --> DEPT_MSG
+    R_DEPT_POL --> DEPT_POL
+    R_DEPT_STATE --> DEPT_STATE
+    DEPT_AGENT --> DEPT_WF
+    DEPT_AGENT --> DYN_DEPT
+    ORCH --> EMOTION
+    ORCH --> DEPT_ROUTER
+    ORCH --> DAENA_VP
+    DBOT_ROUTER --> VISION
+
+    %% ============================================================
+    %% Layer 7 — DaenaBot agents (EXE mode tools)
+    %% ============================================================
+    subgraph LAYER_7[" Layer 7 - DaenaBot Agents (EXE mode) "]
+        FILE_AG[file_agent.py]
+        TERM_AG[terminal_agent.py]
+        BROW_AG[browser_agent.py]
+        MCP_AG[mcp_agent.py]
+        VULN_AG[vuln_scanner_agent.py 12 importers]
+        WEB_CR[web_crawler_agent.py]
+        VIS_BR[vision_browser_agent.py]
+        TARG_INT[target_interaction_agent.py]
+        PLUG_ADM[plugin_admin_agent.py]
+        INTENT[intent_parser.py]
+        BASE_AG[_base_agent.py]
+    end
+
+    DBOT_ROUTER --> INTENT
+    DBOT_ROUTER --> FILE_AG
+    DBOT_ROUTER --> TERM_AG
+    DBOT_ROUTER --> BROW_AG
+    DBOT_ROUTER --> MCP_AG
+    DBOT_ROUTER --> VULN_AG
+    DBOT_ROUTER --> WEB_CR
+    DBOT_ROUTER --> VIS_BR
+    DBOT_ROUTER --> TARG_INT
+    DBOT_ROUTER --> PLUG_ADM
+    FILE_AG --> BASE_AG
+    TERM_AG --> BASE_AG
+    BROW_AG --> BASE_AG
+
+    %% ============================================================
+    %% Layer 8 — Runtime / Provider / MCP / Connection
+    %% ============================================================
+    subgraph LAYER_8[" Layer 8 - Runtime + Provider + MCP + Connection "]
+        RT_REG[runtimes/registry.py]
+        RT_BASE[runtimes/base_adapter.py]
+        RT_HEALTH[runtimes/health_tracker.py]
+        RT_RECOV[runtimes/recovery_monitor.py]
+        RT_SUB[runtimes/subscription_auth.py]
+        RT_CC[adapters/claude_code.py]
+        RT_CS[adapters/claude_session.py]
+        RT_CX[adapters/codex.py]
+        RT_MCPB[adapters/mcp_bridge.py]
+        RT_OLL[adapters/ollama_adapter.py]
+        RT_VLLM[adapters/vllm_adapter.py]
+        PROV_BASE[providers/base.py]
+        PROV_OLL[providers/ollama.py]
+        PROV_ANT[providers/anthropic.py]
+        PROV_OAI[providers/openai.py]
+        PROV_GROQ[providers/groq.py]
+        PROV_GEM[providers/gemini.py]
+        PROV_CLI[providers/claude_cli.py]
+        PROV_OR[providers/openrouter.py]
+        PROV_PPLX[providers/perplexity.py]
+        PROV_TOG[providers/together.py]
+        PROV_VLLM[providers/vllm.py]
+        LLAMA_MGR[providers/llama_server_manager.py<br/>auto-swap]
+        GGUF[providers/gguf_catalog.py]
+        MCP_REG[mcp_registry.py<br/>hydrate_from_db]
+        MCP_INV[mcp_invoker.py]
+        MCP_BOOT[mcp_bootstrap.py]
+        MCP_SRV[mcp/server.py]
+        MCP_DET[mcp_sync/detector.py]
+        CONN_V1[connection_service.py V1]:::stub
+        CONN_V2_REG[connection_v2/registry.py]
+        CONN_V2_SM[connection_v2/state_machine.py]
+        CONN_V2_REC[connection_v2/reconciliation.py]
+        CONN_V2_PROBE[connection_v2/probe.py NotImplementedError]:::stub
+        CONN_V2_SEED[connection_v2/provider_seeder.py]
+        CONN_V2_BRIDGE[connection_v2/legacy_bridge.py]
+        CONN_V2_LOCK[connection_v2/op_lock.py]
+        CONN_V2_PP[connection_v2/probes/provider_probe.py]
+    end
+
+    R_RT_P --> RT_REG
+    R_RT_S --> RT_REG
+    RT_REG --> RT_BASE
+    RT_BASE --> RT_CC
+    RT_BASE --> RT_CS
+    RT_BASE --> RT_CX
+    RT_BASE --> RT_MCPB
+    RT_BASE --> RT_OLL
+    RT_BASE --> RT_VLLM
+    RT_REG --> RT_HEALTH
+    RT_REG --> RT_RECOV
+    RT_REG --> RT_SUB
+    LLM_SVC --> PROV_BASE
+    PROV_BASE --> PROV_OLL
+    PROV_BASE --> PROV_ANT
+    PROV_BASE --> PROV_OAI
+    PROV_BASE --> PROV_GROQ
+    PROV_BASE --> PROV_GEM
+    PROV_BASE --> PROV_CLI
+    PROV_BASE --> PROV_OR
+    PROV_BASE --> PROV_PPLX
+    PROV_BASE --> PROV_TOG
+    PROV_BASE --> PROV_VLLM
+    PROV_VLLM -.-> LLAMA_MGR
+    LLAMA_MGR --> GGUF
+    R_CONN_V1 --> CONN_V1
+    R_CONN_V2 -.-> CONN_V2_REG
+    CONN_V2_REG --> CONN_V2_SM
+    CONN_V2_REG --> CONN_V2_REC
+    CONN_V2_REG -.-> CONN_V2_PROBE
+    CONN_V2_REG --> CONN_V2_SEED
+    CONN_V2_REG --> CONN_V2_BRIDGE
+    CONN_V2_REG --> CONN_V2_LOCK
+    CONN_V2_PROBE --> CONN_V2_PP
+    MCP_AG --> MCP_INV
+    MCP_INV --> MCP_REG
+    MCP_REG --> MCP_BOOT
+    R_MCP_SYNC --> MCP_DET
+
+    %% ============================================================
+    %% Layer 9 — Heartbeat / Cron / Autopilot / Background queue
+    %% ============================================================
+    subgraph LAYER_9[" Layer 9 - Heartbeat + Cron + Autopilot "]
+        HB_DAEMON[heartbeat_daemon.py 650 LOC<br/>NEVER STARTED IN LIFESPAN]:::orphan
+        HB_CRON[cron_scheduler.py<br/>DB-backed cron_runs]
+        HB_CHECKS[heartbeat_checks.py]
+        HB_CONFIG[heartbeat_config.py]
+        HB_QUEUE[heartbeat/work_queue.py]
+        BG_QUEUE[autopilot/background_queue.py 708 LOC<br/>DB-backed restart-recovery]
+        AUTO_CONT[autopilot/continuation.py]
+        AUTO_CRIT[autopilot/criticality_classifier.py]
+        STAY_AWAKE[system/stay_awake.py]
+        CLI_DAEMON_F[agent_core/daemon.py CLI-only]:::orphan
+    end
+
+    R_HB --> HB_CONFIG
+    R_HB --> HB_CHECKS
+    R_HB --> HB_CRON
+    R_HB --> HB_QUEUE
+    R_AUTOPILOT --> BG_QUEUE
+    R_AUTOPILOT --> AUTO_CONT
+    R_AUTOPILOT --> AUTO_CRIT
+    HB_CRON --> ORCH
+    BG_QUEUE --> EXE_SVC
+    HB_DAEMON -.-> HB_CHECKS
+
+    %% ============================================================
+    %% Layer 10 — Cost / Billing / Quota
+    %% ============================================================
+    subgraph LAYER_10[" Layer 10 - Cost + Billing + Quota "]
+        COST_GUARD[cost_guard.py 300+ LOC<br/>budget_alert dedup 60min]
+        COST_ROUTER[cost_router.py]
+        COST_TR[billing/cost_tracker.py]
+        BUDGET_MGR[billing/budget_manager.py 0 importers]:::orphan
+        SUBSCRIPTION[subscription_service.py]
+        DEMO[demo_mode.py]
+    end
+
+    ORCH --> COST_GUARD
+    R_BILL --> COST_TR
+    R_BILL --> SUBSCRIPTION
+    COST_GUARD --> COST_TR
+    ROUTER --> COST_ROUTER
+    COST_GUARD --> NOTIF_SVC
+
+    %% ============================================================
+    %% Layer 11 — Notifications + Audit (observability)
+    %% ============================================================
+    subgraph LAYER_11[" Layer 11 - Notifications + Audit "]
+        NOTIF_SVC[notification_service.py<br/>247 LOC, 7 event types<br/>Phase 11 PR-S2]
+        NOTIF_MODEL[(models/notification.py<br/>NO MIGRATION 008)]:::p0
+    end
+
+    R_NOTIF --> NOTIF_SVC
+    NOTIF_SVC -.-> NOTIF_MODEL
+    EXE_SVC --> NOTIF_SVC
+    APPR --> NOTIF_SVC
+    COST_GUARD --> NOTIF_SVC
+
+    %% ============================================================
+    %% Layer 12 — Security / Scan (defensive + offensive, gated)
+    %% ============================================================
+    subgraph LAYER_12[" Layer 12 - Security + Scan (BG path only) "]
+        SCAN_WF[security/scan_workflow.py<br/>9-phase orchestration]
+        SCAN_ENG[security/cognitive_scan_engine.py<br/>1700+ LOC, 24 importers]
+        REAL_SC[security/real_scanner.py<br/>deterministic, no-LLM]
+        SUP_CHAIN[security/supply_chain_scanner.py]
+        INSTALL_SC[security/install_scanner.py]
+        TOOL_CAT[security/tool_catalog.py<br/>38 importers]
+        REPORT_TIERS[security/report_tiers.py<br/>SCOUT to EVILBOB]
+        REPORT_GEN[security/report_generator.py]
+        EVID_CAP[security/evidence_capture.py]
+        EVID_CKPT[security/evidence_checkpoint.py]
+        POC_ART[security/poc_artifact.py]
+        BOUNTY[security/bounty_programs.py]
+        INTEL_FAN[security/intel_fanout.py 6-channel]
+        BM_ENRICH[security/beyond_mythos_enricher.py]
+        SOURCE_CORR[security/source_correlator.py 0 importers]:::orphan
+        ASYNC_APPR[security/async_approval_manager.py 0 importers]:::orphan
+        PRE_ING[security/pre_ingestion_filter.py]
+
+        EVILBOB[security/evilbob_mode.py<br/>3-gate KEY+LOCAL+ROLE]:::founderonly
+        RT_OPS[security/red_team_ops.py 1046 LOC<br/>BACKGROUND PATH ONLY]:::founderonly
+        ZERO_DAY[security/zero_day_engine.py]:::founderonly
+        EXP_QUEUE[security/exploitation_queue.py 540 LOC]:::founderonly
+        OSINT_E[security/osint_engine.py Apollo]:::founderonly
+        OPSEC[security/opsec.py rotation+TLS mimicry]:::founderonly
+        CRED_CHAIN[security/credential_chain.py]:::founderonly
+        MISSION_INT[security/mission_intelligence.py]:::founderonly
+        NET_INT[security/network_intelligence.py]
+        CVE_INT_A[security/cve_intelligence.py]:::stub
+        CVE_INT_B[security/cve_intel.py duplicate]:::stub
+
+        LAEV[laevateinn/ 28+ reasoning modules<br/>failure_memory debate deep_think<br/>cognitive_forcing counterfactual<br/>epistemic_tracker question_auditor<br/>anomaly_detection adversarial_gate<br/>outcome_simulator consensus_gradient<br/>calibration delivery socratic_inversion]
+        LAEV_DEEP[laevateinn/deep_cognitive_engine.py]
+    end
+
+    R_SEC_DASH --> SCAN_WF
+    R_SEC_DASH --> SCAN_ENG
+    R_SEC_MODE --> EVILBOB
+    R_SEC_SCOPE --> SCAN_WF
+    SCAN_WF --> REAL_SC
+    SCAN_WF --> SUP_CHAIN
+    SCAN_WF --> SCAN_ENG
+    SCAN_WF --> INTEL_FAN
+    SCAN_WF --> BM_ENRICH
+    SCAN_WF --> EXP_QUEUE
+    SCAN_WF --> ZERO_FP
+    SCAN_WF --> REPORT_TIERS
+    SCAN_WF --> REPORT_GEN
+    SCAN_ENG --> TOOL_CAT
+    SCAN_ENG --> EVID_CAP
+    SCAN_ENG --> EVID_CKPT
+    SCAN_ENG --> POC_ART
+    SCAN_ENG --> BOUNTY
+    SCAN_ENG --> CVE_INT_A
+    SCAN_ENG --> NET_INT
+    SCAN_ENG --> INSTALL_SC
+
+    EVILBOB -.-> RT_OPS
+    EVILBOB -.-> ZERO_DAY
+    EVILBOB -.-> EXP_QUEUE
+    EVILBOB -.-> OSINT_E
+    EVILBOB -.-> OPSEC
+    EVILBOB -.-> CRED_CHAIN
+    EVILBOB -.-> MISSION_INT
+
+    REPORT_TIERS --> LAEV
+    LAEV --> LAEV_DEEP
+    OODA --> LAEV
+    VULN_AG --> SCAN_WF
+
+    %% ============================================================
+    %% Layer 13 — Tool Lifecycle Manager (TLM) + Tools
+    %% ============================================================
+    subgraph LAYER_13[" Layer 13 - Tool Lifecycle Manager "]
+        TLM_REG[tool_lifecycle/tool_registry.py]
+        TLM_DISC[tool_lifecycle/tool_discovery.py]
+        TLM_PROXY[tool_lifecycle/activation_proxy.py]
+        TLM_HM[tool_lifecycle/health_monitor.py]
+        TLM_USAGE[tool_lifecycle/usage_tracker.py]
+        TLM_AUTO[tool_lifecycle/auto_scanner.py]
+        TLM_PHASE[tool_lifecycle/phase_detector.py]
+        TLM_SESS[tool_lifecycle/session_manager.py]
+        TLM_NBMF[tool_lifecycle/nbmf_bridge.py]
+        TLM_ORCH[tool_lifecycle/orchestra_integration.py]
+        TOOL_LOOP[tool_use_loop.py 1800+ LOC]
+        TOOL_SCH[tool_schema_builder.py]
+        SKILL_SC[skill_scanner.py]
+        EXT_SC[extension_scanner.py]
+        PLUG_CAT[plugin_catalog.py]
+    end
+
+    DBOT_ROUTER --> TOOL_LOOP
+    TOOL_LOOP --> TLM_REG
+    TLM_REG --> TLM_DISC
+    TLM_REG --> TLM_PROXY
+    TLM_PROXY --> TLM_HM
+    TLM_PROXY --> TLM_USAGE
+    TLM_AUTO --> TLM_PHASE
+    TLM_NBMF --> MEM_SVC
+
+    %% ============================================================
+    %% Layer 14 — Integrations (SaaS connectors)
+    %% ============================================================
+    subgraph LAYER_14[" Layer 14 - SaaS Integrations + OAuth "]
+        OAUTH_SVC[integrations/oauth_service.py]
+        OAUTH_STORE[integrations/oauth_credentials_store.py]
+        INT_ROUTER[integrations/integration_router.py]
+        CAL_C[integrations/calendar_client.py]
+        GMAIL_C[integrations/gmail_client.py]
+        NOTION_C[integrations/notion_client.py]
+        OAUTH_LEG[oauth.py]
+    end
+
+    INT_ROUTER --> OAUTH_SVC
+    OAUTH_SVC --> OAUTH_STORE
+    INT_ROUTER --> CAL_C
+    INT_ROUTER --> GMAIL_C
+    INT_ROUTER --> NOTION_C
+
+    %% ============================================================
+    %% Layer 15 — Models (SQLAlchemy)
+    %% ============================================================
+    subgraph LAYER_15[" Layer 15 - Models (54 total) + Migrations (7) "]
+        M_TENANT[(Tenant)]
+        M_USER[(User)]
+        M_DEPT[(Department)]
+        M_AGENT[(Agent)]
+        M_BRAIN[(BrainModel)]
+        M_CHAT_S[(ChatSession)]
+        M_CHAT_M[(ChatMessage)]
+        M_GOA_REQ[(GoaRequest)]
+        M_GOA_AUD[(GoaAuditEvent)]
+        M_TASK[(Task)]
+        M_TOOL_EX[(ToolExecution)]
+        M_MEM[(MemoryEntry)]
+        M_CONN[(Connector + ConnectorInstance)]
+        M_USAGE[(UsageLedger + UserQuota + Subscription + VaultSecret)]
+        M_SKILL[(RefinedSkill)]
+        M_PROJ[(Project + ProjectPipeline)]
+        M_DEPT_AUX[(DepartmentBudget Expense State Message Policy)]
+        M_FILE[(FileRecord)]
+        M_CRM[(Account Contact Deal OutreachDraft)]
+        M_API_KEY[(ApiKey)]
+        M_MCP_S[(McpServer mig005)]
+        M_SECRET[(Secret mig006)]
+        M_WS[(Workstream + WorkstreamEvent mig003)]
+        M_CONN_V2[(ConnectionV2 + Capability + OpLock mig007)]
+        M_CRON[(CronRun mig005)]
+        M_BG[(BackgroundTask mig005)]
+        M_NOTIF[(Notification - NO MIGRATION)]:::p0
+    end
+
+    %% Wire models to who writes them
+    ORCH --> M_CHAT_S
+    ORCH --> M_CHAT_M
+    EXE_SVC --> M_TASK
+    EXE_SVC --> M_TOOL_EX
+    APPR --> M_GOA_REQ
+    GOV --> M_GOA_REQ
+    AUDIT --> M_GOA_AUD
+    MEM_SVC --> M_MEM
+    SKILL_SVC --> M_SKILL
+    SR_STORE --> M_SKILL
+    HB_CRON --> M_CRON
+    BG_QUEUE --> M_BG
+    MCP_REG --> M_MCP_S
+    AS_VAULT --> M_SECRET
+    CONN_V1 --> M_CONN
+    CONN_V2_REG --> M_CONN_V2
+    NOTIF_SVC --> M_NOTIF
+    R_AUTH --> M_USER
+    R_AUTH --> M_TENANT
+    R_AGENTS --> M_DEPT
+    R_AGENTS --> M_AGENT
+    R_BILL --> M_USAGE
+    R_PIPELINE --> M_CRM
+
+    %% ============================================================
+    %% Layer 16 — Lifespan / Startup
+    %% ============================================================
+    subgraph LAYER_16[" Layer 16 - Lifespan / Startup "]
+        MAIN[main.py FastAPI lifespan]
+        VAULT_LOAD[Vault KEK validation]
+        TABLES[Base.metadata.create_all dev]
+        REDIS_PROBE[Redis connectivity 1s timeout]
+        REG_INIT[ModelRegistry instantiation]
+        DEFER[deferred init - background]
+        WARMUP[ollama warmup fire-and-forget]
+        PERIODIC_RT[periodic_runtime_rescan 60s]
+        SEED[founder/dept/skill/connector seeding]
+        EVILBOB_AUTO[evilbob_auto_activate gated]
+    end
+
+    MAIN --> VAULT_LOAD
+    MAIN --> TABLES
+    MAIN --> REDIS_PROBE
+    MAIN --> REG_INIT
+    MAIN --> DEFER
+    DEFER --> SEED
+    DEFER --> WARMUP
+    DEFER --> PERIODIC_RT
+    DEFER --> RT_REG
+    DEFER --> MCP_REG
+    DEFER --> BG_QUEUE
+    DEFER --> HB_CRON
+    DEFER --> DREAM
+    DEFER --> EVILBOB_AUTO
+    EVILBOB_AUTO -.-> EVILBOB
+    %% NOTE: HB_DAEMON is NOT wired here — Rule 17 violation
+    DEFER -. NEVER WIRED .-> HB_DAEMON
+    %% NOTE: CLI_DAEMON_F is invoked by `python -m`, not lifespan
+    CLI_DAEMON --> CLI_DAEMON_F
+
+    %% ============================================================
+    %% Misc support (not assigned to a numbered layer)
+    %% ============================================================
+    subgraph MISC[" Misc Support "]
+        ARCHIVE[archive.py]
+        DRIFT[drift_detector.py]
+        SUB_AGENT[sub_agent_spawner.py]
+        REMOTE_GW[remote/gateway.py]
+        SESSION_S[session/session_sync.py]
+        RT_TRUTH[runtime_truth_registry.py]
+        DCP_LOAD[dcp_loader.py]
+        SELF_C[self_critique.py]
+        SELF_F[self_fix.py]
+        SELF_R[self_repair.py]
+        SELF_AUD[self_improvement/self_audit.py]
+        DYN_MOD[dynamic_model_service.py]
+        INTENT_AMP[intent_amplifier.py]
+        CHAT_SVC[chat.py 674 LOC distinct from orchestrator]
+        AGENTS_SVC[agents.py]
+        AGENT_LOOP[agent_core/agent_loop.py]
+        AGENT_PROMPT_GOV[agent_core/prompt_governance.py]
+        SMART_RES[agent_core/smart_resolver.py]
+        IPROMPTS[agent_core/interactive_prompts.py]
+        SYS_ACC[agent_core/system_access.py]
+        SWARM_EX[swarm/executor.py 10 importers]
+        SWARM_PL[swarm/planner.py]
+        WORKSTREAM_S[workstream_service.py]
+        WORKSTREAM_RP[workstream_redirect_parser.py]
+        PROJECT_S[project_service.py]
+        COMPANY_C[company_context.py]
+        COMPANY_M[company_mode.py]
+        COMPANY_MP[company_mode_providers.py]
+        COMPANY_MR[company_mode_replies.py]
+        PIPELINE_S[pipeline_service.py]
+        VAULT_MIG[vault_migration.py]
+        BENCH_SUITE[benchmarks/ - 7 modules ~5000 LOC<br/>NOT IN ATLAS]:::orphan
+        USER_CONFIG[user_config.py 0 importers]:::orphan
+    end
+
+    R_BENCH --> BENCH_SUITE
+    R_LAEV --> LAEV
+    R_MISSIONS --> MISSION_INT
+    R_PIPELINE --> PIPELINE_S
+    R_CMODE --> COMPANY_M
+    R_WORKSTREAMS --> WORKSTREAM_S
+    R_SOULS --> SOUL
+    R_FOUNDER --> POLICY_S
+    EXE_SVC --> AGENT_LOOP
+    EXE_SVC --> SWARM_EX
+    SWARM_EX --> SWARM_PL
+    ORCH --> CHAT_SVC
+
+    %% ============================================================
+    %% Class definitions (color coding)
+    %% ============================================================
+    classDef orphan      fill:#3a0a0a,stroke:#ff5555,color:#ffaaaa,stroke-width:2px;
+    classDef stub        fill:#3a2a0a,stroke:#ffaa00,color:#ffd680,stroke-width:2px;
+    classDef founderonly fill:#2a0a3a,stroke:#aa44ff,color:#dca8ff,stroke-width:2px;
+    classDef p0          fill:#0a1a3a,stroke:#5599ff,color:#aaccff,stroke-width:3px;
+
+    %% ============================================================
+    %% Legend (rendered as a subgraph for clarity)
+    %% ============================================================
+    subgraph LEGEND[" LEGEND "]
+        L_OK[Active wiring verified]
+        L_ORPHAN[ORPHAN: 0 importers OR never started in lifespan]:::orphan
+        L_STUB[STUB: NotImplementedError or hardcoded fake-success]:::stub
+        L_FOUNDER[FOUNDER-GATED: EVILBOB KEY + LOCAL env + role]:::founderonly
+        L_P0[P0 PRODUCTION BLOCKER]:::p0
+    end
