@@ -284,3 +284,19 @@ backend/app/data/authorized_scopes.json
 .wsl_check.txt
 *.codex_peer_review_*.txt
 docs/**/.tmp_*
+
+# Vendored external security-scan tools (each has its OWN .git + license) and
+# large scanner binaries (grype/trivy ~330MB). Referenced at runtime by
+# backend/app/services/security/ (network_intelligence.py, tool_catalog.py)
+# from their on-disk location -- they are NOT Daena source and must never enter
+# flagship/OSS history (repo bloat + license contamination on the AGPL mirror).
+# Governed by docs/HACKINGTOOL_INTEGRATION.md denylist policy.
+backend/Sn1per/
+backend/cupp/
+backend/testssl.sh/
+backend/msfinstall
+backend/bin/
+# Runtime-generated memory vault + ad-hoc OpenAPI dump scratch.
+backend/data/memory/
+backend/_oapi.json
+backend/_openapi.json
