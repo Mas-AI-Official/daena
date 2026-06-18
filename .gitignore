@@ -275,3 +275,12 @@ Default/
 # Tenant-specific authorized-scope config for YELLOW security tools
 # (pending Tenant.settings JSONB migration). Tenant-private IP.
 backend/app/data/authorized_scopes.json
+
+# Local scratch / tool artifacts - never commit to flagship history.
+# Root-level junk + per-doc scratch left by Codex / Playwright / WSL probes.
+# (docs/**/.tmp_* overrides the docs/Ultraview/** un-ignore above.)
+.axon.corrupt-*
+.playwright-mcp/
+.wsl_check.txt
+*.codex_peer_review_*.txt
+docs/**/.tmp_*
