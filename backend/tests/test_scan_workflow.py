@@ -72,6 +72,27 @@ def _stub_real_scanner(monkeypatch) -> None:
     monkeypatch.setattr(_swf, "_real_scan_target", _fake_scan_target)
 
 
+@pytest.fixture(autouse=True)
+def _stub_db_persist(monkeypatch) -> None:
+    """No-op the durable DB mirror for EVERY test in this module.
+
+    ``_execute_scan`` now writes a ``scan_reports`` row on completion
+    (PR-9(b), Rule 17). These orchestration tests run real scans with a
+    ``tenant_id`` but never assert on DB persistence, so the write would
+    open a session against the app's *real* engine (``async_session_factory``
+    is not rebound to the in-memory test engine here) and either pollute the
+    dev DB or churn an aiosqlite connection whose GC after loop-close raises a
+    teardown warning. The persistence contract has its own dedicated oracle
+    (``test_scan_report_persist.py``, which patches the factory and seeds a
+    tenant), so stubbing the side effect here keeps these tests hermetic
+    without weakening coverage.
+    """
+    async def _noop_persist_db(self, job, report) -> None:  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(ScanWorkflow, "_persist_report_db", _noop_persist_db)
+
+
 @pytest.fixture
 def workflow() -> ScanWorkflow:
     return ScanWorkflow()

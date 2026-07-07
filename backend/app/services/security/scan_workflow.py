@@ -514,6 +514,105 @@ class ScanWorkflow:
         os.replace(tmp_path, path)
         logger.info("scan_workflow.persisted", job_id=job.id, path=path)
 
+    async def _persist_report_db(self, job: ScanJob, report: ScanReport) -> None:
+        """Best-effort durable DB mirror of a completed scan report (Rule 17).
+
+        The disk JSON (``_persist_report``) stays the primary artifact; this
+        writes one ``scan_reports`` row per completed scan so the report
+        survives disk loss / container rebuild and is queryable per tenant.
+
+        Fail-safe: every DB error is logged and swallowed so a persistence
+        failure never breaks the scan completion path. Skips silently when the
+        job carries no tenant (the ``tenant_id`` FK is NOT NULL). Idempotent:
+        upserts on the ``(tenant_id, job_id)`` unique key so re-running the same
+        scan updates the existing row instead of duplicating it.
+        """
+        if not job.tenant_id:
+            return None
+        try:
+            from sqlalchemy import select
+
+            from app.core.database import async_session_factory
+            from app.models.scan_report import ScanReportRecord
+
+            tier = getattr(report.tier, "value", report.tier)
+            status = getattr(job.status, "value", job.status)
+            async with async_session_factory() as session:
+                existing = (
+                    await session.execute(
+                        select(ScanReportRecord).where(
+                            ScanReportRecord.tenant_id == job.tenant_id,
+                            ScanReportRecord.job_id == job.id,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if existing is None:
+                    session.add(
+                        ScanReportRecord(
+                            tenant_id=job.tenant_id,
+                            job_id=job.id,
+                            target=job.target,
+                            tier=tier,
+                            status=status,
+                            summary=report.summary,
+                            findings=report.findings,
+                            severity_counts=report.severity_counts,
+                            cost_usd=report.cost_usd,
+                            duration_secs=report.duration_secs,
+                            report_pdf_path=report.report_pdf_path,
+                        )
+                    )
+                else:
+                    existing.target = job.target
+                    existing.tier = tier
+                    existing.status = status
+                    existing.summary = report.summary
+                    existing.findings = report.findings
+                    existing.severity_counts = report.severity_counts
+                    existing.cost_usd = report.cost_usd
+                    existing.duration_secs = report.duration_secs
+                    existing.report_pdf_path = report.report_pdf_path
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "scan_workflow.persist_db_failed",
+                job_id=job.id, error=str(exc),
+            )
+        return None
+
+    async def get_persisted_report_record(
+        self, job_id: str, tenant_id: str,
+    ) -> ScanReportRecord | None:
+        """Fetch the durable ``scan_reports`` row for a scan, tenant-scoped.
+
+        Returns the ORM record for ``(tenant_id, job_id)``, or None when no row
+        matches that tenant (never leaks another tenant's report) or when the
+        DB is unreachable. Fail-safe: DB errors log and return None.
+        """
+        if not tenant_id:
+            return None
+        try:
+            from sqlalchemy import select
+
+            from app.core.database import async_session_factory
+            from app.models.scan_report import ScanReportRecord
+
+            async with async_session_factory() as session:
+                return (
+                    await session.execute(
+                        select(ScanReportRecord).where(
+                            ScanReportRecord.tenant_id == tenant_id,
+                            ScanReportRecord.job_id == job_id,
+                        )
+                    )
+                ).scalar_one_or_none()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "scan_workflow.get_report_db_failed",
+                job_id=job_id, error=str(exc),
+            )
+            return None
+
     def _load_report_payload_from_disk(self, job_id: str) -> dict | None:
         """Read the raw persisted JSON for a scan, or None if missing.
 
@@ -1167,6 +1266,10 @@ class ScanWorkflow:
             job.progress_pct = 100.0
             job.findings_count = security_report.total_findings
             job.updated_at = time.time()
+            # Durable DB mirror (Rule 17 / ADR-001): the completed report now
+            # survives as an auditable scan_reports row, not just disk JSON.
+            # Internally fail-safe -- never raises into scan completion.
+            await self._persist_report_db(job, scan_report)
             self._emit_event(
                 job.id, "scan_complete",
                 findings_count=security_report.total_findings,
