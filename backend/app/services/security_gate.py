@@ -12,6 +12,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class ScanResult:
@@ -138,9 +142,15 @@ class SecurityGate:
                         safe=False,
                         matched_pattern=f"pii.{blocking.name}",
                     )
-        except Exception:
-            # Defensive: never let a PII-guard import error break shield.
-            pass
+        except Exception as exc:
+            # Fail CLOSED: the shield is the one wall that never comes down.
+            # If the PII guard cannot run, we cannot prove the message is
+            # free of founder-private data (bank/SIN/address), so we HOLD
+            # the request and surface the failure rather than silently
+            # waving it through. A swallowed error here would be a silent
+            # fail-open on Masoud's #1 mandate (Rule 8 / Rule 17 ADR-001).
+            logger.error("shield.pii_guard_unavailable", error=str(exc))
+            return ScanResult(safe=False, matched_pattern="pii_guard_unavailable")
 
         return ScanResult(safe=True)
 
@@ -164,8 +174,14 @@ class SecurityGate:
                     h.name for h in result.hits if h.severity.value == "redact"
                 })
                 return result.redacted_text, names
-        except Exception:
-            pass
+        except Exception as exc:
+            # Egress redaction failed. We cannot fail-closed here without a
+            # caller contract for "cannot send" (LLM stream / email / social
+            # poster all expect text back), so we degrade to the original
+            # text -- but we MUST NOT do it silently (Rule 17). Logged so the
+            # outbound-leak risk is visible. BACKLOG: give callers a
+            # redaction-unavailable state so egress can fail closed too.
+            logger.error("shield.redact_outbound_unavailable", error=str(exc))
         return message, []
 
     @classmethod

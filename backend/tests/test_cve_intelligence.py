@@ -412,12 +412,64 @@ class TestScanEnrichment:
             enriched = await svc.enrich_scan_findings(findings)
 
         assert enriched[0]["cve_enrichment"]["cve_count"] == 0
+        # A keyword search that answered "nothing" is genuinely clean, not degraded.
+        assert enriched[0]["cve_enrichment"]["lookup_status"] == "complete"
 
     @pytest.mark.asyncio
     async def test_enrich_empty_findings(self) -> None:
         svc = CVEIntelligenceService()
         enriched = await svc.enrich_scan_findings([])
         assert enriched == []
+
+    # ---- Rule 17 / ADR-001: a crashed NVD lookup != "0 CVEs (clean)" ----
+
+    @pytest.mark.asyncio
+    async def test_enrich_degraded_when_keyword_search_raises(self) -> None:
+        """A crashed keyword lookup must mark enrichment degraded, not clean."""
+        findings = [
+            {"info": {"name": "nginx detected", "tags": ["nginx"]}},
+        ]
+        svc = CVEIntelligenceService()
+
+        with patch.object(
+            svc,
+            "search_keyword",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("NVD 503 service unavailable"),
+        ):
+            enriched = await svc.enrich_scan_findings(findings)
+
+        # cve_count is still 0 (nothing was confirmed) ...
+        assert enriched[0]["cve_enrichment"]["cve_count"] == 0
+        # ... but the status says so honestly so 0 is not read as "clean".
+        assert enriched[0]["cve_enrichment"]["lookup_status"] == "degraded"
+
+    @pytest.mark.asyncio
+    async def test_enrich_degraded_when_cve_lookup_raises(self) -> None:
+        """A crashed by-ID lookup (gather branch) must also mark degraded."""
+        findings = [
+            {"template-id": "CVE-2024-3094", "info": {"name": "XZ Backdoor"}},
+        ]
+        svc = CVEIntelligenceService()
+
+        # Isolate the by-ID (gather) branch: "XZ Backdoor" also tokenizes to a
+        # product name, so a live search_keyword would let the keyword fallback
+        # confirm CVEs and mask the by-ID degraded path this test exists to prove.
+        with patch.object(
+            svc,
+            "lookup",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("NVD timeout"),
+        ), patch.object(
+            svc,
+            "search_keyword",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            enriched = await svc.enrich_scan_findings(findings)
+
+        assert enriched[0]["cve_enrichment"]["cve_count"] == 0
+        assert enriched[0]["cve_enrichment"]["lookup_status"] == "degraded"
 
 
 # ---- Tool Call Classifier ----

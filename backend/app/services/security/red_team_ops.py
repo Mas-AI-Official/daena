@@ -167,8 +167,12 @@ class LiveTargetMonitor:
                 baseline["dns_records"]["aaaa"] = list(set(
                     addr[4][0] for addr in ips if addr[0] == socket.AF_INET6
                 ))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "target_monitor.dns_lookup_failed",
+                    target=self.target,
+                    error=type(exc).__name__,
+                )
 
             # TLS certificate info
             try:
@@ -258,8 +262,12 @@ class LiveTargetMonitor:
                                 severity="low",
                                 detected_at=now,
                             ))
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning(
+                            "target_monitor.header_check_failed",
+                            url=url,
+                            error=type(exc).__name__,
+                        )
 
                 # Check for new endpoints
                 base_url = list(self._baseline.get("headers", {}).keys())
@@ -284,8 +292,12 @@ class LiveTargetMonitor:
                                         severity="high" if path in ["/.git/config", "/debug"] else "medium",
                                         detected_at=now,
                                     ))
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                logger.warning(
+                                    "target_monitor.endpoint_probe_failed",
+                                    path=path,
+                                    error=type(exc).__name__,
+                                )
 
             # Check DNS changes
             try:
@@ -317,11 +329,15 @@ class LiveTargetMonitor:
                         severity="medium",
                         detected_at=now,
                     ))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "target_monitor.dns_change_detection_failed",
+                    target=self.target,
+                    error=type(exc).__name__,
+                )
 
         except ImportError:
-            pass
+            logger.debug("target_monitor.requires_httpx")
         except Exception as exc:
             logger.debug("target_monitor.check_error", error=str(exc)[:200])
 

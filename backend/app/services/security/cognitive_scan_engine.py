@@ -2970,6 +2970,7 @@ class CognitiveScanEngine:
         ]
 
         findings = []
+        probe_errors = 0  # crashed probes != "nothing found" (Rule 17 visibility)
         # Ensure target has scheme
         if not target.startswith("http"):
             target = f"https://{target}"
@@ -2997,13 +2998,22 @@ class CognitiveScanEngine:
                                     "severity": "low" if resp.status_code == 200 else "info",
                                 },
                             })
-                    except Exception:
+                    except Exception as exc:
+                        probe_errors += 1
+                        logger.debug(
+                            "cognitive_scan.path_fuzz_probe_failed",
+                            path=path,
+                            error=str(exc)[:100],
+                        )
                         continue
         except Exception as exc:
             return {"summary": f"Path fuzz failed: {str(exc)[:100]}", "findings": []}
 
+        summary = f"Path fuzz: {len(findings)} accessible paths found"
+        if probe_errors:
+            summary += f" ({probe_errors}/{len(interesting_paths)} probes errored -- INCONCLUSIVE)"
         return {
-            "summary": f"Path fuzz: {len(findings)} accessible paths found",
+            "summary": summary,
             "findings": findings,
         }
 
@@ -3027,6 +3037,7 @@ class CognitiveScanEngine:
         scanner = ForgottenInfraScanner()
         probes = scanner.generate_forgotten_probes(domain)
         findings: list[dict[str, Any]] = []
+        probe_errors = 0  # crashed probes != "nothing found" (Rule 17 visibility)
 
         # Use legitimacy mimicry headers
         req_headers = self._get_request_headers()
@@ -3052,7 +3063,13 @@ class CognitiveScanEngine:
                             )
                             if result:
                                 findings.append(result)
-                        except Exception:
+                        except Exception as exc:
+                            probe_errors += 1
+                            logger.debug(
+                                "cognitive_scan.forgotten_infra_probe_failed",
+                                url=url,
+                                error=str(exc)[:100],
+                            )
                             continue
                     elif probe["type"] == "port":
                         # Port-based probe -- TCP connect check
@@ -3098,7 +3115,14 @@ class CognitiveScanEngine:
                                             },
                                         })
                                 sock.close()
-                            except Exception:
+                            except Exception as exc:
+                                probe_errors += 1
+                                logger.debug(
+                                    "cognitive_scan.forgotten_infra_port_failed",
+                                    host=host,
+                                    port=port,
+                                    error=str(exc)[:100],
+                                )
                                 continue
         except Exception as exc:
             return {
@@ -3106,8 +3130,11 @@ class CognitiveScanEngine:
                 "findings": [],
             }
 
+        summary = f"Forgotten infra scan: {len(findings)} services found out of {len(probes)} probes"
+        if probe_errors:
+            summary += f" ({probe_errors} probes errored -- INCONCLUSIVE)"
         return {
-            "summary": f"Forgotten infra scan: {len(findings)} services found out of {len(probes)} probes",
+            "summary": summary,
             "findings": findings,
         }
 
@@ -3363,6 +3390,7 @@ class CognitiveScanEngine:
         probes = analyzer.build_canary_probes(target_urls, canary)
 
         findings: list[dict[str, Any]] = []
+        probe_errors = 0  # crashed probes != "nothing found" (Rule 17 visibility)
         req_headers = self._get_request_headers()
         proxy = self._resolve_proxy()
 
@@ -3406,13 +3434,22 @@ class CognitiveScanEngine:
                                 "description": ef.get("description", ""),
                             }
                             findings.append(ef)
-                    except Exception:
+                    except Exception as exc:
+                        probe_errors += 1
+                        logger.debug(
+                            "cognitive_scan.canary_echo_probe_failed",
+                            url=probe.get("url"),
+                            error=str(exc)[:100],
+                        )
                         continue
         except Exception as exc:
             return {"summary": f"Canary echo failed: {str(exc)[:100]}", "findings": []}
 
+        summary = f"Canary echo: {len(findings)} reflections found across {len(probes)} probes"
+        if probe_errors:
+            summary += f" ({probe_errors} probes errored -- INCONCLUSIVE)"
         return {
-            "summary": f"Canary echo: {len(findings)} reflections found across {len(probes)} probes",
+            "summary": summary,
             "findings": findings,
         }
 
@@ -3496,6 +3533,7 @@ class CognitiveScanEngine:
         probes = detector.build_timing_probes(target_urls)
 
         findings: list[dict[str, Any]] = []
+        probe_errors = 0  # crashed probes != "nothing found" (Rule 17 visibility)
         req_headers = self._get_request_headers()
         proxy = self._resolve_proxy()
 
@@ -3540,12 +3578,21 @@ class CognitiveScanEngine:
                                 "description": finding.get("description", ""),
                             }
                             findings.append(finding)
-                    except Exception:
+                    except Exception as exc:
+                        probe_errors += 1
+                        logger.debug(
+                            "cognitive_scan.cost_amplification_probe_failed",
+                            url=probe.get("url"),
+                            error=str(exc)[:100],
+                        )
                         continue
         except Exception as exc:
             return {"summary": f"Cost amplification failed: {str(exc)[:100]}", "findings": []}
 
+        summary = f"Cost amplification: {len(findings)} amplifiable endpoints from {len(probes)} probes (baseline: {baseline_ms}ms)"
+        if probe_errors:
+            summary += f" ({probe_errors} probes errored -- INCONCLUSIVE)"
         return {
-            "summary": f"Cost amplification: {len(findings)} amplifiable endpoints from {len(probes)} probes (baseline: {baseline_ms}ms)",
+            "summary": summary,
             "findings": findings,
         }

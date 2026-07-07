@@ -64,6 +64,60 @@ class TestLiveTargetMonitor:
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
+    @pytest.mark.asyncio
+    async def test_check_for_changes_logs_probe_failures(self, monkeypatch, capsys):
+        """Rule-17: a failed probe must be logged, never silently swallowed.
+
+        Forces every network probe inside check_for_changes to raise so the
+        header-check, endpoint-discovery, and DNS-change-detection except
+        branches all fire. Each must emit a structured warning instead of the
+        previous ``except: pass`` (masked-observability / empty-as-clean).
+
+        Daena routes structlog to stdout, so we assert on capsys (matching
+        test_cli_runtime_probe.py), not caplog.
+        """
+        import httpx
+        import socket as _socket
+
+        class _RaisingClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def get(self, *args, **kwargs):
+                raise OSError("probe blocked")
+
+        def _dns_boom(*args, **kwargs):
+            raise OSError("dns blocked")
+
+        monkeypatch.setattr(httpx, "AsyncClient", _RaisingClient)
+        monkeypatch.setattr(_socket, "getaddrinfo", _dns_boom)
+
+        monitor = LiveTargetMonitor("example.com")
+        monitor._baseline = {
+            "target": "example.com",
+            "headers": {"https://example.com": {"server": "nginx"}},
+            "endpoints": [{"path": "/", "status": 200}],
+            "response_hashes": {},
+            "dns_records": {"a": ["1.2.3.4"]},
+        }
+
+        changes = await monitor.check_for_changes()
+
+        # Failed probes must NOT be invented as detected changes.
+        assert changes == []
+
+        captured = capsys.readouterr()
+        logged = captured.out + captured.err
+        assert "target_monitor.header_check_failed" in logged
+        assert "target_monitor.endpoint_probe_failed" in logged
+        assert "target_monitor.dns_change_detection_failed" in logged
+
 
 # =============================================================================
 # Social Engineering Crafter

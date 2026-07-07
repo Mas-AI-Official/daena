@@ -282,6 +282,74 @@ class TestFailureDiagnosis:
         assert "429" in diagnosis or "Rate limiting" in diagnosis
 
 
+# ---- Probe-failure visibility (Rule 17 / ADR-001: "all crashed" != "found nothing") ----
+
+class TestProbeFailureVisibility:
+    """Lock the P4 item 5-9 fix: a swept probe that CRASHES must not be reported
+    as a clean "0 found". The crashed-probe count must surface in the summary as
+    INCONCLUSIVE; a genuinely empty (all-404) sweep must NOT carry that caveat.
+
+    _path_fuzz is the representative site -- the other four (_forgotten_infra_scan,
+    _canary_echo, _cost_amplification) share the identical loop shape and counter.
+    """
+
+    @pytest.mark.asyncio
+    async def test_path_fuzz_all_probes_crash_is_inconclusive(self, monkeypatch) -> None:
+        """Every per-path probe raises -> summary must flag INCONCLUSIVE, not "0 found"."""
+        class _BoomClient:
+            def __init__(self, **kwargs) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc) -> bool:
+                return False
+
+            async def get(self, url, headers=None):
+                raise RuntimeError("connection reset by peer")
+
+        monkeypatch.setattr("httpx.AsyncClient", _BoomClient)
+
+        engine = CognitiveScanEngine()
+        result = await engine._path_fuzz("https://target.example", agent=None)
+
+        assert result["findings"] == []
+        # The fix: a crashed sweep is honestly flagged, never silently "clean".
+        assert "INCONCLUSIVE" in result["summary"]
+        assert "probes errored" in result["summary"]
+
+    @pytest.mark.asyncio
+    async def test_path_fuzz_clean_empty_is_not_inconclusive(self, monkeypatch) -> None:
+        """All probes return 404 (genuinely nothing) -> no INCONCLUSIVE caveat."""
+        class _NotFoundResponse:
+            status_code = 404
+            content = b""
+
+        class _NotFoundClient:
+            def __init__(self, **kwargs) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc) -> bool:
+                return False
+
+            async def get(self, url, headers=None):
+                return _NotFoundResponse()
+
+        monkeypatch.setattr("httpx.AsyncClient", _NotFoundClient)
+
+        engine = CognitiveScanEngine()
+        result = await engine._path_fuzz("https://target.example", agent=None)
+
+        assert result["findings"] == []
+        # No probe crashed, so the honest summary stays caveat-free.
+        assert "INCONCLUSIVE" not in result["summary"]
+        assert "0 accessible paths found" in result["summary"]
+
+
 # ---- Proxy / Tor ----
 
 class TestProxyConfiguration:

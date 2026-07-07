@@ -588,6 +588,14 @@ class VulnScannerAgent(BaseAgent):
                 "findings_with_cves": sum(
                     1 for f in enriched if f["cve_enrichment"]["cve_count"] > 0
                 ),
+                # Rule 17: NVD lookups that crashed leave cve_count=0 -- that is NOT
+                # "confirmed clean". Surface the degraded count so the operator never
+                # reads an enrichment failure as a clean result.
+                "findings_with_degraded_enrichment": sum(
+                    1
+                    for f in enriched
+                    if f["cve_enrichment"].get("lookup_status") == "degraded"
+                ),
                 "total_cves_found": cve_count,
                 "max_cvss_score": max_cvss,
             },

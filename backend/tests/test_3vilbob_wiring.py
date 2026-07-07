@@ -1702,11 +1702,13 @@ class TestCKGChatOrchestratorWiring:
     """CKG wired into chat_orchestrator.py for cross-domain insights."""
 
     def test_ckg_imported_in_orchestrator(self):
-        """chat_orchestrator.py references CognitiveKnowledgeGraph."""
+        """chat_orchestrator.py wires the CKG store for cross-domain insights."""
         import inspect
         from app.services import chat_orchestrator
         source = inspect.getsource(chat_orchestrator)
-        assert "CognitiveKnowledgeGraph" in source
+        # CKG is wired via the DB-backed, tenant-scoped CkgStore (renamed from
+        # the in-memory CognitiveKnowledgeGraph during cognition closure).
+        assert "CkgStore" in source
         assert "ckg_insights_injected" in source
 
     def test_ckg_domain_mapping_complete(self):

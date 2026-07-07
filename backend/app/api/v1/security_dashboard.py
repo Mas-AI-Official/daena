@@ -49,6 +49,13 @@ _tool_stats_cache: tuple[float, dict[str, Any]] | None = None
 _tool_stats_refresh_task: asyncio.Task | None = None
 _tools_cache: dict[tuple[str, str, bool], tuple[float, list[ToolInfo]]] = {}
 
+# Strong refs to fire-and-forget bulk-install jobs. asyncio holds only a weak
+# reference to tasks created via create_task; without this set a long-running
+# install job can be garbage-collected mid-run. Mirrors the repo-wide retention
+# convention (see app.services.dept_knowledge_ingest._INFLIGHT) and the sibling
+# _tool_stats_refresh_task above. Tasks are discarded in their done callback.
+_install_inflight: set[asyncio.Task] = set()
+
 
 def _get_workflow():
     """Lazy-init the ScanWorkflow singleton."""
@@ -1446,6 +1453,23 @@ def _prereq_for(install_cmd: str) -> tuple[str, str] | None:
     return None
 
 
+def _schedule_install_job(job_id: str, plan: list[dict[str, Any]]) -> asyncio.Task:
+    """Fire ``_run_install_job`` as a retained background task.
+
+    asyncio only holds a weak reference to tasks created via create_task, so a
+    bare ``asyncio.create_task(...)`` whose handle is dropped can be collected
+    mid-run. Keep a strong ref in ``_install_inflight`` and self-clean in the
+    done callback, matching the repo convention. Every await in the current
+    ``_run_install_job`` is run_in_executor-future-backed (the future keeps the
+    task alive), so this is footgun-removal that hardens the path against a
+    future plain ``await`` rather than a fix for a live collection today.
+    """
+    task = asyncio.create_task(_run_install_job(job_id, plan))
+    _install_inflight.add(task)
+    task.add_done_callback(_install_inflight.discard)
+    return task
+
+
 async def _run_install_job(job_id: str, plan: list[dict[str, Any]]) -> None:
     """Background driver: iterate plan, update ``_install_jobs[job_id]``
     after each install so the status endpoint can report progress.
@@ -1591,8 +1615,9 @@ async def install_all_tools(
     }
     # Fire the background task and return immediately. The task lives on
     # the event loop; when done it flips status to "complete". No UI
-    # wait -- poll endpoint reports progress.
-    asyncio.create_task(_run_install_job(job_id, plan))
+    # wait -- poll endpoint reports progress. Retained via _schedule_install_job
+    # so asyncio's weak task ref cannot collect it mid-run.
+    _schedule_install_job(job_id, plan)
     return {
         "job_id": job_id,
         "status": "running",

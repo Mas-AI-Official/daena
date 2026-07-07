@@ -478,6 +478,7 @@ class CVEIntelligenceService:
             service_info = self._extract_service_info(finding)
 
             cve_data: list[dict[str, Any]] = []
+            lookup_failed = False  # Rule 17: a crashed NVD lookup != "no CVEs (clean)"
 
             # Look up any CVE IDs already referenced
             if cve_ids:
@@ -488,6 +489,11 @@ class CVEIntelligenceService:
                 for result in lookups:
                     if isinstance(result, CVERecord):
                         cve_data.append(result.to_dict())
+                    elif isinstance(result, BaseException):
+                        # The HTTP error is already logged in lookup(). Record that
+                        # THIS finding names a CVE we could NOT verify, so we never
+                        # report a referenced-but-unconfirmed CVE as a clean "0 found".
+                        lookup_failed = True
 
             # If no CVE IDs found, try keyword search from finding name
             if not cve_data and service_info:
@@ -496,14 +502,25 @@ class CVEIntelligenceService:
                     results = await self.search_keyword(keyword.strip(), results_per_page=5)
                     for r in results:
                         cve_data.append(r.to_dict())
-                except Exception:
-                    pass  # Non-critical enrichment failure
+                except Exception as exc:
+                    # search_keyword() already logged the HTTP error at ERROR; here we
+                    # mark enrichment DEGRADED so cve_count=0 is not silently trusted as
+                    # "clean" by the scan summary / report (Rule 17 empty-as-clean).
+                    lookup_failed = True
+                    logger.debug(
+                        "cve_intel.enrich_keyword_degraded",
+                        keyword=keyword,
+                        error=str(exc)[:100],
+                    )
 
             enriched_finding["cve_enrichment"] = {
                 "cve_count": len(cve_data),
                 "cves": cve_data[:10],  # Cap enrichment data
                 "max_cvss": max((c["cvss_score"] for c in cve_data), default=0.0),
                 "max_severity": self._highest_severity(cve_data),
+                # "complete" = NVD answered; "degraded" = a lookup failed, so a 0 count
+                # here may UNDERSTATE risk (do not read it as "confirmed clean").
+                "lookup_status": "degraded" if lookup_failed else "complete",
             }
             enriched.append(enriched_finding)
 
@@ -511,6 +528,10 @@ class CVEIntelligenceService:
             "cve_intel.enrich_complete",
             findings=len(findings),
             enriched_with_cves=sum(1 for f in enriched if f["cve_enrichment"]["cve_count"] > 0),
+            degraded=sum(
+                1 for f in enriched
+                if f["cve_enrichment"]["lookup_status"] == "degraded"
+            ),
         )
         return enriched
 
