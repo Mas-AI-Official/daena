@@ -26,7 +26,7 @@
  *   - Multi-step skill plans
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, ArrowRight, Loader2, Lock, Play, ShieldCheck, User, X,
@@ -116,6 +116,18 @@ export default function SkillExecuteModal({
   pluginId, pluginName, skillId, allowlistRow, onClose,
 }: SkillExecuteModalProps) {
   const navigate = useNavigate()
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  // PR-A11Y-PHASE32: overlay focus contract -- move focus into the panel on open,
+  // restore to the opener on close (WCAG 2.4.3 / 2.1.2 / WAI-ARIA dialog pattern).
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    const focusTimer = setTimeout(() => {
+      const panel = panelRef.current
+      if (panel && !panel.contains(document.activeElement)) panel.focus()
+    }, 50)
+    return () => { clearTimeout(focusTimer); previousFocusRef.current?.focus?.() }
+  }, [])
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<SkillExecutionResultDTO | null>(null)
@@ -366,7 +378,13 @@ export default function SkillExecuteModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Run skill ${humanize(skillId)}`}
+        tabIndex={-1}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }}
+        className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -446,8 +464,8 @@ export default function SkillExecuteModal({
                 </p>
               )}
               {!accountsLoading && accounts !== null && accounts.length > 1 && (
-                <div className="space-y-1">
-                  <p className="text-[11px] text-starlight-400">
+                <div className="space-y-1" role="radiogroup" aria-labelledby="oauth-account-group-label">
+                  <p id="oauth-account-group-label" className="text-[11px] text-starlight-400">
                     Multiple {oauthProvider} accounts are connected. Pick which
                     one Daena should use for this run.
                   </p>

@@ -26,15 +26,21 @@ The other three (``notif_desktop``, ``notif_sound``, ``notif_email``,
   delivery channel that does not exist yet (no SMTP, no audio
   pipeline, no scheduler-driven digest). They stay Coming Soon.
 
-No external send. All emission is in-app only. The bell at
+The in-app DB row is the source of truth. The bell at
 ``frontend/src/components/layout/Header.tsx`` and the test button at
-``frontend/src/pages/settings/SettingsNotifications.tsx`` are the
-only consumers today.
+``frontend/src/pages/settings/SettingsNotifications.tsx`` consume it.
+
+G6 addendum (2026-07-02): push-worthy types (see ``_PUSH_TYPES``) are
+additionally MIRRORED to Web Push via the channel seam in
+``app.services.notification_channels`` -- one-way, best-effort,
+default OFF (``push_alerts_enabled=false``), gated per-user by the
+fail-open ``notif_push`` flag. Push failures never block the row.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Final
 from uuid import UUID
 
@@ -42,7 +48,9 @@ from sqlalchemy import desc, func, select, update
 
 from app.models.identity import User
 from app.models.notification import Notification
+from app.models.push_subscription import PushSubscription
 from app.services._base import BaseService
+from app.services.notification_channels import get_push_channel
 
 _log = logging.getLogger(__name__)
 
@@ -78,6 +86,19 @@ _TYPE_TO_FLAG: Final[dict[str, str | None]] = {
 _VALID_SEVERITIES: Final[frozenset[str]] = frozenset(
     {"info", "success", "warning", "error"},
 )
+
+# Types worth waking the founder's phone for (G6, 2026-07-02).
+# heartbeat + system_info are deliberately excluded: heartbeat fires on
+# a timer and system_info is the ungated test/misc bucket -- mirroring
+# either would train the founder to ignore push. Unknown types never
+# push (allow-list, not deny-list).
+_PUSH_TYPES: Final[frozenset[str]] = frozenset({
+    "task_complete",
+    "budget_alert",
+    "governance_rejection",
+    "runtime_disconnect",
+    "privacy_blocked",
+})
 
 # Truncation guards so a misbehaving caller can never oversize the row.
 _MAX_TITLE_LEN: Final[int] = 200
@@ -217,7 +238,86 @@ class NotificationService(BaseService):
         self.db.add(row)
         await self.db.flush()
         await self.db.refresh(row)
-        return self._to_dict(row)
+        result = self._to_dict(row)
+
+        # Mirror to push AFTER the in-app row exists (row = source of
+        # truth; push is best-effort). Awaited inline on purpose: a
+        # detached create_task escapes the request's session lifetime
+        # and races cleanup (proven by the G5 test-infra failure);
+        # fan-out is 1-3 founder devices, so inline latency is fine.
+        # If device counts ever grow, move to a queue -- do NOT switch
+        # to fire-and-forget on the same session.
+        await self._mirror_to_push(result)
+        return result
+
+    async def _mirror_to_push(self, notif: dict) -> None:
+        """Best-effort Web Push mirror of one just-written notification.
+
+        NEVER raises -- push is an amenity layered on the in-app row.
+        Skips silently when: the type is not push-worthy, the channel
+        is unavailable (feature off / no keys / pywebpush missing), or
+        the user opted out via the ``notif_push`` master flag
+        (fail-open like every other notif_* gate).
+        """
+        try:
+            if notif.get("type") not in _PUSH_TYPES:
+                return
+            channel = get_push_channel()
+            if not channel.available():
+                return
+            user_id = UUID(notif["user_id"])
+            tenant_id = UUID(notif["tenant_id"])
+            if not await self._user_allows(user_id=user_id, flag="notif_push"):
+                return
+
+            subs = (
+                await self.db.execute(
+                    select(PushSubscription).where(
+                        PushSubscription.tenant_id == tenant_id,
+                        PushSubscription.user_id == user_id,
+                        PushSubscription.revoked_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+            if not subs:
+                return
+
+            payload = {
+                "type": notif["type"],
+                "title": notif["title"],
+                "message": notif["message"],
+                "severity": notif["severity"],
+                "notification_id": notif["id"],
+            }
+            revoked_any = False
+            for sub in subs:
+                result = await channel.deliver(
+                    subscription={
+                        "endpoint": sub.endpoint,
+                        "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
+                    },
+                    payload=payload,
+                )
+                if result.gone:
+                    # Push service says the device is gone -- revoke so
+                    # we stop sending. Soft-revoke, never delete (R2).
+                    sub.revoked_at = datetime.now(timezone.utc)
+                    revoked_any = True
+                    _log.info(
+                        "notification.push_endpoint_revoked user=%s detail=%s",
+                        user_id, result.detail,
+                    )
+                elif not result.ok:
+                    _log.warning(
+                        "notification.push_delivery_failed user=%s detail=%s",
+                        user_id, result.detail,
+                    )
+            if revoked_any:
+                # Emit already flushes the notification row; flush the
+                # revoke too so it is durable within the same contract.
+                await self.db.flush()
+        except Exception:  # noqa: BLE001 -- push must never break emit
+            _log.warning("notification.push_mirror_failed", exc_info=True)
 
     async def list_recent(
         self,

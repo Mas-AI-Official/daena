@@ -28,12 +28,19 @@ export function ToastContainer() {
   const toasts = useToastStore((s) => s.toasts)
   const removeToast = useToastStore((s) => s.removeToast)
 
+  // PR-A11Y-PHASE33: the container is positioning-only. Announcement is
+  // per-toast via role=status/alert below -- a container aria-live here
+  // would nest live regions and double-announce on several screen readers.
   return (
     <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none max-w-sm w-full">
       <AnimatePresence mode="popLayout">
         {toasts.map((t) => (
           <motion.div
             key={t.id}
+            // PR-A11Y-PHASE33: error/warning interrupt (role=alert => assertive),
+            // others queue politely (role=status); per-toast role avoids nested
+            // live regions vs a container aria-live.
+            role={t.type === 'error' || t.type === 'warning' ? 'alert' : 'status'}
             layout
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -45,6 +52,7 @@ export function ToastContainer() {
             <p className="text-xs text-starlight-200 flex-1 leading-relaxed">{t.message}</p>
             <button
               onClick={() => removeToast(t.id)}
+              aria-label="Dismiss notification"
               className="text-starlight-500 hover:text-starlight-200 transition-colors cursor-pointer shrink-0"
             >
               <X size={14} />

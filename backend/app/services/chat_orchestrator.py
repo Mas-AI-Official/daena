@@ -705,6 +705,58 @@ class ChatOrchestrator:
             except Exception as _mind_exc:
                 logger.debug("orchestrator.auto_mind_failed", error=str(_mind_exc), exc_info=True)
 
+        # ── Department Mind overlay: runtime bias + temperature + voice ──
+        # 2026-07-02: consume the per-Mind soul metadata (runtime_preference,
+        # temperature, voice, accent_color) that soul_engine parses from
+        # backend/app/soul/departments/<slug>.md. Precedence for runtime is
+        # explicit user Primary Mind > explicitly-pinned department Mind >
+        # auto-router. We reuse the EXISTING primary_mind soft-boost path
+        # (+0.5 at model_router.py:317) instead of widening route()'s signature.
+        _dept_meta = SoulEngine.get_department_metadata(dept_name)
+        _mind_slug: str | None = dept_name
+        if not _dept_meta and session_obj.department_id is None:
+            # No department Mind matched and the session is not pinned -- the
+            # user is talking to Daena herself. Fall back to her VP overlay
+            # (departments/daena.md) so the flagship voice/accent/temperature
+            # apply instead of silently dropping to pipeline defaults. Runtime
+            # bias stays off on this path: the bias below requires a pinned
+            # department by design, and her runtime_preference is already the
+            # resolved default primary. The department_id guard also keeps a
+            # pinned department whose soul file is missing from wrongly
+            # inheriting VP metadata (and satisfying the bias condition).
+            _dept_meta = SoulEngine.get_vp_mind()
+            if _dept_meta:
+                _mind_slug = str(_dept_meta.get("slug") or "daena")
+        _dept_runtime_bias = False
+        # temperature is a bare scalar in frontmatter -> parsed as a STRING;
+        # coerce to float and fall back to the pipeline default on any garbage.
+        _dept_temperature: float | None = None
+        if _dept_meta:
+            _raw_temp = _dept_meta.get("temperature")
+            if _raw_temp is not None:
+                try:
+                    _dept_temperature = float(_raw_temp)
+                except (TypeError, ValueError):
+                    _dept_temperature = None
+            # Runtime bias applies ONLY for an explicitly-pinned department (a
+            # deliberate choice) AND only when the user has not set their own
+            # Primary Mind. An auto-Mind keyword guess is too soft to override
+            # cost-aware routing, so it biases voice/accent only, never runtime.
+            _dept_runtime_pref = _dept_meta.get("runtime_preference")
+            if (
+                primary_mind is None
+                and _dept_runtime_pref
+                and session_obj.department_id is not None
+            ):
+                primary_mind = _dept_runtime_pref
+                _dept_runtime_bias = True
+                logger.info(
+                    "orchestrator.department_runtime_bias",
+                    department=dept_name,
+                    runtime=_dept_runtime_pref,
+                    note="Pinned department Mind runtime applied (no user Primary Mind set).",
+                )
+
         _soul_prefix = SoulEngine.get_soul_prompt(
             governance_mode.value,
             department=dept_name,
@@ -836,8 +888,14 @@ class ChatOrchestrator:
                         _online_runtimes,
                         agi_mode=autopilot,
                     )
-            except Exception:
-                pass  # Non-critical: orchestration prompt is optional
+            except Exception as exc:
+                # Best-effort enrichment: a failure here costs a slightly
+                # less-rich system prompt, not a broken turn. Debug keeps a
+                # recurring failure traceable instead of fully silent (Rule 17).
+                logger.debug(
+                    "orchestrator.orchestration_prompt_failed",
+                    error=type(exc).__name__,
+                )
             # Inject dynamic tool schema so LLM can autonomously call tools
             try:
                 from app.services.tool_schema_builder import build_tool_schema, build_tool_prompt
@@ -846,8 +904,14 @@ class ChatOrchestrator:
                 try:
                     from app.core.events import get_mcp_registry
                     _mcp_reg = get_mcp_registry()
-                except Exception:
-                    pass  # MCP registry not available -- skip auto-discovered tools
+                except Exception as exc:
+                    # MCP registry unavailable -- auto-discovered tools are
+                    # skipped. Best-effort, so debug keeps it traceable
+                    # without noise (Rule 17).
+                    logger.debug(
+                        "orchestrator.mcp_registry_unavailable",
+                        error=type(exc).__name__,
+                    )
                 _exe_tools = build_tool_schema(
                     include_daenabot=True,
                     include_integrations=True,
@@ -858,7 +922,17 @@ class ChatOrchestrator:
                     mcp_registry=_mcp_reg,
                 )
                 system_prompt += "\n" + build_tool_prompt(_exe_tools)
-            except Exception:
+            except Exception as exc:
+                # The dynamic schema builder failed, so the LLM silently loses
+                # every auto-discovered tool (MCP / integrations / workflows /
+                # desktop) and drops to the static list below -- a real
+                # capability regression that would otherwise be invisible in
+                # production. Surface it at warning before falling back (Rule 17).
+                logger.warning(
+                    "orchestrator.tool_schema_build_failed",
+                    error=type(exc).__name__,
+                    detail=str(exc),
+                )
                 # Fallback to static list if schema builder fails
                 system_prompt += (
                     "\nTools: read_file, write_file, run_command, list_directory, "
@@ -1763,6 +1837,12 @@ class ChatOrchestrator:
         _cost_router = CostAwareRouter()
         task_classification = _cost_router.classify_task(user_content)
 
+        # Honest telemetry: surface the pinned-department Mind runtime bias as a
+        # distinct source so the audit trail shows what nudged routing, rather
+        # than masquerading as a bare auto-route.
+        if _dept_runtime_bias and not preferred_model and routing_source == "auto_routed":
+            routing_source = "department_mind"
+
         routing_event = {
             "type": "thinking",
             "stage": "routing",
@@ -1778,6 +1858,15 @@ class ChatOrchestrator:
             routing_event["requested_model"] = preferred_model
         if decision.metadata.get("mode_reason"):
             routing_event["mode_reason"] = decision.metadata["mode_reason"]
+        # Per-Mind presentation: the active Mind (department, or the VP herself
+        # on unpinned chats) plus its voice and accent for the frontend TTS/UI.
+        # Cosmetic SSE fields, zero routing cost.
+        if _mind_slug:
+            routing_event["mind"] = _mind_slug
+        if _dept_meta.get("voice"):
+            routing_event["voice"] = _dept_meta["voice"]
+        if _dept_meta.get("accent_color"):
+            routing_event["accent_color"] = _dept_meta["accent_color"]
         yield routing_event
 
         logger.info(
@@ -1875,26 +1964,59 @@ class ChatOrchestrator:
                 logger.debug("orchestrator.memory_recall_failed", exc_info=True)
 
         # ── Stage 6.1: Agent experience injection ─────────────
-        # Inject validated agent experiences (decisions, patterns)
-        # that are relevant to the current query. Only non-quarantined,
-        # trust-validated experiences are returned.
+        # Inject validated agent experiences (decisions, patterns) relevant to
+        # the current query. Two recall paths, merged: (1) keyword recall over
+        # the local DB tier (always available -- the Rule 17 fallback), and
+        # (2) a fail-open ragx semantic query over the tenant's experience
+        # collection (Phase 3 item 9, G2), which surfaces trust-promoted
+        # experiences by meaning rather than exact terms. Only non-quarantined,
+        # trust-validated experiences reach either path.
         try:
+            keyword_lines: list[str] = []
             experiences = await memory_svc.recall_experiences(
                 tenant_id=tenant_id,
                 query=user_content,
                 top_k=3,
             )
-            if experiences:
-                exp_lines = []
-                for exp in experiences:
-                    exp_summary = exp.get("summary") or exp.get("content", "")[:120]
-                    exp_lines.append(f"- {exp_summary}")
+            for exp in experiences or []:
+                exp_summary = exp.get("summary") or exp.get("content", "")[:120]
+                keyword_lines.append(f"- {exp_summary}")
+
+            # Semantic recall over the tenant-scoped ragx experience collection.
+            # Independent try so a ragx outage never loses the keyword lines.
+            semantic_lines: list[str] = []
+            try:
+                from app.services.ragx_bridge import (
+                    experience_collection_name,
+                    query_ragx,
+                )
+
+                exp_ragx = await query_ragx(
+                    query=user_content,
+                    collections=[experience_collection_name(tenant_id)],
+                    k=3,
+                )
+                for c in exp_ragx.citations:
+                    snip = (c.snippet or "").replace("\n", " ").strip()
+                    if snip:
+                        semantic_lines.append(f"- {snip[:160]}")
+            except Exception:
+                logger.debug(
+                    "orchestrator.experience_ragx_recall_failed", exc_info=True
+                )
+
+            from app.services.experience_ingest import merge_experience_lines
+
+            merged = merge_experience_lines(keyword_lines, semantic_lines, limit=5)
+            if merged:
                 system_prompt += (
-                    "\n\nFrom past experience:\n" + "\n".join(exp_lines)
+                    "\n\nFrom past experience:\n" + "\n".join(merged)
                 )
                 logger.info(
                     "orchestrator.experiences_injected",
-                    count=len(experiences),
+                    keyword=len(keyword_lines),
+                    semantic=len(semantic_lines),
+                    injected=len(merged),
                 )
         except Exception:
             logger.debug("orchestrator.experience_recall_failed", exc_info=True)
@@ -1906,30 +2028,16 @@ class ChatOrchestrator:
         # vice versa. Only high-confidence (>=0.5) abstractions injected.
         ckg_count = 0
         try:
-            from app.services.cognition.knowledge_graph import (
-                CognitiveKnowledgeGraph, Domain,
+            from app.services.cognition.ckg_store import (
+                CkgStore,
+                domain_for_department,
             )
 
-            # Map department name to CKG domain
-            _DEPT_TO_DOMAIN = {
-                "engineering": Domain.ENGINEERING,
-                "product": Domain.PRODUCT,
-                "marketing": Domain.MARKETING,
-                "sales": Domain.SALES,
-                "finance": Domain.FINANCE,
-                "operations": Domain.OPERATIONS,
-                "research": Domain.RESEARCH,
-                "legal": Domain.LEGAL,
-                "skill governance": Domain.SKILL_GOVERNANCE,
-                "security": Domain.SECURITY,
-                "security operations": Domain.SECURITY,
-            }
-            ckg_domain = _DEPT_TO_DOMAIN.get(
-                (dept_name or "").lower(), Domain.REASONING
-            )
-
-            ckg = CognitiveKnowledgeGraph()
-            ckg_insights = ckg.query(
+            # Tenant-scoped DB read (Rule 9) -- no global graph.json, no
+            # cross-tenant leak, no per-turn file IO in the request path.
+            ckg_domain = domain_for_department(dept_name)
+            ckg = CkgStore(self._db, tenant_id)
+            ckg_insights = await ckg.query(
                 domain=ckg_domain,
                 context=user_content,
                 limit=3,
@@ -1938,7 +2046,7 @@ class ChatOrchestrator:
             if ckg_insights:
                 ckg_lines = []
                 for insight in ckg_insights:
-                    origin = insight.origin_domain.value if insight.origin_domain else ""
+                    origin = insight.origin_domain or ""
                     ckg_lines.append(
                         f"- [{origin}] {insight.abstracted_pattern[:150]} "
                         f"(confidence: {insight.confidence:.2f})"
@@ -2212,8 +2320,8 @@ class ChatOrchestrator:
                         session_id=session_id,
                         user_id=user_id,
                         tenant_id=tenant_id,
-                        governance_mode="UNLEASHED",
-                        actor_role="FOUNDER",
+                        governance_mode=governance_mode.value,
+                        actor_role=user_role,
                     )
                     # Surface the result in the chat so the founder
                     # sees the toggle took effect.
@@ -2280,7 +2388,9 @@ class ChatOrchestrator:
         request = GenerateRequest(
             messages=llm_messages,
             system_prompt=system_prompt,
-            temperature=0.7,
+            # Per-Mind sampling: the department soul sets its own temperature
+            # (e.g. Engineering 0.3, VP 0.4); Council/QE inherit via request.temperature.
+            temperature=_dept_temperature if _dept_temperature is not None else 0.7,
             max_tokens=2048,
             model_id=decision.primary.model_id,
             metadata={
@@ -2343,8 +2453,8 @@ class ChatOrchestrator:
                         session_id=session_id,
                         user_id=user_id,
                         tenant_id=tenant_id,
-                        governance_mode="UNLEASHED",
-                        actor_role="FOUNDER",
+                        governance_mode=governance_mode.value,
+                        actor_role=user_role,
                     )
                     daenabot_result = {
                         "status": "COMPLETED" if _fp_result.get("success") else "FAILED",
@@ -3091,10 +3201,22 @@ class ChatOrchestrator:
         )
 
         from app.services.llm_service import LLMService
+        from app.core.universal_cognitive_gateway import (
+            attach_gateway_review,
+            build_gateway_request,
+        )
 
         llm = LLMService(self._registry)
         if not _tool_loop_handled:
             collected_content = ""
+            for _gateway_stage in (
+                "gateway_mission_compressed",
+                "gateway_skill_selected",
+                "gateway_model_routed",
+                "gateway_council_review",
+                "gateway_final_answer",
+            ):
+                yield {"type": "thinking", "stage": _gateway_stage}
         model_id = decision.primary.model_id
         provider_name = decision.primary.provider.value
         token_count = 0
@@ -3334,8 +3456,18 @@ class ChatOrchestrator:
                             system_prompt=expert_system,
                             metadata={"stage": "quintessence_lens", "expert": expert.id},
                         )
+                        expert_request = build_gateway_request(
+                            expert_request,
+                            model_id=sole.model_id,
+                            available_models=[sole.model_id],
+                        )
+
+                        async def _call_expert(req: GenerateRequest):
+                            result = await provider_inst.generate(req)
+                            return attach_gateway_review(result, req)
+
                         t = asyncio.create_task(
-                            asyncio.wait_for(provider_inst.generate(expert_request), timeout=45.0)
+                            asyncio.wait_for(_call_expert(expert_request), timeout=45.0)
                         )
                         expert_tasks.append((expert, t))
 
@@ -3388,7 +3520,17 @@ class ChatOrchestrator:
                             system_prompt=model_system,
                             metadata=request.metadata,
                         )
-                        task = asyncio.create_task(provider_inst.generate(model_request))
+                        model_request = build_gateway_request(
+                            model_request,
+                            model_id=candidate.model_id,
+                            available_models=[c.model_id for c in decision.council_models],
+                        )
+
+                        async def _call_member(req: GenerateRequest, provider: Any):
+                            result = await provider.generate(req)
+                            return attach_gateway_review(result, req)
+
+                        task = asyncio.create_task(_call_member(model_request, provider_inst))
                         tasks_list.append((candidate, task))
 
                     # Parallel gather -- all models run concurrently
@@ -3628,7 +3770,16 @@ class ChatOrchestrator:
                                     sub = await adapter.check_subscription()
                                     if not getattr(sub, "is_authenticated", False):
                                         continue
-                                except Exception:
+                                except Exception as sub_exc:
+                                    # A crashed auth probe is NOT the same as
+                                    # "not authenticated" -- log it so a skipped
+                                    # last-resort runtime is visible (Rule 17),
+                                    # then skip this runtime.
+                                    logger.warning(
+                                        "orchestrator.cli_subscription_check_failed",
+                                        runtime=rt_id,
+                                        error=str(sub_exc),
+                                    )
                                     continue
 
                                 yield {
@@ -3671,8 +3822,16 @@ class ChatOrchestrator:
                                         error=str(cli_exc),
                                     )
                                     continue
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            # The CLI-runtime fallback block failed to set up
+                            # (per-runtime failures are already logged at
+                            # warning in the loop above). The `not
+                            # cli_fallback_done` branch still handles it, but a
+                            # bare pass hid the cause -- log at debug (Rule 17).
+                            logger.debug(
+                                "orchestrator.cli_fallback_block_failed",
+                                error=type(exc).__name__,
+                            )
 
                         if not cli_fallback_done:
                             tried_models = [decision.primary.model_id] + [
@@ -3712,8 +3871,17 @@ class ChatOrchestrator:
                                     run_id=str(session_id) if session_id else None,
                                     metadata_json={"tried_models": tried_models},
                                 )
-                            except Exception:
-                                pass
+                            except Exception as sink_exc:
+                                # Never let an audit-write failure break the
+                                # user's error response, but never drop it
+                                # silently either (Rule 17): the app-log line
+                                # above still exists; this surfaces that the
+                                # structured error-sink record was lost.
+                                logger.error(
+                                    "orchestrator.error_sink_write_failed",
+                                    error_code="ALL_MODELS_FAILED",
+                                    error=str(sink_exc),
+                                )
                             await _emit_trace(
                                 "stream.error",
                                 stage="9_stream",
@@ -4105,6 +4273,7 @@ class ChatOrchestrator:
                 "governance_tier": governance_tier,
                 "latency_ms": latency_ms,
                 "skill_count": skill_count,
+                "department": dept_name or "",
             }
 
     # ── Helpers ───────────────────────────────────────────────

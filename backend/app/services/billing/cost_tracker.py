@@ -73,7 +73,13 @@ class UnifiedCostTracker:
         )
         self._entries.append(entry)
 
-        day_key = entry.timestamp.strftime("%Y-%m-%d")
+        # Bucket by LOCAL day to match every read path (get_daily_cost /
+        # get_monthly_cost / get_usage_history all key on date.today()). The
+        # stored entry.timestamp stays UTC for the audit record, but the daily
+        # aggregate must use the same frame the budget caps read, or spend
+        # logged while local-day != UTC-day vanishes from get_daily_cost and
+        # the cap silently stops enforcing.
+        day_key = date.today().strftime("%Y-%m-%d")
         self._daily_totals[day_key] += cost_usd
         self._provider_totals[provider] += cost_usd
         self._task_type_totals[task_type] += cost_usd

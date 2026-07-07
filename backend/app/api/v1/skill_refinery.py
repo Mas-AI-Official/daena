@@ -6,7 +6,10 @@ and maturity tier promotion/demotion.
 
 from __future__ import annotations
 
+import json
+import os
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -28,6 +31,37 @@ from app.services.skill_refinery.skill_store import SkillStore
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+# ── Refinery decision ledger ──
+#
+# Every refinement verdict (applied or not) is appended to the shared
+# MAS-AI learning ledger so rejected refinements become memory instead
+# of vanishing. Fail-open by design: a ledger failure is logged loudly
+# (Rule 17) but never blocks the API response.
+
+_LEDGER_DIR_DEFAULT = r"D:\agents\AI_COMPANY_OS\state\ledgers"
+
+
+def _ledger_refinement_decision(row: dict[str, Any]) -> None:
+    """Append one refinement decision to refinery_decisions.ndjson.
+
+    Ledger directory override: MASAI_LEDGER_DIR env var (matches the
+    other MAS-AI ledgers: skill_edits, optimizer_runs, aqa_verdicts).
+    """
+    try:
+        ledger_dir = Path(os.environ.get("MASAI_LEDGER_DIR", _LEDGER_DIR_DEFAULT))
+        ledger_dir.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": datetime.now(UTC).isoformat(),
+            "source": "daena.skill_refinery",
+            **row,
+        }
+        path = ledger_dir / "refinery_decisions.ndjson"
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+    except Exception as exc:
+        logger.warning("skill_refinery.ledger_write_failed", error=str(exc))
 
 
 # ── Request schemas ──
@@ -554,8 +588,10 @@ async def refine_skill_endpoint(
     Pass 2 (Improver): proposes fixes, modern alternatives.
     Pass 3 (Critic): validates improvements, scores confidence.
 
-    On success, updates the skill with refined content and promotes
-    to T2_REFINED maturity.
+    On APPROVE, updates the skill with refined content and promotes
+    to T2_REFINED maturity. NEEDS_WORK and REJECT write nothing: the
+    proposed changes are returned for human review only. Every verdict
+    is appended to the refinery decision ledger with an applied flag.
     """
     from app.services.skill_refinery.refinement_service import (
         refine_skill as run_refinement,
@@ -573,8 +609,12 @@ async def refine_skill_endpoint(
     verdict = result.get("critic_verdict", {}).get("verdict", "REJECT")
     refined = result.get("refined", {})
 
-    # If approved, update the skill and promote to T2
-    if verdict in ("APPROVE", "NEEDS_WORK") and refined:
+    applied = False
+
+    # Apply and promote on APPROVE only. NEEDS_WORK means the critic
+    # found problems -- the proposal goes back for human review and the
+    # stored skill is never auto-written on a failing verdict.
+    if verdict == "APPROVE" and refined:
         # Bump version
         old_version = skill_data.get("version", "1.0")
         parts = old_version.split(".")
@@ -606,11 +646,22 @@ async def refine_skill_endpoint(
                 )
                 current += 1
 
+        applied = True
+
+    _ledger_refinement_decision({
+        "skill_id": skill_id,
+        "tenant_id": str(user.tenant_id),
+        "verdict": verdict,
+        "applied": applied,
+        "confidence": result.get("confidence", 0.0),
+    })
+
     # Return full result with before/after
     return {
         "success": True,
         "data": {
             "verdict": verdict,
+            "applied": applied,
             "confidence": result.get("confidence", 0.0),
             "gap_report": result.get("gap_report", {}),
             "improvements": result.get("improvements", {}),

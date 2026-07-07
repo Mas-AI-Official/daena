@@ -19,7 +19,7 @@
  *     (the config_path label) but never inside the per-backup row.
  */
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   AlertTriangle, ArrowLeft, CheckCircle2, Clock, FileWarning,
   Loader2, RotateCcw, X,
@@ -47,6 +47,19 @@ export default function MCPRestoreDrawer({
   target, targetDisplayName, onClose, onComplete,
 }: MCPRestoreDrawerProps) {
   const [step, setStep] = useState<Step>("list")
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  // PR-A11Y-PHASE32: overlay focus contract -- move focus into the panel on open,
+  // restore to the opener on close. Nested under MCPInstallDrawer so capture/
+  // restore is LIFO per overlay (WCAG 2.4.3 / 2.1.2 / WAI-ARIA dialog pattern).
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    const focusTimer = setTimeout(() => {
+      const panel = panelRef.current
+      if (panel && !panel.contains(document.activeElement)) panel.focus()
+    }, 50)
+    return () => { clearTimeout(focusTimer); previousFocusRef.current?.focus?.() }
+  }, [])
   const [listing, setListing] = useState<BackupListReport | null>(null)
   const [listLoading, setListLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
@@ -91,7 +104,13 @@ export default function MCPRestoreDrawer({
       onClick={onClose}
     >
       <div
-        className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Restore MCP backup for ${targetDisplayName}`}
+        tabIndex={-1}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }}
+        className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-start justify-between gap-4 border-b border-white/5 p-5">

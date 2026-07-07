@@ -62,6 +62,14 @@ class TestScanSlop:
         matches = scan_slop(text)
         assert any(m.category == "false_buildup" for m in matches)
 
+    def test_dramatic_fragmentation_detected(self):
+        # Three consecutive single-word sentences trip _DRAMATIC_FRAGMENT.
+        # Every other structural pattern has a detection test; this one was
+        # the lone gap. RED if _DRAMATIC_FRAGMENT is pruned from scan_slop.
+        text = "Fast. Simple. Reliable."
+        matches = scan_slop(text)
+        assert any(m.category == "dramatic_fragmentation" for m in matches)
+
     def test_empty_string(self):
         matches = scan_slop("")
         assert len(matches) == 0
@@ -95,6 +103,13 @@ class TestStripSlop:
         result = strip_slop(text)
         assert "dive in" not in result.lower()
         assert "groundbreaking" not in result.lower()
+
+    def test_collapses_blank_lines(self):
+        # The \n{3,} -> \n\n branch (distinct from the double-space collapse).
+        # Stripping must not leave 3+ consecutive newlines. RED if removed.
+        result = strip_slop("Alpha line.\n\n\n\nBeta line.")
+        assert "\n\n\n" not in result
+        assert result == "Alpha line.\n\nBeta line."
 
     def test_empty_string(self):
         assert strip_slop("") == ""

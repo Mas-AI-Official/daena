@@ -198,12 +198,14 @@ function SkillCard({ skill, permission, onPermissionChange, onToggleActive, inde
         {/* Header row -- always visible */}
         <button
           onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
           className="w-full flex items-start gap-3 p-4 text-left hover:bg-white/[0.02] transition-colors"
         >
           {/* Batch select checkbox */}
           {onSelect && (
             <input
               type="checkbox"
+              aria-label={`Select ${skill.name}`}
               checked={selected || false}
               onChange={(e) => { e.stopPropagation(); onSelect(skill.id, e.target.checked) }}
               onClick={(e) => e.stopPropagation()}
@@ -215,7 +217,7 @@ function SkillCard({ skill, permission, onPermissionChange, onToggleActive, inde
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-display font-semibold text-starlight-100 truncate">{skill.name}</h3>
+              <h2 className="text-sm font-display font-semibold text-starlight-100 truncate">{skill.name}</h2>
               {skill.category && (
                 <Badge variant="default" size="sm">{skill.category}</Badge>
               )}
@@ -248,7 +250,7 @@ function SkillCard({ skill, permission, onPermissionChange, onToggleActive, inde
             {/* On/Off toggle */}
             <button
               onClick={() => onToggleActive(skill.id, !skill.is_active)}
-              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors cursor-pointer ${
+              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors cursor-pointer before:absolute before:content-[''] before:inset-x-0 before:-inset-y-1 ${
                 skill.is_active ? 'bg-accent-green' : 'bg-accent-red/60'
               }`}
               title={skill.is_active ? 'Disable skill' : 'Enable skill'}
@@ -306,7 +308,9 @@ function SkillCard({ skill, permission, onPermissionChange, onToggleActive, inde
                 {/* Metadata row */}
                 <div className="flex items-center gap-4 text-[10px] text-starlight-500 pt-1">
                   <span>ID: <span className="font-mono text-starlight-400">{skill.id.slice(0, 8)}</span></span>
-                  <span>Created: {new Date(skill.created_at).toLocaleDateString()}</span>
+                  {skill.created_at && !isNaN(new Date(skill.created_at).getTime()) && (
+                    <span>Created: {new Date(skill.created_at).toLocaleDateString()}</span>
+                  )}
                 </div>
               </div>
             </motion.div>
@@ -328,6 +332,7 @@ export function SkillsPage() {
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<CategoryKey>('all')
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set())
+  const [batchBusy, setBatchBusy] = useState(false)
   const autopilotActive = useUiStore((s) => s.autopilotActive)
   // Backend is the source of truth: skill.governance_tier maps to permission.
   // Previously this was dual-stored in localStorage + backend, which drifted
@@ -457,7 +462,7 @@ export function SkillsPage() {
       <nav className="w-48 flex-shrink-0 border-r border-white/5 overflow-y-auto py-4 px-2">
         <div className="flex items-center gap-2 px-3 mb-4">
           <Sparkles size={14} className="text-starlight-500" />
-          <h2 className="text-xs font-semibold text-starlight-500 uppercase tracking-wider">Skills</h2>
+          <p className="text-xs font-semibold text-starlight-500 uppercase tracking-wider">Skills</p>
         </div>
         {CATEGORIES.map((cat) => {
           const count = countFor(cat.key)
@@ -560,7 +565,7 @@ export function SkillsPage() {
           )}
 
           {loadError && !loading && (
-            <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30">
+            <div role="alert" className="flex items-start gap-3 px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30">
               <AlertTriangle size={16} className="text-status-warning shrink-0 mt-0.5" />
               <div className="flex-1">
                 <p className="text-xs font-semibold text-status-warning">Skills registry unavailable</p>
@@ -582,6 +587,7 @@ export function SkillsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search skills"
               placeholder="Search skills by name or description..."
               className="w-full glass-input pl-9 pr-4 py-2.5 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-500 focus:outline-none focus:ring-1 focus:ring-primary-500/40"
             />
@@ -597,23 +603,30 @@ export function SkillsPage() {
                 <button
                   key={level}
                   onClick={async () => {
-                    const updated = { ...permissions }
-                    finalFiltered.forEach((s) => { updated[s.id] = level })
-                    setPermissions(updated)
-                    const results = await Promise.allSettled(
-                      finalFiltered.map((s) =>
-                        api.patch(`/skills/${s.id}`, { governance_tier: level === 'ALWAYS_ALLOW' ? 0 : level === 'ASK_EACH_TIME' ? 2 : 4 }),
-                      ),
-                    )
-                    const failures = results.filter((r) => r.status === 'rejected').length
-                    if (failures > 0) {
-                      toast.error(`${finalFiltered.length - failures} of ${finalFiltered.length} skills updated. ${failures} failed.`)
-                      await fetchSkills()
-                    } else {
-                      toast.success(`Set ${finalFiltered.length} skills to ${cfg.label}`)
+                    if (batchBusy) return
+                    setBatchBusy(true)
+                    try {
+                      const updated = { ...permissions }
+                      finalFiltered.forEach((s) => { updated[s.id] = level })
+                      setPermissions(updated)
+                      const results = await Promise.allSettled(
+                        finalFiltered.map((s) =>
+                          api.patch(`/skills/${s.id}`, { governance_tier: level === 'ALWAYS_ALLOW' ? 0 : level === 'ASK_EACH_TIME' ? 2 : 4 }),
+                        ),
+                      )
+                      const failures = results.filter((r) => r.status === 'rejected').length
+                      if (failures > 0) {
+                        toast.error(`${finalFiltered.length - failures} of ${finalFiltered.length} skills updated. ${failures} failed.`)
+                        await fetchSkills()
+                      } else {
+                        toast.success(`Set ${finalFiltered.length} skills to ${cfg.label}`)
+                      }
+                    } finally {
+                      setBatchBusy(false)
                     }
                   }}
-                  className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border} hover:brightness-125 transition-all cursor-pointer`}
+                  disabled={batchBusy}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border} hover:brightness-125 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer`}
                 >
                   <Icon size={10} />
                   {cfg.label} all
@@ -634,41 +647,55 @@ export function SkillsPage() {
               <div className="flex-1" />
               <button
                 onClick={async () => {
-                  const toEnable = finalFiltered.filter((s) => selectedSkills.has(s.id))
-                  const results = await Promise.allSettled(
-                    toEnable.map((s) => api.patch(`/skills/${s.id}`, { is_active: true })),
-                  )
-                  const failures = results.filter((r) => r.status === 'rejected').length
-                  if (failures > 0) {
-                    toast.error(`${toEnable.length - failures} of ${toEnable.length} skills enabled. ${failures} failed.`)
-                    await fetchSkills()
-                  } else {
-                    setSkills((prev) => prev.map((s) => selectedSkills.has(s.id) ? { ...s, is_active: true } : s))
-                    toast.success(`${selectedSkills.size} skills enabled`)
-                    setSelectedSkills(new Set())
+                  if (batchBusy) return
+                  setBatchBusy(true)
+                  try {
+                    const toEnable = finalFiltered.filter((s) => selectedSkills.has(s.id))
+                    const results = await Promise.allSettled(
+                      toEnable.map((s) => api.patch(`/skills/${s.id}`, { is_active: true })),
+                    )
+                    const failures = results.filter((r) => r.status === 'rejected').length
+                    if (failures > 0) {
+                      toast.error(`${toEnable.length - failures} of ${toEnable.length} skills enabled. ${failures} failed.`)
+                      await fetchSkills()
+                    } else {
+                      setSkills((prev) => prev.map((s) => selectedSkills.has(s.id) ? { ...s, is_active: true } : s))
+                      toast.success(`${selectedSkills.size} skills enabled`)
+                      setSelectedSkills(new Set())
+                    }
+                  } finally {
+                    setBatchBusy(false)
                   }
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-green/10 text-accent-green hover:bg-accent-green/20 cursor-pointer"
+                disabled={batchBusy}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-green/10 text-accent-green hover:bg-accent-green/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 Enable selected
               </button>
               <button
                 onClick={async () => {
-                  const toDisable = finalFiltered.filter((s) => selectedSkills.has(s.id))
-                  const results = await Promise.allSettled(
-                    toDisable.map((s) => api.patch(`/skills/${s.id}`, { is_active: false })),
-                  )
-                  const failures = results.filter((r) => r.status === 'rejected').length
-                  if (failures > 0) {
-                    toast.error(`${toDisable.length - failures} of ${toDisable.length} skills disabled. ${failures} failed.`)
-                    await fetchSkills()
-                  } else {
-                    setSkills((prev) => prev.map((s) => selectedSkills.has(s.id) ? { ...s, is_active: false } : s))
-                    toast.success(`${selectedSkills.size} skills disabled`)
-                    setSelectedSkills(new Set())
+                  if (batchBusy) return
+                  setBatchBusy(true)
+                  try {
+                    const toDisable = finalFiltered.filter((s) => selectedSkills.has(s.id))
+                    const results = await Promise.allSettled(
+                      toDisable.map((s) => api.patch(`/skills/${s.id}`, { is_active: false })),
+                    )
+                    const failures = results.filter((r) => r.status === 'rejected').length
+                    if (failures > 0) {
+                      toast.error(`${toDisable.length - failures} of ${toDisable.length} skills disabled. ${failures} failed.`)
+                      await fetchSkills()
+                    } else {
+                      setSkills((prev) => prev.map((s) => selectedSkills.has(s.id) ? { ...s, is_active: false } : s))
+                      toast.success(`${selectedSkills.size} skills disabled`)
+                      setSelectedSkills(new Set())
+                    }
+                  } finally {
+                    setBatchBusy(false)
                   }
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-red/10 text-accent-red hover:bg-accent-red/20 cursor-pointer"
+                disabled={batchBusy}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-accent-red/10 text-accent-red hover:bg-accent-red/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 Disable selected
               </button>
@@ -686,7 +713,7 @@ export function SkillsPage() {
             <div className="flex items-center justify-between px-1">
               <button
                 onClick={() => {
-                  if (selectedSkills.size === finalFiltered.length) {
+                  if (finalFiltered.every((s) => selectedSkills.has(s.id))) {
                     setSelectedSkills(new Set())
                   } else {
                     setSelectedSkills(new Set(finalFiltered.map((s) => s.id)))
@@ -694,27 +721,34 @@ export function SkillsPage() {
                 }}
                 className="text-[10px] text-starlight-500 hover:text-primary-400 cursor-pointer"
               >
-                {selectedSkills.size === finalFiltered.length ? 'Deselect all' : 'Select all'}
+                {finalFiltered.every((s) => selectedSkills.has(s.id)) ? 'Deselect all' : 'Select all'}
               </button>
               <button
                 onClick={async () => {
-                  const allActive = finalFiltered.every((s) => s.is_active)
-                  const results = await Promise.allSettled(
-                    finalFiltered.map((s) => api.patch(`/skills/${s.id}`, { is_active: !allActive })),
-                  )
-                  const failures = results.filter((r) => r.status === 'rejected').length
-                  if (failures > 0) {
-                    toast.error(`${finalFiltered.length - failures} of ${finalFiltered.length} skills updated. ${failures} failed.`)
-                    await fetchSkills()
-                  } else {
-                    setSkills((prev) => prev.map((s) => {
-                      if (finalFiltered.some((f) => f.id === s.id)) return { ...s, is_active: !allActive }
-                      return s
-                    }))
-                    toast.success(allActive ? `${finalFiltered.length} skills disabled` : `${finalFiltered.length} skills enabled`)
+                  if (batchBusy) return
+                  setBatchBusy(true)
+                  try {
+                    const allActive = finalFiltered.every((s) => s.is_active)
+                    const results = await Promise.allSettled(
+                      finalFiltered.map((s) => api.patch(`/skills/${s.id}`, { is_active: !allActive })),
+                    )
+                    const failures = results.filter((r) => r.status === 'rejected').length
+                    if (failures > 0) {
+                      toast.error(`${finalFiltered.length - failures} of ${finalFiltered.length} skills updated. ${failures} failed.`)
+                      await fetchSkills()
+                    } else {
+                      setSkills((prev) => prev.map((s) => {
+                        if (finalFiltered.some((f) => f.id === s.id)) return { ...s, is_active: !allActive }
+                        return s
+                      }))
+                      toast.success(allActive ? `${finalFiltered.length} skills disabled` : `${finalFiltered.length} skills enabled`)
+                    }
+                  } finally {
+                    setBatchBusy(false)
                   }
                 }}
-                className="text-[10px] text-starlight-500 hover:text-accent-green cursor-pointer"
+                disabled={batchBusy}
+                className="text-[10px] text-starlight-500 hover:text-accent-green disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {finalFiltered.every((s) => s.is_active) ? 'Disable all visible' : 'Enable all visible'}
               </button>

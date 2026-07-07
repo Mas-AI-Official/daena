@@ -31,7 +31,7 @@
  *     directly from the consent screen to the backend callback.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ExternalLink,
@@ -56,6 +56,18 @@ export default function OAuthConnectDrawer({
   plugin, onClose, onComplete,
 }: OAuthConnectDrawerProps) {
   const navigate = useNavigate()
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  // PR-A11Y-PHASE32: overlay focus contract -- move focus into the panel on open,
+  // restore to the opener on close (WCAG 2.4.3 / 2.1.2 / WAI-ARIA dialog pattern).
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    const focusTimer = setTimeout(() => {
+      const panel = panelRef.current
+      if (panel && !panel.contains(document.activeElement)) panel.focus()
+    }, 50)
+    return () => { clearTimeout(focusTimer); previousFocusRef.current?.focus?.() }
+  }, [])
   const [step, setStep] = useState<Step>('preflight')
   const [start, setStart] = useState<OAuthStartResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -147,7 +159,13 @@ export default function OAuthConnectDrawer({
       onClick={onClose}
     >
       <div
-        className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Connect ${plugin.name}`}
+        tabIndex={-1}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }}
+        className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-start justify-between gap-4 border-b border-white/5 p-5">

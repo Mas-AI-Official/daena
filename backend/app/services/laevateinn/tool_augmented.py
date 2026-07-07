@@ -20,6 +20,7 @@ import math
 import re
 import sys
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -29,6 +30,13 @@ if TYPE_CHECKING:
     from app.services.llm_service import LLMService
 
 logger = get_logger(__name__)
+
+# An injectable web-search backend: an async callable that takes a query and
+# returns a text result ("" when it has nothing). Lets the RDE be wired to a
+# real provider (Perplexity, SerpAPI, DaenaBot BrowserAgent) without touching
+# this module. None means "no provider", in which case the tool honestly
+# reports unavailable rather than fabricating results (ADR-001 visibility).
+WebSearchProvider = Callable[[str], Awaitable[str]]
 
 # ---------------------------------------------------------------------------
 # Regex patterns for claim extraction
@@ -171,10 +179,22 @@ class ToolAugmentedReasoner:
         self,
         llm_service: LLMService | None = None,
         code_verifier: object | None = None,
+        web_search: WebSearchProvider | None = None,
     ) -> None:
         self._llm = llm_service
         self._code_verifier = code_verifier
+        self._web_search_provider = web_search
         self._search_cache: dict[str, str] = {}
+
+    @property
+    def web_search_available(self) -> bool:
+        """True only when a real web-search provider is injected.
+
+        Reports capability honestly (ADR-001): with no provider wired, the
+        reasoner does not pretend to ground claims against the web -- callers
+        can branch on this instead of inferring from empty results.
+        """
+        return self._web_search_provider is not None
 
     # ------------------------------------------------------------------
     # Public API
@@ -599,24 +619,41 @@ class ToolAugmentedReasoner:
     # Tool implementations
     # ------------------------------------------------------------------
 
-    async def _web_search_stub(self, query: str) -> str:
-        """Stub for web search integration.
+    async def _web_search(self, query: str) -> str:
+        """Web search via the injected provider, or honest "" when unwired.
 
-        In production this will delegate to DaenaBot's BrowserAgent or an
-        external search API (Perplexity, SerpAPI, etc.). For now returns
-        cached results or an empty string indicating no external data.
-
-        When a real search backend is wired, replace the body of this method
-        while keeping the signature stable.
+        With no provider (``web_search_available is False``) this returns ""
+        rather than fabricating results. With a provider it caches by query,
+        awaits the call, and degrades to "" on provider error -- the failure is
+        logged (ADR-001 visibility), never swallowed silently into a fake hit.
         """
         cache_key = query[:200].lower().strip()
         if cache_key in self._search_cache:
             return self._search_cache[cache_key]
 
-        # Simulate zero-latency "no results" -- real implementation will
-        # await an HTTP call here.
-        logger.debug("tool_augmented.web_search_stub", query=query[:120])
-        return ""
+        if self._web_search_provider is None:
+            logger.debug("tool_augmented.web_search_unavailable", query=query[:120])
+            return ""
+
+        try:
+            result = await self._web_search_provider(query)
+        except Exception as exc:
+            logger.warning("tool_augmented.web_search_error", error=str(exc), query=query[:120])
+            return ""
+
+        result = result or ""
+        if result:
+            self._search_cache[cache_key] = result
+        return result
+
+    async def _web_search_stub(self, query: str) -> str:
+        """Backward-compatible alias for :meth:`_web_search`.
+
+        Retained so the verification call sites (and any external callers) keep
+        a stable name; the real behavior -- including routing an injected
+        provider through the verification loop -- lives in ``_web_search``.
+        """
+        return await self._web_search(query)
 
     async def _run_python(self, code: str, timeout: int = 5) -> tuple[str, bool]:
         """Execute a Python snippet in a subprocess sandbox.

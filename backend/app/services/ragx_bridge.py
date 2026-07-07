@@ -18,16 +18,23 @@ silently swallowed beyond the silent-skip pattern that Stage 6.5 uses.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import UUID
 
 import httpx
 
+from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-RAGX_URL = "http://127.0.0.1:8100"
+# Single source of truth for the ragx base URL: app.core.config.Settings
+# (env RAGX_BASE_URL, default http://127.0.0.1:8100). factuality_gate.py reads
+# the same setting. Kept as a module-level string so callers can import it and
+# tests can monkeypatch it.
+RAGX_URL = get_settings().ragx_base_url
 
 # Default collections to query in parallel. Tuned for "what is the operator's
 # current intent" coverage without flooding the prompt: 1 Daena docs, 1 wiki,
@@ -40,6 +47,60 @@ DEFAULT_K = 4
 
 # Soft cap on time spent. Stage 6.55 cannot delay the user-visible response.
 DEFAULT_TIMEOUT_S = 6.0
+
+
+def department_collection_name(dept_name: str, tenant_id: UUID) -> str | None:
+    """Tenant-scoped ragx collection name for a department's private knowledge.
+
+    Form: ``daena-dept-{tenant_id.hex}-{slug}`` -- e.g. "Finance" under tenant
+    aaaa... -> ``daena-dept-aaaa...-finance``. The tenant hex prefix guarantees
+    two tenants with the same department name never share a collection, which is
+    the leak guard dept_knowledge_ingest relies on.
+
+    Returns None when *dept_name* slugifies to empty (blank / punctuation-only):
+    the caller treats None as "skip indexing" rather than writing to a
+    tenant-ambiguous ``daena-dept-{hex}-`` collection.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", (dept_name or "").strip().lower()).strip("-")
+    if not slug:
+        return None
+    return f"daena-dept-{tenant_id.hex}-{slug}"
+
+
+def experience_collection_name(tenant_id: UUID) -> str:
+    """Tenant-scoped ragx collection name for promoted agent experiences.
+
+    Form: ``daena-exp-{tenant_id.hex}`` -- one collection per tenant holds every
+    trust-promoted, non-sensitive experience (AGENT_DECISION / SKILL_OUTCOME /
+    PATTERN_LEARNED / APPROACH_FAILED). The tenant hex prefix is the leak guard:
+    two tenants never share an experience collection (Rule 9).
+
+    Unlike department_collection_name this never returns None -- tenant_id is
+    always a real UUID here, so there is no empty-slug case. The write side
+    (experience_ingest) only feeds NON-sensitive entries, so no PII / creds reach
+    this external store; sensitive experiences stay keyword-only in the DB tier.
+    """
+    return f"daena-exp-{tenant_id.hex}"
+
+
+def collections_for_department(dept_name: str, tenant_id: UUID) -> list[str]:
+    """Ragx collections to query for a department node's grounded evidence.
+
+    Returns the department's tenant-scoped private collection when *dept_name*
+    yields a valid slug; otherwise falls back to DEFAULT_COLLECTIONS so the
+    node still surfaces honest evidence instead of querying nothing. The return
+    shape is parallel to DEFAULT_COLLECTIONS (a list of collection-name strings)
+    because the caller (graph_service._node_ai_context) records it as the
+    "requested" set and passes it straight to query_ragx(collections=...).
+
+    Per ADR-001 (Rule 17): if the dedicated collection does not yet exist in
+    ragx, query_ragx fails open per-collection and the UI shows an honest
+    offline/empty pill -- never a fabricated empty result.
+    """
+    name = department_collection_name(dept_name, tenant_id)
+    if name is None:
+        return list(DEFAULT_COLLECTIONS)
+    return [name]
 
 
 @dataclass(frozen=True, slots=True)

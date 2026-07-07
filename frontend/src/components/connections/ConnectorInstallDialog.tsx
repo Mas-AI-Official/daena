@@ -11,7 +11,7 @@
  * subtitle, About copy, Includes section (Skills + MCP servers),
  * Capabilities pills, big Install button.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X,
@@ -80,6 +80,28 @@ export default function ConnectorInstallDialog({ slug, open, onClose, onConnecte
   const [tokenForm, setTokenForm] = useState<InstallStartResponse['form'] | null>(null)
   const [tokenValues, setTokenValues] = useState<Record<string, string>>({})
   const [submittingToken, setSubmittingToken] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+
+  // PR-A11Y-PHASE43: dialog keyboard semantics -- Escape closes (WCAG 2.1.2);
+  // focus moves into the panel on open and returns to the opener on close
+  // (WCAG 2.4.3). Mirrors the house Modal primitive (components/common/Modal.tsx).
+  useEffect(() => {
+    if (!open) return
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
+  }, [open, onClose])
+
+  useEffect(() => {
+    if (!open) return
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    const focusTimer = setTimeout(() => {
+      const panel = panelRef.current
+      if (panel && !panel.contains(document.activeElement)) panel.focus()
+    }, 50)
+    return () => { clearTimeout(focusTimer); previousFocusRef.current?.focus?.() }
+  }, [open])
 
   useEffect(() => {
     if (!open || !slug) {
@@ -170,7 +192,12 @@ export default function ConnectorInstallDialog({ slug, open, onClose, onConnecte
           onClick={onClose}
         >
           <motion.div
-            className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-midnight-500 border border-white/10 shadow-2xl"
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={data ? `Install ${data.interface?.displayName ?? data.name}` : 'Install connector'}
+            tabIndex={-1}
+            className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-midnight-500 border border-white/10 shadow-2xl focus:outline-none"
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
@@ -338,10 +365,11 @@ export default function ConnectorInstallDialog({ slug, open, onClose, onConnecte
                       <div className="space-y-3">
                         {tokenForm.fields.map((f) => (
                           <div key={f.key}>
-                            <label className="block text-[11px] uppercase tracking-wider text-starlight-400 mb-1">
+                            <label htmlFor={`connector-field-${f.key}`} className="block text-[11px] uppercase tracking-wider text-starlight-400 mb-1">
                               {f.label}
                             </label>
                             <input
+                              id={`connector-field-${f.key}`}
                               type={f.type === 'password' ? 'password' : 'text'}
                               value={tokenValues[f.key] || ''}
                               onChange={(e) =>

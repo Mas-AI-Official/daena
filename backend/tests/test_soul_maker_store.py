@@ -125,3 +125,65 @@ def test_approve_proposal_writes_live_file_preserving_frontmatter() -> None:
         # Restore the original file so the suite stays deterministic
         live_path.write_text(original_file, encoding="utf-8")
         SoulEngine.reload()
+
+
+def test_serialize_proposal_maps_store_keys_to_frontend_contract() -> None:
+    """The API boundary must rename store keys to the frontend SoulProposal shape.
+
+    Regression guard: the live approve/reject buttons POSTed to
+    ``/souls/proposals/undefined/approve`` because the store persists
+    ``id`` / ``slug`` / ``original_body`` / ``decision_notes`` but the
+    frontend reads ``proposal_id`` / ``department_slug`` / ``current_body``
+    / ``notes``. ``_serialize_proposal`` is the translation; if it drifts,
+    the UI silently sends ``undefined`` again.
+    """
+    from app.api.v1.souls import _serialize_proposal
+
+    stored = {
+        "id": "prop-abc-123",
+        "slug": "engineering",
+        "mind_name": "Aria",
+        "status": "pending",
+        "verdict": "APPROVE",
+        "confidence": 0.84,
+        "created_at": "2026-07-01T00:00:00Z",
+        "decided_at": None,
+        "decided_by": None,
+        "decision_notes": "founder note",
+        "original_body": "# Aria\n\nOriginal.\n",
+        "proposed_body": "# Aria\n\nRefined.\n",
+        "improvement_notes": ["added observability frame"],
+        "gap_report": {"missing_expertise_frames": ["observability"]},
+        "evidence_sources": [{"source": "web_search", "title": "t"}],
+    }
+
+    out = _serialize_proposal(stored)
+
+    # Renamed keys -- the whole point of the serializer
+    assert out.proposal_id == "prop-abc-123"
+    assert out.department_slug == "engineering"
+    assert out.current_body == "# Aria\n\nOriginal.\n"
+    assert out.notes == "founder note"
+    # Pass-through keys
+    assert out.mind_name == "Aria"
+    assert out.status == "pending"
+    assert out.verdict == "APPROVE"
+    assert out.confidence == 0.84
+    assert out.proposed_body == "# Aria\n\nRefined.\n"
+    assert out.improvement_notes == ["added observability frame"]
+    assert out.gap_report == {"missing_expertise_frames": ["observability"]}
+    assert out.evidence_sources == [{"source": "web_search", "title": "t"}]
+
+
+def test_serialize_proposal_tolerates_missing_optional_keys() -> None:
+    """A minimal stored record must not raise; required ids fall back to ''."""
+    from app.api.v1.souls import _serialize_proposal
+
+    out = _serialize_proposal({"slug": "product"})
+    assert out.proposal_id == ""  # missing id -> empty, never None/KeyError
+    assert out.department_slug == "product"
+    assert out.current_body is None
+    assert out.notes is None
+    assert out.improvement_notes == []
+    assert out.gap_report == {}
+    assert out.evidence_sources == []

@@ -1,11 +1,24 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom'
 import { Eye, EyeOff, LogIn } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { useAuthStore } from '@/stores/authStore'
 import { Button, Input } from '@/components/common'
 import { OAuthButtons } from '@/components/auth/OAuthButtons'
+
+// Resolve a post-login redirect from the intended destination ProtectedRoute captures
+// (location.state.from) or the ?next= query the 401 interceptor appends. Sanitized to a
+// same-origin relative path: must start with a single "/" (reject "//" and "/\" protocol-relative
+// forms and absolute URLs) and never an auth page -- mirroring the open-redirect-safe hardcoded
+// redirect in lib/api.ts. Falls back to /chat.
+function resolveRedirect(raw: string | null | undefined): string {
+  if (!raw || raw[0] !== '/' || raw[1] === '/' || raw[1] === '\\') return '/chat'
+  if (raw === '/login' || raw === '/register' || raw.startsWith('/login?') || raw.startsWith('/register?')) {
+    return '/chat'
+  }
+  return raw
+}
 
 export function LoginPage() {
   usePageTitle('Sign In')
@@ -15,13 +28,19 @@ export function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true)
   const { login, isLoading, error, clearError } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     clearError()
     await login(email, password)
     if (useAuthStore.getState().isAuthenticated) {
-      navigate('/chat')
+      const fromState = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from
+      const intended = fromState?.pathname
+        ? fromState.pathname + (fromState.search ?? '')
+        : searchParams.get('next')
+      navigate(resolveRedirect(intended))
     }
   }
 

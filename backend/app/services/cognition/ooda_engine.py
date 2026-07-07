@@ -433,17 +433,12 @@ class OODAEngine:
         # weakness. If so, adjust strategy -- practice what we're bad at.
         weakness_note = ""
         try:
-            from app.services.cognition.weakness_tracker import WeaknessTracker
-            tracker = WeaknessTracker()
-            weaknesses = await tracker.identify_weaknesses(state.problem_type)
-            if weaknesses:
-                weak_names = [w.name for w in weaknesses[:3]]
-                weakness_note = f" KNOWN WEAKNESSES in this area: {', '.join(weak_names)}. Adjust approach accordingly."
-                # If we have a specific improvement suggestion, add it
-                for w in weaknesses:
-                    if w.improvement_suggestion:
-                        weakness_note += f" Suggestion: {w.improvement_suggestion}"
-                        break
+            from app.services.cognition.weakness_tracker import (
+                build_weakness_note,
+                get_weakness_tracker,
+            )
+            tracker = get_weakness_tracker(self.tenant_id)
+            weakness_note = await build_weakness_note(tracker, state.problem_type)
         except Exception as exc:
             logger.debug("ooda.weakness_tracker_skipped", error=str(exc))
 
@@ -640,8 +635,8 @@ class OODAEngine:
 
             # Store pattern via LearningService (existing service)
             try:
-                from app.services.learning_service import LearningService, ActionOutcome
-                learning = LearningService()
+                from app.services.learning_service import ActionOutcome
+                learning = await self._get_learning_service()
                 await learning.track_outcome(ActionOutcome(
                     action_id=state.task_id,
                     session_id=str(self.session_id or "cognitive"),
@@ -759,20 +754,15 @@ class OODAEngine:
 
         # WeaknessTracker: Record this outcome for deliberate practice tracking
         try:
-            from app.services.cognition.weakness_tracker import WeaknessTracker
-            tracker = WeaknessTracker()
-            await tracker.record_outcome(
-                category="problem_type",
-                name=state.problem_type,
+            from app.services.cognition.weakness_tracker import get_weakness_tracker
+            tracker = get_weakness_tracker(self.tenant_id)
+            await tracker.record(
+                problem_type=state.problem_type,
+                strategy=state.current_strategy.name if state.current_strategy else "",
+                tools_used=[],
                 success=success,
                 error=state.failure_root_causes[-1] if state.failure_root_causes else "",
             )
-            if state.current_strategy:
-                await tracker.record_outcome(
-                    category="strategy",
-                    name=state.current_strategy.name,
-                    success=success,
-                )
         except Exception as exc:
             logger.debug("ooda.weakness_record_skipped", error=str(exc))
 
@@ -813,7 +803,67 @@ class OODAEngine:
             except Exception as exc:
                 logger.debug("ooda.self_upgrader_skipped", error=str(exc))
 
+        # Durable experience sink: persist what this reflection learned so it
+        # survives the request. LearningService above is in-memory only; this
+        # row is what with_experience_history rehydrates from on later turns.
+        await self._store_experience(state, success, output)
+
         return state
+
+    async def _get_learning_service(self) -> Any:
+        """LearningService rehydrated from this tenant's durable experience log.
+
+        Falls back to a fresh in-memory instance if history cannot be loaded
+        (Rule 17 -- reflection must never fail because history is unavailable).
+        """
+        from app.services.learning_service import LearningService
+        try:
+            return await LearningService.with_experience_history(self.db, self.tenant_id)
+        except Exception as exc:
+            logger.debug("ooda.learning_history_skipped", error=str(exc))
+            return LearningService()
+
+    async def _store_experience(
+        self,
+        state: CognitiveState,
+        success: bool,
+        action_taken: str,
+    ) -> None:
+        """Persist one reflect outcome to the durable experience_log table.
+
+        Best-effort by design: a storage failure is logged and swallowed so it
+        can never break the cognitive loop. Deliberately constructs nothing
+        beyond the row itself (no MemoryService or other subsystems), so a
+        disabled memory subsystem cannot make persisted experience vanish.
+        Flush, not commit: the owning request/session decides the transaction.
+        """
+        try:
+            from app.models.experience import ExperienceLog
+
+            meta: dict[str, Any] = {
+                "problem_type": state.problem_type,
+                "frameworks": list(state.selected_frameworks or []),
+                "cycle": state.cycle,
+            }
+            if state.failure_root_causes:
+                meta["root_causes"] = list(state.failure_root_causes)[-3:]
+
+            row = ExperienceLog(
+                tenant_id=self.tenant_id,
+                user_id=self.user_id,
+                session_id=self.session_id,
+                phase="reflect",
+                situation=(state.task or "")[:500],
+                decision=state.current_strategy.name if state.current_strategy else None,
+                action_taken=(action_taken or "")[:1000],
+                outcome="success" if success else "failure",
+                reward=1.0 if success else 0.0,
+                meta=meta,
+            )
+            self.db.add(row)
+            await self.db.flush()
+        except Exception as exc:
+            logger.warning("ooda.experience_store_failed", error=str(exc))
 
     # ------------------------------------------------------------------
     # Strategy generation

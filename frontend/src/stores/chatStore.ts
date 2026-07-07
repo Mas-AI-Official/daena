@@ -129,6 +129,20 @@ interface SendMessageStreamOptions {
 
 // ── Store shape ──
 
+/**
+ * Routing-entitlement upsell surfaced when Council/Quintessence gracefully
+ * degrades to STANDARD (Rule 13). Populated ONLY from the backend's
+ * governance_notice that carries a structured `upgrade` payload (chat.py), so it
+ * never fires for the orchestrator's mode-downgrade or auth-failover notices.
+ * Top-level (not on ``stream``) so it SURVIVES finalizeStream and stays visible
+ * after the STANDARD answer lands -- exactly when the user reads it.
+ */
+interface GovernanceUpsell {
+  plan: string      // plan that unlocks the requested routing (e.g. PRO / MAX)
+  feature: string   // human label of the requested mode (Council / Quintessence)
+  message: string   // the exact governance_notice text from the backend
+}
+
 interface ChatState {
   // Session list
   sessions: SessionResponse[]
@@ -158,6 +172,13 @@ interface ChatState {
    * operator acts on it.
    */
   governanceEvents: GovernanceEvent[]
+
+  /**
+   * Active routing-entitlement upsell (or null). Set by the governance_notice
+   * handler only when the notice carries an `upgrade` payload; cleared on a new
+   * send / session switch / cancel; survives finalizeStream by design.
+   */
+  governanceUpsell: GovernanceUpsell | null
 
   // Internal cache tracking (not for external use)
   _sessionsLastFetched: number
@@ -189,6 +210,7 @@ interface ChatState {
   // Governance event lifecycle
   addGovernanceEvent: (event: GovernanceEvent) => void
   dismissGovernanceEvent: (id: string) => void
+  clearGovernanceUpsell: () => void
   resolveApproval: (
     approvalId: string,
     decision: 'APPROVED' | 'REJECTED',
@@ -253,6 +275,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
   lastFailedMessage: null,
   governanceEvents: [],
+  governanceUpsell: null,
 
   // ── Fetch all sessions (with 30s TTL cache to avoid re-fetch on route changes) ──
   _sessionsLastFetched: 0,
@@ -340,7 +363,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const { sessions } = get()
     const session = sessions.find((s) => s.id === sessionId) || null
-    set({ activeSessionId: sessionId, activeSession: session, messages: [] })
+    // Clear any routing upsell from the prior session so it never bleeds across
+    // a session switch (the streaming case is already covered via cancelStream).
+    set({ activeSessionId: sessionId, activeSession: session, messages: [], governanceUpsell: null })
     await get().fetchMessages(sessionId)
   },
 
@@ -595,6 +620,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const decoder = new TextDecoder()
       let buffer = ''
 
+      // Per-Mind presentation carried across the routing -> done gap within
+      // this one stream. The backend emits mind/voice/accent_color on the
+      // routing SSE event (type 'thinking'); we stash them here and attach to
+      // the finalized message so VoiceProvider can speak in the Mind's voice.
+      // Locals (not StreamState) because they only need to bridge two events
+      // and finalizeStream resets stream state before the auto-read fires.
+      let streamMind: string | null = null
+      let streamVoice: string | null = null
+      let streamAccent: string | null = null
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -637,6 +672,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
               // Pipeline stage updates -- show intelligent processing stages,
               // not raw model names. Makes Daena feel like a thinking system.
               const stage = event.stage || ''
+              // Capture per-Mind presentation off the routing event (only the
+              // routing_event carries these). Stashed for the 'done' handler.
+              if (event.mind) streamMind = event.mind as string
+              if (event.voice) streamVoice = event.voice as string
+              if (event.accent_color) streamAccent = event.accent_color as string
               // Model info kept in detail (expandable), NOT shown in main label
               const modelDetail = event.model ? event.model : undefined
               const STAGE_LABELS: Record<string, string> = {
@@ -646,6 +686,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 routing: 'Selecting optimal strategy...',
                 routing_override_unavailable: 'Adapting to available resources...',
                 routing_simple_query: 'Routing to fast model...',
+                gateway_mission_compressed: 'Mission compressed',
+                gateway_skill_selected: 'Skill selected',
+                gateway_model_routed: 'Model routed',
+                gateway_council_review: 'Council review',
+                gateway_final_answer: 'Final answer',
                 // Council/Quintessence stages -- show intelligence, not API names
                 council_synthesizing: 'Consulting multiple perspectives...',
                 council_completed: 'Cross-validation complete',
@@ -707,6 +752,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 const prev = s.stream.pipelineStages.map((p) =>
                   p.status === 'active' ? { ...p, status: 'done' as const } : p,
                 )
+                // The entitlement/plan notice (chat.py) is the ONLY governance_notice
+                // that carries a structured `upgrade` payload. Use its presence as a
+                // positive discriminator so mode-downgrade and CLI auth-failover
+                // notices (no `upgrade`) never raise an upsell CTA. The honest
+                // pipeline-stage log below stays for ALL notices; the upsell is purely
+                // additive and only set when this is the routing-entitlement case.
+                const upsell =
+                  event.upgrade && event.upgrade.plan
+                    ? {
+                        plan: String(event.upgrade.plan),
+                        feature: String(event.upgrade.feature ?? ''),
+                        message: String(event.message ?? ''),
+                      }
+                    : null
                 return {
                   stream: {
                     ...s.stream,
@@ -717,6 +776,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                       status: 'done' as const,
                     }],
                   },
+                  ...(upsell ? { governanceUpsell: upsell } : {}),
                 }
               })
             } else if (event.type === 'chunk') {
@@ -743,6 +803,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 token_count_output: null,
                 created_at: new Date().toISOString(),
               }
+              // Attach the per-Mind presentation captured from the routing
+              // event so it survives finalizeStream's stream reset and reaches
+              // the auto-read TTS effect on the finalized message. Applies to
+              // both the event.data and synthesized branches above.
+              if (streamMind) assistantMsg.mind = streamMind
+              if (streamVoice) assistantMsg.voice = streamVoice
+              if (streamAccent) assistantMsg.accent_color = streamAccent
               finalizeStream(assistantMsg)
               // Pick up auto-generated session title from backend
               if (event.data?._session_title) {
@@ -1109,6 +1176,50 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
       }
+
+      // Clean-EOF guard (Rule 17 -- no silent stuck spinner). The while-loop
+      // above exits three ways: a terminal `done` frame (-> finalizeStream,
+      // clears isStreaming), an `error` frame (-> cancelStream, clears
+      // isStreaming), OR a clean EOF (`if (done) break`) that carried NEITHER.
+      // The third case is real in production: an uncaught orchestrator
+      // exception or a Cloud Run / proxy idle-timeout severs the stream AFTER
+      // the last chunk but BEFORE `done`, so the loop breaks with no throw,
+      // the outer catch never fires, and isStreaming stays stuck true ->
+      // infinite "thinking" spinner with no error and no retry. Reset honestly.
+      // (No-op on every normal path: a terminal/error/cancel handler has
+      // already set isStreaming false before we reach here.)
+      if (get().stream.isStreaming) {
+        const partial = get().stream.streamedContent
+        if (partial) {
+          // Tokens already streamed in -- salvage them as a best-effort
+          // assistant message (mirrors the `done`-event synth shape) so the
+          // user keeps what arrived, and tell them it was cut short.
+          finalizeStream({
+            id: `synth-${Date.now()}`,
+            session_id: get().activeSessionId ?? '',
+            role: 'ASSISTANT',
+            content: partial,
+            model_used: get().stream.modelUsed ?? null,
+            provider_used: null,
+            governance_tier: null,
+            cost_usd: null,
+            latency_ms: null,
+            token_count_input: null,
+            token_count_output: null,
+            created_at: new Date().toISOString(),
+          })
+          toast.error('Connection closed before the reply finished -- showing the partial answer.')
+        } else {
+          // Nothing arrived. Mirror the outer-catch reset so retry re-creates
+          // the turn cleanly (remove the optimistic prompt + arm retry).
+          set((s) => ({
+            messages: s.messages.filter((m) => m.id !== optimistic.id),
+            lastFailedMessage: optimistic.content,
+          }))
+          cancelStream()
+          toast.error('Connection closed before a reply arrived. Tap retry.')
+        }
+      }
     } catch (err: unknown) {
       // Roll back optimistic and cancel stream, but save content for retry
       const msg = err instanceof Error ? err.message : 'Failed to stream message'
@@ -1146,6 +1257,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       governanceEvents: s.governanceEvents.filter((e) => e.id !== id),
     })),
 
+  clearGovernanceUpsell: () => set({ governanceUpsell: null }),
+
   resolveApproval: async (approvalId, decision, reason) => {
     // Optimistically remove the card so the UI feels responsive;
     // on error we surface a toast and leave the row in the /approvals
@@ -1176,6 +1289,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   startStream: () =>
     set({
       stream: { isStreaming: true, thinkingContent: '', streamedContent: '', modelUsed: null, daenabotActivity: null, runtimeActivity: null, runtimeOutput: '', pipelineStages: [], toolCalls: [] },
+      // Clear a prior upsell on every new send so it reflects only this turn.
+      governanceUpsell: null,
     }),
 
   appendThinking: (chunk) =>
@@ -1197,6 +1312,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   cancelStream: () =>
     set({
       stream: { isStreaming: false, thinkingContent: '', streamedContent: '', modelUsed: null, daenabotActivity: null, runtimeActivity: null, runtimeOutput: '', pipelineStages: [], toolCalls: [] },
+      // Aborting the stream discards its routing upsell too.
+      governanceUpsell: null,
     }),
 }))
 

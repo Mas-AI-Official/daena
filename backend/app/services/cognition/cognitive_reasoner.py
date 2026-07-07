@@ -27,6 +27,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.logging import get_logger
+from app.core.universal_cognitive_gateway import (
+    attach_gateway_review,
+    build_gateway_request,
+)
 
 logger = get_logger(__name__)
 
@@ -1364,8 +1368,14 @@ class CognitiveReasoner:
                 temperature=0.7,
                 max_tokens=2048,
             )
+            request = build_gateway_request(
+                request,
+                model_id=model_id,
+                available_models=[model_id],
+            )
 
             response = await provider.generate(request)
+            response = attach_gateway_review(response, request)
             logger.info(
                 "cognitive_reasoner.llm_call",
                 model=model_id,
@@ -1500,7 +1510,13 @@ class CognitiveReasoner:
                     temperature=0.7,
                     max_tokens=1500,
                 )
+                req = build_gateway_request(
+                    req,
+                    model_id=model_info.model_id,
+                    available_models=[m.model_id for m in debate_models],
+                )
                 resp = await provider.generate(req)
+                resp = attach_gateway_review(resp, req)
                 return resp.content
 
             # Run debate in parallel (asyncio.gather)
@@ -1546,7 +1562,13 @@ class CognitiveReasoner:
                 temperature=0.5,  # Lower temp for synthesis
                 max_tokens=2048,
             )
+            synth_req = build_gateway_request(
+                synth_req,
+                model_id=self._model_id,
+                available_models=[self._model_id],
+            )
             synth_resp = await primary_provider.generate(synth_req)
+            synth_resp = attach_gateway_review(synth_resp, synth_req)
 
             logger.info(
                 "cognitive_reasoner.quintessence_complete",

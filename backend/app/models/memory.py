@@ -36,8 +36,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import GUID, Base, JSONBCompat, TenantMixin, TimestampMixin
 
+# Semantic recall is delegated to the external ragx service (embeddings +
+# CRAG + NLI live there, per-tenant collections), NOT to this DB tier. The
+# NBMF T0-T4 store below is deliberately keyword-token retrieval: fast,
+# local, no embedding column to keep in sync. This probe stays only as a
+# forward-compat capability flag -- if a future phase adds an on-DB embedding
+# column it can gate on HAS_PGVECTOR -- but nothing reads it today, so do not
+# assume the DB does vector search. It does not.
 try:
-    from pgvector.sqlalchemy import Vector  # noqa: F401
+    from pgvector.sqlalchemy import Vector  # noqa: F401  (probe only; unused today)
     HAS_PGVECTOR = True
 except ImportError:
     HAS_PGVECTOR = False
@@ -46,9 +53,10 @@ except ImportError:
 class MemoryEntry(Base, TenantMixin, TimestampMixin):
     """A single memory entry in the NBMF system.
 
-    Memories have a tier (0-4), optional embeddings for semantic search,
-    TTL-based expiration for lower tiers, quarantine gating, trust scoring,
-    and content-hash deduplication.
+    Memories have a tier (0-4), TTL-based expiration for lower tiers,
+    quarantine gating, trust scoring, and content-hash deduplication.
+    Retrieval here is keyword-token over content/summary/tags; semantic
+    (vector) recall is served by the external ragx service, not this table.
     """
 
     __tablename__ = "memory_entries"

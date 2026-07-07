@@ -296,6 +296,7 @@ export default function ConnectionsPage() {
                   <button
                     key={tab.key}
                     onClick={() => setActiveTab(tab.key)}
+                    aria-pressed={active}
                     className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
                       active
                         ? isAdvanced
@@ -482,9 +483,9 @@ function AdvancedPanel({
                 </div>
               </div>
               <section className="space-y-2">
-                <h3 className="text-sm font-semibold text-starlight-100">
+                <h2 className="text-sm font-semibold text-starlight-100">
                   Legacy plugin browser
-                </h3>
+                </h2>
                 <p className="text-[11px] text-starlight-500">
                   Older catalog used for migration debugging. Install +
                   disconnect actions still function but do not mirror to
@@ -494,9 +495,9 @@ function AdvancedPanel({
                 <PluginsCatalogBrowser />
               </section>
               <section className="space-y-2">
-                <h3 className="text-sm font-semibold text-starlight-100">
+                <h2 className="text-sm font-semibold text-starlight-100">
                   Legacy MCP detector
-                </h3>
+                </h2>
                 <p className="text-[11px] text-starlight-500">
                   Original detect / probe / import view. The Plugins tab
                   is the canonical user surface; this panel is kept for

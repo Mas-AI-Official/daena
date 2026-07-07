@@ -380,12 +380,13 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   // the #1 complaint about SAPI5 browser TTS. ~150-300ms first-byte
   // latency on a warm network.
 
-  const speakWithEdgeTts = useCallback(async (text: string): Promise<boolean> => {
+  const speakWithEdgeTts = useCallback(async (text: string, mindVoice?: string | null): Promise<boolean> => {
     setIsSpeaking(true)
     isSpeakingRef.current = true
     let url: string | null = null
     try {
-      const voice = localStorage.getItem('daena_edge_voice') || 'en-US-AriaNeural'
+      // Per-Mind voice from the message wins; else the user's saved default.
+      const voice = mindVoice || localStorage.getItem('daena_edge_voice') || 'en-US-AriaNeural'
       const token = localStorage.getItem('daena_token') || ''
       const res = await fetch('/api/v1/tts/speak', {
         method: 'POST',
@@ -440,7 +441,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   //   2. ElevenLabs (if the user has a key configured)
   //   3. Browser SpeechSynthesis (always-available robot-voice fallback)
 
-  const speakResponse = useCallback(async (text: string) => {
+  const speakResponse = useCallback(async (text: string, mindVoice?: string | null) => {
     if (!isActiveRef.current && !ttsEnabledRef.current) return
     try { recognitionRef.current?.stop() } catch {}
 
@@ -449,7 +450,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     const edgeDisabled = localStorage.getItem('daena_edge_tts_disabled') === '1'
 
     if (!edgeDisabled) {
-      const ok = await speakWithEdgeTts(text)
+      const ok = await speakWithEdgeTts(text, mindVoice)
       if (ok) return
       // ok=false resets isSpeaking internally; the finally on the function
       // already logged, fall through to next provider.
@@ -572,7 +573,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         // vocalized on trashy voices, and the user's neural-voice
         // preference (see auto-select) handles that.
         const cleanText = cleanTextForTts(newest.content)
-        if (cleanText) speakResponse(cleanText.slice(0, 2000))
+        // Speak in the active department Mind's voice when the routing event
+        // supplied one (chatStore attaches it to the message); else default.
+        if (cleanText) speakResponse(cleanText.slice(0, 2000), newest.voice)
       } else {
         lastMsgCount = msgs.length
       }

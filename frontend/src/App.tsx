@@ -20,47 +20,69 @@ import { CompleteProfilePage } from '@/pages/CompleteProfilePage'
 // Protected pages -- lazy loaded to keep the shell bundle smaller
 const ChatPage = lazy(() => import('@/pages/ChatPage'))
 const DepartmentChatPage = lazy(() => import('@/pages/DepartmentChatPage'))
-const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 // CompanyDashboard + DepartmentInbox deleted 2026-04-17. The /departments
 // route is now the single source of truth for the 10-department model --
 // live status merged into the existing department cards. Inter-department
 // messages surface inside each department's chat room, not in a separate
 // inbox page. Backend services (DepartmentStateService,
 // DepartmentMessageService) preserved for agent programmatic use.
-const PoliciesPage = lazy(() => import('@/pages/PoliciesPage'))
-const GovernanceApprovalsPage = lazy(() => import('@/pages/GovernanceApprovalsPage'))
-const GovernanceAuditPage = lazy(() => import('@/pages/GovernanceAuditPage'))
-const GovernanceTrustPage = lazy(() => import('@/pages/GovernanceTrustPage'))
+// Governance surface (FM-1, 2026-07-02): Approvals / Policies / Audit Log /
+// Trust Ladder fold into ONE path-driven tabbed container (GovernancePage). It
+// owns those four routes and renders the existing tested pages unchanged inside
+// its tab region -- deep-links + query params preserved. Opportunities and the
+// v3.7.0 security stack are NOT folded in (HANDS-OFF), so they stay separate.
+const GovernancePage = lazy(() => import('@/pages/GovernancePage'))
 const OpportunityInboxPage = lazy(() => import('@/pages/OpportunityInboxPage'))
 const DepartmentsPage = lazy(() => import('@/pages/DepartmentsPage'))
 // Department Minds (soul personas) + Company Mode activation -- shipped
 // with the TICKET-DEPT-MINDS-01 stack. Consumes /souls + /company-mode.
-const MindsPage = lazy(() => import('@/pages/MindsPage'))
+// The standalone /minds gallery was consolidated into DepartmentsPage
+// (FM-4, 2026-07-01) -- each department IS its Mind. Only the per-Mind
+// detail view survives; the list route now redirects to /departments.
 const MindDetailPage = lazy(() => import('@/pages/MindDetailPage'))
 const CompanyModePage = lazy(() => import('@/pages/CompanyModePage'))
-const TasksPage = lazy(() => import('@/pages/TasksPage'))
+// Mission Control "Brain" -- read-only force-graph over the live org
+// projection (departments -> agents -> mcp servers -> skills). Wired
+// 2026-06-24 per founder go-ahead (Task #6). Renders an honest error
+// state when GET /graph is unavailable, so it is safe to expose now.
+const MissionControlPage = lazy(() => import('@/pages/MissionControlPage'))
+// Work surface (FM-3, 2026-07-02): Tasks / Workstreams / Projects / Pipeline
+// fold into ONE path-driven tabbed container (WorkPage). It owns those four
+// routes and renders the existing tested pages unchanged inside its tab region
+// -- deep-links + query params preserved. /projects/:projectId (the detail
+// view) stays a separate route below.
+const WorkPage = lazy(() => import('@/pages/WorkPage'))
 const SkillsPage = lazy(() => import('@/pages/SkillsPage'))
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
-const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
 const ProjectDetailPage = lazy(() => import('@/pages/ProjectDetailPage'))
-const PipelinePage = lazy(() => import('@/pages/PipelinePage'))
-const WorkstreamsPage = lazy(() => import('@/pages/WorkstreamsPage'))
-const EngagementConsolePage = lazy(() => import('@/pages/EngagementConsolePage'))
+// EngagementConsolePage archived 2026-06-20 -- it was self-marked DEPRECATED
+// (PR-4, 2026-05-02): the /engagements route redirects to /scan (the single
+// canonical scan launcher), so this lazy-import was dead -- never rendered in
+// any <Route>. Page moved to .archive/. The /engagements -> /scan redirect
+// below stays for old bookmarks.
 // CrmPage and VoiceConsolePage were removed 2026-04-17 -- the department
 // model (/departments/{id}) is the canonical UX. CRM lives inside the
 // Sales department room; voice is an agent capability in Customer
 // Service, not a user-facing page. Backend endpoints remain so the
 // department rooms can consume them.
+// AutopilotPage (P0-5 "Accept-and-Go" console) archived 2026-07-01 -- it was
+// never imported and never had a <Route>; the live surface for autopilot runs
+// is WorkstreamsPage (/workstreams). Moved to .archive/. The catch-all
+// path="*" -> /chat redirect below already covers any stale /autopilot bookmark.
 
 // New pages (Perplexity-level redesign)
 const AccountPage = lazy(() => import('@/pages/AccountPage'))
 const FilesPage = lazy(() => import('@/pages/FilesPage'))
-const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
+// AnalyticsPage consolidated into the Brain cockpit 2026-07-02 (FM-5): its
+// usage/cost/governance panels now render inside MissionControlPage as an
+// "Analytics" overlay. /analytics redirects to /brain below. The page is lazy-
+// imported there, so it is no longer routed directly here.
 const SecurityDashboardPage = lazy(() => import('@/pages/SecurityDashboardPage'))
 const ScanPage = lazy(() => import('@/pages/ScanPage'))
 const ScanWalkthroughPage = lazy(() => import('@/pages/ScanWalkthroughPage'))
 const SecurityScopePage = lazy(() => import('@/pages/SecurityScopePage'))
+const OrgPage = lazy(() => import('@/pages/OrgPage'))
 
 /** Skeleton loading fallback with shimmer animation for polished load perception */
 function PageLoader() {
@@ -109,7 +131,11 @@ function AppRoutes() {
                 <Routes>
                   <Route path="/chat" element={<ChatPage />} />
                   <Route path="/chat/:sessionId" element={<ChatPage />} />
-                  <Route path="/dashboard" element={<DashboardPage />} />
+                  {/* Dashboard consolidated into the Brain cockpit 2026-06-25
+                      (founder go-ahead): /brain is now the single system-overview
+                      surface. The Dashboard's unique panels live inside it as an
+                      "Overview" overlay. Redirect keeps old bookmarks/links alive. */}
+                  <Route path="/dashboard" element={<Navigate to="/brain" replace />} />
                   {/* Legacy URLs redirect to /departments (unified department model).
                       /crm lived as a standalone page; now Sales owns CRM from its room.
                       /voice lived as a standalone page; voice is agent infra -- Customer
@@ -118,12 +144,14 @@ function AppRoutes() {
                   <Route path="/inbox" element={<Navigate to="/departments" replace />} />
                   <Route path="/crm" element={<Navigate to="/departments" replace />} />
                   <Route path="/voice" element={<Navigate to="/departments" replace />} />
-                  <Route path="/policies" element={<PoliciesPage />} />
-
-                  {/* Governance + Security */}
-                  <Route path="/governance/approvals" element={<GovernanceApprovalsPage />} />
-                  <Route path="/governance/audit" element={<GovernanceAuditPage />} />
-                  <Route path="/governance/trust" element={<GovernanceTrustPage />} />
+                  {/* Governance oversight: /policies, /governance/approvals,
+                      /governance/audit, /governance/trust all render the folded
+                      GovernancePage container, which preselects the tab from the
+                      pathname so each old route + its query params still work. */}
+                  <Route path="/policies" element={<GovernancePage />} />
+                  <Route path="/governance/approvals" element={<GovernancePage />} />
+                  <Route path="/governance/audit" element={<GovernancePage />} />
+                  <Route path="/governance/trust" element={<GovernancePage />} />
                   <Route path="/opportunities" element={<OpportunityInboxPage />} />
                   <Route path="/security" element={<SecurityDashboardPage />} />
                   <Route path="/security/scope" element={<SecurityScopePage />} />
@@ -139,32 +167,43 @@ function AppRoutes() {
                   <Route path="/departments/:departmentId" element={<DepartmentChatPage />} />
                   <Route path="/departments/:departmentId/chat" element={<DepartmentChatPage />} />
                   <Route path="/departments/:departmentId/chat/:sessionId" element={<DepartmentChatPage />} />
-                  <Route path="/minds" element={<MindsPage />} />
+                  {/* /minds gallery consolidated into /departments (FM-4). The
+                      list route redirects; the per-Mind detail view survives. */}
+                  <Route path="/minds" element={<Navigate to="/departments" replace />} />
                   <Route path="/minds/:slug" element={<MindDetailPage />} />
                   <Route path="/company-mode" element={<CompanyModePage />} />
+                  <Route path="/brain" element={<MissionControlPage />} />
                   <Route path="/skills" element={<SkillsPage />} />
 
-                  {/* Execution */}
-                  <Route path="/tasks" element={<TasksPage />} />
-                  <Route path="/workstreams" element={<WorkstreamsPage />} />
+                  {/* Execution: /tasks, /workstreams, /projects, /pipeline all
+                      render the folded WorkPage container, which preselects the
+                      tab from the pathname so each old route + its query params
+                      still work. /projects/:projectId stays separate below. */}
+                  <Route path="/tasks" element={<WorkPage />} />
+                  <Route path="/workstreams" element={<WorkPage />} />
                   <Route path="/connections" element={<ConnectionsPage />} />
                   <Route path="/daenabot" element={<Navigate to="/chat" replace />} />
 
                   {/* New pages (Perplexity-level) */}
                   <Route path="/files" element={<FilesPage />} />
-                  <Route path="/analytics" element={<AnalyticsPage />} />
+                  {/* Analytics folded into the Brain (FM-5, 2026-07-02): its
+                      panels live inside /brain as an "Analytics" overlay.
+                      Redirect keeps old bookmarks/links alive. */}
+                  <Route path="/analytics" element={<Navigate to="/brain" replace />} />
 
                   {/* Account -- profile management only */}
                   <Route path="/account" element={<AccountPage />} />
+                  <Route path="/account/org" element={<OrgPage />} />
                   <Route path="/account/:category" element={<AccountPage />} />
 
                   {/* Settings -- 13 real Daena settings tabs */}
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/settings/:category" element={<SettingsPage />} />
 
-                  {/* Projects */}
-                  <Route path="/projects" element={<ProjectsPage />} />
-                  <Route path="/pipeline" element={<PipelinePage />} />
+                  {/* Projects: list + pipeline are tabs of the Work surface;
+                      the per-project detail view stays its own route. */}
+                  <Route path="/projects" element={<WorkPage />} />
+                  <Route path="/pipeline" element={<WorkPage />} />
                   <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
 
                   {/* Legacy redirects */}

@@ -63,6 +63,21 @@ class SoulDetail(SoulSummary):
     version: str | None = None
 
 
+class VpMind(SoulSummary):
+    """Daena's pinned VP-tier Mind -- distinct from the 10 department peers.
+
+    Carries the extra ``tier``/``pinned``/``role`` fields the department
+    shape lacks, so the frontend can render her as the gold Vice President
+    card rather than an eleventh department. Served by GET /souls/vp.
+    """
+
+    tier: str | None = None
+    pinned: bool = False
+    role: str | None = None
+    fallback_runtimes: list[str] = Field(default_factory=list)
+    tools_enabled: list[str] = Field(default_factory=list)
+
+
 class RefineRequest(BaseModel):
     use_research: bool = True
     persist_proposal: bool = True
@@ -70,6 +85,55 @@ class RefineRequest(BaseModel):
 
 class DecisionRequest(BaseModel):
     notes: str | None = Field(None, max_length=4000)
+
+
+class SoulProposalOut(BaseModel):
+    """One soul refinement proposal, shaped for the frontend contract.
+
+    The store persists proposals with internal keys (id / slug /
+    original_body / decision_notes); the frontend ``SoulProposal`` type
+    expects proposal_id / department_slug / current_body / notes. This
+    model is the API-boundary translation so the store's immutable audit
+    format never has to change. Without it the UI POSTs to
+    ``/souls/proposals/undefined/approve`` (proposal_id was never sent).
+    """
+
+    proposal_id: str
+    department_slug: str
+    mind_name: str | None = None
+    status: str
+    verdict: str | None = None
+    confidence: float | None = None
+    created_at: str | None = None
+    decided_at: str | None = None
+    decided_by: str | None = None
+    notes: str | None = None
+    current_body: str | None = None
+    proposed_body: str | None = None
+    improvement_notes: list[str] = Field(default_factory=list)
+    gap_report: dict[str, Any] = Field(default_factory=dict)
+    evidence_sources: list[Any] = Field(default_factory=list)
+
+
+def _serialize_proposal(rec: dict[str, Any]) -> SoulProposalOut:
+    """Map a stored proposal record to the frontend contract shape."""
+    return SoulProposalOut(
+        proposal_id=rec.get("id", ""),
+        department_slug=rec.get("slug", ""),
+        mind_name=rec.get("mind_name"),
+        status=rec.get("status", "pending"),
+        verdict=rec.get("verdict"),
+        confidence=rec.get("confidence"),
+        created_at=rec.get("created_at"),
+        decided_at=rec.get("decided_at"),
+        decided_by=rec.get("decided_by"),
+        notes=rec.get("decision_notes"),
+        current_body=rec.get("original_body"),
+        proposed_body=rec.get("proposed_body"),
+        improvement_notes=rec.get("improvement_notes") or [],
+        gap_report=rec.get("gap_report") or {},
+        evidence_sources=rec.get("evidence_sources") or [],
+    )
 
 
 # ── Public reads ──────────────────────────────────────────────────
@@ -99,17 +163,49 @@ async def list_souls(user: CurrentUser = Depends(get_current_user)) -> list[Soul
     return items
 
 
-@router.get("/souls/proposals")
+@router.get("/souls/proposals", response_model=list[SoulProposalOut])
 async def list_soul_proposals(
     user: CurrentUser = Depends(get_current_user),
     slug: str | None = Query(None, description="Filter by department slug"),
     status: str | None = Query("pending", description="pending | approved | rejected | all"),
     limit: int = Query(100, ge=1, le=500),
-) -> list[dict[str, Any]]:
+) -> list[SoulProposalOut]:
     """List soul refinement proposals awaiting founder review."""
     _ = user
     effective_status = None if (status in (None, "", "all")) else status
-    return list_proposals(slug=slug, status=effective_status, limit=limit)
+    return [
+        _serialize_proposal(r)
+        for r in list_proposals(slug=slug, status=effective_status, limit=limit)
+    ]
+
+
+@router.get("/souls/vp", response_model=VpMind)
+async def get_vp_soul(user: CurrentUser = Depends(get_current_user)) -> VpMind:
+    """Fetch Daena's VP-tier Mind -- the pinned Vice President card.
+
+    Distinct from GET /souls (the 10 department peers, which deliberately
+    excludes her) and GET /souls/{department}. Declared before the
+    ``{department}`` route so the static path is not shadowed. Lets the
+    frontend render Daena as the gold VP rather than an eleventh department.
+    """
+    _ = user
+    vp = SoulEngine.get_vp_mind()
+    if not vp:
+        raise HTTPException(status_code=404, detail="VP Mind not found")
+    return VpMind(
+        slug=vp.get("slug", ""),
+        name=vp.get("name"),
+        department=vp.get("department"),
+        runtime_preference=vp.get("runtime_preference"),
+        voice=vp.get("voice"),
+        accent_color=vp.get("accent_color"),
+        temperature=_coerce_float(vp.get("temperature")),
+        tier=vp.get("tier"),
+        pinned=_coerce_bool(vp.get("pinned")),
+        role=vp.get("role"),
+        fallback_runtimes=_coerce_list(vp.get("fallback_runtimes")),
+        tools_enabled=_coerce_list(vp.get("tools_enabled")),
+    )
 
 
 @router.get("/souls/{department}", response_model=SoulDetail)
@@ -216,7 +312,7 @@ async def approve_soul_proposal(
     rec = approve_proposal(proposal_id, decided_by=str(decided_by), notes=notes)
     if rec is None:
         raise HTTPException(status_code=404, detail="Proposal not found")
-    return rec
+    return _serialize_proposal(rec).model_dump()
 
 
 @router.post("/souls/proposals/{proposal_id}/reject")
@@ -231,20 +327,20 @@ async def reject_soul_proposal(
     rec = reject_proposal(proposal_id, decided_by=str(decided_by), notes=notes)
     if rec is None:
         raise HTTPException(status_code=404, detail="Proposal not found")
-    return rec
+    return _serialize_proposal(rec).model_dump()
 
 
-@router.get("/souls/proposals/{proposal_id}")
+@router.get("/souls/proposals/{proposal_id}", response_model=SoulProposalOut)
 async def get_soul_proposal(
     proposal_id: str,
     user: CurrentUser = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> SoulProposalOut:
     """Fetch a single proposal (with full diff bodies)."""
     _ = user
     rec = get_proposal(proposal_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="Proposal not found")
-    return rec
+    return _serialize_proposal(rec)
 
 
 # ── small parsing helpers ──────────────────────────────────────────
@@ -267,3 +363,18 @@ def _coerce_list(value: Any) -> list[str]:
     if isinstance(value, str):
         return [x.strip() for x in value.strip("[]").split(",") if x.strip()]
     return []
+
+
+def _coerce_bool(value: Any) -> bool:
+    """Honestly coerce a frontmatter value to bool.
+
+    The dependency-free frontmatter parser yields raw strings, so a
+    ``pinned: true`` overlay field arrives as the string ``"true"``. Treat
+    only the explicit truthy tokens as True; ``"false"``/``""``/None are
+    False (a naive ``bool("false")`` would be True -- a trap).
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "on"}
+    return bool(value)

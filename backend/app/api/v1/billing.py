@@ -13,15 +13,17 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
+from app.core.entitlements import resolve_effective_plan
 from app.models.financial import UserQuota
 from app.models.identity import User
+from app.services.billing import checkout_service
 from app.services.billing.cost_tracker import UnifiedCostTracker
 from app.services.cost_guard import CostGuard
 
@@ -173,3 +175,86 @@ async def update_user_quota(
         raise HTTPException(status_code=404, detail="User quota not found")
 
     return {"status": "updated"}
+
+
+# ---------------------------------------------------------------------------
+# Checkout / subscription (Stripe, OFF by default)
+# ---------------------------------------------------------------------------
+class CheckoutRequest(BaseModel):
+    plan: str = Field(..., description="Target plan tier, e.g. PRO / MAX / ENTERPRISE")
+
+
+@router.get("/plans", summary="Purchasable plans and whether billing is live")
+async def get_plans(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """List the plan tiers a tenant can buy plus a billing_enabled flag.
+
+    When billing is not configured the list is empty and billing_enabled is
+    False, so the upgrade UI can show "contact us" instead of a dead button.
+
+    current_plan is the tenant's effective plan (FOUNDER role short-circuits;
+    otherwise the active subscription, defaulting to FREE) so the UI can label
+    owned/current tiers without a second round-trip.
+    """
+    current_plan = await resolve_effective_plan(
+        db, role=current_user.role, tenant_id=current_user.tenant_id
+    )
+    return {
+        "billing_enabled": checkout_service.billing_configured(),
+        "current_plan": current_plan,
+        "plans": checkout_service.purchasable_plans(),
+    }
+
+
+@router.post("/checkout", summary="Start a Stripe Checkout session for a plan")
+async def start_checkout(
+    body: CheckoutRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Create a Stripe-hosted Checkout session and return its URL.
+
+    422 if the plan is not a purchasable, priced tier; 503 if billing is not
+    configured (so the frontend can degrade gracefully rather than 500).
+    """
+    if body.plan.upper() not in checkout_service.purchasable_plans():
+        raise HTTPException(
+            status_code=422,
+            detail=f"Plan '{body.plan}' is not available for purchase",
+        )
+    try:
+        url = checkout_service.create_checkout_session(
+            plan=body.plan,
+            tenant_id=current_user.tenant_id,
+            customer_email=current_user.email or None,
+        )
+    except checkout_service.BillingNotConfigured as exc:
+        raise HTTPException(status_code=503, detail={"error": "not_configured", "message": str(exc)})
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"checkout_url": url}
+
+
+@router.post("/webhook", include_in_schema=False)
+async def stripe_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Receive + apply Stripe subscription lifecycle events.
+
+    Intentionally unauthenticated by JWT: authenticity is proven by the
+    Stripe-Signature header, verified against the webhook signing secret. A bad
+    or missing signature is a 400; billing being off is a 503.
+    """
+    payload = await request.body()
+    sig_header = request.headers.get("Stripe-Signature")
+    try:
+        event = checkout_service.verify_webhook_event(payload, sig_header)
+    except checkout_service.BillingNotConfigured as exc:
+        raise HTTPException(status_code=503, detail={"error": "not_configured", "message": str(exc)})
+    except Exception as exc:  # bad signature / malformed payload
+        raise HTTPException(status_code=400, detail=f"Invalid webhook: {exc}")
+
+    result = await checkout_service.handle_event(db, event)
+    return {"received": True, "result": result}

@@ -215,7 +215,7 @@ export default function MainBrainPanel() {
           </div>
         )}
         {error && (
-          <div className="mt-3 flex items-start gap-2 rounded-md border border-status-error/25 bg-status-error/5 px-3 py-2 text-xs text-status-error">
+          <div role="alert" className="mt-3 flex items-start gap-2 rounded-md border border-status-error/25 bg-status-error/5 px-3 py-2 text-xs text-status-error">
             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             {error}
           </div>

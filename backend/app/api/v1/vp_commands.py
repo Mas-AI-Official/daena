@@ -23,12 +23,15 @@ then runs it via :pyfunc:`vp_work_commands.run_command`. Hard rules:
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, require_role
 from app.core.database import get_db
+from app.services.delegated_goals import DelegatedGoalService
 from app.services.vp_work_commands import (
     CommandResult,
     parse_command,
@@ -52,6 +55,48 @@ class VPCommandResponse(BaseModel):
     needs_disambiguation: bool
     next_action: str | None
     data: dict
+
+
+class DelegateGoalRequest(BaseModel):
+    goal: str = Field(..., min_length=3, max_length=4000)
+    session_id: UUID | None = None
+
+
+class DelegateGoalResponse(BaseModel):
+    goal: str
+    routing_mode: str
+    task_ids: list[str]
+    gated: int
+    steps: list[dict]
+
+
+@router.post("/delegate", response_model=DelegateGoalResponse)
+async def delegate_goal(
+    body: DelegateGoalRequest,
+    user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
+) -> DelegateGoalResponse:
+    """Delegate a multi-step goal to the VP (G5).
+
+    The VP plans + routes the goal, then materializes one PENDING
+    Task per subtask. Spend / outward-facing steps get a PENDING
+    approval row and cannot run until a human approves -- there is
+    no auto-approve path.
+    """
+    svc = DelegatedGoalService(db)
+    result = await svc.delegate(
+        goal=body.goal,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        session_id=body.session_id,
+    )
+    return DelegateGoalResponse(
+        goal=result["goal"],
+        routing_mode=result["routing_mode"],
+        task_ids=result["task_ids"],
+        gated=result["gated"],
+        steps=result["steps"],
+    )
 
 
 @router.post("", response_model=VPCommandResponse)

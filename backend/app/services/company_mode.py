@@ -162,6 +162,7 @@ def register_draft(
     recipient: str,
     body: str,
     subject: str | None = None,
+    draft_id: str | None = None,
 ) -> Draft:
     """Create a Draft, stash it in ``_DRAFT_STORE``, return the record.
 
@@ -170,8 +171,15 @@ def register_draft(
     can act on. Mission counters are NOT bumped here; the caller owns
     that so the counter semantics (e.g. "awaiting approval" vs
     "generated") stay explicit.
+
+    ``draft_id`` lets the caller reuse a persistent id -- the marketing
+    mission passes the crm_outreach_drafts row id that
+    MarketingAgent.author_outreach already persisted, so the in-memory
+    mirror and the DB row are ONE record and the send path can flip the
+    CRM row's status. When None (reply-confirmation drafts, which have
+    no CRM row) a fresh uuid4 is minted.
     """
-    draft_id = str(uuid.uuid4())
+    draft_id = draft_id or str(uuid.uuid4())
     draft = Draft(
         draft_id=draft_id,
         mission_id=mission_id,
@@ -377,12 +385,18 @@ async def _dispatch_marketing_mission(
             or ""
         )
         subject = draft.get("subject") if isinstance(draft, dict) else None
+        # author_outreach persisted an OutreachDraft CRM row and returned
+        # its id; reuse it so mirror id == crm_outreach_drafts.id and the
+        # send endpoint can flip the row to SENT (Rule 17: one record,
+        # not a split-brain).
+        crm_draft_id = draft.get("draft_id") if isinstance(draft, dict) else None
         record = register_draft(
             mission_id=mission.id,
             channel=mission.channel.value,
             recipient=str(recipient),
             body=str(body),
             subject=str(subject) if subject else None,
+            draft_id=str(crm_draft_id) if crm_draft_id else None,
         )
         mission.draft_ids.append(record.draft_id)
         if brief.auto_send:

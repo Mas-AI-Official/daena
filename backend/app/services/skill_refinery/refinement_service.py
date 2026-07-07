@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import date
+from pathlib import Path
 
 import httpx
 
@@ -35,15 +36,53 @@ _refinement_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REFINEMENTS)
 _emergency_stop = asyncio.Event()  # Set to stop all running refinements
 
 # ── Daily cost tracking ──
+#
+# Persisted to disk so the daily budget survives process restarts; an
+# in-memory-only counter resets to zero on every restart and silently
+# defeats the circuit breaker. Fail-open: persistence errors are logged
+# (Rule 17) but never block refinement.
 
-_daily_cost: dict[str, float] = {}  # key: "YYYY-MM-DD", value: estimated tokens
 DAILY_REFINEMENT_TOKEN_LIMIT = 100_000  # tokens per day
+_COST_RETENTION_DAYS = 7
+_COST_FILE = (
+    Path(__file__).resolve().parents[3] / "var" / "skill_refinery" / "daily_cost.json"
+)
+
+
+def _load_daily_cost() -> dict[str, float]:
+    """Load the persisted daily cost map, empty on first run or error."""
+    try:
+        raw = json.loads(_COST_FILE.read_text(encoding="utf-8"))
+        return {str(k): float(v) for k, v in raw.items()}
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        logger.warning("refinement.daily_cost_load_failed", error=str(exc))
+        return {}
+
+
+def _save_daily_cost() -> None:
+    """Persist the daily cost map atomically (tmp write + replace)."""
+    try:
+        _COST_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _COST_FILE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(_daily_cost), encoding="utf-8")
+        tmp.replace(_COST_FILE)
+    except Exception as exc:
+        logger.warning("refinement.daily_cost_save_failed", error=str(exc))
+
+
+_daily_cost: dict[str, float] = _load_daily_cost()  # key: "YYYY-MM-DD", value: estimated tokens
 
 
 def _track_cost(tokens: int) -> None:
-    """Track daily refinement token usage."""
+    """Track daily refinement token usage and persist it."""
     today = date.today().isoformat()
     _daily_cost[today] = _daily_cost.get(today, 0) + tokens
+    if len(_daily_cost) > _COST_RETENTION_DAYS:
+        for key in sorted(_daily_cost)[:-_COST_RETENTION_DAYS]:
+            del _daily_cost[key]
+    _save_daily_cost()
 
 
 def get_daily_cost() -> dict:

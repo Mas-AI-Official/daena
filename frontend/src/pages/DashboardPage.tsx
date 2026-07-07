@@ -402,21 +402,12 @@ export function DashboardPage() {
     }
   }, [])
 
-  // Fallback departments if API fails
-  const hiveDepts: HiveDepartment[] = departments.length > 0
-    ? departments
-    : [
-        { id: '1', name: 'Engineering', agentCount: 6, activeCount: 6, efficiency: 91 },
-        { id: '2', name: 'Product', agentCount: 6, activeCount: 6, efficiency: 94 },
-        { id: '3', name: 'Marketing', agentCount: 6, activeCount: 6, efficiency: 88 },
-        { id: '4', name: 'Sales', agentCount: 6, activeCount: 6, efficiency: 92 },
-        { id: '5', name: 'Finance', agentCount: 6, activeCount: 6, efficiency: 96 },
-        { id: '6', name: 'Operations', agentCount: 6, activeCount: 6, efficiency: 87 },
-        { id: '7', name: 'Research', agentCount: 6, activeCount: 6, efficiency: 89 },
-        { id: '8', name: 'Legal', agentCount: 6, activeCount: 6, efficiency: 93 },
-        { id: '9', name: 'Skill Gov', agentCount: 6, activeCount: 6, efficiency: 90 },
-        { id: '10', name: 'Security Ops', agentCount: 6, activeCount: 6, efficiency: 95 },
-      ]
+  // Rule-17 / ADR-001: no hardcoded demo-data fallback. When departments fail
+  // to load (backend down -> deptsRes rejected -> departments stays []), the
+  // hive renders the central orb with no department hexagons rather than
+  // fabricating 10 fake departments with invented agent counts/efficiencies.
+  // (Same remediation as the deleted RuntimeSwapper.DEFAULT_RUNTIMES, 2026-04-29.)
+  const hiveDepts: HiveDepartment[] = departments
 
   return (
     <div className="h-full overflow-y-auto">
@@ -534,11 +525,16 @@ export function DashboardPage() {
                 System Status
               </h3>
               <div className="grid grid-cols-2 gap-2">
+                {/* Same convention as the F-0001 Redis fix below: the badge
+                    color must match the actual state. When systemHealth is
+                    null (health endpoint unreachable) the value already shows
+                    "Starting...", so the variant degrades to warning instead
+                    of a green "success" that contradicts it. */}
                 <StatusBadge
                   label="Platform"
                   value={systemHealth?.uptime ?? 'Starting...'}
                   icon={<Activity size={12} />}
-                  variant="success"
+                  variant={systemHealth ? 'success' : 'warning'}
                 />
                 <StatusBadge
                   label="Ollama"
@@ -546,9 +542,14 @@ export function DashboardPage() {
                   icon={<Brain size={12} />}
                   variant={systemHealth?.ollama?.status === 'healthy' ? 'success' : 'warning'}
                 />
+                {/* Same convention as the siblings above: when systemHealth is
+                    null (health endpoint unreachable) the count is UNKNOWN, not
+                    a definite 0 -- show the "--" unavailable glyph (matching
+                    Ollama's "?? glyph" and AnalyticsPage's "--") instead of a
+                    fabricated "0". A genuine zero count still renders "0". */}
                 <StatusBadge
                   label="Messages"
-                  value={String(systemHealth?.database?.total_messages ?? 0)}
+                  value={String(systemHealth?.database?.total_messages ?? '--')}
                   icon={<Zap size={12} />}
                   variant="info"
                 />

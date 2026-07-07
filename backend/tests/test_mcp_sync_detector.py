@@ -134,6 +134,49 @@ async def test_discover_all_on_empty_home_returns_empty(tmp_path, monkeypatch) -
     assert isinstance(mcps, list)
 
 
+def test_wsl_user_home_skips_permission_denied_entry(monkeypatch) -> None:
+    """A locked sandbox profile whose ``AppData/Roaming`` makes stat()
+    raise PermissionError must be skipped, not abort the scan.
+
+    Regression for the import-time crash that broke the WSL backend
+    launch path: ``Path.is_dir()`` *raises* PermissionError (an OSError)
+    on an access-denied dir instead of returning False, so one locked
+    ``/mnt/c/Users/CodexSandboxOffline`` profile propagated up through
+    the module-level ``_CANDIDATES`` build and aborted ``import
+    app.main``. The fix keeps scanning past the locked entry and must
+    still find the real Windows user profile.
+    """
+    import pathlib
+
+    from app.services.mcp_sync import detector as d
+
+    bridge = "/mnt/c/Users"
+    locked = "/mnt/c/Users/CodexSandboxOffline"
+    good = "/mnt/c/Users/masou"
+
+    def fake_iterdir(self):
+        if self.as_posix() == bridge:
+            return iter([pathlib.Path(locked), pathlib.Path(good)])
+        return iter([])
+
+    def fake_is_dir(self):
+        p = self.as_posix()
+        if p in (bridge, locked, good):
+            return True
+        if p == f"{locked}/AppData/Roaming":
+            raise PermissionError(13, "Permission denied")
+        if p == f"{good}/AppData/Roaming":
+            return True
+        return False
+
+    monkeypatch.setattr(pathlib.Path, "iterdir", fake_iterdir)
+    monkeypatch.setattr(pathlib.Path, "is_dir", fake_is_dir)
+
+    result = d._wsl_windows_user_home()
+    assert result is not None
+    assert result.as_posix() == good
+
+
 @pytest.mark.asyncio
 async def test_detector_is_read_only(tmp_path) -> None:
     """The detector must never write to any config path."""

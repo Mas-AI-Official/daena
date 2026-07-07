@@ -341,7 +341,20 @@ class ResourceFinder:
                         query_preview=query[:120],
                     )
         except Exception as exc:
-            logger.debug("resource_finder.web_search_failed", error=str(exc))
+            # A transport failure (timeout / DNS / reset) or an unexpected
+            # code defect in the success path -- either way the user's
+            # question goes unanswered, so it must be visible in production,
+            # not swallowed at debug. The routine "DDG rejected the query"
+            # case is the non-200 branch above (web_search_miss), so this
+            # does not spam on normal misses. The exception type lets an
+            # operator tell a transient (ConnectError) from a real bug
+            # (AttributeError) at a glance.
+            logger.warning(
+                "resource_finder.web_search_failed",
+                error=type(exc).__name__,
+                detail=str(exc),
+                query_preview=query[:120],
+            )
 
         return None
 
@@ -368,4 +381,13 @@ class ResourceFinder:
                 source=knowledge.source,
             )
         except Exception as exc:
-            logger.debug("resource_finder.persist_failed", error=str(exc))
+            # Persisting failed means the system learned but did not
+            # remember -- a silent degradation. The success path logs at
+            # INFO (knowledge_persisted), so a debug-only failure path is
+            # inverted: surface it at warning with the exception type.
+            logger.warning(
+                "resource_finder.persist_failed",
+                error=type(exc).__name__,
+                detail=str(exc),
+                question=knowledge.question[:100],
+            )

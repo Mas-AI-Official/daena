@@ -29,6 +29,7 @@ import {
 
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
+import { confirmDialog } from '@/stores/confirmStore'
 import { getBrandIcon } from '@/components/icons/BrandIcons'
 import ConnectorInstallDialog from '@/components/connections/ConnectorInstallDialog'
 import { useConnectorCatalog, type CatalogConnector } from '@/hooks/useConnectorCatalog'
@@ -292,6 +293,13 @@ export default function PluginsCatalogBrowser() {
   }
 
   async function disconnect(instance: InstanceRow, connectorName: string) {
+    const ok = await confirmDialog({
+      title: `Disconnect ${connectorName}?`,
+      message: 'This clears the stored credentials for this connection. You can reconnect later by running the connect flow again.',
+      confirmLabel: 'Disconnect',
+      variant: 'danger',
+    })
+    if (!ok) return
     setBusyConnectorId(instance.connector_id)
     try {
       await api.post(`/connections/instances/${instance.id}/disconnect`, {}, { silent: false })
@@ -412,7 +420,7 @@ export default function PluginsCatalogBrowser() {
       )}
 
       {error && (
-        <div className="rounded-lg border border-status-error/30 bg-status-error/5 p-3">
+        <div role="alert" className="rounded-lg border border-status-error/30 bg-status-error/5 p-3">
           <div className="flex items-start gap-2 text-xs text-status-error">
             <AlertTriangle size={13} className="mt-0.5 shrink-0" />
             <div className="flex-1">

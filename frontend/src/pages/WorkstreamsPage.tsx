@@ -54,6 +54,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
+import { confirmDialog } from '@/stores/confirmStore'
 import { useResilientSSE, type SSEStatus } from '@/lib/sse'
 import { AutonomyMissionControl } from '@/components/common/AutonomyMissionControl'
 
@@ -527,6 +528,7 @@ function WorkstreamDetailDrawer({
   const [redirectError, setRedirectError] = useState<string | null>(null)
   const [redirectApplied, setRedirectApplied] = useState<AppliedAction[] | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [actionBusy, setActionBusy] = useState(false)
   // Tracks ids we've already appended via SSE so duplicates between
   // bootstrap + a fast follow-up event can't render twice.
   const seenEventIdsRef = useRef<Set<string>>(new Set())
@@ -649,6 +651,8 @@ function WorkstreamDetailDrawer({
   }
 
   const lifecycleAction = async (action: 'pause' | 'resume' | 'cancel') => {
+    if (actionBusy) return
+    setActionBusy(true)
     try {
       await api.post(`/workstreams/${workstreamId}/${action}`)
       await refresh()
@@ -656,10 +660,22 @@ function WorkstreamDetailDrawer({
       toast.success(`${action[0].toUpperCase() + action.slice(1)}d`)
     } catch {
       toast.error(`Failed to ${action}`)
+    } finally {
+      setActionBusy(false)
     }
   }
 
   const archive = async () => {
+    if (actionBusy) return
+    const ok = await confirmDialog({
+      title: 'Archive this workstream?',
+      message:
+        'It will be soft-deleted and removed from your active workstreams. The record and its status are preserved for audit.',
+      confirmLabel: 'Archive',
+      variant: 'danger',
+    })
+    if (!ok) return
+    setActionBusy(true)
     try {
       await api.patch(`/workstreams/${workstreamId}/archive`)
       onMutated()
@@ -667,6 +683,8 @@ function WorkstreamDetailDrawer({
       toast.success('Workstream archived')
     } catch {
       toast.error('Failed to archive')
+    } finally {
+      setActionBusy(false)
     }
   }
 
@@ -752,6 +770,7 @@ function WorkstreamDetailDrawer({
               <textarea
                 value={redirectInput}
                 onChange={e => setRedirectInput(e.target.value)}
+                aria-label="Redirect workstream instructions"
                 placeholder="pause file edits, ask Council, only produce a migration plan"
                 rows={2}
                 className="w-full glass-input rounded-lg px-3 py-2 text-xs text-starlight-100"
@@ -776,21 +795,24 @@ function WorkstreamDetailDrawer({
                 </button>
                 <button
                   onClick={() => void lifecycleAction('pause')}
-                  className="px-2 py-1.5 rounded-md text-xs bg-white/5 text-starlight-300 hover:bg-white/10 cursor-pointer"
+                  disabled={actionBusy}
+                  className="px-2 py-1.5 rounded-md text-xs bg-white/5 text-starlight-300 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <Pause size={12} className="inline mr-1" />
                   Pause autopilot
                 </button>
                 <button
                   onClick={() => void lifecycleAction('resume')}
-                  className="px-2 py-1.5 rounded-md text-xs bg-white/5 text-starlight-300 hover:bg-white/10 cursor-pointer"
+                  disabled={actionBusy}
+                  className="px-2 py-1.5 rounded-md text-xs bg-white/5 text-starlight-300 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <Play size={12} className="inline mr-1" />
                   Resume
                 </button>
                 <button
                   onClick={() => void archive()}
-                  className="ml-auto px-2 py-1.5 rounded-md text-xs bg-white/5 text-starlight-400 hover:bg-amber-500/15 hover:text-amber-300 cursor-pointer"
+                  disabled={actionBusy}
+                  className="ml-auto px-2 py-1.5 rounded-md text-xs bg-white/5 text-starlight-400 hover:bg-amber-500/15 hover:text-amber-300 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   title="Soft-delete this workstream (status preserved for audit)"
                 >
                   <Archive size={12} className="inline mr-1" />
@@ -1156,6 +1178,7 @@ function DraftRow({
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
         className="w-full flex items-start gap-2 p-2.5 text-left cursor-pointer"
       >
         {open ? <ChevronDown size={12} className="mt-0.5 text-starlight-500" /> : <ChevronRight size={12} className="mt-0.5 text-starlight-500" />}
@@ -1437,17 +1460,24 @@ function DraftsLane() {
 export default function WorkstreamsPage() {
   const [items, setItems] = useState<Workstream[]>([])
   const [loading, setLoading] = useState(true)
+  // PR-A11Y-PHASE35: distinct fetch-error state. Without it a failed
+  // GET /workstreams fell through to the "No workstreams yet" empty copy
+  // (a false-empty LIE -- Rule 17) with only a transient toast as the signal.
+  const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<WorkstreamStatus | 'ALL'>('ALL')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [demoLoading, setDemoLoading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const params = statusFilter === 'ALL' ? {} : { status: statusFilter }
       const res = await api.get('/workstreams', { params })
       setItems(res.data?.data?.workstreams ?? [])
     } catch {
+      setItems([])
+      setError('The workstreams service is unreachable. Retry to refresh.')
       toast.error('Failed to load workstreams')
     } finally {
       setLoading(false)
@@ -1557,6 +1587,22 @@ export default function WorkstreamsPage() {
 
       {loading ? (
         <div className="text-xs text-starlight-400">Loading…</div>
+      ) : error ? (
+        <div className="glass-panel rounded-xl p-6 text-center">
+          <AlertCircle size={20} className="mx-auto text-rose-300 mb-2" />
+          <div className="text-sm text-starlight-200 font-medium mb-1">
+            Could not load workstreams
+          </div>
+          <div className="text-xs text-starlight-500 max-w-prose mx-auto mb-3">
+            {error}
+          </div>
+          <button
+            onClick={() => void load()}
+            className="text-[11px] text-starlight-400 hover:text-starlight-100 inline-flex items-center gap-1"
+          >
+            <RefreshCw size={11} /> Retry
+          </button>
+        </div>
       ) : items.length === 0 ? (
         <div className="glass-panel rounded-xl p-6 text-center">
           <div className="text-sm text-starlight-300 font-medium mb-1">

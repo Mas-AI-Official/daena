@@ -326,3 +326,60 @@ async def test_monthly_spend_preserved_within_same_month(
     assert float(quota.spend_this_month_usd) == 3.0, (
         "within-month spend must be preserved, not reset"
     )
+
+
+# --- BILL-003: daily reset uses the UTC frame, not the host's LOCAL date -----
+
+async def test_daily_spend_resets_in_utc_frame(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch,
+) -> None:
+    """BILL-003: the lazy daily reset compares against UTC "today".
+
+    period_start / month_period_start are DateTime(timezone=True) written by
+    func.now() (UTC). Before the fix the reset read date.today() (LOCAL), so
+    during the several-hour daily window where local-date != UTC-date the
+    daily comparison used the wrong frame: spend logged under the UTC day was
+    measured against the local day, and the daily reset (and thus the daily
+    cap) mis-fired for that window.
+
+    The fix routes the reset clock through the module-level _utc_today() seam.
+    Monkeypatching that seam to a fixed UTC date makes the divergence
+    deterministic: with period_start on the prior UTC day the daily counter
+    MUST zero, while month_period_start in the same month keeps the monthly
+    counter untouched (the daily branch is exercised in isolation).
+    """
+    from datetime import date, datetime, timezone
+
+    from sqlalchemy import update
+
+    import app.services.cost_guard as cost_guard_module
+
+    # Force the reset clock to a fixed UTC "today" independent of the run host.
+    forced_today = date(2026, 6, 19)
+    monkeypatch.setattr(cost_guard_module, "_utc_today", lambda: forced_today)
+
+    auth = await _register_and_login(client)
+    cg = CostGuard(db_session)
+
+    await cg._get_or_create_user_quota(auth["tenant_id"], auth["user_id"])
+    await db_session.execute(
+        update(UserQuota)
+        .where(UserQuota.user_id == auth["user_id"])
+        .values(
+            spend_today_usd=7.0,
+            # Prior UTC day -> period_start.date() (2026-06-18) < forced today.
+            period_start=datetime(2026, 6, 18, 23, 0, tzinfo=timezone.utc),
+            # Same month as forced today -> the monthly branch must NOT fire.
+            spend_this_month_usd=4.0,
+            month_period_start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        )
+    )
+    await db_session.flush()
+
+    quota = await cg._get_or_create_user_quota(auth["tenant_id"], auth["user_id"])
+    assert float(quota.spend_today_usd) == 0.0, (
+        f"daily spend must reset in the UTC frame; got {quota.spend_today_usd}"
+    )
+    assert float(quota.spend_this_month_usd) == 4.0, (
+        "same-month spend must be preserved while only the daily counter resets"
+    )

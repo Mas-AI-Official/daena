@@ -100,7 +100,11 @@ class Settings(BaseSettings):
     _effective_env_precedence: str = PrivateAttr(default="process_env_first")
 
     # --- Server ---
-    host: str = "0.0.0.0"
+    # NOTE: dev binds loopback by default; prod binds 0.0.0.0 explicitly via
+    # start.sh (`uvicorn --host 0.0.0.0`), NOT via this default. Keep this a
+    # single definition -- a duplicate `host`/`port` below used to shadow these
+    # (Pydantic last-def-wins), so editing the wrong one silently did nothing.
+    host: str = "127.0.0.1"  # Bind to loopback ONLY. Never 0.0.0.0 in dev.
     port: int = 8000
     auto_port: bool = True  # find next free port if default is busy
 
@@ -121,6 +125,21 @@ class Settings(BaseSettings):
     # to ask_department calls still lives in SwarmExecutor (next session).
     # Set DAENA_VP_ENABLED=false in .env to roll back.
     daena_vp_enabled: bool = True
+
+    # --- Push alerts (Phase 4 item 12 / G6, 2026-07-02) ---
+    # Web Push (VAPID, RFC 8292) mirroring of founder notifications.
+    # Default OFF per the autonomy gate: real-world reach stays built
+    # but switched off until the founder flips it. Enabling requires
+    # ALL of: push_alerts_enabled=true, a VAPID keypair, a subject,
+    # and pywebpush installed (lazy-imported; not a hard dependency).
+    # Keys come ONLY from env (.env) -- never hardcode (NEVER-1).
+    # Generate a keypair with: vapid --gen (from the py-vapid package)
+    # or openssl ecparam -genkey -name prime256v1.
+    push_alerts_enabled: bool = False
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    # Contact URI sent to push services, e.g. "mailto:ops@example.com".
+    vapid_subject: str = ""
 
     # --- Database ---
     #
@@ -183,12 +202,16 @@ class Settings(BaseSettings):
         resolved.parent.mkdir(parents=True, exist_ok=True)
         return f"{scheme}:///{resolved.as_posix()}"
 
-    # --- Server ---
-    host: str = "127.0.0.1"  # Bind to loopback ONLY. Never 0.0.0.0 in dev.
-    port: int = 8000
-
     # --- Redis ---
     redis_url: str = "redis://127.0.0.1:6379/0"
+
+    # --- RAG (ragx universal service) ---
+    # Daena talks to the external ragx service (ChromaDB + BM25 + anti-
+    # hallucination) over HTTP. Default is the local dev process; override with
+    # RAGX_BASE_URL in .env for Docker / prod (e.g. http://ragx:8100). Single
+    # source of truth: ragx_bridge.py and factuality_gate.py both read this.
+    # No trailing slash -- callers append /query, /health, /collections/...
+    ragx_base_url: str = "http://127.0.0.1:8100"
 
     # --- Auth ---
     jwt_secret_key: str = "CHANGE-ME-in-production-use-64-char-random"
@@ -205,6 +228,23 @@ class Settings(BaseSettings):
     founder_personal_email: str = ""
     founder_default_password: str = ""
     founder_tenant_name: str = "MAS-AI Technologies"
+
+    # --- Billing / Stripe (monetization, OFF by default) ---
+    # Monetization is opt-in: with stripe_enabled False (or stripe_secret_key
+    # blank) the /billing/checkout + /billing/webhook endpoints answer 503
+    # not_configured and never touch Stripe, and `import app.main` never needs
+    # the stripe SDK (it is imported lazily inside the checkout service). Supply
+    # real values via env / .env in the deployment that actually sells; NEVER
+    # commit live keys to source. Price IDs map a Daena plan tier to its Stripe
+    # Price; a tier with no configured price is reported as not-purchasable.
+    stripe_enabled: bool = False
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_pro: str = ""
+    stripe_price_max: str = ""
+    stripe_price_enterprise: str = ""
+    billing_success_url: str = "http://127.0.0.1:5173/account/billing?status=success"
+    billing_cancel_url: str = "http://127.0.0.1:5173/account/billing?status=cancelled"
 
     # --- OAuth (multi-provider) ---
     google_client_id: str = ""
@@ -453,13 +493,21 @@ class Settings(BaseSettings):
                 "DISABLE_AUTH is only allowed in local development/test environments"
             )
 
-        if self.is_production:
-            if self.debug:
-                issues.append("DEBUG must be false in production")
+        # Placeholder secrets are world-known (open-source defaults) and so
+        # forge-able. Reject them in ANY deployed environment -- production
+        # AND staging -- not just production. This matches the DISABLE_AUTH
+        # gate above and the Django/Rails standard (a real secret is required
+        # in every non-local env, not only one labelled "production").
+        # Local/dev/test keep the placeholder defaults for zero-config startup.
+        if not self.allows_unsafe_dev_features:
             if self._is_placeholder_secret(self.jwt_secret_key):
                 issues.append("JWT_SECRET_KEY still uses the placeholder default")
             if self._is_placeholder_secret(self.vault_encryption_key):
                 issues.append("VAULT_ENCRYPTION_KEY still uses the placeholder default")
+
+        if self.is_production:
+            if self.debug:
+                issues.append("DEBUG must be false in production")
             if self._cors_is_localhost_only():
                 issues.append("CORS_ORIGINS still points only to localhost addresses")
 

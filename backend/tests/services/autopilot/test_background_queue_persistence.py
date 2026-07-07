@@ -297,3 +297,34 @@ class TestTenantIsolation:
         assert by_id[task_a1.id].status == "cancelled"
         assert by_id[task_a2.id].status == "cancelled"
         assert by_id[task_b.id].status == "queued"
+
+
+class TestQueuedAtDefaultIsTzAware:
+    @pytest.mark.asyncio
+    async def test_orm_default_queued_at_is_tz_aware_utc(self, engine_factory, tenant_id):
+        """The queued_at Python-side default must honor DateTime(timezone=True).
+
+        Regression for the naive ``datetime.utcnow()`` default that silently
+        violated the column's tz-aware contract (and the aware sibling
+        columns + every explicit ``_insert_row`` write). Construct the ORM
+        row WITHOUT queued_at -- the only path the Python-side default
+        governs, since enqueue/_insert_row sets queued_at explicitly -- then
+        assert the flushed value is tz-aware UTC. The assertion reads the
+        in-Python attribute populated at flush, NOT a DB read-back (SQLite
+        stores datetimes without tzinfo, so a round-trip would be a false
+        negative regardless of the default).
+        """
+        _wrapped, _engine, factory = engine_factory
+
+        async with factory() as session:
+            row = BackgroundTaskRow(
+                tenant_id=uuid.UUID(tenant_id),
+                session_id="sess-tz",
+                description="tz-aware default regression",
+            )
+            session.add(row)
+            await session.flush()
+
+            assert row.queued_at is not None
+            assert row.queued_at.tzinfo is not None, "queued_at default must be tz-aware"
+            assert row.queued_at.utcoffset().total_seconds() == 0, "queued_at default must be UTC"

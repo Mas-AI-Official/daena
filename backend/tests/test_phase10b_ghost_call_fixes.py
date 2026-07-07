@@ -210,6 +210,52 @@ async def test_g2_g3_unknown_project_returns_404(
     assert tasks_resp.status_code == 404, tasks_resp.text
 
 
+@pytest.mark.asyncio
+async def test_g2_g3_cross_tenant_project_subresources_404(
+    client: AsyncClient,
+) -> None:
+    """Tenant B must NOT reach tenant A's REAL project sub-resources.
+
+    The sibling ``test_g2_g3_unknown_project_returns_404`` only fires a
+    bogus random id, which 404s no matter what -- it never exercises
+    ``_ensure_project``'s ``service.get(..., tenant_id=...)`` tenant
+    filter, so it cannot actually prove its docstring's "no leaking
+    other-tenant data" claim. This pins the real isolation contract: a
+    project that genuinely EXISTS but belongs to another tenant returns
+    404 (never 200 honest-empty) on both sub-resource routes.
+
+    Non-tautology guard: the owner is asserted to get 200 on the SAME id
+    the foreigner gets 404 on. Both assertions can only pass if the
+    backend distinguishes by tenant -- a DEFECT-4 leak (foreigner 200)
+    would fail the 404 assertions, so the test is not vacuous.
+    """
+    owner = await _register_and_login(client)
+    other = await _register_and_login(client)
+    assert owner["tenant_id"] != other["tenant_id"]
+
+    project = await _create_project(client, owner["headers"])
+
+    # Owner resolves the real project's sub-resources (honest-empty 200).
+    owner_tasks = await client.get(
+        f"/api/v1/projects/{project['id']}/tasks", headers=owner["headers"],
+    )
+    owner_files = await client.get(
+        f"/api/v1/projects/{project['id']}/files", headers=owner["headers"],
+    )
+    assert owner_tasks.status_code == 200, owner_tasks.text
+    assert owner_files.status_code == 200, owner_files.text
+
+    # Foreign tenant is denied on the SAME, real id -> 404, no leak.
+    foreign_tasks = await client.get(
+        f"/api/v1/projects/{project['id']}/tasks", headers=other["headers"],
+    )
+    foreign_files = await client.get(
+        f"/api/v1/projects/{project['id']}/files", headers=other["headers"],
+    )
+    assert foreign_tasks.status_code == 404, foreign_tasks.text
+    assert foreign_files.status_code == 404, foreign_files.text
+
+
 # ---------------------------------------------------------------------------
 # B3 — archived-scans visibility (GET /security/scans?archived=true)
 # ---------------------------------------------------------------------------

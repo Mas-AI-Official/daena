@@ -14,6 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
+from app.core.entitlements import (
+    Feature,
+    min_plan_for_feature,
+    plan_has_feature,
+    resolve_effective_plan,
+)
 from app.schemas.chat import (
     CreateSessionRequest,
     SendMessageRequest,
@@ -99,6 +105,27 @@ async def _run_memory_writeback(wb: dict) -> None:
                     "skill_count": wb["skill_count"],
                 },
             )
+
+            # (3) Cognitive Knowledge Graph -- tenant-scoped agent write path.
+            # Abstracts the turn into a structural, cross-domain pattern. The
+            # store skips observations that match no structural category, so
+            # only genuinely transferable insights are persisted (anti-noise).
+            try:
+                from app.services.cognition.ckg_store import (
+                    CkgStore,
+                    domain_for_department,
+                )
+
+                ckg = CkgStore(db, tid)
+                await ckg.learn(
+                    raw_observation=f"{wb['user_content']}\n{wb['collected_content']}",
+                    origin_domain=domain_for_department(wb.get("department")),
+                    evidence_source=wb["session_id"],
+                )
+            except Exception as ckg_err:  # non-critical: never fail the writeback
+                _chat_logger.debug(
+                    "memory_writeback.ckg_skipped", extra={"error": str(ckg_err)}
+                )
 
             await db.commit()
             _chat_logger.info("memory_writeback.success", extra={"model": wb["model"]})
@@ -268,11 +295,68 @@ async def _stream_message_response(
         except Exception as _exc:  # never block a chat on a settings read
             _chat_logger.warning("chat.user_defaults_read_failed err=%s", _exc)
 
+    # -- Routing entitlement gate (monetization enforcement) --
+    # COUNCIL / QUINTESSENCE are PAID routing tiers (FEATURE_MIN_PLAN: COUNCIL -> PRO,
+    # QUINTESSENCE -> MAX). Enforce them ONLY on the user's EXPLICIT request
+    # (body.routing_mode, or the saved default_routing_mode) -- NEVER on the
+    # orchestrator's internal complexity+risk auto-escalation, which is free governance
+    # (locked decision: charging for the safety router's own escalation is both a
+    # governance break and dishonest). routing_mode_override below is exactly that
+    # explicit request, so gating it here leaves the orchestrator's auto-escalation
+    # untouched.
+    #
+    # We deliberately do NOT raise a pre-stream 402: the chat stream is opened by a raw
+    # inline fetch that turns any non-2xx into an opaque toast (the axios 402 -> billing
+    # interceptor never sees the stream response), so a 402 here would surface as a dead
+    # failure, not an upgrade path -- a Rule 17 breach. Instead we degrade gracefully to
+    # STANDARD and emit a visible governance_notice (the SAME honest "insufficient
+    # capability -> STANDARD with a notice" fallback Rule 13 already uses when fewer than
+    # 2 models are available). The stream still succeeds in STANDARD and the user is told
+    # exactly how to unlock the requested tier.
+    _effective_routing = body.routing_mode or _user_default_routing
+    _routing_notice: dict | None = None
+    _req_upper = (_effective_routing or "").upper()
+    _requested_feature = {
+        "COUNCIL": Feature.COUNCIL_ROUTING,
+        "QUINTESSENCE": Feature.QUINTESSENCE_ROUTING,
+    }.get(_req_upper)
+    if _requested_feature is not None:
+        _eff_plan = await resolve_effective_plan(
+            db, role=user.role, tenant_id=user.tenant_id
+        )
+        if not plan_has_feature(_eff_plan, _requested_feature):
+            _need = min_plan_for_feature(_requested_feature)
+            _label = _req_upper.capitalize()
+            _effective_routing = "STANDARD"
+            _routing_notice = {
+                "type": "governance_notice",
+                "tier": 0,
+                "message": (
+                    f"{_label} routing requires the {_need} plan. Running Standard "
+                    f"routing instead. Upgrade at Account > Billing to unlock {_label}."
+                ),
+                # Structured upgrade payload. This `upgrade` key is the POSITIVE
+                # discriminator for the client: it is carried ONLY by this
+                # entitlement/plan notice, never by the orchestrator's other
+                # governance_notice emitters (mode-downgrade, CLI auth-failover), so
+                # the frontend can key an actionable "Upgrade" CTA off its presence
+                # without misfiring on those. `code` mirrors the org-wall 402's
+                # detail.code so both revenue walls speak one vocabulary.
+                "code": "upgrade_required",
+                "upgrade": {"plan": _need, "feature": _label},
+            }
+
     async def event_generator():
         if created_session is not None:
             yield f"data: {json.dumps({'type': 'session_created', 'data': created_session})}\n\n"
 
         yield f"data: {json.dumps({'type': 'user_message', 'data': user_msg})}\n\n"
+
+        # Surface the routing-entitlement downgrade (if any) as a visible governance
+        # notice before the reply streams, so the user sees the STANDARD fallback +
+        # upgrade path rather than a silent demotion (Rule 17).
+        if _routing_notice is not None:
+            yield f"data: {json.dumps(_routing_notice)}\n\n"
 
         async for event in orchestrator.stream_reply(
             session_id=resolved_session_id,
@@ -282,7 +366,7 @@ async def _stream_message_response(
             preferred_model=body.preferred_model,
             governance_mode_str=body.governance_mode or _user_default_gov or "GOVERNED",
             governance_mode_override=body.governance_mode,
-            routing_mode_override=body.routing_mode or _user_default_routing,
+            routing_mode_override=_effective_routing,
             action_mode_override=body.mode or _user_default_chat,
         ):
             # Intercept memory writeback events (not sent to client)

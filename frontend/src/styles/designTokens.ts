@@ -7,7 +7,7 @@
  * CSS variables live in globals.css @theme block; this file is for JS-side usage.
  */
 
-// ── Department Colors (used by SunflowerGrid, SunflowerHive, DepartmentsPage) ──
+// ── Department Colors (used by SunflowerHive, DepartmentsPage) ──
 
 export interface DepartmentColor {
   /** Primary hex color */
@@ -90,3 +90,32 @@ export const BACKGROUNDS = {
   /** Hover border */
   borderHover: 'rgba(255,255,255,0.12)',
 } as const
+
+// ── Mission Control Graph Colors ──
+// JS-side hues for the radial org-map (force-graph canvas, legend, filter chips).
+
+/** Governance-core gold (Daena root + governs-department spokes). Brand-locked. */
+export const GOV_GOLD = '#D4A843'
+/** Selection / search-match teal. Brand-locked. */
+export const GOV_TEAL = '#2DD4BF'
+
+/**
+ * Relational kinds inherit their color from a parent department on the canvas,
+ * so a single flat swatch would misrepresent them (FilterBar renders a multi-hue
+ * gradient chip instead). Membership is checked, never color-mapped.
+ */
+export const RELATIONAL_KINDS = new Set<string>(['department', 'agent', 'workstream'])
+
+/**
+ * Per-kind hues for parent-less resource nodes. `faculty` MUST equal the
+ * GraphCanvas FACULTY_COLOR ('#E6C46A') so the legend swatch matches the node.
+ * Relational kinds (department / agent / workstream) are intentionally absent
+ * (see RELATIONAL_KINDS); consumers fall back to neutral slate '#7c8696'.
+ */
+export const KIND_COLORS: Record<string, string> = {
+  faculty: '#E6C46A',
+  project: '#8b5cf6',
+  mcp_server: '#f97316',
+  skill: '#eab308',
+  tool: '#3b82f6',
+}

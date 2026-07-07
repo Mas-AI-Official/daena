@@ -1,0 +1,331 @@
+diff --git a/backend/app/services/departments/department_agent.py b/backend/app/services/departments/department_agent.py
+index 82f344f..58a64bd 100644
+--- a/backend/app/services/departments/department_agent.py
++++ b/backend/app/services/departments/department_agent.py
+@@ -217,10 +217,17 @@ class DepartmentAgent:
+     # ── System prompt composition ────────────────────────────────
+ 
+     def build_role_prompt(self, role: str) -> str:
+-        """Compose the role prompt for this department.
++        """Compose the ROLE layers for this department (soul NOT included).
++
++        Returns layers 2-5 only. The soul is deliberately NOT prepended here:
++        for the full souled system prompt (soul + Mind overlay + role) call
++        ``SoulEngine.build_agent_system_prompt(governance_mode,
++        department=..., sub_capability=role)`` -- that is the single
++        composition point the chat and swarm paths use. Keeping this method
++        soul-free avoids a double soul when a caller composes both.
+ 
+         Layer order (highest attention to lowest):
+-          1. Soul (shared, injected earlier by SoulEngine)
++          1. (soul -- supplied by SoulEngine.build_agent_system_prompt)
+           2. Department base prompt for the role (from department_prompts.py)
+           3. Offensive SHIELD overlay (when 3vilbob is active and role=SHIELD)
+           4. Security Lens overlay (when lens.active and role != SHIELD)
+diff --git a/backend/app/services/providers/anthropic.py b/backend/app/services/providers/anthropic.py
+index 60d788d..3e08466 100644
+--- a/backend/app/services/providers/anthropic.py
++++ b/backend/app/services/providers/anthropic.py
+@@ -3,10 +3,11 @@
+ Premium reasoning and coding provider.  Uses the Anthropic Messages API
+ directly via httpx (no SDK dependency).
+ 
+-Pricing (March 2026):
+-    Haiku:  $1 / $5  per 1M tokens
+-    Sonnet: $3 / $15 per 1M tokens
+-    Opus:   $5 / $25 per 1M tokens
++Pricing (current catalog, per 1M tokens in / out):
++    Haiku 4.5:  $1 / $5
++    Sonnet 4.6: $3 / $15
++    Opus 4.8:   $5 / $25
++    Fable 5:    $10 / $50
+ """
+ 
+ from __future__ import annotations
+@@ -32,42 +33,82 @@ logger = get_logger(__name__)
+ 
+ _API_BASE = "https://api.anthropic.com"
+ _API_VERSION = "2023-06-01"
+-# 2026-04-18: Primary Mind for Anthropic is Sonnet 4.7 Max -- the
+-# founder-specified top-tier Claude. Sonnet 4 / Opus 4 / Haiku 4.5
+-# kept in the catalog as cheaper fallbacks, but when the router has
+-# no cost pressure it picks 4.7 Max first (priority tag).
+-_DEFAULT_MODEL = "claude-sonnet-4-7-max"
+-
+-# Model catalog with pricing per 1M tokens. Priority tag drives
+-# "best of the best" selection when no cost cap forces a cheaper
+-# pick -- see model_router.py scoring.
++# 2026-06-16: Primary Mind for Anthropic is Opus 4.8 -- the top-tier Claude in
++# the current catalog. The router picks it first for hard reasoning +
++# orchestration (priority tag) and delegates cheaper work to Sonnet / Haiku
++# under cost pressure -- see model_router.py scoring. Fable 5 is the frontier
++# model reserved for detection / security work (founder direction: Fable is
++# best for "detecting things" and must NOT be downgraded). Model IDs are
++# grounded against the current Anthropic catalog -- do NOT append date suffixes.
++_DEFAULT_MODEL = "claude-opus-4-8"
++
++# Models on the ADAPTIVE-THINKING tier. The API REMOVES the sampling params
++# (temperature / top_p / top_k) for these and returns HTTP 400 if any are sent;
++# they take thinking={"type": "adaptive"} + output_config.effort instead.
++# Keep this set in sync with the catalog below.
++_ADAPTIVE_THINKING_MODELS = frozenset(
++    {"claude-opus-4-8", "claude-opus-4-7", "claude-fable-5"}
++)
++
++# Effort per top-tier model (output_config.effort, GA -- no beta header).
++# Workhorse apex (Opus) runs "xhigh": the best coding / agentic setting and
++# Claude Code's own default. Deliberately NOT "max" for the workhorse -- maxing
++# every apex call only pays off once the router reliably routes cheap work to
++# cheaper models (the open orchestration gap). Fable 5 is selected only for
++# rare detection / security calls and, per founder direction, is NOT
++# downgraded -- it runs at "max". Flip Opus to "max" once delegation is proven.
++_EFFORT_BY_MODEL: dict[str, str] = {
++    "claude-opus-4-8": "xhigh",
++    "claude-opus-4-7": "xhigh",
++    "claude-fable-5": "max",
++}
++_DEFAULT_TOP_TIER_EFFORT = "xhigh"
++
++# Minimum output ceiling for the adaptive-thinking tier. Thinking tokens count
++# toward max_tokens, so a low ceiling (e.g. the 2048 default) can truncate the
++# answer -- or even the thinking -- before any visible text is produced. 16384
++# leaves room for deep reasoning plus a thorough answer while still capping a
++# runaway call (~$0.41 worst case at Opus 4.8 output pricing). Cheaper / legacy
++# models keep the caller's value untouched. Raise if answers still truncate.
++_ADAPTIVE_THINKING_MIN_MAX_TOKENS = 16384
++
++# Model catalog with pricing per 1M tokens (in / out). Priority tag drives
++# "best of the best" selection when no cost cap forces a cheaper pick.
+ _MODELS: list[dict[str, Any]] = [
+     {
+-        "id": "claude-sonnet-4-7-max",
+-        "name": "Claude Sonnet 4.7 Max",
++        "id": "claude-opus-4-8",
++        "name": "Claude Opus 4.8",
+         "ctx": 1_000_000,
+-        "in": 3.0,
+-        "out": 15.0,
+-        "tags": ["reasoning", "coding", "frontier", "priority"],
++        "in": 5.0,
++        "out": 25.0,
++        "tags": ["reasoning", "coding", "agentic", "frontier", "priority"],
+     },
+     {
+-        "id": "claude-opus-4-20250514",
+-        "name": "Claude Opus 4",
+-        "ctx": 200_000,
+-        "in": 15.0,
+-        "out": 75.0,
+-        "tags": ["reasoning", "premium"],
++        "id": "claude-fable-5",
++        "name": "Claude Fable 5",
++        "ctx": 1_000_000,
++        "in": 10.0,
++        "out": 50.0,
++        "tags": ["reasoning", "frontier", "detection", "security"],
+     },
+     {
+-        "id": "claude-sonnet-4-20250514",
+-        "name": "Claude Sonnet 4",
+-        "ctx": 200_000,
++        "id": "claude-opus-4-7",
++        "name": "Claude Opus 4.7",
++        "ctx": 1_000_000,
++        "in": 5.0,
++        "out": 25.0,
++        "tags": ["reasoning", "coding", "agentic"],
++    },
++    {
++        "id": "claude-sonnet-4-6",
++        "name": "Claude Sonnet 4.6",
++        "ctx": 1_000_000,
+         "in": 3.0,
+         "out": 15.0,
+         "tags": ["reasoning", "coding", "balanced"],
+     },
+     {
+-        "id": "claude-haiku-4-5-20251001",
++        "id": "claude-haiku-4-5",
+         "name": "Claude Haiku 4.5",
+         "ctx": 200_000,
+         "in": 1.0,
+@@ -228,11 +269,26 @@ class AnthropicProvider(BaseProvider):
+         payload: dict[str, Any] = {
+             "model": model_id,
+             "messages": messages,
+-            "max_tokens": request.max_tokens,
+-            "temperature": request.temperature,
+-            "top_p": request.top_p,
+             "stream": stream,
+         }
++        if model_id in _ADAPTIVE_THINKING_MODELS:
++            # Top reasoning tier: adaptive thinking + per-model effort. The API
++            # REMOVES the sampling params (temperature / top_p / top_k) for this
++            # tier and returns HTTP 400 if any are sent, so they are deliberately
++            # NOT included. Thinking tokens count toward max_tokens -> enforce a
++            # floor so the answer is never starved.
++            payload["thinking"] = {"type": "adaptive"}
++            payload["output_config"] = {
++                "effort": _EFFORT_BY_MODEL.get(model_id, _DEFAULT_TOP_TIER_EFFORT)
++            }
++            payload["max_tokens"] = max(
++                request.max_tokens, _ADAPTIVE_THINKING_MIN_MAX_TOKENS
++            )
++        else:
++            # Cheaper / legacy models: classic sampling, caller's ceiling verbatim.
++            payload["max_tokens"] = request.max_tokens
++            payload["temperature"] = request.temperature
++            payload["top_p"] = request.top_p
+         # System prompt goes as top-level field in Anthropic API
+         system_text = request.system_prompt
+         if not system_text:
+@@ -240,7 +296,20 @@ class AnthropicProvider(BaseProvider):
+             if system_msgs:
+                 system_text = "\n".join(m.content for m in system_msgs)
+         if system_text:
+-            payload["system"] = system_text
++            # Cache the system/soul prefix. It is large and stable across
++            # requests (same department + governance mode => identical soul
++            # string), so caching bills repeat sends at the cache-read rate
++            # (~10% of input cost). Ephemeral (5m) caching is GA -- no beta
++            # header needed -- and the block form is accepted anywhere the
++            # plain string is. Blocks under the model's min cacheable size are
++            # silently served uncached, so this never errors.
++            payload["system"] = [
++                {
++                    "type": "text",
++                    "text": system_text,
++                    "cache_control": {"type": "ephemeral"},
++                }
++            ]
+ 
+         if request.stop_sequences:
+             payload["stop_sequences"] = request.stop_sequences
+diff --git a/backend/app/services/soul_engine.py b/backend/app/services/soul_engine.py
+index 9c1b89e..4ca6f3d 100644
+--- a/backend/app/services/soul_engine.py
++++ b/backend/app/services/soul_engine.py
+@@ -391,6 +391,71 @@ class SoulEngine:
+ 
+         return company_section + base + dept_section + addendum
+ 
++    @classmethod
++    def build_agent_system_prompt(
++        cls,
++        governance_mode: str = "GOVERNED",
++        *,
++        department: str | None = None,
++        sub_capability: str | None = None,
++        company_context: Any = None,
++    ) -> str:
++        """Compose the FULL system prompt for any agent: soul + role.
++
++        This is the single composition point every execution path should use
++        so the soul (core character, Fable-class reasoning, anti-sycophancy,
++        grounding) and the department Mind overlay travel with EVERY agent --
++        the chat path, department agents, and the multi-capability swarm
++        alike. Before this helper existed, the swarm and department paths
++        injected only the per-role prompt via ``get_agent_prompt`` and shipped
++        de-souled agents (no soul, no reasoning rigor, no anti-sycophancy).
++
++        Layer order (highest LLM attention first):
++            1. Core soul + department Mind overlay + governance addendum
++               (delegated to ``get_soul_prompt``)
++            2. Sub-capability role prompt (from ``department_prompts``),
++               tagged ``[department.sub_capability]``
++
++        Degrades safely: a missing soul or an unresolved role each drop out
++        without raising, matching the Daena rule "never break a working path."
++
++        Args:
++            governance_mode: UNLEASHED, BALANCED, or GOVERNED.
++            department: Department name, slug, or Mind name (see
++                ``_DEPARTMENT_SLUG_ALIASES``).
++            sub_capability: MIND / EYES / HANDS / VOICE / SHIELD / MEMORY.
++            company_context: Optional CompanyContext, forwarded to
++                ``get_soul_prompt`` for the founder-scoped company brief.
++
++        Returns:
++            System prompt string ready to lead an agent invocation.
++        """
++        soul = cls.get_soul_prompt(
++            governance_mode,
++            department=department,
++            company_context=company_context,
++        )
++        parts: list[str] = []
++        if soul:
++            parts.append(soul)
++
++        if department and sub_capability:
++            try:
++                from app.services.department_prompts import get_agent_prompt
++                role = get_agent_prompt(department, sub_capability)
++                if role:
++                    parts.append(
++                        "\n\n---\n\n"
++                        f"## YOUR ROLE -- [{department}.{sub_capability}]\n"
++                        + role
++                    )
++            except Exception:
++                logger.warning(
++                    "soul_engine.agent_role_prompt_failed", exc_info=True
++                )
++
++        return "".join(parts)
++
+     @classmethod
+     def get_department_metadata(cls, department: str | None) -> dict[str, Any]:
+         """Return department soul metadata (preferred runtime, voice, tools).
+diff --git a/backend/app/services/swarm/executor.py b/backend/app/services/swarm/executor.py
+index 2608b07..ee6fbf3 100644
+--- a/backend/app/services/swarm/executor.py
++++ b/backend/app/services/swarm/executor.py
+@@ -681,21 +681,40 @@ class SwarmExecutor:
+     ) -> None:
+         """Collect streaming output from a runtime adapter.
+ 
+-        If the subtask is routed to a department agent, injects the
+-        agent's specialized prompt into the task description.
++        If the subtask is routed to a department agent, injects the FULL
++        agent system prompt (soul + department Mind overlay + sub-capability
++        role) ahead of the task. This is what carries the soul -- and with it
++        Fable-class reasoning, anti-sycophancy, and grounding -- onto every
++        swarm sub-agent and every model the swarm routes to. Before this,
++        swarm agents got only the bare role prompt (no soul).
+         """
+         task_desc = subtask.description
+ 
+-        # Inject department agent prompt if routed
++        # Inject the full agent system prompt (soul + role) if routed.
+         dept = subtask.metadata.get("department")
+         sub_cap = subtask.metadata.get("sub_capability")
+         if dept and sub_cap:
+             try:
+-                from app.services.department_prompts import get_agent_prompt
+-                agent_prompt = get_agent_prompt(dept, sub_cap)
+-                task_desc = f"[{dept}.{sub_cap}] {agent_prompt}\n\nTASK: {task_desc}"
++                from app.services.soul_engine import SoulEngine
++                governance_mode = (
++                    context.get("governance_mode")
++                    if isinstance(context, dict) else None
++                ) or "GOVERNED"
++                system_prompt = SoulEngine.build_agent_system_prompt(
++                    governance_mode,
++                    department=dept,
++                    sub_capability=sub_cap,
++                )
++                if system_prompt:
++                    task_desc = f"{system_prompt}\n\n---\n\nTASK: {task_desc}"
+             except Exception:
+-                pass  # Fall back to plain description
++                # Degrade to the prior behavior: bare role prompt, never crash.
++                try:
++                    from app.services.department_prompts import get_agent_prompt
++                    agent_prompt = get_agent_prompt(dept, sub_cap)
++                    task_desc = f"[{dept}.{sub_cap}] {agent_prompt}\n\nTASK: {task_desc}"
++                except Exception:
++                    pass  # Fall back to plain description
+ 
+         async for chunk in adapter.execute(task_desc, context):
+             output_chunks.append(chunk)

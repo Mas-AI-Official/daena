@@ -92,11 +92,27 @@ def main() -> None:
     )
     print(f"[Daena] API docs: http://localhost:{port}/docs")
 
+    # Reload policy: uvicorn's --reload worker is broken on Windows venvs.
+    # The reloader can re-exec the SYSTEM Python instead of the venv
+    # interpreter, so the worker fails to import sqlalchemy/pydantic and the
+    # API silently never loads its routes (see scripts/start-backend-dev.bat
+    # header). Default to no-reload on Windows -- the proven-stable launch
+    # mode -- while keeping debug-driven reload on POSIX where it works.
+    # Override either way with DAENA_RELOAD=1 / DAENA_RELOAD=0.
+    reload_override = os.environ.get("DAENA_RELOAD")
+    if reload_override is not None:
+        use_reload = reload_override.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        use_reload = settings.debug and os.name != "nt"
+    if settings.debug and not use_reload and reload_override is None:
+        print("[Daena] Windows detected: launching without uvicorn --reload "
+              "(reloader worker bug). Set DAENA_RELOAD=1 to force.")
+
     uvicorn.run(
         "app.main:app",
         host=settings.host,
         port=port,
-        reload=settings.debug,
+        reload=use_reload,
         log_level=settings.log_level.lower(),
     )
 

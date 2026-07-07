@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Code, Plus, Key, ExternalLink, Copy, Trash2, Check, AlertTriangle, Eye, EyeOff } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
+import { confirmDialog } from '@/stores/confirmStore'
 
 interface ApiKeyItem {
   id: string
@@ -20,6 +21,7 @@ interface ApiKeyItem {
 export function AccountApiKeys() {
   const [keys, setKeys] = useState<ApiKeyItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
   const [showCreate, setShowCreate] = useState(false)
@@ -29,10 +31,14 @@ export function AccountApiKeys() {
   const [copied, setCopied] = useState(false)
 
   const fetchKeys = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
     try {
       const res = await api.get('/api-keys')
       setKeys(res.data)
     } catch {
+      setKeys([])
+      setLoadError('We could not load your API keys. Retry to refresh.')
       toast.error('Failed to load API keys')
     } finally {
       setLoading(false)
@@ -59,10 +65,17 @@ export function AccountApiKeys() {
     }
   }
 
-  const handleRevoke = async (id: string) => {
-    setRevoking(id)
+  const handleRevoke = async (key: ApiKeyItem) => {
+    const ok = await confirmDialog({
+      title: 'Revoke this API key?',
+      message: `Any integration using "${key.name}" will immediately stop working. This cannot be undone -- you would need to create a new key and update every consumer.`,
+      confirmLabel: 'Revoke key',
+      variant: 'danger',
+    })
+    if (!ok) return
+    setRevoking(key.id)
     try {
-      await api.delete(`/api-keys/${id}`)
+      await api.delete(`/api-keys/${key.id}`)
       toast.success('API key revoked')
       void fetchKeys()
     } catch {
@@ -84,7 +97,7 @@ export function AccountApiKeys() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-display font-semibold text-starlight-100">API Platform</h1>
+        <h3 className="text-xl font-display font-semibold text-starlight-100">API Platform</h3>
         <p className="text-sm text-starlight-400 mt-1">Manage API keys for programmatic access to Daena</p>
       </div>
 
@@ -93,7 +106,7 @@ export function AccountApiKeys() {
         <div className="flex items-start gap-3">
           <Code size={20} className="text-primary-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-starlight-100">Daena API</h3>
+            <h4 className="text-sm font-medium text-starlight-100">Daena API</h4>
             <p className="text-xs text-starlight-400 mt-1">
               Access Daena's governance pipeline, chat, and agent capabilities programmatically.
               API keys authenticate requests to all /api/v1/* endpoints.
@@ -127,10 +140,17 @@ export function AccountApiKeys() {
                 <button
                   onClick={() => void copyToClipboard(justCreatedKey)}
                   className="p-2 rounded-lg hover:bg-white/5 text-starlight-400 cursor-pointer"
-                  title="Copy"
+                  title={copied ? 'Copied' : 'Copy'}
                 >
                   {copied ? <Check size={14} className="text-status-success" /> : <Copy size={14} />}
                 </button>
+                {/* PR-A11Y-PHASE84 (SC 4.1.3 Status Messages): the copy button's
+                    icon swap is silent to screen readers. Announce success via a
+                    polite live region -- mirrors ConnectionStatusIndicator's
+                    sr-only pattern (no founder-gated <LiveRegion> primitive). */}
+                <span className="sr-only" aria-live="polite" aria-atomic="true">
+                  {copied ? 'API key copied to clipboard' : ''}
+                </span>
               </div>
               <button
                 onClick={() => setJustCreatedKey(null)}
@@ -146,9 +166,9 @@ export function AccountApiKeys() {
       {/* API keys list */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-starlight-200">
+          <h4 className="text-sm font-medium text-starlight-200">
             Your API keys {activeKeys.length > 0 && <span className="text-starlight-500">({activeKeys.length})</span>}
-          </h3>
+          </h4>
           {!showCreate && (
             <button
               onClick={() => setShowCreate(true)}
@@ -163,8 +183,9 @@ export function AccountApiKeys() {
         {showCreate && (
           <div className="p-4 rounded-xl bg-midnight-300/30 border border-white/5 max-w-2xl flex items-end gap-3">
             <div className="flex-1">
-              <label className="text-[10px] text-starlight-500 uppercase tracking-wide">Key name</label>
+              <label htmlFor="apikey-name" className="text-[10px] text-starlight-500 uppercase tracking-wide">Key name</label>
               <input
+                id="apikey-name"
                 type="text"
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
@@ -196,6 +217,19 @@ export function AccountApiKeys() {
             {[1, 2].map(i => (
               <div key={i} className="h-14 rounded-lg bg-midnight-300/30 animate-pulse" />
             ))}
+          </div>
+        ) : loadError ? (
+          <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 overflow-hidden max-w-2xl">
+            <div className="px-6 py-8 text-center">
+              <AlertTriangle size={24} className="mx-auto text-rose-300 mb-3" />
+              <p className="text-sm text-rose-200">{loadError}</p>
+              <button
+                onClick={() => void fetchKeys()}
+                className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-500/30 text-xs text-rose-200 hover:bg-rose-500/10 cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
           </div>
         ) : activeKeys.length === 0 ? (
           <div className="rounded-lg border border-white/5 overflow-hidden max-w-2xl">
@@ -232,7 +266,7 @@ export function AccountApiKeys() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
-                        onClick={() => void handleRevoke(k.id)}
+                        onClick={() => void handleRevoke(k)}
                         disabled={revoking === k.id}
                         className="p-1.5 rounded hover:bg-status-error/10 text-starlight-500 hover:text-status-error transition-colors cursor-pointer"
                         title="Revoke key"

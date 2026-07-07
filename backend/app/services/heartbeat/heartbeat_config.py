@@ -45,6 +45,7 @@ class CheckType(Enum):
     AUTONOMOUS_WORK = "autonomous_work"  # AGI mode: pick up pending tasks and execute via SwarmPlanner
     OLLAMA_MODEL_UPDATES = "ollama_model_updates"  # Check and pull Ollama model updates
     SOUL_REFINEMENT = "soul_refinement"  # Weekly: refine Department Mind souls against domain best-practices
+    MEMORY_QUARANTINE = "memory_quarantine"  # Validate quarantined experiences (promote/demote by trust)
     CUSTOM = "custom"  # User-defined check
 
 
@@ -159,6 +160,11 @@ class HeartbeatConfig:
                 HeartbeatCheck(
                     check_type=CheckType.FAILED_TASKS,
                     description="Find failed execution tasks and retry them",
+                ),
+                HeartbeatCheck(
+                    check_type=CheckType.MEMORY_QUARANTINE,
+                    description="Validate quarantined agent experiences (promote repeated successes, archive repeated failures)",
+                    max_cost_usd=0.0,  # Pure local DB pass, zero LLM/network
                 ),
                 HeartbeatCheck(
                     check_type=CheckType.OLLAMA_HEALTH,

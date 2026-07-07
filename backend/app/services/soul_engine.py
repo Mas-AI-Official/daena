@@ -112,7 +112,21 @@ _DEPARTMENT_SLUG_ALIASES: dict[str, str] = {
     "security": "security_operations",
     "secops": "security_operations",
     "rourke": "security_operations",
+    # Daena herself -- the VP. Not a department peer; she orchestrates the
+    # ten above. These aliases let get_soul_prompt(department="daena") and
+    # get_vp_mind() resolve her pinned overlay, while list_departments()
+    # deliberately excludes _VP_MIND_SLUG so she never renders as an 11th
+    # department card in the Minds gallery or the soul-maker candidate loop.
+    "daena": "daena",
+    "vp": "daena",
+    "daena vp": "daena",
 }
+
+# Daena's own Mind lives in departments/daena.md so it reuses the same
+# loader, cache, and frontmatter machinery as the ten department overlays,
+# but she is the Vice President, not a peer department. list_departments()
+# filters this slug out; get_vp_mind() is the dedicated accessor for it.
+_VP_MIND_SLUG = "daena"
 
 # ── Mode-specific addenda ────────────────────────────────────
 
@@ -413,16 +427,38 @@ class SoulEngine:
 
         Used by the UI to render the Minds gallery (avatar + name + tone)
         and by the soul-maker service to iterate candidates for refinement.
+
+        Daena's own Mind (_VP_MIND_SLUG) is deliberately excluded: she is the
+        Vice President who orchestrates these ten, not a peer department. Use
+        get_vp_mind() to address her VP-tier overlay directly.
         """
         out: list[dict[str, Any]] = []
         if not _DEPARTMENT_SOUL_PATH.exists():
             return out
         for path in sorted(_DEPARTMENT_SOUL_PATH.glob("*.md")):
             slug = path.stem
+            if slug == _VP_MIND_SLUG:
+                continue
             meta, _ = _load_department_soul(slug)
             if meta:
                 out.append({"slug": slug, **meta})
         return out
+
+    @classmethod
+    def get_vp_mind(cls) -> dict[str, Any]:
+        """Return Daena's VP-tier Mind metadata (voice, brand, toolset).
+
+        Daena is not a department; her overlay lives in departments/daena.md
+        only to reuse the loader and cache. This accessor lets the model
+        router, the EdgeTTS voice provider, and the frontend pin her as the
+        Vice President (gold brand, flagship voice) rather than surfacing her
+        as an eleventh department card. Returns an empty dict if the VP
+        overlay is missing from the vault.
+        """
+        meta, _ = _load_department_soul(_VP_MIND_SLUG)
+        if not meta:
+            return {}
+        return {"slug": _VP_MIND_SLUG, **meta}
 
     @classmethod
     def reload(cls) -> None:

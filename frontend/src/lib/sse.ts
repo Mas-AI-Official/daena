@@ -319,6 +319,14 @@ export interface StreamWithRetryOptions {
   open: () => Promise<Response>
   /** Concrete callback per event. Same shape as useResilientSSE. */
   onEvent: (event: SSEEvent) => void
+  /**
+   * Fired once each time the HTTP stream is successfully (re)established
+   * (response.ok with a readable body), BEFORE any bytes are read. Lets a
+   * caller flip an honest "connected/live" flag at the exact transport
+   * moment instead of waiting for the first data frame (Rule 17). Optional,
+   * so existing callers are unaffected.
+   */
+  onOpen?: () => void
   /** Max reconnect attempts before giving up. */
   maxRetries?: number
   /** First retry delay in ms (default 1000). */
@@ -329,6 +337,16 @@ export interface StreamWithRetryOptions {
   onReconnecting?: (attempt: number, totalAttempts: number) => void
   /** Abort signal so the caller can tear the loop down. */
   signal?: AbortSignal
+  /**
+   * Treat a clean EOF (the server closing the response body) as a dropped
+   * connection and reconnect, instead of returning. OFF by default so a
+   * finite/one-shot stream still completes on EOF. A PERSISTENT doorbell
+   * stream (e.g. the Mission Control graph channel) sets this true so a
+   * graceful backend restart or a proxy recycling the idle connection
+   * re-establishes the stream rather than silently dropping to polling.
+   * Mirrors ``useResilientSSE``, which already reconnects on clean EOF.
+   */
+  reconnectOnClose?: boolean
 }
 
 /**
@@ -338,7 +356,9 @@ export interface StreamWithRetryOptions {
  * fires, or retries are exhausted. Domain code is responsible for
  * deciding what "stream complete" means via its own event types
  * (e.g. ``finalize``, ``done``). This helper does not try to parse
- * domain semantics; it only manages the transport.
+ * domain semantics; it only manages the transport. Set
+ * ``reconnectOnClose`` for a persistent stream that should re-establish
+ * (not return) when the server closes the body.
  */
 export async function streamWithRetry(
   opts: StreamWithRetryOptions,
@@ -346,11 +366,13 @@ export async function streamWithRetry(
   const {
     open,
     onEvent,
+    onOpen,
     maxRetries = 5,
     initialBackoffMs = 1000,
     maxBackoffMs = 15000,
     onReconnecting,
     signal,
+    reconnectOnClose = false,
   } = opts
 
   let attempt = 0
@@ -386,6 +408,10 @@ export async function streamWithRetry(
     // Successful open clears the retry counter so the next failure
     // starts the backoff fresh, not from where we left off.
     attempt = 0
+    // Transport is established (response.ok + readable body). Signal the
+    // caller now so an honest "live" flag flips at connect, not on the
+    // first frame (which for a low-traffic stream could be 25s away).
+    onOpen?.()
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
@@ -399,7 +425,21 @@ export async function streamWithRetry(
           return
         }
         const { done, value } = await reader.read()
-        if (done) return
+        if (done) {
+          // Clean EOF (server closed the body). For a one-shot stream the
+          // closed body means "complete" and we return. For a persistent
+          // doorbell stream (reconnectOnClose) a graceful restart or a
+          // proxy recycling the connection must reconnect, not drop -- so
+          // route it through the same bounded backoff as a transport error.
+          if (!reconnectOnClose || signal?.aborted) return
+          attempt += 1
+          if (attempt > maxRetries) return
+          onReconnecting?.(attempt, maxRetries)
+          await new Promise((r) =>
+            setTimeout(r, Math.min(initialBackoffMs * 2 ** (attempt - 1), maxBackoffMs)),
+          )
+          break
+        }
 
         buffer += decoder.decode(value, { stream: true })
 

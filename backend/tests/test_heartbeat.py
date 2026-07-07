@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from datetime import datetime, time
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -12,7 +15,9 @@ from app.services.heartbeat.heartbeat_checks import (
     HeartbeatCheckResult,
     check_file,
     check_git_status,
+    check_github_issues,
     check_runtime_health,
+    generate_daily_report,
 )
 from app.services.heartbeat.heartbeat_config import (
     AutopilotLevel,
@@ -97,6 +102,99 @@ class TestHeartbeatChecks:
         assert isinstance(result, HeartbeatCheckResult)
         assert result.check_type == "git_status"
         assert result.status in ("ok", "action_needed", "error")
+
+
+def _fake_completed(returncode: int = 0, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(
+        args=["gh"], returncode=returncode, stdout=stdout, stderr=stderr,
+    )
+
+
+class TestHeartbeatObservability:
+    """Rule 17 / ADR-001: a masked check failure must surface, never read as clean."""
+
+    @pytest.mark.asyncio
+    async def test_github_issues_ok_when_empty(self):
+        with patch(
+            "app.services.heartbeat.heartbeat_checks._run_sync",
+            return_value=_fake_completed(returncode=0, stdout="[]"),
+        ):
+            result = await check_github_issues()
+        assert result.status == "ok"
+        assert result.details["check_failed"] is False
+        assert result.summary == "No open bugs"
+
+    @pytest.mark.asyncio
+    async def test_github_issues_warns_on_nonzero_rc(self):
+        """gh failing must NOT be reported as 'No open bugs' (empty-as-clean)."""
+        with patch(
+            "app.services.heartbeat.heartbeat_checks._run_sync",
+            return_value=_fake_completed(returncode=1, stderr="gh: not authenticated"),
+        ):
+            result = await check_github_issues()
+        assert result.status == "warning"
+        assert result.details["check_failed"] is True
+        assert "No open bugs" not in result.summary
+
+    @pytest.mark.asyncio
+    async def test_github_issues_warns_on_unparseable_output(self):
+        """A JSON parse failure must surface, not silently read as a clean count."""
+        with patch(
+            "app.services.heartbeat.heartbeat_checks._run_sync",
+            return_value=_fake_completed(returncode=0, stdout="not json <<<"),
+        ):
+            result = await check_github_issues()
+        assert result.status == "warning"
+        assert result.details["check_failed"] is True
+        assert "unparseable" in result.summary
+
+    @pytest.mark.asyncio
+    async def test_github_issues_action_needed_when_bugs(self):
+        with patch(
+            "app.services.heartbeat.heartbeat_checks._run_sync",
+            return_value=_fake_completed(
+                returncode=0,
+                stdout='[{"number": 7, "title": "boom", "createdAt": "2026-06-18"}]',
+            ),
+        ):
+            result = await check_github_issues()
+        assert result.status == "action_needed"
+        assert result.details["check_failed"] is False
+        assert "1 open bugs" in result.summary
+
+    @pytest.mark.asyncio
+    async def test_daily_report_shows_github_unavailable_on_failure(self, tmp_path):
+        """A gh failure must not silently drop the GitHub section from the report."""
+        with patch(
+            "app.services.heartbeat.heartbeat_checks._run_sync",
+            side_effect=RuntimeError("gh exploded"),
+        ):
+            result = await generate_daily_report(report_dir=str(tmp_path))
+        assert result.status == "ok"
+        content = Path(result.details["path"]).read_text(encoding="utf-8")
+        assert "## Open GitHub Issues" in content
+        assert "(github unavailable)" in content
+
+    @pytest.mark.asyncio
+    async def test_daily_report_logs_degraded_sections(self, tmp_path, capsys):
+        """git/test/ollama probe failures must be visible to a log monitor, not
+        only as a marker in a report a human may never open (Rule 17)."""
+        with patch(
+            "app.services.heartbeat.heartbeat_checks._run_sync",
+            side_effect=RuntimeError("probe exploded"),
+        ):
+            result = await generate_daily_report(report_dir=str(tmp_path))
+        assert result.status == "ok"
+        content = Path(result.details["path"]).read_text(encoding="utf-8")
+        # control flow preserved: every degraded section still writes its marker
+        assert "(git log unavailable)" in content
+        assert "Error running tests:" in content
+        assert "(ollama unavailable)" in content
+        # the fix: each degraded section is now also visible to a log monitor
+        log_stream = "".join(capsys.readouterr())
+        assert "heartbeat.daily_report_git_unavailable" in log_stream
+        assert "heartbeat.daily_report_tests_unavailable" in log_stream
+        assert "heartbeat.daily_report_ollama_unavailable" in log_stream
 
 
 # ── Daemon tests ──

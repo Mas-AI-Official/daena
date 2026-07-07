@@ -249,7 +249,7 @@ export function AnalyticsPage() {
         </div>
 
         {fetchError && !loading && (
-          <div className="px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30 flex items-start gap-3">
+          <div role="alert" className="px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30 flex items-start gap-3">
             <AlertTriangle size={16} className="text-status-warning shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-sm text-status-warning font-medium">Analytics offline</p>

@@ -1003,6 +1003,11 @@ class MemoryService(BaseService):
 
         promoted_count = 0
         demoted_count = 0
+        # Plain-value tuples for experiences promoted THIS batch that are safe to
+        # feed to ragx (non-sensitive only). Captured at promotion time -- see the
+        # ragx feed block after flush() for why we copy scalars instead of passing
+        # the ORM row.
+        to_ingest: list[tuple] = []
 
         for entry in quarantined:
             # Count siblings with same content hash
@@ -1023,6 +1028,11 @@ class MemoryService(BaseService):
                 entry.trust_score = 0.8
                 entry.tier = max(entry.tier, NBMFTier.SHORT_TERM.value)
                 promoted_count += 1
+                if not entry.is_sensitive:
+                    to_ingest.append((
+                        entry.id, entry.content, entry.summary,
+                        list(entry.tags or []), entry.created_at,
+                    ))
 
                 log = LearningLog(
                     tenant_id=tenant_id,
@@ -1058,9 +1068,36 @@ class MemoryService(BaseService):
                 if entry.trust_score >= TRUST_PROMOTE_THRESHOLD:
                     entry.is_quarantined = False
                     promoted_count += 1
+                    if not entry.is_sensitive:
+                        to_ingest.append((
+                            entry.id, entry.content, entry.summary,
+                            list(entry.tags or []), entry.created_at,
+                        ))
 
         if quarantined:
             await self.db.flush()
+
+        # Feed newly-promoted, non-sensitive experiences into the tenant's ragx
+        # collection so Stage 6.1 recalls them semantically (Phase 3 item 9, G2).
+        # Fire-and-forget with PLAIN values captured above: promotion only flushed
+        # (not committed), so a task that re-read the row could race the uncommitted
+        # is_quarantined flip -- passing scalars removes any DB dependency. Lazy
+        # import keeps this module httpx-free. Fails open: never breaks promotion.
+        if to_ingest:
+            try:
+                from app.services.experience_ingest import schedule_experience_ingest
+
+                for exp_id, content, summary, tags, created_at in to_ingest:
+                    schedule_experience_ingest(
+                        tenant_id=tenant_id,
+                        experience_id=exp_id,
+                        content=content,
+                        summary=summary,
+                        tags=tags,
+                        created_at=created_at,
+                    )
+            except Exception:
+                _log.debug("memory.experience_ingest_schedule_failed", exc_info=True)
 
         return {
             "reviewed": len(quarantined),

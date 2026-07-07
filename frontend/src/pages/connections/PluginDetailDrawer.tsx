@@ -23,7 +23,7 @@
  *   - Install steps are metadata-only -- never auto-executed.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Activity, AlertTriangle, ArrowRight, BookOpen, CheckCircle2,
@@ -66,6 +66,18 @@ export default function PluginDetailDrawer({
   plugin, onClose, onProbe, onEnable, busy = false,
 }: PluginDetailDrawerProps) {
   const navigate = useNavigate()
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  // PR-A11Y-PHASE32: overlay focus contract -- move focus into the panel on open,
+  // restore to the opener on close (WCAG 2.4.3 / 2.1.2 / WAI-ARIA dialog pattern).
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    const focusTimer = setTimeout(() => {
+      const panel = panelRef.current
+      if (panel && !panel.contains(document.activeElement)) panel.focus()
+    }, 50)
+    return () => { clearTimeout(focusTimer); previousFocusRef.current?.focus?.() }
+  }, [])
   const [plan, setPlan] = useState<InstallPlan | null>(null)
   const [planLoading, setPlanLoading] = useState(true)
   const [planError, setPlanError] = useState<string | null>(null)
@@ -155,7 +167,13 @@ export default function PluginDetailDrawer({
       onClick={onClose}
     >
       <div
-        className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${plugin.name} details`}
+        tabIndex={-1}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }}
+        className="max-h-[88vh] w-full max-w-3xl overflow-y-auto scroll-pb-16 rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ── */}
@@ -1013,6 +1031,7 @@ function SourceTrustBlock({ plugin }: { plugin: PluginCard }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
         className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
       >
         <div className="flex items-center gap-2">

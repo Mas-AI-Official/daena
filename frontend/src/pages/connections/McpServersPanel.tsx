@@ -249,6 +249,7 @@ export default function McpServersPanel() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search MCPs..."
+              aria-label="Search MCP servers"
               className="glass-input w-full rounded-md py-2 pl-8 pr-3 text-xs text-starlight-200"
             />
           </div>
@@ -264,7 +265,7 @@ export default function McpServersPanel() {
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 rounded-md border border-status-error/25 bg-status-error/5 px-3 py-2 text-xs text-status-error">
+        <div role="alert" className="flex items-start gap-2 rounded-md border border-status-error/25 bg-status-error/5 px-3 py-2 text-xs text-status-error">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           {error}
         </div>

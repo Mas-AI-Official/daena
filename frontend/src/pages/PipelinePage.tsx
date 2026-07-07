@@ -131,6 +131,10 @@ export function PipelinePage() {
   const [workflowCompany, setWorkflowCompany] = useState('')
   const [workflowRunning, setWorkflowRunning] = useState(false)
   const [workflowResult, setWorkflowResult] = useState<CustomerAcquisitionWorkflowResult | null>(null)
+  // Per-project pending guard for the kanban Advance/Approve button. Mirrors
+  // TasksPage's retryingId === task.id per-item idiom. See handleAdvance for why
+  // an unguarded double-click is a governance hazard, not just a cosmetic dupe.
+  const [advancingId, setAdvancingId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -138,15 +142,15 @@ export function PipelinePage() {
     try {
       const [sumRes, projRes] = await Promise.allSettled([
         api.get<ApiResponse<PipelineSummary>>('/pipeline/summary'),
-        api.get<ApiResponse<{ projects: PipelineProject[] }>>('/pipeline/projects'),
+        api.get<{ success?: boolean; projects?: PipelineProject[]; data?: { projects?: PipelineProject[] } }>('/pipeline/projects'),
       ])
       if (sumRes.status === 'fulfilled') setSummary(sumRes.value.data.data || null)
       else setError('Failed to load pipeline summary')
       if (projRes.status === 'fulfilled') {
-        // Backend wraps as { success, data: { projects, pagination } }.
-        // Defensively support both wrapped and unwrapped shapes.
+        // Live backend returns the unwrapped shape { success, projects, pagination };
+        // older callers may wrap as { data: { projects } }. Support both.
         const payload = projRes.value.data
-        const projects = payload.data?.projects ?? []
+        const projects = payload.data?.projects ?? payload.projects ?? []
         setProjects(projects)
       } else if (!error) setError('Failed to load pipeline projects')
     } catch (err) {
@@ -206,12 +210,30 @@ export function PipelinePage() {
   }
 
   const handleAdvance = async (projectId: string, currentStage: string) => {
+    // Single-flight guard. The advance endpoint advances from the project's
+    // CURRENT db stage (the body carries no target stage), so a rapid
+    // double-click before fetchData re-renders the card would fire a SECOND
+    // advance off the now-stale stage -- moving the governed deal two stages on
+    // one intent and computing founder_approved from the stale closure. Block
+    // any concurrent advance and disable the in-flight card's button below.
+    if (advancingId) return
     const needsApproval = HUMAN_GATES.has(currentStage)
+    setAdvancingId(projectId)
     try {
-      await api.post(`/pipeline/projects/${projectId}/advance`, {
+      const res = await api.post(`/pipeline/projects/${projectId}/advance`, {
         founder_approved: needsApproval,
         notes: 'Advanced from Pipeline board',
       })
+      // The pipeline router returns its errors as an ok-false envelope at HTTP
+      // 200 (uniform house contract -- there is no raise HTTPException in
+      // pipeline.py), so a rejected transition (including a governance
+      // human-gate refusal) never reaches the catch below. Honor the envelope
+      // the way WorkstreamsPage.submitRedirect does, or the operator is told
+      // "advanced" over a transition the backend actually rejected.
+      if (res.data?.success === false) {
+        toast.error(res.data?.error?.message || 'Could not advance the project')
+        return
+      }
       toast.success('Project advanced')
       await fetchData()
     } catch (err: unknown) {
@@ -219,6 +241,8 @@ export function PipelinePage() {
         (err as { response?: { data?: { error?: { message?: string } } } })
           ?.response?.data?.error?.message || 'Failed to advance'
       toast.error(msg)
+    } finally {
+      setAdvancingId(null)
     }
   }
 
@@ -242,9 +266,15 @@ export function PipelinePage() {
     // to match native window.prompt semantics.)
     if (reason === null) return
     try {
-      await api.post(`/pipeline/projects/${projectId}/mark-lost`, {
+      const res = await api.post(`/pipeline/projects/${projectId}/mark-lost`, {
         reason: reason.trim() || null,
       })
+      // Same ok-false-at-200 envelope as advance: a rejected mark-lost (already
+      // lost / CLOSED) returns success:false at HTTP 200, never reaching catch.
+      if (res.data?.success === false) {
+        toast.error(res.data?.error?.message || 'Could not mark the project lost')
+        return
+      }
       toast.success('Project marked as lost')
       await fetchData()
     } catch (err: unknown) {
@@ -272,8 +302,8 @@ export function PipelinePage() {
   if (loading) return <div className="p-6"><Shimmer count={8} layout="card-grid" /></div>
 
   return (
-    <div className="h-full overflow-x-auto">
-      <div className="p-6 min-w-[1200px]">
+    <div className="h-full overflow-y-auto">
+      <div className="p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -282,12 +312,13 @@ export function PipelinePage() {
             </div>
             <div>
               <h1 className="text-2xl font-display font-bold text-starlight-100">Project Pipeline</h1>
-              <p className="text-sm text-starlight-400">{summary?.total || 0} projects across 8 stages</p>
+              <p className="text-sm text-starlight-400">{deptFilter ? filteredProjects.length : (summary?.total || 0)} projects across 8 stages</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {allDepartments.length > 0 && (
               <select
+                aria-label="Filter by department"
                 value={deptFilter}
                 onChange={(e) => setDeptFilter(e.target.value)}
                 className="px-3 py-2 rounded-lg text-sm bg-white/5 border border-white/10 text-starlight-200 focus:outline-none focus:border-primary-500/40 cursor-pointer"
@@ -301,6 +332,7 @@ export function PipelinePage() {
             <div className="flex items-center gap-2">
               <input
                 type="text"
+                aria-label="New project name"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="New project name..."
@@ -311,7 +343,7 @@ export function PipelinePage() {
                 <Plus size={14} /> Create
               </Button>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => void fetchData()}>
+            <Button variant="ghost" size="sm" aria-label="Refresh pipeline" onClick={() => void fetchData()}>
               <RefreshCw size={14} />
             </Button>
           </div>
@@ -346,6 +378,7 @@ export function PipelinePage() {
             <textarea
               value={workflowIcp}
               onChange={(e) => setWorkflowIcp(e.target.value)}
+              aria-label="Ideal customer profile"
               className="glass-input min-h-[78px] px-3 py-2 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-500 resize-none"
               placeholder="Describe the ideal customer profile..."
             />
@@ -353,6 +386,7 @@ export function PipelinePage() {
               type="text"
               value={workflowCompany}
               onChange={(e) => setWorkflowCompany(e.target.value)}
+              aria-label="Seed company (optional)"
               className="glass-input h-10 px-3 py-2 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-500"
               placeholder="Optional seed company"
             />
@@ -416,7 +450,7 @@ export function PipelinePage() {
         </Card>
 
         {error && (
-          <div className="mb-4 px-4 py-3 rounded-xl bg-status-error/10 border border-status-error/20 flex items-center gap-2">
+          <div role="alert" className="mb-4 px-4 py-3 rounded-xl bg-status-error/10 border border-status-error/20 flex items-center gap-2">
             <AlertCircle size={14} className="text-status-error shrink-0" />
             <p className="text-xs text-status-error">{error}</p>
             <button onClick={() => void fetchData()} className="ml-auto text-xs text-status-error hover:text-status-error/80 underline cursor-pointer">Retry</button>
@@ -436,11 +470,14 @@ export function PipelinePage() {
           </div>
         )}
 
-        {/* Kanban board */}
-        <div className="flex gap-3">
+        {/* Kanban board -- the only genuinely 2D surface; it scrolls horizontally
+            within its own bounds so the rest of the page reflows to a 320px-wide
+            viewport with no page-level horizontal scroll (WCAG SC 1.4.10 Reflow). */}
+        <div className="overflow-x-auto pb-1">
+          <div className="flex gap-3 min-w-[1200px]">
           {STAGES.map((stage) => {
             const stageProjects = getProjectsForStage(stage)
-            const count = summary?.[stage] || stageProjects.length
+            const count = deptFilter ? stageProjects.length : (summary?.[stage] || stageProjects.length)
             const isGate = HUMAN_GATES.has(stage)
 
             return (
@@ -526,11 +563,12 @@ export function PipelinePage() {
                             {stage !== 'CLOSED' && !project.lost_at && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); void handleAdvance(project.id, stage) }}
-                                className="opacity-70 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 transition-all cursor-pointer"
+                                disabled={advancingId === project.id}
+                                className="opacity-70 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 title={isGate ? 'Approve and advance' : 'Advance to next stage'}
                               >
                                 <ArrowRight size={8} />
-                                {isGate ? 'Approve' : 'Advance'}
+                                {advancingId === project.id ? 'Advancing' : isGate ? 'Approve' : 'Advance'}
                               </button>
                             )}
                           </div>
@@ -546,6 +584,7 @@ export function PipelinePage() {
               </div>
             )
           })}
+          </div>
         </div>
       </div>
     </div>

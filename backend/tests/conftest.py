@@ -91,6 +91,21 @@ def _restore_handler_registry():
         _ce_dispatch._TOOL_HANDLERS.clear()
         _ce_dispatch._TOOL_HANDLERS.update(_HANDLER_REGISTRY_SNAPSHOT)
 
+
+@pytest.fixture(autouse=True)
+def _isolate_weakness_snapshots(monkeypatch, tmp_path):
+    """Keep WeaknessTracker durable snapshots out of the real var/cognition.
+
+    OODA reflect tests exercise _reflect with a fake tenant id; without this
+    guard every such test writes a weakness-<hex>.json into backend/var/ and
+    leaks state across tests via the module-level _TRACKERS registry.
+    """
+    from app.services.cognition import weakness_tracker as _wt
+
+    monkeypatch.setattr(_wt, "_TRACKERS", {})
+    monkeypatch.setattr(_wt, "_storage_dir", lambda: tmp_path / "weakness_snapshots")
+
+
 # ---------------------------------------------------------------------------
 # SQLite compatibility: compile PostgreSQL types for SQLite test engine
 # ---------------------------------------------------------------------------

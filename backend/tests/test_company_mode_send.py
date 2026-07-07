@@ -167,3 +167,125 @@ async def test_list_drafts_returns_all_for_mission(
     assert recipients == ["a@example.com", "b@example.com"]
     assert all(d["mission_id"] == mission_id for d in listed)
     assert any(d["draft_id"] == draft_id_1 for d in listed)
+
+
+# ---------------------------------------------------------------------------
+# CRM mirror: the in-memory draft shares its id with a crm_outreach_drafts
+# row (register_draft reuses the id author_outreach persisted), and a
+# successful send must flip that row to SENT.
+# ---------------------------------------------------------------------------
+
+
+def test_register_draft_reuses_supplied_id() -> None:
+    supplied = str(uuid.uuid4())
+    record = company_mode_service.register_draft(
+        mission_id="mission-x",
+        channel="email",
+        recipient="prospect@example.com",
+        body="Hello from Daena.",
+        subject="Quick intro",
+        draft_id=supplied,
+    )
+    assert record.draft_id == supplied
+    assert company_mode_service.get_draft(supplied) is record
+
+
+async def _seed_crm_draft(db_session, tenant_id, *, channel: str = "email") -> str:
+    """Persist Tenant -> Contact -> OutreachDraft; return the row id."""
+    from app.models.crm import Contact, OutreachDraft
+    from app.models.identity import Tenant
+
+    tenant = Tenant(
+        id=tenant_id, name="T", slug=f"cm-send-{uuid.uuid4().hex[:6]}",
+    )
+    db_session.add(tenant)
+    await db_session.flush()
+    contact = Contact(
+        tenant_id=tenant_id,
+        full_name="Pat Prospect",
+        email="prospect@example.com",
+    )
+    db_session.add(contact)
+    await db_session.flush()
+    row = OutreachDraft(
+        tenant_id=tenant_id,
+        contact_id=contact.id,
+        channel=channel,
+        subject="Quick intro",
+        body="Hello from Daena.",
+        status="DRAFT",
+        template_id="email_cold_v1",
+    )
+    db_session.add(row)
+    await db_session.flush()
+    return str(row.id)
+
+
+async def _load_crm_status(db_session, draft_id: str) -> str:
+    from sqlalchemy import select
+
+    from app.models.crm import OutreachDraft
+
+    db_session.expire_all()
+    row = (
+        await db_session.execute(
+            select(OutreachDraft).where(OutreachDraft.id == uuid.UUID(draft_id)),
+        )
+    ).scalar_one()
+    return row.status
+
+
+@pytest.mark.asyncio
+async def test_email_send_flips_crm_row_to_sent(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session,
+    test_tenant_id,
+) -> None:
+    crm_id = await _seed_crm_draft(db_session, test_tenant_id)
+    mission_id = str(uuid.uuid4())
+    company_mode_service.register_draft(
+        mission_id=mission_id,
+        channel="email",
+        recipient="prospect@example.com",
+        body="Hello from Daena.",
+        subject="Quick intro",
+        draft_id=crm_id,
+    )
+
+    res = await client.post(
+        f"/api/v1/company-mode/missions/{mission_id}/drafts/{crm_id}/send",
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["outcome"]["status"] == "sent"
+
+    assert await _load_crm_status(db_session, crm_id) == "SENT"
+
+
+@pytest.mark.asyncio
+async def test_blocked_send_leaves_crm_row_draft(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session,
+    test_tenant_id,
+) -> None:
+    crm_id = await _seed_crm_draft(db_session, test_tenant_id, channel="linkedin")
+    mission_id = str(uuid.uuid4())
+    company_mode_service.register_draft(
+        mission_id=mission_id,
+        channel="linkedin",
+        recipient="prospect@example.com",
+        body="Hello from Daena.",
+        subject=None,
+        draft_id=crm_id,
+    )
+
+    res = await client.post(
+        f"/api/v1/company-mode/missions/{mission_id}/drafts/{crm_id}/send",
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["outcome"]["status"] == "blocked"
+
+    assert await _load_crm_status(db_session, crm_id) == "DRAFT"

@@ -27,13 +27,18 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field, replace as _dc_replace
+from dataclasses import dataclass, field
+from dataclasses import replace as _dc_replace
 from typing import Any
 
 from app.core.constants import RoutingMode
 from app.core.events import event_bus
 from app.core.exceptions import ProviderUnavailableError
 from app.core.logging import get_logger
+from app.core.universal_cognitive_gateway import (
+    attach_gateway_review,
+    build_gateway_request,
+)
 from app.services.model_router import ModelCandidate, RoutingDecision
 from app.services.providers.base import (
     BaseProvider,
@@ -132,6 +137,11 @@ class LLMService:
         if not providers_to_try:
             raise ProviderUnavailableError("No LLM providers available for direct call")
 
+        request = build_gateway_request(
+            request,
+            model_id=request.model_id,
+            available_models=[provider_id for provider_id, _ in providers_to_try],
+        )
         last_error: Exception | None = None
 
         for provider_id, provider in providers_to_try:
@@ -160,6 +170,7 @@ class LLMService:
                     failover_request = request
 
                 result = await provider.generate(failover_request)
+                result = attach_gateway_review(result, failover_request)
                 tracker.record_success(provider_id)
 
                 # Log if this was a failover (not the first provider)
@@ -186,7 +197,11 @@ class LLMService:
                     provider=provider_id,
                     error=error_msg[:200],
                     category=category.value,
-                    remaining=len(providers_to_try) - providers_to_try.index((provider_id, provider)) - 1,
+                    remaining=(
+                        len(providers_to_try)
+                        - providers_to_try.index((provider_id, provider))
+                        - 1
+                    ),
                 )
 
         # All providers failed
@@ -209,6 +224,15 @@ class LLMService:
         For QUINTESSENCE: delegate to Quintessence engine (future).
         """
         start = time.monotonic()
+        request = build_gateway_request(
+            request,
+            model_id=decision.primary.model_id,
+            available_models=[
+                decision.primary.model_id,
+                *[c.model_id for c in decision.fallback_chain],
+                *[c.model_id for c in decision.council_models],
+            ],
+        )
 
         if decision.mode == RoutingMode.COUNCIL and decision.council_models:
             result = await self._generate_council(request, decision)
@@ -243,6 +267,11 @@ class LLMService:
         """
         chain = [decision.primary, *decision.fallback_chain]
         last_error: Exception | None = None
+        request = build_gateway_request(
+            request,
+            model_id=decision.primary.model_id,
+            available_models=[c.model_id for c in chain],
+        )
 
         # Sentinels that indicate a provider returned content but it's
         # actually a wrapped auth/permission error. Without this guard,
@@ -290,7 +319,8 @@ class LLMService:
                             lower = accumulated.lower()
                             if any(m in lower for m in _ERROR_CONTENT_MARKERS):
                                 raise ProviderUnavailableError(
-                                    f"{candidate.provider.value} returned auth-error content: {accumulated[:200]}"
+                                    f"{candidate.provider.value} returned auth-error "
+                                    f"content: {accumulated[:200]}"
                                 )
                             buffer_phase = False
                             for b in buffered:
@@ -306,7 +336,8 @@ class LLMService:
                     lower = accumulated.lower()
                     if any(m in lower for m in _ERROR_CONTENT_MARKERS):
                         raise ProviderUnavailableError(
-                            f"{candidate.provider.value} returned auth-error content: {accumulated[:200]}"
+                            f"{candidate.provider.value} returned auth-error "
+                            f"content: {accumulated[:200]}"
                         )
                     for b in buffered:
                         yield b
@@ -360,6 +391,7 @@ class LLMService:
 
             try:
                 response = await provider.generate(adapted)
+                response = attach_gateway_review(response, adapted)
                 return OrchestratedResponse(
                     primary=response,
                     mode=decision.mode,
@@ -427,7 +459,7 @@ class LLMService:
         gather_results = await asyncio.gather(
             *[t for _, t in tasks], return_exceptions=True,
         )
-        for (candidate, _), result in zip(tasks, gather_results):
+        for (candidate, _), result in zip(tasks, gather_results, strict=False):
             if isinstance(result, BaseException):
                 logger.warning(
                     "llm.council_member_failed",
@@ -436,6 +468,7 @@ class LLMService:
                     error=str(result),
                 )
                 continue
+            result = attach_gateway_review(result, request)
             responses.append(result)
             total_cost += result.cost_usd
 

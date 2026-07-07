@@ -392,6 +392,10 @@ class ChatService(BaseService):
             NotFoundError: If session not found.
             ProviderUnavailableError: If Ollama is unreachable.
         """
+        from app.core.universal_cognitive_gateway import (
+            attach_gateway_review,
+            build_gateway_request,
+        )
         from app.services.providers.base import GenerateRequest, LLMMessage
         from app.services.providers.ollama import OllamaProvider
 
@@ -419,11 +423,17 @@ class ChatService(BaseService):
             temperature=0.7,
             max_tokens=2048,
         )
+        request = build_gateway_request(
+            request,
+            model_id="ollama",
+            available_models=["ollama"],
+        )
 
         # Call Ollama directly (MVP — no ModelRouter/LLMService overhead)
         provider = OllamaProvider()
         try:
             llm_response = await provider.generate(request)
+            llm_response = attach_gateway_review(llm_response, request)
         except Exception as exc:
             logger.error(
                 "ollama_generate_failed",

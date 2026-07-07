@@ -21,6 +21,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import uuid
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,11 +30,13 @@ from typing import Any
 import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, require_role
 from app.core.database import get_db
 from app.core.logging import get_logger
+from app.models.crm import OutreachDraft
 from app.services.company_context import (
     CompanyContext,
     company_context_store,
@@ -443,14 +446,51 @@ async def list_mission_drafts(
     return [d.to_dict() for d in drafts]
 
 
+async def _mark_crm_draft_sent(
+    db: AsyncSession,
+    draft_id: str,
+    *,
+    tenant_id: Any,
+) -> None:
+    """Mirror a successful send onto the persisted OutreachDraft row.
+
+    Marketing-mission drafts share their id with a crm_outreach_drafts
+    row (register_draft reuses the id author_outreach persisted), so
+    the Pipeline page must see SENT instead of a stale DRAFT. Drafts
+    with no CRM row (reply-confirmation follow-ups) are a silent no-op.
+    Fail-open: the provider outcome already landed on the in-memory
+    draft; a mirror failure is logged, never breaks the send response.
+    """
+    try:
+        row_id = uuid.UUID(draft_id)
+    except ValueError:
+        return
+    try:
+        stmt = select(OutreachDraft).where(
+            OutreachDraft.id == row_id,
+            OutreachDraft.tenant_id == tenant_id,
+        )
+        row = (await db.execute(stmt)).scalar_one_or_none()
+        if row is None:
+            return
+        row.status = "SENT"
+        await db.commit()
+    except Exception as exc:
+        logger.warning(
+            "company_mode.crm_send_mirror_failed",
+            draft_id=draft_id,
+            error=str(exc),
+        )
+
+
 @router.post("/missions/{mission_id}/drafts/{draft_id}/send")
 async def send_draft(
     mission_id: str,
     draft_id: str,
     user: CurrentUser = Depends(require_role("FOUNDER")),
+    db: AsyncSession = Depends(get_db),
 ) -> SendResponse:
     """Dispatch a single draft via the provider router."""
-    _ = user
     draft = get_draft(draft_id)
     if draft is None or draft.mission_id != mission_id:
         raise HTTPException(status_code=404, detail="draft_not_found")
@@ -464,6 +504,7 @@ async def send_draft(
         except ValueError:
             draft.sent_at = datetime.now(UTC)
         draft.error = None
+        await _mark_crm_draft_sent(db, draft_id, tenant_id=user.tenant_id)
     elif outcome["status"] in ("failed", "blocked"):
         draft.error = outcome["detail"]
 

@@ -11,6 +11,13 @@ type BadgeVariant =
 
 interface BadgeProps {
   variant?: BadgeVariant
+  /**
+   * Semantic color alias used by GovernanceTrustPage / OpportunityInboxPage.
+   * When set, it resolves to an existing variant (gold->amber, gray->outline,
+   * green->success, red->danger) so callers pass intent without knowing the
+   * internal variant names. Takes precedence over `variant` when provided.
+   */
+  color?: 'gold' | 'gray' | 'green' | 'red'
   children: ReactNode
   size?: 'sm' | 'md'
   dot?: boolean
@@ -43,17 +50,20 @@ const dotColors: Record<BadgeVariant, string> = {
   outline: 'bg-starlight-400',
 }
 
-export function Badge({ variant = 'default', children, size = 'sm', dot, className = '' }: BadgeProps) {
+export function Badge({ variant = 'default', color, children, size = 'sm', dot, className = '' }: BadgeProps) {
+  const resolved: BadgeVariant = color
+    ? ({ gold: 'amber', gray: 'outline', green: 'success', red: 'danger' } as const)[color]
+    : variant
   return (
     <span
       className={`
         inline-flex items-center gap-1.5 rounded-full border font-medium
         ${size === 'sm' ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'}
-        ${variantStyles[variant]}
+        ${variantStyles[resolved]}
         ${className}
       `}
     >
-      {dot && <span className={`w-1.5 h-1.5 rounded-full ${dotColors[variant]}`} />}
+      {dot && <span className={`w-1.5 h-1.5 rounded-full ${dotColors[resolved]}`} />}
       {children}
     </span>
   )

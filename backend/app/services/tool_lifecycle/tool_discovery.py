@@ -18,8 +18,19 @@ Flow:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import asdict, dataclass, field
+from typing import TYPE_CHECKING, Any
+from uuid import UUID
+
+from sqlalchemy import select
+
+from app.core.logging import get_logger
+from app.models.tool import ToolRecord
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +180,46 @@ for _idx, _tool in enumerate(TOOL_CATALOG):
         _SEARCH_INDEX.setdefault(_word, []).append(_idx)
 
 
+async def seed_tool_records(db_session: AsyncSession, tenant_id: UUID) -> int:
+    """Insert one ToolRecord per TOOL_CATALOG entry missing for *tenant_id*.
+
+    Idempotent and operator-safe: only catalog tools with no row yet for this
+    tenant are inserted, so a re-seed adds zero and never resurrects or
+    re-enables a tool an operator disabled (Rule 17 -- no silent demo-data
+    fallback overriding operator intent). Returns the count of rows inserted.
+
+    Each row stores the full ToolCandidate in ``meta`` so ToolDiscovery.from_db
+    can losslessly round-trip it back into a ToolCandidate; id maps to name,
+    source to source_ref, and description carries across.
+    """
+    result = await db_session.execute(
+        select(ToolRecord.name).where(ToolRecord.tenant_id == tenant_id)
+    )
+    existing = set(result.scalars().all())
+
+    inserted = 0
+    for cand in TOOL_CATALOG:
+        if cand.id in existing:
+            continue
+        db_session.add(
+            ToolRecord(
+                tenant_id=tenant_id,
+                name=cand.id,
+                kind="builtin",
+                description=cand.description,
+                enabled=True,
+                source_ref=cand.source,
+                schema={},
+                meta=asdict(cand),
+            )
+        )
+        inserted += 1
+
+    if inserted:
+        await db_session.flush()
+    return inserted
+
+
 class ToolDiscovery:
     """Discovers tools matching a need from the known catalog.
 
@@ -182,6 +233,61 @@ class ToolDiscovery:
 
     def __init__(self, catalog: list[ToolCandidate] | None = None) -> None:
         self._catalog = catalog or TOOL_CATALOG
+
+    @classmethod
+    async def from_db(
+        cls,
+        db_session: AsyncSession,
+        tenant_id: UUID,
+    ) -> ToolDiscovery:
+        """Build discovery from a tenant's persisted ToolRecord rows.
+
+        Prefers the DB so operator edits stick: a disabled tool is excluded, an
+        added/refreshed tool is honored. Fail-open and self-bootstrapping so the
+        live cognition path never hard-breaks (Rule 17):
+          * read error -> fall back to the constant TOOL_CATALOG
+          * zero rows  -> seed once (day-one == TOOL_CATALOG), then use it
+          * otherwise  -> catalog = the enabled rows, rebuilt from ``meta``
+
+        All rows are read and the enabled filter is applied in Python (not in
+        SQL): an all-disabled tenant has rows, so it must NOT look "fresh" and
+        get re-bootstrapped -- it correctly yields an empty discovery catalog.
+        """
+        try:
+            result = await db_session.execute(
+                select(ToolRecord).where(ToolRecord.tenant_id == tenant_id)
+            )
+            rows = list(result.scalars().all())
+        except Exception:
+            logger.warning("tool_discovery.from_db_read_failed", exc_info=True)
+            return cls()
+
+        if not rows:
+            try:
+                await seed_tool_records(db_session, tenant_id)
+            except Exception:
+                logger.warning("tool_discovery.from_db_seed_failed", exc_info=True)
+            # A fresh seed mirrors TOOL_CATALOG exactly (all enabled), so the
+            # constant catalog is an honest reflection of what was persisted.
+            return cls()
+
+        catalog: list[ToolCandidate] = []
+        for row in rows:
+            if not row.enabled:
+                continue
+            if not row.meta:
+                # Schema-only / partial registration -- not yet keyword-
+                # discoverable until a registrant supplies the full candidate.
+                continue
+            try:
+                catalog.append(ToolCandidate(**row.meta))
+            except TypeError:
+                logger.warning(
+                    "tool_discovery.skip_malformed_tool_record",
+                    tool_name=row.name,
+                    tenant_id=str(tenant_id),
+                )
+        return cls(catalog=catalog)
 
     def search(
         self,

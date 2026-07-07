@@ -1,12 +1,17 @@
 /**
- * SettingsPage -- 13 lazy-loaded tabs grouped into Normal vs Advanced.
+ * SettingsPage -- 12 lazy-loaded tabs grouped into Normal vs Advanced.
  *
  * PR-SETTINGS-CLEANUP (2026-05-02) introduced the Normal/Advanced split
  * so the default surface is the seven tabs an operator can trust without
  * understanding the full system (General, Memory, Privacy & Data,
- * Notifications, Voice, Billing & Usage, About). The six advanced tabs
- * (LLM Providers, Governance, Models & Runtimes, Daena Heartbeat,
- * Developer, Shortcuts) are surfaced behind a "Show advanced" toggle.
+ * Notifications, Voice, Billing & Usage, About). The five advanced tabs
+ * (Governance, Models & Runtimes, Daena Heartbeat, Developer, Shortcuts)
+ * are surfaced behind a "Show advanced" toggle.
+ *
+ * CONSOLIDATION (2026-06-18): the former standalone "LLM Providers" tab
+ * was folded into "Models & Runtimes" (SettingsModelsRuntimes composes
+ * SettingsLLM directly), removing one overlapping advanced tab. Its
+ * routing controls are unchanged and still backend-enforced.
  *
  * The toggle persists to localStorage (key
  * "daena.settings.show_advanced") so the founder's preference sticks
@@ -38,7 +43,8 @@ import type { ComponentType } from 'react'
 // Lazy-load each settings tab
 const SettingsGeneral = lazy(() => import('./settings/SettingsGeneral').then(m => ({ default: m.SettingsGeneral })))
 // Appearance merged into General
-const SettingsLLM = lazy(() => import('./settings/SettingsLLM').then(m => ({ default: m.SettingsLLM })))
+// SettingsLLM is no longer a standalone tab (2026-06-18) -- it is composed
+// inside SettingsModelsRuntimes, which is its sole importer now.
 const SettingsModelsRuntimes = lazy(() => import('./settings/SettingsModelsRuntimes').then(m => ({ default: m.SettingsModelsRuntimes })))
 const SettingsGovernance = lazy(() => import('./settings/SettingsGovernance').then(m => ({ default: m.SettingsGovernance })))
 const SettingsMemory = lazy(() => import('./settings/SettingsMemory').then(m => ({ default: m.SettingsMemory })))
@@ -71,7 +77,7 @@ const CATEGORIES: readonly CategoryEntry[] = [
   { key: 'billing', label: 'Billing & Usage', icon: DollarSign, component: SettingsBilling, advanced: false },
   { key: 'about', label: 'About', icon: Info, component: SettingsAbout, advanced: false },
   // Advanced (founder / developer; behind the Show-advanced toggle)
-  { key: 'llm', label: 'LLM Providers', icon: Cpu, component: SettingsLLM, advanced: true },
+  // 'llm' (LLM Providers) folded into 'models' (Models & Runtimes) 2026-06-18.
   { key: 'governance', label: 'Governance', icon: Shield, component: SettingsGovernance, advanced: true },
   { key: 'models', label: 'Models & Runtimes', icon: Cpu, component: SettingsModelsRuntimes, advanced: true },
   { key: 'heartbeat', label: 'Daena Heartbeat', icon: Heart, component: SettingsHeartbeat, advanced: true },
@@ -129,7 +135,7 @@ export function SettingsPage() {
     }
   }
 
-  // Tab filter -- at 13 tabs the discoverability problem is real ("where
+  // Tab filter -- at 12 tabs the discoverability problem is real ("where
   // do I change my voice?"). Filters by label substring.
   const [search, setSearch] = useState('')
   const visibleByGroup = useMemo(() => {
@@ -182,7 +188,7 @@ export function SettingsPage() {
         {/* Show-advanced toggle (PR-SETTINGS-CLEANUP) */}
         <label
           className="mb-3 flex items-center justify-between gap-2 px-3 py-1.5 rounded-md text-[10px] text-starlight-500 cursor-pointer hover:text-starlight-300"
-          title="Hide founder/developer tabs (LLM Providers, Governance, Models & Runtimes, Daena Heartbeat, Developer, Shortcuts) so the default Settings surface stays simple. Persists per browser."
+          title="Hide founder/developer tabs (Governance, Models & Runtimes, Daena Heartbeat, Developer, Shortcuts) so the default Settings surface stays simple. Persists per browser."
         >
           <span>Show advanced</span>
           <input

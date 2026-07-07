@@ -80,7 +80,8 @@ async def fetch_domain_best_practices(
     Empty list on failure -- refinement continues without external signal.
 
     Source priority:
-    1. ``intel_fanout.run_multi_source`` if importable (real production path).
+    1. ``intel_fanout.fan_out_intelligence`` if importable (real production
+       path -- governance-aware, tenant-isolated, Shield-respecting).
     2. Fallback: empty list, logged as degraded.
     """
     query = _DOMAIN_RESEARCH_QUERIES.get(department_slug)
@@ -90,35 +91,39 @@ async def fetch_domain_best_practices(
 
     # Try the real intel fanout first. This keeps the research pass
     # governance-aware (it respects tenant isolation and the Shield).
+    # ``fan_out_intelligence`` runs the 6-channel background fan-out and
+    # returns an ``IntelligenceBundle``; we flatten its dict-bearing channels
+    # into the flat snippet shape refinement expects.
     try:
-        from app.services.security.intel_fanout import run_multi_source  # type: ignore
+        from app.services.security.intel_fanout import fan_out_intelligence
 
-        results = await run_multi_source(
-            query=query,
-            sources=["web_search", "codebase_memory", "nbmf_t3"],
-            max_per_source=max(2, max_snippets // 3),
+        bundle = await fan_out_intelligence(query, phase="orient")
+        # Map each bundle channel back to a source-tagged snippet. Items are
+        # already normalized to dicts by the fan-out; we only trim + provenance.
+        channel_map = (
+            ("web_search", bundle.web_insights),
+            ("codebase_memory", bundle.source_matches),
+            ("nbmf_t3", bundle.historical_patterns),
+            ("knowledge_graph", bundle.graph_paths),
         )
-        # Flatten + trim. run_multi_source returns a dict of source-keyed
-        # lists; we normalize into a flat list so refinement only sees
-        # the interesting text + provenance.
         flat: list[dict[str, Any]] = []
-        if isinstance(results, dict):
-            for source, items in results.items():
-                if not isinstance(items, list):
+        for source, items in channel_map:
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
                     continue
-                for item in items[:max_snippets]:
-                    if not isinstance(item, dict):
-                        continue
-                    flat.append({
-                        "source": source,
-                        "title": str(item.get("title") or item.get("url") or "")[:200],
-                        "text": str(item.get("text") or item.get("content") or item.get("snippet") or "")[:1200],
-                        "date": str(item.get("date") or item.get("published_at") or ""),
-                    })
+                flat.append({
+                    "source": source,
+                    "title": str(item.get("title") or item.get("url") or item.get("summary") or "")[:200],
+                    "text": str(item.get("text") or item.get("content") or item.get("snippet") or item.get("summary") or "")[:1200],
+                    "date": str(item.get("date") or item.get("published_at") or ""),
+                })
         logger.info(
             "soul_maker.research.fanout",
             slug=department_slug,
             snippets=len(flat),
+            channels_ok=sum(1 for c in bundle.channel_results if c.status == "ok"),
         )
         return flat[:max_snippets]
     except ImportError:

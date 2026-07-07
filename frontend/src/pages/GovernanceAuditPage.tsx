@@ -277,7 +277,7 @@ function AuditDetail({ entry }: { entry: AuditEntryResponse }) {
                 {params.read_only === false ? 'WRITE' : 'read-only'}
               </p>
             </div>
-            {params.target_tool && (
+            {Boolean(params.target_tool) && (
               <div>
                 <span className="text-[10px] text-starlight-500">Target tool</span>
                 <p className="font-mono text-starlight-300">
@@ -285,7 +285,7 @@ function AuditDetail({ entry }: { entry: AuditEntryResponse }) {
                 </p>
               </div>
             )}
-            {params.url_host && (
+            {Boolean(params.url_host) && (
               <div>
                 <span className="text-[10px] text-starlight-500">Host</span>
                 <p className="font-mono text-starlight-300 truncate">
@@ -299,7 +299,7 @@ function AuditDetail({ entry }: { entry: AuditEntryResponse }) {
                 <p className="text-starlight-300">{String(params.result_length)} chars</p>
               </div>
             )}
-            {params.blocked_reason && (
+            {Boolean(params.blocked_reason) && (
               <div className="col-span-2 lg:col-span-3">
                 <span className="text-[10px] text-starlight-500">Reason</span>
                 <p className="text-rose-300 font-mono break-all">

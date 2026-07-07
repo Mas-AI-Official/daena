@@ -33,6 +33,7 @@ from app.services.heartbeat.heartbeat_checks import (
     check_test_suite,
     check_github_issues,
     check_failed_tasks,
+    check_memory_quarantine,
     check_ollama_health,
     check_ollama_model_updates,
     generate_daily_report,
@@ -52,6 +53,7 @@ CHECK_TIMEOUT_SECONDS: dict[CheckType, float] = {
     CheckType.GITHUB_ISSUES: 6.0,
     CheckType.OLLAMA_HEALTH: 5.0,
     CheckType.OLLAMA_MODEL_UPDATES: 6.0,
+    CheckType.MEMORY_QUARANTINE: 15.0,  # DB pass over up to 10 tenants x 50 entries
 }
 DEFAULT_CHECK_TIMEOUT_SECONDS = 8.0
 
@@ -396,6 +398,8 @@ class HeartbeatDaemon:
             )
         elif check_type == CheckType.FAILED_TASKS:
             return await check_failed_tasks()
+        elif check_type == CheckType.MEMORY_QUARANTINE:
+            return await check_memory_quarantine()
         elif check_type == CheckType.OLLAMA_HEALTH:
             return await check_ollama_health()
         elif check_type == CheckType.DAILY_REPORT:

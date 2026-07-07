@@ -176,7 +176,15 @@ api.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null)
         localStorage.removeItem('daena_token')
-        window.location.href = '/login'
+        // Preserve the page the user was on so re-login can return them there instead of a
+        // bare /chat. The path is read from window.location (same-origin by construction);
+        // LoginPage re-sanitizes ?next= on read to block any crafted open-redirect, mirroring
+        // the hardcoded 402 billing redirect below.
+        const here = window.location.pathname
+        const next = here && here !== '/login' && here !== '/register'
+          ? `?next=${encodeURIComponent(here + window.location.search)}`
+          : ''
+        window.location.href = `/login${next}`
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false
@@ -219,6 +227,19 @@ api.interceptors.response.use(
       message: error.message ?? `HTTP ${status}`,
       silent,
     })
+
+    // ── 402 upgrade_required path ──
+    // Entitlement gates (require_tier / require_feature in app/api/deps.py)
+    // answer 402 with an upgrade_url. Route the user to the billing surface so
+    // a gated 402 always lands somewhere they can actually upgrade. Fires
+    // regardless of the silent flag (this is navigation, not a toast); the path
+    // guard prevents a redirect loop once already on the billing page. The
+    // target is hardcoded rather than read from response.data.upgrade_url to
+    // avoid an open-redirect via a crafted server response.
+    if (status === 402 && !window.location.pathname.startsWith('/account/billing')) {
+      window.location.href = '/account/billing#billing'
+      return Promise.reject(error)
+    }
 
     // Now decide whether to surface a toast.
     if (!silent) {

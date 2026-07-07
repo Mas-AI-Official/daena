@@ -212,6 +212,7 @@ export default function PluginsPanel({
       all: plugins.length,
       available: 0, installed: 0, needs_auth: 0,
       connected: 0, failed: 0, not_supported_on_os: 0,
+      coming_soon: 0,
     }
     for (const p of plugins) {
       out[p.status] += 1

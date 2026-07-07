@@ -745,8 +745,11 @@ async def _run_deferred_initialization(app: FastAPI) -> None:
                     logger.debug("runtime_rescan_failed", error=str(_r_exc))
                 try:
                     invalidate_ollama_resolver_cache()
-                except Exception:
-                    pass
+                except Exception as _c_exc:
+                    logger.debug(
+                        "ollama_resolver_cache_invalidate_failed",
+                        error=str(_c_exc),
+                    )
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -1086,9 +1089,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await asyncio.wait_for(deferred_task, timeout=2.0)
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
-    # WebSocket placeholder route removed 2026-04-29 (no consumers).
-    # ConnectionManager retained at app/core/websocket.py for future use.
-    # voice_ws does not use ConnectionManager, so no shutdown call needed here.
+    # WebSocket placeholder routes removed (ws.router 2026-04-29, voice_ws
+    # 2026-06-18 -> .archive) -- both were canned-reply stubs with no consumers.
+    # ConnectionManager retained at app/core/websocket.py for future use; it
+    # holds no per-connection state needing a shutdown call here.
 
     # Stop the cron scheduler singleton.
     try:
@@ -1276,6 +1280,12 @@ def create_app() -> FastAPI:
     app.include_router(v1_router, prefix="/api/v1")
 
     # --- DaenaBot Bridge WebSocket ---
+    # INTENTIONAL DUAL MOUNT (do NOT "de-dup" this away). Two shipped client
+    # generations dial two different paths: the Python DaenaBot daemon
+    # (daena-bot/daena_bot/bridge.py:62) dials the ROOT "/ws/bridge" mounted
+    # here, while the npm daena-mcp package + the /bridge/setup contract dial
+    # "/api/v1/ws/bridge" (the copy at api/v1/__init__.py). Dropping either
+    # mount silently breaks one client generation. Grounded 2026-07-02.
     from app.api.v1.bridge import router as bridge_router
     app.include_router(bridge_router)
 

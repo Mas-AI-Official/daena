@@ -1,7 +1,7 @@
 /**
  * MessageBubble — renders a single chat message.
  * User messages: right-aligned, primary color, with inline edit on hover + avatar initial.
- * System/Daena messages: left-aligned with NeuralOrb avatar, glass style.
+ * System/Daena messages: left-aligned with DaenaAvatar, glass style.
  * Renders markdown via react-markdown (bold, lists, headers, code blocks).
  */
 import { memo, useState, useRef, useEffect } from 'react'
@@ -197,33 +197,26 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-/** Thumbs up/down feedback — sends to backend for quality tracking */
+/**
+ * Thumbs up/down feedback. Records the user's rating locally for this session.
+ * Durable persistence is a flagged follow-on (see HANDOFF_P3): chat_messages
+ * has no feedback column and is immutable, and the learning-loop endpoint keys
+ * on an agent action_id, a different namespace from message.id, so there is no
+ * honest backend sink for per-message feedback yet. The old POST to
+ * /api/v1/chat/messages/{id}/feedback hit a nonexistent route (404); remapping
+ * it to the learning endpoint would have recorded nothing behind a 200.
+ */
 function FeedbackButtons({ messageId }: { messageId: string }) {
   const [feedback, setFeedback] = useState<'up' | 'down' | null>(null)
 
-  const sendFeedback = async (type: 'up' | 'down') => {
-    if (feedback === type) {
-      setFeedback(null)
-      return
-    }
-    setFeedback(type)
-    try {
-      const token = localStorage.getItem('daena_token')
-      await fetch(`/api/v1/chat/messages/${messageId}/feedback`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ rating: type === 'up' ? 1 : -1 }),
-      })
-    } catch {
-      // Silent fail — feedback is non-critical
-    }
+  // Local-only toggle. No network call until a real per-message feedback sink
+  // exists; data-message-id is carried so the durable wire-up is a one-line add.
+  const sendFeedback = (type: 'up' | 'down') => {
+    setFeedback((prev) => (prev === type ? null : type))
   }
 
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex items-center gap-0.5" data-message-id={messageId}>
       <button
         onClick={() => sendFeedback('up')}
         className={`p-1 rounded transition-all cursor-pointer ${

@@ -2,7 +2,7 @@
  * TasksPage — background tasks and autopilot status.
  * Shows running, paused, completed, and failed tasks.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -77,8 +77,26 @@ export function TasksPage() {
   }
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [retryingId, setRetryingId] = useState<string | null>(null)
+  // Busy guard for the batch action bar (run/archive/delete). Without it the
+  // buttons stay enabled mid-flight -- a second click fires a duplicate batch
+  // (double-fire) before the first round-trip clears the selection. Reset in
+  // finally so a failed batch re-enables the bar instead of sticking disabled.
+  const [batchBusy, setBatchBusy] = useState(false)
   const [queueStatus, setQueueStatus] = useState<BackgroundQueueStatus | null>(null)
   const [queueStatusError, setQueueStatusError] = useState<string | null>(null)
+  // Inline fetch-error state for the main task list. Without this, a rejected
+  // /execution/tasks call falls through to setTasks([]) and the list renders the
+  // "No active tasks" empty state -- a load FAILURE pixel-identical to a genuinely
+  // empty list (the Rule-17 "looks empty when it actually failed" lie). Mirrors the
+  // queueStatusError pattern below so the render can distinguish failure from empty.
+  const [tasksError, setTasksError] = useState<string | null>(null)
+  // Wall-clock of the last SUCCESSFUL /execution/tasks fetch so "Last updated"
+  // reflects when the data was actually refreshed, not render time. A bare
+  // new Date() in the render asserts false freshness on every re-render
+  // (filter/selection/batch toggles) with no refetch -- the Rule-17 TIME-
+  // dimension visibility lie. Mirrors modelRegistryStore.lastFetchedAt /
+  // securityModeStore.lastFetched (fetch-time, set only on success).
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null)
 
   // Sync state when URL changes externally (back/forward buttons, deep link).
   useEffect(() => {
@@ -88,13 +106,22 @@ export function TasksPage() {
   }, [searchParams])
 
   // When deep-linked from /projects/<id>?tab=tasks via #task-<id>, scroll to
-  // and highlight that row once tasks load.
+  // and highlight that row once tasks load. Guarded to fire exactly once per
+  // mount: the 15s auto-refresh poll flips `loading` and can change
+  // `tasks.length`, which would otherwise re-run this effect and yank a user
+  // who has scrolled away back to the deep-linked row on every refetch.
+  const didDeepLinkScrollRef = useRef(false)
   useEffect(() => {
     if (loading) return
+    if (didDeepLinkScrollRef.current) return
     if (window.location.hash.startsWith('#task-')) {
       const id = window.location.hash.slice('#task-'.length)
       const t = setTimeout(() => {
-        document.getElementById(`task-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        const el = document.getElementById(`task-${id}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          didDeepLinkScrollRef.current = true
+        }
       }, 100)
       return () => clearTimeout(t)
     }
@@ -106,8 +133,11 @@ export function TasksPage() {
       const params = filter !== 'ALL' ? `?status=${filter}` : ''
       const { data } = await api.get<ApiResponse<TaskResponse[]>>(`/execution/tasks${params}`)
       setTasks(data.data || [])
+      setTasksError(null)
+      setLastUpdatedAt(new Date())
     } catch {
       setTasks([])
+      setTasksError('The task service is unreachable. Retry to refresh.')
     } finally {
       setLoading(false)
     }
@@ -208,32 +238,61 @@ export function TasksPage() {
   // Parallelized — a 50-task batch was previously 50 sequential round-trips.
   // Promise.allSettled lets the slowest one set the wall-clock floor.
   const handleBatchRun = async () => {
+    if (batchBusy) return
     const runnable = tasks.filter(
       (t) => selectedIds.has(t.id) &&
         ['PENDING', 'FAILED', 'CANCELLED', 'PAUSED'].includes(t.status),
     )
     if (runnable.length === 0) return
-    await Promise.allSettled(
-      runnable.map(async (t) => {
-        if (t.status !== 'PENDING') {
-          await api.patch(`/execution/tasks/${t.id}`, { status: 'PENDING' })
-        }
-        await api.post(`/execution/tasks/${t.id}/run`)
-      }),
-    )
-    setSelectedIds(new Set())
-    await fetchTasks()
+    setBatchBusy(true)
+    try {
+      // allSettled keeps one failure from aborting the rest, but its results
+      // were previously discarded -- a batch where every request 500'd cleared
+      // the selection with zero feedback (Rule 17 "ran but did nothing"). Count
+      // the rejections and surface them through the existing toast.
+      const results = await Promise.allSettled(
+        runnable.map(async (t) => {
+          if (t.status !== 'PENDING') {
+            await api.patch(`/execution/tasks/${t.id}`, { status: 'PENDING' })
+          }
+          await api.post(`/execution/tasks/${t.id}/run`)
+        }),
+      )
+      const failed = results.filter((r) => r.status === 'rejected').length
+      const plural = runnable.length === 1 ? '' : 's'
+      if (failed > 0) {
+        toast.error(`${failed} of ${runnable.length} task${plural} failed to start. Check backend logs.`)
+      } else {
+        toast.success(`${runnable.length} task${plural} started`)
+      }
+      setSelectedIds(new Set())
+      await fetchTasks()
+    } finally {
+      setBatchBusy(false)
+    }
   }
 
   // ── Batch archive (parallelized) ──
   const handleBatchArchive = async () => {
-    await Promise.allSettled(
-      [...selectedIds].map((id) =>
-        api.patch(`/execution/tasks/${id}`, { status: 'CANCELLED' }),
-      ),
-    )
-    setSelectedIds(new Set())
-    await fetchTasks()
+    if (batchBusy) return
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    setBatchBusy(true)
+    try {
+      const results = await Promise.allSettled(
+        ids.map((id) =>
+          api.patch(`/execution/tasks/${id}`, { status: 'CANCELLED' }),
+        ),
+      )
+      const failed = results.filter((r) => r.status === 'rejected').length
+      if (failed > 0) {
+        toast.error(`${failed} of ${ids.length} task${ids.length === 1 ? '' : 's'} could not be archived.`)
+      }
+      setSelectedIds(new Set())
+      await fetchTasks()
+    } finally {
+      setBatchBusy(false)
+    }
   }
 
   // ── Cancel a running task ──
@@ -252,14 +311,20 @@ export function TasksPage() {
   // partial-failure/total-failure feedback matches FilesPage,
   // ProjectsPage, and anywhere else that deletes in bulk.
   const handleBatchDelete = async () => {
-    const result = await batchDeleteWithToast(
-      selectedIds,
-      (id) => `/execution/tasks/${id}`,
-      { entity: 'task' },
-    )
-    if (result.succeeded > 0) {
-      setSelectedIds(new Set())
-      await fetchTasks()
+    if (batchBusy) return
+    setBatchBusy(true)
+    try {
+      const result = await batchDeleteWithToast(
+        selectedIds,
+        (id) => `/execution/tasks/${id}`,
+        { entity: 'task' },
+      )
+      if (result.succeeded > 0) {
+        setSelectedIds(new Set())
+        await fetchTasks()
+      }
+    } finally {
+      setBatchBusy(false)
     }
   }
 
@@ -325,7 +390,7 @@ export function TasksPage() {
               )
             })}
             <div className="ml-auto text-[10px] text-starlight-500">
-              Last updated: {new Date().toLocaleTimeString()}
+              {lastUpdatedAt && `Last updated: ${lastUpdatedAt.toLocaleTimeString()}`}
             </div>
           </div>
         )}
@@ -360,13 +425,13 @@ export function TasksPage() {
             {selectedIds.size > 0 && (
               <>
                 <div className="w-px h-4 bg-white/10" />
-                <button onClick={handleBatchRun} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-status-success/10 text-status-success hover:bg-status-success/20 transition-colors cursor-pointer">
+                <button onClick={handleBatchRun} disabled={batchBusy} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-status-success/10 text-status-success hover:bg-status-success/20 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                   <Play size={11} /> Run
                 </button>
-                <button onClick={handleBatchArchive} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-amber/10 text-accent-amber hover:bg-accent-amber/20 transition-colors cursor-pointer">
+                <button onClick={handleBatchArchive} disabled={batchBusy} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-amber/10 text-accent-amber hover:bg-accent-amber/20 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                   <Archive size={11} /> Archive
                 </button>
-                <button onClick={handleBatchDelete} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-red/10 text-accent-red hover:bg-accent-red/20 transition-colors cursor-pointer">
+                <button onClick={handleBatchDelete} disabled={batchBusy} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-red/10 text-accent-red hover:bg-accent-red/20 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                   <Trash2 size={11} /> Delete
                 </button>
               </>
@@ -377,6 +442,13 @@ export function TasksPage() {
         {/* Task list */}
         {loading ? (
           <Shimmer count={4} layout="list" />
+        ) : tasksError ? (
+          <EmptyState
+            icon={XCircle}
+            title="Could not load tasks"
+            description={tasksError}
+            action={{ label: 'Retry', onClick: () => { void fetchTasks() } }}
+          />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={ListTodo}
@@ -408,7 +480,7 @@ export function TasksPage() {
                     >
                       <div className="flex items-start gap-3">
                         {/* Checkbox */}
-                        <button onClick={() => toggleSelect(task.id)} className="shrink-0 mt-0.5 text-starlight-500 hover:text-primary-400 transition-colors cursor-pointer">
+                        <button onClick={() => toggleSelect(task.id)} aria-label={`Select task ${task.name}`} className="shrink-0 mt-0.5 text-starlight-500 hover:text-primary-400 transition-colors cursor-pointer">
                           {selectedIds.has(task.id) ? <CheckSquare size={14} className="text-primary-400" /> : <Square size={14} />}
                         </button>
                         <div className="flex-1 min-w-0">

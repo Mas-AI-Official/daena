@@ -117,6 +117,15 @@ export interface MessageResponse {
   token_count_output: number | null
   created_at: string
   /**
+   * Per-Mind presentation -- populated on the client from the routing SSE
+   * event (chat_orchestrator emits mind/voice/accent_color off the active
+   * department soul). Frontend-only, never server-persisted; drives per-Mind
+   * TTS voice and accent theming. 2026-07-02.
+   */
+  mind?: string | null
+  voice?: string | null
+  accent_color?: string | null
+  /**
    * VP-command preflight result -- when set, this assistant message is the
    * structured response from /api/v1/vp-commands (no LLM call). MessageBubble
    * renders the card layout instead of the markdown body.
@@ -554,7 +563,7 @@ export interface ProjectResponse {
   description: string
   owner_id: string
   created_at: string
-  updated_at: string
+  updated_at: string | null
   working_directory: string | null
   connected_runtimes: string[]
   memory_scope: string
@@ -624,6 +633,18 @@ export interface SoulDetail extends SoulSummary {
   fallback_runtimes: string[]
   tools_enabled: string[]
   version?: string | null
+}
+
+// Daena's pinned VP-tier Mind. Served by GET /souls/vp, distinct from the
+// 10 department peers -- carries the extra tier/pinned/role fields the
+// department shape lacks so the gallery can render her as the gold Vice
+// President banner, not an eleventh department.
+export interface VpMind extends SoulSummary {
+  tier?: string | null
+  pinned: boolean
+  role?: string | null
+  fallback_runtimes: string[]
+  tools_enabled: string[]
 }
 
 export interface SoulRefineVerdict {

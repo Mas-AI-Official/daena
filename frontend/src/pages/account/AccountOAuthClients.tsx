@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
+import { confirmDialog } from '@/stores/confirmStore'
 
 interface OAuthClientRow {
   slug: string
@@ -80,12 +81,17 @@ export function AccountOAuthClients() {
   const [saving, setSaving] = useState<string | null>(null)
   const [clearing, setClearing] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const fetchRows = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
     try {
       const res = await api.get<OAuthClientRow[]>('/account/oauth-clients')
       setRows(res.data)
     } catch {
+      setRows([])
+      setLoadError('We could not load your OAuth client config. Retry to refresh.')
       toast.error('Failed to load OAuth client config')
     } finally {
       setLoading(false)
@@ -166,6 +172,13 @@ export function AccountOAuthClients() {
 
   async function handleClear(row: OAuthClientRow) {
     if (!row.configured && !row.client_id_present) return
+    const ok = await confirmDialog({
+      title: `Clear the ${row.display_name} OAuth client?`,
+      message: `${row.display_name} connections will stop working until you paste new credentials. The stored client_id and secret are removed and cannot be recovered -- you would need the originals to re-enter them.`,
+      confirmLabel: 'Clear client',
+      variant: 'danger',
+    })
+    if (!ok) return
     setClearing(row.slug)
     try {
       await api.delete(`/account/oauth-clients/${row.slug}`)
@@ -213,6 +226,17 @@ export function AccountOAuthClients() {
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-24 rounded-lg bg-midnight-300/30 animate-pulse" />
           ))}
+        </div>
+      ) : loadError ? (
+        <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-6 py-8 text-center max-w-2xl">
+          <AlertTriangle size={20} className="mx-auto text-rose-300 mb-2" />
+          <p className="text-sm text-rose-200">{loadError}</p>
+          <button
+            onClick={() => void fetchRows()}
+            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-500/30 text-xs text-rose-200 hover:bg-rose-500/10 cursor-pointer"
+          >
+            Retry
+          </button>
         </div>
       ) : rows.length === 0 ? (
         <div className="rounded-lg border border-white/5 px-6 py-8 text-center text-sm text-starlight-400 max-w-2xl">
@@ -285,10 +309,11 @@ export function AccountOAuthClients() {
 
                 {/* client_id paste row */}
                 <div className="mt-3">
-                  <label className="text-[10px] uppercase tracking-wider text-starlight-500">
+                  <label htmlFor={`oauth-client-id-${row.slug}`} className="text-[10px] uppercase tracking-wider text-starlight-500">
                     client_id
                   </label>
                   <input
+                    id={`oauth-client-id-${row.slug}`}
                     type="text"
                     value={draft.client_id}
                     onChange={(e) => updateDraft(row.slug, { client_id: e.target.value })}
@@ -305,11 +330,12 @@ export function AccountOAuthClients() {
 
                 {/* client_secret paste row (with reveal toggle) */}
                 <div className="mt-3">
-                  <label className="text-[10px] uppercase tracking-wider text-starlight-500">
+                  <label htmlFor={`oauth-client-secret-${row.slug}`} className="text-[10px] uppercase tracking-wider text-starlight-500">
                     client_secret
                   </label>
                   <div className="relative mt-1">
                     <input
+                      id={`oauth-client-secret-${row.slug}`}
                       type={isRevealed ? 'text' : 'password'}
                       value={draft.client_secret}
                       onChange={(e) => updateDraft(row.slug, { client_secret: e.target.value })}
@@ -344,7 +370,7 @@ export function AccountOAuthClients() {
                 <div className="mt-3 flex items-center justify-end gap-2">
                   <button
                     onClick={() => void handleSave(row)}
-                    disabled={isSaving || !draft.client_id.trim() || !draft.client_secret.trim()}
+                    disabled={isSaving || isClearing || !draft.client_id.trim() || !draft.client_secret.trim()}
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary-500 text-white text-xs font-medium hover:bg-primary-600 disabled:opacity-40 transition-colors"
                   >
                     {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
@@ -353,7 +379,7 @@ export function AccountOAuthClients() {
                   {(row.configured || row.client_id_present) && (
                     <button
                       onClick={() => void handleClear(row)}
-                      disabled={isClearing}
+                      disabled={isClearing || isSaving}
                       className="p-2 rounded-lg border border-white/5 text-starlight-500 hover:bg-rose-500/10 hover:text-rose-300 hover:border-rose-500/30 disabled:opacity-40 transition-colors"
                       title={`Clear ${row.display_name} OAuth client`}
                     >
@@ -363,7 +389,10 @@ export function AccountOAuthClients() {
                 </div>
 
                 {error && (
-                  <div className="mt-2 flex items-start gap-2 rounded-md border border-rose-500/30 bg-rose-500/5 px-2.5 py-1.5 text-[11px] text-rose-200">
+                  <div
+                    role="alert"
+                    className="mt-2 flex items-start gap-2 rounded-md border border-rose-500/30 bg-rose-500/5 px-2.5 py-1.5 text-[11px] text-rose-200"
+                  >
                     <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                     <span>{error}</span>
                   </div>

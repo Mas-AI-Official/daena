@@ -40,8 +40,11 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]['key']
 
-function timeAgo(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime()
+function timeAgo(isoDate: string | null): string {
+  if (!isoDate) return 'never'
+  const t = new Date(isoDate).getTime()
+  if (Number.isNaN(t)) return 'never'
+  const diff = Date.now() - t
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'just now'
   if (mins < 60) return `${mins}m ago`
@@ -104,7 +107,11 @@ export function ProjectDetailPage() {
 
   const handleDelete = async () => {
     if (!projectId) return
-    const ok = await deleteWithToast(`/projects/${projectId}`, { entity: 'Project' })
+    const ok = await deleteWithToast(`/projects/${projectId}`, {
+      entity: 'Project',
+      confirmMessage:
+        'This permanently deletes the project. Its workstreams, tasks, and files will no longer be accessible, and this cannot be undone.',
+    })
     if (ok) navigate('/projects')
   }
 
@@ -197,6 +204,7 @@ export function ProjectDetailPage() {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
+                aria-pressed={isActive}
                 className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-all cursor-pointer ${
                   isActive
                     ? 'bg-primary-500/10 text-primary-400 border-b-2 border-primary-500'
@@ -338,8 +346,9 @@ export function ProjectDetailPage() {
               </h3>
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-starlight-400 mb-1 block">Working Directory</label>
+                  <label htmlFor="project-working-dir" className="text-xs text-starlight-400 mb-1 block">Working Directory</label>
                   <input
+                    id="project-working-dir"
                     type="text"
                     defaultValue={project.working_directory ?? ''}
                     placeholder="/path/to/project"

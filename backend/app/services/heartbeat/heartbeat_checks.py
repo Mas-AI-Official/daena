@@ -399,11 +399,26 @@ async def check_github_issues(
         )
 
         issues: list[dict[str, Any]] = []
-        if result.returncode == 0 and result.stdout.strip():
+        # Rule 17: a gh failure or unparseable output is NOT "no open bugs". Surface
+        # it as a warning so the heartbeat never reports a masked failure as clean.
+        check_failed = False
+        fail_reason = ""
+        if result.returncode != 0:
+            check_failed = True
+            fail_reason = (result.stderr or "").strip()[:120] or f"gh exited {result.returncode}"
+            logger.warning("heartbeat.github_issues_unavailable", repo=repo, reason=fail_reason)
+        elif result.stdout.strip():
             try:
                 issues = json.loads(result.stdout)
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as exc:
+                check_failed = True
+                fail_reason = "gh output unparseable"
+                logger.warning(
+                    "heartbeat.github_issues_parse_failed",
+                    repo=repo,
+                    error=str(exc)[:120],
+                    stdout_head=result.stdout[:120],
+                )
 
         actions = []
         if issues:
@@ -416,11 +431,18 @@ async def check_github_issues(
                 runtime_preference="claude_code",
             ))
 
+        if issues:
+            status, summary = "action_needed", f"{len(issues)} open bugs"
+        elif check_failed:
+            status, summary = "warning", f"github_issues check could not complete: {fail_reason}"
+        else:
+            status, summary = "ok", "No open bugs"
+
         return HeartbeatCheckResult(
             check_type="github_issues",
-            status="action_needed" if issues else "ok",
-            summary=f"{len(issues)} open bugs" if issues else "No open bugs",
-            details={"repo": repo, "issues": issues[:10]},
+            status=status,
+            summary=summary,
+            details={"repo": repo, "issues": issues[:10], "check_failed": check_failed},
             actions=actions,
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
@@ -664,10 +686,14 @@ async def generate_daily_report(
             sections.append(git_result.stdout.strip() or "No commits found")
             sections.append("```")
             sections.append("")
-        except Exception:
+        except Exception as exc:
             sections.append("## Recent Commits")
             sections.append("(git log unavailable)")
             sections.append("")
+            logger.warning(
+                "heartbeat.daily_report_git_unavailable",
+                error=str(exc)[:120],
+            )
 
         # Test status
         try:
@@ -685,6 +711,10 @@ async def generate_daily_report(
             sections.append("## Test Suite")
             sections.append(f"Error running tests: {e}")
             sections.append("")
+            logger.warning(
+                "heartbeat.daily_report_tests_unavailable",
+                error=str(e)[:120],
+            )
 
         # Runtime status
         try:
@@ -697,12 +727,19 @@ async def generate_daily_report(
             for line in model_lines[1:6]:  # First 5 models
                 sections.append(f"- {line.split()[0]}")
             sections.append("")
-        except Exception:
+        except Exception as exc:
             sections.append("## Ollama Models")
             sections.append("(ollama unavailable)")
             sections.append("")
+            logger.warning(
+                "heartbeat.daily_report_ollama_unavailable",
+                error=str(exc)[:120],
+            )
 
-        # GitHub issues
+        # GitHub issues -- mirror the Ollama section above: always write the header,
+        # and on any failure show "(github unavailable)" rather than silently
+        # dropping the section (Rule 17: every failure visible).
+        sections.append("## Open GitHub Issues")
         try:
             gh_result = await asyncio.to_thread(
                 _run_sync,
@@ -712,15 +749,24 @@ async def generate_daily_report(
             )
             if gh_result.returncode == 0 and gh_result.stdout.strip():
                 issues = json.loads(gh_result.stdout)
-                sections.append("## Open GitHub Issues")
                 if issues:
                     for iss in issues:
                         sections.append(f"- #{iss['number']}: {iss['title']}")
                 else:
                     sections.append("No open issues")
-                sections.append("")
-        except Exception:
-            pass
+            else:
+                sections.append("(github unavailable)")
+                logger.warning(
+                    "heartbeat.daily_report_github_unavailable",
+                    rc=gh_result.returncode,
+                )
+        except Exception as exc:
+            sections.append("(github unavailable)")
+            logger.warning(
+                "heartbeat.daily_report_github_failed",
+                error=str(exc)[:120],
+            )
+        sections.append("")
 
         # Write report
         filepath.write_text("\n".join(sections), encoding="utf-8")
@@ -1012,5 +1058,89 @@ async def check_autonomous_work() -> HeartbeatCheckResult:
             check_type="autonomous_work",
             status="error",
             summary=f"Autonomous work check failed: {exc}",
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+
+
+async def check_memory_quarantine() -> HeartbeatCheckResult:
+    """Validate quarantined agent experiences across tenants.
+
+    Runs MemoryService.validate_quarantined for every tenant that has
+    quarantined experience entries: repeated successes promote to
+    trusted, repeated failures archive. This is the scheduled caller
+    the NBMF promotion loop was missing -- until now only the manual
+    POST /api/v1/memory/experiences/validate route drove it, so
+    quarantined experiences sat unvalidated between manual calls.
+
+    Pure local DB pass: zero LLM calls, zero network egress, safe as a
+    default-enabled check per PR-HB-DAEMON-WIRE doctrine. The service
+    only flushes, so this check owns the commit.
+    """
+    import time as _time
+
+    t0 = _time.perf_counter()
+    try:
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.models.memory import MemoryEntry
+        from app.services.memory import EXPERIENCE_TYPES, MemoryService
+
+        max_tenants_per_cycle = 10
+
+        async with async_session_factory() as db:
+            stmt = (
+                select(MemoryEntry.tenant_id)
+                .where(
+                    MemoryEntry.content_type.in_(EXPERIENCE_TYPES),
+                    MemoryEntry.is_quarantined.is_(True),
+                    MemoryEntry.archived_at.is_(None),
+                )
+                .distinct()
+                .limit(max_tenants_per_cycle)
+            )
+            result = await db.execute(stmt)
+            tenant_ids = [row[0] for row in result.all()]
+
+            if not tenant_ids:
+                return HeartbeatCheckResult(
+                    check_type="memory_quarantine",
+                    status="ok",
+                    summary="No quarantined experiences awaiting validation",
+                    duration_ms=int((_time.perf_counter() - t0) * 1000),
+                )
+
+            service = MemoryService(db)
+            reviewed = promoted = demoted = 0
+            for tenant_id in tenant_ids:
+                outcome = await service.validate_quarantined(tenant_id=tenant_id)
+                reviewed += outcome.get("reviewed", 0)
+                promoted += outcome.get("promoted", 0)
+                demoted += outcome.get("demoted", 0)
+            # validate_quarantined only flushes; persist the batch here.
+            await db.commit()
+
+        return HeartbeatCheckResult(
+            check_type="memory_quarantine",
+            status="ok",
+            summary=(
+                f"Validated {reviewed} quarantined experiences across "
+                f"{len(tenant_ids)} tenants: {promoted} promoted, {demoted} archived"
+            ),
+            details={
+                "tenants": len(tenant_ids),
+                "reviewed": reviewed,
+                "promoted": promoted,
+                "demoted": demoted,
+            },
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+
+    except Exception as exc:
+        logger.warning("heartbeat.memory_quarantine_failed", error=str(exc))
+        return HeartbeatCheckResult(
+            check_type="memory_quarantine",
+            status="error",
+            summary=f"Memory quarantine validation failed: {exc}",
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )

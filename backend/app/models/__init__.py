@@ -5,6 +5,7 @@ All models are imported here for Alembic auto-discovery.
 
 from app.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin
 from app.models.chat import ChatCategory, ChatMessage, ChatSession
+from app.models.cognition import CkgInsight, CkgTransferEdge
 from app.models.connection_v2 import (
     AuthMethod,
     ConnectionKind,
@@ -25,6 +26,7 @@ from app.models.department_policy import DepartmentPolicy
 from app.models.department_state import DepartmentState
 from app.models.department_task import DepartmentTask
 from app.models.execution import Skill, Task, ToolExecution
+from app.models.experience import ExperienceLog
 from app.models.files import FileRecord
 from app.models.error_event import ErrorEvent
 from app.models.financial import Subscription, UsageLedger, UserQuota, VaultSecret
@@ -44,6 +46,7 @@ from app.models.cron_run import CronRun
 from app.models.mcp_server import McpServer
 from app.models.notification import Notification
 from app.models.plugin_policy_override import PluginPolicyOverride
+from app.models.push_subscription import PushSubscription
 from app.models.secret import Secret
 from app.models.waitlist import WaitlistEntry
 from app.models.workstream import (
@@ -59,6 +62,7 @@ __all__ = [
     "Tenant", "User", "RefreshToken",
     "Department", "Agent", "BrainModel",
     "ChatSession", "ChatMessage", "ChatCategory",
+    "CkgInsight", "CkgTransferEdge",
     "GoaRequest", "GoaPolicyState", "GoaAuditEvent", "PendingApproval",
     "MemoryEntry", "LearningLog",
     "Task", "ToolExecution", "Skill", "DepartmentTask", "FileRecord",
@@ -73,6 +77,7 @@ __all__ = [
     "UsageLedger", "VaultSecret", "Subscription", "UserQuota", "ErrorEvent",
     "HeartbeatConfigRow",
     "RunTraceEvent",
+    "ExperienceLog",
     "ProjectPipeline",
     "Project",
     "ApiKey",
@@ -82,6 +87,7 @@ __all__ = [
     "McpServer",
     "Notification",
     "PluginPolicyOverride",
+    "PushSubscription",
     "Secret",
     "WaitlistEntry",
     "Workstream", "WorkstreamEvent",

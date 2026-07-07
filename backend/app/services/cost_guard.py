@@ -27,6 +27,7 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from typing import ClassVar
 
 from sqlalchemy import func, select, update
@@ -37,6 +38,22 @@ from app.core.logging import get_logger
 from app.models.financial import Subscription, UsageLedger, UserQuota
 
 logger = get_logger(__name__)
+
+
+def _utc_today() -> date:
+    """Current calendar date in the UTC frame.
+
+    UserQuota.period_start / month_period_start are DateTime(timezone=True)
+    written server-side by func.now() (UTC). The lazy daily/monthly reset must
+    compare against UTC "today", not the host's LOCAL date.today(): during the
+    several-hour daily window where local-date != UTC-date, a local-frame
+    comparison either skips the daily reset (throttling the user a day early)
+    or trips the monthly reset at a month boundary (zeroing spend_this_month a
+    day early -- a cap leak). Centralised here so the reset frame is one
+    test-injectable seam.
+    """
+    return datetime.now(timezone.utc).date()
+
 
 # Phase 11 PR-S2.1: dedup window for budget_alert in-app notifications.
 # preflight_check fires before EVERY LLM call. Without a window, a user
@@ -164,8 +181,6 @@ class CostGuard:
         self, tenant_id: uuid.UUID, user_id: uuid.UUID,
     ) -> UserQuota:
         """Lazy-provision: get existing quota or create with plan defaults."""
-        from datetime import date, timezone
-
         stmt = select(UserQuota).where(UserQuota.user_id == user_id)
         result = await self._db.execute(stmt)
         quota = result.scalar_one_or_none()
@@ -177,7 +192,7 @@ class CostGuard:
             # separate monthly anchor (BILL-002). Without the monthly reset,
             # spend_this_month_usd accumulated forever and the monthly quota
             # looked permanently exhausted after the user's first month.
-            today = date.today()
+            today = _utc_today()  # UTC frame: matches the UTC-stored period anchors
             reset_values: dict = {}
             if quota.period_start.date() < today:
                 reset_values["spend_today_usd"] = 0

@@ -21,7 +21,7 @@
  *     toggle that the user must explicitly opt into.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2,
   FileWarning, Loader2, RotateCcw, ShieldCheck, X,
@@ -76,6 +76,18 @@ export default function MCPInstallDrawer({
   plugin, onClose, onComplete,
 }: MCPInstallDrawerProps) {
   const [step, setStep] = useState<Step>('target')
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  // PR-A11Y-PHASE32: overlay focus contract -- move focus into the panel on open,
+  // restore to the opener on close (WCAG 2.4.3 / 2.1.2 / WAI-ARIA dialog pattern).
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    const focusTimer = setTimeout(() => {
+      const panel = panelRef.current
+      if (panel && !panel.contains(document.activeElement)) panel.focus()
+    }, 50)
+    return () => { clearTimeout(focusTimer); previousFocusRef.current?.focus?.() }
+  }, [])
   const [target, setTarget] = useState<McpInstallTarget | null>(null)
   const [allowCreate, setAllowCreate] = useState(false)
   const [preview, setPreview] = useState<McpInstallPreview | null>(null)
@@ -157,7 +169,13 @@ export default function MCPInstallDrawer({
       onClick={onClose}
     >
       <div
-        className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Install MCP server for ${plugin.name}`}
+        tabIndex={-1}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }}
+        className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 shadow-2xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <DrawerHeader plugin={plugin} step={step} onClose={onClose} />
@@ -483,7 +501,12 @@ function PreviewStep({
             </div>
             {placeholderValueRejected && (
               <p className="mt-2 text-[11px] text-rose-300">
-                Backend refused a value: <code>{preview.failure_reason}</code>
+                That value was rejected:{' '}
+                <code>
+                  {preview.failure_reason?.replace('placeholder_value_invalid: ', '')}
+                </code>
+                . Remove shell metacharacters and re-enter, then click Update
+                preview.
               </p>
             )}
           </div>

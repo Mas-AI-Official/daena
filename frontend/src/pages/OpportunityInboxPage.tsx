@@ -224,13 +224,13 @@ export default function OpportunityInboxPage() {
         )}
 
         {lastRunSummary && (
-          <Card className="border-slate-700 bg-slate-900/50">
+          <Card role="status" className="border-slate-700 bg-slate-900/50">
             <div className="p-3 text-xs text-slate-400">{lastRunSummary}</div>
           </Card>
         )}
 
         {error && (
-          <Card className="border-red-700 bg-red-950/30">
+          <Card role="alert" className="border-red-700 bg-red-950/30">
             <div className="p-4 flex items-center gap-3 text-red-200">
               <AlertTriangle className="w-4 h-4" />
               {error}

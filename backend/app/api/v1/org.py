@@ -6,16 +6,20 @@ tenant-level operations for the Account > Enterprise section.
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, get_current_user, require_role
+from app.api.deps import CurrentUser, get_current_user, require_feature, require_role
 from app.core.database import get_db
+from app.core.entitlements import Feature
+from app.core.security import hash_password
 from app.models.identity import Tenant, User
 from app.models.financial import UsageLedger
 
@@ -50,6 +54,13 @@ class OrgMemberResponse(BaseModel):
 class InviteMemberRequest(BaseModel):
     email: EmailStr
     role: str = Field(default="MEMBER", pattern="^(MEMBER|ADMIN)$")
+
+
+class InviteMemberResponse(BaseModel):
+    member: OrgMemberResponse
+    temporary_password: str
+    email_sent: bool = False
+    message: str
 
 
 class UpdateMemberRoleRequest(BaseModel):
@@ -143,11 +154,78 @@ async def list_org_members(
     ]
 
 
+@router.post("/members", response_model=InviteMemberResponse, status_code=201)
+async def invite_member(
+    body: InviteMemberRequest,
+    user: CurrentUser = Depends(require_role("ADMIN")),
+    _org_mgmt: CurrentUser = Depends(require_feature(Feature.ORG_MANAGEMENT)),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new member in the organization. Requires ADMIN+.
+
+    Honesty (Rule 17): Daena has no transactional email path yet, so no
+    invitation email is sent. The endpoint returns a one-time temporary
+    password the admin must share securely; the member can sign in immediately
+    and change it under Account > Profile. email_sent is therefore always
+    False. Email is unique per tenant (uq_users_tenant_id_email); a duplicate
+    is a 409, checked up front with the DB UNIQUE as the backstop.
+    """
+    email = str(body.email).strip().lower()
+
+    existing = await db.scalar(
+        select(func.count()).select_from(User).where(
+            User.tenant_id == user.tenant_id,
+            func.lower(User.email) == email,
+        )
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="A member with that email already exists")
+
+    temp_password = secrets.token_urlsafe(12)
+    member = User(
+        tenant_id=user.tenant_id,
+        email=email,
+        password_hash=hash_password(temp_password),
+        display_name=email.split("@")[0],
+        role=body.role,
+        is_active=True,
+        email_verified=False,
+        settings={},
+    )
+    db.add(member)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A member with that email already exists")
+    await db.refresh(member)
+
+    return {
+        "member": {
+            "id": str(member.id),
+            "email": member.email,
+            "display_name": member.display_name,
+            "role": member.role,
+            "is_active": member.is_active,
+            "last_login": None,
+            "created_at": member.created_at.isoformat() if member.created_at else None,
+        },
+        "temporary_password": temp_password,
+        "email_sent": False,
+        "message": (
+            "Member created. No invitation email was sent (email delivery is not "
+            "configured). Share the temporary password securely; the member can sign "
+            "in and change it under Account > Profile."
+        ),
+    }
+
+
 @router.patch("/members/{member_id}/role")
 async def update_member_role(
     member_id: str,
     body: UpdateMemberRoleRequest,
     user: CurrentUser = Depends(require_role("ADMIN")),
+    _org_mgmt: CurrentUser = Depends(require_feature(Feature.ORG_MANAGEMENT)),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Change a member's role. Requires ADMIN+. Cannot demote self."""
@@ -181,6 +259,7 @@ async def update_member_role(
 async def remove_member(
     member_id: str,
     user: CurrentUser = Depends(require_role("ADMIN")),
+    _org_mgmt: CurrentUser = Depends(require_feature(Feature.ORG_MANAGEMENT)),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Deactivate a member. Requires ADMIN+. Cannot remove self."""

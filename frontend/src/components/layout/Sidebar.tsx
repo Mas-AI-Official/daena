@@ -4,10 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 // Sidebar cleaned: Perplexity menu items removed 2026-04-13
 import {
   MessageSquare,
-  LayoutDashboard,
   Shield,
   ShieldCheck,
   Brain,
+  Network,
   Zap,
   Plug,
   Crosshair,
@@ -15,19 +15,14 @@ import {
   ChevronLeft,
   ChevronRight,
   ListTodo,
-  FolderKanban,
-  Kanban,
   FileText,
-  BarChart3,
   Bell,
   Users,
   Building,
   User,
   Settings,
   LogOut,
-  Sparkles,
   Rocket,
-  Activity,
 } from 'lucide-react'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -39,6 +34,11 @@ interface NavItem {
   icon: React.ReactNode
   badge?: string
   badgeKey?: string
+  /** Extra path prefixes that ALSO mark this item active (FM-1/FM-3,
+   *  2026-07-02). A merged surface entry (Work, Governance) points `path`
+   *  at its default tab but must stay highlighted on every folded route.
+   *  Omitted -> highlights on `path` alone (unchanged behavior). */
+  matchPaths?: string[]
   /** Hover tooltip explaining what the page does in one sentence.
    *  Added 2026-04-23 so first-time users don't have to click every
    *  link to learn what it is. Kept short (≤120 chars). */
@@ -65,7 +65,12 @@ const navGroups: NavGroup[] = [
     color: 'text-primary-400',
     items: [
       { label: 'Chat', path: '/chat', icon: <MessageSquare size={18} /> },
-      { label: 'Dashboard', path: '/dashboard', icon: <LayoutDashboard size={18} /> },
+      // Brain = the unified cockpit. Dashboard was folded into it 2026-06-25
+      // (founder go-ahead): the old /dashboard redirects to /brain and its
+      // Control Room panels now live inside the Brain as an "Overview" overlay.
+      // Promoted from Intelligence to Core as the single system-overview surface.
+      // Renders an honest error state when GET /graph is offline.
+      { label: 'Brain', path: '/brain', icon: <Network size={18} />, title: 'The Daena cockpit: a live neural map of departments, agents, the MCP servers each uses, and the backend -- plus an Overview panel with KPIs, system status, governance pulse, and quick actions.' },
       // Company + Inbox removed 2026-04-17 -- /departments is the single
       // source of truth for the 10-department model. Inter-department
       // messaging happens through each department's chat room.
@@ -76,11 +81,11 @@ const navGroups: NavGroup[] = [
     color: 'text-accent-cyan',
     items: [
       { label: 'Security Scan', path: '/scan', icon: <Crosshair size={18} /> },
+      // Departments IS the Minds surface now (FM-4, 2026-07-01): each card
+      // carries the department's soul persona + a drill-in to the per-Mind
+      // detail view, plus the founder-gated "Refine all Minds" control. The
+      // standalone /minds gallery was consolidated here; /minds redirects.
       { label: 'Departments', path: '/departments', icon: <Brain size={18} /> },
-      // Minds = per-department soul personas. Cards open the live soul
-      // body + founder-gated refinement loop. Lives next to Departments
-      // because they're two lenses on the same 10-unit model.
-      { label: 'Minds', path: '/minds', icon: <Sparkles size={18} /> },
       { label: 'Skills', path: '/skills', icon: <Zap size={18} /> },
     ],
   },
@@ -99,21 +104,23 @@ const navGroups: NavGroup[] = [
     title: 'Execution',
     color: 'text-status-success',
     items: [
-      // Workstreams = Daena's visible unit of autonomy (Council R3 lock,
-      // 2026-04-25). Listed first because it's THE buyer-facing surface
-      // that demonstrates "OpenClaw-but-better": governed, interruptible
-      // threads of work that can be redirected mid-flight. Tasks /
-      // Projects / Pipeline / Files are containers and dumb lists; the
-      // workstream is the live thing.
+      // Work = one surface, four tabs (FM-3, 2026-07-02). Tasks /
+      // Workstreams / Projects / Pipeline were four sibling entries; they
+      // are all lenses on the same unit of work, so they fold into ONE
+      // tabbed WorkPage. The entry lands on Tasks (the default tab) and
+      // stays highlighted across every folded route via matchPaths, so a
+      // deep-link to /workstreams or /projects/:id still lights "Work".
+      // The approvals-style pending count now rides the Tasks tab, so the
+      // badge (tasks) moves to this merged entry. Files stays its own
+      // surface (it is a store, not a work lens).
       {
-        label: 'Workstreams',
-        path: '/workstreams',
-        icon: <Activity size={18} />,
-        title: 'Live console for autonomous work. Each workstream is one Daena task you can pause, redirect mid-flight, or cancel. Use this to watch what she is doing in real time.',
+        label: 'Work',
+        path: '/tasks',
+        icon: <ListTodo size={18} />,
+        badgeKey: 'tasks',
+        matchPaths: ['/tasks', '/workstreams', '/projects', '/pipeline'],
+        title: 'Tasks, live Workstreams, Projects, and the GTM Pipeline in one tabbed surface. Watch, redirect, or queue autonomous work.',
       },
-      { label: 'Tasks', path: '/tasks', icon: <ListTodo size={18} />, badgeKey: 'tasks', title: 'Discrete work items, queued + retryable. Each task has a status, owner, and audit trail.' },
-      { label: 'Projects', path: '/projects', icon: <FolderKanban size={18} />, title: 'Group related tasks under a project. Scopes context for agents and bills work to the right tenant.' },
-      { label: 'Pipeline', path: '/pipeline', icon: <Kanban size={18} />, title: 'Sales / GTM kanban. Auto-populated by Company Mode activations and reply triage.' },
       { label: 'Files', path: '/files', icon: <FileText size={18} />, title: 'Files Daena has read or produced -- uploads, generated artifacts, exported reports.' },
     ],
   },
@@ -125,7 +132,12 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    title: 'Governance',
+    // Group title is "Oversight" (was "Governance") because the merged
+    // ITEM below is now named "Governance" -- keeping both the same would
+    // read as a duplicate. The collapsible state keys off `key: 'gov'`
+    // (localStorage), not the title, so the rename is display-only and
+    // does not reset anyone's open/closed preference.
+    title: 'Oversight',
     color: 'text-accent-amber',
     collapsible: true,
     key: 'gov',
@@ -141,12 +153,29 @@ const navGroups: NavGroup[] = [
       // exists in App.tsx so bookmarks and deep-links resolve, but
       // there is now ONE canonical scan entry point: Security Scan
       // under Intelligence above.
-      { label: 'Approvals', path: '/governance/approvals', icon: <Shield size={18} />, badgeKey: 'approvals' },
-      { label: 'Policy Rules', path: '/policies', icon: <Shield size={18} /> },
-      { label: 'Audit Log', path: '/governance/audit', icon: <Shield size={18} /> },
-      { label: 'Trust Ladder', path: '/governance/trust', icon: <Shield size={18} /> },
+      //
+      // Governance = one surface, four tabs (FM-1, 2026-07-02). Approvals /
+      // Policy Rules / Audit Log / Trust Ladder were four sibling entries;
+      // they are the four lenses of the same governance-oversight loop, so
+      // they fold into ONE tabbed GovernancePage. The entry lands on
+      // Approvals (which carries the pending-approvals SSE badge) and stays
+      // highlighted across every folded route via matchPaths, so a deep-link
+      // to /policies?tab=... or /governance/audit still lights "Governance".
+      // Security Ops + Scan Scope stay separate (v3.7.0 security stack,
+      // HANDS-OFF); Opportunities stays its own inbox surface.
+      {
+        label: 'Governance',
+        path: '/governance/approvals',
+        icon: <Shield size={18} />,
+        badgeKey: 'approvals',
+        matchPaths: ['/governance/approvals', '/policies', '/governance/audit', '/governance/trust'],
+        title: 'Approvals, Policy Rules, the Audit Log, and the Trust Ladder in one tabbed surface. The pending-approvals count rides this entry.',
+      },
       { label: 'Opportunities', path: '/opportunities', icon: <Shield size={18} /> },
-      { label: 'Analytics', path: '/analytics', icon: <BarChart3 size={18} /> },
+      // Analytics folded into the Brain (FM-5, 2026-07-02): usage/cost/
+      // governance metrics now open as an "Analytics" overlay from the Brain
+      // toolbar (Core > Brain), so the standalone nav entry was removed.
+      // /analytics redirects to /brain for old bookmarks.
     ],
   },
 ]
@@ -353,7 +382,12 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
 
             <div className={`space-y-0.5 ${itemsVisible ? '' : 'hidden'}`}>
               {group.items.map((item) => {
-                const isActive = location.pathname.startsWith(item.path)
+                // A merged surface (Work, Governance) highlights on any of
+                // its folded routes; a plain item still highlights on its
+                // own path prefix (unchanged when matchPaths is absent).
+                const isActive = (item.matchPaths ?? [item.path]).some((p) =>
+                  location.pathname.startsWith(p),
+                )
                 const badgeCount = item.badgeKey ? badgeCounts[item.badgeKey] ?? 0 : 0
                 const showBadge = badgeCount > 0
                 // Task badge uses info (teal), approval badge uses warning (amber).
@@ -477,7 +511,7 @@ export function Sidebar({ mobile }: SidebarProps = {}) {
           {/* Org row */}
           {effectiveOpen && (
             <button
-              onClick={() => menuNavigate('/account/org/details')}
+              onClick={() => menuNavigate('/account/org')}
               className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
             >
               <Building size={16} className="text-starlight-400 shrink-0" />

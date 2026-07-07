@@ -22,7 +22,7 @@
  *     status, expires_at, and outcome reasons.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, Archive, CheckCircle2, Loader2, RefreshCw, X,
 } from 'lucide-react'
@@ -258,6 +258,18 @@ function ConfirmDialog({
 }) {
   const isArchive = kind === 'archive'
   const title = isArchive ? 'Archive this connection?' : 'Disconnect this connection?'
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  // PR-A11Y-PHASE32: confirm-dialog focus contract -- focus into the panel on
+  // open, restore to the opener on close; Escape cancels (WCAG 2.4.3 / 2.1.2).
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    const focusTimer = setTimeout(() => {
+      const panel = panelRef.current
+      if (panel && !panel.contains(document.activeElement)) panel.focus()
+    }, 50)
+    return () => { clearTimeout(focusTimer); previousFocusRef.current?.focus?.() }
+  }, [])
   const verb = isArchive ? 'Archive' : 'Disconnect'
   const consequence = isArchive
     ? 'The connection will be hidden from the default list (audit history preserved). You can re-connect any time -- a fresh OAuth flow will create a new instance.'
@@ -265,7 +277,15 @@ function ConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-lg border border-white/10 bg-night-950 p-5 shadow-xl">
+      <div
+        ref={panelRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel() } }}
+        className="w-full max-w-md rounded-lg border border-white/10 bg-night-950 p-5 shadow-xl focus:outline-none"
+      >
         <div className="mb-3 flex items-start gap-2">
           <AlertTriangle
             size={16}

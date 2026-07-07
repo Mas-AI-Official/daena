@@ -524,3 +524,52 @@ class TestStrategyGeneration:
 
         assert len(strategies) >= 1
         assert strategies[0].name == "adaptive_execution"
+
+
+# ---- WeaknessTracker wiring (orient reads, reflect writes) ----
+
+
+class TestWeaknessWiring:
+    @pytest.mark.asyncio
+    async def test_orient_surfaces_known_weakness(self) -> None:
+        """A pre-seeded tenant weakness shows up in orientation_analysis.
+
+        The strategy-category weakness ("s": 3 attempts, 0 successes) makes
+        build_weakness_note non-empty regardless of how orient classifies
+        the task, so this asserts the wiring, not the classifier.
+        """
+        from app.services.cognition.weakness_tracker import get_weakness_tracker
+
+        tracker = get_weakness_tracker(FAKE_TENANT)
+        for _ in range(3):
+            await tracker.record(
+                problem_type="debugging",
+                strategy="s",
+                tools_used=[],
+                success=False,
+                error="boom",
+            )
+
+        engine = _make_engine()
+        state = CognitiveState(task="Fix the bug in auth middleware")
+        state.observation = Observation(task_description=state.task)
+
+        state = await engine._orient(state, {})
+
+        assert "KNOWN WEAKNESSES" in state.orientation_analysis
+
+    @pytest.mark.asyncio
+    async def test_reflect_records_into_shared_tracker(self) -> None:
+        """_reflect writes to the SHARED per-tenant tracker, not a throwaway."""
+        from app.services.cognition.weakness_tracker import get_weakness_tracker
+
+        engine = _make_engine()
+        state = CognitiveState(task="Deploy the service")
+        state.current_strategy = Strategy(name="direct_execution")
+        state.problem_type = "deployment"
+        state.selected_frameworks = ["first_principles"]
+
+        await engine._reflect(state, False, "", {})
+
+        summary = get_weakness_tracker(FAKE_TENANT).get_summary()
+        assert summary["problem_types"]["deployment"]["total"] == 1

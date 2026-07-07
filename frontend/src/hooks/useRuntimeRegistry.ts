@@ -6,7 +6,7 @@
  *                            cloud_mode: boolean, api_providers: [...] } }
  * where each RuntimeData carries: runtime_id, display_name, installed,
  * status, subscription. The hook adapts that into the leaner RuntimeInfo
- * shape used by RuntimeSwapper / Mind Control surfaces.
+ * shape used by the Mind Control surfaces.
  *
  * Behaviour:
  *  - First fetch happens immediately on mount.
@@ -63,9 +63,9 @@ function normalizeStatus(raw: string, installed: boolean): RuntimeStatus {
   if (s.includes('error')) return 'error'
   if (s.includes('online') || s.includes('ready') || s.includes('connected')) return 'online'
   if (s.includes('offline') || s.includes('disconnected')) return 'offline'
-  // Default for installed-but-unknown: treat as offline (visible in
-  // RuntimeSwapper's filter as "not online" and so hidden, which is the
-  // safer call than mis-labelling it online).
+  // Default for installed-but-unknown: treat as offline (the Mind
+  // Control surfaces filter on "online", so an unknown runtime stays
+  // hidden, which is the safer call than mis-labelling it online).
   return 'offline'
 }
 

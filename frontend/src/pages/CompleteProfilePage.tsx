@@ -9,7 +9,7 @@
  * and issues new JWT tokens with profile_complete=true.
  */
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Navigate, Link } from 'react-router-dom'
 import { Cpu, Building2, Shield, Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -19,10 +19,13 @@ export function CompleteProfilePage() {
   const [agreedToTerms, setAgreedToTerms] = useState(false)
   const [tenantName, setTenantName] = useState('')
 
-  // If profile is already complete, redirect to app
+  // If profile is already complete, redirect to app.
+  // Use the declarative <Navigate> rather than calling navigate() during render --
+  // React Router v6 refuses imperative navigation in the render phase, which left a
+  // profile-complete user stranded on a blank /complete-profile dead-end (Rule 17:
+  // every failure must be visible; no silent no-op redirect). Mirrors ProtectedRoute.
   if (profileComplete) {
-    navigate('/chat', { replace: true })
-    return null
+    return <Navigate to="/chat" replace />
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,6 +73,10 @@ export function CompleteProfilePage() {
               value={tenantName}
               onChange={(e) => setTenantName(e.target.value)}
               placeholder="e.g. Acme Corp, My Startup, Personal"
+              // PR-A11Y-PHASE85 (SC 1.3.5 Identify Input Purpose): this field's
+              // purpose is the company/organization name, so expose the standard
+              // autocomplete token -- matches RegisterPage's existing convention.
+              autoComplete="organization"
               className="w-full glass-input px-4 py-2.5 rounded-lg text-sm text-starlight-200 placeholder:text-starlight-500"
             />
             <p className="text-xs text-starlight-500">

@@ -215,7 +215,7 @@ _UI_PREF_KEYS = (
     # Notifications
     "notif_desktop", "notif_task_complete", "notif_budget_alert",
     "notif_heartbeat", "notif_gov_reject", "notif_runtime_disconnect",
-    "notif_sound", "notif_email", "notif_daily_digest",
+    "notif_sound", "notif_email", "notif_daily_digest", "notif_push",
     # Developer
     "developer_mode",
     # Billing
@@ -256,6 +256,7 @@ _UI_PREF_DEFAULTS: dict[str, object] = {
     "notif_sound": False,
     "notif_email": False,
     "notif_daily_digest": False,
+    "notif_push": True,
     # Developer
     "developer_mode": False,
     # Billing
@@ -313,6 +314,7 @@ class UserPreferencesUpdate(BaseModel):
     notif_sound: bool | None = None
     notif_email: bool | None = None
     notif_daily_digest: bool | None = None
+    notif_push: bool | None = None
     # Developer
     developer_mode: bool | None = None
     # Billing

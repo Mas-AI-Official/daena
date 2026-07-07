@@ -130,8 +130,17 @@ def _wsl_windows_user_home() -> Path | None:
     except OSError:
         return None
     for entry in entries:
-        if (entry / "AppData" / "Roaming").is_dir():
-            return entry
+        try:
+            if (entry / "AppData" / "Roaming").is_dir():
+                return entry
+        except OSError:
+            # A locked / sandbox profile (e.g. CodexSandboxOffline) can
+            # make stat() raise PermissionError instead of returning
+            # False. Skip that entry and keep scanning -- a later one may
+            # be the real Windows user -- rather than letting the error
+            # propagate up through the module-level _CANDIDATES build and
+            # abort `import app.main` (the backend's WSL launch path).
+            continue
     return None
 
 

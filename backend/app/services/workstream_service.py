@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.core.sse_channels import get_workstream_channel
+from app.core.sse_channels import get_workstream_channel, publish_graph_changed
 from app.models.workstream import (
     Workstream,
     WorkstreamEscalationLevel,
@@ -304,6 +304,15 @@ class WorkstreamService:
         )
         await self._db.commit()
         await _publish_workstream_event(ws, event)
+        # Live Brain doorbell (best-effort): a new workstream node just entered
+        # RUNNING, which adds a pulsing node to the org projection, so nudge the
+        # canvas to re-pull GET /graph. transition() covers later status flips;
+        # start() is the only place a workstream is born, so without this the
+        # brand-new RUNNING node would not light until the 15s poll backstop.
+        await publish_graph_changed(
+            "workstream_started",
+            workstream_id=str(ws.id),
+        )
         logger.info(
             "workstream.started",
             workstream_id=str(ws.id),
@@ -367,6 +376,16 @@ class WorkstreamService:
         )
         await self._db.commit()
         await _publish_workstream_event(ws, event)
+        # Live Brain doorbell (best-effort): a workstream node just changed
+        # status, which moves the org projection, so nudge the canvas to
+        # re-pull GET /graph. Only fired from transition() -- the lone funnel
+        # that flips ws.status, the field the graph signature keys on -- so a
+        # progress/text-only event never triggers a wasted refetch.
+        await publish_graph_changed(
+            "workstream_transitioned",
+            workstream_id=str(workstream_id),
+            status=new_status.value,
+        )
         logger.info(
             "workstream.transitioned",
             workstream_id=str(workstream_id),

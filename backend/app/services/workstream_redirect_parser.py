@@ -43,6 +43,10 @@ from pathlib import Path
 from typing import Any
 
 from app.core.logging import get_logger
+from app.core.universal_cognitive_gateway import (
+    attach_gateway_review,
+    build_gateway_request,
+)
 
 logger = get_logger(__name__)
 
@@ -268,7 +272,13 @@ async def _call_llm_parser(instruction: str) -> dict[str, Any] | None:
             max_tokens=600,
             metadata={"stage": "workstream_redirect_parse"},
         )
+        request = build_gateway_request(
+            request,
+            model_id="auto",
+            available_models=["gemini", "perplexity", "anthropic", "openai", "ollama"],
+        )
         resp = await provider.generate(request)
+        resp = attach_gateway_review(resp, request)
         if not resp or not resp.content:
             return None
         return _extract_json(resp.content)

@@ -206,6 +206,13 @@ cron_channel = SSEChannel("cron")
 queue_channel = SSEChannel("queue")
 approval_channel = SSEChannel("approvals")
 pipeline_channel = SSEChannel("pipeline")
+# Mission Control "Brain" live channel. Carries THIN change notifications
+# only: a producer publishes "graph.changed" after a task/workstream state
+# moves, and the /graph/stream route fans it to the canvas, which re-fetches
+# GET /graph and diffs it client-side. The projection itself is NEVER pushed
+# here -- /graph stays the single source of truth, the channel is just a
+# "something moved, re-pull" doorbell.
+graph_channel = SSEChannel("graph")
 
 
 def get_channel(name: str) -> SSEChannel | None:
@@ -215,7 +222,26 @@ def get_channel(name: str) -> SSEChannel | None:
         "queue": queue_channel,
         "approvals": approval_channel,
         "pipeline": pipeline_channel,
+        "graph": graph_channel,
     }.get(name)
+
+
+async def publish_graph_changed(reason: str, **detail: Any) -> None:
+    """Best-effort doorbell telling the live Brain the projection changed.
+
+    A THIN signal: subscribers re-fetch GET /graph and diff it themselves,
+    so the payload is just a ``reason`` plus optional debug ``detail`` --
+    never the projection. Wrapped so a telemetry push can NEVER break the
+    domain write that triggered it: any failure (serialization, a dead
+    subscriber, cancellation during shutdown) is swallowed and logged at
+    debug. Safe to fire-and-(optionally-)await from any async service after
+    a state change; producers should call it best-effort and never let its
+    result gate their own commit.
+    """
+    try:
+        await graph_channel.publish("graph.changed", {"reason": reason, **detail})
+    except Exception:  # noqa: BLE001 -- telemetry must never break a domain write
+        logger.debug("graph_channel.publish_failed", reason=reason, exc_info=True)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -269,7 +295,9 @@ __all__ = [
     "cron_channel",
     "get_channel",
     "get_workstream_channel",
+    "graph_channel",
     "pipeline_channel",
+    "publish_graph_changed",
     "queue_channel",
     "workstream_channel_count",
 ]

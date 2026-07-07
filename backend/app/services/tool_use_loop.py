@@ -39,6 +39,8 @@ from typing import Any
 from uuid import UUID
 
 from app.core.logging import get_logger
+from app.core.universal_cognitive_gateway import build_gateway_request
+from app.services.providers.base import GenerateRequest, LLMMessage
 from app.services.tool_schema_builder import (
     build_tool_schema,
     build_tool_prompt,
@@ -384,6 +386,26 @@ class ToolUseLoop:
         try:
             from app.core.config import get_settings
             settings = get_settings()
+
+            gateway_messages: list[LLMMessage] = []
+            for msg in messages:
+                role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
+                content = msg.content if hasattr(msg, "content") else msg.get("content", "")
+                gateway_messages.append(LLMMessage(role=role.lower(), content=content))
+            gateway_request = build_gateway_request(
+                GenerateRequest(
+                    messages=gateway_messages,
+                    model_id=model_id,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    system_prompt=system_prompt,
+                    metadata={"stage": "tool_use_loop"},
+                ),
+                model_id=model_id,
+                available_models=[model_id],
+                available_tools=["daenabot"],
+            )
+            system_prompt = gateway_request.system_prompt or system_prompt
 
             # Build messages array for cloud API
             api_messages = [{"role": "system", "content": system_prompt}]

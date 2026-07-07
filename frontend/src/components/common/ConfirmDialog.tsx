@@ -107,7 +107,7 @@ export function ConfirmDialog() {
 
         {/* Title + message */}
         <div className="space-y-1.5 max-w-sm">
-          <h3 className="text-lg font-display font-medium text-starlight-100">
+          <h3 id="confirm-dialog-title" className="text-lg font-display font-medium text-starlight-100">
             {request.title}
           </h3>
           {request.message && (
@@ -125,6 +125,7 @@ export function ConfirmDialog() {
                 ref={textareaRef}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
+                aria-labelledby="confirm-dialog-title"
                 placeholder={promptConfig.placeholder}
                 maxLength={promptConfig.maxLength}
                 rows={3}
@@ -136,6 +137,7 @@ export function ConfirmDialog() {
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
+                aria-labelledby="confirm-dialog-title"
                 placeholder={promptConfig.placeholder}
                 maxLength={promptConfig.maxLength}
                 className="w-full px-3 py-2.5 rounded-xl text-sm bg-midnight-950/60 border border-white/10 text-starlight-100 placeholder-starlight-500 focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500/40"

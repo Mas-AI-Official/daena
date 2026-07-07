@@ -8,13 +8,14 @@ import { useChatStore } from '@/stores/chatStore'
 import { useModelRegistryStore } from '@/stores/modelRegistryStore'
 import { useSecurityModeStore } from '@/stores/securityModeStore'
 import { CommandPalette } from '@/components/common/CommandPalette'
+import { ConnectionStatusIndicator } from '@/components/common/ConnectionStatusIndicator'
 import { useVoice } from '@/providers/VoiceProvider'
 // RuntimeSwapper was re-mounted here in Session 2 (2026-04-16) and
 // removed in Session 9 (2026-04-17) after operator audit: it duplicated
 // the Mind Control tab on /connections + the per-message Model dropdown
 // in ChatInput. Primary Mind selection now lives in Connections > Mind
 // Control for setup, and ChatInput "Model:" handles per-message picks.
-// The RuntimeSwapper component file stays -- Mind Control may reuse it.
+// RuntimeSwapper.tsx archived 2026-06-17 -> .archive/dead_orphan_components_20260617/ (revive = founder call).
 import type { ChatMode, RoutingMode, GovernanceMode } from '@/types/api'
 
 /** Fire a PATCH to sync a session-level field to the backend (fire-and-forget). */
@@ -235,6 +236,13 @@ export const Header = memo(function Header() {
 
         {/* Voice / Conversational mode toggle */}
         <VoiceToggle />
+
+        {/* Connection-health dot -- surfaces backend fetch failures from
+            errorStore (fed unconditionally by the axios interceptor). Returns
+            null while healthy; lights degraded/down when fetches fail in a 60s
+            window. Restores the global error surface ADR-001 mandates -- the
+            component existed but was never mounted (Rule-17 fix, Phase 7). */}
+        <ConnectionStatusIndicator />
 
         {/* Heartbeat indicator */}
         <HeartbeatIndicator />

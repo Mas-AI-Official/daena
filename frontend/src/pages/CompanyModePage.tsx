@@ -100,6 +100,7 @@ export function CompanyModePage() {
   const [result, setResult] = useState<ActivationResult | null>(null)
   const [history, setHistory] = useState<ActivationHistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
 
   // Seed brief quick-fill state. The founder stashes a "go-to" brief on the
   // backend; we auto-apply it on mount so the form is never blank when a
@@ -114,19 +115,24 @@ export function CompanyModePage() {
   const [seedAutoLoaded, setSeedAutoLoaded] = useState(false)
   const [seedDeleting, setSeedDeleting] = useState(false)
 
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true)
+    setHistoryError(null)
+    try {
+      const { data } = await api.get<ActivationHistoryEntry[]>('/company-mode/activations?limit=20')
+      setHistory(data ?? [])
+    } catch (err) {
+      console.error('Failed to load activation history:', err)
+      setHistory([])
+      setHistoryError('We could not load your recent activations. Retry to refresh.')
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!isFounder) return
     let cancelled = false
-    const load = async () => {
-      try {
-        const { data } = await api.get<ActivationHistoryEntry[]>('/company-mode/activations?limit=20')
-        if (!cancelled) setHistory(data ?? [])
-      } catch (err) {
-        console.error('Failed to load activation history:', err)
-      } finally {
-        if (!cancelled) setHistoryLoading(false)
-      }
-    }
     const loadSeed = async () => {
       try {
         const { data } = await api.get<SeedBriefResponse>('/company-mode/seed-brief')
@@ -154,12 +160,12 @@ export function CompanyModePage() {
         }
       }
     }
-    void load()
+    void loadHistory()
     void loadSeed()
     return () => {
       cancelled = true
     }
-  }, [isFounder])
+  }, [isFounder, loadHistory])
 
   // Validation mirrors the Pydantic bounds on ActivateRequest.
   const errors = useMemo(() => {
@@ -177,6 +183,41 @@ export function CompanyModePage() {
 
   const canSubmit = Object.keys(errors).length === 0 && !submitting
   const canSaveSeed = Object.keys(errors).length === 0 && !seedSaving
+
+  // Dirty when the authored brief differs from the last-saved seed (or, with
+  // no seed yet, from the pristine blank form). Only the typed free-text fields
+  // count as effort-at-risk -- channel toggles / tone / limits are trivially
+  // re-set and must not trigger a leave-warning. Canonical key order keeps the
+  // stringify comparison stable (no spurious dirty from object key ordering).
+  const isDirty = useMemo(() => {
+    const norm = (b: ActivateRequest) =>
+      JSON.stringify({
+        company_name: b.company_name.trim(),
+        company_one_liner: b.company_one_liner.trim(),
+        target_customer: b.target_customer.trim(),
+        customer_pain: b.customer_pain.trim(),
+        our_promise: b.our_promise.trim(),
+        proof_points: b.proof_points.map((p) => p.trim()).filter(Boolean),
+        notes: b.notes?.trim() || '',
+      })
+    return norm(req) !== norm(seedBrief ?? blankRequest())
+  }, [req, seedBrief])
+
+  // Warn on tab-close / refresh when the founder has unsaved brief edits, so a
+  // multi-field activation brief is not silently lost. Mirrors the in-house
+  // SecurityScopePage guard. NOTE: beforeunload covers tab-close/refresh/back to
+  // a non-SPA URL only; in-app route changes (sidebar nav) are not interceptable
+  // under BrowserRouter without a data-router useBlocker migration -- that wider
+  // guard is a founder-gated durable rec (see Phase 14 handoff).
+  useEffect(() => {
+    if (!isDirty) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
 
   // Apply the loaded seed into the form. We deep-copy arrays so later edits
   // do not mutate the stashed seed.
@@ -451,6 +492,7 @@ export function CompanyModePage() {
                         <input
                           className="glass-input text-starlight-100 text-sm placeholder:text-starlight-400 focus-ring transition-all duration-200 flex-1"
                           placeholder={`Proof ${idx + 1} (e.g. "2 USPTO provisionals: PhiLattice + NBMF")`}
+                          aria-label="Proof point"
                           value={p}
                           onChange={(e) => setProof(idx, e.target.value)}
                         />
@@ -629,6 +671,13 @@ export function CompanyModePage() {
             <h2 className="text-sm font-display font-semibold text-starlight-100">Recent activations</h2>
             {historyLoading ? (
               <Shimmer count={3} layout="list" />
+            ) : historyError ? (
+              <EmptyState
+                icon={<AlertTriangle size={28} />}
+                title="Couldn't load activations"
+                description={historyError}
+                action={{ label: 'Retry', onClick: () => void loadHistory() }}
+              />
             ) : history.length === 0 ? (
               <EmptyState
                 icon={<Clock size={28} />}
@@ -681,6 +730,11 @@ function Textarea({
   error?: string
 }) {
   const id = label.toLowerCase().replace(/\s+/g, '-')
+  // Associate the field-level error with the control so AT announces the invalid
+  // state and reads the message on focus (WCAG 3.3.1 + 4.1.2). Mirrors the Input
+  // primitive's pattern (components/common/Input.tsx): generate an id for the
+  // message and point aria-describedby at it, plus aria-invalid when in error.
+  const errorId = error ? `${id}-error` : undefined
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-xs font-medium text-starlight-300">
@@ -692,11 +746,13 @@ function Textarea({
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={errorId}
         className={`glass-input text-starlight-100 text-sm placeholder:text-starlight-400 focus-ring transition-all duration-200 resize-y ${
           error ? 'border-status-error/50 focus:ring-status-error/50' : ''
         }`}
       />
-      {error && <p className="text-xs text-status-error">{error}</p>}
+      {error && <p id={errorId} className="text-xs text-status-error">{error}</p>}
     </div>
   )
 }
@@ -711,7 +767,7 @@ function ActivationResultCard({ result }: { result: ActivationResult }) {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <CheckCircle2 size={16} className="text-status-success" />
-            <h3 className="text-sm font-display font-semibold text-starlight-100">Activation complete</h3>
+            <h2 className="text-sm font-display font-semibold text-starlight-100">Activation complete</h2>
           </div>
           <Badge variant="default" size="sm">
             {result.activation_id.slice(0, 8)}

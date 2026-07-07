@@ -107,6 +107,54 @@ class LearningService:
         self._patterns: dict[str, LearnedPattern] = {}
         self._session_outcomes: dict[str, list[ActionOutcome]] = {}
 
+    @classmethod
+    async def with_experience_history(
+        cls,
+        db: Any,
+        tenant_id: UUID,
+        limit: int = 100,
+    ) -> "LearningService":
+        """Build a LearningService rehydrated from the durable experience_log.
+
+        Loads the tenant's most recent ``limit`` reflect experiences (oldest
+        first, so recency ordering inside ``_outcomes`` is preserved) so that
+        learned patterns survive across requests instead of resetting with
+        every in-memory instance. Rows are appended directly to ``_outcomes``
+        rather than replayed through ``track_outcome`` -- rehydration must not
+        re-fire pattern extraction or emit tracking logs for old events.
+
+        Fails open: any DB error returns a fresh empty service (Rule 17 --
+        history being unavailable must never break the caller's path).
+        """
+        service = cls()
+        try:
+            from sqlalchemy import select
+
+            from app.models.experience import ExperienceLog
+
+            result = await db.execute(
+                select(ExperienceLog)
+                .where(ExperienceLog.tenant_id == tenant_id)
+                .order_by(ExperienceLog.created_at.desc())
+                .limit(limit)
+            )
+            rows = list(result.scalars().all())
+            for row in reversed(rows):
+                service._outcomes.append(
+                    ActionOutcome(
+                        action_id=str(row.id),
+                        session_id=str(row.session_id) if row.session_id else "cognitive",
+                        agent="cognitive_engine",
+                        operation=row.decision or "",
+                        params=dict(row.meta or {}),
+                        success=(row.outcome == "success"),
+                        output_preview=(row.action_taken or "")[:200],
+                    )
+                )
+        except Exception as exc:
+            logger.warning("learning.history_rehydrate_failed", error=str(exc))
+        return service
+
     async def track_outcome(self, outcome: ActionOutcome) -> None:
         """Record an action outcome for learning.
 

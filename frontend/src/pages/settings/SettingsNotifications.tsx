@@ -9,12 +9,20 @@
  * yet (no audio pipeline, no SMTP, no scheduler-driven digest job).
  */
 import { useState, useEffect } from 'react'
-import { Bell, Volume2, Mail, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Bell, Volume2, Mail, Smartphone, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { Card, Switch, Badge } from '@/components/common'
 import { useAuthStore } from '@/stores/authStore'
 import { api } from '@/lib/api'
 import { persistUiPref } from '@/stores/uiStore'
 import { toast } from '@/stores/toastStore'
+import {
+  fetchPushStatus,
+  getLocalSubscription,
+  isPushSupported,
+  subscribeThisDevice,
+  unsubscribeThisDevice,
+  type PushStatus,
+} from '@/lib/push'
 
 export function SettingsNotifications() {
   const userEmail = useAuthStore((s) => s.user?.email || '')
@@ -29,6 +37,19 @@ export function SettingsNotifications() {
   const [dailyDigest, setDailyDigest] = useState(false)
   const [sendingTest, setSendingTest] = useState(false)
   const emailConfigured = false
+
+  // G6 push channel: founder-alert mirror to this device. Status comes
+  // from the backend (enabled + VAPID public key + active device count);
+  // subscribe/unsubscribe are FOUNDER-only server-side, so the UI gates
+  // the controls on role too instead of offering a button that would 403.
+  const role = useAuthStore((s) => s.user?.role)
+  const isFounder = role === 'FOUNDER'
+  const pushSupported = isPushSupported()
+  const [pushStatus, setPushStatus] = useState<PushStatus | null>(null)
+  const [pushStatusError, setPushStatusError] = useState(false)
+  const [thisDeviceSubscribed, setThisDeviceSubscribed] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushError, setPushError] = useState<string | null>(null)
 
   // Hydrate from backend on mount
   useEffect(() => {
@@ -45,6 +66,18 @@ export function SettingsNotifications() {
       if (d.notif_email != null) setEmailEnabled(d.notif_email)
       if (d.notif_daily_digest != null) setDailyDigest(d.notif_daily_digest)
     }).catch(() => {})
+  }, [])
+
+  // Push channel hydration: server status (silent -- failures render
+  // inline below, matching the quiet /settings/user hydration above) +
+  // whether THIS browser already holds a push subscription.
+  useEffect(() => {
+    fetchPushStatus()
+      .then((s) => setPushStatus(s))
+      .catch(() => setPushStatusError(true))
+    getLocalSubscription()
+      .then((sub) => setThisDeviceSubscribed(!!sub))
+      .catch(() => {})
   }, [])
 
   const [permStatus, setPermStatus] = useState<NotificationPermission>(
@@ -121,6 +154,48 @@ export function SettingsNotifications() {
       toast.error('Failed to send test notification.')
     } finally {
       setSendingTest(false)
+    }
+  }
+
+  const handlePushSubscribe = async () => {
+    if (!pushStatus?.publicKey) {
+      setPushError('Server did not provide a VAPID public key -- cannot subscribe.')
+      return
+    }
+    setPushBusy(true)
+    setPushError(null)
+    try {
+      await subscribeThisDevice(pushStatus.publicKey)
+      setThisDeviceSubscribed(true)
+      toast.success('This device will now receive founder alerts.')
+      fetchPushStatus().then((s) => setPushStatus(s)).catch(() => {})
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : ''
+      const msg =
+        reason === 'permission_denied'
+          ? 'Notification permission was denied -- allow notifications for this site in the browser, then retry.'
+          : 'Push subscription failed -- see the console for the exact error.'
+      setPushError(msg)
+      toast.error(msg)
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  const handlePushUnsubscribe = async () => {
+    setPushBusy(true)
+    setPushError(null)
+    try {
+      await unsubscribeThisDevice()
+      setThisDeviceSubscribed(false)
+      toast.success('This device unsubscribed from founder alerts.')
+      fetchPushStatus().then((s) => setPushStatus(s)).catch(() => {})
+    } catch {
+      const msg = 'Unsubscribe failed -- the server revoke did not go through, so this device stays subscribed.'
+      setPushError(msg)
+      toast.error(msg)
+    } finally {
+      setPushBusy(false)
     }
   }
 
@@ -287,6 +362,77 @@ export function SettingsNotifications() {
                 <Switch checked={dailyDigest} onChange={() => toggle('notif_daily_digest', dailyDigest, setDailyDigest)} label="" size="sm" />
               </div>
             </div>
+          )}
+        </Card>
+      </section>
+
+      {/* Mobile push (G6 founder-alert mirror) */}
+      <section className="space-y-3">
+        <h3 className="text-sm font-display font-semibold text-starlight-100 flex items-center gap-2">
+          <Smartphone size={14} className="text-primary-400" />
+          Mobile Push
+        </h3>
+        <Card variant="glass" padding="md" className="space-y-3">
+          {!pushSupported ? (
+            <p
+              className="text-[10px] text-starlight-500"
+              title="Web Push needs serviceWorker + PushManager + Notification. Missing here (older browser or non-secure context), so no fake toggle is rendered."
+            >
+              This browser does not support Web Push, so device subscription is unavailable here. Use a modern browser over HTTPS (or localhost).
+            </p>
+          ) : pushStatusError ? (
+            <div className="flex items-start gap-2 rounded-lg border border-accent-amber/20 bg-accent-amber/5 px-3 py-2">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0 text-accent-amber" />
+              <p className="text-[10px] text-starlight-400">
+                Could not load push channel status from the backend. Check the connection and reload this page.
+              </p>
+            </div>
+          ) : !pushStatus ? (
+            <p className="text-[10px] text-starlight-500">Checking push channel status…</p>
+          ) : !pushStatus.enabled ? (
+            <div
+              className="flex items-start gap-2 rounded-lg border border-accent-amber/20 bg-accent-amber/5 px-3 py-2"
+              title="Backend reports the channel is off: PUSH_ALERTS_ENABLED false, VAPID keys missing from env, or pywebpush not installed. Keys are env-only (NEVER-1); this page will not pretend devices can subscribe."
+            >
+              <AlertTriangle size={13} className="mt-0.5 shrink-0 text-accent-amber" />
+              <p className="text-[10px] text-starlight-400">
+                Server push channel is not provisioned (VAPID keys not configured), so no device can subscribe. Founder alerts stay in-app until it is enabled.
+              </p>
+            </div>
+          ) : !isFounder ? (
+            <p
+              className="text-[10px] text-starlight-500"
+              title="POST /notifications/push/subscribe is require_role(FOUNDER) server-side; the UI gates the button on the same role instead of offering one that would 403."
+            >
+              Push mirrors founder alerts (budget, governance, heartbeat). Only the FOUNDER role can subscribe devices.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-starlight-200">Founder alerts on this device</p>
+                  <p className="text-[10px] text-starlight-500">
+                    {thisDeviceSubscribed
+                      ? 'This device is subscribed -- high-signal alerts arrive even when the tab is closed.'
+                      : 'Subscribe to receive high-signal alerts even when the tab is closed.'}
+                    {' '}Active devices: {pushStatus.subscriptions}.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { void (thisDeviceSubscribed ? handlePushUnsubscribe() : handlePushSubscribe()) }}
+                  disabled={pushBusy}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-500/10 text-primary-400 border border-primary-500/20 hover:bg-primary-500/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {pushBusy ? 'Working…' : thisDeviceSubscribed ? 'Unsubscribe' : 'Subscribe'}
+                </button>
+              </div>
+              {pushError && (
+                <div className="flex items-start gap-2 rounded-lg border border-accent-amber/20 bg-accent-amber/5 px-3 py-2">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0 text-accent-amber" />
+                  <p className="text-[10px] text-starlight-400">{pushError}</p>
+                </div>
+              )}
+            </>
           )}
         </Card>
       </section>

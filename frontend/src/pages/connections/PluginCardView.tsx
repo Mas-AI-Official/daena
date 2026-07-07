@@ -202,7 +202,24 @@ export default function PluginCardView({
         className={`group flex h-full cursor-pointer flex-col gap-3 rounded-xl border bg-midnight-400/40 p-4 transition-all hover:-translate-y-0.5 hover:bg-midnight-400/60 hover:shadow-lg ${tone.border}`}
         title={`${plugin.backing_types.join(' / ')}`}
       >
-        <header className="flex items-start gap-3">
+        {/* PR-A11Y-PHASE31 (2026-06-21): the card body opens the details
+            drawer on click (mouse). Keyboard/SR users need an equivalent
+            focusable control -- promote the header block to role="button"
+            with an Enter/Space handler (WCAG 2.1.1 + 4.1.2). The action
+            <button> below is a sibling, so no nested-interactive. Mirrors
+            the ProjectsPage clickable-card pattern. */}
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label={`Open details for ${plugin.name}`}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setDrawerOpen(true)
+            }
+          }}
+          className="flex items-start gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-primary-400/40"
+        >
           <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>
             <Icon size={22} />
           </div>
@@ -223,7 +240,7 @@ export default function PluginCardView({
               {plugin.risk_level === 'high' && <RiskBadge risk={plugin.risk_level} />}
             </div>
           </div>
-        </header>
+        </div>
 
         {/* Description -- skill pack carries an inline "Skill pack:" prefix
             so the kind is visible without a separate badge. */}

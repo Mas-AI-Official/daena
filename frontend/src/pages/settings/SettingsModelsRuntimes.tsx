@@ -1,20 +1,30 @@
 /**
- * SettingsModelsRuntimes -- unified Models & Runtimes tab.
- * Merges: LLM settings + Connections/Runtimes into one place.
+ * SettingsModelsRuntimes -- the single Models & Runtimes tab.
+ *
+ * CONSOLIDATION 2026-06-18: this tab now is the unified surface its
+ * name always promised. The former standalone "LLM Providers" Settings
+ * tab (SettingsLLM) is composed in below rather than living as a second,
+ * overlapping tab. SettingsLLM is reused as-is (not copied) so the
+ * backend-enforced routing toggles (model_router PR-S3, 2026-06-01) keep
+ * their exact wiring. The former in-tab API-key form (which posted to
+ * /dynamic-models/provision with no health check and no never-echo) was
+ * removed in favour of a pointer to the canonical, validate-before-persist
+ * Account > Provider Keys surface.
  *
  * Sections:
- * 1. Local Models (Ollama)
- * 2. CLI Runtimes (Claude Code, Codex, Gemini)
- * 3. API Keys (fallback)
- * 4. Auto Routing config
+ * 1. Local Models (Ollama) runtime status
+ * 2. Providers, routing, and cost  (composed SettingsLLM)
+ * 3. Provider API keys  (pointer to Account > Provider Keys)
+ * 4. Fallback chain
  */
 import { useEffect, useState, useCallback } from 'react'
-import { Terminal, Key, RefreshCw, Check, X, Loader2, Eye, EyeOff, AlertTriangle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Terminal, Key, RefreshCw, AlertTriangle, ArrowRight } from 'lucide-react'
 import { api } from '@/lib/api'
-import { toast } from '@/stores/toastStore'
 import { Card, Badge } from '@/components/common'
 import { BrainReadinessPanel } from '@/components/common/BrainReadinessPanel'
 import { MorningReadinessPanel } from '@/components/common/MorningReadinessPanel'
+import { SettingsLLM } from './SettingsLLM'
 
 interface RuntimeInfo {
   runtime_id: string
@@ -22,104 +32,6 @@ interface RuntimeInfo {
   installed: boolean
   status: string
   subscription: { status: string; plan_name: string | null; is_authenticated: boolean } | null
-}
-
-const PROVIDERS = [
-  { id: 'anthropic', label: 'Anthropic', envHint: 'ANTHROPIC_API_KEY' },
-  { id: 'openai', label: 'OpenAI', envHint: 'OPENAI_API_KEY' },
-  { id: 'google_gemini', label: 'Google Gemini', envHint: 'GEMINI_API_KEY' },
-  { id: 'perplexity', label: 'Perplexity', envHint: 'PERPLEXITY_API_KEY' },
-]
-
-function ApiKeyRow({ provider }: { provider: typeof PROVIDERS[0] }) {
-  const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [showKey, setShowKey] = useState(false)
-
-  const handleSave = async () => {
-    if (!value.trim()) return
-    setSaving(true)
-    try {
-      await api.post('/dynamic-models/provision', {
-        provider_name: provider.id,
-        api_key: value.trim(),
-      })
-      toast.success(`${provider.label} key saved and models discovered`)
-      setSaved(true)
-      setEditing(false)
-      setValue('')
-    } catch {
-      toast.error(`Failed to provision ${provider.label}. Check your API key.`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="flex items-center justify-between py-2">
-      <div className="flex items-center gap-2">
-        <Key size={12} className="text-starlight-500" />
-        <span className="text-xs text-starlight-300">{provider.label}</span>
-        {saved && <Check size={10} className="text-accent-green" />}
-      </div>
-      {editing ? (
-        <div className="flex items-center gap-1.5">
-          <div className="relative">
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="sk-..."
-              autoFocus
-              className="glass-input w-48 px-2 py-1 rounded text-xs text-starlight-200 placeholder:text-starlight-600 pr-7"
-            />
-            <button
-              onClick={() => setShowKey(!showKey)}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-starlight-500 hover:text-starlight-300 cursor-pointer"
-            >
-              {showKey ? <EyeOff size={10} /> : <Eye size={10} />}
-            </button>
-          </div>
-          <button
-            onClick={handleSave}
-            disabled={saving || !value.trim()}
-            className="p-1 rounded bg-accent-green/10 text-accent-green hover:bg-accent-green/20 disabled:opacity-50 cursor-pointer"
-          >
-            {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-          </button>
-          <button
-            onClick={() => { setEditing(false); setValue('') }}
-            className="p-1 rounded bg-white/5 text-starlight-500 hover:bg-white/10 cursor-pointer"
-          >
-            <X size={12} />
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={() => setEditing(true)}
-          className="text-[10px] text-primary-400 hover:text-primary-300 cursor-pointer"
-        >
-          {saved ? 'Change key' : 'Add key'}
-        </button>
-      )}
-    </div>
-  )
-}
-
-function ApiKeysSection() {
-  return (
-    <section className="space-y-3">
-      <div>
-        <h3 className="text-sm font-display font-semibold text-starlight-100">API Keys</h3>
-        <p className="text-xs text-starlight-400 mt-0.5">Optional fallback when CLI runtimes are unavailable.</p>
-      </div>
-      <Card variant="glass" padding="md" className="space-y-1">
-        {PROVIDERS.map(p => <ApiKeyRow key={p.id} provider={p} />)}
-      </Card>
-    </section>
-  )
 }
 
 export function SettingsModelsRuntimes() {
@@ -200,26 +112,58 @@ export function SettingsModelsRuntimes() {
 
       {/* CLI Runtimes moved to Connections page (Runtimes tab) */}
 
-      {/* Section 3: API Keys */}
-      <ApiKeysSection />
+      {/* Section 2: Providers, routing, and cost.
+          CONSOLIDATION 2026-06-18: composed from the former standalone
+          "LLM Providers" tab. Reused as-is so the backend-enforced
+          local-first / cost-aware routing toggles keep their exact
+          model_router PR-S3 wiring. This is what folds two overlapping
+          Settings tabs into this one Models & Runtimes surface. */}
+      <SettingsLLM />
 
-      {/* Section 4: Auto Routing */}
+      {/* Section 3: Provider API keys.
+          Rule-2 de-duplication 2026-06-18: the canonical key-entry surface
+          is Account > Provider Keys (POST /account/provider-keys --
+          validate-before-persist via a provider health check, never echoes
+          a saved value, 7 providers). The inferior in-tab form removed from
+          here posted to the older /dynamic-models/provision with no health
+          check and only 4 hardcoded providers; its code is preserved in git
+          history. We point at the canonical surface rather than duplicate it. */}
       <section className="space-y-3">
         <div>
-          <h3 className="text-sm font-display font-semibold text-starlight-100">Auto Routing</h3>
-          <p className="text-xs text-starlight-400 mt-0.5">Read-only here until backend routing contracts are verified.</p>
+          <h3 className="text-sm font-display font-semibold text-starlight-100">API Keys</h3>
+          <p className="text-xs text-starlight-400 mt-0.5">Upstream provider keys are entered and rotated on the Account page.</p>
         </div>
-        <Card variant="glass" padding="md" className="space-y-3">
-          <div className="flex items-start gap-2 rounded-md border border-accent-amber/20 bg-accent-amber/5 px-3 py-2">
-            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-accent-amber" />
-            <p className="text-[10px] text-starlight-400">
-              The old cost-optimization toggle was frontend-only. Use Runtime & Connections for provider truth and Billing for budget preferences until backend routing enforcement is verified.
-            </p>
-          </div>
-          <div className="pt-2 border-t border-white/5">
-            <span className="text-[10px] text-starlight-500 uppercase tracking-wider font-semibold">Fallback chain</span>
-            <p className="text-xs text-starlight-400 mt-1">Claude Code &rarr; Codex &rarr; Gemini &rarr; Ollama &rarr; API keys</p>
-          </div>
+        <Card variant="glass" padding="md">
+          <Link
+            to="/account#provider-keys"
+            className="flex items-center justify-between gap-3 group cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <Key size={16} className="shrink-0 text-starlight-500 group-hover:text-primary-400" />
+              <div>
+                <p className="text-xs text-starlight-200 group-hover:text-starlight-100">Provider Keys</p>
+                <p className="text-[10px] text-starlight-500">
+                  Add or rotate Anthropic, OpenAI, Gemini and more. Keys are health-checked before they are saved and never echoed back.
+                </p>
+              </div>
+            </div>
+            <ArrowRight size={14} className="shrink-0 text-starlight-500 group-hover:text-primary-400" />
+          </Link>
+        </Card>
+      </section>
+
+      {/* Section 4: Fallback chain.
+          The routing toggles now live in the composed providers section
+          above and ARE enforced (model_router PR-S3 honors them); the prior
+          "frontend-only / not yet verified" note here was stale and was
+          removed. */}
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-display font-semibold text-starlight-100">Fallback chain</h3>
+          <p className="text-xs text-starlight-400 mt-0.5">Order Daena tries runtimes when the preferred provider is unavailable.</p>
+        </div>
+        <Card variant="glass" padding="md">
+          <p className="text-xs text-starlight-400">Claude Code &rarr; Codex &rarr; Gemini &rarr; Ollama &rarr; API keys</p>
         </Card>
       </section>
     </div>

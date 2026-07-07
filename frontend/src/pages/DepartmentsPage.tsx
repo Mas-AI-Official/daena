@@ -2,7 +2,7 @@
  * DepartmentsPage -- Grid view of all 10 departments.
  * Each department has 6 sub-capabilities (MIND, EYES, HANDS, VOICE, SHIELD, MEMORY).
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -19,12 +19,27 @@ import {
   Bot,
   ChevronRight,
   AlertTriangle,
+  Search,
+  Sparkles,
+  Wand2,
+  FileCheck2,
+  Crown,
+  Pin,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Shimmer, EmptyState, Button } from '@/components/common'
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
+import { toast } from '@/stores/toastStore'
 import { useDepartmentStates, type DepartmentState } from '@/hooks/useDepartmentStates'
-import type { DepartmentResponse, ApiResponse } from '@/types/api'
+import type {
+  DepartmentResponse,
+  ApiResponse,
+  SoulSummary,
+  SoulProposal,
+  SoulRefineVerdict,
+  VpMind,
+} from '@/types/api'
 
 // Map the per-department live-status -> Badge variant. Absorbed from
 // the deleted CompanyDashboard so this page is the single source of
@@ -89,6 +104,21 @@ export function DepartmentsPage() {
     states.map((s) => [s.department_name, s]),
   )
 
+  // Minds overlay. Folded in from the retired standalone /minds gallery
+  // (FM-4 consolidation 2026-07-01): each department IS a Mind (its soul
+  // persona), so the two listings collapse into this one grid. Souls +
+  // pending proposals load as an enrichment layer; a soul-fetch failure
+  // degrades to "no Mind affordances", it never blanks the department grid.
+  const currentUser = useAuthStore((s) => s.user)
+  const isFounder = currentUser?.role === 'FOUNDER'
+  const [souls, setSouls] = useState<SoulSummary[]>([])
+  const [proposals, setProposals] = useState<SoulProposal[]>([])
+  const [refining, setRefining] = useState(false)
+  // Daena's VP-tier Mind (GET /souls/vp). Rendered as a pinned gold banner
+  // above the grid, NOT as an 11th department. Own catch so a VP-only failure
+  // never drops the souls/proposals overlay (R17).
+  const [vp, setVp] = useState<VpMind | null>(null)
+
   useEffect(() => {
     const fetchDepts = async () => {
       try {
@@ -112,6 +142,94 @@ export function DepartmentsPage() {
     fetchDepts()
   }, [])
 
+  // Souls + pending proposals fan out in parallel (R16), independent of the
+  // departments fetch so neither blocks the other. Soft-fails to empty.
+  useEffect(() => {
+    let cancelled = false
+    const loadMinds = async () => {
+      try {
+        const [soulsRes, proposalsRes, vpRes] = await Promise.all([
+          api.get<SoulSummary[]>('/souls'),
+          api
+            .get<SoulProposal[]>('/souls/proposals?status=pending&limit=100')
+            .catch(() => ({ data: [] as SoulProposal[] })),
+          api.get<VpMind>('/souls/vp').catch(() => ({ data: null as VpMind | null })),
+        ])
+        if (cancelled) return
+        setSouls(soulsRes.data ?? [])
+        setProposals(proposalsRes.data ?? [])
+        setVp(vpRes.data ?? null)
+      } catch (err) {
+        // Enrichment overlay only — never error the whole page (R17).
+        console.error('Failed to load Minds overlay:', err)
+      }
+    }
+    void loadMinds()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Founder-gated 3-pass refinement across every Mind. Moved verbatim from
+  // the retired MindsPage so the consolidation loses no capability (R17).
+  const runRefineAll = async () => {
+    if (!isFounder || refining) return
+    setRefining(true)
+    try {
+      const { data } = await api.post<SoulRefineVerdict[]>('/souls/refine-all', {
+        use_research: true,
+        persist_proposal: true,
+      })
+      const total = data?.length ?? 0
+      const proposed = data?.filter((r) => !r.error).length ?? 0
+      toast.success(`Refine-all complete: ${proposed}/${total} Minds proposed updates`)
+      const refreshed = await api.get<SoulProposal[]>('/souls/proposals?status=pending&limit=100')
+      setProposals(refreshed.data ?? [])
+    } catch (err) {
+      console.error('refine-all failed:', err)
+      toast.error('Refine-all failed. See server logs.')
+    } finally {
+      setRefining(false)
+    }
+  }
+
+  // Lifted so the rendered grid and the zero-result branch share ONE source
+  // of truth (FLOW #54 -- empty-state vs zero-result honesty). A filter that
+  // excludes every department must NOT render the same blank as a genuinely
+  // empty backend: the branch below distinguishes "no departments loaded"
+  // (departments.length === 0, raw fetch) from "no departments match your
+  // filter" (visibleDepartments.length === 0 while departments.length > 0)
+  // and offers a clear-filter affordance for the latter, mirroring the
+  // SkillsPage / FilesPage filter-aware empty-state convention.
+  const visibleDepartments = departments.filter(
+    (d) => !searchQuery.trim() || d.name.toLowerCase().includes(searchQuery.trim().toLowerCase()),
+  )
+
+  // department name -> soul slug. DepartmentResponse carries no slug, so the
+  // join is by the display name the /souls payload also carries (soul.department).
+  const slugByDeptName = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const s of souls) {
+      if (s.department) map[s.department] = s.slug
+    }
+    return map
+  }, [souls])
+
+  // soul slug -> count of pending proposals, for the per-card "N new" chip.
+  const pendingBySlug = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const p of proposals) {
+      if (p.status && p.status !== 'pending') continue
+      map[p.department_slug] = (map[p.department_slug] ?? 0) + 1
+    }
+    return map
+  }, [proposals])
+
+  const totalPending = useMemo(
+    () => proposals.filter((p) => !p.status || p.status === 'pending').length,
+    [proposals],
+  )
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-7xl mx-auto p-6 space-y-6">
@@ -129,41 +247,146 @@ export function DepartmentsPage() {
                   : 'No live department data loaded'}
               </p>
           </div>
-          {/* Live status summary — at-a-glance counters before the operator
-              has to scan every card. */}
-          {!loading && departments.length > 0 && (
-            <div className="flex items-center gap-2">
-              {(() => {
-                const counts = { WORKING: 0, IDLE: 0, OVERLOADED: 0, OFFLINE: 0 } as Record<string, number>
-                departments.forEach((d) => {
-                  const live = stateByName[d.name]
-                  const label = live?.status || 'IDLE'
-                  counts[label] = (counts[label] ?? 0) + 1
-                })
-                return (
-                  <>
-                    <span className="text-[11px] px-2 py-1 rounded-md bg-status-success/10 text-status-success border border-status-success/20">
-                      {counts.WORKING} working
+          {/* Right cluster: Minds controls (pending-proposal jump + founder
+              Refine-all, folded in from the retired /minds gallery) sitting
+              next to the live-status counters. */}
+          <div className="flex items-center gap-2">
+            {totalPending > 0 && (
+              <button
+                onClick={() => {
+                  const firstPending = proposals.find((p) => !p.status || p.status === 'pending')
+                  const slug = firstPending?.department_slug
+                  navigate(slug ? `/minds/${slug}#proposals` : '/departments')
+                }}
+                className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-status-warning/10 text-status-warning border border-status-warning/20 hover:bg-status-warning/20 transition-colors"
+                title="Jump to the first Mind with pending proposals"
+              >
+                <FileCheck2 size={12} />
+                {totalPending} pending
+              </button>
+            )}
+            {isFounder && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={runRefineAll}
+                disabled={refining}
+                className="flex items-center gap-1.5"
+                title="Run the 3-pass gap-finder, improver, critic refinement across every Mind"
+              >
+                <Wand2 size={14} />
+                {refining ? 'Refining...' : 'Refine all Minds'}
+              </Button>
+            )}
+            {!loading && departments.length > 0 && (() => {
+              const counts = { WORKING: 0, IDLE: 0, OVERLOADED: 0, OFFLINE: 0 } as Record<string, number>
+              departments.forEach((d) => {
+                const live = stateByName[d.name]
+                const label = live?.status || 'IDLE'
+                counts[label] = (counts[label] ?? 0) + 1
+              })
+              return (
+                <>
+                  <span className="text-[11px] px-2 py-1 rounded-md bg-status-success/10 text-status-success border border-status-success/20">
+                    {counts.WORKING} working
+                  </span>
+                  <span className="text-[11px] px-2 py-1 rounded-md bg-white/5 text-starlight-300 border border-white/10">
+                    {counts.IDLE} idle
+                  </span>
+                  {counts.OVERLOADED > 0 && (
+                    <span className="text-[11px] px-2 py-1 rounded-md bg-status-warning/10 text-status-warning border border-status-warning/20">
+                      {counts.OVERLOADED} overloaded
                     </span>
-                    <span className="text-[11px] px-2 py-1 rounded-md bg-white/5 text-starlight-300 border border-white/10">
-                      {counts.IDLE} idle
+                  )}
+                  {counts.OFFLINE > 0 && (
+                    <span className="text-[11px] px-2 py-1 rounded-md bg-status-error/10 text-status-error border border-status-error/20">
+                      {counts.OFFLINE} offline
                     </span>
-                    {counts.OVERLOADED > 0 && (
-                      <span className="text-[11px] px-2 py-1 rounded-md bg-status-warning/10 text-status-warning border border-status-warning/20">
-                        {counts.OVERLOADED} overloaded
-                      </span>
-                    )}
-                    {counts.OFFLINE > 0 && (
-                      <span className="text-[11px] px-2 py-1 rounded-md bg-status-error/10 text-status-error border border-status-error/20">
-                        {counts.OFFLINE} offline
-                      </span>
-                    )}
-                  </>
-                )
-              })()}
-            </div>
-          )}
+                  )}
+                </>
+              )
+            })()}
+          </div>
         </motion.div>
+
+        {/* Pinned VP-tier Mind (Phase 1 item 3, 2026-07-02): Daena is the Vice
+            President, NOT an eleventh department -- she renders as a distinct
+            gold banner ABOVE the 10-department grid. Served by GET /souls/vp
+            (VpMind carries the tier/pinned/role the department shape lacks).
+            Soft-fails to hidden when the endpoint is down (R17). Clicking opens
+            her Mind at /minds/daena -- a live route (_normalize_department
+            resolves the "daena" alias). Gold comes from the backend
+            accent_color (brand #D4A843 fallback). */}
+        {vp && (() => {
+          const gold = vp.accent_color || '#D4A843'
+          const openVp = () => navigate(`/minds/${vp.slug}`)
+          return (
+            <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={openVp}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    openVp()
+                  }
+                }}
+                className="group cursor-pointer rounded-2xl p-5 flex items-center gap-4 border transition-all"
+                style={{
+                  borderColor: `${gold}55`,
+                  background: `linear-gradient(90deg, ${gold}14 0%, rgba(255,255,255,0.02) 45%)`,
+                }}
+                title="Open the VP Mind (Daena's soul persona + founder-gated refinement)"
+              >
+                <div className="p-3 rounded-xl shrink-0" style={{ backgroundColor: `${gold}1F`, color: gold }}>
+                  <Crown size={26} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-lg font-display font-bold text-starlight-100">
+                      {vp.name || 'Daena'}
+                    </h2>
+                    <span
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
+                      style={{ backgroundColor: `${gold}22`, color: gold, border: `1px solid ${gold}44` }}
+                    >
+                      {vp.tier || 'VP'}
+                    </span>
+                    {vp.pinned && (
+                      <span className="flex items-center gap-1 text-[10px] text-starlight-400">
+                        <Pin size={11} style={{ color: gold }} />
+                        Pinned
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-starlight-300 mt-0.5">
+                    {vp.role || 'Vice President'} -- orchestrates every department Mind
+                  </p>
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    {vp.runtime_preference && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 text-starlight-300 border border-white/10">
+                        Runtime: {vp.runtime_preference}
+                      </span>
+                    )}
+                    {vp.voice && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 text-starlight-300 border border-white/10">
+                        Voice: {vp.voice}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span
+                  className="flex items-center gap-1 text-xs shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ color: gold }}
+                >
+                  Open VP Mind
+                  <ChevronRight size={14} />
+                </span>
+              </div>
+            </motion.div>
+          )
+        })()}
 
         {/* Search filter — useful when N grows beyond the seeded 10. */}
         {!loading && departments.length > 4 && (
@@ -179,7 +402,7 @@ export function DepartmentsPage() {
         )}
 
         {loadError && !loading && (
-          <div className="px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30 flex items-start gap-3">
+          <div role="alert" className="px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30 flex items-start gap-3">
             <AlertTriangle size={16} className="text-status-warning shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-sm text-status-warning font-medium">Departments offline</p>
@@ -199,11 +422,20 @@ export function DepartmentsPage() {
             title="No live departments loaded"
             description={loadError || 'The department API returned no rows. This page will not render placeholder agents.'}
           />
+        ) : visibleDepartments.length === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="No departments match your filter"
+            description={`No departments match "${searchQuery.trim()}". Clear the filter to see all ${departments.length} departments.`}
+            action={
+              <Button variant="secondary" onClick={() => setSearchQuery('')}>
+                Clear filter
+              </Button>
+            }
+          />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            {departments
-              .filter((d) => !searchQuery.trim() || d.name.toLowerCase().includes(searchQuery.trim().toLowerCase()))
-              .map((dept, i) => {
+            {visibleDepartments.map((dept, i) => {
               const meta = DEPT_META[dept.name] || FALLBACK
               return (
                 <motion.div
@@ -253,6 +485,34 @@ export function DepartmentsPage() {
                       ))}
                       <span className="text-[10px] text-starlight-500 ml-1">6 caps</span>
                     </div>
+
+                    {/* Mind drill-in: opens this department's soul persona +
+                        founder-gated refinement. stopPropagation so it does not
+                        also fire the card's chat navigation. Only rendered when
+                        a soul is joined by name (FM-4 consolidation). */}
+                    {(() => {
+                      const slug = slugByDeptName[dept.name]
+                      if (!slug) return null
+                      const pending = pendingBySlug[slug] ?? 0
+                      return (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            navigate(`/minds/${slug}${pending > 0 ? '#proposals' : ''}`)
+                          }}
+                          className="mb-2 flex items-center gap-1.5 text-[10px] text-starlight-400 hover:text-primary-300 transition-colors"
+                          title="Open this department's Mind (soul persona + founder-gated refinement)"
+                        >
+                          <Sparkles size={11} className="text-primary-400" />
+                          Mind
+                          {pending > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning">
+                              {pending} new
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })()}
 
                     <div className="flex items-center justify-between text-[10px] text-starlight-500">
                       <span>{dept.agent_count} agents</span>

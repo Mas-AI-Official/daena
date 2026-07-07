@@ -91,8 +91,6 @@ export function ConnectionStatusIndicator() {
     return 'ok'
   }, [summaries])
 
-  if (overall === 'ok') return null
-
   const isDown = overall === 'down'
   const dotClass = isDown ? 'bg-status-error' : 'bg-status-warning'
   const Icon = isDown ? AlertCircle : AlertTriangle
@@ -111,6 +109,18 @@ export function ConnectionStatusIndicator() {
 
   return (
     <div className="relative" ref={popoverRef}>
+      {/* Persistent polite live region -- gives screen-reader users the same
+          passive backend-health signal the dot gives sighted users. Stays
+          mounted even when healthy (this component no longer early-returns
+          null) so a status transition announces on change; polite + atomic
+          reads the short summary once without interrupting the current task.
+          Honors the deliberately-discreet design: a background poll failure
+          should not assertively interrupt, only surface quietly. */}
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {overall === 'ok' ? '' : tooltip}
+      </span>
+      {overall !== 'ok' && (
+        <>
       <button
         onClick={() => setOpen((v) => !v)}
         className="relative flex items-center justify-center p-1.5 rounded-lg
@@ -210,6 +220,8 @@ export function ConnectionStatusIndicator() {
           </motion.div>
         )}
       </AnimatePresence>
+        </>
+      )}
     </div>
   )
 }

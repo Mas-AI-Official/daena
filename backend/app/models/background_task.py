@@ -23,7 +23,7 @@ Why this exists (2026-04-29 audit):
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, Float, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -84,7 +84,13 @@ class BackgroundTask(Base, TenantMixin, TimestampMixin):
     queued_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.utcnow(),
+        # tz-aware to honor the DateTime(timezone=True) column contract and
+        # match every explicit write (_insert_row writes datetime.now(UTC)) and
+        # the aware sibling columns started_at / finished_at. A naive
+        # datetime.utcnow() default silently violated that contract and would
+        # seed a naive value on any ORM-direct construction that omits
+        # queued_at (a latent offset-naive vs offset-aware comparison crash).
+        default=lambda: datetime.now(timezone.utc),
     )
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True,

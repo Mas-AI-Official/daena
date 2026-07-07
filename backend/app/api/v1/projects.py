@@ -11,7 +11,7 @@ import html as _html
 import re as _re
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,7 +90,7 @@ class UpdateProjectBody(BaseModel):
 
 @router.get("")
 async def list_projects(
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

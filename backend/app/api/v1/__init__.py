@@ -39,6 +39,7 @@ from app.api.v1 import (
     files,
     founder,
     governance,
+    graph,
     health,
     heartbeat,
     integrations,
@@ -48,6 +49,7 @@ from app.api.v1 import (
     missions,
     mobile,
     notifications,
+    ontology,
     org,
     pipeline,
     policies,
@@ -78,7 +80,6 @@ from app.api.v1 import (
     trust,
     trust_chat,
     tts,
-    voice_ws,
     vp_commands,
     waitlist,
 )
@@ -93,6 +94,19 @@ router.include_router(health.router, prefix="/health", tags=["health"])
 router.include_router(chat.router, prefix="/chat", tags=["chat"])
 router.include_router(agents.router, prefix="/agents", tags=["agents"])
 router.include_router(governance.router, prefix="/governance", tags=["governance"])
+# Mission Control org graph -- read-only projection powering the /brain
+# canvas (nodes + edges + live working statuses). The router + GraphService
+# already existed and are tested (tests/test_graph_api.py expects 401/200);
+# this mount is what makes GET /api/v1/graph routable so the frontend
+# self-upgrades from the grounded fallback brain to live telemetry.
+router.include_router(graph.router, prefix="/graph", tags=["graph"])
+# Typed ontology CRUD (PR-3 write side) -- operator-authored Workflow / Sop /
+# Document / Decision / Risk / Kpi nodes + EntityLink edges, tenant-scoped. The
+# read side (graph projection of these same rows) was already mounted above; the
+# router + schemas + tests existed but this mount was never wired, leaving
+# tests/test_ontology.py::test_crud_* red. Wiring it lights up the Fowler
+# "SOPs/docs/decisions as graph nodes" write-back path on the /brain canvas.
+router.include_router(ontology.router, prefix="/ontology", tags=["ontology"])
 router.include_router(founder.router, prefix="/founder", tags=["founder"])
 router.include_router(memory.router, prefix="/memory", tags=["memory"])
 router.include_router(execution.router, prefix="/execution", tags=["execution"])
@@ -206,6 +220,10 @@ router.include_router(heartbeat.router, prefix="/heartbeat", tags=["heartbeat"])
 router.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 router.include_router(connector_oauth.router, tags=["connector-oauth"])
 router.include_router(connector_install.router, tags=["connector-install"])
+# /api/v1/ws/bridge -- the path the npm daena-mcp client + /bridge/setup
+# contract dial. The ROOT "/ws/bridge" copy is mounted in main.py for the
+# Python DaenaBot daemon. INTENTIONAL dual mount, do NOT collapse (both
+# client generations depend on their own path).
 router.include_router(bridge.router, tags=["bridge"])
 router.include_router(self_improvement.router, prefix="/self-improvement", tags=["self-improvement"])
 router.include_router(waitlist.router, prefix="/waitlist", tags=["waitlist"])
@@ -283,7 +301,18 @@ router.include_router(
     prefix="/integrations/controlled-execution",
     tags=["controlled-execution"],
 )
-router.include_router(voice_ws.router, tags=["voice-websocket"])
+# Note: voice_ws.router (Phase I.4 placeholder /voice/ws/{session_id}) was
+# archived 2026-06-18 to .archive/overnight_20260618/dead_voice_ws/. It only
+# echoed a canned "I heard: ... the voice pipeline is live and governed" reply
+# (a fabricated capability claim -- Rule 17 / ADR-001) via a hardcoded
+# _echo_chat_turn stub, never reached the reasoning engine, and persisted
+# nothing (session_id was unused). Its only stated consumer, VoiceConsolePage,
+# was removed 2026-04-17; there is no frontend WebSocket client and no test.
+# This mirrors the 2026-04-29 removal of ws.router for the identical reason.
+# The SHIPPED voice path is VoiceProvider.tsx -> useChatStore.sendMessageStream
+# (real orchestrator) + /api/v1/tts/speak. The reusable infra it depended on
+# (ConversationSession, STTPipeline, TTSPipeline -- all directly tested in
+# tests/test_voice_pipeline.py) is retained for a future real wiring.
 # Sprint-12 PR-5 (2026-05-05): VP work chat commands. Natural-English
 # parser + runner that drives the draft + workstream pipeline. NO
 # external action; tenant + user-scoped; runtime-not-ready refusals

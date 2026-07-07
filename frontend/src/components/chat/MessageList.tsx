@@ -8,6 +8,7 @@ import { ArrowDown, RotateCcw, Code2, Search, FileText, Bug, BookOpen } from 'lu
 import { MessageBubble } from './MessageBubble'
 import { ThinkingProcess } from './ThinkingProcess'
 import { DaenaAvatar } from './DaenaAvatar'
+import { GovernanceUpsellNotice } from './GovernanceUpsellNotice'
 import { useUiStore } from '@/stores/uiStore'
 import { useChatStore } from '@/stores/chatStore'
 import { speakText } from './VoiceControls'
@@ -131,6 +132,8 @@ export const MessageList = memo(function MessageList({
   const autoReadResponses = useUiStore((s) => s.autoReadResponses)
   const lastFailedMessage = useChatStore((s) => s.lastFailedMessage)
   const retryLastMessage = useChatStore((s) => s.retryLastMessage)
+  const governanceUpsell = useChatStore((s) => s.governanceUpsell)
+  const clearGovernanceUpsell = useChatStore((s) => s.clearGovernanceUpsell)
 
   // Show thinking panel only when Think toggle is ON or routing is Council/Quintessence
   const showThinking = thinkingVisible || routingMode === 'COUNCIL' || routingMode === 'QUINTESSENCE'
@@ -447,6 +450,17 @@ export const MessageList = memo(function MessageList({
               Retry last message
             </button>
           </motion.div>
+        )}
+
+        {/* Routing upsell — shown when a Council/Quintessence request fell back
+            to STANDARD and the backend emitted an upgrade-bearing governance
+            notice. Survives stream end; cleared on new send / session switch. */}
+        {governanceUpsell && (
+          <GovernanceUpsellNotice
+            feature={governanceUpsell.feature}
+            plan={governanceUpsell.plan}
+            onDismiss={clearGovernanceUpsell}
+          />
         )}
 
         <div ref={bottomRef} />

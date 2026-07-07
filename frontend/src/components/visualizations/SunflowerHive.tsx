@@ -1,7 +1,7 @@
 /**
  * SunflowerHive — hex hive visualization with Daena orb at center.
  * 10 department hexagons arranged in a decagonal ring around a central orb.
- * Ported visual design from legacy SunflowerGrid.
+ * Ported visual design from legacy SunflowerGrid (archived 2026-06-17 -> .archive/dead_orphan_components_20260617/).
  *
  * Patent-pending: Sunflower-Honeycomb Architecture.
  */

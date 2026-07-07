@@ -25,6 +25,7 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.core.logging import get_logger
+from app.core.sse_channels import publish_graph_changed
 from app.models.chat import ChatSession
 from app.models.execution import Task, ToolExecution
 from app.models.identity import User
@@ -468,6 +469,20 @@ class ExecutionService(BaseService):
             execution.latency_ms = elapsed_ms
             await self.db.commit()
 
+            # PR-6 memory loop: index this completed execution into the
+            # department's tenant-scoped ragx collection. Fire-and-forget,
+            # fail-open -- can never turn a committed success into a
+            # failure. Lazy import keeps the module off the hot import
+            # path (NEVER-4).
+            from app.services.dept_knowledge_ingest import (
+                schedule_execution_ingest,
+            )
+            schedule_execution_ingest(
+                execution_id=execution.id,
+                session_id=session_id,
+                tenant_id=tenant_id,
+            )
+
             logger.info(
                 "tool_executed",
                 tool=tool_name,
@@ -552,6 +567,7 @@ class ExecutionService(BaseService):
         session_id: UUID | None = None,
         also_create_workstream: bool = False,
         department_id: UUID | None = None,
+        checkpoint_data: dict | None = None,
     ) -> dict:
         """Create a background task for Autopilot mode.
 
@@ -568,6 +584,9 @@ class ExecutionService(BaseService):
             department_id: Owner department for the spawned workstream.
                 Optional even when also_create_workstream=True; falls
                 back to the first active department for the tenant.
+            checkpoint_data: Optional durable metadata stored on the Task
+                row. G5 delegated goals store their delegation envelope
+                here; ``run_task`` reads it to enforce the approval gate.
 
         Returns:
             Dict shape (matches ``_task_to_dict``) with an extra
@@ -581,6 +600,7 @@ class ExecutionService(BaseService):
             session_id=session_id,
             status=TaskStatus.PENDING.value,
             progress=0,
+            checkpoint_data=checkpoint_data,
         )
         self.db.add(task)
         await self.db.commit()
@@ -759,6 +779,14 @@ class ExecutionService(BaseService):
         # helper itself short-circuits on no link / no transition.
         if status is not None and status != prior_status:
             await self._sync_linked_workstream(task, status)
+            # Live Brain doorbell (best-effort): a task node just changed
+            # status, so nudge the canvas to re-pull GET /graph. The helper
+            # swallows its own failures and never gates this write.
+            await publish_graph_changed(
+                "task_status_changed",
+                task_id=str(task.id),
+                status=status,
+            )
 
         return self._task_to_dict(task)
 
@@ -921,6 +949,36 @@ class ExecutionService(BaseService):
                 f"Task is {task.status}; only {sorted(runnable)} can be run"
             )
 
+        # G5 delegation gate: a delegated spend/outward step must be
+        # human-approved before dispatch. Tasks without a "delegation"
+        # envelope (Stage 2.85 VP tasks, normal tasks) are unaffected.
+        delegation = (task.checkpoint_data or {}).get("delegation") or {}
+        approval_ref = delegation.get("approval_request_id")
+        if approval_ref:
+            from app.models.governance import GoaRequest
+
+            try:
+                approval_uuid = UUID(str(approval_ref))
+            except ValueError:
+                approval_uuid = None
+            goa = None
+            if approval_uuid is not None:
+                goa = (
+                    await self.db.execute(
+                        select(GoaRequest).where(
+                            GoaRequest.id == approval_uuid,
+                            GoaRequest.tenant_id == tenant_id,
+                        )
+                    )
+                ).scalar_one_or_none()
+            status = goa.status if goa is not None else "MISSING"
+            if status != "APPROVED":
+                raise ValidationError(
+                    f"Delegated task is gated on approval {approval_ref} "
+                    f"(status={status}); approve it in "
+                    "/governance/approvals before running"
+                )
+
         # Flip to RUNNING immediately so the UI reflects state on the
         # POST response, not on the next poll.
         prior_status = task.status
@@ -936,6 +994,14 @@ class ExecutionService(BaseService):
         # since this path bypasses ``update_task_status``. Best-effort.
         if prior_status != TaskStatus.RUNNING.value:
             await self._sync_linked_workstream(task, TaskStatus.RUNNING.value)
+            # Live Brain doorbell (best-effort): the node flipped to RUNNING
+            # on this fast path that bypasses update_task_status, so announce
+            # the change for the canvas to re-pull. Never gates the dispatch.
+            await publish_graph_changed(
+                "task_status_changed",
+                task_id=str(task.id),
+                status=TaskStatus.RUNNING.value,
+            )
 
         # Snapshot the fields the background task needs BEFORE the
         # request session closes. Re-fetching by id inside the bg task
@@ -946,6 +1012,11 @@ class ExecutionService(BaseService):
         captured_user_id = task.user_id
         captured_name = task.name
         captured_desc = task.description or ""
+        # Plain copy of the delegation envelope (if any) so the bg task
+        # can pick the real executor without re-reading the row.
+        captured_delegation = dict(
+            (task.checkpoint_data or {}).get("delegation") or {}
+        )
 
         # Bind the bg session factory to the SAME engine the request
         # used (``self.db.bind``) instead of the app-global factory.
@@ -968,31 +1039,56 @@ class ExecutionService(BaseService):
             async with bg_factory() as bg_db:
                 bg_service = ExecutionService(bg_db)
                 try:
-                    # Simulate work in three slices so the UI can show
-                    # real progress bars. Future ticket replaces this
-                    # with the actual executor (chat_orchestrator /
-                    # department workflow dispatch / tool loop).
-                    for pct in (25, 60, 90):
-                        await _asyncio.sleep(0.8)
+                    if captured_delegation.get("origin") == "delegated":
+                        # Real executor (delegated-llm-v1): one governed
+                        # model call produces the step's work product.
+                        # Raises on provider failure / timeout / empty
+                        # output, so the outer except marks the task
+                        # FAILED (retryable) -- never a fake COMPLETED.
+                        # The G5 approval gate in run_task already fired
+                        # for spend/outward steps before we got here.
+                        from app.services.delegated_executor import (
+                            execute_delegated_step,
+                        )
                         await bg_service.update_task_status(
                             captured_id, captured_tenant,
-                            progress=pct,
+                            progress=25,
                         )
-                    # Produce a lightweight result. Real executor would
-                    # attach LLM output / tool results / file paths.
-                    result = {
-                        "summary": f"Task '{captured_name}' executed.",
-                        "description_used": captured_desc[:500],
-                        "executed_at": datetime.now(UTC).isoformat(),
-                        "executor": "minimal-run-task-v1",
-                        "note": (
-                            "This is the minimal task executor. A real "
-                            "executor (department workflow / tool loop) "
-                            "will replace it in a later ticket; until then "
-                            "'run' just cycles through RUNNING -> COMPLETED "
-                            "so operators can exercise the lifecycle."
-                        ),
-                    }
+                        result = await execute_delegated_step(
+                            name=captured_name,
+                            description=captured_desc,
+                            delegation=captured_delegation,
+                            tenant_id=captured_tenant,
+                        )
+                        result["executed_at"] = (
+                            datetime.now(UTC).isoformat()
+                        )
+                        await bg_service.update_task_status(
+                            captured_id, captured_tenant,
+                            progress=90,
+                        )
+                    else:
+                        # Non-delegated tasks have no defined body yet:
+                        # simulate work in three slices so the UI can
+                        # show real progress bars.
+                        for pct in (25, 60, 90):
+                            await _asyncio.sleep(0.8)
+                            await bg_service.update_task_status(
+                                captured_id, captured_tenant,
+                                progress=pct,
+                            )
+                        result = {
+                            "summary": f"Task '{captured_name}' executed.",
+                            "description_used": captured_desc[:500],
+                            "executed_at": datetime.now(UTC).isoformat(),
+                            "executor": "minimal-run-task-v1",
+                            "note": (
+                                "This is the minimal task executor for "
+                                "tasks without a delegation envelope; "
+                                "'run' cycles through RUNNING -> COMPLETED "
+                                "so operators can exercise the lifecycle."
+                            ),
+                        }
                     await bg_service.update_task_status(
                         captured_id, captured_tenant,
                         status=TaskStatus.COMPLETED.value,
@@ -1003,6 +1099,23 @@ class ExecutionService(BaseService):
                         "task_run.completed",
                         task_id=str(captured_id),
                     )
+                    # P2 knowledge loop: a delegated step's artifact becomes
+                    # department knowledge. Fire-and-forget + fail-open; the
+                    # COMPLETED row above is already committed. Lazy import
+                    # (NEVER-4).
+                    if (
+                        captured_delegation.get("origin") == "delegated"
+                        and result.get("artifact")
+                    ):
+                        from app.services.dept_knowledge_ingest import (
+                            schedule_task_artifact_ingest,
+                        )
+                        schedule_task_artifact_ingest(
+                            task_id=captured_id,
+                            tenant_id=captured_tenant,
+                            department=captured_delegation.get("department"),
+                            result=result,
+                        )
                     # Phase 11 PR-S2.1: in-app notification on successful
                     # completion. Best-effort — must NEVER raise from the
                     # background task. Gated by users.settings.notif_task_complete.

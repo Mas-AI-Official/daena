@@ -396,7 +396,7 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
           {/* Model selector.
              2026-04-16: "Model:" prefix added to disambiguate this
              per-message model override from the header's Primary
-             Mind (RuntimeSwapper). The header picks the RUNTIME
+             Mind selector. The header picks the RUNTIME
              (Claude Code CLI / Codex / Gemini / Ollama); this
              dropdown picks the SPECIFIC MODEL within the resolved
              runtime. Both used to show "Auto" which confused
@@ -404,6 +404,7 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
           <div className="relative" ref={modelDropdownRef}>
             <button
               onClick={() => { setModelOpen(!modelOpen); setActiveProvider(null) }}
+              aria-expanded={modelOpen}
               className="flex items-center gap-1 px-1.5 py-0.5 rounded
                          hover:bg-white/5 transition-colors cursor-pointer"
               title="Per-message model override (the header picks the runtime)"
@@ -473,6 +474,7 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled, placeholder
                             {providerModels.map((opt) => (
                               <button
                                 key={opt.id ?? '__auto__'}
+                                disabled={!opt.selectable}
                                 onClick={() => {
                                   if (!opt.selectable) return
                                   setSelectedModel(opt.id)

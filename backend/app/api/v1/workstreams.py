@@ -22,7 +22,7 @@ import asyncio
 import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -142,7 +142,7 @@ def _serialize_event(ev) -> dict:
 @router.get("")
 async def list_workstreams(
     status: WorkstreamStatus | None = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -745,7 +745,7 @@ async def cancel_workstream(
 @router.get("/{workstream_id}/events")
 async def list_workstream_events(
     workstream_id: uuid.UUID,
-    limit: int = 200,
+    limit: int = Query(200, ge=1, le=1000),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:

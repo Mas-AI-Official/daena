@@ -26,6 +26,8 @@ import {
   CheckCircle2,
   X,
   XCircle,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { api } from '@/lib/api'
@@ -60,8 +62,15 @@ function formatBytes(bytes: number): string {
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
+  const t = d.getTime()
+  // F-DATE-EPOCH defensive (mirrors DashboardPage formatRelativeTime + ProjectsPage
+  // timeAgo): a legacy NULL created_at coerces to Unix epoch 0 (1970-01-01) and an
+  // unparseable string yields Invalid Date; either would render a fabricated
+  // "1/1/1970" / "Invalid Date" in the date column. Fall to the honest "--"
+  // (OrgPage fmtDate convention) instead. A genuine recent date is unaffected.
+  if (!Number.isFinite(t) || t < 1577836800000) return '--'
   const now = new Date()
-  const diff = now.getTime() - d.getTime()
+  const diff = now.getTime() - t
   if (diff < 60_000) return 'Just now'
   if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
   if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
@@ -101,6 +110,7 @@ function FileRow({ file, selected, onSelect, onDelete }: {
     <div className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors group">
       <input
         type="checkbox"
+        aria-label={`Select ${file.original_filename}`}
         checked={selected}
         onChange={(e) => onSelect(file.id, e.target.checked)}
         className="w-3.5 h-3.5 rounded border-white/20 bg-transparent accent-primary-500 cursor-pointer shrink-0"
@@ -183,6 +193,12 @@ export function FilesPage() {
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  // Inline fetch-error state for the file list. Without it a rejected
+  // GET /files falls through to setFiles([]) and the page renders the
+  // "No files yet" upload zone -- a load FAILURE indistinguishable from a
+  // genuinely empty account (Rule 17). The banner co-locates the failure
+  // while leaving the upload zone reachable. Mirrors SkillsPage loadError.
+  const [loadError, setLoadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchFiles = useCallback(async () => {
@@ -200,9 +216,10 @@ export function FilesPage() {
         purpose: String(f.purpose ?? 'general'),
         created_at: String(f.created_at ?? new Date().toISOString()),
       })))
+      setLoadError(null)
     } catch {
-      // Graceful -- backend might not have list endpoint yet
       setFiles([])
+      setLoadError('Could not load your files. Retry to refresh.')
     } finally {
       setLoading(false)
     }
@@ -250,18 +267,25 @@ export function FilesPage() {
 
   const handleBatchDelete = async () => {
     if (selectedFiles.size === 0) return
-    // Snapshot IDs before the batch; the source-of-truth for "which
-    // survived" is the set of IDs that actually succeeded, returned
-    // in the result. We refetch afterwards for a consistent view.
+    // Snapshot IDs before the batch. batchDeleteWithToast reports how
+    // many succeeded vs failed but NOT which ids failed, so on a partial
+    // failure we cannot tell from the result alone which files survived.
     const targetIds = new Set(selectedFiles)
     const result = await batchDeleteWithToast(
       targetIds,
       (id) => `/files/${id}`,
       { entity: 'file' },
     )
-    if (result.succeeded > 0) {
+    if (result.succeeded === 0) return
+    setSelectedFiles(new Set())
+    if (result.failed > 0) {
+      // Partial failure: some targets still exist server-side. Optimistically
+      // filtering all targetIds would hide those survivors (a phantom delete
+      // that the warning toast just contradicted). Refetch server-truth so the
+      // list shows exactly what remains.
+      void fetchFiles()
+    } else {
       setFiles((prev) => prev.filter((f) => !targetIds.has(f.id)))
-      setSelectedFiles(new Set())
     }
   }
 
@@ -310,12 +334,13 @@ export function FilesPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-midnight-300/50 border border-white/10">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-midnight-300/50 border border-white/10 focus-within:ring-2 focus-within:ring-primary-400/40">
               <Search size={14} className="text-starlight-400" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                aria-label="Search files"
                 placeholder="Search files..."
                 className="bg-transparent text-sm text-starlight-100 focus:outline-none w-48"
               />
@@ -359,6 +384,7 @@ export function FilesPage() {
               </button>
               <button
                 onClick={() => setSelectedFiles(new Set())}
+                aria-label="Clear selection"
                 className="p-1 rounded hover:bg-white/5 text-starlight-500 cursor-pointer"
               >
                 <X size={14} />
@@ -370,6 +396,21 @@ export function FilesPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
+        {loadError && !loading && (
+          <div role="alert" className="mx-6 mt-4 flex items-start gap-3 px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30">
+            <AlertTriangle size={16} className="text-status-warning shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-status-warning">File list unavailable</p>
+              <p className="text-[11px] text-starlight-400 mt-0.5">{loadError}</p>
+            </div>
+            <button
+              onClick={() => { setLoading(true); void fetchFiles() }}
+              className="flex items-center gap-1 text-xs text-status-warning hover:text-status-warning/80 underline cursor-pointer shrink-0"
+            >
+              <RefreshCw size={12} /> Retry
+            </button>
+          </div>
+        )}
         {/* Drag overlay */}
         <AnimatePresence>
           {dragOver && (
@@ -391,12 +432,21 @@ export function FilesPage() {
           <div className="flex items-center justify-center py-20">
             <Loader2 size={24} className="animate-spin text-starlight-400" />
           </div>
-        ) : files.length === 0 ? (
-          /* Empty state with upload zone */
+        ) : loadError ? null : files.length === 0 ? (
+          /* Empty state with upload zone (suppressed under loadError -- the banner above is the sole failure surface; no affirmative "No files yet" and no dropzone into an unreachable backend) */
           <div className="p-6 max-w-2xl mx-auto">
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-white/10 rounded-xl p-12 text-center hover:border-primary-500/30 transition-colors cursor-pointer"
+              role="button"
+              tabIndex={0}
+              aria-label="Drag and drop files here, or click to browse"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  fileInputRef.current?.click()
+                }
+              }}
+              className="border-2 border-dashed border-white/10 rounded-xl p-12 text-center hover:border-primary-500/30 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/40"
             >
               <Upload size={32} className="mx-auto text-starlight-500 mb-3" />
               <p className="text-sm text-starlight-300">Drag and drop files here</p>
@@ -415,7 +465,16 @@ export function FilesPage() {
             {/* Upload zone (compact when files exist) */}
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-white/10 rounded-xl p-6 text-center hover:border-primary-500/30 transition-colors cursor-pointer mb-4"
+              role="button"
+              tabIndex={0}
+              aria-label="Drop files here or click to upload"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  fileInputRef.current?.click()
+                }
+              }}
+              className="border-2 border-dashed border-white/10 rounded-xl p-6 text-center hover:border-primary-500/30 transition-colors cursor-pointer mb-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/40"
             >
               <Upload size={20} className="mx-auto text-starlight-500 mb-1" />
               <p className="text-xs text-starlight-400">Drop files here or click to upload</p>
@@ -425,9 +484,10 @@ export function FilesPage() {
             <div className="flex items-center gap-3 px-4 py-2 text-[10px] text-starlight-500 uppercase tracking-wider font-semibold border-b border-white/5">
               <input
                 type="checkbox"
-                checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0}
+                aria-label="Select all files"
+                checked={filteredFiles.length > 0 && filteredFiles.every((f) => selectedFiles.has(f.id))}
                 onChange={() => {
-                  if (selectedFiles.size === filteredFiles.length) setSelectedFiles(new Set())
+                  if (filteredFiles.length > 0 && filteredFiles.every((f) => selectedFiles.has(f.id))) setSelectedFiles(new Set())
                   else setSelectedFiles(new Set(filteredFiles.map((f) => f.id)))
                 }}
                 className="w-3.5 h-3.5 rounded border-white/20 bg-transparent accent-primary-500 cursor-pointer shrink-0"

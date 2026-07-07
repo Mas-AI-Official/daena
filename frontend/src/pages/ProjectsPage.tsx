@@ -17,6 +17,8 @@ import {
   Loader2,
   ChevronRight,
   FolderKanban,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button, EmptyState, Shimmer, Input } from '@/components/common'
@@ -26,7 +28,8 @@ import type { ProjectResponse } from '@/types/api'
 
 // ── Helpers ──
 
-function timeAgo(isoDate: string): string {
+function timeAgo(isoDate: string | null): string {
+  if (!isoDate) return ''
   const then = new Date(isoDate).getTime()
   // F-DATE-EPOCH defensive: legacy rows with NULL created_at coerce to
   // Unix epoch 0 (1970-01-01), rendering "20568d ago". Anything before
@@ -42,6 +45,33 @@ function timeAgo(isoDate: string): string {
   return `${days}d ago`
 }
 
+// Pull a human-readable reason out of an axios error, honest across the
+// backend's dual error shape (no custom RequestValidationError handler is
+// registered, so the two live shapes differ): DaenaError business rejections
+// answer `{error:{message}}`, FastAPI/Pydantic field-validation 422s answer
+// `{detail:[{loc,msg,type}]}`, and legacy HTTPException answers
+// `{detail:"..."}`. Mirrors OrgPage's extractDetail, widened to all three so a
+// create/update rejection is surfaced inline rather than swallowed silently
+// (/projects/ is a silent toast prefix, so without this the only signal is the
+// far-off navbar dot).
+function extractApiError(err: unknown, fallback: string): string {
+  const data = (err as { response?: { data?: unknown } })?.response?.data as
+    | { error?: { message?: unknown }; detail?: unknown }
+    | undefined
+  if (!data) return fallback
+  const envelope = data.error?.message
+  if (typeof envelope === 'string' && envelope) return envelope
+  const detail = data.detail
+  if (typeof detail === 'string' && detail) return detail
+  if (Array.isArray(detail)) {
+    const first = (detail[0] as { msg?: unknown } | undefined)?.msg
+    if (typeof first === 'string' && first) return first
+  }
+  const nested = (detail as { message?: unknown } | undefined)?.message
+  if (typeof nested === 'string' && nested) return nested
+  return fallback
+}
+
 // ── Create/Edit Dialog ──
 
 interface ProjectDialogProps {
@@ -52,6 +82,7 @@ interface ProjectDialogProps {
   initialDescription?: string
   title: string
   saving?: boolean
+  error?: string | null
 }
 
 function ProjectDialog({
@@ -62,6 +93,7 @@ function ProjectDialog({
   initialDescription = '',
   title,
   saving,
+  error,
 }: ProjectDialogProps) {
   const [name, setName] = useState(initialName)
   const [description, setDescription] = useState(initialDescription)
@@ -71,11 +103,24 @@ function ProjectDialog({
     setDescription(initialDescription)
   }, [initialName, initialDescription, open])
 
+  // PR-A11Y-PHASE43: Escape closes the dialog (WCAG 2.1.2 No Keyboard Trap).
+  // Mirrors the house Modal primitive (components/common/Modal.tsx); focus-in
+  // is already handled by the name field's autoFocus (WCAG 2.4.3).
+  useEffect(() => {
+    if (!open) return
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
+  }, [open, onClose])
+
   if (!open) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
@@ -86,8 +131,9 @@ function ProjectDialog({
 
           <div className="space-y-3">
             <div>
-              <label className="text-xs text-starlight-400 mb-1 block">Project Name</label>
+              <label htmlFor="project-name" className="text-xs text-starlight-400 mb-1 block">Project Name</label>
               <Input
+                id="project-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Daena V2 Sprint"
@@ -95,8 +141,9 @@ function ProjectDialog({
               />
             </div>
             <div>
-              <label className="text-xs text-starlight-400 mb-1 block">Description</label>
+              <label htmlFor="project-description" className="text-xs text-starlight-400 mb-1 block">Description</label>
               <textarea
+                id="project-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="What is this project about?"
@@ -105,6 +152,12 @@ function ProjectDialog({
               />
             </div>
           </div>
+
+          {error && (
+            <div role="alert" className="p-2 rounded-lg bg-status-error/10 border border-status-error/20 text-xs text-status-error">
+              {error}
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="ghost" onClick={onClose} disabled={saving}>
@@ -148,7 +201,18 @@ function ProjectCard({ project, onEdit, onDelete, onClick }: ProjectCardProps) {
         onClick={onClick}
       >
         <div className="flex items-start justify-between">
-          <div className="flex-1 min-w-0">
+          <div
+            className="flex-1 min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-primary-400/40"
+            role="button"
+            tabIndex={0}
+            aria-label={`Open project ${project.name}`}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onClick()
+              }
+            }}
+          >
             <div className="flex items-center gap-2 mb-1">
               <FolderOpen size={16} className="text-primary-400 shrink-0" />
               <h3 className="text-sm font-medium text-starlight-100 truncate">
@@ -213,6 +277,18 @@ export function ProjectsPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<ProjectResponse | null>(null)
   const [saving, setSaving] = useState(false)
+  // Inline create/edit dialog error -- the create/edit dialogs are mutually
+  // exclusive, so one state serves both. /projects/ is a silent toast prefix
+  // (lib/api.ts), so without this an 8xx/422 reject would surface only on the
+  // far-off navbar dot; this binds the reason inside the open dialog (Rule 17).
+  const [saveError, setSaveError] = useState<string | null>(null)
+  // Inline fetch-error state for the project LIST. Without it a rejected
+  // GET /projects falls through to setProjects([]) and the grid renders the
+  // friendly "No projects yet" empty state -- a load FAILURE pixel-identical
+  // to a genuinely empty account (the Rule-17 "looks empty when it actually
+  // failed" lie). /projects/ is a silent toast prefix (lib/api.ts), so the
+  // only other signal is the far-off navbar dot. Mirrors TasksPage tasksError.
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortMode, setSortMode] = useState<'updated' | 'name' | 'tasks'>('updated')
 
@@ -221,8 +297,10 @@ export function ProjectsPage() {
     try {
       const { data } = await api.get('/projects')
       setProjects(data.projects ?? [])
+      setLoadError(null)
     } catch {
       setProjects([])
+      setLoadError('The project service is unreachable. Retry to refresh.')
     } finally {
       setLoading(false)
     }
@@ -232,10 +310,15 @@ export function ProjectsPage() {
 
   const handleCreate = async (name: string, description: string) => {
     setSaving(true)
+    setSaveError(null)
     try {
       await api.post('/projects', { name, description })
       setCreateOpen(false)
       fetchProjects()
+    } catch (err) {
+      // Keep the dialog open (setCreateOpen(false) is skipped on throw) and
+      // surface the backend reason inline so the user knows what to fix.
+      setSaveError(extractApiError(err, 'Could not create the project. Please try again.'))
     } finally {
       setSaving(false)
     }
@@ -244,19 +327,41 @@ export function ProjectsPage() {
   const handleUpdate = async (name: string, description: string) => {
     if (!editTarget) return
     setSaving(true)
+    setSaveError(null)
     try {
       await api.put(`/projects/${editTarget.id}`, { name, description })
       setEditTarget(null)
       fetchProjects()
+    } catch (err) {
+      setSaveError(extractApiError(err, 'Could not save the project. Please try again.'))
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (projectId: string) => {
-    const ok = await deleteWithToast(`/projects/${projectId}`, { entity: 'Project' })
+    const ok = await deleteWithToast(`/projects/${projectId}`, {
+      entity: 'Project',
+      confirmMessage:
+        'This permanently deletes the project. Its workstreams, tasks, and files will no longer be accessible, and this cannot be undone.',
+    })
     if (ok) fetchProjects()
   }
+
+  // Lifted so the rendered list and the zero-result branch share ONE source of
+  // truth (FLOW #54 -- empty-state vs zero-result honesty). A search that
+  // excludes every row must NOT render the same blank as a genuinely empty
+  // account: the grid below distinguishes "no projects yet" (projects.length
+  // === 0) from "no projects match your search" (visibleProjects.length === 0
+  // while projects.length > 0) and offers a clear-search affordance for the
+  // latter, mirroring the SkillsPage / FilesPage filter-aware convention.
+  const visibleProjects = projects
+    .filter((p) => !searchQuery.trim() || p.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) || (p.description ?? '').toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    .sort((a, b) => {
+      if (sortMode === 'name') return a.name.localeCompare(b.name)
+      if (sortMode === 'tasks') return (b.task_count ?? 0) - (a.task_count ?? 0)
+      return new Date(b.updated_at ?? 0).getTime() - new Date(a.updated_at ?? 0).getTime()
+    })
 
   return (
     <div className="h-full overflow-y-auto">
@@ -276,7 +381,7 @@ export function ProjectsPage() {
               Persistent workspaces for organizing tasks, files, and chat context
             </p>
           </div>
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={() => { setSaveError(null); setCreateOpen(true) }}>
             <Plus size={16} className="mr-1.5" />
             New Project
           </Button>
@@ -290,9 +395,11 @@ export function ProjectsPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search projects..."
+              aria-label="Search projects"
               className="flex-1 px-3 py-2 rounded-lg text-sm bg-white/5 border border-white/10 text-starlight-200 placeholder:text-starlight-500 focus:outline-none focus:border-primary-500/40"
             />
             <select
+              aria-label="Sort projects"
               value={sortMode}
               onChange={(e) => setSortMode(e.target.value as 'updated' | 'name' | 'tasks')}
               className="px-3 py-2 rounded-lg text-sm bg-white/5 border border-white/10 text-starlight-200 focus:outline-none focus:border-primary-500/40 cursor-pointer"
@@ -307,33 +414,49 @@ export function ProjectsPage() {
         {/* Project grid */}
         {loading ? (
           <Shimmer count={4} layout="list" />
+        ) : loadError ? (
+          <EmptyState
+            icon={<AlertTriangle size={40} className="text-status-warning" />}
+            title="Could not load projects"
+            description={loadError}
+            action={
+              <Button onClick={() => { void fetchProjects() }}>
+                <RefreshCw size={16} className="mr-1.5" />
+                Retry
+              </Button>
+            }
+          />
         ) : projects.length === 0 ? (
           <EmptyState
             icon={<FolderOpen size={40} className="text-starlight-400" />}
             title="No projects yet"
             description="Create your first project to organize work into focused workspaces"
             action={
-              <Button onClick={() => setCreateOpen(true)}>
+              <Button onClick={() => { setSaveError(null); setCreateOpen(true) }}>
                 <Plus size={16} className="mr-1.5" />
                 Create Project
+              </Button>
+            }
+          />
+        ) : visibleProjects.length === 0 ? (
+          <EmptyState
+            icon={<FolderOpen size={40} className="text-starlight-400" />}
+            title="No projects match your search"
+            description={`No projects match "${searchQuery.trim()}". Clear the search to see all ${projects.length} ${projects.length === 1 ? 'project' : 'projects'}.`}
+            action={
+              <Button variant="secondary" onClick={() => setSearchQuery('')}>
+                Clear search
               </Button>
             }
           />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <AnimatePresence mode="popLayout">
-              {projects
-                .filter((p) => !searchQuery.trim() || p.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) || (p.description ?? '').toLowerCase().includes(searchQuery.trim().toLowerCase()))
-                .sort((a, b) => {
-                  if (sortMode === 'name') return a.name.localeCompare(b.name)
-                  if (sortMode === 'tasks') return (b.task_count ?? 0) - (a.task_count ?? 0)
-                  return new Date(b.updated_at ?? 0).getTime() - new Date(a.updated_at ?? 0).getTime()
-                })
-                .map((project) => (
+              {visibleProjects.map((project) => (
                 <ProjectCard
                   key={project.id}
                   project={project}
-                  onEdit={() => setEditTarget(project)}
+                  onEdit={() => { setSaveError(null); setEditTarget(project) }}
                   onDelete={() => handleDelete(project.id)}
                   onClick={() => navigate(`/projects/${project.id}`)}
                 />
@@ -347,10 +470,11 @@ export function ProjectsPage() {
           {createOpen && (
             <ProjectDialog
               open={createOpen}
-              onClose={() => setCreateOpen(false)}
+              onClose={() => { setSaveError(null); setCreateOpen(false) }}
               onSave={handleCreate}
               title="New Project"
               saving={saving}
+              error={saveError}
             />
           )}
         </AnimatePresence>
@@ -360,12 +484,13 @@ export function ProjectsPage() {
           {editTarget && (
             <ProjectDialog
               open={!!editTarget}
-              onClose={() => setEditTarget(null)}
+              onClose={() => { setSaveError(null); setEditTarget(null) }}
               onSave={handleUpdate}
               title="Edit Project"
               initialName={editTarget.name}
               initialDescription={editTarget.description}
               saving={saving}
+              error={saveError}
             />
           )}
         </AnimatePresence>

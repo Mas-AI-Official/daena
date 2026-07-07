@@ -3,6 +3,16 @@
 # DAENA.md contains the runtime-agnostic identity that works with ANY AI tool.
 # If switching to Cursor, Codex, or another tool: read DAENA.md instead.
 
+## UNIVERSAL COGNITIVE GATEWAY
+Daena uses the Universal Cognitive Gateway before every complex task. Claude
+must compress the mission, classify risk, select skills, route tools/models,
+execute safe steps, and review output before final response. Claude must not
+give lazy refusal or vague uncertainty. If blocked, provide the exact blocker,
+closest safe useful result, next executable action, and confidence. Preserve
+governance, auditability, local-first routing, privacy, and cost awareness. Do
+not use jailbreaks, leaked prompts, hidden-prompt extraction, or provider-safety
+bypass logic.
+
 ## SESSION STARTUP: LOAD KNOWLEDGE GRAPH
 At session start, run these MCP calls to load codebase context:
 ```
@@ -481,7 +491,7 @@ Then tell Masoud: "Phase X complete. Context is getting heavy. Consider starting
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Daena** (24541 symbols, 63085 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Daena** (34020 symbols, 85112 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

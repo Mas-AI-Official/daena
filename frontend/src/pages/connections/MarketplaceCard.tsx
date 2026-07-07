@@ -22,7 +22,7 @@
  *   - last-checked timestamp visible when present
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Activity, AlertTriangle, BookOpen, ExternalLink, Loader2, Power,
   ShieldAlert, Wrench, X,
@@ -298,13 +298,31 @@ function SetupDrawer({
   onClose: () => void
 }) {
   const cat = card.catalog
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  // PR-A11Y-PHASE32: overlay focus contract -- move focus into the panel on open,
+  // restore to the opener on close (WCAG 2.4.3 / 2.1.2 / WAI-ARIA dialog pattern).
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    const focusTimer = setTimeout(() => {
+      const panel = panelRef.current
+      if (panel && !panel.contains(document.activeElement)) panel.focus()
+    }, 50)
+    return () => { clearTimeout(focusTimer); previousFocusRef.current?.focus?.() }
+  }, [])
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-midnight-900/80 px-4"
       onClick={onClose}
     >
       <div
-        className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 p-5 shadow-2xl"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Setup guide for ${cat.display_name}`}
+        tabIndex={-1}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }}
+        className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-white/10 bg-midnight-400/95 p-5 shadow-2xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="mb-4 flex items-start justify-between gap-3">

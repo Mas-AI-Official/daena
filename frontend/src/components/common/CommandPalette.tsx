@@ -52,7 +52,7 @@ const PAGE_PATHS: Record<string, string> = {
   'p-account': '/account/details',
   'p-account-usage': '/account/usage',
   'p-account-assistant': '/account/assistant',
-  'p-account-org': '/account/org/details',
+  'p-account-org': '/account/org',
 }
 
 interface CommandPaletteProps {
@@ -64,6 +64,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
   const navigate = useNavigate()
   const sessions = useChatStore((s) => s.sessions)
 
@@ -93,12 +94,19 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   // Reset selection on query change
   useEffect(() => setSelectedIndex(0), [query])
 
-  // Focus input on open
+  // Focus input on open; on close restore focus to the trigger so keyboard /
+  // screen-reader users keep their place when the palette is dismissed without
+  // navigating (Escape / backdrop click). If an item was selected the trigger is
+  // unmounted by the route change and the guarded restore is a safe no-op.
   useEffect(() => {
-    if (isOpen) {
-      setQuery('')
-      setSelectedIndex(0)
-      setTimeout(() => inputRef.current?.focus(), 50)
+    if (!isOpen) return
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    setQuery('')
+    setSelectedIndex(0)
+    const id = setTimeout(() => inputRef.current?.focus(), 50)
+    return () => {
+      clearTimeout(id)
+      previousFocusRef.current?.focus?.()
     }
   }, [isOpen])
 
@@ -123,9 +131,16 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       {isOpen && (
         <motion.div
           className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          // Bind pointerEvents to the open/exit state, not just opacity. If framer-motion
+          // leaves this exit node mounted at opacity 0 (safeToRemove failing to fire -- a
+          // known React.StrictMode dev double-invoke interaction with AnimatePresence), an
+          // opacity-0 fixed inset-0 overlay would otherwise be an invisible full-viewport
+          // click trap over the destination page. pointer-events is inherited, so the
+          // backdrop + dialog cascade from here: 'auto' while open keeps backdrop-click-to-
+          // close working, 'none' on exit makes any lingering node click-through.
+          initial={{ opacity: 0, pointerEvents: 'none' }}
+          animate={{ opacity: 1, pointerEvents: 'auto' }}
+          exit={{ opacity: 0, pointerEvents: 'none' }}
           transition={{ duration: 0.1 }}
         >
           {/* Backdrop */}
@@ -136,6 +151,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
           {/* Palette */}
           <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
             className="relative w-full max-w-lg mx-4 bg-midnight-300/95 backdrop-blur-md
                        border border-white/10 rounded-xl shadow-2xl overflow-hidden"
             initial={{ opacity: 0, scale: 0.95, y: -10 }}
@@ -151,6 +169,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
+                aria-label="Search pages and sessions"
                 placeholder="Search pages and sessions..."
                 className="flex-1 bg-transparent text-sm text-starlight-100 placeholder:text-starlight-500
                            focus:outline-none"
@@ -159,7 +178,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                              bg-midnight-500/50 border border-white/10 text-[10px] text-starlight-500">
                 ESC
               </kbd>
-              <button onClick={onClose} className="p-1 text-starlight-500 hover:text-starlight-200 cursor-pointer">
+              <button onClick={onClose} aria-label="Close" className="p-1 text-starlight-500 hover:text-starlight-200 cursor-pointer">
                 <X size={14} />
               </button>
             </div>

@@ -14,6 +14,7 @@ const AccountDetails = lazy(() => import('./account/AccountDetails').then(m => (
 const AccountApiKeys = lazy(() => import('./account/AccountApiKeys').then(m => ({ default: m.AccountApiKeys })))
 const AccountProviderKeys = lazy(() => import('./account/AccountProviderKeys').then(m => ({ default: m.AccountProviderKeys })))
 const AccountOAuthClients = lazy(() => import('./account/AccountOAuthClients').then(m => ({ default: m.AccountOAuthClients })))
+const AccountBilling = lazy(() => import('./account/AccountBilling').then(m => ({ default: m.AccountBilling })))
 
 function AccountLoader() {
   return (
@@ -65,6 +66,16 @@ export function AccountPage() {
           <h2 className="text-sm font-display font-semibold text-starlight-100 mb-3">Profile</h2>
           <Suspense fallback={<AccountLoader />}>
             <AccountDetails />
+          </Suspense>
+        </section>
+
+        {/* Plan & Billing section -- current plan + upgrade surface. Anchor id
+            "billing" is the deep-link target a gated 402 redirects to
+            (/account/billing#billing). */}
+        <section id="billing" className="pt-4 border-t border-white/5 scroll-mt-24">
+          <h2 className="text-sm font-display font-semibold text-starlight-100 mb-3">Plan &amp; Billing</h2>
+          <Suspense fallback={<AccountLoader />}>
+            <AccountBilling />
           </Suspense>
         </section>
 
