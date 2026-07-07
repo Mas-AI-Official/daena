@@ -1307,9 +1307,13 @@ class ExecutionService(BaseService):
 
             # If offensive requested, activate global /3vilbob mode
             if offensive:
-                from app.services.security.evilbob_mode import activate, is_active
+                from app.services.security.evilbob_mode import (
+                    activate,
+                    is_active,
+                    read_activation_key,
+                )
                 if not is_active():
-                    evilbob_key = os.environ.get("EVILBOB_KEY", "")
+                    evilbob_key = read_activation_key()
                     state = activate(key=evilbob_key, user_id="founder")
                     if not state.active:
                         return {
@@ -1328,10 +1332,11 @@ class ExecutionService(BaseService):
             if operation == "evilbob_toggle":
                 from app.services.security.evilbob_mode import (
                     activate, deactivate, get_state, is_active,
+                    read_activation_key,
                 )
                 action = params.get("action", "STATUS")
                 if action == "ON":
-                    evilbob_key = os.environ.get("EVILBOB_KEY", "")
+                    evilbob_key = read_activation_key()
                     state = activate(key=evilbob_key, user_id="founder")
                     return {
                         "agent": "SecurityAgent",

@@ -35,7 +35,7 @@ import hashlib
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from app.core.logging import get_logger
 
@@ -106,6 +106,60 @@ def detect_environment() -> str:
     return "local"
 
 
+# ---------------------------------------------------------------------------
+# Master activation key read (single consume-only choke point)
+# ---------------------------------------------------------------------------
+
+# Optional backend that supplies the /3vilbob master key. None => env fallback.
+# Consume-only seam (Rule 18): a real secret backend (e.g. GCP Secret Manager on
+# Cloud Run) can register here at deploy time without editing any read site.
+_activation_key_provider: Callable[[], str | None] | None = None
+
+
+def set_activation_key_provider(
+    provider: Callable[[], str | None] | None,
+) -> None:
+    """Register (or clear) the backend that supplies the /3vilbob master key.
+
+    Pass a zero-arg callable returning the key string, or None/"" when it has no
+    value (read_activation_key then falls back to the EVILBOB_KEY env var). Pass
+    None to clear the provider and use the process environment directly.
+
+    Never pass the key itself here -- pass a callable that fetches it, so the
+    master secret is never captured in a module global.
+    """
+    global _activation_key_provider
+    _activation_key_provider = provider
+
+
+def read_activation_key() -> str:
+    """Return the /3vilbob master activation key (EVILBOB_KEY).
+
+    Single choke point for reading the master key. Resolution order:
+      1. A registered provider (cloud/secret-manager path), if it yields a
+         non-empty value.
+      2. The EVILBOB_KEY process environment variable (local/test path).
+
+    EVILBOB_KEY is a master-key-class secret: it is never logged here, never
+    committed to source, and never shipped in env to a cloud runtime. A provider
+    that raises is logged by exception TYPE only and swallowed, so a misconfigured
+    backend can never crash the activation path -- it falls back to the env read.
+    """
+    provider = _activation_key_provider
+    if provider is not None:
+        try:
+            value = provider()
+        except Exception as exc:  # never let a bad backend crash activation
+            logger.warning(
+                "evilbob.key_provider_failed",
+                error=type(exc).__name__,
+            )
+            value = None
+        if value:
+            return value
+    return os.environ.get("EVILBOB_KEY", "")
+
+
 def _validate_key(user_key: str) -> bool:
     """Validate the /3vilbob activation key.
 
@@ -115,7 +169,7 @@ def _validate_key(user_key: str) -> bool:
 
     If EVILBOB_KEY is not set, activation is impossible.
     """
-    stored_key = os.environ.get("EVILBOB_KEY", "")
+    stored_key = read_activation_key()
     if not stored_key:
         return False
     if not user_key:
@@ -282,7 +336,7 @@ def auto_activate_if_configured() -> EvilBobState | None:
     if auto not in ("true", "1", "yes"):
         return None
 
-    key = os.environ.get("EVILBOB_KEY", "")
+    key = read_activation_key()
     if not key:
         logger.debug("evilbob.auto_activate_skipped", reason="no EVILBOB_KEY")
         return None
