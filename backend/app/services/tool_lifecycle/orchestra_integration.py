@@ -195,6 +195,15 @@ def initialize_tlm() -> None:
     ]
 
     count = registry.register_many(builtin_tools)
+
+    # QA/QC verification loop -- registered only when the ai-qa-loop engine is present
+    # (honest capability advertising per ADR-001); skipped gracefully otherwise so a slim
+    # checkout still boots. Additive-only: never mutates the builtin catalog above.
+    with contextlib.suppress(Exception):
+        from app.services.qa import register_qa_tool
+
+        register_qa_tool(registry)
+
     _initialized = True
     logger.info("tlm.initialized", tools_registered=count, total=registry.count)
 
