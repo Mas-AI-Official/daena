@@ -316,7 +316,9 @@ class Settings(BaseSettings):
     # to the international (Singapore) region; override for US/Beijing.
     qwen_cloud_api_key: str = ""
     qwen_cloud_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-    vllm_base_url: str = "http://localhost:8100/v1"
+    # Local OpenAI-compat endpoint: llama.cpp llama-server by default
+    # (also accepts a real vLLM server). .env key: VLLM_BASE_URL.
+    vllm_base_url: str = "http://127.0.0.1:8080/v1"
     vllm_default_model: str = ""  # empty = auto-detect first available
     # LlamaServerManager mode. Controls whether Daena owns the
     # llama-server lifecycle or just consumes whatever the user has

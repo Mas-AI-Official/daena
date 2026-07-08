@@ -393,11 +393,15 @@ class RuntimeRegistry:
         if scores:
             return max(scores, key=scores.get)  # type: ignore[arg-type]
 
-        # 3. Fallback to Ollama (local, always free)
-        if "ollama" not in exclude_set:
-            ollama_health = self._health_cache.get("ollama", RuntimeStatus.OFFLINE)
-            if ollama_health == RuntimeStatus.ONLINE:
-                return "ollama"
+        # 3. Fallback to local runtimes (always free). vllm serves the
+        # local llama.cpp llama-server (OpenAI-compat); ollama is kept
+        # for backward compat only.
+        for local_rid in ("vllm", "ollama"):
+            if local_rid in exclude_set:
+                continue
+            local_health = self._health_cache.get(local_rid, RuntimeStatus.OFFLINE)
+            if local_health == RuntimeStatus.ONLINE:
+                return local_rid
 
         raise NoRuntimeAvailableError(
             f"No runtimes available for task type '{task_type}'. "
@@ -414,10 +418,11 @@ class RuntimeRegistry:
     ) -> dict[str, Any]:
         """Try each runtime in priority order until one succeeds.
 
-        Fallback chain: claude_code -> codex -> ollama
+        Fallback chain: claude_code -> codex -> gemini_cli -> grok_cli
+        -> vllm -> ollama
         """
         context = context or {}
-        priority_order = ["claude_code", "codex", "gemini_cli", "grok_cli", "ollama"]
+        priority_order = ["claude_code", "codex", "gemini_cli", "grok_cli", "vllm", "ollama"]
         last_error = None
 
         for rid in priority_order:
