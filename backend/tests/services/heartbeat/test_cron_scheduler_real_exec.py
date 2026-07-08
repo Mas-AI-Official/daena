@@ -138,6 +138,18 @@ def _make_failing_adapter(error: Exception):
     return adapter
 
 
+def _make_hanging_adapter():
+    """Mock adapter that yields once then hangs forever."""
+
+    async def _execute(task, context):  # noqa: ANN001, ANN202
+        yield "partial"
+        await asyncio.sleep(3600)
+
+    adapter = MagicMock()
+    adapter.execute = _execute
+    return adapter
+
+
 # ── Tests ──────────────────────────────────────────────────────────────
 
 class TestCheckAndRunCallsRuntime:
@@ -268,6 +280,57 @@ class TestErrorHandling:
         assert bad_row.error is not None
         assert "boom" in bad_row.error
         assert good_row.error is None
+
+    @pytest.mark.asyncio
+    async def test_hung_adapter_times_out_and_scheduler_advances(
+        self, patched_session_factory,
+    ):
+        # One adapter hangs forever after a partial yield; the wall-clock
+        # cap must finalize it as a timeout and let the next job run
+        # instead of wedging the whole scheduler.
+        hung_adapter = _make_hanging_adapter()
+        good_adapter = _make_streaming_adapter(["ok"])
+
+        def _resolve(runtime_id):  # noqa: ANN001, ANN202
+            return hung_adapter if runtime_id == "ollama" else good_adapter
+
+        registry = MagicMock()
+        registry.get_adapter = MagicMock(side_effect=_resolve)
+        set_runtime_registry_resolver(lambda: registry)
+
+        hung_job = _due_job("job-hung", runtime="ollama")
+        hung_job.max_runtime_s = 0.2
+
+        scheduler = CronScheduler()
+        scheduler.add_job(hung_job)
+        scheduler.add_job(_due_job("job-after-hang", runtime="codex"))
+
+        executed = await scheduler.check_and_run()
+
+        assert "job-hung" in executed
+        assert "job-after-hang" in executed
+
+        async with patched_session_factory() as session:
+            hung_row = (
+                await session.execute(
+                    select(CronRun).where(CronRun.job_id == "job-hung")
+                )
+            ).scalar_one()
+            good_row = (
+                await session.execute(
+                    select(CronRun).where(CronRun.job_id == "job-after-hang")
+                )
+            ).scalar_one()
+
+        assert hung_row.error is not None
+        assert "timeout" in hung_row.error.lower()
+        # Partial output streamed before the hang is preserved.
+        assert "partial" in (hung_row.full_text or "")
+        assert good_row.error is None
+
+        job = scheduler._jobs["job-hung"]
+        assert job.last_result is not None
+        assert "timeout" in job.last_result.lower()
 
 
 class TestSingletonAndLifecycle:

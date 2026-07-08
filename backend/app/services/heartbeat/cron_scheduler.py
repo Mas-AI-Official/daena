@@ -41,6 +41,12 @@ DEFAULT_CRON_COST_CAP_USD = 0.50
 # their own per-task estimates downstream.
 DEFAULT_CRON_TOKEN_BUDGET = 2000
 
+# Wall-clock cap (seconds) on a single cron run. The scheduler awaits
+# the adapter's stream inline; without a deadline one hung adapter
+# wedges every subsequent cron job forever. On timeout the run is
+# finalized with an error and the loop moves on.
+DEFAULT_CRON_JOB_TIMEOUT_S = 120.0
+
 
 class CronFrequency(Enum):
     """How often a cron job runs."""
@@ -65,6 +71,7 @@ class CronJob:
     last_run: datetime | None = None
     last_result: str | None = None
     max_cost_usd: float = DEFAULT_CRON_COST_CAP_USD
+    max_runtime_s: float = DEFAULT_CRON_JOB_TIMEOUT_S
 
     def is_due(self, now: datetime | None = None) -> bool:
         """Check if this job should run now."""
@@ -111,6 +118,7 @@ class CronJob:
             "last_run": self.last_run.isoformat() if self.last_run else None,
             "last_result": self.last_result,
             "max_cost_usd": self.max_cost_usd,
+            "max_runtime_s": self.max_runtime_s,
         }
 
 
@@ -331,11 +339,42 @@ class CronScheduler:
         }
 
         chunks: list[str] = []
-        try:
+
+        async def _consume() -> None:
             async for chunk in adapter.execute(
                 task=job.task_prompt, context=context,
             ):
                 chunks.append(chunk)
+
+        try:
+            await asyncio.wait_for(_consume(), timeout=job.max_runtime_s)
+        except asyncio.TimeoutError:
+            # Must precede the generic handler: on Python 3.11+
+            # asyncio.TimeoutError IS builtins.TimeoutError, which is
+            # an Exception subclass.
+            error = (
+                f"timeout: job exceeded max_runtime_s="
+                f"{job.max_runtime_s}s"
+            )
+            logger.error(
+                "cron.runtime_timeout",
+                job_id=job.job_id,
+                runtime=job.runtime_preference,
+                max_runtime_s=job.max_runtime_s,
+            )
+            await self._finalize_run(
+                run_id=run_id,
+                started_at=now,
+                summary=None,
+                full_text="\n".join(chunks) or None,
+                error=error,
+                cost_usd=0.0,
+                tokens_in=0,
+                tokens_out=0,
+            )
+            job.last_run = now
+            job.last_result = error[:500]
+            return
         except Exception as exc:
             error = f"runtime error: {exc}"
             logger.error(
