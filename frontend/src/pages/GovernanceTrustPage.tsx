@@ -92,8 +92,8 @@ export default function GovernanceTrustPage() {
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      api.get<PolicyRow[]>('/api/v1/trust/policies'),
-      api.get<EligibilityResponse>('/api/v1/trust/eligible-tools'),
+      api.get<PolicyRow[]>('/trust/policies'),
+      api.get<EligibilityResponse>('/trust/eligible-tools'),
     ])
       .then(([policiesRes, eligibilityRes]) => {
         if (cancelled) return
@@ -129,7 +129,7 @@ export default function GovernanceTrustPage() {
     setSubmitting(true)
     try {
       const r = await api.post<TierSetResponse>(
-        '/api/v1/trust/policies/tier-set',
+        '/trust/policies/tier-set',
         {
           tool_id: dialog.row.tool_id,
           template_class: dialog.row.template_class,
