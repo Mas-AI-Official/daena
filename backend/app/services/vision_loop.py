@@ -140,8 +140,10 @@ class VisionLoop:
                 yield step
                 break
 
-            # Step 4: Execute the action
-            await self._execute_action(action)
+            # Step 4: Execute the action. success is derived from the
+            # real outcome; a swallowed pyautogui failure must not count
+            # as a successful step in get_summary().
+            step.success = await self._execute_action(action)
             self._steps.append(step)
             yield step
 
@@ -444,8 +446,13 @@ IMPORTANT: Coordinates must be precise pixel positions on the {width}x{height} s
             description=f"Could not parse vision response: {text[:200]}",
         )
 
-    async def _execute_action(self, action: VisionAction) -> None:
-        """Execute a vision-determined action on the desktop."""
+    async def _execute_action(self, action: VisionAction) -> bool:
+        """Execute a vision-determined action on the desktop.
+
+        Returns True only when the action really executed. The caller
+        stores this on ``VisionStep.success``, which is what makes the
+        ``successful_steps`` count in ``get_summary()`` honest.
+        """
         try:
             import pyautogui
             pyautogui.FAILSAFE = True
@@ -480,9 +487,11 @@ IMPORTANT: Coordinates must be precise pixel positions on the {width}x{height} s
                 action=action.action_type,
                 description=action.description[:100],
             )
+            return True
 
         except Exception as exc:
             logger.error("vision_loop.action_failed", error=str(exc))
+            return False
 
     def get_summary(self) -> dict[str, Any]:
         """Get execution summary."""

@@ -83,6 +83,66 @@ class TestVisionLoop:
             assert len(steps) >= 1
             assert steps[-1].success is False
 
+    @pytest.mark.asyncio
+    async def test_forced_pyautogui_failure_marks_step_failed(self):
+        """A pyautogui failure must surface as step.success=False.
+
+        Guards the honesty fix: _execute_action used to swallow the
+        exception while the step stayed success=True, so the caller's
+        successful_steps>0 verdict could never see a failed action.
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from app.services.vision_loop import VisionAction, VisionLoop
+
+        loop = VisionLoop(max_iterations=1)
+        click = VisionAction(
+            action_type="click", x=10, y=20, description="Click button",
+        )
+
+        fake_pyautogui = MagicMock()
+        fake_pyautogui.click.side_effect = RuntimeError("forced click failure")
+
+        with patch.dict("sys.modules", {"pyautogui": fake_pyautogui}), \
+                patch.object(
+                    loop, "_take_screenshot",
+                    AsyncMock(return_value=("b64", 100, 100)),
+                ), \
+                patch.object(
+                    loop, "_analyze_screenshot",
+                    AsyncMock(return_value=click),
+                ):
+            steps = [step async for step in loop.execute("Click the button")]
+
+        # First yielded step is the failed click action.
+        assert steps[0].action is click
+        assert steps[0].success is False
+        assert loop.get_summary()["successful_steps"] == 0
+
+    @pytest.mark.asyncio
+    async def test_executed_action_marks_step_success(self):
+        """A click that executes cleanly keeps step.success=True."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from app.services.vision_loop import VisionAction, VisionLoop
+
+        loop = VisionLoop(max_iterations=1)
+        click = VisionAction(
+            action_type="click", x=10, y=20, description="Click button",
+        )
+
+        with patch.dict("sys.modules", {"pyautogui": MagicMock()}), \
+                patch.object(
+                    loop, "_take_screenshot",
+                    AsyncMock(return_value=("b64", 100, 100)),
+                ), \
+                patch.object(
+                    loop, "_analyze_screenshot",
+                    AsyncMock(return_value=click),
+                ):
+            steps = [step async for step in loop.execute("Click the button")]
+
+        assert steps[0].success is True
+        assert loop.get_summary()["successful_steps"] == 1
+
 
 class TestDepartmentPrompts:
     """Tests for department agent prompt generation."""
