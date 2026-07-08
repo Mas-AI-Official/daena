@@ -3,8 +3,8 @@
 ``ExecutionService._background_run`` branches on the delegation envelope:
 tasks with ``checkpoint_data.delegation.origin == "delegated"`` run through
 ``delegated_executor.execute_delegated_step`` (one governed model call ->
-work-product artifact in ``task.result``); everything else keeps the
-minimal simulated ticker ("minimal-run-task-v1").
+work-product artifact in ``task.result``); everything else has NO
+executor wired and fails honestly, never a fabricated completion.
 
 Contracts pinned here:
 
@@ -16,7 +16,8 @@ Contracts pinned here:
   FAILED with the error recorded -- never a fake COMPLETED.
 * The executor result dict carries the audit fields (executor tag, model,
   provider, tokens, cost) and ``_background_run`` stamps ``executed_at``.
-* Non-delegated tasks are untouched by this branch (still the ticker).
+* Non-delegated tasks never reach the real executor; with no executor
+  wired they land FAILED honestly, never a fake COMPLETED.
 * Phase 11 pin: the delegated path still emits the ``task_complete``
   notification with the executor's summary as the message.
 
@@ -359,9 +360,12 @@ async def test_delegated_executor_failure_marks_task_failed(
 
 
 @pytest.mark.asyncio
-async def test_non_delegated_task_keeps_minimal_ticker(
+async def test_non_delegated_task_fails_honestly_without_executor(
     db_session, monkeypatch,
 ):
+    """A plain task must not invoke the real executor NOR fabricate
+    success: with no executor wired it lands FAILED (retryable)."""
+
     async def _must_not_run(**kwargs):
         raise AssertionError("real executor invoked for a plain task")
 
@@ -383,12 +387,13 @@ async def test_non_delegated_task_keeps_minimal_ticker(
     await db_session.commit()
 
     await ExecutionService(db_session).run_task(task_id, tid)
-    assert await _wait_terminal(db_session, task_id) == "COMPLETED"
+    assert await _wait_terminal(db_session, task_id) == "FAILED"
     db_session.expire_all()
     row = (
         await db_session.execute(select(Task).where(Task.id == task_id))
     ).scalar_one()
-    assert row.result["executor"] == "minimal-run-task-v1"
+    assert "no executor" in (row.error or "").lower()
+    assert row.result is None, "honest failure must not fake a result"
 
 
 @pytest.mark.asyncio
@@ -488,10 +493,10 @@ async def test_artifactless_delegated_completion_skips_ingest(
 
 
 @pytest.mark.asyncio
-async def test_non_delegated_completion_skips_ingest(
+async def test_non_delegated_run_skips_ingest(
     db_session, _capture_artifact_ingest,
 ):
-    """The minimal ticker path never feeds department knowledge."""
+    """The no-executor failure path never feeds department knowledge."""
     tid, uid, _ = await _seed(db_session)
     task_id = uuid.uuid4()
     db_session.add(
@@ -507,6 +512,6 @@ async def test_non_delegated_completion_skips_ingest(
     await db_session.commit()
 
     await ExecutionService(db_session).run_task(task_id, tid)
-    assert await _wait_terminal(db_session, task_id) == "COMPLETED"
+    assert await _wait_terminal(db_session, task_id) == "FAILED"
     await _drain_bg()
     assert _capture_artifact_ingest == []

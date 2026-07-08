@@ -918,9 +918,12 @@ class ExecutionService(BaseService):
 
         There is no long-lived autopilot worker yet; without an explicit
         kick-off, tasks sit in PENDING forever. This method flips the
-        task to RUNNING and fires an asyncio background task that
-        simulates progress through 0 -> 100 and marks COMPLETED on
-        success or FAILED on exception.
+        task to RUNNING and fires an asyncio background task. Delegated
+        tasks (``checkpoint_data.delegation``) dispatch the real
+        executor and mark COMPLETED on success or FAILED on exception.
+        Non-delegated tasks have NO executor wired and fail honestly
+        (ADR-001 / Rule 17): FAILED with the reason recorded, never a
+        fabricated COMPLETED.
 
         The background task uses a fresh async session (not ``self.db``
         which belongs to the request lifecycle); otherwise the session
@@ -1068,27 +1071,20 @@ class ExecutionService(BaseService):
                             progress=90,
                         )
                     else:
-                        # Non-delegated tasks have no defined body yet:
-                        # simulate work in three slices so the UI can
-                        # show real progress bars.
-                        for pct in (25, 60, 90):
-                            await _asyncio.sleep(0.8)
-                            await bg_service.update_task_status(
-                                captured_id, captured_tenant,
-                                progress=pct,
-                            )
-                        result = {
-                            "summary": f"Task '{captured_name}' executed.",
-                            "description_used": captured_desc[:500],
-                            "executed_at": datetime.now(UTC).isoformat(),
-                            "executor": "minimal-run-task-v1",
-                            "note": (
-                                "This is the minimal task executor for "
-                                "tasks without a delegation envelope; "
-                                "'run' cycles through RUNNING -> COMPLETED "
-                                "so operators can exercise the lifecycle."
-                            ),
-                        }
+                        # No executor is wired for tasks without a
+                        # delegation envelope. HONEST FAILURE (ADR-001 /
+                        # Rule 17): raising here lands the task in
+                        # FAILED with the reason recorded by the outer
+                        # except -- never a fabricated COMPLETED with a
+                        # fake result/progress. FAILED stays in the
+                        # runnable set, so the task can be retried once
+                        # it is delegated or a real executor exists.
+                        raise RuntimeError(
+                            "No executor is wired for non-delegated "
+                            "tasks; refusing to fabricate completion. "
+                            "Delegate the task (checkpoint_data."
+                            "delegation) or wire a real executor."
+                        )
                     await bg_service.update_task_status(
                         captured_id, captured_tenant,
                         status=TaskStatus.COMPLETED.value,

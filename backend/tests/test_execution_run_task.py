@@ -1,37 +1,70 @@
 """Tests for POST /execution/tasks/{id}/run (TICKET-TASKS-RUN-01).
 
 Before this ticket, PENDING tasks never executed because there was no
-worker. The /run endpoint kicks off a minimal async background runner
-that drives RUNNING -> COMPLETED with progress reporting.
+worker. /run kicks off an async background runner. Delegated tasks
+(``checkpoint_data.delegation``) dispatch the real executor;
+non-delegated tasks have NO executor wired, and the runner refuses to
+fabricate completion (ADR-001 / Rule 17): they land FAILED with the
+reason recorded, never a fake COMPLETED with a fake result.
 
 Locks the contract:
     * /run on a PENDING task flips it to RUNNING synchronously.
     * /run on a RUNNING task returns 400 (no double-dispatch).
-    * /run on FAILED / CANCELLED / PAUSED is accepted (enables retry + resume).
-    * /run reaches COMPLETED + progress=100 within ~4s for the minimal executor.
+    * /run on FAILED / CANCELLED is accepted (enables retry + re-submit).
+    * DETERMINISTIC GATE: a task with no executor is NEVER COMPLETED;
+      it terminates FAILED with progress untouched and result None.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
+import uuid
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.execution import Task
 from tests.test_execution import _register_and_login  # reuse helper
+
+
+async def _create_task(
+    client: AsyncClient, headers: dict[str, str], name: str,
+) -> str:
+    resp = await client.post(
+        "/api/v1/execution/tasks",
+        json={"name": name, "description": "smoke test"},
+        headers=headers,
+    )
+    assert resp.status_code in (200, 201), resp.text
+    return resp.json()["data"]["id"]
+
+
+async def _wait_terminal(
+    client: AsyncClient, headers: dict[str, str],
+    task_id: str, max_wait_s: float = 6.0,
+) -> dict:
+    """Poll GET /tasks/{id} until the background runner leaves RUNNING."""
+    deadline = time.monotonic() + max_wait_s
+    while time.monotonic() < deadline:
+        resp = await client.get(
+            f"/api/v1/execution/tasks/{task_id}", headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        if data["status"] != "RUNNING":
+            return data
+        await asyncio.sleep(0.05)
+    pytest.fail(f"Task {task_id} still RUNNING after {max_wait_s}s")
 
 
 @pytest.mark.asyncio
 async def test_run_task_flips_to_running(client: AsyncClient) -> None:
     """POST /tasks/{id}/run returns the task with status=RUNNING."""
     auth = await _register_and_login(client)
-
-    create_resp = await client.post(
-        "/api/v1/execution/tasks",
-        json={"name": "Runnable task", "description": "smoke test"},
-        headers=auth["headers"],
-    )
-    task_id = create_resp.json()["data"]["id"]
+    task_id = await _create_task(client, auth["headers"], "Runnable task")
 
     resp = await client.post(
         f"/api/v1/execution/tasks/{task_id}/run",
@@ -44,50 +77,59 @@ async def test_run_task_flips_to_running(client: AsyncClient) -> None:
     assert body["data"]["started_at"] is not None
     assert body["data"]["progress"] == 0
 
-
-@pytest.mark.asyncio
-async def test_run_task_reaches_completed(client: AsyncClient) -> None:
-    """After ~3s the background runner should drive the task to COMPLETED."""
-    auth = await _register_and_login(client)
-    create_resp = await client.post(
-        "/api/v1/execution/tasks",
-        json={"name": "End-to-end task"},
-        headers=auth["headers"],
-    )
-    task_id = create_resp.json()["data"]["id"]
-    await client.post(
-        f"/api/v1/execution/tasks/{task_id}/run",
-        headers=auth["headers"],
-    )
-    await asyncio.sleep(3.5)  # bg runner sleeps 0.8s * 3 + commit overhead
-    final = await client.get(
-        f"/api/v1/execution/tasks/{task_id}",
-        headers=auth["headers"],
-    )
-    assert final.status_code == 200
-    data = final.json()["data"]
-    assert data["status"] == "COMPLETED", f"got {data['status']} with error {data.get('error')}"
-    assert data["progress"] == 100
-    assert isinstance(data["result"], dict)
-    assert "executor" in data["result"]
-    assert data["result"]["executor"].startswith("minimal-run-task")
+    # Drain the background runner: leaving it mid-write past teardown
+    # invalidates the shared in-memory SQLite connection for later tests.
+    await _wait_terminal(client, auth["headers"], task_id)
 
 
 @pytest.mark.asyncio
-async def test_run_rejects_already_running(client: AsyncClient) -> None:
-    """Second POST /run while still RUNNING must return 400."""
+async def test_no_executor_task_is_never_completed(
+    client: AsyncClient,
+) -> None:
+    """DETERMINISTIC GATE: a non-delegated task has no executor, so the
+    runner must land it FAILED with the reason recorded -- fabricating
+    COMPLETED/progress=100/result here is a lie in the completion
+    signal (ADR-001 / Rule 17)."""
     auth = await _register_and_login(client)
-    create_resp = await client.post(
-        "/api/v1/execution/tasks",
-        json={"name": "Double-run guard"},
-        headers=auth["headers"],
+    task_id = await _create_task(
+        client, auth["headers"], "No-executor honesty gate",
     )
-    task_id = create_resp.json()["data"]["id"]
-    first = await client.post(
+    resp = await client.post(
         f"/api/v1/execution/tasks/{task_id}/run",
         headers=auth["headers"],
     )
-    assert first.status_code == 200
+    assert resp.status_code == 200, resp.text
+
+    data = await _wait_terminal(client, auth["headers"], task_id)
+    assert data["status"] == "FAILED", (
+        f"no-executor task must land FAILED, got {data['status']}"
+    )
+    assert data["status"] != "COMPLETED"
+    assert data["progress"] != 100, "progress must not be fabricated"
+    assert data["result"] is None, "honest failure must not fake a result"
+    assert "no executor" in (data["error"] or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_run_rejects_already_running(
+    client: AsyncClient, db_session: AsyncSession,
+) -> None:
+    """POST /run on a RUNNING task must return 400 (no double-dispatch).
+
+    The RUNNING state is forced directly in the DB: the PATCH surface
+    only allows PAUSED/CANCELLED, and racing the (now fast-failing)
+    background runner would make this test flaky.
+    """
+    auth = await _register_and_login(client)
+    task_id = await _create_task(client, auth["headers"], "Double-run guard")
+
+    row = (
+        await db_session.execute(
+            select(Task).where(Task.id == uuid.UUID(task_id))
+        )
+    ).scalar_one()
+    row.status = "RUNNING"
+    await db_session.commit()
 
     second = await client.post(
         f"/api/v1/execution/tasks/{task_id}/run",
@@ -99,54 +141,55 @@ async def test_run_rejects_already_running(client: AsyncClient) -> None:
     assert body["success"] is False
     assert "RUNNING" in body["error"]["message"]
 
-    # Wait for bg to finish so it doesn't bleed into other tests.
-    await asyncio.sleep(3.5)
-
 
 @pytest.mark.asyncio
 async def test_run_accepts_failed_task(client: AsyncClient) -> None:
-    """Retry: FAILED tasks must be runnable again."""
+    """Retry: FAILED tasks must be runnable again.
+
+    FAILED is reached the real way -- running a no-executor task fails
+    honestly -- so this pins that the honest failure stays retryable.
+    """
     auth = await _register_and_login(client)
-    create_resp = await client.post(
-        "/api/v1/execution/tasks",
-        json={"name": "Retry-after-fail"},
+    task_id = await _create_task(client, auth["headers"], "Retry-after-fail")
+
+    await client.post(
+        f"/api/v1/execution/tasks/{task_id}/run",
         headers=auth["headers"],
     )
-    task_id = create_resp.json()["data"]["id"]
-    # Simulate a prior failure.
-    await client.patch(
-        f"/api/v1/execution/tasks/{task_id}",
-        json={"status": "FAILED"},
-        headers=auth["headers"],
-    )
+    first = await _wait_terminal(client, auth["headers"], task_id)
+    assert first["status"] == "FAILED"
+
     resp = await client.post(
         f"/api/v1/execution/tasks/{task_id}/run",
         headers=auth["headers"],
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["status"] == "RUNNING"
-    await asyncio.sleep(3.5)
+
+    # Still no executor: the retry must also terminate honestly.
+    retry = await _wait_terminal(client, auth["headers"], task_id)
+    assert retry["status"] == "FAILED"
 
 
 @pytest.mark.asyncio
 async def test_run_accepts_cancelled_task(client: AsyncClient) -> None:
     """CANCELLED tasks must be runnable again (re-submit)."""
     auth = await _register_and_login(client)
-    create_resp = await client.post(
-        "/api/v1/execution/tasks",
-        json={"name": "Re-submit"},
-        headers=auth["headers"],
-    )
-    task_id = create_resp.json()["data"]["id"]
-    await client.patch(
+    task_id = await _create_task(client, auth["headers"], "Re-submit")
+
+    patch_resp = await client.patch(
         f"/api/v1/execution/tasks/{task_id}",
         json={"status": "CANCELLED"},
         headers=auth["headers"],
     )
+    assert patch_resp.status_code == 200, patch_resp.text
+
     resp = await client.post(
         f"/api/v1/execution/tasks/{task_id}/run",
         headers=auth["headers"],
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["status"] == "RUNNING"
-    await asyncio.sleep(3.5)
+
+    # Drain the background runner so it does not bleed into other tests.
+    await _wait_terminal(client, auth["headers"], task_id)

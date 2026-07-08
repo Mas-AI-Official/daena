@@ -31,6 +31,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.execution import Task
 from app.models.notification import Notification
 from app.services.cost_guard import CostGuard
 from app.services.notification_service import NotificationService
@@ -92,6 +93,29 @@ async def _wait_for_task_complete(
     pytest.fail(f"Task {task_id} did not complete within {max_wait_s}s")
 
 
+async def _delegate_task(db: AsyncSession, task_id: str) -> None:
+    """Attach a minimal delegation envelope so /run dispatches the real
+    executor branch (stubbed per-test): non-delegated tasks fail
+    honestly (no executor wired), so completion-path tests must go
+    through the delegated seam."""
+    row = (
+        await db.execute(select(Task).where(Task.id == uuid.UUID(task_id)))
+    ).scalar_one()
+    row.checkpoint_data = {
+        "delegation": {"origin": "delegated", "department": "Engineering"},
+    }
+    await db.commit()
+
+
+async def _fake_delegated_success(**kwargs) -> dict:
+    """Deterministic executor stub: succeeds WITHOUT an artifact so the
+    P2 knowledge-ingest hook stays out of the picture."""
+    return {
+        "executor": "delegated-llm-v1",
+        "summary": "stubbed delegated work product",
+    }
+
+
 # ---------------------------------------------------------------------------
 # task_complete retrofit
 # ---------------------------------------------------------------------------
@@ -99,9 +123,13 @@ async def _wait_for_task_complete(
 
 @pytest.mark.asyncio
 async def test_task_complete_emits_notification_when_enabled(
-    client: AsyncClient, db_session: AsyncSession,
+    client: AsyncClient, db_session: AsyncSession, monkeypatch,
 ) -> None:
     """Default state -> task completion lands a `task_complete` row."""
+    monkeypatch.setattr(
+        "app.services.delegated_executor.execute_delegated_step",
+        _fake_delegated_success,
+    )
     auth = await _register_and_login(client)
 
     create_resp = await client.post(
@@ -110,6 +138,7 @@ async def test_task_complete_emits_notification_when_enabled(
         headers=auth["headers"],
     )
     task_id = create_resp.json()["data"]["id"]
+    await _delegate_task(db_session, task_id)
 
     run_resp = await client.post(
         f"/api/v1/execution/tasks/{task_id}/run", headers=auth["headers"],
@@ -137,9 +166,13 @@ async def test_task_complete_emits_notification_when_enabled(
 
 @pytest.mark.asyncio
 async def test_task_complete_suppressed_when_flag_off(
-    client: AsyncClient, db_session: AsyncSession,
+    client: AsyncClient, db_session: AsyncSession, monkeypatch,
 ) -> None:
     """notif_task_complete=false -> NO task_complete row appears."""
+    monkeypatch.setattr(
+        "app.services.delegated_executor.execute_delegated_step",
+        _fake_delegated_success,
+    )
     auth = await _register_and_login(client)
     await _set_user_setting(
         client, auth["headers"], "notif_task_complete", False,
@@ -151,6 +184,7 @@ async def test_task_complete_suppressed_when_flag_off(
         headers=auth["headers"],
     )
     task_id = create_resp.json()["data"]["id"]
+    await _delegate_task(db_session, task_id)
     await client.post(
         f"/api/v1/execution/tasks/{task_id}/run", headers=auth["headers"],
     )
