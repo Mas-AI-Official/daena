@@ -110,6 +110,17 @@ class AgentLoop:
     STEP_TIMEOUT_SECONDS = 300
     # Show progress prompt every N steps (unless in AGI mode)
     PROGRESS_CHECK_INTERVAL = 3
+    # Runtime selection order when the registry exposes registered ids.
+    # vllm (local llama-server) is first-class; ollama is deprecated and
+    # kept only as a last-resort fallback for older installs.
+    _RUNTIME_PRIORITY = (
+        "claude_code",
+        "codex",
+        "gemini_cli",
+        "grok_cli",
+        "vllm",
+        "ollama",
+    )
 
     def __init__(
         self,
@@ -321,10 +332,22 @@ class AgentLoop:
         # Build the prompt with context from previous steps
         prompt = self._build_prompt(step, context)
 
-        # Select runtime
+        # Select runtime from what the registry actually has registered,
+        # in priority order, then any other registered runtime. Falls back
+        # to the static priority tuple when the registry does not expose
+        # its ids. Each candidate is probed for a fresh ONLINE signal so a
+        # cold health cache cannot mask an available runtime.
+        registered = getattr(registry, "registered_ids", None)
+        if registered:
+            ordered = [r for r in self._RUNTIME_PRIORITY if r in registered]
+            ordered += [r for r in registered if r not in self._RUNTIME_PRIORITY]
+            candidates = ordered
+        else:
+            candidates = list(self._RUNTIME_PRIORITY)
+
         selected_rid = None
         adapter = None
-        for candidate in ["claude_code", "codex", "ollama"]:
+        for candidate in candidates:
             _cand = registry.get_adapter(candidate)
             if _cand:
                 health = await registry.ensure_health_fresh(candidate)
@@ -343,13 +366,37 @@ class AgentLoop:
 
         try:
             output_lines: list[str] = []
-            async for line in adapter.execute(
-                task=prompt,
-                context={"session_id": f"agent-loop-{step.step_id}", "working_directory": "."},
-            ):
-                output_lines.append(line)
+
+            async def _consume() -> None:
+                async for line in adapter.execute(
+                    task=prompt,
+                    context={
+                        "session_id": f"agent-loop-{step.step_id}",
+                        "working_directory": ".",
+                    },
+                ):
+                    output_lines.append(line)
+
+            # Per-step timeout: a hung runtime must fail the step, not
+            # stall the whole loop. STEP_TIMEOUT_SECONDS was defined but
+            # never enforced before this.
+            await asyncio.wait_for(_consume(), timeout=self.STEP_TIMEOUT_SECONDS)
 
             output = "\n".join(output_lines)
+
+            # Honesty gate (Rule 17 / ADR-001): a runtime that produced no
+            # output did not do the work -- that is a failure, not a hollow
+            # success.
+            if not output.strip():
+                elapsed = (datetime.utcnow() - t0).total_seconds() * 1000
+                return StepResult(
+                    step_id=step.step_id,
+                    success=False,
+                    error=f"runtime '{selected_rid}' returned no output",
+                    duration_ms=int(elapsed),
+                    runtime_used=selected_rid,
+                    iteration=self._receipt.total_iterations,
+                )
 
             # Parse cost from output metadata
             cost = 0.0
@@ -374,6 +421,20 @@ class AgentLoop:
                 output=output,
                 cost_usd=cost,
                 duration_ms=duration or int(elapsed),
+                runtime_used=selected_rid,
+                iteration=self._receipt.total_iterations,
+            )
+
+        except TimeoutError:
+            elapsed = (datetime.utcnow() - t0).total_seconds() * 1000
+            return StepResult(
+                step_id=step.step_id,
+                success=False,
+                error=(
+                    f"runtime '{selected_rid}' timed out after "
+                    f"{self.STEP_TIMEOUT_SECONDS}s"
+                ),
+                duration_ms=int(elapsed),
                 runtime_used=selected_rid,
                 iteration=self._receipt.total_iterations,
             )
