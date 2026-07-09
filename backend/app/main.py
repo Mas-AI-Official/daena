@@ -512,6 +512,25 @@ async def _run_deferred_initialization(app: FastAPI) -> None:
 
     await _step("background_queue", _background_queue)
 
+    # Boot recovery for the delegated Task spine: any task left RUNNING by
+    # a previous process death is a phantom -- its background coroutine
+    # never resumes across a restart. Sweep every such row to
+    # FAILED("interrupted by restart") so the table tells the truth and
+    # the operator decides whether to re-run; never silently auto-retry a
+    # possibly-destructive step (Rule 17 / ADR-001, mirrors the
+    # BackgroundTask failed_due_to_restart recovery). Runs before the cron
+    # scheduler -- the one startup launcher of delegated tasks -- so it can
+    # never race a freshly-started RUNNING row.
+    async def _sweep_stale_tasks() -> None:
+        from app.core.database import async_session_factory
+        from app.services.execution_service import ExecutionService
+
+        async with async_session_factory() as db:
+            swept = await ExecutionService(db).sweep_stale_running_tasks()
+        logger.info("task_spine.boot_sweep_complete", swept=swept)
+
+    await _step("task_spine_sweep", _sweep_stale_tasks)
+
     async def _cron_scheduler() -> None:
         from app.core.events import get_runtime_registry
         from app.services.heartbeat.cron_scheduler import (

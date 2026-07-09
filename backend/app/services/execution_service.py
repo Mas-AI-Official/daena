@@ -1170,6 +1170,38 @@ class ExecutionService(BaseService):
         _asyncio.create_task(_background_run())
         return payload
 
+    async def sweep_stale_running_tasks(self) -> int:
+        """Boot recovery: fail tasks stuck in RUNNING across a restart.
+
+        A task flips to RUNNING and hands off to a detached background
+        coroutine (see run_task). If the process dies mid-flight, that
+        coroutine never resumes and the row is left as a phantom
+        RUNNING forever. On startup we sweep every such row to FAILED
+        with a truthful error rather than leaving a lie in the table or
+        silently auto-retrying a possibly-destructive step (Rule 17 /
+        ADR-001; mirrors the BackgroundTask ``failed_due_to_restart``
+        precedent for the delegated Task spine). The operator decides
+        whether to re-run.
+
+        Global across all tenants -- startup has no tenant scope.
+        Returns the number of tasks swept.
+        """
+        rows = (
+            await self.db.execute(
+                select(Task).where(Task.status == TaskStatus.RUNNING.value)
+            )
+        ).scalars().all()
+        if not rows:
+            return 0
+        now = datetime.now(UTC)
+        for task in rows:
+            task.status = TaskStatus.FAILED.value
+            task.error = "interrupted by restart"
+            task.completed_at = now
+        await self.db.commit()
+        logger.warning("task_spine.swept_stale_running", count=len(rows))
+        return len(rows)
+
     # ── Private helpers ───────────────────────────────────────
 
     async def _get_session(

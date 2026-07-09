@@ -422,3 +422,128 @@ async def test_delegate_goal_materializes_tasks(db_session):
         assert dg.get("origin") == "delegated"
         assert dg.get("classification") in ("free", "spend", "outward")
         assert "step_index" in dg
+
+
+# ── 5. autopilot kicker: free steps run, gated steps stay PENDING ──
+
+
+class _FakeVP:
+    """Deterministic VP stub so delegate() materializes a KNOWN mixed
+    plan (one free + one outward) without the live rule/model router.
+
+    __init__ swallows ``state_service=`` (delegate constructs a real
+    DepartmentStateService and passes it in); the pipeline methods are
+    pass-through so classify_step sees our hand-built subtasks verbatim.
+    """
+
+    _PLAN = _plan(
+        [
+            VPSubtask(
+                description="Analyze the churn data", department="Engineering"
+            ),
+            VPSubtask(
+                description="Send the launch announcement to partners",
+                department="Marketing",
+            ),
+        ],
+        goal="Launch the Q3 growth push",
+    )
+
+    def __init__(self, **_kw):
+        pass
+
+    async def plan(self, goal, *, tenant_id):
+        return self._PLAN
+
+    async def route(self, plan, *, tenant_id):
+        return plan
+
+    async def apply_policies(self, plan, *, tenant_id):
+        return plan
+
+
+@pytest.mark.asyncio
+async def test_delegate_kicks_free_steps_leaves_gated_pending(
+    db_session, monkeypatch
+):
+    """The autopilot kicker: after delegate() materializes a plan, every
+    FREE step is dispatched (leaves PENDING with NO manual POST /run),
+    while every gated (spend/outward) step stays PENDING behind its
+    approval. Mirrors master.md #4 gate: "approves a plan, asserts task
+    leaves PENDING without POST /run"."""
+    monkeypatch.setattr(
+        "app.services.delegated_goals.DaenaVP", _FakeVP
+    )
+    tid, uid, _ = await _seed(
+        db_session, dept_names=("Engineering", "Marketing")
+    )
+    svc = DelegatedGoalService(db_session)
+
+    result = await svc.delegate(
+        goal="Launch the Q3 growth push", tenant_id=tid, user_id=uid
+    )
+
+    by_class = {s["classification"]: s for s in result["steps"]}
+    assert set(by_class) == {"free", "outward"}
+    free_id = by_class["free"]["task_id"]
+    outward_id = by_class["outward"]["task_id"]
+
+    # Exactly the outward step is gated; only the free step was kicked.
+    assert result["gated"] == 1
+    assert free_id in result["kicked"]
+    assert outward_id not in result["kicked"]
+
+    db_session.expire_all()
+    tasks = {
+        str(t.id): t for t in await _tasks_for_tenant(db_session, tid)
+    }
+    # Free step left PENDING under autopilot (no explicit run_task call).
+    assert tasks[free_id].status != "PENDING"
+    # Gated step is untouched -- approval must gate it, never autopilot.
+    assert tasks[outward_id].status == "PENDING"
+
+    # And the kick actually drove the free step to a real terminal state.
+    assert (
+        await _wait_terminal(db_session, uuid.UUID(free_id)) == "COMPLETED"
+    )
+    db_session.expire_all()
+    still_gated = (
+        await db_session.execute(
+            select(Task).where(Task.id == uuid.UUID(outward_id))
+        )
+    ).scalar_one()
+    assert still_gated.status == "PENDING"
+
+
+@pytest.mark.asyncio
+async def test_sweep_stale_running_marks_failed_on_restart(db_session):
+    """Boot recovery: a Task stuck in RUNNING across a process restart is
+    swept to FAILED with a truthful error -- never left as a phantom
+    RUNNING and never auto-retried (Rule 17 / ADR-001, mirrors the
+    BackgroundTask failed_due_to_restart precedent). master.md #4 gate:
+    "restart-sim asserts RUNNING -> FAILED(interrupted by restart)"."""
+    tid, uid, _ = await _seed(db_session)
+    task_id = uuid.uuid4()
+    db_session.add(
+        Task(
+            id=task_id,
+            tenant_id=tid,
+            user_id=uid,
+            name="Interrupted mid-flight",
+            description="Was RUNNING when the process died",
+            status="RUNNING",
+            progress=42,
+        )
+    )
+    await db_session.commit()
+
+    swept = await ExecutionService(db_session).sweep_stale_running_tasks()
+
+    assert swept == 1
+    db_session.expire_all()
+    row = (
+        await db_session.execute(select(Task).where(Task.id == task_id))
+    ).scalar_one()
+    assert row.status == "FAILED"
+    assert row.error == "interrupted by restart"
+    assert row.completed_at is not None

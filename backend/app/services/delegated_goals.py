@@ -144,11 +144,36 @@ class DelegatedGoalService:
             session_id=session_id,
         )
         result["goal"] = goal
+
+        # Autopilot kicker: dispatch every FREE step immediately so a
+        # delegated goal actually starts running without a human POST
+        # /run. Gated (spend/outward) steps are NEVER kicked -- they
+        # stay PENDING behind their approval, and run_task's G5 gate
+        # refuses them anyway (defense in depth). Best-effort: a kick
+        # that raises is logged and skipped so one bad step never aborts
+        # the whole delegation.
+        exec_svc = ExecutionService(self.db)
+        kicked: list[str] = []
+        for step in result["steps"]:
+            if step["classification"] != "free":
+                continue
+            try:
+                await exec_svc.run_task(UUID(step["task_id"]), tenant_id)
+                kicked.append(step["task_id"])
+            except Exception:  # noqa: BLE001 - best-effort autopilot kick
+                logger.warning(
+                    "delegated_goal.kick_failed",
+                    task_id=step["task_id"],
+                    exc_info=True,
+                )
+        result["kicked"] = kicked
+
         logger.info(
             "delegated_goal.materialized",
             tenant_id=str(tenant_id),
             tasks=len(result["task_ids"]),
             gated=result["gated"],
+            kicked=len(kicked),
             routing_mode=result["routing_mode"],
         )
         return result
