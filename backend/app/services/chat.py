@@ -826,6 +826,9 @@ class ChatService(BaseService):
             "latency_ms": message.latency_ms,
             "token_count_input": message.token_count_input,
             "token_count_output": message.token_count_output,
+            # FactualityGate grounding verdict (BUILD-NOW #8). None when the
+            # message was not grounding-eligible or the gate never ran.
+            "grounding": getattr(message, "grounding", None),
             "created_at": (
                 message.created_at.isoformat() if message.created_at else None
             ),

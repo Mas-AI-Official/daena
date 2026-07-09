@@ -132,6 +132,12 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     thinking_steps: Mapped[dict | None] = mapped_column(JSONBCompat, nullable=True)
     tools_used: Mapped[dict | None] = mapped_column(JSONBCompat, nullable=True)
+    # Grounding verdict from FactualityGate (BUILD-NOW #8 / ADR-001). Null when
+    # the message was not grounding-eligible or the gate was never run. When
+    # present: {checked, available, abstain, confidence, citation_count,
+    # citations[], reasons[], latency_ms}. available=False means ragx was
+    # offline -- an honest "unverified", never a fabricated pass.
+    grounding: Mapped[dict | None] = mapped_column(JSONBCompat, nullable=True)
     model_used: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     provider_used: Mapped[str | None] = mapped_column(String(50), nullable=True)
     governance_tier: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)

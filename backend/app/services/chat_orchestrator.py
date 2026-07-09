@@ -151,6 +151,14 @@ class ChatOrchestrator:
     # so it must persist across orchestrator instances within the same process.
     _behavior_guard: Any = None
 
+    # FactualityGate wiring (BUILD-NOW #8 / C1). The gate runs only for
+    # knowledge-seeking intents -- grounding a greeting is noise. It is
+    # time-boxed so a slow/hung ragx can never stall the terminal SSE event;
+    # the terminal reply always ships, with an honest "unverified" verdict if
+    # the gate could not complete in budget.
+    FACTUALITY_GATE_BUDGET_SECONDS: float = 8.0
+    _GROUNDING_INTENTS: frozenset[str] = frozenset({"SEARCH", "ANALYSIS"})
+
     @classmethod
     def _get_behavior_guard(cls) -> Any:
         """Lazy-init singleton BehaviorGuard."""
@@ -256,6 +264,69 @@ class ChatOrchestrator:
             return round(input_cost + output_cost, 8)
 
         return 0.0
+
+    async def _run_factuality_gate(
+        self, *, query: str, answer: str, intent_name: str,
+    ) -> dict | None:
+        """Ground the final answer against ragx via FactualityGate (C1).
+
+        Returns a compact, persistable verdict dict for the SSE ``grounding``
+        event and the ``ChatMessage.grounding`` column, or ``None`` when the
+        gate does not apply (ineligible intent or empty answer).
+
+        Honesty contract (Rule 17 / ADR-001): on ragx outage, budget timeout,
+        or any unexpected error this returns ``available=False`` with a reason.
+        It never fabricates a grounded pass and never raises -- a grounding
+        failure must not break the chat turn. Zero model tokens: the gate hits
+        ragx with generate=False.
+        """
+        if intent_name not in self._GROUNDING_INTENTS:
+            return None
+        if not (answer and answer.strip()):
+            return None
+
+        def _unavailable(reason: str) -> dict:
+            return {
+                "checked": True,
+                "available": False,
+                "abstain": True,
+                "confidence": 0.0,
+                "citation_count": 0,
+                "citations": [],
+                "reasons": [reason],
+                "latency_ms": None,
+            }
+
+        try:
+            from app.services.factuality_gate import FactualityGate
+
+            verdict = await asyncio.wait_for(
+                FactualityGate.verify(query=query, candidate_answer=answer),
+                timeout=self.FACTUALITY_GATE_BUDGET_SECONDS,
+            )
+        except (asyncio.TimeoutError, TimeoutError):
+            return _unavailable("factuality gate timed out")
+        except Exception as exc:  # noqa: BLE001 - honest degrade, never break the turn
+            logger.debug("orchestrator.factuality_gate_failed", error=str(exc))
+            return _unavailable(f"factuality gate error: {str(exc)[:80]}")
+
+        return {
+            "checked": True,
+            "available": verdict.available,
+            "abstain": verdict.abstain,
+            "confidence": round(verdict.confidence, 4),
+            "citation_count": len(verdict.citations),
+            "citations": [
+                {
+                    "source_path": c.source_path,
+                    "score": round(c.score, 4),
+                    "snippet": (c.snippet or "")[:240],
+                }
+                for c in verdict.citations[:5]
+            ],
+            "reasons": verdict.reasons[:5],
+            "latency_ms": int(verdict.latency_ms),
+        }
 
     async def stream_reply(
         self,
@@ -4175,6 +4246,26 @@ class ChatOrchestrator:
             },
         )
 
+        # ── FactualityGate grounding (BUILD-NOW #8 / C1) ──────
+        # Ground the FINAL answer against ragx AFTER the MEM-03 commit, so the
+        # time-boxed gate never widens the disconnect window on the durable
+        # answer write. The verdict is persisted in a fail-open second commit
+        # and surfaced as exactly one SSE `grounding` event below. Honest on
+        # outage: available=False, never a fabricated pass. Zero model tokens.
+        _grounding = await self._run_factuality_gate(
+            query=user_content,
+            answer=collected_content,
+            intent_name=qu_result.intent.name,
+        )
+        if _grounding is not None:
+            assistant_msg.grounding = _grounding
+            try:
+                await self._db.commit()
+            except Exception:
+                logger.warning(
+                    "orchestrator.grounding_commit_failed", exc_info=True,
+                )
+
         # Slop scoring (non-blocking, audit only)
         try:
             from app.config.stop_slop import score_content, scan_slop
@@ -4206,6 +4297,12 @@ class ChatOrchestrator:
                 "content_len": len(collected_content or ""),
             },
         )
+        # Exactly one grounding SSE event (BUILD-NOW #8 / C1), emitted just
+        # before the terminal `done`. The same verdict already rides inside
+        # done_data via _message_to_dict; this dedicated event lets the UI
+        # render the grounding badge without re-parsing the message payload.
+        if _grounding is not None:
+            yield {"type": "grounding", "data": _grounding}
         yield {"type": "done", "data": done_data}
 
         # ── Stage 10: Record cost + audit ─────────────────────

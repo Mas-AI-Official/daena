@@ -1006,6 +1006,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 "connector_instances": {
                     "owner_email": "VARCHAR(254)",
                 },
+                "chat_messages": {  # BUILD-NOW #8 FactualityGate grounding verdict
+                    "grounding": "JSON",
+                },
             }
             for _tbl, _cols in _extra_table_cols.items():
                 for col_name, col_type in _cols.items():
