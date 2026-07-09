@@ -14,8 +14,9 @@
  */
 
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
-  AlertTriangle, BookOpen, Loader2, RefreshCw, Search,
+  AlertTriangle, BookOpen, ChevronRight, Loader2, RefreshCw, Search, Zap,
 } from 'lucide-react'
 
 import {
@@ -56,6 +57,13 @@ export default function SkillPacksPanel() {
               app. Daena uses them as context so the LLM knows how to do
               specific tasks.
             </p>
+            <Link
+              to="/skills"
+              className="mt-2 inline-flex items-center gap-1 rounded-lg border border-primary-500/20 px-2.5 py-1 text-[10px] text-primary-400 transition-colors hover:bg-primary-500/10"
+              title="Author, register, and manage skills on the canonical Skills page."
+            >
+              <Zap size={10} /> Manage skills on /skills <ChevronRight size={10} />
+            </Link>
           </div>
           <button
             onClick={refresh}
