@@ -5,7 +5,8 @@
  */
 import { useEffect, useState, useCallback } from 'react'
 import { Card, Badge } from '@/components/common'
-import { DollarSign, BarChart3, Bell, TrendingUp, Layers, Calendar, CheckCircle, Gauge, Users } from 'lucide-react'
+import { DollarSign, BarChart3, Bell, TrendingUp, Layers, Calendar, CheckCircle, ChevronRight, Gauge, Users } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { persistUiPref } from '@/stores/uiStore'
 
@@ -172,6 +173,20 @@ export function SettingsBilling() {
 
   return (
     <div className="space-y-6">
+      {/* Cross-link to the plan/upgrade surface. This tab is usage + spend;
+          changing plan or entering payment lives in Account > Plan & Billing. */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-starlight-500">
+          Usage and spend for this workspace. To change plan or payment, go to Plan &amp; Billing.
+        </p>
+        <Link
+          to="/account#billing"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] text-primary-400 border border-primary-500/20 hover:bg-primary-500/10 transition-colors shrink-0"
+          title="Plan changes, upgrades, and Stripe checkout live in Account > Plan & Billing."
+        >
+          <DollarSign size={10} /> Plan &amp; Billing <ChevronRight size={10} />
+        </Link>
+      </div>
       {/* My Quota */}
       {quota && (
         <Card variant="glass" padding="lg">

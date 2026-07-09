@@ -4,7 +4,7 @@
  * PR-SETTINGS-CLEANUP (2026-05-02) introduced the Normal/Advanced split
  * so the default surface is the seven tabs an operator can trust without
  * understanding the full system (General, Memory, Privacy & Data,
- * Notifications, Voice, Billing & Usage, About). The five advanced tabs
+ * Notifications, Voice, Usage & Costs, About). The five advanced tabs
  * (Governance, Models & Runtimes, Daena Heartbeat, Developer, Shortcuts)
  * are surfaced behind a "Show advanced" toggle.
  *
@@ -74,7 +74,7 @@ const CATEGORIES: readonly CategoryEntry[] = [
   { key: 'privacy', label: 'Privacy & Data', icon: Lock, component: SettingsPrivacy, advanced: false },
   { key: 'notifications', label: 'Notifications', icon: Bell, component: SettingsNotifications, advanced: false },
   { key: 'voice', label: 'Voice', icon: Mic, component: SettingsVoice, advanced: false },
-  { key: 'billing', label: 'Billing & Usage', icon: DollarSign, component: SettingsBilling, advanced: false },
+  { key: 'billing', label: 'Usage & Costs', icon: DollarSign, component: SettingsBilling, advanced: false },
   { key: 'about', label: 'About', icon: Info, component: SettingsAbout, advanced: false },
   // Advanced (founder / developer; behind the Show-advanced toggle)
   // 'llm' (LLM Providers) folded into 'models' (Models & Runtimes) 2026-06-18.

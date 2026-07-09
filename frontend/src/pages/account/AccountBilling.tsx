@@ -11,7 +11,8 @@
  * lands on, so every gated 402 reaches somewhere a user can actually upgrade.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Sparkles, Check, ExternalLink, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react'
+import { Sparkles, Check, ExternalLink, AlertCircle, Loader2, CheckCircle2, ChevronRight, Gauge } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { toast } from '@/stores/toastStore'
 
@@ -168,6 +169,18 @@ export function AccountBilling() {
           <span>{error}</span>
         </div>
       )}
+
+      {/* Cross-link to the usage/cost surface. This surface is plan + upgrade;
+          usage totals and budget alerts live in Settings > Usage & Costs. */}
+      <div className="flex justify-end">
+        <Link
+          to="/settings/billing"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] text-primary-400 border border-primary-500/20 hover:bg-primary-500/10 transition-colors"
+          title="Usage totals, spend history, and budget alerts live in Settings > Usage & Costs."
+        >
+          <Gauge size={10} /> Usage &amp; Costs <ChevronRight size={10} />
+        </Link>
+      </div>
 
       {/* Current plan */}
       {data && (
