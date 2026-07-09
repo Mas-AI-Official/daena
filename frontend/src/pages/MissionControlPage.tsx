@@ -6,13 +6,13 @@ import { BACKGROUNDS } from '@/styles/designTokens'
 // Governance Pulse, Quick Actions, Recent Activity) live here as an "Overview"
 // overlay. Lazy so the dashboard's data burst + bundle load only on open,
 // keeping the default canvas view lean. /dashboard now redirects to /brain.
-const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
+const DashboardPage = lazy(() => import('@/components/brain/DashboardPage'))
 // Analytics folded into the Brain cockpit 2026-07-02 (FM-5): the usage/cost/
 // governance metrics that lived at /analytics are a second read-only lens on
 // the same org the brain graphs, so they belong here as an "Analytics" overlay
 // rather than a peer route. Lazy so its /analytics/dashboard burst fires only
 // on open. /analytics now redirects to /brain.
-const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
+const AnalyticsPage = lazy(() => import('@/components/brain/AnalyticsPage'))
 import { useGraphStore } from '@/stores/graphStore'
 import BrainCanvas from '@/components/missionControl/BrainCanvas'
 import { countWorking } from '@/components/missionControl/workingStatus'

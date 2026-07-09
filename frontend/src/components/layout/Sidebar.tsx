@@ -7,6 +7,7 @@ import {
   Shield,
   ShieldCheck,
   Brain,
+  Briefcase,
   Network,
   Zap,
   Plug,
@@ -171,7 +172,7 @@ const navGroups: NavGroup[] = [
         matchPaths: ['/governance/approvals', '/policies', '/governance/audit', '/governance/trust'],
         title: 'Approvals, Policy Rules, the Audit Log, and the Trust Ladder in one tabbed surface. The pending-approvals count rides this entry.',
       },
-      { label: 'Opportunities', path: '/opportunities', icon: <Shield size={18} /> },
+      { label: 'Opportunities', path: '/opportunities', icon: <Briefcase size={18} /> },
       // Analytics folded into the Brain (FM-5, 2026-07-02): usage/cost/
       // governance metrics now open as an "Analytics" overlay from the Brain
       // toolbar (Core > Brain), so the standalone nav entry was removed.
