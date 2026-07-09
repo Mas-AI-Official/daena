@@ -30,6 +30,7 @@ from sqlalchemy.ext.compiler import compiles
 from app.models.base import Base
 from app.models.cron_run import CronRun
 from app.services.heartbeat import cron_scheduler as cs_module
+from app.services.runtimes.base_adapter import RuntimeExecutionError
 from app.services.heartbeat.cron_scheduler import (
     CronFrequency,
     CronJob,
@@ -280,6 +281,43 @@ class TestErrorHandling:
         assert bad_row.error is not None
         assert "boom" in bad_row.error
         assert good_row.error is None
+
+    @pytest.mark.asyncio
+    async def test_runtime_execution_error_recorded_on_cron_run(
+        self, patched_session_factory,
+    ):
+        # BUILD-NOW #3 (adapters raise, consumers honor): an adapter that
+        # raises RuntimeExecutionError instead of yielding error text must
+        # end with a CronRun row carrying the error message -- never a
+        # clean row that reads as success (ADR-001 honesty).
+        bad_adapter = _make_failing_adapter(
+            RuntimeExecutionError(
+                runtime_id="ollama",
+                message="Not logged in -- Please run /login",
+            )
+        )
+
+        registry = MagicMock()
+        registry.get_adapter = MagicMock(return_value=bad_adapter)
+        set_runtime_registry_resolver(lambda: registry)
+
+        scheduler = CronScheduler()
+        scheduler.add_job(_due_job("job-authfail", runtime="ollama"))
+
+        executed = await scheduler.check_and_run()
+
+        assert "job-authfail" in executed
+
+        async with patched_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(CronRun).where(CronRun.job_id == "job-authfail")
+                )
+            ).scalar_one()
+
+        assert row.error is not None
+        assert "Not logged in" in row.error
+        assert row.finished_at is not None
 
     @pytest.mark.asyncio
     async def test_hung_adapter_times_out_and_scheduler_advances(

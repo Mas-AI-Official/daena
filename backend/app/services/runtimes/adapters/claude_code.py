@@ -23,6 +23,7 @@ from app.core.logging import get_logger
 from app.services.runtimes.base_adapter import (
     BaseRuntimeAdapter,
     RuntimeCapability,
+    RuntimeExecutionError,
     RuntimeProbeResult,
     RuntimeStatus,
 )
@@ -268,7 +269,10 @@ class ClaudeCodeAdapter(BaseRuntimeAdapter):
         )
 
         if result.is_error:
-            yield f"[Claude Code error: {result.result_text}]"
+            raise RuntimeExecutionError(
+                runtime_id=self.runtime_id,
+                message=result.result_text or "Claude Code execution failed",
+            )
         else:
             if result.result_text:
                 yield result.result_text

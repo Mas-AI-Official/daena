@@ -22,6 +22,7 @@ from app.core.logging import get_logger
 from app.services.runtimes.base_adapter import (
     BaseRuntimeAdapter,
     RuntimeCapability,
+    RuntimeExecutionError,
     RuntimeProbeResult,
     RuntimeStatus,
 )
@@ -143,10 +144,16 @@ class CodexAdapter(BaseRuntimeAdapter):
                     stderr=result.stderr.strip()[:500],
                     task=task[:100],
                 )
-        except subprocess.TimeoutExpired:
-            yield "[Codex timed out after 5 minutes]"
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeExecutionError(
+                runtime_id=self.runtime_id,
+                message="Codex timed out after 5 minutes",
+            ) from exc
         except Exception as exc:
-            yield f"[Codex error: {exc}]"
+            raise RuntimeExecutionError(
+                runtime_id=self.runtime_id,
+                message=str(exc) or exc.__class__.__name__,
+            ) from exc
 
     async def cancel(self, session_id: str) -> bool:
         """Cancel is not supported in thread-pool subprocess mode."""

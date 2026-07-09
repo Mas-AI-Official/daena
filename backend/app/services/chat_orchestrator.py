@@ -2884,18 +2884,53 @@ class ChatOrchestrator:
                             has_error=_has_error,
                         )
                     except Exception as rt_exc:
-                        yield {
-                            "type": "runtime_activity",
-                            "runtime_id": selected_rid,
-                            "display_name": adapter.display_name,
-                            "status": "failed",
-                            "description": str(rt_exc),
-                        }
-                        logger.warning(
-                            "orchestrator.runtime_dispatch_failed",
-                            runtime=selected_rid,
-                            error=str(rt_exc),
+                        from app.services.providers.claude_cli import (
+                            _looks_like_cli_auth_error as _auth_check,
                         )
+
+                        if _auth_check(str(rt_exc)):
+                            # Adapters now RAISE on execution errors, so a CLI
+                            # auth failure arrives here as an exception instead
+                            # of as buffered content. Emit the same "Primary
+                            # Mind unavailable" failover notice as the
+                            # buffered-text auth path above.
+                            yield {
+                                "type": "governance_notice",
+                                "runtime_id": selected_rid,
+                                "tier": 1,
+                                "title": "Primary Mind unavailable",
+                                "message": (
+                                    f"{adapter.display_name} is not logged in. "
+                                    f"Falling over to the next available brain."
+                                ),
+                            }
+                            yield {
+                                "type": "runtime_activity",
+                                "runtime_id": selected_rid,
+                                "display_name": adapter.display_name,
+                                "status": "failed",
+                                "description": (
+                                    f"{adapter.display_name} not logged in. "
+                                    f"Routing to next available brain..."
+                                ),
+                            }
+                            logger.warning(
+                                "orchestrator.runtime_auth_error_failover",
+                                runtime=selected_rid,
+                            )
+                        else:
+                            yield {
+                                "type": "runtime_activity",
+                                "runtime_id": selected_rid,
+                                "display_name": adapter.display_name,
+                                "status": "failed",
+                                "description": str(rt_exc),
+                            }
+                            logger.warning(
+                                "orchestrator.runtime_dispatch_failed",
+                                runtime=selected_rid,
+                                error=str(rt_exc),
+                            )
                         # Fall through to DaenaBot
             except _AgentLoopHandled:
                 pass  # AgentLoop already handled the task

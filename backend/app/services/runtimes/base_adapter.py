@@ -28,6 +28,21 @@ from enum import Enum
 from typing import Any
 
 
+class RuntimeExecutionError(Exception):
+    """Raised by an adapter when task execution fails.
+
+    Adapters must raise this instead of yielding error text as stream
+    content -- yielded error text flows into every consumer's success
+    path and gets recorded as a successful result (ADR-001 honesty).
+    The message carries the underlying error text verbatim so consumers
+    can surface it and CLI auth detectors can match content markers.
+    """
+
+    def __init__(self, runtime_id: str, message: str) -> None:
+        super().__init__(message)
+        self.runtime_id = runtime_id
+
+
 class RuntimeStatus(Enum):
     """Current operational status of a runtime."""
     ONLINE = "online"
