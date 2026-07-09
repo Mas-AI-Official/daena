@@ -18,6 +18,14 @@ import { buildGroundedBrain } from '@/components/missionControl/groundedBrain'
 let realtimeController: AbortController | null = null
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
+// Monotonic id for Brain activity pulses (see pulseNode). Module-level so it
+// never resets mid-session; BrainCanvas drains by this seq, so a bounded buffer
+// plus a briefly-slow consumer can never double-fire the same comet.
+let pulseSeq = 0
+// The pulse queue is a fire-and-forget animation cue, not a log: the canvas
+// consumes within a frame or two, so anything older than a small tail is stale.
+const PULSE_BUFFER = 32
+
 /**
  * Order-independent fingerprint of a projection used to gate the background poll
  * (refresh): id:status per node plus node/edge counts. Excludes stats.generated_at
@@ -31,6 +39,38 @@ function graphSignature(d: GraphData | null): string {
   const parts = d.nodes.map((n) => `${n.id}:${n.status ?? ''}`)
   parts.sort()
   return `${d.nodes.length}|${d.edges?.length ?? 0}|${parts.join(',')}`
+}
+
+/**
+ * One Brain activity cue: "node <nodeId> just moved because <reason>". Enqueued
+ * by pulseNode when a typed graph event names a node the CURRENT projection
+ * actually contains; drained by BrainCanvas into exactly one comet along an edge
+ * incident to that node. Purely decorative over the SAME GET /graph re-pull -- it
+ * carries no projection data, so the thin-doorbell contract still holds.
+ */
+export interface GraphPulse {
+  seq: number
+  nodeId: string
+  reason: string
+}
+
+/**
+ * Extract the change detail from a graph SSE envelope, or null when there is
+ * nothing to pulse (heartbeat ping, malformed frame, or an older backend whose
+ * doorbell did not name a node). The route dumps the WHOLE SSEChannel envelope
+ * as the data line, so the typed detail lives at e.data.data: { reason, node_id }
+ * -- NOT at e.data.node_id. Kept pure and exported so the SSE router is
+ * unit-testable without standing up the stream.
+ */
+export function parseGraphEvent(
+  e: { type: string; data: unknown },
+): { nodeId: string; reason: string } | null {
+  if (e.type === 'ping') return null
+  const detail = (e.data as { data?: unknown } | null)?.data
+  if (!detail || typeof detail !== 'object') return null
+  const { node_id: nodeId, reason } = detail as { node_id?: unknown; reason?: unknown }
+  if (typeof nodeId !== 'string' || !nodeId) return null
+  return { nodeId, reason: typeof reason === 'string' ? reason : 'graph.changed' }
 }
 
 interface GraphState {
@@ -53,6 +93,12 @@ interface GraphState {
   // drop into reconnect backoff or the stream ends, so LiveStatusPill never
   // claims "Live" while we are really back on the polling fallback.
   live: boolean
+  // Brain activity pulses: a bounded, monotonic queue of "this node just moved"
+  // cues the SSE router enqueues and BrainCanvas drains into event-driven comets.
+  // Reactive so the store stays the single source, but NO component selects it
+  // (the canvas reads it via a vanilla subscribe into a ref), so appends never
+  // trigger a React re-render.
+  pulses: GraphPulse[]
   selectedNodeId: string | null
   // Brain lens: 'graph' = force-directed canvas, 'list' = sortable triage table.
   // Both lenses read the SAME data / kindFilters / highlightedIds so the active
@@ -78,6 +124,10 @@ interface GraphState {
   connectRealtime: () => void
   // Tear the stream down (component unmount); flips `live` false.
   disconnectRealtime: () => void
+  // Enqueue one activity pulse for a node -- but only if the CURRENT projection
+  // actually contains it (Rule 17: never paint activity on a node we cannot
+  // show). Called by the SSE router with the node_id a typed event names.
+  pulseNode: (nodeId: string, reason: string) => void
   selectNode: (id: string | null) => void
   setGraphViewMode: (mode: 'graph' | 'list') => void
   toggleKind: (k: string) => void
@@ -94,6 +144,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   fallbackNotice: null,
   lastUpdated: null,
   live: false,
+  pulses: [],
   selectedNodeId: null,
   graphViewMode: 'graph',
   kindFilters: new Set(),
@@ -205,6 +256,14 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         // Drop heartbeat pings (they carry no change); any real event hints a
         // possible projection change -> coalesced refetch decides if it moved.
         if (e.type === 'ping') return
+        // A typed doorbell (task_status_changed / workstream_*) names the exact
+        // node that moved: fire a single Brain comet on it NOW, before the
+        // debounced refetch, so the pulse feels instant. The refetch below still
+        // runs and remains the sole source of projection truth -- the comet is
+        // pure decoration over the same re-pull, so the thin-doorbell contract
+        // holds even for an older backend that names no node (pulse is skipped).
+        const detail = parseGraphEvent(e)
+        if (detail) get().pulseNode(detail.nodeId, detail.reason)
         scheduleRefresh()
       },
       onReconnecting: () => {
@@ -237,6 +296,18 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     realtimeController?.abort()
     realtimeController = null
     set({ live: false })
+  },
+  pulseNode: (nodeId, reason) => {
+    // Rule 17: only paint activity on a node the live projection actually shows.
+    // A doorbell can name a task/workstream the current /graph slice does not
+    // contain (kind-filtered out, or not yet in this poll); silently skip it
+    // rather than emit a comet pointing at nothing.
+    const nodes = get().data?.nodes
+    if (!nodes || !nodes.some((n) => n.id === nodeId)) return
+    // Monotonic seq lets a briefly-slow canvas consumer drain by id and never
+    // double-fire; the bounded slice keeps this a fire-and-forget cue, not a log.
+    const pulse: GraphPulse = { seq: ++pulseSeq, nodeId, reason }
+    set({ pulses: [...get().pulses, pulse].slice(-PULSE_BUFFER) })
   },
   selectNode: (id) =>
     set(

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pause, Play, Zap, ZapOff, Maximize2, Plus, Minus } from 'lucide-react'
 import type { GraphData, GraphNode } from '@/lib/graphApi'
-import { useGraphStore } from '@/stores/graphStore'
+import { useGraphStore, type GraphPulse } from '@/stores/graphStore'
 import { HIVE_HEX_COLORS, DEPARTMENT_COLORS, GOV_GOLD, GOV_TEAL, BACKGROUNDS, KIND_COLORS } from '@/styles/designTokens'
 import { govSignal, type GovSignal } from './governanceSignal'
 import { WORKING_STATUS } from './workingStatus'
@@ -85,6 +85,22 @@ interface Star {
   tw: number
 }
 
+// One in-flight event-driven comet (#10): a single honest pulse fired when the
+// backend reports a real status change (task_status_changed / workstream_*).
+// src->tgt animates a comet along an incident synapse toward the node that
+// moved; when the node has no drawable edge, ringNodeId ring-flashes it instead.
+// cx/cy is the incident edge's quadratic control point, captured at emit so the
+// curve matches section 5 even if the layout re-fits mid-flight.
+interface EventComet {
+  born: number
+  color: string
+  src: string | null
+  tgt: string | null
+  cx: number
+  cy: number
+  ringNodeId: string | null
+}
+
 const ROOT_ID = 'daena:root'
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
 const CAP_ORDER = ['MIND', 'EYES', 'HANDS', 'VOICE', 'SHIELD', 'MEMORY']
@@ -114,6 +130,13 @@ const R_OTHER = 6
 const MIN_SCALE = 0.18
 const MAX_SCALE = 4
 const STAR_COUNT = 150
+
+// #10 event-driven comet: how long one honest status-change pulse lives on the
+// canvas, and a hard cap so a burst of backend events can never grow the buffer
+// unbounded (the graphStore pulse queue is already bounded at 32; this bounds
+// the render side too). Expiry runs every frame regardless of signalsOn.
+const EVENT_COMET_MS = 1100
+const EVENT_COMET_MAX = 24
 
 function hash01(s: string): number {
   let h = 2166136261
@@ -486,6 +509,12 @@ export default function BrainCanvas() {
   const rafRef = useRef(0)
   const dragRef = useRef({ active: false, lastX: 0, lastY: 0, moved: 0 })
   const starsRef = useRef<Star[]>([])
+  // #10: in-flight event comets and the last pulse.seq we have already turned
+  // into a comet. The subscribe effect appends here (never re-renders); draw()
+  // expires them by age. Kept in refs so the stable draw closure sees the live
+  // buffer without a rebuild.
+  const activeCometsRef = useRef<EventComet[]>([])
+  const lastPulseSeqRef = useRef(0)
 
   const stateRef = useRef<CanvasState>({
     layout,
@@ -674,6 +703,74 @@ export default function BrainCanvas() {
         }
       }
       ctx.globalCompositeOperation = 'source-over'
+    }
+
+    // 6b) Event-driven comets (#10): one honest pulse per real backend status
+    // change (task_status_changed / workstream_*). Unlike section 6 these are
+    // NOT illustrative -- each rides an incident synapse toward the node that
+    // actually moved, then self-expires after EVENT_COMET_MS. Expiry runs every
+    // frame so the buffer stays bounded even while signals are toggled off; only
+    // the draw is gated on signalsOn.
+    const comets = activeCometsRef.current
+    if (comets.length) {
+      const survivors: EventComet[] = []
+      const drawOn = st.signalsOn
+      if (drawOn) ctx.globalCompositeOperation = 'lighter'
+      for (const cm of comets) {
+        const age = nowMs - cm.born
+        if (age < 0 || age >= EVENT_COMET_MS) continue // expired -> dropped
+        survivors.push(cm)
+        if (!drawOn) continue
+        const life = age / EVENT_COMET_MS
+        // smoothstep travel so the head eases in then settles on the target.
+        const p = life * life * (3 - 2 * life)
+        const fade = 1 - life // whole comet dims as it ages
+        if (cm.src && cm.tgt) {
+          const a = lay.placed.get(cm.src)
+          const b = lay.placed.get(cm.tgt)
+          if (!a || !b) continue // layout re-fit dropped an endpoint; expire by age
+          const trail = 6
+          for (let k = trail; k >= 0; k--) {
+            const tt = p - k * 0.02
+            if (tt < 0 || tt > 1) continue
+            const u = 1 - tt
+            // Same quadratic Bezier sampler as section 6, with the control point
+            // captured at emit so the curve matches the drawn synapse.
+            const wx = u * u * a.x + 2 * u * tt * cm.cx + tt * tt * b.x
+            const wy = u * u * a.y + 2 * u * tt * cm.cy + tt * tt * b.y
+            const sx = toSx(wx)
+            const sy = toSy(wy)
+            const alpha = (1 - k / (trail + 1)) * fade
+            const rad = (k === 0 ? 3.6 : 2.4) * (1 - k / (trail + 2))
+            ctx.beginPath()
+            ctx.arc(sx, sy, Math.max(0.8, rad), 0, Math.PI * 2)
+            ctx.fillStyle = hexA(cm.color, alpha)
+            ctx.fill()
+            if (k === 0) {
+              ctx.beginPath()
+              ctx.arc(sx, sy, Math.max(1.6, rad * 2.4), 0, Math.PI * 2)
+              ctx.fillStyle = hexA(cm.color, alpha * 0.3)
+              ctx.fill()
+            }
+          }
+        } else if (cm.ringNodeId) {
+          // Fallback: the moved node has no drawable incident edge, so flash an
+          // expanding ring on the node itself rather than fabricate a path.
+          const n = lay.placed.get(cm.ringNodeId)
+          if (!n) continue
+          const sx = toSx(n.x)
+          const sy = toSy(n.y)
+          const baseR = nodeScreenR(n.r)
+          const rr = baseR + p * baseR * 3.2
+          ctx.beginPath()
+          ctx.arc(sx, sy, rr, 0, Math.PI * 2)
+          ctx.strokeStyle = hexA(cm.color, fade * 0.7)
+          ctx.lineWidth = 2
+          ctx.stroke()
+        }
+      }
+      if (drawOn) ctx.globalCompositeOperation = 'source-over'
+      activeCometsRef.current = survivors
     }
 
     // 7) Heartbeat throughput rings pulsing out from the core.
@@ -869,6 +966,53 @@ export default function BrainCanvas() {
       }
     }
     return best
+  }, [])
+
+  // #10: turn graphStore pulses into on-canvas event comets. The store has no
+  // selector middleware, so a vanilla subscribe fires the full-state listener on
+  // every set; we drain by monotonic seq so each honest backend pulse spawns
+  // exactly one comet even across React batching, and read the FRESH layout from
+  // stateRef so a comet always rides the currently drawn synapse.
+  useEffect(() => {
+    const consume = (pulses: GraphPulse[]) => {
+      if (!pulses.length) return
+      const lay = stateRef.current.layout
+      for (const pulse of pulses) {
+        if (pulse.seq <= lastPulseSeqRef.current) continue
+        lastPulseSeqRef.current = pulse.seq
+        const moved = lay.placed.get(pulse.nodeId)
+        if (!moved) continue // node absent from the current projection -> nothing honest to show
+        // Prefer an edge ARRIVING at the moved node ("signal reaching the thing
+        // that changed"); else an edge leaving it; else ring-flash the node.
+        let edge = lay.edges.find((e) => e.target === pulse.nodeId)
+        if (!edge) edge = lay.edges.find((e) => e.source === pulse.nodeId)
+        const comet: EventComet = edge
+          ? {
+              born: performance.now(),
+              color: moved.color,
+              src: edge.source,
+              tgt: edge.target,
+              cx: edge.cx,
+              cy: edge.cy,
+              ringNodeId: null,
+            }
+          : {
+              born: performance.now(),
+              color: moved.color,
+              src: null,
+              tgt: null,
+              cx: 0,
+              cy: 0,
+              ringNodeId: pulse.nodeId,
+            }
+        const buf = activeCometsRef.current
+        buf.push(comet)
+        if (buf.length > EVENT_COMET_MAX) buf.splice(0, buf.length - EVENT_COMET_MAX)
+      }
+    }
+    // Drain anything queued before we subscribed, then follow the stream.
+    consume(useGraphStore.getState().pulses)
+    return useGraphStore.subscribe((s) => consume(s.pulses))
   }, [])
 
   // Mount: size the canvas, wire pointer/wheel, paint the first frame, run rAF.

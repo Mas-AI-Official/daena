@@ -312,6 +312,10 @@ class WorkstreamService:
         await publish_graph_changed(
             "workstream_started",
             workstream_id=str(ws.id),
+            # node_id lets the live Brain pulse the exact node that moved.
+            # Mirrors graph_service._nid("workstream", ws.id) -- keep the prefix
+            # in sync (a workstream renders as node workstream:<id>).
+            node_id=f"workstream:{ws.id}",
         )
         logger.info(
             "workstream.started",
@@ -384,6 +388,9 @@ class WorkstreamService:
         await publish_graph_changed(
             "workstream_transitioned",
             workstream_id=str(workstream_id),
+            # Mirrors graph_service._nid("workstream", workstream_id); see the
+            # start() doorbell for the contract.
+            node_id=f"workstream:{workstream_id}",
             status=new_status.value,
         )
         logger.info(

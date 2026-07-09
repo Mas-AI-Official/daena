@@ -785,6 +785,11 @@ class ExecutionService(BaseService):
             await publish_graph_changed(
                 "task_status_changed",
                 task_id=str(task.id),
+                # node_id lets the live Brain pulse the EXACT node that moved
+                # instead of re-diffing the whole projection. Mirrors
+                # graph_service._nid("execution", task.id) -- keep the prefix in
+                # sync with that builder (a task renders as node execution:<id>).
+                node_id=f"execution:{task.id}",
                 status=status,
             )
 
@@ -1003,6 +1008,9 @@ class ExecutionService(BaseService):
             await publish_graph_changed(
                 "task_status_changed",
                 task_id=str(task.id),
+                # Mirrors graph_service._nid("execution", task.id); see the
+                # update_task_status doorbell above for the contract.
+                node_id=f"execution:{task.id}",
                 status=TaskStatus.RUNNING.value,
             )
 
