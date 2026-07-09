@@ -371,6 +371,90 @@ class TestErrorHandling:
         assert "timeout" in job.last_result.lower()
 
 
+class TestOnlineFallback:
+    @pytest.mark.asyncio
+    async def test_unregistered_preference_falls_back_to_online_runtime(
+        self, patched_session_factory,
+    ):
+        # BUILD-NOW #5 (cron hardening): the job's hardcoded
+        # runtime_preference ("ollama") is NOT registered, but a real
+        # ONLINE runtime ("vllm") is. The scheduler must dispatch to the
+        # online fallback and finalize a CronRun that records the ACTUAL
+        # runtime used -- never a fake "not registered" dead-end when a
+        # working runtime is standing right there (ADR-001 honesty).
+        vllm_adapter = _make_streaming_adapter(["fell back ", "to vllm"])
+
+        def _resolve(runtime_id):  # noqa: ANN001, ANN202
+            return vllm_adapter if runtime_id == "vllm" else None
+
+        registry = MagicMock()
+        registry.get_adapter = MagicMock(side_effect=_resolve)
+        registry.online_ids = ["vllm"]
+        set_runtime_registry_resolver(lambda: registry)
+
+        scheduler = CronScheduler()
+        scheduler.add_job(_due_job("job-fallback", runtime="ollama"))
+
+        executed = await scheduler.check_and_run()
+
+        assert "job-fallback" in executed
+
+        async with patched_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(CronRun).where(CronRun.job_id == "job-fallback")
+                )
+            ).scalar_one()
+
+        # The run actually happened via the online fallback, and the row
+        # records the ACTUAL runtime used, not the dead preference.
+        assert row.error is None
+        assert row.runtime == "vllm"
+        assert "vllm" in (row.full_text or "")
+        assert row.finished_at is not None
+
+        job = scheduler._jobs["job-fallback"]
+        assert job.last_result is not None
+        assert "not registered" not in job.last_result.lower()
+
+    @pytest.mark.asyncio
+    async def test_no_online_runtime_finalizes_truthful_error(
+        self, patched_session_factory,
+    ):
+        # When the preferred runtime is unregistered AND there is no
+        # online runtime to fall back to, the run must finalize a
+        # truthful "no runtime available" error -- never fabricate a
+        # fake "executed" (Rule 17 / ADR-001).
+        def _resolve(runtime_id):  # noqa: ANN001, ANN202
+            return None
+
+        registry = MagicMock()
+        registry.get_adapter = MagicMock(side_effect=_resolve)
+        registry.online_ids = []
+        set_runtime_registry_resolver(lambda: registry)
+
+        scheduler = CronScheduler()
+        scheduler.add_job(_due_job("job-noruntime", runtime="ollama"))
+
+        executed = await scheduler.check_and_run()
+
+        assert "job-noruntime" in executed
+
+        async with patched_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(CronRun).where(CronRun.job_id == "job-noruntime")
+                )
+            ).scalar_one()
+
+        assert row.error is not None
+        assert "no runtime available" in row.error.lower()
+        assert row.finished_at is not None
+        # The intended runtime is preserved in the audit row (nothing
+        # ran, so there is no actual runtime to substitute).
+        assert row.runtime == "ollama"
+
+
 class TestSingletonAndLifecycle:
     def test_get_cron_scheduler_returns_same_instance(self):
         a = get_cron_scheduler()

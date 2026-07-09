@@ -47,6 +47,45 @@ DEFAULT_CRON_TOKEN_BUDGET = 2000
 # finalized with an error and the loop moves on.
 DEFAULT_CRON_JOB_TIMEOUT_S = 120.0
 
+# Ordered preference for a LOCAL fallback runtime when a cron job's
+# configured ``runtime_preference`` is not registered. Cron work is
+# background + cost-capped, so we bias toward the cheapest local
+# runtimes first (vllm before the deprecated ollama) and only then
+# fall through to whatever else the registry reports online. Mirrors
+# the runtime registry's own local-fallback order so behaviour is
+# consistent whichever path resolves the runtime.
+_LOCAL_FALLBACK_ORDER = ("vllm", "ollama")
+
+
+def _pick_online_fallback(registry: Any, *, exclude: str) -> tuple[str | None, Any]:
+    """Pick the first ONLINE runtime to stand in for an unregistered
+    preference.
+
+    Returns ``(runtime_id, adapter)`` for the first online runtime whose
+    adapter resolves, biased by ``_LOCAL_FALLBACK_ORDER`` then any other
+    online runtime the registry reports. Returns ``(None, None)`` when
+    nothing usable is online. Never raises -- a flaky registry must not
+    wedge the scheduler loop.
+    """
+    try:
+        online = list(getattr(registry, "online_ids", None) or [])
+    except Exception:
+        online = []
+    # Local runtimes first (in preferred order), then any other online
+    # runtime the registry reports, so the cheapest local option wins.
+    ordered = [rid for rid in _LOCAL_FALLBACK_ORDER if rid in online]
+    ordered += [rid for rid in online if rid not in _LOCAL_FALLBACK_ORDER]
+    for rid in ordered:
+        if rid == exclude:
+            continue
+        try:
+            adapter = registry.get_adapter(rid)
+        except Exception:
+            adapter = None
+        if adapter is not None:
+            return rid, adapter
+    return None, None
+
 
 class CronFrequency(Enum):
     """How often a cron job runs."""
@@ -300,18 +339,37 @@ class CronScheduler:
             job.last_result = error[:500]
             return
 
-        # Resolve the adapter. If the registry has nothing usable we
-        # record an error row and bail out cleanly.
+        # Resolve the adapter. Prefer the job's configured runtime; if it
+        # is not registered, fall back to the first ONLINE runtime instead
+        # of dead-ending -- the whole point of the registry is that a
+        # working runtime may be standing right there. We track the ACTUAL
+        # runtime used in ``effective_runtime`` so the audit row, cost
+        # accounting, and adapter context never lie (Rule 17 / ADR-001).
+        effective_runtime = job.runtime_preference
         adapter = None
         if registry is not None:
             adapter = registry.get_adapter(job.runtime_preference)
+            if adapter is None:
+                fallback_runtime, fallback_adapter = _pick_online_fallback(
+                    registry, exclude=job.runtime_preference,
+                )
+                if fallback_adapter is not None:
+                    logger.info(
+                        "cron.runtime_substituted",
+                        job_id=job.job_id,
+                        requested=job.runtime_preference,
+                        substituted=fallback_runtime,
+                    )
+                    effective_runtime = fallback_runtime
+                    adapter = fallback_adapter
         if adapter is None:
             error = (
-                f"runtime '{job.runtime_preference}' not registered "
-                "(scheduler cannot dispatch)"
+                f"no runtime available: preferred "
+                f"'{job.runtime_preference}' not registered and no "
+                "online runtime to fall back to"
             )
             logger.warning(
-                "cron.adapter_unavailable",
+                "cron.no_runtime_available",
                 job_id=job.job_id,
                 runtime=job.runtime_preference,
             )
@@ -332,7 +390,7 @@ class CronScheduler:
         # Execute. Cron is system-initiated, so tenant_id is "system".
         context: dict[str, Any] = {
             "task_prompt": job.task_prompt,
-            "runtime_preference": job.runtime_preference,
+            "runtime_preference": effective_runtime,
             "tenant_id": "system",
             "source": "cron_scheduler",
             "job_id": job.job_id,
@@ -371,6 +429,7 @@ class CronScheduler:
                 cost_usd=0.0,
                 tokens_in=0,
                 tokens_out=0,
+                runtime=effective_runtime,
             )
             job.last_run = now
             job.last_result = error[:500]
@@ -393,6 +452,7 @@ class CronScheduler:
                 cost_usd=0.0,
                 tokens_in=0,
                 tokens_out=0,
+                runtime=effective_runtime,
             )
             job.last_run = now
             job.last_result = error[:500]
@@ -409,7 +469,7 @@ class CronScheduler:
         tokens_out = max(len(full_text) // 4, 0)
         cost_usd = cost_estimator.record_actual(
             session_id=str(run_id),
-            runtime_id=job.runtime_preference,
+            runtime_id=effective_runtime,
             actual_input_tokens=tokens_in,
             actual_output_tokens=tokens_out,
         )
@@ -423,6 +483,7 @@ class CronScheduler:
             cost_usd=cost_usd,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
+            runtime=effective_runtime,
         )
 
         job.last_run = now
@@ -439,12 +500,18 @@ class CronScheduler:
         cost_usd: float,
         tokens_in: int,
         tokens_out: int,
+        runtime: str | None = None,
     ) -> None:
         """Update the pre-inserted CronRun row with the final state.
 
         Wrapped in try/except so a DB hiccup at finalize time does not
         leak back into the scheduler loop. The forensic row will simply
         stay "started but no finish", which is the correct signal.
+
+        ``runtime`` corrects the pre-inserted ``row.runtime`` to the
+        ACTUAL runtime that ran when the scheduler substituted an online
+        fallback for an unregistered preference. Left ``None`` (the bail
+        paths) the row keeps its originally-intended runtime.
         """
         from app.core.database import async_session_factory
         from app.models.cron_run import CronRun
@@ -475,6 +542,8 @@ class CronScheduler:
                 row.cost_usd = cost_usd
                 row.tokens_in = tokens_in
                 row.tokens_out = tokens_out
+                if runtime is not None:
+                    row.runtime = runtime
                 await session.commit()
         except Exception as exc:
             logger.error(
