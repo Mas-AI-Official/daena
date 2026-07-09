@@ -829,6 +829,9 @@ class ChatService(BaseService):
             # FactualityGate grounding verdict (BUILD-NOW #8). None when the
             # message was not grounding-eligible or the gate never ran.
             "grounding": getattr(message, "grounding", None),
+            # ragx retrieval transparency (BUILD-NOW #9 / C3). None when nothing
+            # was surfaced (ineligible intent + no citations).
+            "retrieval": getattr(message, "retrieval", None),
             "created_at": (
                 message.created_at.isoformat() if message.created_at else None
             ),

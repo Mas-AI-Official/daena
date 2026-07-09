@@ -138,6 +138,13 @@ class ChatMessage(Base):
     # citations[], reasons[], latency_ms}. available=False means ragx was
     # offline -- an honest "unverified", never a fabricated pass.
     grounding: Mapped[dict | None] = mapped_column(JSONBCompat, nullable=True)
+    # Retrieval transparency from Stage 6.55 ragx (BUILD-NOW #9 / C3). Null when
+    # nothing was surfaced (ineligible intent + no citations). When present:
+    # {checked, available, abstained, citation_count, collections[],
+    # abstained_collections[], citations[], elapsed_ms, reasons[]}. This is the
+    # PRE-answer complement to grounding (post-answer): abstained=True with
+    # available=False is an honest "ungrounded", never a fabricated pass.
+    retrieval: Mapped[dict | None] = mapped_column(JSONBCompat, nullable=True)
     model_used: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     provider_used: Mapped[str | None] = mapped_column(String(50), nullable=True)
     governance_tier: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)

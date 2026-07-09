@@ -328,6 +328,74 @@ class ChatOrchestrator:
             "latency_ms": int(verdict.latency_ms),
         }
 
+    def _summarize_retrieval(
+        self, result: Any, intent_name: str,
+    ) -> dict | None:
+        """Summarize the Stage 6.55 ragx retrieval into a surfaced verdict (C3).
+
+        Returns a compact, persistable dict for the SSE ``retrieval`` event and
+        the ``ChatMessage.retrieval`` column, or ``None`` when nothing should be
+        surfaced. Pure mapping over a ``RagxResult`` -- zero model tokens, no DB.
+
+        Emit rule (BUILD-NOW #9): a positive citation-flash surfaces on ANY
+        intent (real sources were consulted -> show them). An honest-negative
+        (abstain or offline) surfaces only on a grounding-eligible intent so a
+        down ragx never spams offline events on chit-chat like "hi".
+
+        Honesty contract (Rule 17 / ADR-001): ``available=False`` with
+        ``abstained=True`` is an honest "ungrounded / unverified", never a
+        fabricated grounded pass.
+        """
+        citation_count = len(result.citations)
+        abstained = citation_count == 0
+        intent_eligible = intent_name in self._GROUNDING_INTENTS
+
+        emit = (citation_count > 0) or (
+            intent_eligible and (abstained or not result.available)
+        )
+        if not emit:
+            return None
+
+        collection_set = {c.collection for c in result.citations if c.collection}
+        collection_set.update(ac for ac in result.abstained_collections if ac)
+        collections = sorted(collection_set)
+
+        reasons: list[str] = []
+        if citation_count > 0:
+            reasons.append(
+                f"{citation_count} citation(s) from "
+                f"{len(collections)} collection(s) consulted"
+            )
+        elif not result.available:
+            reasons.append(
+                "ragx offline / unreachable -- answer is ungrounded (unverified)"
+            )
+        else:
+            consulted = len(result.abstained_collections)
+            reasons.append(
+                f"ragx abstained -- no confident evidence; "
+                f"{consulted} collection(s) consulted"
+            )
+
+        return {
+            "checked": True,
+            "available": result.available,
+            "abstained": abstained,
+            "citation_count": citation_count,
+            "collections": collections,
+            "abstained_collections": list(result.abstained_collections),
+            "citations": [
+                {
+                    "collection": c.collection,
+                    "source_path": c.source_path,
+                    "score": round(c.score, 4),
+                }
+                for c in result.citations[:5]
+            ],
+            "elapsed_ms": int(result.elapsed_ms),
+            "reasons": reasons,
+        }
+
     async def stream_reply(
         self,
         *,
@@ -2176,6 +2244,7 @@ class ChatOrchestrator:
         # chat pipeline continues with skill evidence only. Same failure
         # contract as Stage 6.5.
         ragx_citation_count = 0
+        _retrieval_meta: dict | None = None
         try:
             from app.services.ragx_bridge import (
                 format_ragx_evidence_block,
@@ -2194,6 +2263,18 @@ class ChatOrchestrator:
                         elapsed_ms=int(ragx_result.elapsed_ms),
                         abstained=ragx_result.abstained_collections,
                     )
+            # BUILD-NOW #9 (C3): surface retrieval transparency. A full abstain
+            # (no citations) or an offline ragx on a grounding-eligible intent
+            # is now an honest, user-visible verdict -- not a silent
+            # logger.debug. Citation-flash fires on any intent when real
+            # sources were consulted. Emitted here as an early SSE event so the
+            # UI can flash the sources / abstain before the answer streams;
+            # persisted at Stage 9 into ChatMessage.retrieval.
+            _retrieval_meta = self._summarize_retrieval(
+                ragx_result, qu_result.intent.name,
+            )
+            if _retrieval_meta is not None:
+                yield {"type": "retrieval", "data": _retrieval_meta}
         except Exception:
             logger.debug("orchestrator.ragx_retrieval_failed", exc_info=True)
 
@@ -4259,6 +4340,13 @@ class ChatOrchestrator:
         )
         if _grounding is not None:
             assistant_msg.grounding = _grounding
+        # Persist the Stage 6.55 retrieval verdict (BUILD-NOW #9 / C3) on the
+        # same fail-open commit. Pre-answer transparency (what ragx surfaced or
+        # abstained on) is made durable alongside the post-answer grounding
+        # verdict, and rides done_data via _message_to_dict below.
+        if _retrieval_meta is not None:
+            assistant_msg.retrieval = _retrieval_meta
+        if _grounding is not None or _retrieval_meta is not None:
             try:
                 await self._db.commit()
             except Exception:
