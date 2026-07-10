@@ -37,6 +37,7 @@ Forbidden FOREVER for routines:
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -52,6 +53,11 @@ from app.services.business_pipeline.workstream_bridge import (
     DepartmentNotFound,
     ValidationRequired,
     create_workstream_for_opportunity,
+)
+from app.services.business_pipeline.validator import (
+    VALIDATION_METADATA_KEY,
+    has_persisted_validation,
+    validate_opportunity,
 )
 from app.services.outreach.draft_factory import (
     create_outreach_draft_for_opportunity,
@@ -233,6 +239,71 @@ async def local_draft_action_creation_handler(
     return (artifacts, detail)
 
 
+async def startup_idea_validation_handler(
+    *, db=None, tenant_id=None, user_id=None,
+    top_k: int = 10, now=None, **_extra,
+):
+    """Validate discovered ``startup_idea`` opportunities and PERSIST the
+    score into ``raw_metadata['validation']`` so they can pass the Phase 4
+    promotion gate (workstream_bridge.ValidationRequired).
+
+    Scheduler-safe LOCAL DB write only: never sends / submits / posts /
+    pays / applies / commits / scans. The validator is pure Python (no
+    LLM, no network). Persisting a score -- even a no_go 0 -- records only
+    that validation RAN; GO / NO-GO stays the human's call (the gate is
+    presence-not-verdict).
+
+    Returns the (artifacts, detail) tuple shape run_once expects.
+    NEVER raises.
+    """
+    if db is None or tenant_id is None:
+        return ([], "missing db or tenant_id")
+
+    stmt = (
+        select(Opportunity)
+        .where(Opportunity.tenant_id == tenant_id)
+        .where(Opportunity.type == "startup_idea")
+        .where(Opportunity.status.in_(["discovered", "queued"]))
+        .order_by(Opportunity.score.desc())
+        .limit(max(1, min(int(top_k), 50)))
+    )
+    candidates = list((await db.execute(stmt)).scalars().all())
+
+    when = now or datetime.now(UTC)
+    validated_at = when.isoformat()
+    artifacts: list[str] = []
+    validated = 0
+    already = 0
+    for opp in candidates:
+        if has_persisted_validation(opp.raw_metadata):
+            already += 1
+            continue
+        try:
+            result = validate_opportunity(opp, now=when)
+        except Exception as exc:  # noqa: BLE001 -- defensive; NEVER raises
+            logger.warning(
+                "business.routine.validation_failed",
+                opportunity_id=str(opp.id), error=str(exc),
+            )
+            continue
+        # Reassign (not mutate) so SQLAlchemy marks the JSON column dirty.
+        new_meta = dict(opp.raw_metadata or {})
+        new_meta[VALIDATION_METADATA_KEY] = result.to_metadata(
+            validated_at=validated_at,
+        )
+        opp.raw_metadata = new_meta
+        artifacts.append(f"validated:{opp.id}:{result.score}")
+        validated += 1
+
+    await db.flush()
+
+    detail = (
+        f"candidates={len(candidates)} validated={validated} "
+        f"already_validated={already}"
+    )
+    return (artifacts, detail)
+
+
 def register() -> None:
     """Register all business handlers with routine_autonomy.
     Idempotent -- re-registration replaces existing handlers."""
@@ -243,6 +314,8 @@ def register() -> None:
          business_workstream_proposal_handler),
         ("local_draft_action_creation",
          local_draft_action_creation_handler),
+        ("startup_idea_validation",
+         startup_idea_validation_handler),
     ):
         routine_autonomy._HANDLERS.pop(kind, None)
         register_handler(kind, fn)

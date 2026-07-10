@@ -513,6 +513,82 @@ class TestPhase4ValidationGate:
         )
         assert result.department_name == "Finance"
 
+    async def test_validation_handler_persists_score(
+        self, bridge_seeded, db_session, test_tenant_id, test_user_id,
+    ):
+        """The startup_idea_validation routine handler validates a bare
+        discovered startup_idea and PERSISTS the score into
+        raw_metadata['validation'] (the SCHEDULING/VERIFICATION move of
+        the Phase 4 loop). A bare _seed_opp carries only source_url + no
+        deadline, so the deterministic validator scores exactly 20
+        (evidence_linked 15 + window_open 5), verdict no_go."""
+        from app.services.business_pipeline.routine_handler import (
+            startup_idea_validation_handler,
+        )
+        from app.services.business_pipeline.validator import (
+            has_persisted_validation,
+        )
+        opp = _seed_opp(
+            db_session, tenant_id=test_tenant_id, type_="startup_idea",
+        )
+        await db_session.flush()
+        # Pre-condition: validation has NOT run yet.
+        assert has_persisted_validation(opp.raw_metadata) is False
+
+        artifacts, detail = await startup_idea_validation_handler(
+            db=db_session, tenant_id=test_tenant_id,
+            user_id=test_user_id,
+        )
+
+        assert has_persisted_validation(opp.raw_metadata) is True
+        assert opp.raw_metadata["validation"]["score"] == 20
+        assert opp.raw_metadata["validation"]["verdict"] == "no_go"
+        assert artifacts, "handler must report the validated opportunity"
+        assert f"validated:{opp.id}:20" in artifacts
+        assert "validated=1" in detail
+
+    async def test_validation_handler_opens_promotion_gate(
+        self, bridge_seeded, db_session, test_tenant_id, test_user_id,
+    ):
+        """End-to-end Phase 4 loop: a startup_idea the gate would REFUSE
+        becomes promotable once the routine handler runs. Proves the
+        discover -> validate -> gate -> promote chain closes without any
+        hand-set metadata (the handler is the only thing that persists
+        validation here)."""
+        from app.services.business_pipeline.routine_handler import (
+            startup_idea_validation_handler,
+        )
+        from app.services.business_pipeline.workstream_bridge import (
+            ValidationRequired, create_workstream_for_opportunity,
+        )
+        opp = _seed_opp(
+            db_session, tenant_id=test_tenant_id, type_="startup_idea",
+            title="Governed RAG for regulated SMBs",
+        )
+        await db_session.flush()
+
+        # Gate is CLOSED before validation runs.
+        with pytest.raises(ValidationRequired):
+            await create_workstream_for_opportunity(
+                db_session, tenant_id=test_tenant_id,
+                user_id=test_user_id, opportunity_id=opp.id,
+            )
+
+        # Run the routine handler -> persists the validation score.
+        await startup_idea_validation_handler(
+            db=db_session, tenant_id=test_tenant_id,
+            user_id=test_user_id,
+        )
+
+        # Gate is now OPEN -> promotes to Research + Product/Finance.
+        result = await create_workstream_for_opportunity(
+            db_session, tenant_id=test_tenant_id,
+            user_id=test_user_id, opportunity_id=opp.id,
+        )
+        assert result.department_name == "Research"
+        assert "Product" in result.collaborators
+        assert "Finance" in result.collaborators
+
 
 # ────────────────────────────────────────────────────────────────────
 # API endpoint contract

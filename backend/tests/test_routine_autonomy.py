@@ -1,7 +1,8 @@
 """Sprint-18 PR-4 -- routine autonomy scheduler skeleton contract.
 
 Pins:
-  1. RoutineKind values are exactly the 6 Sprint-18 allowed kinds.
+  1. RoutineKind values are exactly the locked allowed kinds
+     (6 Sprint-18 + startup_idea_validation added in Phase 4).
   2. register_routine refuses unknown kind.
   3. pause / resume per-routine works.
   4. global pause blocks all run-once calls.
@@ -35,7 +36,7 @@ def isolated_state(tmp_path, monkeypatch):
 
 
 class TestKindEnum:
-    async def test_six_kinds_locked(self, isolated_state):
+    async def test_kinds_locked(self, isolated_state):
         from app.services.routine_autonomy import (
             RoutineKind, ROUTINE_KIND_VALUES,
         )
@@ -47,6 +48,9 @@ class TestKindEnum:
             "self_diagnostic",
             "readiness_check",
             "repair_workstream_proposal",
+            # Phase 4 Venture Studio: local DB write, persists validation
+            # score. Still forbidden-substring-free (see loop below).
+            "startup_idea_validation",
         })
         # No SEND / SUBMIT / POST / PAY / APPLY / COMMIT kinds
         for k in RoutineKind:

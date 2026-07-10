@@ -24,6 +24,7 @@ Allowed routine kinds (Sprint-18 locked set):
   * ``self_diagnostic``             -- read-only system check
   * ``readiness_check``             -- read-only readiness probe
   * ``repair_workstream_proposal``  -- creates local repair plan
+  * ``startup_idea_validation``     -- local DB write: persists validation score
 
 Forbidden FOREVER (the routine cannot be of these kinds):
 
@@ -63,6 +64,7 @@ class RoutineKind(str, Enum):
     SELF_DIAGNOSTIC = "self_diagnostic"
     READINESS_CHECK = "readiness_check"
     REPAIR_WORKSTREAM_PROPOSAL = "repair_workstream_proposal"
+    STARTUP_IDEA_VALIDATION = "startup_idea_validation"
 
 
 ROUTINE_KIND_VALUES: frozenset[str] = frozenset(k.value for k in RoutineKind)
