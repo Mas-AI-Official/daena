@@ -43,6 +43,9 @@ from app.models.workstream import (
     WorkstreamSourceType,
     WorkstreamStatus,
 )
+from app.services.business_pipeline.validator import (
+    has_persisted_validation,
+)
 
 logger = get_logger(__name__)
 
@@ -66,6 +69,9 @@ OPP_TYPE_TO_PRIMARY_DEPT: dict[str, str] = {
     "partnership": "Sales",
     "bug_bounty_program": "Security Operations",
     "content_opportunity": "Marketing",
+    # Phase 4: Research owns idea validation (market research, competitive
+    # analysis, tech scouting -- constants.py DEFAULT_DEPARTMENTS sunflower 6).
+    "startup_idea": "Research",
 }
 
 OPP_TYPE_TO_COLLABORATORS: dict[str, list[str]] = {
@@ -77,6 +83,8 @@ OPP_TYPE_TO_COLLABORATORS: dict[str, list[str]] = {
     "partnership": ["Legal & Compliance"],
     "bug_bounty_program": [],
     "content_opportunity": ["Operations"],
+    # Phase 4: Product shapes the idea, Finance sizes the market/unit economics.
+    "startup_idea": ["Product", "Finance"],
 }
 
 
@@ -109,6 +117,10 @@ class DuplicateWorkstream(WorkstreamBridgeError):
     def __init__(self, existing_workstream_id: uuid.UUID):
         super().__init__(str(existing_workstream_id))
         self.existing_workstream_id = existing_workstream_id
+
+
+class ValidationRequired(WorkstreamBridgeError):
+    code = "validation_required"
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -144,6 +156,15 @@ async def create_workstream_for_opportunity(
     opp = (await db.execute(opp_stmt)).scalar_one_or_none()
     if opp is None:
         raise OpportunityNotFound(str(opportunity_id))
+
+    # Phase 4 gate: a startup_idea must carry a persisted
+    # validation score before it can consume a department's
+    # effort. Human owns GO/NO-GO; this only enforces that
+    # validation RAN (has_persisted_validation).
+    if opp.type == "startup_idea" and not has_persisted_validation(
+        opp.raw_metadata
+    ):
+        raise ValidationRequired(str(opportunity_id))
 
     # 2. Resolve target department by type.
     dept_name = OPP_TYPE_TO_PRIMARY_DEPT.get(opp.type)

@@ -1,7 +1,8 @@
 """Sprint-19 PR-1 -- business pipeline orchestrator contract.
 
 Pins:
-  1. OPPORTUNITY_TYPES is the locked Sprint-19 set of 8.
+  1. OPPORTUNITY_TYPES is the locked set of 9 (8 Sprint-19 + startup_idea,
+     added Phase 4 Venture Studio per master.md).
   2. Scorer is deterministic: same input -> same score, NO LLM.
   3. Scorer components clamped 0..25; total clamped 0..100.
   4. Manual-seed source tolerates missing/malformed file.
@@ -50,7 +51,10 @@ async def _seed_tenant(db_session, tenant_id):
 
 
 class TestOpportunityTypes:
-    async def test_locked_eight_types(self):
+    async def test_locked_nine_types(self):
+        # 8 Sprint-19 types + startup_idea (Phase 4 Venture Studio). The
+        # order is load-bearing: UI + config match this verbatim, and
+        # startup_idea is appended (never inserted) so existing indices hold.
         from app.models.business import OPPORTUNITY_TYPES
 
         assert OPPORTUNITY_TYPES == (
@@ -62,7 +66,38 @@ class TestOpportunityTypes:
             "partnership",
             "bug_bounty_program",
             "content_opportunity",
+            "startup_idea",
         )
+
+    async def test_every_type_has_weight_and_primary_dept(self):
+        # Invariant guard: adding a type to OPPORTUNITY_TYPES without also
+        # wiring its scorer weight + routing department is a silent drift
+        # bug. Catch it here, not in production promotion.
+        from app.models.business import OPPORTUNITY_TYPES
+        from app.services.business_pipeline.scorer import _TYPE_WEIGHT
+        from app.services.business_pipeline.workstream_bridge import (
+            OPP_TYPE_TO_PRIMARY_DEPT,
+        )
+
+        for opp_type in OPPORTUNITY_TYPES:
+            assert opp_type in _TYPE_WEIGHT, f"{opp_type} missing scorer weight"
+            assert (
+                opp_type in OPP_TYPE_TO_PRIMARY_DEPT
+            ), f"{opp_type} missing primary department"
+
+    async def test_startup_idea_wiring(self):
+        # Phase 4: startup_idea routes to Research (market/tech scouting is
+        # the department that owns idea validation), collaborates with
+        # Product + Finance, and carries a high-but-not-top type weight.
+        from app.services.business_pipeline.scorer import _type_weight
+        from app.services.business_pipeline.workstream_bridge import (
+            OPP_TYPE_TO_COLLABORATORS,
+            OPP_TYPE_TO_PRIMARY_DEPT,
+        )
+
+        assert _type_weight("startup_idea") == 20
+        assert OPP_TYPE_TO_PRIMARY_DEPT["startup_idea"] == "Research"
+        assert OPP_TYPE_TO_COLLABORATORS["startup_idea"] == ["Product", "Finance"]
 
 
 # ────────────────────────────────────────────────────────────────────

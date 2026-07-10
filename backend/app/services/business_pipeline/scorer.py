@@ -36,6 +36,10 @@ _TYPE_WEIGHT: dict[str, int] = {
     "partnership": 18,
     "bug_bounty_program": 15,
     "content_opportunity": 8,
+    # Phase 4: high strategic weight (venture ideas matter), but below
+    # grant/customer_lead -- idea QUALITY is scored separately + deterministically
+    # by validator.py, so the type baseline must not inflate weak ideas.
+    "startup_idea": 20,
 }
 
 

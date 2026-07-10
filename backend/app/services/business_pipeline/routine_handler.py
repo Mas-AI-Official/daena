@@ -50,6 +50,7 @@ from app.services.business_pipeline.workstream_bridge import (
     DuplicateWorkstream,
     UnknownOpportunityType,
     DepartmentNotFound,
+    ValidationRequired,
     create_workstream_for_opportunity,
 )
 from app.services.outreach.draft_factory import (
@@ -151,6 +152,12 @@ async def business_workstream_proposal_handler(
                 opportunity_id=str(opp.id), reason=type(exc).__name__,
             )
             failed += 1
+        except ValidationRequired:
+            logger.info(
+                "business.routine.workstream_pending_validation",
+                opportunity_id=str(opp.id),
+            )
+            skipped += 1
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "business.routine.workstream_failed",

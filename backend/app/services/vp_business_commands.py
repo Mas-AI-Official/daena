@@ -239,7 +239,8 @@ async def _create_workstream_from_opp_by_id(
     only -- never fuzzy-matches by title."""
     from app.services.business_pipeline.workstream_bridge import (
         DepartmentNotFound, DuplicateWorkstream, OpportunityNotFound,
-        UnknownOpportunityType, create_workstream_for_opportunity,
+        UnknownOpportunityType, ValidationRequired,
+        create_workstream_for_opportunity,
     )
     try:
         opp_id = uuid.UUID(opp_id_str)
@@ -271,6 +272,8 @@ async def _create_workstream_from_opp_by_id(
             "ok": False, "code": "duplicate_workstream",
             "existing_workstream_id": str(exc.existing_workstream_id),
         }
+    except ValidationRequired:
+        return {"ok": False, "code": "validation_required"}
 
     return {
         "ok": True,

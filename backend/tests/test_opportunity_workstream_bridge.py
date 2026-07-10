@@ -427,6 +427,93 @@ class TestNoExternalAction:
             )
 
 
+class TestPhase4ValidationGate:
+    """Phase 4 Venture Studio gate: a startup_idea Opportunity cannot be
+    promoted to a Workstream until a validation score is persisted in
+    raw_metadata['validation']. The bridge only enforces that validation
+    RAN (has_persisted_validation) -- the GO/NO-GO verdict stays the
+    human's call downstream, never the bridge's."""
+
+    async def test_startup_idea_without_validation_refused(
+        self, bridge_seeded, db_session, test_tenant_id, test_user_id,
+    ):
+        """Negative path: _seed_opp leaves raw_metadata=None, so
+        validation never ran -> the gate refuses promotion."""
+        from app.services.business_pipeline.workstream_bridge import (
+            ValidationRequired, create_workstream_for_opportunity,
+        )
+        opp = _seed_opp(
+            db_session, tenant_id=test_tenant_id, type_="startup_idea",
+        )
+        await db_session.flush()
+        with pytest.raises(ValidationRequired):
+            await create_workstream_for_opportunity(
+                db_session, tenant_id=test_tenant_id,
+                user_id=test_user_id, opportunity_id=opp.id,
+            )
+
+    async def test_startup_idea_with_persisted_validation_promoted(
+        self, bridge_seeded, db_session, test_tenant_id, test_user_id,
+    ):
+        """Positive path: a persisted validation score opens the gate;
+        Research owns the idea, Product + Finance collaborate."""
+        from app.services.business_pipeline.workstream_bridge import (
+            create_workstream_for_opportunity,
+        )
+        opp = _seed_opp(
+            db_session, tenant_id=test_tenant_id, type_="startup_idea",
+            title="AI copilot for grant writers",
+        )
+        opp.raw_metadata = {"validation": {"score": 80}}
+        await db_session.flush()
+        result = await create_workstream_for_opportunity(
+            db_session, tenant_id=test_tenant_id,
+            user_id=test_user_id, opportunity_id=opp.id,
+        )
+        assert result.department_name == "Research"
+        assert "Product" in result.collaborators
+        assert "Finance" in result.collaborators
+
+    async def test_no_go_score_still_counts_as_validated(
+        self, bridge_seeded, db_session, test_tenant_id, test_user_id,
+    ):
+        """Presence-not-verdict: a no_go (score 0) still RAN validation,
+        so the gate opens. Whether to actually pursue is the human's
+        GO/NO-GO decision, made after promotion -- not a silent block
+        here (Rule 17: no fake gating disguised as validation)."""
+        from app.services.business_pipeline.workstream_bridge import (
+            create_workstream_for_opportunity,
+        )
+        opp = _seed_opp(
+            db_session, tenant_id=test_tenant_id, type_="startup_idea",
+        )
+        opp.raw_metadata = {"validation": {"score": 0}}
+        await db_session.flush()
+        result = await create_workstream_for_opportunity(
+            db_session, tenant_id=test_tenant_id,
+            user_id=test_user_id, opportunity_id=opp.id,
+        )
+        assert result.department_name == "Research"
+
+    async def test_gate_is_startup_idea_only(
+        self, bridge_seeded, db_session, test_tenant_id, test_user_id,
+    ):
+        """The gate must not leak onto other types. A grant with
+        raw_metadata=None still promotes without any validation."""
+        from app.services.business_pipeline.workstream_bridge import (
+            create_workstream_for_opportunity,
+        )
+        opp = _seed_opp(
+            db_session, tenant_id=test_tenant_id, type_="grant",
+        )
+        await db_session.flush()
+        result = await create_workstream_for_opportunity(
+            db_session, tenant_id=test_tenant_id,
+            user_id=test_user_id, opportunity_id=opp.id,
+        )
+        assert result.department_name == "Finance"
+
+
 # ────────────────────────────────────────────────────────────────────
 # API endpoint contract
 # ────────────────────────────────────────────────────────────────────
@@ -493,3 +580,23 @@ class TestApiEndpoint:
             headers=auth_headers,
         )
         assert r.status_code == 400
+
+    async def test_promote_startup_idea_returns_400_validation_required(
+        self, bridge_seeded, db_session, test_tenant_id, test_user_id,
+        client, auth_headers,
+    ):
+        """Phase 4: an unvalidated startup_idea surfaces the bridge's
+        ValidationRequired as HTTP 400 {"code":"validation_required"}
+        through the generic WorkstreamBridgeError handler."""
+        opp = _seed_opp(
+            db_session, tenant_id=test_tenant_id, type_="startup_idea",
+        )
+        await db_session.flush()
+        await db_session.commit()
+        r = await client.post(
+            f"/api/v1/opportunities/{opp.id}/create-workstream",
+            headers=auth_headers,
+        )
+        assert r.status_code == 400, r.text
+        body = r.json()
+        assert body["detail"]["code"] == "validation_required"

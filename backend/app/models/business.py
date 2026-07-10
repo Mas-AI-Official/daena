@@ -47,6 +47,9 @@ OPPORTUNITY_TYPES: tuple[str, ...] = (
     "partnership",
     "bug_bounty_program",
     "content_opportunity",
+    # Phase 4 Venture Studio (Polsia-style idea->business pipeline). Appended,
+    # never inserted -- UI + config match this tuple order verbatim.
+    "startup_idea",
 )
 
 OPPORTUNITY_STATUSES: tuple[str, ...] = (
