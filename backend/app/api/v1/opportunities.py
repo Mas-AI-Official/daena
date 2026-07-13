@@ -18,6 +18,7 @@ dispatcher is the only path to external action.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -33,6 +34,11 @@ from app.models.business import (
     Opportunity,
 )
 from app.services.business_pipeline.orchestrator import run_discovery_loop
+from app.services.business_pipeline.validator import (
+    VALIDATION_METADATA_KEY,
+    VALIDATION_VERSION,
+    validate_opportunity,
+)
 from app.services.business_pipeline.workstream_bridge import (
     DepartmentNotFound,
     DuplicateWorkstream,
@@ -44,6 +50,78 @@ from app.services.business_pipeline.workstream_bridge import (
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+
+class ValidationCheckDTO(BaseModel):
+    """One deterministic checklist item, mirrored from the validator."""
+
+    key: str
+    label: str
+    passed: bool
+    weight: int
+    detail: str
+
+
+class ValidationDTO(BaseModel):
+    """Persisted validation payload surfaced to the inbox so the operator
+    sees the deterministic score + advisory GO / REVIEW / NO-GO verdict
+    behind the Phase-4 promotion gate. The human owns the final GO/NO-GO."""
+
+    score: int
+    verdict: str
+    version: int = VALIDATION_VERSION
+    validated_at: str | None = None
+    checks: list[ValidationCheckDTO] = Field(default_factory=list)
+
+
+def _validation_from_metadata(raw_metadata: dict | None) -> ValidationDTO | None:
+    """Build a ValidationDTO from a persisted raw_metadata payload.
+
+    Defensive on purpose: returns None when validation has not been
+    persisted, and tolerates partial / malformed payloads (bad check
+    entries are skipped) so a read endpoint never 500s on a hand-edited
+    or older-version row. Presence of a numeric score is the same floor
+    the workstream bridge enforces (has_persisted_validation)."""
+    if not isinstance(raw_metadata, dict):
+        return None
+    payload = raw_metadata.get(VALIDATION_METADATA_KEY)
+    if not isinstance(payload, dict):
+        return None
+    score = payload.get("score")
+    if not isinstance(score, int) or isinstance(score, bool):
+        return None
+
+    checks: list[ValidationCheckDTO] = []
+    raw_checks = payload.get("checks")
+    if isinstance(raw_checks, list):
+        for c in raw_checks:
+            if not isinstance(c, dict):
+                continue
+            try:
+                checks.append(ValidationCheckDTO(
+                    key=str(c["key"]),
+                    label=str(c["label"]),
+                    passed=bool(c["passed"]),
+                    weight=int(c["weight"]),
+                    detail=str(c["detail"]),
+                ))
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    verdict = payload.get("verdict")
+    version = payload.get("version")
+    validated_at = payload.get("validated_at")
+    return ValidationDTO(
+        score=score,
+        verdict=verdict if isinstance(verdict, str) else "",
+        version=(
+            version
+            if isinstance(version, int) and not isinstance(version, bool)
+            else VALIDATION_VERSION
+        ),
+        validated_at=validated_at if isinstance(validated_at, str) else None,
+        checks=checks,
+    )
 
 
 class OpportunityRow(BaseModel):
@@ -63,6 +141,7 @@ class OpportunityRow(BaseModel):
     status: str
     created_at: str
     updated_at: str | None
+    validation: ValidationDTO | None = None
 
 
 def _row_to_response(o: Opportunity) -> OpportunityRow:
@@ -83,6 +162,7 @@ def _row_to_response(o: Opportunity) -> OpportunityRow:
         status=o.status,
         created_at=o.created_at.isoformat() if o.created_at else "",
         updated_at=o.updated_at.isoformat() if o.updated_at else None,
+        validation=_validation_from_metadata(o.raw_metadata),
     )
 
 
@@ -250,6 +330,56 @@ async def reject(
     )
     response = _row_to_response(row)
     await db.commit()
+    return response
+
+
+# ── Phase 4 (Venture Studio): deterministic idea validation ─────────
+# Runs the pure-Python validation checklist and persists the score onto
+# the opportunity. This is the gate INPUT the workstream bridge checks
+# (has_persisted_validation). It NEVER promotes and NEVER changes status
+# -- the human keeps GO / NO-GO (master.md human gate 1). The verdict is
+# advisory; the bridge requires only that validation RAN.
+
+
+@router.post("/{opportunity_id}/validate", response_model=OpportunityRow)
+async def validate(
+    opportunity_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> OpportunityRow:
+    try:
+        oid = uuid.UUID(opportunity_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid_uuid")
+    stmt = select(Opportunity).where(
+        Opportunity.id == oid, Opportunity.tenant_id == user.tenant_id,
+    )
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    result = validate_opportunity(row)
+    # Reassign (not in-place mutate) so SQLAlchemy marks the JSON column
+    # dirty and persists it. Stamp the wall clock at the write site.
+    row.raw_metadata = {
+        **(row.raw_metadata or {}),
+        VALIDATION_METADATA_KEY: result.to_metadata(
+            validated_at=datetime.now(UTC).isoformat(),
+        ),
+    }
+    await db.flush()
+    # Eagerly load attrs before building the Pydantic response outside
+    # the async context (same greenlet reason as _set_status).
+    await db.refresh(row)
+    response = _row_to_response(row)
+    await db.commit()
+
+    logger.info(
+        "business.opportunity.validated",
+        opportunity_id=str(row.id),
+        score=result.score,
+        verdict=result.verdict,
+    )
     return response
 
 

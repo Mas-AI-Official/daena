@@ -42,6 +42,9 @@ from app.services.business_pipeline.sources.rss import (
 from app.services.business_pipeline.sources.url_list import (
     build_url_list_source,
 )
+from app.services.business_pipeline.sources.worldsignal_drop import (
+    build_worldsignal_drop_source,
+)
 
 logger = get_logger(__name__)
 
@@ -78,6 +81,11 @@ def register_public_sources_from_config() -> list[str]:
           "url_pages": [
             {"url": "https://...", "type": "accelerator",
              "source_name": "Y accelerator"}
+          ],
+          "worldsignal_drops": [
+            {"path": "var/worldsignal/opportunity_drop.json",
+             "type": "partnership", "source_name": "WorldSignal drop",
+             "max_items": 20}
           ]
         }
     """
@@ -126,6 +134,31 @@ def register_public_sources_from_config() -> list[str]:
                 source=name, error=str(exc),
             )
 
+    # WorldSignal drops -- NEVER-7 boundary. WorldSignal writes a local
+    # JSON file; Daena reads it via adapter only. No DB / queue / runtime
+    # link to the WorldSignal process.
+    for drop in cfg.get("worldsignal_drops", []) or []:
+        if not isinstance(drop, dict):
+            continue
+        name = str(drop.get("source_name") or "").strip()
+        path = str(drop.get("path") or "").strip()
+        otype = str(drop.get("type") or "").strip()
+        if not name or not path or not otype:
+            continue
+        try:
+            max_items = int(drop.get("max_items") or 20)
+            unregister_source(name)
+            register_source(name, build_worldsignal_drop_source(
+                drop_path=path, default_type=otype,
+                source_name=name, max_items=max_items,
+            ))
+            registered.append(name)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "opportunity.sources.register_worldsignal_failed",
+                source=name, error=str(exc),
+            )
+
     if registered:
         logger.info(
             "opportunity.sources.registered",
@@ -138,4 +171,5 @@ __all__ = [
     "register_public_sources_from_config",
     "build_rss_atom_source",
     "build_url_list_source",
+    "build_worldsignal_drop_source",
 ]

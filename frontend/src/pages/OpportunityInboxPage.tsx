@@ -12,12 +12,28 @@
  *     through the controlled execution dispatcher elsewhere.
  */
 import { useEffect, useState } from 'react'
-import { Briefcase, RefreshCw, Archive, X, AlertTriangle, ShieldAlert, GitBranch } from 'lucide-react'
+import { Briefcase, RefreshCw, Archive, X, AlertTriangle, ShieldAlert, ShieldCheck, GitBranch, Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { Card, Badge, Button } from '@/components/common'
 import { api } from '@/lib/api'
 import { useGoogleActivationSummary } from '@/hooks/useGoogleActivationSummary'
+
+interface ValidationCheck {
+  key: string
+  label: string
+  passed: boolean
+  weight: number
+  detail: string
+}
+
+interface Validation {
+  score: number
+  verdict: string
+  version: number
+  validated_at: string | null
+  checks: ValidationCheck[]
+}
 
 interface OpportunityRow {
   id: string
@@ -36,6 +52,7 @@ interface OpportunityRow {
   status: string
   created_at: string
   updated_at: string | null
+  validation: Validation | null
 }
 
 const STATUS_COLOR: Record<string, 'gray' | 'gold' | 'green' | 'red'> = {
@@ -57,6 +74,21 @@ const TYPE_LABEL: Record<string, string> = {
   partnership: 'Partnership',
   bug_bounty_program: 'Bug bounty',
   content_opportunity: 'Content',
+  startup_idea: 'Startup idea',
+}
+
+// Advisory verdict colors. The human owns the final GO / NO-GO decision
+// (Phase-4 human gate 1); the deterministic score is guidance, not a gate.
+const VERDICT_COLOR: Record<string, 'green' | 'gold' | 'red'> = {
+  go: 'green',
+  review: 'gold',
+  no_go: 'red',
+}
+
+const VERDICT_LABEL: Record<string, string> = {
+  go: 'GO',
+  review: 'REVIEW',
+  no_go: 'NO-GO',
 }
 
 export default function OpportunityInboxPage() {
@@ -137,8 +169,38 @@ export default function OpportunityInboxPage() {
       )
       setReloadCount((c) => c + 1)
     } catch (e: unknown) {
+      // The bridge blocks promoting an un-validated startup_idea (CI floor).
+      // Surface the governance reason instead of a raw HTTP 400 string.
+      const code = (e as { response?: { data?: { detail?: { code?: string } } } })
+        ?.response?.data?.detail?.code
+      if (code === 'validation_required') {
+        setLastRunSummary(
+          'Promotion blocked: run Validate on this startup idea first, then review the GO / NO-GO before promoting.',
+        )
+        return
+      }
       const msg = e instanceof Error ? e.message : 'Failed to create workstream'
       setLastRunSummary(`Promotion failed: ${msg}`)
+    }
+  }
+
+  async function validate(id: string) {
+    try {
+      const r = await api.post<{ validation: Validation | null }>(
+        `/opportunities/${id}/validate`,
+      )
+      const v = r.data.validation
+      if (v) {
+        setLastRunSummary(
+          `Validated: score ${v.score}/100 -> ${VERDICT_LABEL[v.verdict] || v.verdict}. The GO / NO-GO decision is yours.`,
+        )
+      } else {
+        setLastRunSummary('Validation ran but returned no result. Check server logs.')
+      }
+      setReloadCount((c) => c + 1)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to validate'
+      setLastRunSummary(`Validation failed: ${msg}`)
     }
   }
 
@@ -310,6 +372,17 @@ export default function OpportunityInboxPage() {
                     </div>
                     {row.status === 'discovered' && (
                       <div className="flex gap-2">
+                        {row.type === 'startup_idea' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => validate(row.id)}
+                            title="Run the deterministic validation checklist (advisory GO / NO-GO)"
+                          >
+                            <ShieldCheck className="w-3 h-3 mr-1" />
+                            {row.validation ? 'Re-validate' : 'Validate'}
+                          </Button>
+                        )}
                         <Button
                           variant="secondary"
                           size="sm"
@@ -371,6 +444,54 @@ export default function OpportunityInboxPage() {
                   {row.next_action && (
                     <div className="text-xs text-slate-400 italic border-t border-slate-800 pt-2">
                       Next: {row.next_action}
+                    </div>
+                  )}
+
+                  {row.validation && (
+                    <div
+                      className="border-t border-slate-800 pt-3 space-y-2"
+                      data-testid="opp-validation-report"
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-slate-500 uppercase tracking-wide">
+                          Validation
+                        </span>
+                        <Badge color={VERDICT_COLOR[row.validation.verdict] || 'gray'}>
+                          {VERDICT_LABEL[row.validation.verdict] || row.validation.verdict}
+                        </Badge>
+                        <span className="text-xs text-slate-400">
+                          score {row.validation.score}/100
+                        </span>
+                        {row.validation.validated_at && (
+                          <span className="text-xs text-slate-600">
+                            checked {row.validation.validated_at.slice(0, 10)}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-slate-600 italic">
+                          advisory -- you own the GO / NO-GO
+                        </span>
+                      </div>
+                      <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                        {row.validation.checks.map((c) => (
+                          <li
+                            key={c.key}
+                            className="flex items-start gap-2 text-xs"
+                            title={c.detail}
+                          >
+                            {c.passed ? (
+                              <Check className="w-3 h-3 mt-0.5 shrink-0 text-emerald-400" />
+                            ) : (
+                              <X className="w-3 h-3 mt-0.5 shrink-0 text-red-400" />
+                            )}
+                            <span
+                              className={c.passed ? 'text-slate-300' : 'text-slate-500'}
+                            >
+                              {c.label}
+                              <span className="text-slate-600"> ({c.weight})</span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>
